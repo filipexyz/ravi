@@ -113,11 +113,23 @@ public struct CommandsListIssue: Codable, Sendable {
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(self.code, forKey: .code)
-    try container.encode(self.id, forKey: .id)
+    if let value = self.id {
+      try container.encode(value, forKey: .id)
+    } else {
+      try container.encodeNil(forKey: .id)
+    }
     try container.encode(self.level, forKey: .level)
     try container.encode(self.message, forKey: .message)
-    try container.encode(self.path, forKey: .path)
-    try container.encode(self.scope, forKey: .scope)
+    if let value = self.path {
+      try container.encode(value, forKey: .path)
+    } else {
+      try container.encodeNil(forKey: .path)
+    }
+    if let value = self.scope {
+      try container.encode(value, forKey: .scope)
+    } else {
+      try container.encodeNil(forKey: .scope)
+    }
   }
 }
 
@@ -135,6 +147,8 @@ public struct CommandsListItem: Codable, Sendable {
   public var shadows: [String]?
   public var title: String?
   public var token: String?
+
+  private var _raviPresentKeys: Set<String> = []
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case argumentHint = "argumentHint"
@@ -161,36 +175,89 @@ public struct CommandsListItem: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListItem requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.argumentHint = try container.decodeIfPresent(String.self, forKey: .argumentHint)
-    self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments)
+    if container.contains(.arguments) {
+      self.arguments = try container.decode([String].self, forKey: .arguments)
+    } else {
+      self.arguments = nil
+    }
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
-    self.disabled = try container.decodeIfPresent(Bool.self, forKey: .disabled)
-    self.id = try container.decodeIfPresent(String.self, forKey: .id)
-    self.issues = try container.decodeIfPresent([CommandsListIssue].self, forKey: .issues)
-    self.path = try container.decodeIfPresent(String.self, forKey: .path)
-    self.relativePath = try container.decodeIfPresent(String.self, forKey: .relativePath)
-    self.scope = try container.decodeIfPresent(String.self, forKey: .scope)
+    if container.contains(.disabled) {
+      self.disabled = try container.decode(Bool.self, forKey: .disabled)
+    } else {
+      self.disabled = nil
+    }
+    if container.contains(.id) {
+      self.id = try container.decode(String.self, forKey: .id)
+    } else {
+      self.id = nil
+    }
+    if container.contains(.issues) {
+      self.issues = try container.decode([CommandsListIssue].self, forKey: .issues)
+    } else {
+      self.issues = nil
+    }
+    if container.contains(.path) {
+      self.path = try container.decode(String.self, forKey: .path)
+    } else {
+      self.path = nil
+    }
+    if container.contains(.relativePath) {
+      self.relativePath = try container.decode(String.self, forKey: .relativePath)
+    } else {
+      self.relativePath = nil
+    }
+    if container.contains(.scope) {
+      self.scope = try container.decode(String.self, forKey: .scope)
+    } else {
+      self.scope = nil
+    }
     self.shadowedBy = try container.decodeIfPresent(String.self, forKey: .shadowedBy)
-    self.shadows = try container.decodeIfPresent([String].self, forKey: .shadows)
+    if container.contains(.shadows) {
+      self.shadows = try container.decode([String].self, forKey: .shadows)
+    } else {
+      self.shadows = nil
+    }
     self.title = try container.decodeIfPresent(String.self, forKey: .title)
-    self.token = try container.decodeIfPresent(String.self, forKey: .token)
+    if container.contains(.token) {
+      self.token = try container.decode(String.self, forKey: .token)
+    } else {
+      self.token = nil
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encodeIfPresent(self.argumentHint, forKey: .argumentHint)
+    if let value = self.argumentHint {
+      try container.encode(value, forKey: .argumentHint)
+    } else if self._raviPresentKeys.contains("argumentHint") {
+      try container.encodeNil(forKey: .argumentHint)
+    }
     try container.encodeIfPresent(self.arguments, forKey: .arguments)
-    try container.encodeIfPresent(self.description, forKey: .description)
+    if let value = self.description {
+      try container.encode(value, forKey: .description)
+    } else if self._raviPresentKeys.contains("description") {
+      try container.encodeNil(forKey: .description)
+    }
     try container.encodeIfPresent(self.disabled, forKey: .disabled)
     try container.encodeIfPresent(self.id, forKey: .id)
     try container.encodeIfPresent(self.issues, forKey: .issues)
     try container.encodeIfPresent(self.path, forKey: .path)
     try container.encodeIfPresent(self.relativePath, forKey: .relativePath)
     try container.encodeIfPresent(self.scope, forKey: .scope)
-    try container.encodeIfPresent(self.shadowedBy, forKey: .shadowedBy)
+    if let value = self.shadowedBy {
+      try container.encode(value, forKey: .shadowedBy)
+    } else if self._raviPresentKeys.contains("shadowedBy") {
+      try container.encodeNil(forKey: .shadowedBy)
+    }
     try container.encodeIfPresent(self.shadows, forKey: .shadows)
-    try container.encodeIfPresent(self.title, forKey: .title)
+    if let value = self.title {
+      try container.encode(value, forKey: .title)
+    } else if self._raviPresentKeys.contains("title") {
+      try container.encodeNil(forKey: .title)
+    }
     try container.encodeIfPresent(self.token, forKey: .token)
   }
 }
@@ -220,7 +287,11 @@ public struct CommandsListLocations: Codable, Sendable {
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(self.agent, forKey: .agent)
+    if let value = self.agent {
+      try container.encode(value, forKey: .agent)
+    } else {
+      try container.encodeNil(forKey: .agent)
+    }
     try container.encode(self.global, forKey: .global)
   }
 }
@@ -314,10 +385,18 @@ public struct ProjectDetails: Codable, Sendable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
     try container.encode(self.links, forKey: .links)
-    try container.encode(self.operational, forKey: .operational)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
     try container.encode(self.project, forKey: .project)
     try container.encode(self.tags, forKey: .tags)
-    try container.encode(self.workflowAggregate, forKey: .workflowAggregate)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -336,6 +415,8 @@ public struct ProjectedProjectResource: Codable, Sendable {
   public var resourceType: String?
   public var role: String?
   public var updatedAt: Double?
+
+  private var _raviPresentKeys: Set<String> = []
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case assetId = "assetId"
@@ -363,21 +444,50 @@ public struct ProjectedProjectResource: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectResource requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.assetId = try container.decodeIfPresent(String.self, forKey: .assetId)
-    self.assetType = try container.decodeIfPresent(String.self, forKey: .assetType)
-    self.createdAt = try container.decodeIfPresent(Double.self, forKey: .createdAt)
+    if container.contains(.assetId) {
+      self.assetId = try container.decode(String.self, forKey: .assetId)
+    } else {
+      self.assetId = nil
+    }
+    if container.contains(.assetType) {
+      self.assetType = try container.decode(String.self, forKey: .assetType)
+    } else {
+      self.assetType = nil
+    }
+    if container.contains(.createdAt) {
+      self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    } else {
+      self.createdAt = nil
+    }
     self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
     self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
     self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
-    self.id = try container.decodeIfPresent(String.self, forKey: .id)
+    if container.contains(.id) {
+      self.id = try container.decode(String.self, forKey: .id)
+    } else {
+      self.id = nil
+    }
     self.label = try container.decodeIfPresent(String.self, forKey: .label)
-    self.locator = try container.decodeIfPresent(String.self, forKey: .locator)
+    if container.contains(.locator) {
+      self.locator = try container.decode(String.self, forKey: .locator)
+    } else {
+      self.locator = nil
+    }
     self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
-    self.projectId = try container.decodeIfPresent(String.self, forKey: .projectId)
+    if container.contains(.projectId) {
+      self.projectId = try container.decode(String.self, forKey: .projectId)
+    } else {
+      self.projectId = nil
+    }
     self.resourceType = try container.decodeIfPresent(String.self, forKey: .resourceType)
     self.role = try container.decodeIfPresent(String.self, forKey: .role)
-    self.updatedAt = try container.decodeIfPresent(Double.self, forKey: .updatedAt)
+    if container.contains(.updatedAt) {
+      self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+    } else {
+      self.updatedAt = nil
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -385,16 +495,44 @@ public struct ProjectedProjectResource: Codable, Sendable {
     try container.encodeIfPresent(self.assetId, forKey: .assetId)
     try container.encodeIfPresent(self.assetType, forKey: .assetType)
     try container.encodeIfPresent(self.createdAt, forKey: .createdAt)
-    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
-    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
-    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    if let value = self.createdBy {
+      try container.encode(value, forKey: .createdBy)
+    } else if self._raviPresentKeys.contains("createdBy") {
+      try container.encodeNil(forKey: .createdBy)
+    }
+    if let value = self.createdByAgentId {
+      try container.encode(value, forKey: .createdByAgentId)
+    } else if self._raviPresentKeys.contains("createdByAgentId") {
+      try container.encodeNil(forKey: .createdByAgentId)
+    }
+    if let value = self.createdBySessionName {
+      try container.encode(value, forKey: .createdBySessionName)
+    } else if self._raviPresentKeys.contains("createdBySessionName") {
+      try container.encodeNil(forKey: .createdBySessionName)
+    }
     try container.encodeIfPresent(self.id, forKey: .id)
-    try container.encodeIfPresent(self.label, forKey: .label)
+    if let value = self.label {
+      try container.encode(value, forKey: .label)
+    } else if self._raviPresentKeys.contains("label") {
+      try container.encodeNil(forKey: .label)
+    }
     try container.encodeIfPresent(self.locator, forKey: .locator)
-    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    if let value = self.metadata {
+      try container.encode(value, forKey: .metadata)
+    } else if self._raviPresentKeys.contains("metadata") {
+      try container.encodeNil(forKey: .metadata)
+    }
     try container.encodeIfPresent(self.projectId, forKey: .projectId)
-    try container.encodeIfPresent(self.resourceType, forKey: .resourceType)
-    try container.encodeIfPresent(self.role, forKey: .role)
+    if let value = self.resourceType {
+      try container.encode(value, forKey: .resourceType)
+    } else if self._raviPresentKeys.contains("resourceType") {
+      try container.encodeNil(forKey: .resourceType)
+    }
+    if let value = self.role {
+      try container.encode(value, forKey: .role)
+    } else if self._raviPresentKeys.contains("role") {
+      try container.encodeNil(forKey: .role)
+    }
     try container.encodeIfPresent(self.updatedAt, forKey: .updatedAt)
   }
 }
@@ -405,6 +543,8 @@ public struct ProjectedProjectStatusEntry: Codable, Sendable {
   public var operational: ProjectOperational?
   public var project: ProjectSummary?
   public var workflowAggregate: ProjectWorkflowAggregate?
+
+  private var _raviPresentKeys: Set<String> = []
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case linkedWorkflows = "linkedWorkflows"
@@ -423,11 +563,24 @@ public struct ProjectedProjectStatusEntry: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntry requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.linkedWorkflows = try container.decodeIfPresent([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
-    self.links = try container.decodeIfPresent([ProjectLink].self, forKey: .links)
+    if container.contains(.linkedWorkflows) {
+      self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    } else {
+      self.linkedWorkflows = nil
+    }
+    if container.contains(.links) {
+      self.links = try container.decode([ProjectLink].self, forKey: .links)
+    } else {
+      self.links = nil
+    }
     self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
-    self.project = try container.decodeIfPresent(ProjectSummary.self, forKey: .project)
+    if container.contains(.project) {
+      self.project = try container.decode(ProjectSummary.self, forKey: .project)
+    } else {
+      self.project = nil
+    }
     self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
   }
 
@@ -435,9 +588,17 @@ public struct ProjectedProjectStatusEntry: Codable, Sendable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(self.linkedWorkflows, forKey: .linkedWorkflows)
     try container.encodeIfPresent(self.links, forKey: .links)
-    try container.encodeIfPresent(self.operational, forKey: .operational)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else if self._raviPresentKeys.contains("operational") {
+      try container.encodeNil(forKey: .operational)
+    }
     try container.encodeIfPresent(self.project, forKey: .project)
-    try container.encodeIfPresent(self.workflowAggregate, forKey: .workflowAggregate)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else if self._raviPresentKeys.contains("workflowAggregate") {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -447,6 +608,8 @@ public struct ProjectedProjectStatusEntryAlias: Codable, Sendable {
   public var operational: ProjectOperational?
   public var project: ProjectSummary?
   public var workflowAggregate: ProjectWorkflowAggregate?
+
+  private var _raviPresentKeys: Set<String> = []
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case linkedWorkflows = "linkedWorkflows"
@@ -465,11 +628,24 @@ public struct ProjectedProjectStatusEntryAlias: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntryAlias requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.linkedWorkflows = try container.decodeIfPresent([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
-    self.links = try container.decodeIfPresent([ProjectLink].self, forKey: .links)
+    if container.contains(.linkedWorkflows) {
+      self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    } else {
+      self.linkedWorkflows = nil
+    }
+    if container.contains(.links) {
+      self.links = try container.decode([ProjectLink].self, forKey: .links)
+    } else {
+      self.links = nil
+    }
     self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
-    self.project = try container.decodeIfPresent(ProjectSummary.self, forKey: .project)
+    if container.contains(.project) {
+      self.project = try container.decode(ProjectSummary.self, forKey: .project)
+    } else {
+      self.project = nil
+    }
     self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
   }
 
@@ -477,9 +653,17 @@ public struct ProjectedProjectStatusEntryAlias: Codable, Sendable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(self.linkedWorkflows, forKey: .linkedWorkflows)
     try container.encodeIfPresent(self.links, forKey: .links)
-    try container.encodeIfPresent(self.operational, forKey: .operational)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else if self._raviPresentKeys.contains("operational") {
+      try container.encodeNil(forKey: .operational)
+    }
     try container.encodeIfPresent(self.project, forKey: .project)
-    try container.encodeIfPresent(self.workflowAggregate, forKey: .workflowAggregate)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else if self._raviPresentKeys.contains("workflowAggregate") {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -502,6 +686,8 @@ public struct ProjectedProjectSummary: Codable, Sendable {
   public var tags: [ProjectTagBinding]?
   public var title: String?
   public var updatedAt: Double?
+
+  private var _raviPresentKeys: Set<String> = []
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case archivedAt = "archivedAt"
@@ -533,45 +719,118 @@ public struct ProjectedProjectSummary: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectSummary requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.archivedAt = try container.decodeIfPresent(Double.self, forKey: .archivedAt)
-    self.createdAt = try container.decodeIfPresent(Double.self, forKey: .createdAt)
+    if container.contains(.createdAt) {
+      self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    } else {
+      self.createdAt = nil
+    }
     self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
     self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
     self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
-    self.hypothesis = try container.decodeIfPresent(String.self, forKey: .hypothesis)
-    self.id = try container.decodeIfPresent(String.self, forKey: .id)
-    self.lastSignalAt = try container.decodeIfPresent(Double.self, forKey: .lastSignalAt)
-    self.linkCount = try container.decodeIfPresent(Double.self, forKey: .linkCount)
-    self.nextStep = try container.decodeIfPresent(String.self, forKey: .nextStep)
+    if container.contains(.hypothesis) {
+      self.hypothesis = try container.decode(String.self, forKey: .hypothesis)
+    } else {
+      self.hypothesis = nil
+    }
+    if container.contains(.id) {
+      self.id = try container.decode(String.self, forKey: .id)
+    } else {
+      self.id = nil
+    }
+    if container.contains(.lastSignalAt) {
+      self.lastSignalAt = try container.decode(Double.self, forKey: .lastSignalAt)
+    } else {
+      self.lastSignalAt = nil
+    }
+    if container.contains(.linkCount) {
+      self.linkCount = try container.decode(Double.self, forKey: .linkCount)
+    } else {
+      self.linkCount = nil
+    }
+    if container.contains(.nextStep) {
+      self.nextStep = try container.decode(String.self, forKey: .nextStep)
+    } else {
+      self.nextStep = nil
+    }
     self.operatorSessionName = try container.decodeIfPresent(String.self, forKey: .operatorSessionName)
     self.ownerAgentId = try container.decodeIfPresent(String.self, forKey: .ownerAgentId)
-    self.slug = try container.decodeIfPresent(String.self, forKey: .slug)
-    self.status = try container.decodeIfPresent(String.self, forKey: .status)
-    self.summary = try container.decodeIfPresent(String.self, forKey: .summary)
+    if container.contains(.slug) {
+      self.slug = try container.decode(String.self, forKey: .slug)
+    } else {
+      self.slug = nil
+    }
+    if container.contains(.status) {
+      self.status = try container.decode(String.self, forKey: .status)
+    } else {
+      self.status = nil
+    }
+    if container.contains(.summary) {
+      self.summary = try container.decode(String.self, forKey: .summary)
+    } else {
+      self.summary = nil
+    }
     self.tags = try container.decodeIfPresent([ProjectTagBinding].self, forKey: .tags)
-    self.title = try container.decodeIfPresent(String.self, forKey: .title)
-    self.updatedAt = try container.decodeIfPresent(Double.self, forKey: .updatedAt)
+    if container.contains(.title) {
+      self.title = try container.decode(String.self, forKey: .title)
+    } else {
+      self.title = nil
+    }
+    if container.contains(.updatedAt) {
+      self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+    } else {
+      self.updatedAt = nil
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encodeIfPresent(self.archivedAt, forKey: .archivedAt)
+    if let value = self.archivedAt {
+      try container.encode(value, forKey: .archivedAt)
+    } else if self._raviPresentKeys.contains("archivedAt") {
+      try container.encodeNil(forKey: .archivedAt)
+    }
     try container.encodeIfPresent(self.createdAt, forKey: .createdAt)
-    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
-    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
-    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    if let value = self.createdBy {
+      try container.encode(value, forKey: .createdBy)
+    } else if self._raviPresentKeys.contains("createdBy") {
+      try container.encodeNil(forKey: .createdBy)
+    }
+    if let value = self.createdByAgentId {
+      try container.encode(value, forKey: .createdByAgentId)
+    } else if self._raviPresentKeys.contains("createdByAgentId") {
+      try container.encodeNil(forKey: .createdByAgentId)
+    }
+    if let value = self.createdBySessionName {
+      try container.encode(value, forKey: .createdBySessionName)
+    } else if self._raviPresentKeys.contains("createdBySessionName") {
+      try container.encodeNil(forKey: .createdBySessionName)
+    }
     try container.encodeIfPresent(self.hypothesis, forKey: .hypothesis)
     try container.encodeIfPresent(self.id, forKey: .id)
     try container.encodeIfPresent(self.lastSignalAt, forKey: .lastSignalAt)
     try container.encodeIfPresent(self.linkCount, forKey: .linkCount)
     try container.encodeIfPresent(self.nextStep, forKey: .nextStep)
-    try container.encodeIfPresent(self.operatorSessionName, forKey: .operatorSessionName)
-    try container.encodeIfPresent(self.ownerAgentId, forKey: .ownerAgentId)
+    if let value = self.operatorSessionName {
+      try container.encode(value, forKey: .operatorSessionName)
+    } else if self._raviPresentKeys.contains("operatorSessionName") {
+      try container.encodeNil(forKey: .operatorSessionName)
+    }
+    if let value = self.ownerAgentId {
+      try container.encode(value, forKey: .ownerAgentId)
+    } else if self._raviPresentKeys.contains("ownerAgentId") {
+      try container.encodeNil(forKey: .ownerAgentId)
+    }
     try container.encodeIfPresent(self.slug, forKey: .slug)
     try container.encodeIfPresent(self.status, forKey: .status)
     try container.encodeIfPresent(self.summary, forKey: .summary)
-    try container.encodeIfPresent(self.tags, forKey: .tags)
+    if let value = self.tags {
+      try container.encode(value, forKey: .tags)
+    } else if self._raviPresentKeys.contains("tags") {
+      try container.encodeNil(forKey: .tags)
+    }
     try container.encodeIfPresent(self.title, forKey: .title)
     try container.encodeIfPresent(self.updatedAt, forKey: .updatedAt)
   }
@@ -668,8 +927,16 @@ public struct ProjectListFilters: Codable, Sendable {
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(self.status, forKey: .status)
-    try container.encode(self.tagSlug, forKey: .tagSlug)
+    if let value = self.status {
+      try container.encode(value, forKey: .status)
+    } else {
+      try container.encodeNil(forKey: .status)
+    }
+    if let value = self.tagSlug {
+      try container.encode(value, forKey: .tagSlug)
+    } else {
+      try container.encodeNil(forKey: .tagSlug)
+    }
   }
 }
 
@@ -788,22 +1055,86 @@ public struct ProjectOperational: Codable, Sendable {
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(self.hottestNodeKey, forKey: .hottestNodeKey)
-    try container.encode(self.hottestNodeKind, forKey: .hottestNodeKind)
-    try container.encode(self.hottestNodeLabel, forKey: .hottestNodeLabel)
-    try container.encode(self.hottestNodeReleaseMode, forKey: .hottestNodeReleaseMode)
-    try container.encode(self.hottestNodeRequirement, forKey: .hottestNodeRequirement)
-    try container.encode(self.hottestNodeRunId, forKey: .hottestNodeRunId)
-    try container.encode(self.hottestNodeStatus, forKey: .hottestNodeStatus)
-    try container.encode(self.hottestTaskId, forKey: .hottestTaskId)
-    try container.encode(self.hottestTaskPriority, forKey: .hottestTaskPriority)
-    try container.encode(self.hottestTaskProgress, forKey: .hottestTaskProgress)
-    try container.encode(self.hottestTaskStatus, forKey: .hottestTaskStatus)
-    try container.encode(self.hottestTaskTitle, forKey: .hottestTaskTitle)
-    try container.encode(self.hottestWorkflowRunId, forKey: .hottestWorkflowRunId)
-    try container.encode(self.hottestWorkflowStatus, forKey: .hottestWorkflowStatus)
-    try container.encode(self.hottestWorkflowTitle, forKey: .hottestWorkflowTitle)
-    try container.encode(self.runtimeStatus, forKey: .runtimeStatus)
+    if let value = self.hottestNodeKey {
+      try container.encode(value, forKey: .hottestNodeKey)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeKey)
+    }
+    if let value = self.hottestNodeKind {
+      try container.encode(value, forKey: .hottestNodeKind)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeKind)
+    }
+    if let value = self.hottestNodeLabel {
+      try container.encode(value, forKey: .hottestNodeLabel)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeLabel)
+    }
+    if let value = self.hottestNodeReleaseMode {
+      try container.encode(value, forKey: .hottestNodeReleaseMode)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeReleaseMode)
+    }
+    if let value = self.hottestNodeRequirement {
+      try container.encode(value, forKey: .hottestNodeRequirement)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeRequirement)
+    }
+    if let value = self.hottestNodeRunId {
+      try container.encode(value, forKey: .hottestNodeRunId)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeRunId)
+    }
+    if let value = self.hottestNodeStatus {
+      try container.encode(value, forKey: .hottestNodeStatus)
+    } else {
+      try container.encodeNil(forKey: .hottestNodeStatus)
+    }
+    if let value = self.hottestTaskId {
+      try container.encode(value, forKey: .hottestTaskId)
+    } else {
+      try container.encodeNil(forKey: .hottestTaskId)
+    }
+    if let value = self.hottestTaskPriority {
+      try container.encode(value, forKey: .hottestTaskPriority)
+    } else {
+      try container.encodeNil(forKey: .hottestTaskPriority)
+    }
+    if let value = self.hottestTaskProgress {
+      try container.encode(value, forKey: .hottestTaskProgress)
+    } else {
+      try container.encodeNil(forKey: .hottestTaskProgress)
+    }
+    if let value = self.hottestTaskStatus {
+      try container.encode(value, forKey: .hottestTaskStatus)
+    } else {
+      try container.encodeNil(forKey: .hottestTaskStatus)
+    }
+    if let value = self.hottestTaskTitle {
+      try container.encode(value, forKey: .hottestTaskTitle)
+    } else {
+      try container.encodeNil(forKey: .hottestTaskTitle)
+    }
+    if let value = self.hottestWorkflowRunId {
+      try container.encode(value, forKey: .hottestWorkflowRunId)
+    } else {
+      try container.encodeNil(forKey: .hottestWorkflowRunId)
+    }
+    if let value = self.hottestWorkflowStatus {
+      try container.encode(value, forKey: .hottestWorkflowStatus)
+    } else {
+      try container.encodeNil(forKey: .hottestWorkflowStatus)
+    }
+    if let value = self.hottestWorkflowTitle {
+      try container.encode(value, forKey: .hottestWorkflowTitle)
+    } else {
+      try container.encodeNil(forKey: .hottestWorkflowTitle)
+    }
+    if let value = self.runtimeStatus {
+      try container.encode(value, forKey: .runtimeStatus)
+    } else {
+      try container.encodeNil(forKey: .runtimeStatus)
+    }
     try container.encode(self.workflowCount, forKey: .workflowCount)
   }
 }
@@ -962,11 +1293,19 @@ public struct ProjectResource: Codable, Sendable {
     try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
     try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
     try container.encode(self.id, forKey: .id)
-    try container.encode(self.label, forKey: .label)
+    if let value = self.label {
+      try container.encode(value, forKey: .label)
+    } else {
+      try container.encodeNil(forKey: .label)
+    }
     try container.encode(self.locator, forKey: .locator)
     try container.encodeIfPresent(self.metadata, forKey: .metadata)
     try container.encode(self.projectId, forKey: .projectId)
-    try container.encode(self.resourceType, forKey: .resourceType)
+    if let value = self.resourceType {
+      try container.encode(value, forKey: .resourceType)
+    } else {
+      try container.encodeNil(forKey: .resourceType)
+    }
     try container.encodeIfPresent(self.role, forKey: .role)
     try container.encode(self.updatedAt, forKey: .updatedAt)
   }
@@ -1229,15 +1568,47 @@ public struct ProjectWorkflowAggregate: Codable, Sendable {
     try container.encode(self.done, forKey: .done)
     try container.encode(self.draft, forKey: .draft)
     try container.encode(self.failed, forKey: .failed)
-    try container.encode(self.focusedWorkflowRole, forKey: .focusedWorkflowRole)
-    try container.encode(self.focusedWorkflowRunId, forKey: .focusedWorkflowRunId)
-    try container.encode(self.focusedWorkflowStatus, forKey: .focusedWorkflowStatus)
-    try container.encode(self.focusedWorkflowTitle, forKey: .focusedWorkflowTitle)
+    if let value = self.focusedWorkflowRole {
+      try container.encode(value, forKey: .focusedWorkflowRole)
+    } else {
+      try container.encodeNil(forKey: .focusedWorkflowRole)
+    }
+    if let value = self.focusedWorkflowRunId {
+      try container.encode(value, forKey: .focusedWorkflowRunId)
+    } else {
+      try container.encodeNil(forKey: .focusedWorkflowRunId)
+    }
+    if let value = self.focusedWorkflowStatus {
+      try container.encode(value, forKey: .focusedWorkflowStatus)
+    } else {
+      try container.encodeNil(forKey: .focusedWorkflowStatus)
+    }
+    if let value = self.focusedWorkflowTitle {
+      try container.encode(value, forKey: .focusedWorkflowTitle)
+    } else {
+      try container.encodeNil(forKey: .focusedWorkflowTitle)
+    }
     try container.encode(self.missing, forKey: .missing)
-    try container.encode(self.overallStatus, forKey: .overallStatus)
-    try container.encode(self.primaryWorkflowRunId, forKey: .primaryWorkflowRunId)
-    try container.encode(self.primaryWorkflowStatus, forKey: .primaryWorkflowStatus)
-    try container.encode(self.primaryWorkflowTitle, forKey: .primaryWorkflowTitle)
+    if let value = self.overallStatus {
+      try container.encode(value, forKey: .overallStatus)
+    } else {
+      try container.encodeNil(forKey: .overallStatus)
+    }
+    if let value = self.primaryWorkflowRunId {
+      try container.encode(value, forKey: .primaryWorkflowRunId)
+    } else {
+      try container.encodeNil(forKey: .primaryWorkflowRunId)
+    }
+    if let value = self.primaryWorkflowStatus {
+      try container.encode(value, forKey: .primaryWorkflowStatus)
+    } else {
+      try container.encodeNil(forKey: .primaryWorkflowStatus)
+    }
+    if let value = self.primaryWorkflowTitle {
+      try container.encode(value, forKey: .primaryWorkflowTitle)
+    } else {
+      try container.encodeNil(forKey: .primaryWorkflowTitle)
+    }
     try container.encode(self.ready, forKey: .ready)
     try container.encode(self.running, forKey: .running)
     try container.encode(self.total, forKey: .total)
@@ -1305,13 +1676,33 @@ public struct ProjectWorkflowLink: Codable, Sendable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(self.createdAt, forKey: .createdAt)
     try container.encode(self.linkId, forKey: .linkId)
-    try container.encode(self.role, forKey: .role)
+    if let value = self.role {
+      try container.encode(value, forKey: .role)
+    } else {
+      try container.encodeNil(forKey: .role)
+    }
     try container.encode(self.updatedAt, forKey: .updatedAt)
     try container.encode(self.workflowRunId, forKey: .workflowRunId)
-    try container.encode(self.workflowRunStatus, forKey: .workflowRunStatus)
-    try container.encode(self.workflowRunTitle, forKey: .workflowRunTitle)
-    try container.encode(self.workflowSpecId, forKey: .workflowSpecId)
-    try container.encode(self.workflowSpecTitle, forKey: .workflowSpecTitle)
+    if let value = self.workflowRunStatus {
+      try container.encode(value, forKey: .workflowRunStatus)
+    } else {
+      try container.encodeNil(forKey: .workflowRunStatus)
+    }
+    if let value = self.workflowRunTitle {
+      try container.encode(value, forKey: .workflowRunTitle)
+    } else {
+      try container.encodeNil(forKey: .workflowRunTitle)
+    }
+    if let value = self.workflowSpecId {
+      try container.encode(value, forKey: .workflowSpecId)
+    } else {
+      try container.encodeNil(forKey: .workflowSpecId)
+    }
+    if let value = self.workflowSpecTitle {
+      try container.encode(value, forKey: .workflowSpecTitle)
+    } else {
+      try container.encodeNil(forKey: .workflowSpecTitle)
+    }
   }
 }
 
@@ -1381,16 +1772,16 @@ public struct AdaptersShowReturn: Codable, Sendable {
   public var bind: RaviJSON
   public var diagnosticState: String
   public var health: [String: RaviJSON]
-  public var lastCommand: RaviJSON
-  public var lastEvent: RaviJSON
-  public var lastProtocolError: RaviJSON
+  public var lastCommand: [String: RaviJSON]?
+  public var lastEvent: [String: RaviJSON]?
+  public var lastProtocolError: [String: RaviJSON]?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var status: String
   public var transport: String
   public var updatedAt: Double
 
-  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: RaviJSON, lastEvent: RaviJSON, lastProtocolError: RaviJSON, sessionKey: String, sessionName: RaviJSON, status: String, transport: String, updatedAt: Double) {
+  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: [String: RaviJSON]?, lastEvent: [String: RaviJSON]?, lastProtocolError: [String: RaviJSON]?, sessionKey: String, sessionName: String?, status: String, transport: String, updatedAt: Double) {
     self.adapterId = adapterId
     self.adapterName = adapterName
     self.bind = bind
@@ -1420,6 +1811,68 @@ public struct AdaptersShowReturn: Codable, Sendable {
     case status = "status"
     case transport = "transport"
     case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.adapterId = try container.decode(String.self, forKey: .adapterId)
+    self.adapterName = try container.decode(String.self, forKey: .adapterName)
+    self.bind = try container.decode(RaviJSON.self, forKey: .bind)
+    self.diagnosticState = try container.decode(String.self, forKey: .diagnosticState)
+    self.health = try container.decode([String: RaviJSON].self, forKey: .health)
+    guard container.contains(.lastCommand) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastCommand, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastCommand."))
+    }
+    self.lastCommand = try container.decodeIfPresent([String: RaviJSON].self, forKey: .lastCommand)
+    guard container.contains(.lastEvent) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastEvent, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastEvent."))
+    }
+    self.lastEvent = try container.decodeIfPresent([String: RaviJSON].self, forKey: .lastEvent)
+    guard container.contains(.lastProtocolError) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastProtocolError, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastProtocolError."))
+    }
+    self.lastProtocolError = try container.decodeIfPresent([String: RaviJSON].self, forKey: .lastProtocolError)
+    self.sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.transport = try container.decode(String.self, forKey: .transport)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.adapterId, forKey: .adapterId)
+    try container.encode(self.adapterName, forKey: .adapterName)
+    try container.encode(self.bind, forKey: .bind)
+    try container.encode(self.diagnosticState, forKey: .diagnosticState)
+    try container.encode(self.health, forKey: .health)
+    if let value = self.lastCommand {
+      try container.encode(value, forKey: .lastCommand)
+    } else {
+      try container.encodeNil(forKey: .lastCommand)
+    }
+    if let value = self.lastEvent {
+      try container.encode(value, forKey: .lastEvent)
+    } else {
+      try container.encodeNil(forKey: .lastEvent)
+    }
+    if let value = self.lastProtocolError {
+      try container.encode(value, forKey: .lastProtocolError)
+    } else {
+      try container.encodeNil(forKey: .lastProtocolError)
+    }
+    try container.encode(self.sessionKey, forKey: .sessionKey)
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.transport, forKey: .transport)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
   }
 }
 
@@ -1487,10 +1940,10 @@ public struct AgentsDebounceReturn: Codable, Sendable {
   public var action: String?
   public var agentId: String
   public var changed: Bool?
-  public var debounceMs: RaviJSON
+  public var debounceMs: Double?
   public var enabled: Bool
 
-  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: RaviJSON, enabled: Bool) {
+  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: Double?, enabled: Bool) {
     self.action = action
     self.agentId = agentId
     self.changed = changed
@@ -1504,6 +1957,31 @@ public struct AgentsDebounceReturn: Codable, Sendable {
     case changed = "changed"
     case debounceMs = "debounceMs"
     case enabled = "enabled"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decodeIfPresent(String.self, forKey: .action)
+    self.agentId = try container.decode(String.self, forKey: .agentId)
+    self.changed = try container.decodeIfPresent(Bool.self, forKey: .changed)
+    guard container.contains(.debounceMs) else {
+      throw DecodingError.keyNotFound(CodingKeys.debounceMs, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field debounceMs."))
+    }
+    self.debounceMs = try container.decodeIfPresent(Double.self, forKey: .debounceMs)
+    self.enabled = try container.decode(Bool.self, forKey: .enabled)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.action, forKey: .action)
+    try container.encode(self.agentId, forKey: .agentId)
+    try container.encodeIfPresent(self.changed, forKey: .changed)
+    if let value = self.debounceMs {
+      try container.encode(value, forKey: .debounceMs)
+    } else {
+      try container.encodeNil(forKey: .debounceMs)
+    }
+    try container.encode(self.enabled, forKey: .enabled)
   }
 }
 
@@ -1676,10 +2154,10 @@ public struct AgentsModelBrokerReturn: Codable, Sendable {
   public var agent: RaviJSON?
   public var agentId: String
   public var changed: Bool
-  public var defaults: RaviJSON?
-  public var modelBroker: RaviJSON
+  public var defaults: [String: RaviJSON]?
+  public var modelBroker: RaviJSON?
 
-  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: RaviJSON? = nil, modelBroker: RaviJSON) {
+  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: [String: RaviJSON]? = nil, modelBroker: RaviJSON?) {
     self.action = action
     self.agent = agent
     self.agentId = agentId
@@ -1695,6 +2173,33 @@ public struct AgentsModelBrokerReturn: Codable, Sendable {
     case changed = "changed"
     case defaults = "defaults"
     case modelBroker = "modelBroker"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    self.agent = try container.decodeIfPresent(RaviJSON.self, forKey: .agent)
+    self.agentId = try container.decode(String.self, forKey: .agentId)
+    self.changed = try container.decode(Bool.self, forKey: .changed)
+    self.defaults = try container.decodeIfPresent([String: RaviJSON].self, forKey: .defaults)
+    guard container.contains(.modelBroker) else {
+      throw DecodingError.keyNotFound(CodingKeys.modelBroker, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field modelBroker."))
+    }
+    self.modelBroker = try container.decodeIfPresent(RaviJSON.self, forKey: .modelBroker)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    try container.encodeIfPresent(self.agent, forKey: .agent)
+    try container.encode(self.agentId, forKey: .agentId)
+    try container.encode(self.changed, forKey: .changed)
+    try container.encodeIfPresent(self.defaults, forKey: .defaults)
+    if let value = self.modelBroker {
+      try container.encode(value, forKey: .modelBroker)
+    } else {
+      try container.encodeNil(forKey: .modelBroker)
+    }
   }
 }
 
@@ -1736,11 +2241,11 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var before: RaviJSON?
   public var changed: Bool
   public var command: String?
-  public var defaults: RaviJSON?
+  public var defaults: [String: RaviJSON]?
   public var profile: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: [String: RaviJSON]? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
@@ -1872,9 +2377,9 @@ public struct AgentsSetReturn: Codable, Sendable {
 public struct AgentsShowReturn: Codable, Sendable {
   public var agent: RaviJSON
   public var permissionsCommand: String
-  public var runtimePermissions: RaviJSON
+  public var runtimePermissions: RaviJSON?
 
-  public init(agent: RaviJSON, permissionsCommand: String, runtimePermissions: RaviJSON) {
+  public init(agent: RaviJSON, permissionsCommand: String, runtimePermissions: RaviJSON?) {
     self.agent = agent
     self.permissionsCommand = permissionsCommand
     self.runtimePermissions = runtimePermissions
@@ -1884,6 +2389,27 @@ public struct AgentsShowReturn: Codable, Sendable {
     case agent = "agent"
     case permissionsCommand = "permissionsCommand"
     case runtimePermissions = "runtimePermissions"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.agent = try container.decode(RaviJSON.self, forKey: .agent)
+    self.permissionsCommand = try container.decode(String.self, forKey: .permissionsCommand)
+    guard container.contains(.runtimePermissions) else {
+      throw DecodingError.keyNotFound(CodingKeys.runtimePermissions, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field runtimePermissions."))
+    }
+    self.runtimePermissions = try container.decodeIfPresent(RaviJSON.self, forKey: .runtimePermissions)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.agent, forKey: .agent)
+    try container.encode(self.permissionsCommand, forKey: .permissionsCommand)
+    if let value = self.runtimePermissions {
+      try container.encode(value, forKey: .runtimePermissions)
+    } else {
+      try container.encodeNil(forKey: .runtimePermissions)
+    }
   }
 }
 
@@ -2023,15 +2549,15 @@ public struct AppsDeleteReturn: Codable, Sendable {
 }
 
 public struct AppsGuideReturn: Codable, Sendable {
-  public var app: RaviJSON
-  public var appId: RaviJSON
+  public var app: RaviJSON?
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON?, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -2049,6 +2575,42 @@ public struct AppsGuideReturn: Codable, Sendable {
     case prompts = "prompts"
     case skill = "skill"
     case skillGate = "skillGate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.app) else {
+      throw DecodingError.keyNotFound(CodingKeys.app, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field app."))
+    }
+    self.app = try container.decodeIfPresent(RaviJSON.self, forKey: .app)
+    guard container.contains(.appId) else {
+      throw DecodingError.keyNotFound(CodingKeys.appId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field appId."))
+    }
+    self.appId = try container.decodeIfPresent(String.self, forKey: .appId)
+    self.builder = try container.decode(RaviJSON.self, forKey: .builder)
+    self.nextCommands = try container.decode([String].self, forKey: .nextCommands)
+    self.prompts = try container.decode([RaviJSON].self, forKey: .prompts)
+    self.skill = try container.decode(String.self, forKey: .skill)
+    self.skillGate = try container.decode(RaviJSON.self, forKey: .skillGate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.app {
+      try container.encode(value, forKey: .app)
+    } else {
+      try container.encodeNil(forKey: .app)
+    }
+    if let value = self.appId {
+      try container.encode(value, forKey: .appId)
+    } else {
+      try container.encodeNil(forKey: .appId)
+    }
+    try container.encode(self.builder, forKey: .builder)
+    try container.encode(self.nextCommands, forKey: .nextCommands)
+    try container.encode(self.prompts, forKey: .prompts)
+    try container.encode(self.skill, forKey: .skill)
+    try container.encode(self.skillGate, forKey: .skillGate)
   }
 }
 
@@ -2120,7 +2682,7 @@ public struct AppsImportCliOptions: Codable, Sendable {
 
 public struct AppsImportCliReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var confidence: String
   public var debugCandidates: [RaviJSON]
@@ -2135,14 +2697,14 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var nextCommands: [String]
   public var operationCandidates: [RaviJSON]
   public var reviewRequired: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
   public var source: String
   public var sourceCommand: String
-  public var specPath: RaviJSON
+  public var specPath: String?
   public var warnings: [String]
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: String?, skillPath: String?, source: String, sourceCommand: String, specPath: String?, warnings: [String]) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -2190,6 +2752,86 @@ public struct AppsImportCliReturn: Codable, Sendable {
     case sourceCommand = "sourceCommand"
     case specPath = "specPath"
     case warnings = "warnings"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.builder = try container.decode(RaviJSON.self, forKey: .builder)
+    guard container.contains(.cliPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.cliPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cliPath."))
+    }
+    self.cliPath = try container.decodeIfPresent(String.self, forKey: .cliPath)
+    self.command = try container.decode(String.self, forKey: .command)
+    self.confidence = try container.decode(String.self, forKey: .confidence)
+    self.debugCandidates = try container.decode([RaviJSON].self, forKey: .debugCandidates)
+    self.description = try container.decode(String.self, forKey: .description)
+    self.dryRun = try container.decode(Bool.self, forKey: .dryRun)
+    self.files = try container.decode([RaviJSON].self, forKey: .files)
+    self.force = try container.decode(Bool.self, forKey: .force)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.manifest = try container.decode([String: RaviJSON].self, forKey: .manifest)
+    self.manifestPath = try container.decode(String.self, forKey: .manifestPath)
+    self.name = try container.decode(String.self, forKey: .name)
+    self.nextCommands = try container.decode([String].self, forKey: .nextCommands)
+    self.operationCandidates = try container.decode([RaviJSON].self, forKey: .operationCandidates)
+    self.reviewRequired = try container.decode([String].self, forKey: .reviewRequired)
+    guard container.contains(.skill) else {
+      throw DecodingError.keyNotFound(CodingKeys.skill, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field skill."))
+    }
+    self.skill = try container.decodeIfPresent(String.self, forKey: .skill)
+    guard container.contains(.skillPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.skillPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field skillPath."))
+    }
+    self.skillPath = try container.decodeIfPresent(String.self, forKey: .skillPath)
+    self.source = try container.decode(String.self, forKey: .source)
+    self.sourceCommand = try container.decode(String.self, forKey: .sourceCommand)
+    guard container.contains(.specPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.specPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field specPath."))
+    }
+    self.specPath = try container.decodeIfPresent(String.self, forKey: .specPath)
+    self.warnings = try container.decode([String].self, forKey: .warnings)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.builder, forKey: .builder)
+    if let value = self.cliPath {
+      try container.encode(value, forKey: .cliPath)
+    } else {
+      try container.encodeNil(forKey: .cliPath)
+    }
+    try container.encode(self.command, forKey: .command)
+    try container.encode(self.confidence, forKey: .confidence)
+    try container.encode(self.debugCandidates, forKey: .debugCandidates)
+    try container.encode(self.description, forKey: .description)
+    try container.encode(self.dryRun, forKey: .dryRun)
+    try container.encode(self.files, forKey: .files)
+    try container.encode(self.force, forKey: .force)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.manifest, forKey: .manifest)
+    try container.encode(self.manifestPath, forKey: .manifestPath)
+    try container.encode(self.name, forKey: .name)
+    try container.encode(self.nextCommands, forKey: .nextCommands)
+    try container.encode(self.operationCandidates, forKey: .operationCandidates)
+    try container.encode(self.reviewRequired, forKey: .reviewRequired)
+    if let value = self.skill {
+      try container.encode(value, forKey: .skill)
+    } else {
+      try container.encodeNil(forKey: .skill)
+    }
+    if let value = self.skillPath {
+      try container.encode(value, forKey: .skillPath)
+    } else {
+      try container.encodeNil(forKey: .skillPath)
+    }
+    try container.encode(self.source, forKey: .source)
+    try container.encode(self.sourceCommand, forKey: .sourceCommand)
+    if let value = self.specPath {
+      try container.encode(value, forKey: .specPath)
+    } else {
+      try container.encodeNil(forKey: .specPath)
+    }
+    try container.encode(self.warnings, forKey: .warnings)
   }
 }
 
@@ -2245,15 +2887,15 @@ public struct AppsListReturn: Codable, Sendable {
 }
 
 public struct AppsPromptsReturn: Codable, Sendable {
-  public var app: RaviJSON
-  public var appId: RaviJSON
+  public var app: RaviJSON?
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON?, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -2271,6 +2913,42 @@ public struct AppsPromptsReturn: Codable, Sendable {
     case prompts = "prompts"
     case skill = "skill"
     case skillGate = "skillGate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.app) else {
+      throw DecodingError.keyNotFound(CodingKeys.app, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field app."))
+    }
+    self.app = try container.decodeIfPresent(RaviJSON.self, forKey: .app)
+    guard container.contains(.appId) else {
+      throw DecodingError.keyNotFound(CodingKeys.appId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field appId."))
+    }
+    self.appId = try container.decodeIfPresent(String.self, forKey: .appId)
+    self.builder = try container.decode(RaviJSON.self, forKey: .builder)
+    self.nextCommands = try container.decode([String].self, forKey: .nextCommands)
+    self.prompts = try container.decode([RaviJSON].self, forKey: .prompts)
+    self.skill = try container.decode(String.self, forKey: .skill)
+    self.skillGate = try container.decode(RaviJSON.self, forKey: .skillGate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.app {
+      try container.encode(value, forKey: .app)
+    } else {
+      try container.encodeNil(forKey: .app)
+    }
+    if let value = self.appId {
+      try container.encode(value, forKey: .appId)
+    } else {
+      try container.encodeNil(forKey: .appId)
+    }
+    try container.encode(self.builder, forKey: .builder)
+    try container.encode(self.nextCommands, forKey: .nextCommands)
+    try container.encode(self.prompts, forKey: .prompts)
+    try container.encode(self.skill, forKey: .skill)
+    try container.encode(self.skillGate, forKey: .skillGate)
   }
 }
 
@@ -2293,7 +2971,7 @@ public struct AppsRunOptions: Codable, Sendable {
 }
 
 public struct AppsRunReturn: Codable, Sendable {
-  public var appId: RaviJSON
+  public var appId: String?
   public var callerContextId: String?
   public var channel: String?
   public var childContextId: String?
@@ -2302,13 +2980,13 @@ public struct AppsRunReturn: Codable, Sendable {
   public var durationMs: Double
   public var error: String?
   public var errorCode: String?
-  public var exitCode: RaviJSON?
+  public var exitCode: Double?
   public var handler: String?
-  public var interface: RaviJSON
+  public var interface: String?
   public var mutating: Bool
   public var ok: Bool
-  public var operation: RaviJSON
-  public var operationId: RaviJSON
+  public var operation: String?
+  public var operationId: String?
   public var permissionProvider: RaviJSON?
   public var plan: RaviJSON?
   public var result: RaviJSON?
@@ -2316,7 +2994,7 @@ public struct AppsRunReturn: Codable, Sendable {
   public var stderr: String?
   public var stdout: String?
 
-  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
+  public init(appId: String?, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: Double? = nil, handler: String? = nil, interface: String?, mutating: Bool, ok: Bool, operation: String?, operationId: String?, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
     self.appId = appId
     self.callerContextId = callerContextId
     self.channel = channel
@@ -2364,6 +3042,86 @@ public struct AppsRunReturn: Codable, Sendable {
     case status = "status"
     case stderr = "stderr"
     case stdout = "stdout"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.appId) else {
+      throw DecodingError.keyNotFound(CodingKeys.appId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field appId."))
+    }
+    self.appId = try container.decodeIfPresent(String.self, forKey: .appId)
+    self.callerContextId = try container.decodeIfPresent(String.self, forKey: .callerContextId)
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    self.childContextId = try container.decodeIfPresent(String.self, forKey: .childContextId)
+    self.command = try container.decodeIfPresent(String.self, forKey: .command)
+    self.dryRun = try container.decodeIfPresent(Bool.self, forKey: .dryRun)
+    self.durationMs = try container.decode(Double.self, forKey: .durationMs)
+    self.error = try container.decodeIfPresent(String.self, forKey: .error)
+    self.errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+    self.exitCode = try container.decodeIfPresent(Double.self, forKey: .exitCode)
+    self.handler = try container.decodeIfPresent(String.self, forKey: .handler)
+    guard container.contains(.interface) else {
+      throw DecodingError.keyNotFound(CodingKeys.interface, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field interface."))
+    }
+    self.interface = try container.decodeIfPresent(String.self, forKey: .interface)
+    self.mutating = try container.decode(Bool.self, forKey: .mutating)
+    self.ok = try container.decode(Bool.self, forKey: .ok)
+    guard container.contains(.operation) else {
+      throw DecodingError.keyNotFound(CodingKeys.operation, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operation."))
+    }
+    self.operation = try container.decodeIfPresent(String.self, forKey: .operation)
+    guard container.contains(.operationId) else {
+      throw DecodingError.keyNotFound(CodingKeys.operationId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operationId."))
+    }
+    self.operationId = try container.decodeIfPresent(String.self, forKey: .operationId)
+    self.permissionProvider = try container.decodeIfPresent(RaviJSON.self, forKey: .permissionProvider)
+    self.plan = try container.decodeIfPresent(RaviJSON.self, forKey: .plan)
+    self.result = try container.decodeIfPresent(RaviJSON.self, forKey: .result)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.stderr = try container.decodeIfPresent(String.self, forKey: .stderr)
+    self.stdout = try container.decodeIfPresent(String.self, forKey: .stdout)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.appId {
+      try container.encode(value, forKey: .appId)
+    } else {
+      try container.encodeNil(forKey: .appId)
+    }
+    try container.encodeIfPresent(self.callerContextId, forKey: .callerContextId)
+    try container.encodeIfPresent(self.channel, forKey: .channel)
+    try container.encodeIfPresent(self.childContextId, forKey: .childContextId)
+    try container.encodeIfPresent(self.command, forKey: .command)
+    try container.encodeIfPresent(self.dryRun, forKey: .dryRun)
+    try container.encode(self.durationMs, forKey: .durationMs)
+    try container.encodeIfPresent(self.error, forKey: .error)
+    try container.encodeIfPresent(self.errorCode, forKey: .errorCode)
+    try container.encodeIfPresent(self.exitCode, forKey: .exitCode)
+    try container.encodeIfPresent(self.handler, forKey: .handler)
+    if let value = self.interface {
+      try container.encode(value, forKey: .interface)
+    } else {
+      try container.encodeNil(forKey: .interface)
+    }
+    try container.encode(self.mutating, forKey: .mutating)
+    try container.encode(self.ok, forKey: .ok)
+    if let value = self.operation {
+      try container.encode(value, forKey: .operation)
+    } else {
+      try container.encodeNil(forKey: .operation)
+    }
+    if let value = self.operationId {
+      try container.encode(value, forKey: .operationId)
+    } else {
+      try container.encodeNil(forKey: .operationId)
+    }
+    try container.encodeIfPresent(self.permissionProvider, forKey: .permissionProvider)
+    try container.encodeIfPresent(self.plan, forKey: .plan)
+    try container.encodeIfPresent(self.result, forKey: .result)
+    try container.encode(self.status, forKey: .status)
+    try container.encodeIfPresent(self.stderr, forKey: .stderr)
+    try container.encodeIfPresent(self.stdout, forKey: .stdout)
   }
 }
 
@@ -2429,7 +3187,7 @@ public struct AppsScaffoldOptions: Codable, Sendable {
 
 public struct AppsScaffoldReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var description: String
   public var dryRun: Bool
@@ -2440,11 +3198,11 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var manifestPath: String
   public var name: String
   public var nextCommands: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
-  public var specPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
+  public var specPath: String?
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: String?, skillPath: String?, specPath: String?) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -2478,6 +3236,72 @@ public struct AppsScaffoldReturn: Codable, Sendable {
     case skill = "skill"
     case skillPath = "skillPath"
     case specPath = "specPath"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.builder = try container.decode(RaviJSON.self, forKey: .builder)
+    guard container.contains(.cliPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.cliPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cliPath."))
+    }
+    self.cliPath = try container.decodeIfPresent(String.self, forKey: .cliPath)
+    self.command = try container.decode(String.self, forKey: .command)
+    self.description = try container.decode(String.self, forKey: .description)
+    self.dryRun = try container.decode(Bool.self, forKey: .dryRun)
+    self.files = try container.decode([RaviJSON].self, forKey: .files)
+    self.force = try container.decode(Bool.self, forKey: .force)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.manifest = try container.decode([String: RaviJSON].self, forKey: .manifest)
+    self.manifestPath = try container.decode(String.self, forKey: .manifestPath)
+    self.name = try container.decode(String.self, forKey: .name)
+    self.nextCommands = try container.decode([String].self, forKey: .nextCommands)
+    guard container.contains(.skill) else {
+      throw DecodingError.keyNotFound(CodingKeys.skill, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field skill."))
+    }
+    self.skill = try container.decodeIfPresent(String.self, forKey: .skill)
+    guard container.contains(.skillPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.skillPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field skillPath."))
+    }
+    self.skillPath = try container.decodeIfPresent(String.self, forKey: .skillPath)
+    guard container.contains(.specPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.specPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field specPath."))
+    }
+    self.specPath = try container.decodeIfPresent(String.self, forKey: .specPath)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.builder, forKey: .builder)
+    if let value = self.cliPath {
+      try container.encode(value, forKey: .cliPath)
+    } else {
+      try container.encodeNil(forKey: .cliPath)
+    }
+    try container.encode(self.command, forKey: .command)
+    try container.encode(self.description, forKey: .description)
+    try container.encode(self.dryRun, forKey: .dryRun)
+    try container.encode(self.files, forKey: .files)
+    try container.encode(self.force, forKey: .force)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.manifest, forKey: .manifest)
+    try container.encode(self.manifestPath, forKey: .manifestPath)
+    try container.encode(self.name, forKey: .name)
+    try container.encode(self.nextCommands, forKey: .nextCommands)
+    if let value = self.skill {
+      try container.encode(value, forKey: .skill)
+    } else {
+      try container.encodeNil(forKey: .skill)
+    }
+    if let value = self.skillPath {
+      try container.encode(value, forKey: .skillPath)
+    } else {
+      try container.encodeNil(forKey: .skillPath)
+    }
+    if let value = self.specPath {
+      try container.encode(value, forKey: .specPath)
+    } else {
+      try container.encodeNil(forKey: .specPath)
+    }
   }
 }
 
@@ -3028,10 +3852,10 @@ public struct ArtifactsPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -3061,6 +3885,54 @@ public struct ArtifactsPublishReturn: Codable, Sendable {
     case upload = "upload"
     case uploadSession = "uploadSession"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.artifact = try container.decode(RaviJSON.self, forKey: .artifact)
+    self.artifactVersion = try container.decode(RaviJSON.self, forKey: .artifactVersion)
+    self.authenticated = try container.decode(Bool.self, forKey: .authenticated)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.localSync = try container.decode(RaviJSON.self, forKey: .localSync)
+    self.publish = try container.decode(RaviJSON.self, forKey: .publish)
+    self.release = try container.decode(RaviJSON.self, forKey: .release)
+    self.routes = try container.decode([[String: RaviJSON]].self, forKey: .routes)
+    self.site = try container.decode(RaviJSON.self, forKey: .site)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    self.upload = try container.decode(RaviJSON.self, forKey: .upload)
+    guard container.contains(.uploadSession) else {
+      throw DecodingError.keyNotFound(CodingKeys.uploadSession, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field uploadSession."))
+    }
+    self.uploadSession = try container.decodeIfPresent([String: RaviJSON].self, forKey: .uploadSession)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.artifact, forKey: .artifact)
+    try container.encode(self.artifactVersion, forKey: .artifactVersion)
+    try container.encode(self.authenticated, forKey: .authenticated)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.localSync, forKey: .localSync)
+    try container.encode(self.publish, forKey: .publish)
+    try container.encode(self.release, forKey: .release)
+    try container.encode(self.routes, forKey: .routes)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.success, forKey: .success)
+    try container.encode(self.upload, forKey: .upload)
+    if let value = self.uploadSession {
+      try container.encode(value, forKey: .uploadSession)
+    } else {
+      try container.encodeNil(forKey: .uploadSession)
+    }
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -3111,9 +3983,9 @@ public struct ArtifactsReleaseActivateReturn: Codable, Sendable {
   public var release: RaviJSON
   public var routes: [RaviJSON]
   public var site: RaviJSON
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: RaviJSON) {
+  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: String?) {
     self.localSync = localSync
     self.release = release
     self.routes = routes
@@ -3127,6 +3999,31 @@ public struct ArtifactsReleaseActivateReturn: Codable, Sendable {
     case routes = "routes"
     case site = "site"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.localSync = try container.decodeIfPresent([String: RaviJSON].self, forKey: .localSync)
+    self.release = try container.decode(RaviJSON.self, forKey: .release)
+    self.routes = try container.decode([RaviJSON].self, forKey: .routes)
+    self.site = try container.decode(RaviJSON.self, forKey: .site)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.localSync, forKey: .localSync)
+    try container.encode(self.release, forKey: .release)
+    try container.encode(self.routes, forKey: .routes)
+    try container.encode(self.site, forKey: .site)
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -3923,13 +4820,13 @@ public struct BridgesCreateOptions: Codable, Sendable {
 
 public struct BridgesCreateReturn: Codable, Sendable {
   public var bridge: [String: RaviJSON]
-  public var bridgeToken: RaviJSON
-  public var bridgeUrl: RaviJSON
+  public var bridgeToken: String?
+  public var bridgeUrl: String?
   public var consoleUrl: String
   public var projectRef: String
   public var success: Bool
 
-  public init(bridge: [String: RaviJSON], bridgeToken: RaviJSON, bridgeUrl: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+  public init(bridge: [String: RaviJSON], bridgeToken: String?, bridgeUrl: String?, consoleUrl: String, projectRef: String, success: Bool) {
     self.bridge = bridge
     self.bridgeToken = bridgeToken
     self.bridgeUrl = bridgeUrl
@@ -3945,6 +4842,40 @@ public struct BridgesCreateReturn: Codable, Sendable {
     case consoleUrl = "consoleUrl"
     case projectRef = "projectRef"
     case success = "success"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.bridge = try container.decode([String: RaviJSON].self, forKey: .bridge)
+    guard container.contains(.bridgeToken) else {
+      throw DecodingError.keyNotFound(CodingKeys.bridgeToken, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field bridgeToken."))
+    }
+    self.bridgeToken = try container.decodeIfPresent(String.self, forKey: .bridgeToken)
+    guard container.contains(.bridgeUrl) else {
+      throw DecodingError.keyNotFound(CodingKeys.bridgeUrl, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field bridgeUrl."))
+    }
+    self.bridgeUrl = try container.decodeIfPresent(String.self, forKey: .bridgeUrl)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.success = try container.decode(Bool.self, forKey: .success)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.bridge, forKey: .bridge)
+    if let value = self.bridgeToken {
+      try container.encode(value, forKey: .bridgeToken)
+    } else {
+      try container.encodeNil(forKey: .bridgeToken)
+    }
+    if let value = self.bridgeUrl {
+      try container.encode(value, forKey: .bridgeUrl)
+    } else {
+      try container.encodeNil(forKey: .bridgeUrl)
+    }
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.success, forKey: .success)
   }
 }
 
@@ -4250,9 +5181,9 @@ public struct CalendarsEventsCancelOptions: Codable, Sendable {
 
 public struct CalendarsEventsCancelReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -4260,6 +5191,25 @@ public struct CalendarsEventsCancelReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case event = "event"
     case outbox = "outbox"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.event = try container.decode(RaviJSON.self, forKey: .event)
+    guard container.contains(.outbox) else {
+      throw DecodingError.keyNotFound(CodingKeys.outbox, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field outbox."))
+    }
+    self.outbox = try container.decodeIfPresent(RaviJSON.self, forKey: .outbox)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.event, forKey: .event)
+    if let value = self.outbox {
+      try container.encode(value, forKey: .outbox)
+    } else {
+      try container.encodeNil(forKey: .outbox)
+    }
   }
 }
 
@@ -4331,9 +5281,9 @@ public struct CalendarsEventsCreateOptions: Codable, Sendable {
 
 public struct CalendarsEventsCreateReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -4341,6 +5291,25 @@ public struct CalendarsEventsCreateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case event = "event"
     case outbox = "outbox"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.event = try container.decode(RaviJSON.self, forKey: .event)
+    guard container.contains(.outbox) else {
+      throw DecodingError.keyNotFound(CodingKeys.outbox, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field outbox."))
+    }
+    self.outbox = try container.decodeIfPresent(RaviJSON.self, forKey: .outbox)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.event, forKey: .event)
+    if let value = self.outbox {
+      try container.encode(value, forKey: .outbox)
+    } else {
+      try container.encodeNil(forKey: .outbox)
+    }
   }
 }
 
@@ -4562,9 +5531,9 @@ public struct CalendarsEventsUpdateOptions: Codable, Sendable {
 
 public struct CalendarsEventsUpdateReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -4572,6 +5541,25 @@ public struct CalendarsEventsUpdateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case event = "event"
     case outbox = "outbox"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.event = try container.decode(RaviJSON.self, forKey: .event)
+    guard container.contains(.outbox) else {
+      throw DecodingError.keyNotFound(CodingKeys.outbox, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field outbox."))
+    }
+    self.outbox = try container.decodeIfPresent(RaviJSON.self, forKey: .outbox)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.event, forKey: .event)
+    if let value = self.outbox {
+      try container.encode(value, forKey: .outbox)
+    } else {
+      try container.encodeNil(forKey: .outbox)
+    }
   }
 }
 
@@ -4916,9 +5904,9 @@ public struct ChannelsProbeReturn: Codable, Sendable {
   public var outbound: [String: RaviJSON]
   public var pid: Double
   public var running: Bool
-  public var startedAt: RaviJSON
+  public var startedAt: Double?
 
-  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: RaviJSON) {
+  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: Double?) {
     self.adapters = adapters
     self.outbound = outbound
     self.pid = pid
@@ -4932,6 +5920,31 @@ public struct ChannelsProbeReturn: Codable, Sendable {
     case pid = "pid"
     case running = "running"
     case startedAt = "startedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.adapters = try container.decode([[String: RaviJSON]].self, forKey: .adapters)
+    self.outbound = try container.decode([String: RaviJSON].self, forKey: .outbound)
+    self.pid = try container.decode(Double.self, forKey: .pid)
+    self.running = try container.decode(Bool.self, forKey: .running)
+    guard container.contains(.startedAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.startedAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field startedAt."))
+    }
+    self.startedAt = try container.decodeIfPresent(Double.self, forKey: .startedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.adapters, forKey: .adapters)
+    try container.encode(self.outbound, forKey: .outbound)
+    try container.encode(self.pid, forKey: .pid)
+    try container.encode(self.running, forKey: .running)
+    if let value = self.startedAt {
+      try container.encode(value, forKey: .startedAt)
+    } else {
+      try container.encodeNil(forKey: .startedAt)
+    }
   }
 }
 
@@ -4956,13 +5969,13 @@ public struct ChannelsRestartOptions: Codable, Sendable {
 public struct ChannelsRestartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -5055,13 +6068,13 @@ public struct ChannelsStartOptions: Codable, Sendable {
 public struct ChannelsStartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -5112,13 +6125,13 @@ public struct ChannelsStatusReturn: Codable, Sendable {
 public struct ChannelsStopReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -5857,10 +6870,10 @@ public struct CloudProjectsCreateOptions: Codable, Sendable {
 public struct CloudProjectsCreateReturn: Codable, Sendable {
   public var consoleUrl: String
   public var project: [String: RaviJSON]
-  public var redirectTo: RaviJSON
+  public var redirectTo: String?
   public var success: Bool
 
-  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: RaviJSON, success: Bool) {
+  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: String?, success: Bool) {
     self.consoleUrl = consoleUrl
     self.project = project
     self.redirectTo = redirectTo
@@ -5872,6 +6885,29 @@ public struct CloudProjectsCreateReturn: Codable, Sendable {
     case project = "project"
     case redirectTo = "redirectTo"
     case success = "success"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.project = try container.decode([String: RaviJSON].self, forKey: .project)
+    guard container.contains(.redirectTo) else {
+      throw DecodingError.keyNotFound(CodingKeys.redirectTo, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field redirectTo."))
+    }
+    self.redirectTo = try container.decodeIfPresent(String.self, forKey: .redirectTo)
+    self.success = try container.decode(Bool.self, forKey: .success)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.project, forKey: .project)
+    if let value = self.redirectTo {
+      try container.encode(value, forKey: .redirectTo)
+    } else {
+      try container.encodeNil(forKey: .redirectTo)
+    }
+    try container.encode(self.success, forKey: .success)
   }
 }
 
@@ -6028,12 +7064,12 @@ public struct CloudScopeExplainOptions: Codable, Sendable {
 public struct CloudScopeExplainReturn: Codable, Sendable {
   public var candidates: [RaviJSON]
   public var consoleUrl: String
-  public var missingProjectCommand: RaviJSON?
+  public var missingProjectCommand: String?
   public var organization: RaviJSON?
-  public var resolved: RaviJSON
+  public var resolved: RaviJSON?
   public var success: Bool
 
-  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: RaviJSON? = nil, organization: RaviJSON? = nil, resolved: RaviJSON, success: Bool) {
+  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: String? = nil, organization: RaviJSON? = nil, resolved: RaviJSON?, success: Bool) {
     self.candidates = candidates
     self.consoleUrl = consoleUrl
     self.missingProjectCommand = missingProjectCommand
@@ -6049,6 +7085,33 @@ public struct CloudScopeExplainReturn: Codable, Sendable {
     case organization = "organization"
     case resolved = "resolved"
     case success = "success"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.candidates = try container.decode([RaviJSON].self, forKey: .candidates)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.missingProjectCommand = try container.decodeIfPresent(String.self, forKey: .missingProjectCommand)
+    self.organization = try container.decodeIfPresent(RaviJSON.self, forKey: .organization)
+    guard container.contains(.resolved) else {
+      throw DecodingError.keyNotFound(CodingKeys.resolved, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field resolved."))
+    }
+    self.resolved = try container.decodeIfPresent(RaviJSON.self, forKey: .resolved)
+    self.success = try container.decode(Bool.self, forKey: .success)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.candidates, forKey: .candidates)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encodeIfPresent(self.missingProjectCommand, forKey: .missingProjectCommand)
+    try container.encodeIfPresent(self.organization, forKey: .organization)
+    if let value = self.resolved {
+      try container.encode(value, forKey: .resolved)
+    } else {
+      try container.encodeNil(forKey: .resolved)
+    }
+    try container.encode(self.success, forKey: .success)
   }
 }
 
@@ -7036,7 +8099,7 @@ public typealias ContactsUnlinkReturn = [String: RaviJSON]
 public typealias ContactsUntagReturn = [String: RaviJSON]
 
 public struct ContextAuthorizeReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var approved: Bool
   public var capabilitiesCount: Double
@@ -7045,9 +8108,9 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
   public var objectId: String
   public var objectType: String
   public var permission: String
-  public var reason: RaviJSON
+  public var reason: String?
 
-  public init(agentId: RaviJSON, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: RaviJSON) {
+  public init(agentId: String?, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: String?) {
     self.agentId = agentId
     self.allowed = allowed
     self.approved = approved
@@ -7072,17 +8135,59 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
     case permission = "permission"
     case reason = "reason"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.allowed = try container.decode(Bool.self, forKey: .allowed)
+    self.approved = try container.decode(Bool.self, forKey: .approved)
+    self.capabilitiesCount = try container.decode(Double.self, forKey: .capabilitiesCount)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.inherited = try container.decode(Bool.self, forKey: .inherited)
+    self.objectId = try container.decode(String.self, forKey: .objectId)
+    self.objectType = try container.decode(String.self, forKey: .objectType)
+    self.permission = try container.decode(String.self, forKey: .permission)
+    guard container.contains(.reason) else {
+      throw DecodingError.keyNotFound(CodingKeys.reason, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field reason."))
+    }
+    self.reason = try container.decodeIfPresent(String.self, forKey: .reason)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.allowed, forKey: .allowed)
+    try container.encode(self.approved, forKey: .approved)
+    try container.encode(self.capabilitiesCount, forKey: .capabilitiesCount)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.inherited, forKey: .inherited)
+    try container.encode(self.objectId, forKey: .objectId)
+    try container.encode(self.objectType, forKey: .objectType)
+    try container.encode(self.permission, forKey: .permission)
+    if let value = self.reason {
+      try container.encode(value, forKey: .reason)
+    } else {
+      try container.encodeNil(forKey: .reason)
+    }
+  }
 }
 
 public struct ContextCapabilitiesReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var contextId: String
   public var kind: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: RaviJSON, sessionName: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: String?, sessionName: String?) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.contextId = contextId
@@ -7099,10 +8204,51 @@ public struct ContextCapabilitiesReturn: Codable, Sendable {
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.capabilities = try container.decode([RaviJSON].self, forKey: .capabilities)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.kind = try container.decode(String.self, forKey: .kind)
+    guard container.contains(.sessionKey) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionKey, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionKey."))
+    }
+    self.sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.capabilities, forKey: .capabilities)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.kind, forKey: .kind)
+    if let value = self.sessionKey {
+      try container.encode(value, forKey: .sessionKey)
+    } else {
+      try container.encodeNil(forKey: .sessionKey)
+    }
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+  }
 }
 
 public struct ContextCheckReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var capabilitiesCount: Double
   public var contextId: String
@@ -7110,7 +8256,7 @@ public struct ContextCheckReturn: Codable, Sendable {
   public var objectType: String
   public var permission: String
 
-  public init(agentId: RaviJSON, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
+  public init(agentId: String?, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
     self.agentId = agentId
     self.allowed = allowed
     self.capabilitiesCount = capabilitiesCount
@@ -7128,6 +8274,35 @@ public struct ContextCheckReturn: Codable, Sendable {
     case objectId = "objectId"
     case objectType = "objectType"
     case permission = "permission"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.allowed = try container.decode(Bool.self, forKey: .allowed)
+    self.capabilitiesCount = try container.decode(Double.self, forKey: .capabilitiesCount)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.objectId = try container.decode(String.self, forKey: .objectId)
+    self.objectType = try container.decode(String.self, forKey: .objectType)
+    self.permission = try container.decode(String.self, forKey: .permission)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.allowed, forKey: .allowed)
+    try container.encode(self.capabilitiesCount, forKey: .capabilitiesCount)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.objectId, forKey: .objectId)
+    try container.encode(self.objectType, forKey: .objectType)
+    try container.encode(self.permission, forKey: .permission)
   }
 }
 
@@ -7180,12 +8355,12 @@ public struct ContextCleanupAgentRuntimeReturn: Codable, Sendable {
   public var dryRun: Bool
   public var olderThan: String
   public var olderThanMs: Double
-  public var reason: RaviJSON
+  public var reason: String?
   public var revoked: [RaviJSON]
   public var revokedCount: Double
   public var scanned: RaviJSON
 
-  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: RaviJSON, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
+  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: String?, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
     self.candidates = candidates
     self.candidatesCount = candidatesCount
     self.cutoffAt = cutoffAt
@@ -7209,6 +8384,41 @@ public struct ContextCleanupAgentRuntimeReturn: Codable, Sendable {
     case revoked = "revoked"
     case revokedCount = "revokedCount"
     case scanned = "scanned"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.candidates = try container.decode([RaviJSON].self, forKey: .candidates)
+    self.candidatesCount = try container.decode(Double.self, forKey: .candidatesCount)
+    self.cutoffAt = try container.decode(Double.self, forKey: .cutoffAt)
+    self.dryRun = try container.decode(Bool.self, forKey: .dryRun)
+    self.olderThan = try container.decode(String.self, forKey: .olderThan)
+    self.olderThanMs = try container.decode(Double.self, forKey: .olderThanMs)
+    guard container.contains(.reason) else {
+      throw DecodingError.keyNotFound(CodingKeys.reason, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field reason."))
+    }
+    self.reason = try container.decodeIfPresent(String.self, forKey: .reason)
+    self.revoked = try container.decode([RaviJSON].self, forKey: .revoked)
+    self.revokedCount = try container.decode(Double.self, forKey: .revokedCount)
+    self.scanned = try container.decode(RaviJSON.self, forKey: .scanned)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.candidates, forKey: .candidates)
+    try container.encode(self.candidatesCount, forKey: .candidatesCount)
+    try container.encode(self.cutoffAt, forKey: .cutoffAt)
+    try container.encode(self.dryRun, forKey: .dryRun)
+    try container.encode(self.olderThan, forKey: .olderThan)
+    try container.encode(self.olderThanMs, forKey: .olderThanMs)
+    if let value = self.reason {
+      try container.encode(value, forKey: .reason)
+    } else {
+      try container.encodeNil(forKey: .reason)
+    }
+    try container.encode(self.revoked, forKey: .revoked)
+    try container.encode(self.revokedCount, forKey: .revokedCount)
+    try container.encode(self.scanned, forKey: .scanned)
   }
 }
 
@@ -7250,10 +8460,10 @@ public struct ContextCredentialsAddOptions: Codable, Sendable {
 
 public struct ContextCredentialsAddReturn: Codable, Sendable {
   public var added: String
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(added: String, default_: RaviJSON, path: String) {
+  public init(added: String, default_: String?, path: String) {
     self.added = added
     self.default_ = default_
     self.path = path
@@ -7263,6 +8473,27 @@ public struct ContextCredentialsAddReturn: Codable, Sendable {
     case added = "added"
     case default_ = "default"
     case path = "path"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.added = try container.decode(String.self, forKey: .added)
+    guard container.contains(.default_) else {
+      throw DecodingError.keyNotFound(CodingKeys.default_, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field default."))
+    }
+    self.default_ = try container.decodeIfPresent(String.self, forKey: .default_)
+    self.path = try container.decode(String.self, forKey: .path)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.added, forKey: .added)
+    if let value = self.default_ {
+      try container.encode(value, forKey: .default_)
+    } else {
+      try container.encodeNil(forKey: .default_)
+    }
+    try container.encode(self.path, forKey: .path)
   }
 }
 
@@ -7297,7 +8528,7 @@ public struct ContextCredentialsListOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsListReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var entries: [RaviJSON]
   public var exists: Bool
   public var items: [RaviJSON]
@@ -7305,7 +8536,7 @@ public struct ContextCredentialsListReturn: Codable, Sendable {
   public var path: String
   public var total: Double
 
-  public init(default_: RaviJSON, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
+  public init(default_: String?, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
     self.default_ = default_
     self.entries = entries
     self.exists = exists
@@ -7323,6 +8554,35 @@ public struct ContextCredentialsListReturn: Codable, Sendable {
     case pagination = "pagination"
     case path = "path"
     case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.default_) else {
+      throw DecodingError.keyNotFound(CodingKeys.default_, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field default."))
+    }
+    self.default_ = try container.decodeIfPresent(String.self, forKey: .default_)
+    self.entries = try container.decode([RaviJSON].self, forKey: .entries)
+    self.exists = try container.decode(Bool.self, forKey: .exists)
+    self.items = try container.decode([RaviJSON].self, forKey: .items)
+    self.pagination = try container.decode(RaviJSON.self, forKey: .pagination)
+    self.path = try container.decode(String.self, forKey: .path)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.default_ {
+      try container.encode(value, forKey: .default_)
+    } else {
+      try container.encodeNil(forKey: .default_)
+    }
+    try container.encode(self.entries, forKey: .entries)
+    try container.encode(self.exists, forKey: .exists)
+    try container.encode(self.items, forKey: .items)
+    try container.encode(self.pagination, forKey: .pagination)
+    try container.encode(self.path, forKey: .path)
+    try container.encode(self.total, forKey: .total)
   }
 }
 
@@ -7345,11 +8605,11 @@ public struct ContextCredentialsRemoveOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsRemoveReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
   public var removed: String
 
-  public init(default_: RaviJSON, path: String, removed: String) {
+  public init(default_: String?, path: String, removed: String) {
     self.default_ = default_
     self.path = path
     self.removed = removed
@@ -7360,13 +8620,34 @@ public struct ContextCredentialsRemoveReturn: Codable, Sendable {
     case path = "path"
     case removed = "removed"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.default_) else {
+      throw DecodingError.keyNotFound(CodingKeys.default_, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field default."))
+    }
+    self.default_ = try container.decodeIfPresent(String.self, forKey: .default_)
+    self.path = try container.decode(String.self, forKey: .path)
+    self.removed = try container.decode(String.self, forKey: .removed)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.default_ {
+      try container.encode(value, forKey: .default_)
+    } else {
+      try container.encodeNil(forKey: .default_)
+    }
+    try container.encode(self.path, forKey: .path)
+    try container.encode(self.removed, forKey: .removed)
+  }
 }
 
 public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(default_: RaviJSON, path: String) {
+  public init(default_: String?, path: String) {
     self.default_ = default_
     self.path = path
   }
@@ -7375,29 +8656,48 @@ public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
     case default_ = "default"
     case path = "path"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.default_) else {
+      throw DecodingError.keyNotFound(CodingKeys.default_, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field default."))
+    }
+    self.default_ = try container.decodeIfPresent(String.self, forKey: .default_)
+    self.path = try container.decode(String.self, forKey: .path)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.default_ {
+      try container.encode(value, forKey: .default_)
+    } else {
+      try container.encodeNil(forKey: .default_)
+    }
+    try container.encode(self.path, forKey: .path)
+  }
 }
 
 public struct ContextInfoReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON?, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -7438,6 +8738,127 @@ public struct ContextInfoReturn: Codable, Sendable {
     case source = "source"
     case status = "status"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.capabilities = try container.decode([RaviJSON].self, forKey: .capabilities)
+    self.capabilitiesCount = try container.decode(Double.self, forKey: .capabilitiesCount)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    guard container.contains(.expiresAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.expiresAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field expiresAt."))
+    }
+    self.expiresAt = try container.decodeIfPresent(Double.self, forKey: .expiresAt)
+    guard container.contains(.issuanceMode) else {
+      throw DecodingError.keyNotFound(CodingKeys.issuanceMode, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field issuanceMode."))
+    }
+    self.issuanceMode = try container.decodeIfPresent(String.self, forKey: .issuanceMode)
+    guard container.contains(.issuedFor) else {
+      throw DecodingError.keyNotFound(CodingKeys.issuedFor, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field issuedFor."))
+    }
+    self.issuedFor = try container.decodeIfPresent(String.self, forKey: .issuedFor)
+    self.kind = try container.decode(String.self, forKey: .kind)
+    guard container.contains(.lastUsedAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastUsedAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastUsedAt."))
+    }
+    self.lastUsedAt = try container.decodeIfPresent(Double.self, forKey: .lastUsedAt)
+    self.lineage = try container.decode(RaviJSON.self, forKey: .lineage)
+    guard container.contains(.metadata) else {
+      throw DecodingError.keyNotFound(CodingKeys.metadata, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field metadata."))
+    }
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    guard container.contains(.parentContextId) else {
+      throw DecodingError.keyNotFound(CodingKeys.parentContextId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field parentContextId."))
+    }
+    self.parentContextId = try container.decodeIfPresent(String.self, forKey: .parentContextId)
+    guard container.contains(.revokedAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.revokedAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field revokedAt."))
+    }
+    self.revokedAt = try container.decodeIfPresent(Double.self, forKey: .revokedAt)
+    guard container.contains(.sessionKey) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionKey, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionKey."))
+    }
+    self.sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+    guard container.contains(.source) else {
+      throw DecodingError.keyNotFound(CodingKeys.source, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field source."))
+    }
+    self.source = try container.decodeIfPresent(RaviJSON.self, forKey: .source)
+    self.status = try container.decode(String.self, forKey: .status)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.capabilities, forKey: .capabilities)
+    try container.encode(self.capabilitiesCount, forKey: .capabilitiesCount)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    if let value = self.expiresAt {
+      try container.encode(value, forKey: .expiresAt)
+    } else {
+      try container.encodeNil(forKey: .expiresAt)
+    }
+    if let value = self.issuanceMode {
+      try container.encode(value, forKey: .issuanceMode)
+    } else {
+      try container.encodeNil(forKey: .issuanceMode)
+    }
+    if let value = self.issuedFor {
+      try container.encode(value, forKey: .issuedFor)
+    } else {
+      try container.encodeNil(forKey: .issuedFor)
+    }
+    try container.encode(self.kind, forKey: .kind)
+    if let value = self.lastUsedAt {
+      try container.encode(value, forKey: .lastUsedAt)
+    } else {
+      try container.encodeNil(forKey: .lastUsedAt)
+    }
+    try container.encode(self.lineage, forKey: .lineage)
+    if let value = self.metadata {
+      try container.encode(value, forKey: .metadata)
+    } else {
+      try container.encodeNil(forKey: .metadata)
+    }
+    if let value = self.parentContextId {
+      try container.encode(value, forKey: .parentContextId)
+    } else {
+      try container.encodeNil(forKey: .parentContextId)
+    }
+    if let value = self.revokedAt {
+      try container.encode(value, forKey: .revokedAt)
+    } else {
+      try container.encodeNil(forKey: .revokedAt)
+    }
+    if let value = self.sessionKey {
+      try container.encode(value, forKey: .sessionKey)
+    } else {
+      try container.encodeNil(forKey: .sessionKey)
+    }
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+    if let value = self.source {
+      try container.encode(value, forKey: .source)
+    } else {
+      try container.encodeNil(forKey: .source)
+    }
+    try container.encode(self.status, forKey: .status)
+  }
 }
 
 public struct ContextIssueOptions: Codable, Sendable {
@@ -7471,7 +8892,7 @@ public struct ContextIssueOptions: Codable, Sendable {
 }
 
 public struct ContextIssueReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var cliName: String
@@ -7479,15 +8900,15 @@ public struct ContextIssueReturn: Codable, Sendable {
   public var contextKey: String
   public var createdAt: Double
   public var env: [String: String]
-  public var expiresAt: RaviJSON
+  public var expiresAt: Double?
   public var kind: String
-  public var metadata: RaviJSON
+  public var metadata: [String: RaviJSON]?
   public var parentContextId: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: RaviJSON, kind: String, metadata: RaviJSON, parentContextId: String, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: Double?, kind: String, metadata: [String: RaviJSON]?, parentContextId: String, sessionKey: String?, sessionName: String?, source: RaviJSON?) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -7521,6 +8942,86 @@ public struct ContextIssueReturn: Codable, Sendable {
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
     case source = "source"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.capabilities = try container.decode([RaviJSON].self, forKey: .capabilities)
+    self.capabilitiesCount = try container.decode(Double.self, forKey: .capabilitiesCount)
+    self.cliName = try container.decode(String.self, forKey: .cliName)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.contextKey = try container.decode(String.self, forKey: .contextKey)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.env = try container.decode([String: String].self, forKey: .env)
+    guard container.contains(.expiresAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.expiresAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field expiresAt."))
+    }
+    self.expiresAt = try container.decodeIfPresent(Double.self, forKey: .expiresAt)
+    self.kind = try container.decode(String.self, forKey: .kind)
+    guard container.contains(.metadata) else {
+      throw DecodingError.keyNotFound(CodingKeys.metadata, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field metadata."))
+    }
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.parentContextId = try container.decode(String.self, forKey: .parentContextId)
+    guard container.contains(.sessionKey) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionKey, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionKey."))
+    }
+    self.sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+    guard container.contains(.source) else {
+      throw DecodingError.keyNotFound(CodingKeys.source, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field source."))
+    }
+    self.source = try container.decodeIfPresent(RaviJSON.self, forKey: .source)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.capabilities, forKey: .capabilities)
+    try container.encode(self.capabilitiesCount, forKey: .capabilitiesCount)
+    try container.encode(self.cliName, forKey: .cliName)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.contextKey, forKey: .contextKey)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encode(self.env, forKey: .env)
+    if let value = self.expiresAt {
+      try container.encode(value, forKey: .expiresAt)
+    } else {
+      try container.encodeNil(forKey: .expiresAt)
+    }
+    try container.encode(self.kind, forKey: .kind)
+    if let value = self.metadata {
+      try container.encode(value, forKey: .metadata)
+    } else {
+      try container.encodeNil(forKey: .metadata)
+    }
+    try container.encode(self.parentContextId, forKey: .parentContextId)
+    if let value = self.sessionKey {
+      try container.encode(value, forKey: .sessionKey)
+    } else {
+      try container.encodeNil(forKey: .sessionKey)
+    }
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+    if let value = self.source {
+      try container.encode(value, forKey: .source)
+    } else {
+      try container.encodeNil(forKey: .source)
+    }
   }
 }
 
@@ -7721,12 +9222,12 @@ public struct ContextVisibilityReturn: Codable, Sendable {
   public var compact: RaviJSON
   public var lastUpdatedAt: Double
   public var loadedSkills: [String]
-  public var provider: RaviJSON
+  public var provider: String?
   public var sessionKey: String
   public var skills: [RaviJSON]
   public var tokens: RaviJSON
 
-  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: RaviJSON, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
+  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: String?, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
     self.agentId = agentId
     self.compact = compact
     self.lastUpdatedAt = lastUpdatedAt
@@ -7747,29 +9248,60 @@ public struct ContextVisibilityReturn: Codable, Sendable {
     case skills = "skills"
     case tokens = "tokens"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.agentId = try container.decode(String.self, forKey: .agentId)
+    self.compact = try container.decode(RaviJSON.self, forKey: .compact)
+    self.lastUpdatedAt = try container.decode(Double.self, forKey: .lastUpdatedAt)
+    self.loadedSkills = try container.decode([String].self, forKey: .loadedSkills)
+    guard container.contains(.provider) else {
+      throw DecodingError.keyNotFound(CodingKeys.provider, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field provider."))
+    }
+    self.provider = try container.decodeIfPresent(String.self, forKey: .provider)
+    self.sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    self.skills = try container.decode([RaviJSON].self, forKey: .skills)
+    self.tokens = try container.decode(RaviJSON.self, forKey: .tokens)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.agentId, forKey: .agentId)
+    try container.encode(self.compact, forKey: .compact)
+    try container.encode(self.lastUpdatedAt, forKey: .lastUpdatedAt)
+    try container.encode(self.loadedSkills, forKey: .loadedSkills)
+    if let value = self.provider {
+      try container.encode(value, forKey: .provider)
+    } else {
+      try container.encodeNil(forKey: .provider)
+    }
+    try container.encode(self.sessionKey, forKey: .sessionKey)
+    try container.encode(self.skills, forKey: .skills)
+    try container.encode(self.tokens, forKey: .tokens)
+  }
 }
 
 public struct ContextWhoamiReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON?, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -7809,6 +9341,127 @@ public struct ContextWhoamiReturn: Codable, Sendable {
     case sessionName = "sessionName"
     case source = "source"
     case status = "status"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.capabilities = try container.decode([RaviJSON].self, forKey: .capabilities)
+    self.capabilitiesCount = try container.decode(Double.self, forKey: .capabilitiesCount)
+    self.contextId = try container.decode(String.self, forKey: .contextId)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    guard container.contains(.expiresAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.expiresAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field expiresAt."))
+    }
+    self.expiresAt = try container.decodeIfPresent(Double.self, forKey: .expiresAt)
+    guard container.contains(.issuanceMode) else {
+      throw DecodingError.keyNotFound(CodingKeys.issuanceMode, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field issuanceMode."))
+    }
+    self.issuanceMode = try container.decodeIfPresent(String.self, forKey: .issuanceMode)
+    guard container.contains(.issuedFor) else {
+      throw DecodingError.keyNotFound(CodingKeys.issuedFor, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field issuedFor."))
+    }
+    self.issuedFor = try container.decodeIfPresent(String.self, forKey: .issuedFor)
+    self.kind = try container.decode(String.self, forKey: .kind)
+    guard container.contains(.lastUsedAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastUsedAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastUsedAt."))
+    }
+    self.lastUsedAt = try container.decodeIfPresent(Double.self, forKey: .lastUsedAt)
+    self.lineage = try container.decode(RaviJSON.self, forKey: .lineage)
+    guard container.contains(.metadata) else {
+      throw DecodingError.keyNotFound(CodingKeys.metadata, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field metadata."))
+    }
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    guard container.contains(.parentContextId) else {
+      throw DecodingError.keyNotFound(CodingKeys.parentContextId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field parentContextId."))
+    }
+    self.parentContextId = try container.decodeIfPresent(String.self, forKey: .parentContextId)
+    guard container.contains(.revokedAt) else {
+      throw DecodingError.keyNotFound(CodingKeys.revokedAt, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field revokedAt."))
+    }
+    self.revokedAt = try container.decodeIfPresent(Double.self, forKey: .revokedAt)
+    guard container.contains(.sessionKey) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionKey, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionKey."))
+    }
+    self.sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+    guard container.contains(.source) else {
+      throw DecodingError.keyNotFound(CodingKeys.source, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field source."))
+    }
+    self.source = try container.decodeIfPresent(RaviJSON.self, forKey: .source)
+    self.status = try container.decode(String.self, forKey: .status)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.capabilities, forKey: .capabilities)
+    try container.encode(self.capabilitiesCount, forKey: .capabilitiesCount)
+    try container.encode(self.contextId, forKey: .contextId)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    if let value = self.expiresAt {
+      try container.encode(value, forKey: .expiresAt)
+    } else {
+      try container.encodeNil(forKey: .expiresAt)
+    }
+    if let value = self.issuanceMode {
+      try container.encode(value, forKey: .issuanceMode)
+    } else {
+      try container.encodeNil(forKey: .issuanceMode)
+    }
+    if let value = self.issuedFor {
+      try container.encode(value, forKey: .issuedFor)
+    } else {
+      try container.encodeNil(forKey: .issuedFor)
+    }
+    try container.encode(self.kind, forKey: .kind)
+    if let value = self.lastUsedAt {
+      try container.encode(value, forKey: .lastUsedAt)
+    } else {
+      try container.encodeNil(forKey: .lastUsedAt)
+    }
+    try container.encode(self.lineage, forKey: .lineage)
+    if let value = self.metadata {
+      try container.encode(value, forKey: .metadata)
+    } else {
+      try container.encodeNil(forKey: .metadata)
+    }
+    if let value = self.parentContextId {
+      try container.encode(value, forKey: .parentContextId)
+    } else {
+      try container.encodeNil(forKey: .parentContextId)
+    }
+    if let value = self.revokedAt {
+      try container.encode(value, forKey: .revokedAt)
+    } else {
+      try container.encodeNil(forKey: .revokedAt)
+    }
+    if let value = self.sessionKey {
+      try container.encode(value, forKey: .sessionKey)
+    } else {
+      try container.encodeNil(forKey: .sessionKey)
+    }
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+    if let value = self.source {
+      try container.encode(value, forKey: .source)
+    } else {
+      try container.encodeNil(forKey: .source)
+    }
+    try container.encode(self.status, forKey: .status)
   }
 }
 
@@ -7966,12 +9619,12 @@ public struct CostsPricingReturn: Codable, Sendable {
 }
 
 public struct CostsSessionReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var summary: RaviJSON
 
-  public init(agentId: RaviJSON, sessionKey: String, sessionName: RaviJSON, summary: RaviJSON) {
+  public init(agentId: String?, sessionKey: String, sessionName: String?, summary: RaviJSON) {
     self.agentId = agentId
     self.sessionKey = sessionKey
     self.sessionName = sessionName
@@ -7983,6 +9636,36 @@ public struct CostsSessionReturn: Codable, Sendable {
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
     case summary = "summary"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agentId) else {
+      throw DecodingError.keyNotFound(CodingKeys.agentId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agentId."))
+    }
+    self.agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+    self.sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+    self.summary = try container.decode(RaviJSON.self, forKey: .summary)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.agentId {
+      try container.encode(value, forKey: .agentId)
+    } else {
+      try container.encodeNil(forKey: .agentId)
+    }
+    try container.encode(self.sessionKey, forKey: .sessionKey)
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+    try container.encode(self.summary, forKey: .summary)
   }
 }
 
@@ -8092,14 +9775,31 @@ public struct CredentialsConnectionsDisableOptions: Codable, Sendable {
 }
 
 public struct CredentialsConnectionsDisableReturn: Codable, Sendable {
-  public var connection: RaviJSON
+  public var connection: RaviJSON?
 
-  public init(connection: RaviJSON) {
+  public init(connection: RaviJSON?) {
     self.connection = connection
   }
 
   enum CodingKeys: String, CodingKey {
     case connection = "connection"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.connection) else {
+      throw DecodingError.keyNotFound(CodingKeys.connection, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field connection."))
+    }
+    self.connection = try container.decodeIfPresent(RaviJSON.self, forKey: .connection)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.connection {
+      try container.encode(value, forKey: .connection)
+    } else {
+      try container.encodeNil(forKey: .connection)
+    }
   }
 }
 
@@ -8128,14 +9828,31 @@ public struct CredentialsConnectionsEnableOptions: Codable, Sendable {
 }
 
 public struct CredentialsConnectionsEnableReturn: Codable, Sendable {
-  public var connection: RaviJSON
+  public var connection: RaviJSON?
 
-  public init(connection: RaviJSON) {
+  public init(connection: RaviJSON?) {
     self.connection = connection
   }
 
   enum CodingKeys: String, CodingKey {
     case connection = "connection"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.connection) else {
+      throw DecodingError.keyNotFound(CodingKeys.connection, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field connection."))
+    }
+    self.connection = try container.decodeIfPresent(RaviJSON.self, forKey: .connection)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.connection {
+      try container.encode(value, forKey: .connection)
+    } else {
+      try container.encodeNil(forKey: .connection)
+    }
   }
 }
 
@@ -10296,11 +12013,11 @@ public struct CronAddOptions: Codable, Sendable {
 
 public struct CronAddReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10312,16 +12029,39 @@ public struct CronAddReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
 public struct CronDisableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10333,16 +12073,39 @@ public struct CronDisableReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
 public struct CronEnableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10354,6 +12117,29 @@ public struct CronEnableReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
@@ -10446,11 +12232,11 @@ public struct CronRmOptions: Codable, Sendable {
 
 public struct CronRmReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10462,6 +12248,29 @@ public struct CronRmReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
@@ -10485,11 +12294,11 @@ public struct CronRunOptions: Codable, Sendable {
 
 public struct CronRunReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10501,16 +12310,39 @@ public struct CronRunReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
 public struct CronSetReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10522,6 +12354,29 @@ public struct CronSetReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    guard container.contains(.job) else {
+      throw DecodingError.keyNotFound(CodingKeys.job, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field job."))
+    }
+    self.job = try container.decodeIfPresent([String: RaviJSON].self, forKey: .job)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    if let value = self.job {
+      try container.encode(value, forKey: .job)
+    } else {
+      try container.encodeNil(forKey: .job)
+    }
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
   }
 }
 
@@ -11063,15 +12918,15 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
 }
 
 public struct DevinSessionsCreateReturn: Codable, Sendable {
-  public var devinMode: RaviJSON?
-  public var maxAcuLimit: RaviJSON
+  public var devinMode: String?
+  public var maxAcuLimit: Double?
   public var maxAcuLimitSource: String
-  public var platform: RaviJSON?
-  public var resumable: RaviJSON?
+  public var platform: String?
+  public var resumable: Bool?
   public var session: RaviJSON
   public var status: String
 
-  public init(devinMode: RaviJSON? = nil, maxAcuLimit: RaviJSON, maxAcuLimitSource: String, platform: RaviJSON? = nil, resumable: RaviJSON? = nil, session: RaviJSON, status: String) {
+  public init(devinMode: String? = nil, maxAcuLimit: Double?, maxAcuLimitSource: String, platform: String? = nil, resumable: Bool? = nil, session: RaviJSON, status: String) {
     self.devinMode = devinMode
     self.maxAcuLimit = maxAcuLimit
     self.maxAcuLimitSource = maxAcuLimitSource
@@ -11089,6 +12944,35 @@ public struct DevinSessionsCreateReturn: Codable, Sendable {
     case resumable = "resumable"
     case session = "session"
     case status = "status"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.devinMode = try container.decodeIfPresent(String.self, forKey: .devinMode)
+    guard container.contains(.maxAcuLimit) else {
+      throw DecodingError.keyNotFound(CodingKeys.maxAcuLimit, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field maxAcuLimit."))
+    }
+    self.maxAcuLimit = try container.decodeIfPresent(Double.self, forKey: .maxAcuLimit)
+    self.maxAcuLimitSource = try container.decode(String.self, forKey: .maxAcuLimitSource)
+    self.platform = try container.decodeIfPresent(String.self, forKey: .platform)
+    self.resumable = try container.decodeIfPresent(Bool.self, forKey: .resumable)
+    self.session = try container.decode(RaviJSON.self, forKey: .session)
+    self.status = try container.decode(String.self, forKey: .status)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.devinMode, forKey: .devinMode)
+    if let value = self.maxAcuLimit {
+      try container.encode(value, forKey: .maxAcuLimit)
+    } else {
+      try container.encodeNil(forKey: .maxAcuLimit)
+    }
+    try container.encode(self.maxAcuLimitSource, forKey: .maxAcuLimitSource)
+    try container.encodeIfPresent(self.platform, forKey: .platform)
+    try container.encodeIfPresent(self.resumable, forKey: .resumable)
+    try container.encode(self.session, forKey: .session)
+    try container.encode(self.status, forKey: .status)
   }
 }
 
@@ -11119,9 +13003,9 @@ public struct DevinSessionsInsightsOptions: Codable, Sendable {
 public struct DevinSessionsInsightsReturn: Codable, Sendable {
   public var insights: RaviJSON
   public var session: RaviJSON
-  public var summary: RaviJSON
+  public var summary: [String: RaviJSON]?
 
-  public init(insights: RaviJSON, session: RaviJSON, summary: RaviJSON) {
+  public init(insights: RaviJSON, session: RaviJSON, summary: [String: RaviJSON]?) {
     self.insights = insights
     self.session = session
     self.summary = summary
@@ -11131,6 +13015,27 @@ public struct DevinSessionsInsightsReturn: Codable, Sendable {
     case insights = "insights"
     case session = "session"
     case summary = "summary"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.insights = try container.decode(RaviJSON.self, forKey: .insights)
+    self.session = try container.decode(RaviJSON.self, forKey: .session)
+    guard container.contains(.summary) else {
+      throw DecodingError.keyNotFound(CodingKeys.summary, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field summary."))
+    }
+    self.summary = try container.decodeIfPresent([String: RaviJSON].self, forKey: .summary)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.insights, forKey: .insights)
+    try container.encode(self.session, forKey: .session)
+    if let value = self.summary {
+      try container.encode(value, forKey: .summary)
+    } else {
+      try container.encodeNil(forKey: .summary)
+    }
   }
 }
 
@@ -11341,11 +13246,11 @@ public struct DevinSessionsSyncOptions: Codable, Sendable {
 public struct DevinSessionsSyncReturn: Codable, Sendable {
   public var artifacts: [String]
   public var attachments: Double
-  public var insights: RaviJSON
+  public var insights: [String: RaviJSON]?
   public var messages: Double
   public var session: RaviJSON
 
-  public init(artifacts: [String], attachments: Double, insights: RaviJSON, messages: Double, session: RaviJSON) {
+  public init(artifacts: [String], attachments: Double, insights: [String: RaviJSON]?, messages: Double, session: RaviJSON) {
     self.artifacts = artifacts
     self.attachments = attachments
     self.insights = insights
@@ -11359,6 +13264,31 @@ public struct DevinSessionsSyncReturn: Codable, Sendable {
     case insights = "insights"
     case messages = "messages"
     case session = "session"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.artifacts = try container.decode([String].self, forKey: .artifacts)
+    self.attachments = try container.decode(Double.self, forKey: .attachments)
+    guard container.contains(.insights) else {
+      throw DecodingError.keyNotFound(CodingKeys.insights, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field insights."))
+    }
+    self.insights = try container.decodeIfPresent([String: RaviJSON].self, forKey: .insights)
+    self.messages = try container.decode(Double.self, forKey: .messages)
+    self.session = try container.decode(RaviJSON.self, forKey: .session)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.artifacts, forKey: .artifacts)
+    try container.encode(self.attachments, forKey: .attachments)
+    if let value = self.insights {
+      try container.encode(value, forKey: .insights)
+    } else {
+      try container.encodeNil(forKey: .insights)
+    }
+    try container.encode(self.messages, forKey: .messages)
+    try container.encode(self.session, forKey: .session)
   }
 }
 
@@ -12273,11 +14203,11 @@ public struct ImageAtlasSplitReturn: Codable, Sendable {
   public var crops: [[String: RaviJSON]]
   public var manifestPath: String
   public var outputDir: String
-  public var parentArtifactId: RaviJSON
+  public var parentArtifactId: String?
   public var sent: [[String: RaviJSON]]
   public var success: Bool
 
-  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: RaviJSON, sent: [[String: RaviJSON]], success: Bool) {
+  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: String?, sent: [[String: RaviJSON]], success: Bool) {
     self.artifactId = artifactId
     self.artifact_id = artifact_id
     self.crops = crops
@@ -12297,6 +14227,37 @@ public struct ImageAtlasSplitReturn: Codable, Sendable {
     case parentArtifactId = "parentArtifactId"
     case sent = "sent"
     case success = "success"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.artifactId = try container.decode(String.self, forKey: .artifactId)
+    self.artifact_id = try container.decode(String.self, forKey: .artifact_id)
+    self.crops = try container.decode([[String: RaviJSON]].self, forKey: .crops)
+    self.manifestPath = try container.decode(String.self, forKey: .manifestPath)
+    self.outputDir = try container.decode(String.self, forKey: .outputDir)
+    guard container.contains(.parentArtifactId) else {
+      throw DecodingError.keyNotFound(CodingKeys.parentArtifactId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field parentArtifactId."))
+    }
+    self.parentArtifactId = try container.decodeIfPresent(String.self, forKey: .parentArtifactId)
+    self.sent = try container.decode([[String: RaviJSON]].self, forKey: .sent)
+    self.success = try container.decode(Bool.self, forKey: .success)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.artifactId, forKey: .artifactId)
+    try container.encode(self.artifact_id, forKey: .artifact_id)
+    try container.encode(self.crops, forKey: .crops)
+    try container.encode(self.manifestPath, forKey: .manifestPath)
+    try container.encode(self.outputDir, forKey: .outputDir)
+    if let value = self.parentArtifactId {
+      try container.encode(value, forKey: .parentArtifactId)
+    } else {
+      try container.encodeNil(forKey: .parentArtifactId)
+    }
+    try container.encode(self.sent, forKey: .sent)
+    try container.encode(self.success, forKey: .success)
   }
 }
 
@@ -13692,10 +15653,10 @@ public struct MailMessagesImportOptions: Codable, Sendable {
 
 public struct MailMessagesImportReturn: Codable, Sendable {
   public var inboxCreated: Bool
-  public var inboxItem: RaviJSON
+  public var inboxItem: [String: RaviJSON]?
   public var message: RaviJSON
 
-  public init(inboxCreated: Bool, inboxItem: RaviJSON, message: RaviJSON) {
+  public init(inboxCreated: Bool, inboxItem: [String: RaviJSON]?, message: RaviJSON) {
     self.inboxCreated = inboxCreated
     self.inboxItem = inboxItem
     self.message = message
@@ -13705,6 +15666,27 @@ public struct MailMessagesImportReturn: Codable, Sendable {
     case inboxCreated = "inboxCreated"
     case inboxItem = "inboxItem"
     case message = "message"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.inboxCreated = try container.decode(Bool.self, forKey: .inboxCreated)
+    guard container.contains(.inboxItem) else {
+      throw DecodingError.keyNotFound(CodingKeys.inboxItem, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field inboxItem."))
+    }
+    self.inboxItem = try container.decodeIfPresent([String: RaviJSON].self, forKey: .inboxItem)
+    self.message = try container.decode(RaviJSON.self, forKey: .message)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.inboxCreated, forKey: .inboxCreated)
+    if let value = self.inboxItem {
+      try container.encode(value, forKey: .inboxItem)
+    } else {
+      try container.encodeNil(forKey: .inboxItem)
+    }
+    try container.encode(self.message, forKey: .message)
   }
 }
 
@@ -15046,10 +17028,10 @@ public struct ObserversRefreshReturn: Codable, Sendable {
   public var mode: String
   public var refreshedProfiles: [[String: RaviJSON]]
   public var skipped: [[String: RaviJSON]]
-  public var source: RaviJSON
+  public var source: [String: RaviJSON]?
   public var total: Double
 
-  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: RaviJSON, total: Double) {
+  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: [String: RaviJSON]?, total: Double) {
     self.bindings = bindings
     self.created = created
     self.disabled = disabled
@@ -15069,6 +17051,37 @@ public struct ObserversRefreshReturn: Codable, Sendable {
     case skipped = "skipped"
     case source = "source"
     case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.bindings = try container.decode([[String: RaviJSON]].self, forKey: .bindings)
+    self.created = try container.decode([[String: RaviJSON]].self, forKey: .created)
+    self.disabled = try container.decode([[String: RaviJSON]].self, forKey: .disabled)
+    self.mode = try container.decode(String.self, forKey: .mode)
+    self.refreshedProfiles = try container.decode([[String: RaviJSON]].self, forKey: .refreshedProfiles)
+    self.skipped = try container.decode([[String: RaviJSON]].self, forKey: .skipped)
+    guard container.contains(.source) else {
+      throw DecodingError.keyNotFound(CodingKeys.source, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field source."))
+    }
+    self.source = try container.decodeIfPresent([String: RaviJSON].self, forKey: .source)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.bindings, forKey: .bindings)
+    try container.encode(self.created, forKey: .created)
+    try container.encode(self.disabled, forKey: .disabled)
+    try container.encode(self.mode, forKey: .mode)
+    try container.encode(self.refreshedProfiles, forKey: .refreshedProfiles)
+    try container.encode(self.skipped, forKey: .skipped)
+    if let value = self.source {
+      try container.encode(value, forKey: .source)
+    } else {
+      try container.encodeNil(forKey: .source)
+    }
+    try container.encode(self.total, forKey: .total)
   }
 }
 
@@ -15440,13 +17453,13 @@ public struct PagesCreateOptions: Codable, Sendable {
 
 public struct PagesCreateReturn: Codable, Sendable {
   public var consoleUrl: String
-  public var contentPublishCommand: RaviJSON
+  public var contentPublishCommand: String?
   public var projectRef: String
   public var site: [String: RaviJSON]
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, contentPublishCommand: RaviJSON, projectRef: String, site: [String: RaviJSON], success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, contentPublishCommand: String?, projectRef: String, site: [String: RaviJSON], success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.contentPublishCommand = contentPublishCommand
     self.projectRef = projectRef
@@ -15462,6 +17475,40 @@ public struct PagesCreateReturn: Codable, Sendable {
     case site = "site"
     case success = "success"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    guard container.contains(.contentPublishCommand) else {
+      throw DecodingError.keyNotFound(CodingKeys.contentPublishCommand, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field contentPublishCommand."))
+    }
+    self.contentPublishCommand = try container.decodeIfPresent(String.self, forKey: .contentPublishCommand)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.site = try container.decode([String: RaviJSON].self, forKey: .site)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    if let value = self.contentPublishCommand {
+      try container.encode(value, forKey: .contentPublishCommand)
+    } else {
+      try container.encodeNil(forKey: .contentPublishCommand)
+    }
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.success, forKey: .success)
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -15647,7 +17694,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -15657,7 +17704,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -15687,6 +17734,47 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
     case siteRef = "siteRef"
     case success = "success"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    self.configured = try container.decode(Bool.self, forKey: .configured)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.path = try container.decode(String.self, forKey: .path)
+    guard container.contains(.policy) else {
+      throw DecodingError.keyNotFound(CodingKeys.policy, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field policy."))
+    }
+    self.policy = try container.decodeIfPresent([String: RaviJSON].self, forKey: .policy)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.release = try container.decode([String: RaviJSON].self, forKey: .release)
+    self.route = try container.decode([String: RaviJSON].self, forKey: .route)
+    self.scope = try container.decode(String.self, forKey: .scope)
+    self.site = try container.decode([String: RaviJSON].self, forKey: .site)
+    self.siteRef = try container.decode(String.self, forKey: .siteRef)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    self.url = try container.decode(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    try container.encode(self.configured, forKey: .configured)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.path, forKey: .path)
+    if let value = self.policy {
+      try container.encode(value, forKey: .policy)
+    } else {
+      try container.encodeNil(forKey: .policy)
+    }
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.release, forKey: .release)
+    try container.encode(self.route, forKey: .route)
+    try container.encode(self.scope, forKey: .scope)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.siteRef, forKey: .siteRef)
+    try container.encode(self.success, forKey: .success)
+    try container.encode(self.url, forKey: .url)
   }
 }
 
@@ -15725,7 +17813,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -15735,7 +17823,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -15765,6 +17853,47 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
     case siteRef = "siteRef"
     case success = "success"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    self.configured = try container.decode(Bool.self, forKey: .configured)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.path = try container.decode(String.self, forKey: .path)
+    guard container.contains(.policy) else {
+      throw DecodingError.keyNotFound(CodingKeys.policy, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field policy."))
+    }
+    self.policy = try container.decodeIfPresent([String: RaviJSON].self, forKey: .policy)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.release = try container.decode([String: RaviJSON].self, forKey: .release)
+    self.route = try container.decode([String: RaviJSON].self, forKey: .route)
+    self.scope = try container.decode(String.self, forKey: .scope)
+    self.site = try container.decode([String: RaviJSON].self, forKey: .site)
+    self.siteRef = try container.decode(String.self, forKey: .siteRef)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    self.url = try container.decode(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    try container.encode(self.configured, forKey: .configured)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.path, forKey: .path)
+    if let value = self.policy {
+      try container.encode(value, forKey: .policy)
+    } else {
+      try container.encodeNil(forKey: .policy)
+    }
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.release, forKey: .release)
+    try container.encode(self.route, forKey: .route)
+    try container.encode(self.scope, forKey: .scope)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.siteRef, forKey: .siteRef)
+    try container.encode(self.success, forKey: .success)
+    try container.encode(self.url, forKey: .url)
   }
 }
 
@@ -15900,10 +18029,10 @@ public struct PagesPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -15933,6 +18062,54 @@ public struct PagesPublishReturn: Codable, Sendable {
     case upload = "upload"
     case uploadSession = "uploadSession"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.artifact = try container.decode(RaviJSON.self, forKey: .artifact)
+    self.artifactVersion = try container.decode(RaviJSON.self, forKey: .artifactVersion)
+    self.authenticated = try container.decode(Bool.self, forKey: .authenticated)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.localSync = try container.decode(RaviJSON.self, forKey: .localSync)
+    self.publish = try container.decode(RaviJSON.self, forKey: .publish)
+    self.release = try container.decode(RaviJSON.self, forKey: .release)
+    self.routes = try container.decode([[String: RaviJSON]].self, forKey: .routes)
+    self.site = try container.decode(RaviJSON.self, forKey: .site)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    self.upload = try container.decode(RaviJSON.self, forKey: .upload)
+    guard container.contains(.uploadSession) else {
+      throw DecodingError.keyNotFound(CodingKeys.uploadSession, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field uploadSession."))
+    }
+    self.uploadSession = try container.decodeIfPresent([String: RaviJSON].self, forKey: .uploadSession)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.artifact, forKey: .artifact)
+    try container.encode(self.artifactVersion, forKey: .artifactVersion)
+    try container.encode(self.authenticated, forKey: .authenticated)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.localSync, forKey: .localSync)
+    try container.encode(self.publish, forKey: .publish)
+    try container.encode(self.release, forKey: .release)
+    try container.encode(self.routes, forKey: .routes)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.success, forKey: .success)
+    try container.encode(self.upload, forKey: .upload)
+    if let value = self.uploadSession {
+      try container.encode(value, forKey: .uploadSession)
+    } else {
+      try container.encodeNil(forKey: .uploadSession)
+    }
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -16045,9 +18222,9 @@ public struct PagesUpdateReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -16065,6 +18242,35 @@ public struct PagesUpdateReturn: Codable, Sendable {
     case siteRef = "siteRef"
     case success = "success"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.edgeManifestRepair = try container.decode(RaviJSON.self, forKey: .edgeManifestRepair)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.site = try container.decode([String: RaviJSON].self, forKey: .site)
+    self.siteRef = try container.decode(String.self, forKey: .siteRef)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.edgeManifestRepair, forKey: .edgeManifestRepair)
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.siteRef, forKey: .siteRef)
+    try container.encode(self.success, forKey: .success)
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -16105,9 +18311,9 @@ public struct PagesVisibilityReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -16125,6 +18331,35 @@ public struct PagesVisibilityReturn: Codable, Sendable {
     case siteRef = "siteRef"
     case success = "success"
     case url = "url"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.consoleUrl = try container.decode(String.self, forKey: .consoleUrl)
+    self.edgeManifestRepair = try container.decode(RaviJSON.self, forKey: .edgeManifestRepair)
+    self.projectRef = try container.decode(String.self, forKey: .projectRef)
+    self.site = try container.decode([String: RaviJSON].self, forKey: .site)
+    self.siteRef = try container.decode(String.self, forKey: .siteRef)
+    self.success = try container.decode(Bool.self, forKey: .success)
+    guard container.contains(.url) else {
+      throw DecodingError.keyNotFound(CodingKeys.url, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field url."))
+    }
+    self.url = try container.decodeIfPresent(String.self, forKey: .url)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.consoleUrl, forKey: .consoleUrl)
+    try container.encode(self.edgeManifestRepair, forKey: .edgeManifestRepair)
+    try container.encode(self.projectRef, forKey: .projectRef)
+    try container.encode(self.site, forKey: .site)
+    try container.encode(self.siteRef, forKey: .siteRef)
+    try container.encode(self.success, forKey: .success)
+    if let value = self.url {
+      try container.encode(value, forKey: .url)
+    } else {
+      try container.encodeNil(forKey: .url)
+    }
   }
 }
 
@@ -16479,12 +18714,12 @@ public struct ProjectsCreateOptions: Codable, Sendable {
 public struct ProjectsCreateReturn: Codable, Sendable {
   public var linkedWorkflows: [ProjectWorkflowLink]
   public var links: [ProjectLink]
-  public var operational: RaviJSON
+  public var operational: ProjectOperational?
   public var project: ProjectRecord
   public var tags: [ProjectTagBinding]
-  public var workflowAggregate: RaviJSON
+  public var workflowAggregate: ProjectWorkflowAggregate?
 
-  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: ProjectOperational?, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: ProjectWorkflowAggregate?) {
     self.linkedWorkflows = linkedWorkflows
     self.links = links
     self.operational = operational
@@ -16500,6 +18735,40 @@ public struct ProjectsCreateReturn: Codable, Sendable {
     case project = "project"
     case tags = "tags"
     case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -16674,12 +18943,12 @@ public struct ProjectsLinkOptions: Codable, Sendable {
 public struct ProjectsLinkReturn: Codable, Sendable {
   public var linkedWorkflows: [ProjectWorkflowLink]
   public var links: [ProjectLink]
-  public var operational: RaviJSON
+  public var operational: ProjectOperational?
   public var project: ProjectRecord
   public var tags: [ProjectTagBinding]
-  public var workflowAggregate: RaviJSON
+  public var workflowAggregate: ProjectWorkflowAggregate?
 
-  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: ProjectOperational?, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: ProjectWorkflowAggregate?) {
     self.linkedWorkflows = linkedWorkflows
     self.links = links
     self.operational = operational
@@ -16695,6 +18964,40 @@ public struct ProjectsLinkReturn: Codable, Sendable {
     case project = "project"
     case tags = "tags"
     case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -16874,15 +19177,15 @@ public struct ProjectsResourcesAddReturn: Codable, Sendable {
   public var createdByAgentId: String?
   public var createdBySessionName: String?
   public var id: String
-  public var label: RaviJSON
+  public var label: String?
   public var locator: String
   public var metadata: [String: RaviJSON]?
   public var projectId: String
-  public var resourceType: RaviJSON
+  public var resourceType: String?
   public var role: String?
   public var updatedAt: Double
 
-  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: RaviJSON, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: RaviJSON, role: String? = nil, updatedAt: Double) {
+  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: String?, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: String?, role: String? = nil, updatedAt: Double) {
     self.assetId = assetId
     self.assetType = assetType
     self.createdAt = createdAt
@@ -16914,6 +19217,56 @@ public struct ProjectsResourcesAddReturn: Codable, Sendable {
     case resourceType = "resourceType"
     case role = "role"
     case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.id = try container.decode(String.self, forKey: .id)
+    guard container.contains(.label) else {
+      throw DecodingError.keyNotFound(CodingKeys.label, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field label."))
+    }
+    self.label = try container.decodeIfPresent(String.self, forKey: .label)
+    self.locator = try container.decode(String.self, forKey: .locator)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.projectId = try container.decode(String.self, forKey: .projectId)
+    guard container.contains(.resourceType) else {
+      throw DecodingError.keyNotFound(CodingKeys.resourceType, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field resourceType."))
+    }
+    self.resourceType = try container.decodeIfPresent(String.self, forKey: .resourceType)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.id, forKey: .id)
+    if let value = self.label {
+      try container.encode(value, forKey: .label)
+    } else {
+      try container.encodeNil(forKey: .label)
+    }
+    try container.encode(self.locator, forKey: .locator)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.projectId, forKey: .projectId)
+    if let value = self.resourceType {
+      try container.encode(value, forKey: .resourceType)
+    } else {
+      try container.encodeNil(forKey: .resourceType)
+    }
+    try container.encodeIfPresent(self.role, forKey: .role)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
   }
 }
 
@@ -17045,15 +19398,15 @@ public struct ProjectsResourcesShowReturn: Codable, Sendable {
   public var createdByAgentId: String?
   public var createdBySessionName: String?
   public var id: String
-  public var label: RaviJSON
+  public var label: String?
   public var locator: String
   public var metadata: [String: RaviJSON]?
   public var projectId: String
-  public var resourceType: RaviJSON
+  public var resourceType: String?
   public var role: String?
   public var updatedAt: Double
 
-  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: RaviJSON, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: RaviJSON, role: String? = nil, updatedAt: Double) {
+  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: String?, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: String?, role: String? = nil, updatedAt: Double) {
     self.assetId = assetId
     self.assetType = assetType
     self.createdAt = createdAt
@@ -17086,17 +19439,67 @@ public struct ProjectsResourcesShowReturn: Codable, Sendable {
     case role = "role"
     case updatedAt = "updatedAt"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.id = try container.decode(String.self, forKey: .id)
+    guard container.contains(.label) else {
+      throw DecodingError.keyNotFound(CodingKeys.label, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field label."))
+    }
+    self.label = try container.decodeIfPresent(String.self, forKey: .label)
+    self.locator = try container.decode(String.self, forKey: .locator)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.projectId = try container.decode(String.self, forKey: .projectId)
+    guard container.contains(.resourceType) else {
+      throw DecodingError.keyNotFound(CodingKeys.resourceType, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field resourceType."))
+    }
+    self.resourceType = try container.decodeIfPresent(String.self, forKey: .resourceType)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.id, forKey: .id)
+    if let value = self.label {
+      try container.encode(value, forKey: .label)
+    } else {
+      try container.encodeNil(forKey: .label)
+    }
+    try container.encode(self.locator, forKey: .locator)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.projectId, forKey: .projectId)
+    if let value = self.resourceType {
+      try container.encode(value, forKey: .resourceType)
+    } else {
+      try container.encodeNil(forKey: .resourceType)
+    }
+    try container.encodeIfPresent(self.role, forKey: .role)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+  }
 }
 
 public struct ProjectsShowReturn: Codable, Sendable {
   public var linkedWorkflows: [ProjectWorkflowLink]
   public var links: [ProjectLink]
-  public var operational: RaviJSON
+  public var operational: ProjectOperational?
   public var project: ProjectRecord
   public var tags: [ProjectTagBinding]
-  public var workflowAggregate: RaviJSON
+  public var workflowAggregate: ProjectWorkflowAggregate?
 
-  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: ProjectOperational?, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: ProjectWorkflowAggregate?) {
     self.linkedWorkflows = linkedWorkflows
     self.links = links
     self.operational = operational
@@ -17112,18 +19515,52 @@ public struct ProjectsShowReturn: Codable, Sendable {
     case project = "project"
     case tags = "tags"
     case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
 public struct ProjectsStatusReturn: Codable, Sendable {
   public var linkedWorkflows: [ProjectWorkflowLink]
   public var links: [ProjectLink]
-  public var operational: RaviJSON
+  public var operational: ProjectOperational?
   public var project: ProjectRecord
   public var tags: [ProjectTagBinding]
-  public var workflowAggregate: RaviJSON
+  public var workflowAggregate: ProjectWorkflowAggregate?
 
-  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: ProjectOperational?, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: ProjectWorkflowAggregate?) {
     self.linkedWorkflows = linkedWorkflows
     self.links = links
     self.operational = operational
@@ -17139,6 +19576,40 @@ public struct ProjectsStatusReturn: Codable, Sendable {
     case project = "project"
     case tags = "tags"
     case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -17385,12 +19856,12 @@ public struct ProjectsUpdateOptions: Codable, Sendable {
 public struct ProjectsUpdateReturn: Codable, Sendable {
   public var linkedWorkflows: [ProjectWorkflowLink]
   public var links: [ProjectLink]
-  public var operational: RaviJSON
+  public var operational: ProjectOperational?
   public var project: ProjectRecord
   public var tags: [ProjectTagBinding]
-  public var workflowAggregate: RaviJSON
+  public var workflowAggregate: ProjectWorkflowAggregate?
 
-  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: ProjectOperational?, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: ProjectWorkflowAggregate?) {
     self.linkedWorkflows = linkedWorkflows
     self.links = links
     self.operational = operational
@@ -17406,6 +19877,40 @@ public struct ProjectsUpdateReturn: Codable, Sendable {
     case project = "project"
     case tags = "tags"
     case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    if let value = self.operational {
+      try container.encode(value, forKey: .operational)
+    } else {
+      try container.encodeNil(forKey: .operational)
+    }
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    if let value = self.workflowAggregate {
+      try container.encode(value, forKey: .workflowAggregate)
+    } else {
+      try container.encodeNil(forKey: .workflowAggregate)
+    }
   }
 }
 
@@ -17621,9 +20126,9 @@ public struct ProxCallsProfilesConfigureOptions: Codable, Sendable {
 
 public struct ProxCallsProfilesConfigureReturn: Codable, Sendable {
   public var profile: [String: RaviJSON]
-  public var providerSync: RaviJSON
+  public var providerSync: RaviJSON?
 
-  public init(profile: [String: RaviJSON], providerSync: RaviJSON) {
+  public init(profile: [String: RaviJSON], providerSync: RaviJSON?) {
     self.profile = profile
     self.providerSync = providerSync
   }
@@ -17631,6 +20136,25 @@ public struct ProxCallsProfilesConfigureReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case profile = "profile"
     case providerSync = "provider_sync"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.profile = try container.decode([String: RaviJSON].self, forKey: .profile)
+    guard container.contains(.providerSync) else {
+      throw DecodingError.keyNotFound(CodingKeys.providerSync, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field provider_sync."))
+    }
+    self.providerSync = try container.decodeIfPresent(RaviJSON.self, forKey: .providerSync)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.profile, forKey: .profile)
+    if let value = self.providerSync {
+      try container.encode(value, forKey: .providerSync)
+    } else {
+      try container.encodeNil(forKey: .providerSync)
+    }
   }
 }
 
@@ -17757,13 +20281,13 @@ public struct ProxCallsRequestOptions: Codable, Sendable {
 }
 
 public struct ProxCallsRequestReturn: Codable, Sendable {
-  public var blockReason: RaviJSON?
+  public var blockReason: String?
   public var blocked: Bool
   public var hint: String
   public var providerMode: String
   public var request: [String: RaviJSON]
 
-  public init(blockReason: RaviJSON? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
+  public init(blockReason: String? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
     self.blockReason = blockReason
     self.blocked = blocked
     self.hint = hint
@@ -17802,10 +20326,10 @@ public typealias ProxCallsRulesReturn = RaviJSON
 
 public struct ProxCallsShowReturn: Codable, Sendable {
   public var request: [String: RaviJSON]
-  public var result: RaviJSON
+  public var result: [String: RaviJSON]?
   public var runs: [[String: RaviJSON]]
 
-  public init(request: [String: RaviJSON], result: RaviJSON, runs: [[String: RaviJSON]]) {
+  public init(request: [String: RaviJSON], result: [String: RaviJSON]?, runs: [[String: RaviJSON]]) {
     self.request = request
     self.result = result
     self.runs = runs
@@ -17815,6 +20339,27 @@ public struct ProxCallsShowReturn: Codable, Sendable {
     case request = "request"
     case result = "result"
     case runs = "runs"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.request = try container.decode([String: RaviJSON].self, forKey: .request)
+    guard container.contains(.result) else {
+      throw DecodingError.keyNotFound(CodingKeys.result, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field result."))
+    }
+    self.result = try container.decodeIfPresent([String: RaviJSON].self, forKey: .result)
+    self.runs = try container.decode([[String: RaviJSON]].self, forKey: .runs)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.request, forKey: .request)
+    if let value = self.result {
+      try container.encode(value, forKey: .result)
+    } else {
+      try container.encodeNil(forKey: .result)
+    }
+    try container.encode(self.runs, forKey: .runs)
   }
 }
 
@@ -18084,10 +20629,10 @@ public struct ProxCallsTranscriptOptions: Codable, Sendable {
 public struct ProxCallsTranscriptReturn: Codable, Sendable {
   public var outcome: String
   public var requestId: String
-  public var summary: RaviJSON?
+  public var summary: String?
   public var transcript: String
 
-  public init(outcome: String, requestId: String, summary: RaviJSON? = nil, transcript: String) {
+  public init(outcome: String, requestId: String, summary: String? = nil, transcript: String) {
     self.outcome = outcome
     self.requestId = requestId
     self.summary = summary
@@ -18282,11 +20827,11 @@ public struct ProxCallsVoiceAgentsSyncReturn: Codable, Sendable {
   public var dryRun: Bool
   public var intendedChanges: [String: RaviJSON]
   public var provider: String
-  public var providerAgentId: RaviJSON?
+  public var providerAgentId: String?
   public var providerSync: String
   public var voiceAgentId: String
 
-  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: RaviJSON? = nil, providerSync: String, voiceAgentId: String) {
+  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: String? = nil, providerSync: String, voiceAgentId: String) {
     self.dryRun = dryRun
     self.intendedChanges = intendedChanges
     self.provider = provider
@@ -18384,14 +20929,14 @@ public struct RoutesExplainOptions: Codable, Sendable {
 }
 
 public struct RoutesExplainReturn: Codable, Sendable {
-  public var channel: RaviJSON
-  public var configuredRoute: RaviJSON
+  public var channel: String?
+  public var configuredRoute: [String: RaviJSON]?
   public var instance: String
-  public var liveEffect: RaviJSON
-  public var pattern: RaviJSON
+  public var liveEffect: [String: RaviJSON]?
+  public var pattern: String?
   public var target: [String: RaviJSON]
 
-  public init(channel: RaviJSON, configuredRoute: RaviJSON, instance: String, liveEffect: RaviJSON, pattern: RaviJSON, target: [String: RaviJSON]) {
+  public init(channel: String?, configuredRoute: [String: RaviJSON]?, instance: String, liveEffect: [String: RaviJSON]?, pattern: String?, target: [String: RaviJSON]) {
     self.channel = channel
     self.configuredRoute = configuredRoute
     self.instance = instance
@@ -18407,6 +20952,54 @@ public struct RoutesExplainReturn: Codable, Sendable {
     case liveEffect = "liveEffect"
     case pattern = "pattern"
     case target = "target"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.channel) else {
+      throw DecodingError.keyNotFound(CodingKeys.channel, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field channel."))
+    }
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    guard container.contains(.configuredRoute) else {
+      throw DecodingError.keyNotFound(CodingKeys.configuredRoute, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field configuredRoute."))
+    }
+    self.configuredRoute = try container.decodeIfPresent([String: RaviJSON].self, forKey: .configuredRoute)
+    self.instance = try container.decode(String.self, forKey: .instance)
+    guard container.contains(.liveEffect) else {
+      throw DecodingError.keyNotFound(CodingKeys.liveEffect, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field liveEffect."))
+    }
+    self.liveEffect = try container.decodeIfPresent([String: RaviJSON].self, forKey: .liveEffect)
+    guard container.contains(.pattern) else {
+      throw DecodingError.keyNotFound(CodingKeys.pattern, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field pattern."))
+    }
+    self.pattern = try container.decodeIfPresent(String.self, forKey: .pattern)
+    self.target = try container.decode([String: RaviJSON].self, forKey: .target)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.channel {
+      try container.encode(value, forKey: .channel)
+    } else {
+      try container.encodeNil(forKey: .channel)
+    }
+    if let value = self.configuredRoute {
+      try container.encode(value, forKey: .configuredRoute)
+    } else {
+      try container.encodeNil(forKey: .configuredRoute)
+    }
+    try container.encode(self.instance, forKey: .instance)
+    if let value = self.liveEffect {
+      try container.encode(value, forKey: .liveEffect)
+    } else {
+      try container.encodeNil(forKey: .liveEffect)
+    }
+    if let value = self.pattern {
+      try container.encode(value, forKey: .pattern)
+    } else {
+      try container.encodeNil(forKey: .pattern)
+    }
+    try container.encode(self.target, forKey: .target)
   }
 }
 
@@ -18448,13 +21041,13 @@ public struct RoutesListOptions: Codable, Sendable {
 
 public struct RoutesListReturn: Codable, Sendable {
   public var filter: [String: RaviJSON]
-  public var instance: RaviJSON
+  public var instance: String?
   public var items: [[String: RaviJSON]]
   public var pagination: RaviJSON
   public var routes: [[String: RaviJSON]]
   public var total: Double
 
-  public init(filter: [String: RaviJSON], instance: RaviJSON, items: [[String: RaviJSON]], pagination: RaviJSON, routes: [[String: RaviJSON]], total: Double) {
+  public init(filter: [String: RaviJSON], instance: String?, items: [[String: RaviJSON]], pagination: RaviJSON, routes: [[String: RaviJSON]], total: Double) {
     self.filter = filter
     self.instance = instance
     self.items = items
@@ -18470,6 +21063,33 @@ public struct RoutesListReturn: Codable, Sendable {
     case pagination = "pagination"
     case routes = "routes"
     case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.filter = try container.decode([String: RaviJSON].self, forKey: .filter)
+    guard container.contains(.instance) else {
+      throw DecodingError.keyNotFound(CodingKeys.instance, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field instance."))
+    }
+    self.instance = try container.decodeIfPresent(String.self, forKey: .instance)
+    self.items = try container.decode([[String: RaviJSON]].self, forKey: .items)
+    self.pagination = try container.decode(RaviJSON.self, forKey: .pagination)
+    self.routes = try container.decode([[String: RaviJSON]].self, forKey: .routes)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.filter, forKey: .filter)
+    if let value = self.instance {
+      try container.encode(value, forKey: .instance)
+    } else {
+      try container.encodeNil(forKey: .instance)
+    }
+    try container.encode(self.items, forKey: .items)
+    try container.encode(self.pagination, forKey: .pagination)
+    try container.encode(self.routes, forKey: .routes)
+    try container.encode(self.total, forKey: .total)
   }
 }
 
@@ -19018,9 +21638,9 @@ public struct RuntimeCredentialsRefreshReturn: Codable, Sendable {
 
 public struct RuntimeCredentialsResetHealthReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -19028,6 +21648,25 @@ public struct RuntimeCredentialsResetHealthReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case credential = "credential"
     case health = "health"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.credential = try container.decode([String: RaviJSON].self, forKey: .credential)
+    guard container.contains(.health) else {
+      throw DecodingError.keyNotFound(CodingKeys.health, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field health."))
+    }
+    self.health = try container.decodeIfPresent([String: RaviJSON].self, forKey: .health)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.credential, forKey: .credential)
+    if let value = self.health {
+      try container.encode(value, forKey: .health)
+    } else {
+      try container.encodeNil(forKey: .health)
+    }
   }
 }
 
@@ -19076,9 +21715,9 @@ public struct RuntimeCredentialsSelectOptions: Codable, Sendable {
 public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
   public var candidates: [[String: RaviJSON]]
   public var rejected: [[String: RaviJSON]]
-  public var selected: RaviJSON
+  public var selected: [String: RaviJSON]?
 
-  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: RaviJSON) {
+  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: [String: RaviJSON]?) {
     self.candidates = candidates
     self.rejected = rejected
     self.selected = selected
@@ -19089,13 +21728,34 @@ public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
     case rejected = "rejected"
     case selected = "selected"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.candidates = try container.decode([[String: RaviJSON]].self, forKey: .candidates)
+    self.rejected = try container.decode([[String: RaviJSON]].self, forKey: .rejected)
+    guard container.contains(.selected) else {
+      throw DecodingError.keyNotFound(CodingKeys.selected, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field selected."))
+    }
+    self.selected = try container.decodeIfPresent([String: RaviJSON].self, forKey: .selected)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.candidates, forKey: .candidates)
+    try container.encode(self.rejected, forKey: .rejected)
+    if let value = self.selected {
+      try container.encode(value, forKey: .selected)
+    } else {
+      try container.encodeNil(forKey: .selected)
+    }
+  }
 }
 
 public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -19103,6 +21763,25 @@ public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case credential = "credential"
     case health = "health"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.credential = try container.decode([String: RaviJSON].self, forKey: .credential)
+    guard container.contains(.health) else {
+      throw DecodingError.keyNotFound(CodingKeys.health, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field health."))
+    }
+    self.health = try container.decodeIfPresent([String: RaviJSON].self, forKey: .health)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.credential, forKey: .credential)
+    if let value = self.health {
+      try container.encode(value, forKey: .health)
+    } else {
+      try container.encodeNil(forKey: .health)
+    }
   }
 }
 
@@ -19306,7 +21985,7 @@ public struct RuntimePresetsImpactOptions: Codable, Sendable {
 
 public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var agents: [RaviJSON]
-  public var correctionCommand: RaviJSON
+  public var correctionCommand: String?
   public var enabled: Bool
   public var limit: Double
   public var model: String
@@ -19319,7 +21998,7 @@ public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var shadowingSessionsTotal: Double
   public var version: Double
 
-  public init(agents: [RaviJSON], correctionCommand: RaviJSON, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
+  public init(agents: [RaviJSON], correctionCommand: String?, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
     self.agents = agents
     self.correctionCommand = correctionCommand
     self.enabled = enabled
@@ -19349,6 +22028,47 @@ public struct RuntimePresetsImpactReturn: Codable, Sendable {
     case referencingAgentsTotal = "referencingAgentsTotal"
     case shadowingSessionsTotal = "shadowingSessionsTotal"
     case version = "version"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.agents = try container.decode([RaviJSON].self, forKey: .agents)
+    guard container.contains(.correctionCommand) else {
+      throw DecodingError.keyNotFound(CodingKeys.correctionCommand, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field correctionCommand."))
+    }
+    self.correctionCommand = try container.decodeIfPresent(String.self, forKey: .correctionCommand)
+    self.enabled = try container.decode(Bool.self, forKey: .enabled)
+    self.limit = try container.decode(Double.self, forKey: .limit)
+    self.model = try container.decode(String.self, forKey: .model)
+    self.offset = try container.decode(Double.self, forKey: .offset)
+    self.pagination = try container.decode(RaviJSON.self, forKey: .pagination)
+    self.presetId = try container.decode(String.self, forKey: .presetId)
+    self.provider = try container.decode(String.self, forKey: .provider)
+    self.referenced = try container.decode(Bool.self, forKey: .referenced)
+    self.referencingAgentsTotal = try container.decode(Double.self, forKey: .referencingAgentsTotal)
+    self.shadowingSessionsTotal = try container.decode(Double.self, forKey: .shadowingSessionsTotal)
+    self.version = try container.decode(Double.self, forKey: .version)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.agents, forKey: .agents)
+    if let value = self.correctionCommand {
+      try container.encode(value, forKey: .correctionCommand)
+    } else {
+      try container.encodeNil(forKey: .correctionCommand)
+    }
+    try container.encode(self.enabled, forKey: .enabled)
+    try container.encode(self.limit, forKey: .limit)
+    try container.encode(self.model, forKey: .model)
+    try container.encode(self.offset, forKey: .offset)
+    try container.encode(self.pagination, forKey: .pagination)
+    try container.encode(self.presetId, forKey: .presetId)
+    try container.encode(self.provider, forKey: .provider)
+    try container.encode(self.referenced, forKey: .referenced)
+    try container.encode(self.referencingAgentsTotal, forKey: .referencingAgentsTotal)
+    try container.encode(self.shadowingSessionsTotal, forKey: .shadowingSessionsTotal)
+    try container.encode(self.version, forKey: .version)
   }
 }
 
@@ -20735,10 +23455,10 @@ public struct SessionsGoalOptions: Codable, Sendable {
 public struct SessionsGoalReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var goal: RaviJSON
+  public var goal: RaviJSON?
   public var session: RaviJSON
 
-  public init(action: String, changed: Bool, goal: RaviJSON, session: RaviJSON) {
+  public init(action: String, changed: Bool, goal: RaviJSON?, session: RaviJSON) {
     self.action = action
     self.changed = changed
     self.goal = goal
@@ -20750,6 +23470,29 @@ public struct SessionsGoalReturn: Codable, Sendable {
     case changed = "changed"
     case goal = "goal"
     case session = "session"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    self.changed = try container.decode(Bool.self, forKey: .changed)
+    guard container.contains(.goal) else {
+      throw DecodingError.keyNotFound(CodingKeys.goal, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field goal."))
+    }
+    self.goal = try container.decodeIfPresent(RaviJSON.self, forKey: .goal)
+    self.session = try container.decode(RaviJSON.self, forKey: .session)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    try container.encode(self.changed, forKey: .changed)
+    if let value = self.goal {
+      try container.encode(value, forKey: .goal)
+    } else {
+      try container.encodeNil(forKey: .goal)
+    }
+    try container.encode(self.session, forKey: .session)
   }
 }
 
@@ -21421,9 +24164,9 @@ public struct SessionsSendReturn: Codable, Sendable {
   public var published: Bool
   public var response: RaviJSON?
   public var session: RaviJSON
-  public var thread: RaviJSON
+  public var thread: [String: RaviJSON]?
 
-  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: RaviJSON) {
+  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: [String: RaviJSON]?) {
     self.action = action
     self.createdSession = createdSession
     self.delivery = delivery
@@ -21446,23 +24189,56 @@ public struct SessionsSendReturn: Codable, Sendable {
     case session = "session"
     case thread = "thread"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    self.createdSession = try container.decode(Bool.self, forKey: .createdSession)
+    self.delivery = try container.decode([String: RaviJSON].self, forKey: .delivery)
+    self.mode = try container.decode(String.self, forKey: .mode)
+    self.promptLength = try container.decode(Int.self, forKey: .promptLength)
+    self.published = try container.decode(Bool.self, forKey: .published)
+    self.response = try container.decodeIfPresent(RaviJSON.self, forKey: .response)
+    self.session = try container.decode(RaviJSON.self, forKey: .session)
+    guard container.contains(.thread) else {
+      throw DecodingError.keyNotFound(CodingKeys.thread, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field thread."))
+    }
+    self.thread = try container.decodeIfPresent([String: RaviJSON].self, forKey: .thread)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    try container.encode(self.createdSession, forKey: .createdSession)
+    try container.encode(self.delivery, forKey: .delivery)
+    try container.encode(self.mode, forKey: .mode)
+    try container.encode(self.promptLength, forKey: .promptLength)
+    try container.encode(self.published, forKey: .published)
+    try container.encodeIfPresent(self.response, forKey: .response)
+    try container.encode(self.session, forKey: .session)
+    if let value = self.thread {
+      try container.encode(value, forKey: .thread)
+    } else {
+      try container.encodeNil(forKey: .thread)
+    }
+  }
 }
 
 public typealias SessionsSetDisplayReturn = [String: RaviJSON]
 
 public struct SessionsSetEffortReturn: Codable, Sendable {
   public var action: String
-  public var after: RaviJSON
+  public var after: RaviJSON?
   public var appliesOn: String
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveEffort: String
   public var effectiveEffortSource: String
-  public var effortOverride: RaviJSON
+  public var effortOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON?, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -21487,22 +24263,71 @@ public struct SessionsSetEffortReturn: Codable, Sendable {
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    guard container.contains(.after) else {
+      throw DecodingError.keyNotFound(CodingKeys.after, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field after."))
+    }
+    self.after = try container.decodeIfPresent(RaviJSON.self, forKey: .after)
+    self.appliesOn = try container.decode(String.self, forKey: .appliesOn)
+    self.before = try container.decode(RaviJSON.self, forKey: .before)
+    self.changed = try container.decode(Bool.self, forKey: .changed)
+    self.effectiveEffort = try container.decode(String.self, forKey: .effectiveEffort)
+    self.effectiveEffortSource = try container.decode(String.self, forKey: .effectiveEffortSource)
+    guard container.contains(.effortOverride) else {
+      throw DecodingError.keyNotFound(CodingKeys.effortOverride, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field effortOverride."))
+    }
+    self.effortOverride = try container.decodeIfPresent(String.self, forKey: .effortOverride)
+    self.sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    if let value = self.after {
+      try container.encode(value, forKey: .after)
+    } else {
+      try container.encodeNil(forKey: .after)
+    }
+    try container.encode(self.appliesOn, forKey: .appliesOn)
+    try container.encode(self.before, forKey: .before)
+    try container.encode(self.changed, forKey: .changed)
+    try container.encode(self.effectiveEffort, forKey: .effectiveEffort)
+    try container.encode(self.effectiveEffortSource, forKey: .effectiveEffortSource)
+    if let value = self.effortOverride {
+      try container.encode(value, forKey: .effortOverride)
+    } else {
+      try container.encodeNil(forKey: .effortOverride)
+    }
+    try container.encode(self.sessionKey, forKey: .sessionKey)
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
+  }
 }
 
 public typealias SessionsSetModelReturn = [String: RaviJSON]
 
 public struct SessionsSetProviderReturn: Codable, Sendable {
   public var action: String
-  public var after: RaviJSON
+  public var after: RaviJSON?
   public var appliesOn: String
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveProvider: String
-  public var runtimeProviderOverride: RaviJSON
+  public var runtimeProviderOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON?, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -21524,6 +24349,53 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
     case runtimeProviderOverride = "runtimeProviderOverride"
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(String.self, forKey: .action)
+    guard container.contains(.after) else {
+      throw DecodingError.keyNotFound(CodingKeys.after, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field after."))
+    }
+    self.after = try container.decodeIfPresent(RaviJSON.self, forKey: .after)
+    self.appliesOn = try container.decode(String.self, forKey: .appliesOn)
+    self.before = try container.decode(RaviJSON.self, forKey: .before)
+    self.changed = try container.decode(Bool.self, forKey: .changed)
+    self.effectiveProvider = try container.decode(String.self, forKey: .effectiveProvider)
+    guard container.contains(.runtimeProviderOverride) else {
+      throw DecodingError.keyNotFound(CodingKeys.runtimeProviderOverride, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field runtimeProviderOverride."))
+    }
+    self.runtimeProviderOverride = try container.decodeIfPresent(String.self, forKey: .runtimeProviderOverride)
+    self.sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    guard container.contains(.sessionName) else {
+      throw DecodingError.keyNotFound(CodingKeys.sessionName, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field sessionName."))
+    }
+    self.sessionName = try container.decodeIfPresent(String.self, forKey: .sessionName)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.action, forKey: .action)
+    if let value = self.after {
+      try container.encode(value, forKey: .after)
+    } else {
+      try container.encodeNil(forKey: .after)
+    }
+    try container.encode(self.appliesOn, forKey: .appliesOn)
+    try container.encode(self.before, forKey: .before)
+    try container.encode(self.changed, forKey: .changed)
+    try container.encode(self.effectiveProvider, forKey: .effectiveProvider)
+    if let value = self.runtimeProviderOverride {
+      try container.encode(value, forKey: .runtimeProviderOverride)
+    } else {
+      try container.encodeNil(forKey: .runtimeProviderOverride)
+    }
+    try container.encode(self.sessionKey, forKey: .sessionKey)
+    if let value = self.sessionName {
+      try container.encode(value, forKey: .sessionName)
+    } else {
+      try container.encodeNil(forKey: .sessionName)
+    }
   }
 }
 
@@ -25261,7 +28133,7 @@ public struct SyncPullOptions: Codable, Sendable {
 
 public struct SyncPullReturn: Codable, Sendable {
   public var applied: Double
-  public var cursor: RaviJSON
+  public var cursor: String?
   public var downloaded: Double
   public var enqueued: Double
   public var errorCode: String?
@@ -25270,7 +28142,7 @@ public struct SyncPullReturn: Codable, Sendable {
   public var skipped: Double
   public var status: String
 
-  public init(applied: Double, cursor: RaviJSON, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
+  public init(applied: Double, cursor: String?, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
     self.applied = applied
     self.cursor = cursor
     self.downloaded = downloaded
@@ -25292,6 +28164,39 @@ public struct SyncPullReturn: Codable, Sendable {
     case linked = "linked"
     case skipped = "skipped"
     case status = "status"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.applied = try container.decode(Double.self, forKey: .applied)
+    guard container.contains(.cursor) else {
+      throw DecodingError.keyNotFound(CodingKeys.cursor, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cursor."))
+    }
+    self.cursor = try container.decodeIfPresent(String.self, forKey: .cursor)
+    self.downloaded = try container.decode(Double.self, forKey: .downloaded)
+    self.enqueued = try container.decode(Double.self, forKey: .enqueued)
+    self.errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+    self.failed = try container.decode(Double.self, forKey: .failed)
+    self.linked = try container.decode(Bool.self, forKey: .linked)
+    self.skipped = try container.decode(Double.self, forKey: .skipped)
+    self.status = try container.decode(String.self, forKey: .status)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.applied, forKey: .applied)
+    if let value = self.cursor {
+      try container.encode(value, forKey: .cursor)
+    } else {
+      try container.encodeNil(forKey: .cursor)
+    }
+    try container.encode(self.downloaded, forKey: .downloaded)
+    try container.encode(self.enqueued, forKey: .enqueued)
+    try container.encodeIfPresent(self.errorCode, forKey: .errorCode)
+    try container.encode(self.failed, forKey: .failed)
+    try container.encode(self.linked, forKey: .linked)
+    try container.encode(self.skipped, forKey: .skipped)
+    try container.encode(self.status, forKey: .status)
   }
 }
 
@@ -25434,18 +28339,18 @@ public struct SyncRetryReturn: Codable, Sendable {
 }
 
 public struct SyncStatusReturn: Codable, Sendable {
-  public var consoleUrl: RaviJSON
+  public var consoleUrl: String?
   public var cursors: [RaviJSON]
   public var inbox: RaviJSON
-  public var installationId: RaviJSON
-  public var lastDownload: RaviJSON
-  public var lastError: RaviJSON
-  public var lastUpload: RaviJSON
+  public var installationId: String?
+  public var lastDownload: String?
+  public var lastError: String?
+  public var lastUpload: String?
   public var linked: Bool
   public var outbox: RaviJSON
   public var runner: RaviJSON
 
-  public init(consoleUrl: RaviJSON, cursors: [RaviJSON], inbox: RaviJSON, installationId: RaviJSON, lastDownload: RaviJSON, lastError: RaviJSON, lastUpload: RaviJSON, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
+  public init(consoleUrl: String?, cursors: [RaviJSON], inbox: RaviJSON, installationId: String?, lastDownload: String?, lastError: String?, lastUpload: String?, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
     self.consoleUrl = consoleUrl
     self.cursors = cursors
     self.inbox = inbox
@@ -25469,6 +28374,69 @@ public struct SyncStatusReturn: Codable, Sendable {
     case linked = "linked"
     case outbox = "outbox"
     case runner = "runner"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.consoleUrl) else {
+      throw DecodingError.keyNotFound(CodingKeys.consoleUrl, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field consoleUrl."))
+    }
+    self.consoleUrl = try container.decodeIfPresent(String.self, forKey: .consoleUrl)
+    self.cursors = try container.decode([RaviJSON].self, forKey: .cursors)
+    self.inbox = try container.decode(RaviJSON.self, forKey: .inbox)
+    guard container.contains(.installationId) else {
+      throw DecodingError.keyNotFound(CodingKeys.installationId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field installationId."))
+    }
+    self.installationId = try container.decodeIfPresent(String.self, forKey: .installationId)
+    guard container.contains(.lastDownload) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastDownload, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastDownload."))
+    }
+    self.lastDownload = try container.decodeIfPresent(String.self, forKey: .lastDownload)
+    guard container.contains(.lastError) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastError, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastError."))
+    }
+    self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+    guard container.contains(.lastUpload) else {
+      throw DecodingError.keyNotFound(CodingKeys.lastUpload, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field lastUpload."))
+    }
+    self.lastUpload = try container.decodeIfPresent(String.self, forKey: .lastUpload)
+    self.linked = try container.decode(Bool.self, forKey: .linked)
+    self.outbox = try container.decode(RaviJSON.self, forKey: .outbox)
+    self.runner = try container.decode(RaviJSON.self, forKey: .runner)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.consoleUrl {
+      try container.encode(value, forKey: .consoleUrl)
+    } else {
+      try container.encodeNil(forKey: .consoleUrl)
+    }
+    try container.encode(self.cursors, forKey: .cursors)
+    try container.encode(self.inbox, forKey: .inbox)
+    if let value = self.installationId {
+      try container.encode(value, forKey: .installationId)
+    } else {
+      try container.encodeNil(forKey: .installationId)
+    }
+    if let value = self.lastDownload {
+      try container.encode(value, forKey: .lastDownload)
+    } else {
+      try container.encodeNil(forKey: .lastDownload)
+    }
+    if let value = self.lastError {
+      try container.encode(value, forKey: .lastError)
+    } else {
+      try container.encodeNil(forKey: .lastError)
+    }
+    if let value = self.lastUpload {
+      try container.encode(value, forKey: .lastUpload)
+    } else {
+      try container.encodeNil(forKey: .lastUpload)
+    }
+    try container.encode(self.linked, forKey: .linked)
+    try container.encode(self.outbox, forKey: .outbox)
+    try container.encode(self.runner, forKey: .runner)
   }
 }
 
@@ -27060,14 +30028,14 @@ public struct TasksCreateReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var event: [String: RaviJSON]
-  public var launchPlan: RaviJSON
-  public var parentTaskId: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
+  public var parentTaskId: String?
   public var readiness: [String: RaviJSON]
   public var relatedEvents: [[String: RaviJSON]]
   public var task: [String: RaviJSON]
   public var taskProfile: [String: RaviJSON]
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: RaviJSON, parentTaskId: RaviJSON, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: [String: RaviJSON]?, parentTaskId: String?, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.event = event
@@ -27089,6 +30057,46 @@ public struct TasksCreateReturn: Codable, Sendable {
     case relatedEvents = "relatedEvents"
     case task = "task"
     case taskProfile = "taskProfile"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.dependencies = try container.decode([[String: RaviJSON]].self, forKey: .dependencies)
+    self.dependents = try container.decode([[String: RaviJSON]].self, forKey: .dependents)
+    self.event = try container.decode([String: RaviJSON].self, forKey: .event)
+    guard container.contains(.launchPlan) else {
+      throw DecodingError.keyNotFound(CodingKeys.launchPlan, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field launchPlan."))
+    }
+    self.launchPlan = try container.decodeIfPresent([String: RaviJSON].self, forKey: .launchPlan)
+    guard container.contains(.parentTaskId) else {
+      throw DecodingError.keyNotFound(CodingKeys.parentTaskId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field parentTaskId."))
+    }
+    self.parentTaskId = try container.decodeIfPresent(String.self, forKey: .parentTaskId)
+    self.readiness = try container.decode([String: RaviJSON].self, forKey: .readiness)
+    self.relatedEvents = try container.decode([[String: RaviJSON]].self, forKey: .relatedEvents)
+    self.task = try container.decode([String: RaviJSON].self, forKey: .task)
+    self.taskProfile = try container.decode([String: RaviJSON].self, forKey: .taskProfile)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.dependencies, forKey: .dependencies)
+    try container.encode(self.dependents, forKey: .dependents)
+    try container.encode(self.event, forKey: .event)
+    if let value = self.launchPlan {
+      try container.encode(value, forKey: .launchPlan)
+    } else {
+      try container.encodeNil(forKey: .launchPlan)
+    }
+    if let value = self.parentTaskId {
+      try container.encode(value, forKey: .parentTaskId)
+    } else {
+      try container.encodeNil(forKey: .parentTaskId)
+    }
+    try container.encode(self.readiness, forKey: .readiness)
+    try container.encode(self.relatedEvents, forKey: .relatedEvents)
+    try container.encode(self.task, forKey: .task)
+    try container.encode(self.taskProfile, forKey: .taskProfile)
   }
 }
 
@@ -27135,13 +30143,13 @@ public struct TasksDepsLsReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var items: [[String: RaviJSON]]
-  public var launchPlan: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
   public var pagination: RaviJSON
   public var readiness: [String: RaviJSON]
   public var taskId: String
   public var total: Double
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: RaviJSON, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: [String: RaviJSON]?, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.items = items
@@ -27161,6 +30169,37 @@ public struct TasksDepsLsReturn: Codable, Sendable {
     case readiness = "readiness"
     case taskId = "taskId"
     case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.dependencies = try container.decode([[String: RaviJSON]].self, forKey: .dependencies)
+    self.dependents = try container.decode([[String: RaviJSON]].self, forKey: .dependents)
+    self.items = try container.decode([[String: RaviJSON]].self, forKey: .items)
+    guard container.contains(.launchPlan) else {
+      throw DecodingError.keyNotFound(CodingKeys.launchPlan, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field launchPlan."))
+    }
+    self.launchPlan = try container.decodeIfPresent([String: RaviJSON].self, forKey: .launchPlan)
+    self.pagination = try container.decode(RaviJSON.self, forKey: .pagination)
+    self.readiness = try container.decode([String: RaviJSON].self, forKey: .readiness)
+    self.taskId = try container.decode(String.self, forKey: .taskId)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.dependencies, forKey: .dependencies)
+    try container.encode(self.dependents, forKey: .dependents)
+    try container.encode(self.items, forKey: .items)
+    if let value = self.launchPlan {
+      try container.encode(value, forKey: .launchPlan)
+    } else {
+      try container.encodeNil(forKey: .launchPlan)
+    }
+    try container.encode(self.pagination, forKey: .pagination)
+    try container.encode(self.readiness, forKey: .readiness)
+    try container.encode(self.taskId, forKey: .taskId)
+    try container.encode(self.total, forKey: .total)
   }
 }
 
@@ -27498,12 +30537,12 @@ public struct TasksListReturn: Codable, Sendable {
   public var archiveMode: String
   public var filters: [String: RaviJSON]
   public var items: [[String: RaviJSON]]
-  public var limit: RaviJSON
+  public var limit: Double?
   public var page: [String: RaviJSON]
   public var tasks: [[String: RaviJSON]]
   public var total: Double
 
-  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: RaviJSON, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
+  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: Double?, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
     self.archiveMode = archiveMode
     self.filters = filters
     self.items = items
@@ -27521,6 +30560,35 @@ public struct TasksListReturn: Codable, Sendable {
     case page = "page"
     case tasks = "tasks"
     case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.archiveMode = try container.decode(String.self, forKey: .archiveMode)
+    self.filters = try container.decode([String: RaviJSON].self, forKey: .filters)
+    self.items = try container.decode([[String: RaviJSON]].self, forKey: .items)
+    guard container.contains(.limit) else {
+      throw DecodingError.keyNotFound(CodingKeys.limit, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field limit."))
+    }
+    self.limit = try container.decodeIfPresent(Double.self, forKey: .limit)
+    self.page = try container.decode([String: RaviJSON].self, forKey: .page)
+    self.tasks = try container.decode([[String: RaviJSON]].self, forKey: .tasks)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.archiveMode, forKey: .archiveMode)
+    try container.encode(self.filters, forKey: .filters)
+    try container.encode(self.items, forKey: .items)
+    if let value = self.limit {
+      try container.encode(value, forKey: .limit)
+    } else {
+      try container.encodeNil(forKey: .limit)
+    }
+    try container.encode(self.page, forKey: .page)
+    try container.encode(self.tasks, forKey: .tasks)
+    try container.encode(self.total, forKey: .total)
   }
 }
 
@@ -27765,12 +30833,12 @@ public struct TasksShowReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var events: [[String: RaviJSON]]
-  public var historyLimit: RaviJSON
-  public var launchPlan: RaviJSON
+  public var historyLimit: Double?
+  public var launchPlan: [String: RaviJSON]?
   public var readiness: [String: RaviJSON]
   public var task: [String: RaviJSON]
 
-  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: RaviJSON, launchPlan: RaviJSON, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
+  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: Double?, launchPlan: [String: RaviJSON]?, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
     self.comments = comments
     self.dependencies = dependencies
     self.dependents = dependents
@@ -27790,6 +30858,44 @@ public struct TasksShowReturn: Codable, Sendable {
     case launchPlan = "launchPlan"
     case readiness = "readiness"
     case task = "task"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.comments = try container.decode([[String: RaviJSON]].self, forKey: .comments)
+    self.dependencies = try container.decode([[String: RaviJSON]].self, forKey: .dependencies)
+    self.dependents = try container.decode([[String: RaviJSON]].self, forKey: .dependents)
+    self.events = try container.decode([[String: RaviJSON]].self, forKey: .events)
+    guard container.contains(.historyLimit) else {
+      throw DecodingError.keyNotFound(CodingKeys.historyLimit, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field historyLimit."))
+    }
+    self.historyLimit = try container.decodeIfPresent(Double.self, forKey: .historyLimit)
+    guard container.contains(.launchPlan) else {
+      throw DecodingError.keyNotFound(CodingKeys.launchPlan, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field launchPlan."))
+    }
+    self.launchPlan = try container.decodeIfPresent([String: RaviJSON].self, forKey: .launchPlan)
+    self.readiness = try container.decode([String: RaviJSON].self, forKey: .readiness)
+    self.task = try container.decode([String: RaviJSON].self, forKey: .task)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.comments, forKey: .comments)
+    try container.encode(self.dependencies, forKey: .dependencies)
+    try container.encode(self.dependents, forKey: .dependents)
+    try container.encode(self.events, forKey: .events)
+    if let value = self.historyLimit {
+      try container.encode(value, forKey: .historyLimit)
+    } else {
+      try container.encodeNil(forKey: .historyLimit)
+    }
+    if let value = self.launchPlan {
+      try container.encode(value, forKey: .launchPlan)
+    } else {
+      try container.encodeNil(forKey: .launchPlan)
+    }
+    try container.encode(self.readiness, forKey: .readiness)
+    try container.encode(self.task, forKey: .task)
   }
 }
 
@@ -28403,15 +31509,15 @@ public struct ToolsShowReturn: Codable, Sendable {
 }
 
 public struct ToolsTestReturn: Codable, Sendable {
-  public var access: RaviJSON
+  public var access: RaviJSON?
   public var args: [String: RaviJSON]
   public var executed: Bool
   public var invokeCommand: String
   public var mode: String
-  public var schema: RaviJSON
+  public var schema: [String: RaviJSON]?
   public var tool: RaviJSON
 
-  public init(access: RaviJSON, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: RaviJSON, tool: RaviJSON) {
+  public init(access: RaviJSON?, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: [String: RaviJSON]?, tool: RaviJSON) {
     self.access = access
     self.args = args
     self.executed = executed
@@ -28429,6 +31535,42 @@ public struct ToolsTestReturn: Codable, Sendable {
     case mode = "mode"
     case schema = "schema"
     case tool = "tool"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.access) else {
+      throw DecodingError.keyNotFound(CodingKeys.access, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field access."))
+    }
+    self.access = try container.decodeIfPresent(RaviJSON.self, forKey: .access)
+    self.args = try container.decode([String: RaviJSON].self, forKey: .args)
+    self.executed = try container.decode(Bool.self, forKey: .executed)
+    self.invokeCommand = try container.decode(String.self, forKey: .invokeCommand)
+    self.mode = try container.decode(String.self, forKey: .mode)
+    guard container.contains(.schema) else {
+      throw DecodingError.keyNotFound(CodingKeys.schema, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field schema."))
+    }
+    self.schema = try container.decodeIfPresent([String: RaviJSON].self, forKey: .schema)
+    self.tool = try container.decode(RaviJSON.self, forKey: .tool)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let value = self.access {
+      try container.encode(value, forKey: .access)
+    } else {
+      try container.encodeNil(forKey: .access)
+    }
+    try container.encode(self.args, forKey: .args)
+    try container.encode(self.executed, forKey: .executed)
+    try container.encode(self.invokeCommand, forKey: .invokeCommand)
+    try container.encode(self.mode, forKey: .mode)
+    if let value = self.schema {
+      try container.encode(value, forKey: .schema)
+    } else {
+      try container.encodeNil(forKey: .schema)
+    }
+    try container.encode(self.tool, forKey: .tool)
   }
 }
 
@@ -28565,9 +31707,9 @@ public struct TriggersAddReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28579,6 +31721,29 @@ public struct TriggersAddReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -28586,9 +31751,9 @@ public struct TriggersDisableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28600,6 +31765,29 @@ public struct TriggersDisableReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -28607,9 +31795,9 @@ public struct TriggersEnableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28621,6 +31809,29 @@ public struct TriggersEnableReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -28703,9 +31914,9 @@ public struct TriggersRmReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28717,6 +31928,29 @@ public struct TriggersRmReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -28724,9 +31958,9 @@ public struct TriggersSetReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28738,6 +31972,29 @@ public struct TriggersSetReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -28775,9 +32032,9 @@ public struct TriggersTestReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28789,6 +32046,29 @@ public struct TriggersTestReturn: Codable, Sendable {
     case status = "status"
     case target = "target"
     case trigger = "trigger"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.changedCount = try container.decode(Double.self, forKey: .changedCount)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.target = try container.decode(RaviJSON.self, forKey: .target)
+    guard container.contains(.trigger) else {
+      throw DecodingError.keyNotFound(CodingKeys.trigger, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field trigger."))
+    }
+    self.trigger = try container.decodeIfPresent([String: RaviJSON].self, forKey: .trigger)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.changedCount, forKey: .changedCount)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.target, forKey: .target)
+    if let value = self.trigger {
+      try container.encode(value, forKey: .trigger)
+    } else {
+      try container.encodeNil(forKey: .trigger)
+    }
   }
 }
 
@@ -30085,9 +33365,9 @@ public struct WorkflowsRunsTaskCreateOptions: Codable, Sendable {
 
 public struct WorkflowsRunsTaskCreateReturn: Codable, Sendable {
   public var task: [String: RaviJSON]
-  public var workflow: RaviJSON
+  public var workflow: [String: RaviJSON]?
 
-  public init(task: [String: RaviJSON], workflow: RaviJSON) {
+  public init(task: [String: RaviJSON], workflow: [String: RaviJSON]?) {
     self.task = task
     self.workflow = workflow
   }
@@ -30095,6 +33375,25 @@ public struct WorkflowsRunsTaskCreateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case task = "task"
     case workflow = "workflow"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.task = try container.decode([String: RaviJSON].self, forKey: .task)
+    guard container.contains(.workflow) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflow, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflow."))
+    }
+    self.workflow = try container.decodeIfPresent([String: RaviJSON].self, forKey: .workflow)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.task, forKey: .task)
+    if let value = self.workflow {
+      try container.encode(value, forKey: .workflow)
+    } else {
+      try container.encodeNil(forKey: .workflow)
+    }
   }
 }
 

@@ -22,14 +22,14 @@ interface CliResult {
   stderr: string;
 }
 
-function runCli(args: string[]): CliResult {
+function runCli(args: string[], targetStateDir = stateDir): CliResult {
   const env = withoutRaviRuntimeContextEnv();
   delete env.RAVI_NO_AUDIT;
   delete env.RAVI_SUPPRESS_AUDIT_EVENTS;
   const result = spawnSync("bun", ["src/cli/index.ts", ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
-    env: { ...env, RAVI_HOME: stateDir, RAVI_STATE_DIR: stateDir },
+    env: { ...env, RAVI_HOME: targetStateDir, RAVI_STATE_DIR: targetStateDir },
   });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
@@ -107,6 +107,53 @@ afterAll(() => {
 });
 
 describe("projects read process contract", () => {
+  it("leaves the database and active WAL byte-identical while a writer remains open", () => {
+    const walStateDir = mkdtempSync(join(tmpdir(), "ravi-projects-active-wal-"));
+    const databasePath = join(walStateDir, "ravi.db");
+    const walPath = `${databasePath}-wal`;
+    const database = new Database(databasePath);
+    try {
+      database.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA wal_autocheckpoint = 0;
+        CREATE TABLE projects (
+          id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          status TEXT NOT NULL, summary TEXT NOT NULL, hypothesis TEXT NOT NULL,
+          next_step TEXT NOT NULL, last_signal_at INTEGER NOT NULL,
+          owner_agent_id TEXT, operator_session_name TEXT, created_by TEXT,
+          created_by_agent_id TEXT, created_by_session_name TEXT, archived_at INTEGER,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE project_links (
+          id TEXT PRIMARY KEY, project_id TEXT NOT NULL, asset_type TEXT NOT NULL,
+          asset_id TEXT NOT NULL, role TEXT, metadata_json TEXT, created_by TEXT,
+          created_by_agent_id TEXT, created_by_session_name TEXT,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        INSERT INTO projects (
+          id, slug, title, status, summary, hypothesis, next_step, last_signal_at, created_at, updated_at
+        ) VALUES ('wal-project', 'wal-project', 'WAL Project', 'active', 'S', 'H', 'N', 1, 1, 1);
+      `);
+
+      const walBytesBefore = readFileSync(walPath);
+      expect(walBytesBefore.byteLength).toBeGreaterThan(0);
+      const databaseBytesBefore = readFileSync(databasePath);
+
+      const result = runCli(["projects", "list", "--fields", "slug", "--limit", "1", "--json"], walStateDir);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({ items: [{ slug: "wal-project" }] });
+      expect(readFileSync(databasePath)).toEqual(databaseBytesBefore);
+      expect(readFileSync(walPath)).toEqual(walBytesBefore);
+      expect(database.query("SELECT slug FROM projects WHERE id = 'wal-project'").get()).toEqual({
+        slug: "wal-project",
+      });
+    } finally {
+      database.close();
+      rmSync(walStateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+    }
+  });
+
   it("keeps audit transport disabled and bounds the next-work payload", () => {
     const result = expectReadOnly(["projects", "next", "--json"]);
     expect(result.stderr).toBe("");
