@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cwctype>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -170,6 +171,65 @@ std::optional<Handle> nt_open_relative(
     fail_win32("SAFE_OPEN_FAILED", name, "Cannot open specs entry relative to its pinned parent");
   }
   return Handle(reinterpret_cast<RawHandle>(result));
+}
+
+std::vector<std::wstring> absolute_windows_segments(const std::wstring& path, std::wstring& root) {
+  if (path.size() >= 3 && std::iswalpha(path[0]) && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) {
+    root = path.substr(0, 3);
+  } else if (path.rfind(L"\\\\", 0) == 0) {
+    const std::size_t server_end = path.find_first_of(L"\\/", 2);
+    const std::size_t share_end = server_end == std::wstring::npos ? std::wstring::npos : path.find_first_of(L"\\/", server_end + 1);
+    if (server_end == std::wstring::npos || share_end == std::wstring::npos) {
+      throw SafeFsError("INVALID_DATABASE_PATH", "", "UNC database path must include a server and share");
+    }
+    root = path.substr(0, share_end + 1);
+  } else {
+    throw SafeFsError("INVALID_DATABASE_PATH", "", "Database path must be absolute");
+  }
+
+  std::vector<std::wstring> segments;
+  std::size_t start = root.size();
+  while (start <= path.size()) {
+    const std::size_t end = path.find_first_of(L"\\/", start);
+    const std::wstring segment = path.substr(start, end == std::wstring::npos ? end : end - start);
+    if (!segment.empty()) {
+      if (segment == L"." || segment == L"..") {
+        throw SafeFsError("INVALID_DATABASE_PATH", "", "Database path contains an unsafe segment");
+      }
+      segments.push_back(segment);
+    }
+    if (end == std::wstring::npos) break;
+    start = end + 1;
+  }
+  if (segments.empty()) throw SafeFsError("INVALID_DATABASE_PATH", "", "Database path has no file name");
+  return segments;
+}
+
+std::string database_binding(const Handle& parent, const std::string& name, const std::optional<Handle>& file) {
+  return "parent:" + entry_info(parent).identity + ";name:" + name + ";file:" +
+         (file ? entry_info(*file).identity : "missing");
+}
+
+void rename_pinned_directory(const Handle& directory, const Handle& parent, const std::string& target_name) {
+  const std::wstring wide_name = widen(target_name);
+  const std::size_t bytes = offsetof(NativeFileRenameInformation, file_name) + wide_name.size() * sizeof(wchar_t);
+  std::vector<unsigned char> storage(bytes, 0);
+  auto* rename = reinterpret_cast<NativeFileRenameInformation*>(storage.data());
+  rename->replace_if_exists = FALSE;
+  rename->root_directory = reinterpret_cast<HANDLE>(parent.get());
+  rename->file_name_length = static_cast<ULONG>(wide_name.size() * sizeof(wchar_t));
+  std::copy(wide_name.begin(), wide_name.end(), rename->file_name);
+  IO_STATUS_BLOCK status_block {};
+  const NTSTATUS status = nt_set_information_file()(
+      reinterpret_cast<HANDLE>(directory.get()),
+      &status_block,
+      rename,
+      static_cast<ULONG>(storage.size()),
+      FileRenameInformation);
+  if (status < 0) {
+    SetLastError(RtlNtStatusToDosError(status));
+    fail_win32("SAFE_PROMOTION_FAILED", target_name, "Cannot rename pinned directory without replacement");
+  }
 }
 
 }  // namespace
@@ -359,47 +419,186 @@ void flush_handle(const Handle& handle) {
 void promote_directory_no_replace(
     const Handle& parent,
     const std::string&,
-  const Handle& staging,
-  const std::string& target_name) {
-  const std::wstring wide_name = widen(target_name);
-  const std::size_t bytes = offsetof(NativeFileRenameInformation, file_name) + wide_name.size() * sizeof(wchar_t);
-  std::vector<unsigned char> storage(bytes, 0);
-  auto* rename = reinterpret_cast<NativeFileRenameInformation*>(storage.data());
-  rename->replace_if_exists = FALSE;
-  rename->root_directory = reinterpret_cast<HANDLE>(parent.get());
-  rename->file_name_length = static_cast<ULONG>(wide_name.size() * sizeof(wchar_t));
-  std::copy(wide_name.begin(), wide_name.end(), rename->file_name);
-  IO_STATUS_BLOCK status_block {};
-  const NTSTATUS status = nt_set_information_file()(
-      reinterpret_cast<HANDLE>(staging.get()),
-      &status_block,
-      rename,
-      static_cast<ULONG>(storage.size()),
-      FileRenameInformation);
-  if (status < 0) {
-    SetLastError(RtlNtStatusToDosError(status));
-    fail_win32("SAFE_PROMOTION_FAILED", target_name, "Cannot promote specs directory without replacement");
-  }
+    const Handle& staging,
+    const std::string& target_name,
+    const std::string& recovery_name,
+    const std::function<void()>& immediately_before_rename) {
+  if (immediately_before_rename) immediately_before_rename();
+  rename_pinned_directory(staging, parent, target_name);
   if (!pinned_entry_still_named(parent, target_name, staging)) {
-    throw SafeFsError("SAFE_PROMOTION_FAILED", target_name, "Promoted target identity does not match pinned staging");
+    try {
+      rename_pinned_directory(staging, parent, recovery_name);
+    } catch (const SafeFsError&) {
+      throw SafeFsError("PROMOTION_ROLLBACK_FAILED", target_name, "Cannot roll back divergent pinned promotion");
+    }
+    if (pinned_entry_still_named(parent, target_name, staging) ||
+        !pinned_entry_still_named(parent, recovery_name, staging)) {
+      throw SafeFsError("PROMOTION_ROLLBACK_FAILED", target_name, "Promotion rollback identity could not be verified");
+    }
+    throw SafeFsError("PROMOTION_IDENTITY_CHANGED", target_name, "Promoted target identity does not match pinned staging");
   }
 }
 
-void remove_private_tree(const Handle& parent, const std::string& name, const Handle& expected_directory) noexcept {
-  try {
-    if (!pinned_entry_still_named(parent, name, expected_directory)) return;
-    for (const std::string& child_name : list_directory(expected_directory)) {
-      auto child = open_writable_file_at(expected_directory, child_name);
-      if (!child || child->info.directory) continue;
-      FILE_DISPOSITION_INFO disposition {TRUE};
-      SetFileInformationByHandle(
-          reinterpret_cast<HANDLE>(child->handle.get()), FileDispositionInfo, &disposition, sizeof(disposition));
+bool remove_private_tree(const Handle& parent, const std::string& name, const Handle& expected_directory) {
+  if (!pinned_entry_still_named(parent, name, expected_directory)) return false;
+  for (const std::string& child_name : list_directory(expected_directory)) {
+    auto child = open_writable_file_at(expected_directory, child_name);
+    if (!child || child->info.directory) {
+      throw SafeFsError("STAGING_CLEANUP_FAILED", child_name, "Private staging contains an unsafe cleanup entry");
     }
     FILE_DISPOSITION_INFO disposition {TRUE};
-    SetFileInformationByHandle(
-        reinterpret_cast<HANDLE>(expected_directory.get()), FileDispositionInfo, &disposition, sizeof(disposition));
-  } catch (...) {
+    if (!SetFileInformationByHandle(
+            reinterpret_cast<HANDLE>(child->handle.get()), FileDispositionInfo, &disposition, sizeof(disposition))) {
+      fail_win32("STAGING_CLEANUP_FAILED", child_name, "Cannot remove pinned private staging entry");
+    }
   }
+  FILE_DISPOSITION_INFO disposition {TRUE};
+  if (!SetFileInformationByHandle(
+          reinterpret_cast<HANDLE>(expected_directory.get()), FileDispositionInfo, &disposition, sizeof(disposition))) {
+    fail_win32("STAGING_CLEANUP_FAILED", name, "Cannot remove pinned private staging directory");
+  }
+  return true;
+}
+
+bool remove_empty_directory_at(const Handle& parent, const std::string& name, const Handle& expected_directory) {
+  if (!pinned_entry_still_named(parent, name, expected_directory)) return false;
+  if (!list_directory(expected_directory).empty()) return false;
+  FILE_DISPOSITION_INFO disposition {TRUE};
+  if (!SetFileInformationByHandle(
+          reinterpret_cast<HANDLE>(expected_directory.get()), FileDispositionInfo, &disposition, sizeof(disposition))) {
+    fail_win32("ROLLBACK_FAILED", name, "Cannot remove newly created empty directory");
+  }
+  return true;
+}
+
+DatabaseState open_database_state_impl(const std::string& absolute_path, bool share_delete_for_file) {
+  const std::wstring wide_path = widen(absolute_path);
+  std::wstring root;
+  const std::vector<std::wstring> segments = absolute_windows_segments(wide_path, root);
+  HANDLE root_handle = CreateFileW(
+      root.c_str(),
+      FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE,
+      nullptr,
+      OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr);
+  if (root_handle == INVALID_HANDLE_VALUE) fail_win32("SAFE_DB_OPEN_FAILED", absolute_path, "Cannot pin database root");
+  DatabaseState state;
+  state.absolute_path = absolute_path;
+  state.file_name = narrow(segments.back().data(), segments.back().size());
+  state.path_handles.emplace_back(reinterpret_cast<RawHandle>(root_handle));
+  (void)entry_info(state.path_handles.back());
+  for (std::size_t index = 0; index + 1 < segments.size(); ++index) {
+    const std::string segment = narrow(segments[index].data(), segments[index].size());
+    auto next = nt_open_relative(
+        state.path_handles.back(),
+        segment,
+        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        kFileOpen,
+        kFileDirectoryFile,
+        FILE_ATTRIBUTE_DIRECTORY);
+    if (!next) {
+      std::string missing;
+      for (std::size_t remaining = index; remaining + 1 < segments.size(); ++remaining) {
+        if (!missing.empty()) missing += "/";
+        missing += narrow(segments[remaining].data(), segments[remaining].size());
+      }
+      state.binding = "anchor:" + entry_info(state.path_handles.back()).identity + ";missing-parent:" + missing +
+                      ";name:" + state.file_name;
+      return state;
+    }
+    const EntryInfo info = entry_info(*next);
+    if (!info.directory) throw SafeFsError("UNSAFE_DB_PATH", segment, "Database parent is not a directory");
+    state.path_handles.emplace_back(std::move(*next));
+  }
+  state.parent_exists = true;
+  std::optional<Handle> shared_file;
+  if (share_delete_for_file) {
+    shared_file = nt_open_relative(
+        state.path_handles.back(),
+        state.file_name,
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        kFileOpen,
+        kFileNonDirectoryFile,
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+  }
+  auto file = share_delete_for_file ? std::optional<OpenedEntry>() : open_entry_at(state.path_handles.back(), state.file_name);
+  if (shared_file) {
+    const EntryInfo info = entry_info(*shared_file);
+    if (!info.regular_file) throw SafeFsError("UNSAFE_DB_PATH", state.file_name, "Database is not a regular file");
+    state.file_existed = true;
+    state.file.emplace(std::move(*shared_file));
+  } else if (file) {
+    if (!file->info.regular_file) throw SafeFsError("UNSAFE_DB_PATH", state.file_name, "Database is not a regular file");
+    state.file_existed = true;
+    state.file.emplace(std::move(file->handle));
+  }
+  state.binding = database_binding(state.path_handles.back(), state.file_name, state.file);
+  state.safe_path = absolute_path;
+  return state;
+}
+
+DatabaseState open_database_state(const std::string& absolute_path) {
+  return open_database_state_impl(absolute_path, false);
+}
+
+void pin_database_file_for_write(DatabaseState& state, bool create_if_missing) {
+  if (!state.parent_exists) {
+    throw SafeFsError("DB_PARENT_NOT_FOUND", state.absolute_path, "Database parent directory does not exist");
+  }
+  const std::optional<std::string> expected = state.file ? std::optional(entry_info(*state.file).identity) : std::nullopt;
+  auto writable_handle = nt_open_relative(
+      state.path_handles.back(),
+      state.file_name,
+      FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      kFileOpen,
+      kFileNonDirectoryFile,
+      FILE_ATTRIBUTE_NORMAL);
+  std::optional<OpenedEntry> writable;
+  if (writable_handle) {
+    EntryInfo info = entry_info(*writable_handle);
+    writable.emplace(OpenedEntry{std::move(*writable_handle), std::move(info)});
+  }
+  if (!writable) {
+    if (!create_if_missing) throw SafeFsError("DB_NOT_FOUND", state.absolute_path, "Database file does not exist");
+    auto created_handle = nt_open_relative(
+        state.path_handles.back(),
+        state.file_name,
+        FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        kFileCreate,
+        kFileNonDirectoryFile,
+        FILE_ATTRIBUTE_NORMAL);
+    if (!created_handle) throw SafeFsError("SAFE_CREATE_FAILED", state.file_name, "Cannot create pinned database file");
+    Handle created = std::move(*created_handle);
+    if (!entry_info(created).regular_file) {
+      throw SafeFsError("UNSAFE_DB_PATH", state.file_name, "Created database target is not a regular file");
+    }
+    state.file_created = true;
+    state.file.emplace(std::move(created));
+  } else {
+    if (expected && writable->info.identity != *expected) {
+      throw SafeFsError("DB_BINDING_CHANGED", state.absolute_path, "Database identity changed before write pinning");
+    }
+    state.file.emplace(std::move(writable->handle));
+  }
+}
+
+bool database_path_matches_state(const DatabaseState& state) {
+  DatabaseState current = open_database_state_impl(state.absolute_path, true);
+  if (current.binding == state.binding) return true;
+  if (!state.parent_exists || !current.parent_exists || !state.file) return false;
+  return entry_info(current.path_handles.back()).identity == entry_info(state.path_handles.back()).identity &&
+         current.file && entry_info(*current.file).identity == entry_info(*state.file).identity;
+}
+
+DatabaseAccessWitness capture_database_access_witness() { return {}; }
+
+bool database_connection_matches_state(const DatabaseState& state, const DatabaseAccessWitness&) {
+  // The pinned database handle denies FILE_SHARE_DELETE. A path replacement
+  // cannot occur while SQLite opens, so matching the pinned path is sufficient.
+  return database_path_matches_state(state);
 }
 
 }  // namespace ravi::specs_safe_fs

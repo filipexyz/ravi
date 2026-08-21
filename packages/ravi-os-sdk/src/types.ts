@@ -13774,7 +13774,10 @@ export type SpecsFacadeNewApplyReturn = {
       }>;
       binding: {
         cwd: string;
+        dbBinding: string;
+        dbParentExists: boolean;
         dbPath: string;
+        rootBinding: string;
         specsRoot: string;
         workspaceIdentity: string;
       };
@@ -13820,7 +13823,10 @@ export type SpecsFacadeNewPlanInput = {
 export type SpecsFacadeNewPlanReturn = {
   binding: {
     cwd: string;
+    dbBinding: string;
+    dbParentExists: boolean;
     dbPath: string;
+    rootBinding: string;
     specsRoot: string;
     workspaceIdentity: string;
   };
@@ -13891,7 +13897,10 @@ export type SpecsFacadeNewReadbackReturn = {
   }>;
   binding: {
     cwd: string;
+    dbBinding: string;
+    dbParentExists: boolean;
     dbPath: string;
+    rootBinding: string;
     specsRoot: string;
     workspaceIdentity: string;
   };
@@ -13946,7 +13955,10 @@ export type SpecsFacadeNewRecoverReturn = {
     }>;
     binding: {
       cwd: string;
+      dbBinding: string;
+      dbParentExists: boolean;
       dbPath: string;
+      rootBinding: string;
       specsRoot: string;
       workspaceIdentity: string;
     };
@@ -14002,7 +14014,10 @@ export type SpecsFacadeNewVerifyReturn = {
     }>;
     binding: {
       cwd: string;
+      dbBinding: string;
+      dbParentExists: boolean;
       dbPath: string;
+      rootBinding: string;
       specsRoot: string;
       workspaceIdentity: string;
     };
@@ -14057,7 +14072,10 @@ export type SpecsFacadeSyncApplyReturn = {
       }>;
       binding: {
         cwd: string;
+        dbBinding: string;
+        dbParentExists: boolean;
         dbPath: string;
+        rootBinding: string;
         specsRoot: string;
         workspaceIdentity: string;
       };
@@ -14098,7 +14116,10 @@ export type SpecsFacadeSyncPlanInput = Record<string, never>;
 export type SpecsFacadeSyncPlanReturn = {
   binding: {
     cwd: string;
+    dbBinding: string;
+    dbParentExists: boolean;
     dbPath: string;
+    rootBinding: string;
     specsRoot: string;
     workspaceIdentity: string;
   };
@@ -14162,7 +14183,10 @@ export type SpecsFacadeSyncReadbackReturn = {
   }>;
   binding: {
     cwd: string;
+    dbBinding: string;
+    dbParentExists: boolean;
     dbPath: string;
+    rootBinding: string;
     specsRoot: string;
     workspaceIdentity: string;
   };
@@ -14213,7 +14237,10 @@ export type SpecsFacadeSyncRecoverReturn = {
     }>;
     binding: {
       cwd: string;
+      dbBinding: string;
+      dbParentExists: boolean;
       dbPath: string;
+      rootBinding: string;
       specsRoot: string;
       workspaceIdentity: string;
     };
@@ -14265,7 +14292,10 @@ export type SpecsFacadeSyncVerifyReturn = {
     }>;
     binding: {
       cwd: string;
+      dbBinding: string;
+      dbParentExists: boolean;
       dbPath: string;
+      rootBinding: string;
       specsRoot: string;
       workspaceIdentity: string;
     };

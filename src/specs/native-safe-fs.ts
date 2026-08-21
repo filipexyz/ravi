@@ -30,7 +30,9 @@ export interface NativeSpecCreationRequest {
   existingDirectory: "error" | "populate";
   stagingName: string;
   stagingPath: string;
+  originalRecoveryPath: string;
   beforePromote?: (stagingPath: string) => boolean;
+  beforeNativePromote?: (stagingPath: string, originalRecoveryPath: string) => boolean;
 }
 
 export interface NativeSpecCreationResult {
@@ -40,9 +42,27 @@ export interface NativeSpecCreationResult {
 }
 
 interface NativeSpecsAddon {
-  implementation: "node-api-handles-v1";
+  implementation: "node-api-handles-v2";
   snapshot(workspacePath: string, onEntry?: (relativePath: string) => void): NativeSpecsSnapshot;
   createSpec(request: NativeSpecCreationRequest): NativeSpecCreationResult;
+  snapshotDatabase(databasePath: string): NativeDatabaseSnapshot;
+  withDatabase<T>(request: NativeDatabaseAccessRequest<T>): T;
+}
+
+export interface NativeDatabaseSnapshot {
+  binding: string;
+  parentExists: boolean;
+  fileExists: boolean;
+}
+
+interface NativeDatabaseAccessRequest<T> {
+  databasePath: string;
+  expectedBinding: string;
+  write: boolean;
+  create: boolean;
+  beforeOpen?: () => void;
+  beforeCallback?: (safePath: string) => void;
+  callback: (safePath: string, confirmOpen: () => void) => T;
 }
 
 export class NativeSpecsSafetyError extends Error {
@@ -89,9 +109,11 @@ function nativeAddon(): NativeSpecsAddon {
   try {
     const candidate = require(path) as Partial<NativeSpecsAddon>;
     if (
-      candidate.implementation !== "node-api-handles-v1" ||
+      candidate.implementation !== "node-api-handles-v2" ||
       typeof candidate.snapshot !== "function" ||
-      typeof candidate.createSpec !== "function"
+      typeof candidate.createSpec !== "function" ||
+      typeof candidate.snapshotDatabase !== "function" ||
+      typeof candidate.withDatabase !== "function"
     ) {
       throw new Error("Native module contract mismatch.");
     }
@@ -130,6 +152,35 @@ export function captureNativeSpecsTree(
 
 export function createNativeSpec(request: NativeSpecCreationRequest): NativeSpecCreationResult {
   return callNative(() => nativeAddon().createSpec(request));
+}
+
+export function captureNativeDatabaseBinding(databasePath: string): NativeDatabaseSnapshot {
+  return callNative(() => nativeAddon().snapshotDatabase(databasePath));
+}
+
+export function withNativeDatabaseBinding<T>(
+  request: Omit<NativeDatabaseAccessRequest<T>, "callback">,
+  callback: (safePath: string, confirmOpen: () => void) => T,
+): T {
+  let callbackError: unknown;
+  try {
+    return callNative(() =>
+      nativeAddon().withDatabase({
+        ...request,
+        callback: (safePath, confirmOpen) => {
+          try {
+            return callback(safePath, confirmOpen);
+          } catch (error) {
+            callbackError = error;
+            throw error;
+          }
+        },
+      }),
+    );
+  } catch (error) {
+    if (callbackError !== undefined) throw callbackError;
+    throw error;
+  }
 }
 
 export function nativeSpecsImplementation(): string {

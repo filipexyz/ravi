@@ -23558,20 +23558,29 @@ public struct SpecsFacadeNewApplyReturnVerificationReadbackAncestorsItem: Codabl
 
 public struct SpecsFacadeNewApplyReturnVerificationReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -23750,20 +23759,29 @@ public struct SpecsFacadeNewPlanOptions: Codable, Sendable {
 
 public struct SpecsFacadeNewPlanReturnBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24008,20 +24026,29 @@ public struct SpecsFacadeNewReadbackReturnAncestorsItem: Codable, Sendable {
 
 public struct SpecsFacadeNewReadbackReturnBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24176,20 +24203,29 @@ public struct SpecsFacadeNewRecoverReturnReadbackAncestorsItem: Codable, Sendabl
 
 public struct SpecsFacadeNewRecoverReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24371,20 +24407,29 @@ public struct SpecsFacadeNewVerifyReturnReadbackAncestorsItem: Codable, Sendable
 
 public struct SpecsFacadeNewVerifyReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24542,20 +24587,29 @@ public struct SpecsFacadeSyncApplyReturnVerificationReadbackAncestorsItem: Codab
 
 public struct SpecsFacadeSyncApplyReturnVerificationReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24716,20 +24770,29 @@ public struct SpecsFacadeSyncApplyReturn: Codable, Sendable {
 
 public struct SpecsFacadeSyncPlanReturnBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -24947,20 +25010,29 @@ public struct SpecsFacadeSyncReadbackReturnAncestorsItem: Codable, Sendable {
 
 public struct SpecsFacadeSyncReadbackReturnBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -25097,20 +25169,29 @@ public struct SpecsFacadeSyncRecoverReturnReadbackAncestorsItem: Codable, Sendab
 
 public struct SpecsFacadeSyncRecoverReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }
@@ -25274,20 +25355,29 @@ public struct SpecsFacadeSyncVerifyReturnReadbackAncestorsItem: Codable, Sendabl
 
 public struct SpecsFacadeSyncVerifyReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
+  public var dbBinding: String
+  public var dbParentExists: Bool
   public var dbPath: String
+  public var rootBinding: String
   public var specsRoot: String
   public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
+  public init(cwd: String, dbBinding: String, dbParentExists: Bool, dbPath: String, rootBinding: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
+    self.dbBinding = dbBinding
+    self.dbParentExists = dbParentExists
     self.dbPath = dbPath
+    self.rootBinding = rootBinding
     self.specsRoot = specsRoot
     self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case dbBinding = "dbBinding"
+    case dbParentExists = "dbParentExists"
     case dbPath = "dbPath"
+    case rootBinding = "rootBinding"
     case specsRoot = "specsRoot"
     case workspaceIdentity = "workspaceIdentity"
   }

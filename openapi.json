@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "2389eff0609a0f09"
+    "version": "6d9b976cc2cc4dd9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -84940,7 +84940,16 @@
                                 "cwd": {
                                   "type": "string"
                                 },
+                                "dbBinding": {
+                                  "type": "string"
+                                },
+                                "dbParentExists": {
+                                  "type": "boolean"
+                                },
                                 "dbPath": {
+                                  "type": "string"
+                                },
+                                "rootBinding": {
                                   "type": "string"
                                 },
                                 "specsRoot": {
@@ -84954,7 +84963,10 @@
                                 "cwd",
                                 "specsRoot",
                                 "dbPath",
-                                "workspaceIdentity"
+                                "workspaceIdentity",
+                                "rootBinding",
+                                "dbBinding",
+                                "dbParentExists"
                               ],
                               "type": "object"
                             },
@@ -85179,7 +85191,16 @@
                         "cwd": {
                           "type": "string"
                         },
+                        "dbBinding": {
+                          "type": "string"
+                        },
+                        "dbParentExists": {
+                          "type": "boolean"
+                        },
                         "dbPath": {
+                          "type": "string"
+                        },
+                        "rootBinding": {
                           "type": "string"
                         },
                         "specsRoot": {
@@ -85193,7 +85214,10 @@
                         "cwd",
                         "specsRoot",
                         "dbPath",
-                        "workspaceIdentity"
+                        "workspaceIdentity",
+                        "rootBinding",
+                        "dbBinding",
+                        "dbParentExists"
                       ],
                       "type": "object"
                     },
@@ -85535,7 +85559,16 @@
                         "cwd": {
                           "type": "string"
                         },
+                        "dbBinding": {
+                          "type": "string"
+                        },
+                        "dbParentExists": {
+                          "type": "boolean"
+                        },
                         "dbPath": {
+                          "type": "string"
+                        },
+                        "rootBinding": {
                           "type": "string"
                         },
                         "specsRoot": {
@@ -85549,7 +85582,10 @@
                         "cwd",
                         "specsRoot",
                         "dbPath",
-                        "workspaceIdentity"
+                        "workspaceIdentity",
+                        "rootBinding",
+                        "dbBinding",
+                        "dbParentExists"
                       ],
                       "type": "object"
                     },
@@ -85808,7 +85844,16 @@
                             "cwd": {
                               "type": "string"
                             },
+                            "dbBinding": {
+                              "type": "string"
+                            },
+                            "dbParentExists": {
+                              "type": "boolean"
+                            },
                             "dbPath": {
+                              "type": "string"
+                            },
+                            "rootBinding": {
                               "type": "string"
                             },
                             "specsRoot": {
@@ -85822,7 +85867,10 @@
                             "cwd",
                             "specsRoot",
                             "dbPath",
-                            "workspaceIdentity"
+                            "workspaceIdentity",
+                            "rootBinding",
+                            "dbBinding",
+                            "dbParentExists"
                           ],
                           "type": "object"
                         },
@@ -86089,7 +86137,16 @@
                             "cwd": {
                               "type": "string"
                             },
+                            "dbBinding": {
+                              "type": "string"
+                            },
+                            "dbParentExists": {
+                              "type": "boolean"
+                            },
                             "dbPath": {
+                              "type": "string"
+                            },
+                            "rootBinding": {
                               "type": "string"
                             },
                             "specsRoot": {
@@ -86103,7 +86160,10 @@
                             "cwd",
                             "specsRoot",
                             "dbPath",
-                            "workspaceIdentity"
+                            "workspaceIdentity",
+                            "rootBinding",
+                            "dbBinding",
+                            "dbParentExists"
                           ],
                           "type": "object"
                         },
@@ -86363,7 +86423,16 @@
                                 "cwd": {
                                   "type": "string"
                                 },
+                                "dbBinding": {
+                                  "type": "string"
+                                },
+                                "dbParentExists": {
+                                  "type": "boolean"
+                                },
                                 "dbPath": {
+                                  "type": "string"
+                                },
+                                "rootBinding": {
                                   "type": "string"
                                 },
                                 "specsRoot": {
@@ -86377,7 +86446,10 @@
                                 "cwd",
                                 "specsRoot",
                                 "dbPath",
-                                "workspaceIdentity"
+                                "workspaceIdentity",
+                                "rootBinding",
+                                "dbBinding",
+                                "dbParentExists"
                               ],
                               "type": "object"
                             },
@@ -86568,7 +86640,16 @@
                         "cwd": {
                           "type": "string"
                         },
+                        "dbBinding": {
+                          "type": "string"
+                        },
+                        "dbParentExists": {
+                          "type": "boolean"
+                        },
                         "dbPath": {
+                          "type": "string"
+                        },
+                        "rootBinding": {
                           "type": "string"
                         },
                         "specsRoot": {
@@ -86582,7 +86663,10 @@
                         "cwd",
                         "specsRoot",
                         "dbPath",
-                        "workspaceIdentity"
+                        "workspaceIdentity",
+                        "rootBinding",
+                        "dbBinding",
+                        "dbParentExists"
                       ],
                       "type": "object"
                     },
@@ -86885,7 +86969,16 @@
                         "cwd": {
                           "type": "string"
                         },
+                        "dbBinding": {
+                          "type": "string"
+                        },
+                        "dbParentExists": {
+                          "type": "boolean"
+                        },
                         "dbPath": {
+                          "type": "string"
+                        },
+                        "rootBinding": {
                           "type": "string"
                         },
                         "specsRoot": {
@@ -86899,7 +86992,10 @@
                         "cwd",
                         "specsRoot",
                         "dbPath",
-                        "workspaceIdentity"
+                        "workspaceIdentity",
+                        "rootBinding",
+                        "dbBinding",
+                        "dbParentExists"
                       ],
                       "type": "object"
                     },
@@ -87140,7 +87236,16 @@
                             "cwd": {
                               "type": "string"
                             },
+                            "dbBinding": {
+                              "type": "string"
+                            },
+                            "dbParentExists": {
+                              "type": "boolean"
+                            },
                             "dbPath": {
+                              "type": "string"
+                            },
+                            "rootBinding": {
                               "type": "string"
                             },
                             "specsRoot": {
@@ -87154,7 +87259,10 @@
                             "cwd",
                             "specsRoot",
                             "dbPath",
-                            "workspaceIdentity"
+                            "workspaceIdentity",
+                            "rootBinding",
+                            "dbBinding",
+                            "dbParentExists"
                           ],
                           "type": "object"
                         },
@@ -87403,7 +87511,16 @@
                             "cwd": {
                               "type": "string"
                             },
+                            "dbBinding": {
+                              "type": "string"
+                            },
+                            "dbParentExists": {
+                              "type": "boolean"
+                            },
                             "dbPath": {
+                              "type": "string"
+                            },
+                            "rootBinding": {
                               "type": "string"
                             },
                             "specsRoot": {
@@ -87417,7 +87534,10 @@
                             "cwd",
                             "specsRoot",
                             "dbPath",
-                            "workspaceIdentity"
+                            "workspaceIdentity",
+                            "rootBinding",
+                            "dbBinding",
+                            "dbParentExists"
                           ],
                           "type": "object"
                         },

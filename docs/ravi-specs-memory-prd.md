@@ -297,13 +297,15 @@ or `sync` as the operation argument. Generated clients expose separate
 only apply to creation from being sent to synchronization.
 
 Plans do not accept an arbitrary root. They are bound to the current workspace,
-its `.ravi/specs` directory, and the resolved Ravi database. Existing symbolic
-links or junctions in those bindings are rejected. Traversal, reads, staging,
-and promotion run through native Windows or Linux handles opened relative to a
-pinned parent, so an entry cannot be redirected by replacing its name after a
-separate path check. There is no path-based fallback. Creation also requires
-every ancestor `SPEC.md` and revalidates that hierarchy immediately before
-publishing the staged directory.
+the real identity of its `.ravi/specs` directory, and the parent/file identity
+of the resolved Ravi database. Existing symbolic links or junctions in those
+bindings are rejected. Traversal, reads, staging, promotion, and facade SQLite
+access run through native Windows or Linux handles opened relative to pinned
+parents. Linux uses descriptor-relative paths for SQLite; Windows keeps sharing
+rules that prevent replacement while SQLite writes. There is no path-based
+fallback. Creation also requires every ancestor `SPEC.md`, revalidates that
+hierarchy immediately before publishing, and performs a checked rename rollback
+if Linux detects a substituted staging identity after promotion.
 
 ### Project Integration
 
@@ -389,7 +391,7 @@ Audit commands are explicitly out of the MVP. Future audit findings can later be
 - `ravi projects link spec <project> <spec-id>` works and stores metadata in `project_links`.
 - Specs remain readable without SQLite.
 - `ravi specs sync` can rebuild the index from Markdown.
-- Facade plans are read-only and reject linked workspace bindings.
+- Facade plans are read-only, bind real root/database identities, and reject linked workspace bindings.
 - Facade apply rejects stale hashes and hierarchy changes before publication.
 - Exact creation replay is a no-op; changed or unexpected files require manual
   review and are never overwritten by recovery.

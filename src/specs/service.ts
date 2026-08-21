@@ -668,6 +668,7 @@ export function applyPreparedSpecCreation(
   }
   const stagingName = `.${basename(prepared.directoryPath)}.ravi-stage-${randomUUID()}`;
   const stagingPath = join(dirname(prepared.directoryPath), stagingName);
+  const originalRecoveryPath = `${stagingPath}.original`;
   let result: ReturnType<typeof createNativeSpec>;
   let callbackError: unknown;
   try {
@@ -682,11 +683,25 @@ export function applyPreparedSpecCreation(
       existingDirectory: options.existingDirectory ?? "error",
       stagingName,
       stagingPath,
+      originalRecoveryPath,
       ...(options.beforePromote
         ? {
             beforePromote: (path: string) => {
               try {
                 options.beforePromote!(path);
+                return true;
+              } catch (error) {
+                callbackError = error;
+                return false;
+              }
+            },
+          }
+        : {}),
+      ...(options.beforeNativePromote
+        ? {
+            beforeNativePromote: (path: string, recoveryPath: string) => {
+              try {
+                options.beforeNativePromote!(path, recoveryPath);
                 return true;
               } catch (error) {
                 callbackError = error;

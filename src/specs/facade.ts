@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { isAbsolute, join, parse, relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import { getRaviDbPath } from "../router/router-db.js";
 import {
   applyPreparedSpecCreation,
@@ -8,10 +8,10 @@ import {
   inspectPreparedSpecCreation,
   listSpecs,
   prepareSpecCreation,
-  syncSpecsSnapshot,
   UnsafeSpecsTreeError,
 } from "./service.js";
-import { inspectSpecsIndex } from "./spec-db.js";
+import { captureNativeDatabaseBinding, NativeSpecsSafetyError } from "./native-safe-fs.js";
+import { inspectSpecsIndexBound, replaceSpecsIndexBound } from "./spec-db.js";
 import type { CapturedSpecsTree } from "./service.js";
 import type { NewSpecInput, PreparedSpecCreation, SpecKind, SpecRecord } from "./types.js";
 
@@ -40,6 +40,9 @@ export interface SpecsFacadePlan {
     specsRoot: string;
     dbPath: string;
     workspaceIdentity: string;
+    rootBinding: string;
+    dbBinding: string;
+    dbParentExists: boolean;
   };
   input: Record<string, unknown>;
   target: Record<string, unknown>;
@@ -56,7 +59,7 @@ export interface SpecsFacadeReadback {
   ancestors: Array<Record<string, unknown>>;
   files: Array<Record<string, unknown>>;
   unexpectedFiles: string[];
-  index: ReturnType<typeof inspectSpecsIndex>;
+  index: ReturnType<typeof inspectSpecsIndexBound>;
   observedAt: string;
 }
 
@@ -72,6 +75,12 @@ export interface ApplySpecsFacadePlanOptions {
   afterValidation?: () => void;
   /** Promotion seam used to prove that ancestor loss cannot publish a target. */
   beforePromote?: (stagingPath: string) => void;
+  /** Native seam immediately after the final stage identity check. */
+  beforeNativePromote?: (stagingPath: string, originalRecoveryPath: string) => void;
+  /** Native seam after the database plan binding is pinned and before SQLite opens. */
+  beforeDatabaseOpen?: () => void;
+  /** Native seam after the database file is pinned and immediately before SQLite opens. */
+  beforeDatabaseWrite?: (safePath: string) => void;
 }
 
 interface SpecsFacadePlanState {
@@ -95,6 +104,9 @@ export class SpecsFacadeError extends Error {
 function throwFacadeSpecsError(error: unknown): never {
   if (error instanceof UnsafeSpecsTreeError) {
     throw new SpecsFacadeError("UNSAFE_SPECS_ROOT", error.message, { path: error.unsafePath });
+  }
+  if (error instanceof NativeSpecsSafetyError) {
+    throw new SpecsFacadeError(error.code, error.message, { path: error.unsafePath });
   }
   throw error;
 }
@@ -130,22 +142,7 @@ function canonicalCwd(cwd?: string): string {
 }
 
 function canonicalDatabasePath(): string {
-  const path = resolve(getRaviDbPath());
-  const root = parse(path).root;
-  let current = root;
-  for (const segment of path
-    .slice(root.length)
-    .split(/[\\/]+/)
-    .filter(Boolean)) {
-    current = join(current, segment);
-    if (!existsSync(current)) continue;
-    if (lstatSync(current).isSymbolicLink()) {
-      throw new SpecsFacadeError("UNSAFE_DB_PATH", `Unsafe symbolic link in Ravi database path: ${current}`, {
-        path: current,
-      });
-    }
-  }
-  return path;
+  return resolve(getRaviDbPath());
 }
 
 function planHash(
@@ -191,27 +188,58 @@ function bindingForCwd(cwd?: string): SpecsFacadePlan["binding"] {
     specsRoot: captured.rootPath,
     dbPath: canonicalDatabasePath(),
     workspaceIdentity: captured.workspaceIdentity,
+    rootBinding: captured.rootBinding,
+    ...(() => {
+      try {
+        const database = captureNativeDatabaseBinding(canonicalDatabasePath());
+        return { dbBinding: database.binding, dbParentExists: database.parentExists };
+      } catch (error) {
+        if (error instanceof NativeSpecsSafetyError && error.code === "UNSAFE_LINK") {
+          throw new SpecsFacadeError("UNSAFE_DB_PATH", error.message, { path: error.unsafePath });
+        }
+        return throwFacadeSpecsError(error);
+      }
+    })(),
   };
 }
 
-function assertCurrentSpecsBinding(expectedPath: string, expectedWorkspaceIdentity: string, cwd: string): void {
+function assertCurrentSpecsBinding(
+  expectedPath: string,
+  expectedWorkspaceIdentity: string,
+  expectedRootBinding: string,
+  cwd: string,
+): void {
   const current = captureFacadeSpecsTree(cwd);
-  if (current.rootPath !== expectedPath || current.workspaceIdentity !== expectedWorkspaceIdentity) {
+  if (
+    current.rootPath !== expectedPath ||
+    current.workspaceIdentity !== expectedWorkspaceIdentity ||
+    current.rootBinding !== expectedRootBinding
+  ) {
     throw new SpecsFacadeError("PLAN_STALE", "Specs root binding changed after planning", {
       expectedSpecsRoot: expectedPath,
       currentSpecsRoot: current.rootPath,
       expectedWorkspaceIdentity,
       currentWorkspaceIdentity: current.workspaceIdentity,
+      expectedRootBinding,
+      currentRootBinding: current.rootBinding,
     });
   }
 }
 
-function assertCurrentDatabaseBinding(expectedPath: string): void {
+function assertCurrentDatabaseBinding(expectedPath: string, expectedBinding: string): void {
   const currentPath = canonicalDatabasePath();
-  if (currentPath !== expectedPath) {
+  let currentBinding: string;
+  try {
+    currentBinding = captureNativeDatabaseBinding(currentPath).binding;
+  } catch (error) {
+    throwFacadeSpecsError(error);
+  }
+  if (currentPath !== expectedPath || currentBinding !== expectedBinding) {
     throw new SpecsFacadeError("PLAN_STALE", "Ravi database binding changed after planning", {
       expectedDbPath: expectedPath,
       currentDbPath: currentPath,
+      expectedDbBinding: expectedBinding,
+      currentDbBinding: currentBinding,
     });
   }
 }
@@ -302,8 +330,16 @@ function syncPlanState(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>
     throw error;
   }
   const source = specs.map(comparableIndexSpec);
-  const index = inspectSpecsIndex(binding.specsRoot, specs, binding.dbPath);
+  const index = inspectSpecsIndexBound(binding.specsRoot, specs, binding.dbPath, binding.dbBinding);
   const sourceDigest = sha256(canonicalJson(source));
+  const blockers: SpecsFacadePlan["blockers"] = binding.dbParentExists
+    ? []
+    : [
+        {
+          code: "DB_PARENT_NOT_FOUND",
+          message: `Ravi database parent directory does not exist: ${binding.dbPath}`,
+        },
+      ];
   const hashable = {
     schemaVersion: "specs.agent-first/v1" as const,
     operation: intent.operation,
@@ -325,9 +361,9 @@ function syncPlanState(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>
     specs,
     plan: {
       ...hashable,
-      planHash: planHash(hashable, []),
-      executable: true,
-      blockers: [],
+      planHash: planHash(hashable, blockers),
+      executable: blockers.length === 0,
+      blockers,
       observation: {
         sourceFiles: specs.map((spec) => ({ id: spec.id, path: spec.path })),
         index,
@@ -356,29 +392,52 @@ function hashablePlan(plan: SpecsFacadePlan) {
   };
 }
 
+function bindingVariants(binding: SpecsFacadePlan["binding"]): SpecsFacadePlan["binding"][] {
+  const roots = new Set([binding.rootBinding]);
+  const rootMatch = /^workspace:([^;]+);ravi:([^;]+);specs:([^;]+)$/.exec(binding.rootBinding);
+  if (rootMatch) {
+    roots.add(`workspace:${rootMatch[1]};ravi:missing;specs:missing`);
+    if (rootMatch[2] !== "missing") roots.add(`workspace:${rootMatch[1]};ravi:${rootMatch[2]};specs:missing`);
+  }
+  const databases = new Set([binding.dbBinding]);
+  if (/;file:[^;]+$/.test(binding.dbBinding)) {
+    databases.add(binding.dbBinding.replace(/;file:[^;]+$/, ";file:missing"));
+  }
+  return [...roots].flatMap((rootBinding) =>
+    [...databases].map((dbBinding) => ({ ...binding, rootBinding, dbBinding })),
+  );
+}
+
+function acceptedObservationHashes(plan: SpecsFacadePlan): Set<string> {
+  return new Set(bindingVariants(plan.binding).map((binding) => planHash({ ...hashablePlan(plan), binding }, [])));
+}
+
 function assertExpectedPlan(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadePlanState {
   const state = captureSpecsFacadePlan(intent);
   const plan = state.plan;
-  if (!expectedPlanHash.trim() || plan.planHash !== expectedPlanHash.trim()) {
+  const expected = expectedPlanHash.trim();
+  const exactReplay =
+    plan.executable && state.plan.observation.replay === "noop" && acceptedObservationHashes(plan).has(expected);
+  if (!expected || (plan.planHash !== expected && !exactReplay)) {
     throw new SpecsFacadeError("PLAN_STALE", "Specs facade plan hash does not match the current intent and target", {
       expectedPlanHash: expectedPlanHash.trim() || null,
       currentPlanHash: plan.planHash,
     });
   }
-  return state;
+  return plan.planHash === expected ? state : { ...state, plan: { ...plan, planHash: expected } };
 }
 
 function assertExpectedObservationPlan(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadePlanState {
   const state = captureSpecsFacadePlan(intent);
   const expected = expectedPlanHash.trim();
-  const executableHash = planHash(hashablePlan(state.plan), []);
-  if (!expected || (state.plan.planHash !== expected && (intent.operation !== "new" || executableHash !== expected))) {
+  const accepted = acceptedObservationHashes(state.plan);
+  if (!expected || (state.plan.planHash !== expected && !accepted.has(expected))) {
     throw new SpecsFacadeError("PLAN_STALE", "Specs facade plan hash does not match the intended observed effect", {
       expectedPlanHash: expected || null,
       currentPlanHash: state.plan.planHash,
     });
   }
-  return state;
+  return state.plan.planHash === expected ? state : { ...state, plan: { ...state.plan, planHash: expected } };
 }
 
 function fileReadback(snapshot: CapturedSpecsTree, path: string, expectedSha256?: string): Record<string, unknown> {
@@ -406,8 +465,13 @@ function fileReadback(snapshot: CapturedSpecsTree, path: string, expectedSha256?
 export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadeReadback {
   const state = assertExpectedObservationPlan(intent, expectedPlanHash);
   const plan = state.plan;
-  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.workspaceIdentity, plan.binding.cwd);
-  assertCurrentDatabaseBinding(plan.binding.dbPath);
+  assertCurrentSpecsBinding(
+    plan.binding.specsRoot,
+    plan.binding.workspaceIdentity,
+    plan.binding.rootBinding,
+    plan.binding.cwd,
+  );
+  assertCurrentDatabaseBinding(plan.binding.dbPath, plan.binding.dbBinding);
   if (intent.operation === "new") {
     const prepared = state.prepared!;
     const specs = listSpecs({ cwd: plan.binding.cwd });
@@ -424,7 +488,7 @@ export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash:
         fileReadback(observedTree, String(effect.path), String(effect.contentSha256)),
       ),
       unexpectedFiles: inspection.unexpectedFiles,
-      index: inspectSpecsIndex(plan.binding.specsRoot, specs, plan.binding.dbPath),
+      index: inspectSpecsIndexBound(plan.binding.specsRoot, specs, plan.binding.dbPath, plan.binding.dbBinding),
       observedAt: new Date().toISOString(),
     };
   }
@@ -434,8 +498,13 @@ export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash:
 
 function readbackCapturedSync(state: SpecsFacadePlanState, expectedPlanHash: string): SpecsFacadeReadback {
   const plan = state.plan;
-  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.workspaceIdentity, plan.binding.cwd);
-  assertCurrentDatabaseBinding(plan.binding.dbPath);
+  assertCurrentSpecsBinding(
+    plan.binding.specsRoot,
+    plan.binding.workspaceIdentity,
+    plan.binding.rootBinding,
+    plan.binding.cwd,
+  );
+  const currentDatabase = captureNativeDatabaseBinding(plan.binding.dbPath);
   const observedTree = captureFacadeSpecsTree(plan.binding.cwd);
   return {
     schemaVersion: plan.schemaVersion,
@@ -446,7 +515,7 @@ function readbackCapturedSync(state: SpecsFacadePlanState, expectedPlanHash: str
     ancestors: [],
     files: state.specs.map((spec) => fileReadback(observedTree, spec.path)),
     unexpectedFiles: [],
-    index: inspectSpecsIndex(plan.binding.specsRoot, state.specs, plan.binding.dbPath),
+    index: inspectSpecsIndexBound(plan.binding.specsRoot, state.specs, plan.binding.dbPath, currentDatabase.binding),
     observedAt: new Date().toISOString(),
   };
 }
@@ -492,10 +561,20 @@ export function applySpecsFacadePlan(
     const blocker = plan.blockers[0]!;
     throw new SpecsFacadeError(blocker.code, blocker.message, blocker.details);
   }
-  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.workspaceIdentity, plan.binding.cwd);
-  assertCurrentDatabaseBinding(plan.binding.dbPath);
+  assertCurrentSpecsBinding(
+    plan.binding.specsRoot,
+    plan.binding.workspaceIdentity,
+    plan.binding.rootBinding,
+    plan.binding.cwd,
+  );
+  assertCurrentDatabaseBinding(plan.binding.dbPath, plan.binding.dbBinding);
   options.afterValidation?.();
-  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.workspaceIdentity, plan.binding.cwd);
+  assertCurrentSpecsBinding(
+    plan.binding.specsRoot,
+    plan.binding.workspaceIdentity,
+    plan.binding.rootBinding,
+    plan.binding.cwd,
+  );
 
   if (intent.operation === "new") {
     let result: ReturnType<typeof applyPreparedSpecCreation>;
@@ -505,6 +584,9 @@ export function applySpecsFacadePlan(
         existing: "noop",
         beforePromote: (stagingPath) => {
           options.beforePromote?.(stagingPath);
+        },
+        beforeNativePromote: (stagingPath, recoveryPath) => {
+          options.beforeNativePromote?.(stagingPath, recoveryPath);
         },
       });
     } catch (error) {
@@ -519,11 +601,19 @@ export function applySpecsFacadePlan(
     return { operation: intent.operation, state: result.status, changed: result.changed, verification };
   }
 
-  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.workspaceIdentity, plan.binding.cwd);
-  assertCurrentDatabaseBinding(plan.binding.dbPath);
-  let result: ReturnType<typeof syncSpecsSnapshot>;
+  assertCurrentSpecsBinding(
+    plan.binding.specsRoot,
+    plan.binding.workspaceIdentity,
+    plan.binding.rootBinding,
+    plan.binding.cwd,
+  );
+  assertCurrentDatabaseBinding(plan.binding.dbPath, plan.binding.dbBinding);
+  let changed: boolean;
   try {
-    result = syncSpecsSnapshot(state.specs, { cwd: plan.binding.cwd });
+    changed = replaceSpecsIndexBound(plan.binding.specsRoot, state.specs, plan.binding.dbPath, plan.binding.dbBinding, {
+      ...(options.beforeDatabaseOpen ? { beforeOpen: options.beforeDatabaseOpen } : {}),
+      ...(options.beforeDatabaseWrite ? { beforeCallback: options.beforeDatabaseWrite } : {}),
+    });
   } catch (error) {
     return throwFacadeSpecsError(error);
   }
@@ -535,8 +625,8 @@ export function applySpecsFacadePlan(
   }
   return {
     operation: intent.operation,
-    state: result.changed ? ("applied" as const) : ("noop" as const),
-    changed: result.changed,
+    state: changed ? ("applied" as const) : ("noop" as const),
+    changed,
     verification,
   };
 }

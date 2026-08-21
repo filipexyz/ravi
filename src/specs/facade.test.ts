@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { Database } from "bun:sqlite";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -277,6 +279,28 @@ describe("specs facade", () => {
     expect(third.planHash).not.toBe(first.planHash);
   });
 
+  it("binds the real specs-root and database identities into the plan hash", () => {
+    const cwd = makeWorkspace();
+    mkdirSync(join(cwd, ".ravi", "specs"), { recursive: true });
+    const intent = { operation: "new" as const, cwd, id: "channels", title: "Channels", kind: "domain" as const };
+    const initial = buildSpecsFacadePlan(intent);
+
+    const originalRoot = join(cwd, ".ravi", "specs-original");
+    renameSync(join(cwd, ".ravi", "specs"), originalRoot);
+    mkdirSync(join(cwd, ".ravi", "specs"));
+    const replacedRoot = buildSpecsFacadePlan(intent);
+
+    expect(replacedRoot.binding.rootBinding).not.toBe(initial.binding.rootBinding);
+    expect(replacedRoot.planHash).not.toBe(initial.planHash);
+    expect(() => applySpecsFacadePlan(intent, initial.planHash)).toThrow("plan hash does not match");
+
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    writeFileSync(databasePath, "", "utf8");
+    const replacedDatabase = buildSpecsFacadePlan(intent);
+    expect(replacedDatabase.binding.dbBinding).not.toBe(replacedRoot.binding.dbBinding);
+    expect(replacedDatabase.planHash).not.toBe(replacedRoot.planHash);
+  });
+
   it("canonicalizes a relative database binding without creating it", () => {
     const cwd = makeWorkspace();
     const relativeState = `.ravi-relative-state-${Date.now()}`;
@@ -534,6 +558,134 @@ describe("specs facade", () => {
       action: "none",
       replay: false,
     });
+  });
+
+  it("never opens a replacement SQLite directory after the native binding is pinned", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "sync" as const, cwd };
+    const plan = buildSpecsFacadePlan(intent);
+    const originalState = `${isolatedStateDir!}-pinned-original`;
+    let swapped = false;
+    let renameBlocked = false;
+
+    const operation = () =>
+      applySpecsFacadePlan(intent, plan.planHash, {
+        beforeDatabaseOpen: () => {
+          try {
+            renameSync(isolatedStateDir!, originalState);
+            tempRoots.push(originalState);
+            mkdirSync(isolatedStateDir!);
+            swapped = true;
+          } catch (error) {
+            if (!["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            renameBlocked = true;
+          }
+        },
+      });
+
+    if (process.platform === "linux") {
+      expect(operation).toThrow(SpecsFacadeError);
+      expect(swapped).toBe(true);
+      expect(existsSync(join(originalState, "ravi.db"))).toBe(false);
+      expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(false);
+    } else {
+      const result = operation();
+      expect(renameBlocked).toBe(true);
+      expect(result.verification.outcome).toBe("confirmed");
+      expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(true);
+    }
+  });
+
+  it("never writes a replacement SQLite file swapped after the planned file is pinned", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    const seeded = new Database(databasePath);
+    seeded.exec("CREATE TABLE seed (value TEXT)");
+    seeded.close();
+    const originalDatabase = `${databasePath}.pinned-original`;
+    const intent = { operation: "sync" as const, cwd };
+    const plan = buildSpecsFacadePlan(intent);
+    let swapped = false;
+    let renameBlocked = false;
+
+    const operation = () =>
+      applySpecsFacadePlan(intent, plan.planHash, {
+        beforeDatabaseWrite: () => {
+          try {
+            renameSync(databasePath, originalDatabase);
+            const replacement = new Database(databasePath);
+            replacement.exec("CREATE TABLE decoy (value TEXT)");
+            replacement.close();
+            swapped = true;
+          } catch (error) {
+            if (!["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            renameBlocked = true;
+          }
+        },
+      });
+
+    if (process.platform === "linux") {
+      expect(operation).toThrow(SpecsFacadeError);
+      expect(swapped).toBe(true);
+      const replacement = new Database(databasePath, { readonly: true, create: false });
+      expect(
+        replacement.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'specs_index'").get(),
+      ).toBeNull();
+      replacement.close();
+      const original = new Database(originalDatabase, { readonly: true, create: false });
+      expect(
+        original.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'specs_index'").get(),
+      ).toBeNull();
+      original.close();
+    } else {
+      const result = operation();
+      expect(renameBlocked).toBe(true);
+      expect(result.verification.outcome).toBe("confirmed");
+    }
+  });
+
+  it("never recreates a database name removed immediately before SQLite open", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    const seeded = new Database(databasePath);
+    seeded.exec("CREATE TABLE seed (value TEXT)");
+    seeded.close();
+    const originalDatabase = `${databasePath}.pinned-missing-name`;
+    const intent = { operation: "sync" as const, cwd };
+    const plan = buildSpecsFacadePlan(intent);
+    let renamed = false;
+    let renameBlocked = false;
+
+    const operation = () =>
+      applySpecsFacadePlan(intent, plan.planHash, {
+        beforeDatabaseWrite: () => {
+          try {
+            renameSync(databasePath, originalDatabase);
+            renamed = true;
+          } catch (error) {
+            if (!["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            renameBlocked = true;
+          }
+        },
+      });
+
+    if (process.platform === "linux") {
+      expect(operation).toThrow();
+      expect(renamed).toBe(true);
+      expect(existsSync(databasePath)).toBe(false);
+      const original = new Database(originalDatabase, { readonly: true, create: false });
+      expect(
+        original.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'specs_index'").get(),
+      ).toBeNull();
+      original.close();
+    } else {
+      const result = operation();
+      expect(renameBlocked).toBe(true);
+      expect(result.verification.outcome).toBe("confirmed");
+    }
   });
 
   it("sync writes the exact validated snapshot when Markdown changes before the write", () => {

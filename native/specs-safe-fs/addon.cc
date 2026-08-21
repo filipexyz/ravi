@@ -75,7 +75,8 @@ RootState open_root(const std::string& workspace_path) {
   state.workspace_identity = entry_info(state.workspace).identity;
   auto ravi = open_entry_at(state.workspace, ".ravi");
   if (!ravi) {
-    state.root_binding = "anchor:" + state.workspace_identity + ";missing:.ravi/specs";
+    state.root_binding =
+        "workspace:" + state.workspace_identity + ";ravi:missing;specs:missing";
     return state;
   }
   if (!ravi->info.directory) throw SafeFsError("UNSAFE_SPECS_ROOT", ".ravi", ".ravi is not a safe directory");
@@ -83,11 +84,13 @@ RootState open_root(const std::string& workspace_path) {
   state.ravi.emplace(std::move(ravi->handle));
   auto specs = open_entry_at(*state.ravi, "specs");
   if (!specs) {
-    state.root_binding = "anchor:" + ravi_identity + ";missing:specs";
+    state.root_binding =
+        "workspace:" + state.workspace_identity + ";ravi:" + ravi_identity + ";specs:missing";
     return state;
   }
   if (!specs->info.directory) throw SafeFsError("UNSAFE_SPECS_ROOT", ".ravi/specs", "Specs root is not a safe directory");
-  state.root_binding = "root:" + specs->info.identity;
+  state.root_binding = "workspace:" + state.workspace_identity + ";ravi:" + ravi_identity +
+                       ";specs:" + specs->info.identity;
   state.specs.emplace(std::move(specs->handle));
   return state;
 }
@@ -218,8 +221,21 @@ std::vector<ExpectedFile> required_files(const Napi::Object& object) {
 }
 
 Handle& ensure_specs_root(RootState& state) {
-  if (!state.ravi) state.ravi.emplace(create_directory_at(state.workspace, ".ravi"));
-  if (!state.specs) state.specs.emplace(create_directory_at(*state.ravi, "specs"));
+  bool created_ravi = false;
+  if (!state.ravi) {
+    state.ravi.emplace(create_directory_at(state.workspace, ".ravi"));
+    created_ravi = true;
+  }
+  if (!state.specs) {
+    try {
+      state.specs.emplace(create_directory_at(*state.ravi, "specs"));
+    } catch (...) {
+      if (created_ravi && !remove_empty_directory_at(state.workspace, ".ravi", *state.ravi)) {
+        throw SafeFsError("ROLLBACK_FAILED", ".ravi", "Cannot roll back the empty Ravi directory after specs-root failure");
+      }
+      throw;
+    }
+  }
   return *state.specs;
 }
 
@@ -372,6 +388,8 @@ Napi::Value create_spec(const Napi::CallbackInfo& info) {
     }
 
     Handle staging = create_movable_directory_at(parent, staging_name);
+    const std::string original_recovery_name = staging_name + ".original";
+    const std::string promotion_rollback_name = staging_name + ".rollback";
     bool promoted = false;
     try {
       for (const ExpectedFile& file : files) {
@@ -409,13 +427,146 @@ Napi::Value create_spec(const Napi::CallbackInfo& info) {
       if (open_entry_at(parent, target_name)) {
         throw SafeFsError("SAFE_PROMOTION_FAILED", target_name, "Spec target appeared before promotion");
       }
-      promote_directory_no_replace(parent, staging_name, staging, target_name);
+      const Napi::Value native_hook_value = request.Get("beforeNativePromote");
+      std::function<void()> native_hook;
+      if (native_hook_value.IsFunction()) {
+        native_hook = [&]() {
+          const Napi::Value hook_result = native_hook_value.As<Napi::Function>().Call(
+              {Napi::String::New(env, required_string(request, "stagingPath")),
+               Napi::String::New(env, required_string(request, "originalRecoveryPath"))});
+          if (env.IsExceptionPending()) {
+            throw SafeFsError("TEST_HOOK_FAILED", staging_name, "Native promotion hook raised an exception");
+          }
+          if (hook_result.IsBoolean() && !hook_result.As<Napi::Boolean>().Value()) {
+            throw SafeFsError("TEST_HOOK_FAILED", staging_name, "Native promotion hook rejected the operation");
+          }
+        };
+      }
+      promote_directory_no_replace(
+          parent, staging_name, staging, target_name, promotion_rollback_name, native_hook);
       promoted = true;
       return creation_result(env, "created", staging);
     } catch (...) {
-      if (!promoted) remove_private_tree(parent, staging_name, staging);
+      if (!promoted) {
+        const bool removed_at_stage = remove_private_tree(parent, staging_name, staging);
+        const bool removed_at_recovery =
+            removed_at_stage ? false : remove_private_tree(parent, original_recovery_name, staging);
+        if (!removed_at_stage && !removed_at_recovery) {
+          throw SafeFsError(
+              "STAGING_CLEANUP_FAILED", staging_name, "Pinned staging directory could not be found for cleanup");
+        }
+      }
       throw;
     }
+  } catch (const SafeFsError& error) {
+    return throw_safe_error(env, error);
+  } catch (const std::exception& error) {
+    return throw_safe_error(env, SafeFsError("NATIVE_SAFE_FS_FAILED", "", error.what()));
+  }
+}
+
+Napi::Object database_state_to_js(Napi::Env env, const DatabaseState& state) {
+  Napi::Object result = Napi::Object::New(env);
+  result.Set("binding", state.binding);
+  result.Set("parentExists", state.parent_exists);
+  result.Set("fileExists", state.file_existed);
+  return result;
+}
+
+Napi::Value snapshot_database(const Napi::CallbackInfo& info) {
+  const Napi::Env env = info.Env();
+  try {
+    if (info.Length() < 1 || !info[0].IsString()) {
+      throw SafeFsError("INVALID_NATIVE_REQUEST", "databasePath", "Database snapshot requires an absolute path");
+    }
+    return database_state_to_js(env, open_database_state(info[0].As<Napi::String>().Utf8Value()));
+  } catch (const SafeFsError& error) {
+    return throw_safe_error(env, error);
+  } catch (const std::exception& error) {
+    return throw_safe_error(env, SafeFsError("NATIVE_SAFE_FS_FAILED", "", error.what()));
+  }
+}
+
+Napi::Value with_database(const Napi::CallbackInfo& info) {
+  const Napi::Env env = info.Env();
+  try {
+    if (info.Length() < 1 || !info[0].IsObject()) {
+      throw SafeFsError("INVALID_NATIVE_REQUEST", "request", "withDatabase requires an operation request");
+    }
+    const Napi::Object request = info[0].As<Napi::Object>();
+    const std::string database_path = required_string(request, "databasePath");
+    const std::string expected_binding = required_string(request, "expectedBinding");
+    const bool write = optional_boolean(request, "write", false);
+    const bool create = optional_boolean(request, "create", false);
+    const Napi::Value callback_value = request.Get("callback");
+    if (!callback_value.IsFunction()) {
+      throw SafeFsError("INVALID_NATIVE_REQUEST", "callback", "withDatabase callback must be a function");
+    }
+
+    DatabaseState state = open_database_state(database_path);
+    if (state.binding != expected_binding) {
+      throw SafeFsError("DB_BINDING_CHANGED", database_path, "Database binding changed before access");
+    }
+    const Napi::Value hook_value = request.Get("beforeOpen");
+    if (hook_value.IsFunction()) {
+      hook_value.As<Napi::Function>().Call({});
+      if (env.IsExceptionPending()) {
+        throw SafeFsError("TEST_HOOK_FAILED", database_path, "Database-open hook raised an exception");
+      }
+    }
+    if (!database_path_matches_state(state)) {
+      throw SafeFsError("DB_BINDING_CHANGED", database_path, "Database path changed before access pinning");
+    }
+    if (write) {
+      pin_database_file_for_write(state, create);
+    } else if (!state.file) {
+      throw SafeFsError("DB_NOT_FOUND", database_path, "Database file does not exist");
+    }
+    if (!database_path_matches_state(state)) {
+      throw SafeFsError("DB_BINDING_CHANGED", database_path, "Database target changed before callback");
+    }
+
+    const Napi::Value before_callback_value = request.Get("beforeCallback");
+    if (before_callback_value.IsFunction()) {
+      before_callback_value.As<Napi::Function>().Call({Napi::String::New(env, state.safe_path)});
+      if (env.IsExceptionPending()) {
+        throw SafeFsError("TEST_HOOK_FAILED", database_path, "Database-callback hook raised an exception");
+      }
+    }
+    const DatabaseAccessWitness access_witness = capture_database_access_witness();
+    bool database_open_confirmed = false;
+    const Napi::Function confirm_database_open = Napi::Function::New(
+        env,
+        [&](const Napi::CallbackInfo& callback_info) -> Napi::Value {
+          try {
+            if (!database_connection_matches_state(state, access_witness)) {
+              throw SafeFsError(
+                  "DB_OPEN_IDENTITY_MISMATCH",
+                  database_path,
+                  "SQLite did not open the database file pinned by the approved plan");
+            }
+            database_open_confirmed = true;
+            return callback_info.Env().Undefined();
+          } catch (const SafeFsError& error) {
+            return throw_safe_error(callback_info.Env(), error);
+          } catch (const std::exception& error) {
+            return throw_safe_error(
+                callback_info.Env(), SafeFsError("DB_OPEN_PROOF_FAILED", database_path, error.what()));
+          }
+        });
+
+    const Napi::Value callback_result = callback_value.As<Napi::Function>().Call(
+        {Napi::String::New(env, state.safe_path), confirm_database_open});
+    if (env.IsExceptionPending()) return env.Undefined();
+    if (!database_open_confirmed) {
+      throw SafeFsError(
+          "DB_OPEN_NOT_CONFIRMED", database_path, "Database callback did not confirm its opened SQLite connection");
+    }
+    if (!database_path_matches_state(state)) {
+      throw SafeFsError(
+          "DB_BINDING_CHANGED_AFTER_WRITE", database_path, "Database path changed while the pinned operation ran");
+    }
+    return callback_result;
   } catch (const SafeFsError& error) {
     return throw_safe_error(env, error);
   } catch (const std::exception& error) {
@@ -426,7 +577,9 @@ Napi::Value create_spec(const Napi::CallbackInfo& info) {
 Napi::Object initialize(Napi::Env env, Napi::Object exports) {
   exports.Set("snapshot", Napi::Function::New(env, snapshot_binding));
   exports.Set("createSpec", Napi::Function::New(env, create_spec));
-  exports.Set("implementation", "node-api-handles-v1");
+  exports.Set("snapshotDatabase", Napi::Function::New(env, snapshot_database));
+  exports.Set("withDatabase", Napi::Function::New(env, with_database));
+  exports.Set("implementation", "node-api-handles-v2");
   return exports;
 }
 

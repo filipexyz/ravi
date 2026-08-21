@@ -68859,7 +68859,16 @@ public enum RaviSchemas {
                   "cwd": {
                     "type": "string"
                   },
+                  "dbBinding": {
+                    "type": "string"
+                  },
+                  "dbParentExists": {
+                    "type": "boolean"
+                  },
                   "dbPath": {
+                    "type": "string"
+                  },
+                  "rootBinding": {
                     "type": "string"
                   },
                   "specsRoot": {
@@ -68873,7 +68882,10 @@ public enum RaviSchemas {
                   "cwd",
                   "specsRoot",
                   "dbPath",
-                  "workspaceIdentity"
+                  "workspaceIdentity",
+                  "rootBinding",
+                  "dbBinding",
+                  "dbParentExists"
                 ],
                 "type": "object"
               },
@@ -69072,7 +69084,16 @@ public enum RaviSchemas {
           "cwd": {
             "type": "string"
           },
+          "dbBinding": {
+            "type": "string"
+          },
+          "dbParentExists": {
+            "type": "boolean"
+          },
           "dbPath": {
+            "type": "string"
+          },
+          "rootBinding": {
             "type": "string"
           },
           "specsRoot": {
@@ -69086,7 +69107,10 @@ public enum RaviSchemas {
           "cwd",
           "specsRoot",
           "dbPath",
-          "workspaceIdentity"
+          "workspaceIdentity",
+          "rootBinding",
+          "dbBinding",
+          "dbParentExists"
         ],
         "type": "object"
       },
@@ -69402,7 +69426,16 @@ public enum RaviSchemas {
           "cwd": {
             "type": "string"
           },
+          "dbBinding": {
+            "type": "string"
+          },
+          "dbParentExists": {
+            "type": "boolean"
+          },
           "dbPath": {
+            "type": "string"
+          },
+          "rootBinding": {
             "type": "string"
           },
           "specsRoot": {
@@ -69416,7 +69449,10 @@ public enum RaviSchemas {
           "cwd",
           "specsRoot",
           "dbPath",
-          "workspaceIdentity"
+          "workspaceIdentity",
+          "rootBinding",
+          "dbBinding",
+          "dbParentExists"
         ],
         "type": "object"
       },
@@ -69649,7 +69685,16 @@ public enum RaviSchemas {
               "cwd": {
                 "type": "string"
               },
+              "dbBinding": {
+                "type": "string"
+              },
+              "dbParentExists": {
+                "type": "boolean"
+              },
               "dbPath": {
+                "type": "string"
+              },
+              "rootBinding": {
                 "type": "string"
               },
               "specsRoot": {
@@ -69663,7 +69708,10 @@ public enum RaviSchemas {
               "cwd",
               "specsRoot",
               "dbPath",
-              "workspaceIdentity"
+              "workspaceIdentity",
+              "rootBinding",
+              "dbBinding",
+              "dbParentExists"
             ],
             "type": "object"
           },
@@ -69904,7 +69952,16 @@ public enum RaviSchemas {
               "cwd": {
                 "type": "string"
               },
+              "dbBinding": {
+                "type": "string"
+              },
+              "dbParentExists": {
+                "type": "boolean"
+              },
               "dbPath": {
+                "type": "string"
+              },
+              "rootBinding": {
                 "type": "string"
               },
               "specsRoot": {
@@ -69918,7 +69975,10 @@ public enum RaviSchemas {
               "cwd",
               "specsRoot",
               "dbPath",
-              "workspaceIdentity"
+              "workspaceIdentity",
+              "rootBinding",
+              "dbBinding",
+              "dbParentExists"
             ],
             "type": "object"
           },
@@ -70152,7 +70212,16 @@ public enum RaviSchemas {
                   "cwd": {
                     "type": "string"
                   },
+                  "dbBinding": {
+                    "type": "string"
+                  },
+                  "dbParentExists": {
+                    "type": "boolean"
+                  },
                   "dbPath": {
+                    "type": "string"
+                  },
+                  "rootBinding": {
                     "type": "string"
                   },
                   "specsRoot": {
@@ -70166,7 +70235,10 @@ public enum RaviSchemas {
                   "cwd",
                   "specsRoot",
                   "dbPath",
-                  "workspaceIdentity"
+                  "workspaceIdentity",
+                  "rootBinding",
+                  "dbBinding",
+                  "dbParentExists"
                 ],
                 "type": "object"
               },
@@ -70343,7 +70415,16 @@ public enum RaviSchemas {
           "cwd": {
             "type": "string"
           },
+          "dbBinding": {
+            "type": "string"
+          },
+          "dbParentExists": {
+            "type": "boolean"
+          },
           "dbPath": {
+            "type": "string"
+          },
+          "rootBinding": {
             "type": "string"
           },
           "specsRoot": {
@@ -70357,7 +70438,10 @@ public enum RaviSchemas {
           "cwd",
           "specsRoot",
           "dbPath",
-          "workspaceIdentity"
+          "workspaceIdentity",
+          "rootBinding",
+          "dbBinding",
+          "dbParentExists"
         ],
         "type": "object"
       },
@@ -70634,7 +70718,16 @@ public enum RaviSchemas {
           "cwd": {
             "type": "string"
           },
+          "dbBinding": {
+            "type": "string"
+          },
+          "dbParentExists": {
+            "type": "boolean"
+          },
           "dbPath": {
+            "type": "string"
+          },
+          "rootBinding": {
             "type": "string"
           },
           "specsRoot": {
@@ -70648,7 +70741,10 @@ public enum RaviSchemas {
           "cwd",
           "specsRoot",
           "dbPath",
-          "workspaceIdentity"
+          "workspaceIdentity",
+          "rootBinding",
+          "dbBinding",
+          "dbParentExists"
         ],
         "type": "object"
       },
@@ -70863,7 +70959,16 @@ public enum RaviSchemas {
               "cwd": {
                 "type": "string"
               },
+              "dbBinding": {
+                "type": "string"
+              },
+              "dbParentExists": {
+                "type": "boolean"
+              },
               "dbPath": {
+                "type": "string"
+              },
+              "rootBinding": {
                 "type": "string"
               },
               "specsRoot": {
@@ -70877,7 +70982,10 @@ public enum RaviSchemas {
               "cwd",
               "specsRoot",
               "dbPath",
-              "workspaceIdentity"
+              "workspaceIdentity",
+              "rootBinding",
+              "dbBinding",
+              "dbParentExists"
             ],
             "type": "object"
           },
@@ -71100,7 +71208,16 @@ public enum RaviSchemas {
               "cwd": {
                 "type": "string"
               },
+              "dbBinding": {
+                "type": "string"
+              },
+              "dbParentExists": {
+                "type": "boolean"
+              },
               "dbPath": {
+                "type": "string"
+              },
+              "rootBinding": {
                 "type": "string"
               },
               "specsRoot": {
@@ -71114,7 +71231,10 @@ public enum RaviSchemas {
               "cwd",
               "specsRoot",
               "dbPath",
-              "workspaceIdentity"
+              "workspaceIdentity",
+              "rootBinding",
+              "dbBinding",
+              "dbParentExists"
             ],
             "type": "object"
           },

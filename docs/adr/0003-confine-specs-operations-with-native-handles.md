@@ -102,3 +102,34 @@ after linking so repeated clean builds are byte-for-byte reproducible.
   but only Linux CI can execute the Linux binary. Both CI jobs are required
   before release.
 
+## Revision note: 2026-08-21, promotion and SQLite identity closure
+
+Independent review rejected commit
+`7ded59741deb6451f98cd39d77763543719f28af`. Linux promotion still selected
+the staging directory by name after checking its pinned handle, SQLite still
+opened a mutable textual path after `lstat`, the facade hash omitted the real
+specs-root identity, and an `openat2` failure could leave empty directories.
+The canonical Ravi Spec also lacked these native invariants.
+
+The correction keeps the original decision and tightens its effect boundaries:
+
+- Linux verifies staging before `renameat2`, verifies the published inode, and
+  moves a divergent target to a reserved private name with
+  `RENAME_NOREPLACE`; target absence and moved identity are checked, and
+  rollback errors are explicit.
+- Database planning records the native parent/file identity. The addon keeps
+  those handles alive through SQLite access. On Linux it snapshots open process
+  descriptors, gives SQLite a descriptor-relative parent path, and requires a
+  newly opened descriptor for the pinned inode before any pragma or SQL. On
+  Windows it denies delete/rename sharing without requesting delete access that
+  would block SQLite itself.
+- The facade hash includes `rootBinding` and `dbBinding`; only a confirmed
+  absent-to-created effect can reuse the original hash as an exact no-op.
+- Linux creation removes operation-created `.ravi` and `.ravi/specs`
+  directories when `openat2` becomes unavailable after `mkdirat`, provided the
+  directory remains empty and identity-matched.
+
+The alternative of another path recheck was rejected for the same reason as in
+the original ADR: it narrows but does not remove the race. Ignoring a failed
+post-promotion `rmdir` was also rejected because non-empty substituted content
+could remain publicly visible.

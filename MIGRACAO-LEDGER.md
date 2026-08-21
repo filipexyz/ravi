@@ -2123,3 +2123,129 @@ pacote foi formado e nao houve push, PR ou acesso a VPS. O checkpoint pode
 receber commit local porque tudo que era executavel localmente ficou verde, mas
 permanece NO-GO para promocao ate o CI Ubuntu executar o commit exato e uma nova
 auditoria independente nao encontrar bloqueador.
+
+### Quinto NO-GO independente de SPECS e correcao em andamento
+
+A auditoria independente rejeitou o commit
+`7ded59741deb6451f98cd39d77763543719f28af` antes de pacote, push ou PR. A
+promocao Linux ainda podia publicar um diretorio de estagio substituido entre a
+verificacao e o `renameat2`; a escrita SQLite ainda reabria um caminho textual
+mutavel; a identidade real da raiz nao entrava no `planHash`; e uma falha de
+`openat2` depois de `mkdirat` podia deixar diretorios vazios. A Ravi Spec
+canonica tambem nao registrava essas garantias.
+
+A correcao mantem handles da raiz e do banco vinculados ao plano e vivos ate a
+fronteira de efeito. Linux usa o pai do banco por descritor; Windows bloqueia
+delete/rename durante a escrita sem impedir o acesso do SQLite. A promocao
+Linux agora verifica a identidade publicada e, se houver divergencia, move o
+alvo para um nome privado sem substituicao e confirma tanto a ausencia do nome
+publico quanto a identidade movida. Falhas de rollback nao sao ignoradas.
+
+Foram adicionados seams deterministas imediatamente antes da promocao nativa e
+da abertura SQLite, alem do caso `openat2` indisponivel depois da criacao. Neste
+host Windows, o dominio SPECS passou 40 testes com 147 assercoes; dois casos
+Linux ficaram marcados como nao executados. Esse resultado e um checkpoint
+local, nao um GO: compilacao Linux, geracao de contratos, gates completos, novo
+commit e nova revisao ainda precisam ser concluidos. Nao houve pacote, push, PR,
+merge ou VPS.
+
+### Recaptura local dos gates do quinto candidato
+
+A primeira execucao dos testes do quality gate ocorreu junto com SDK, OpenAPI,
+Swift e verificacao nativa. Trinta e nove testes passaram, mas o caso docs-only
+ultrapassou o limite fixo de cinco segundos. Essa captura paralela permanece
+registrada como falha e nao conta como gate verde. A repeticao isolada passou
+40 testes e 90 assercoes.
+
+O conjunto SPECS no Windows passou 40 testes e 147 assercoes, com dois casos
+exclusivos de Linux explicitamente pulados. Os testes aplicaveis de CLI passaram
+39 casos e 150 assercoes. Typecheck, build completo, SDK e drift, dois OpenAPI,
+drift Swift, fronteira dos binarios nativos, Biome focado, Markdown e diff check
+passaram. O runner de qualidade leu o diff acumulado de 90 arquivos, indexou 274
+specs e aprovou os gates de spec e cobertura runtime.
+
+Os dois alvos nativos compilam; somente o Windows executou localmente em Bun e
+Node. A execucao Linux, os dois casos adversariais exclusivos desse sistema e a
+compilacao Swift continuam pendentes de CI depois de eventual push autorizado.
+
+### Recaptura dos timeouts do SDK
+
+Uma segunda chamada completa do SDK, feita apenas para obter o resumo compacto,
+teve 73 passes e dois timeouts de cinco segundos nos arquivos inalterados de
+channel backend e round-trip. A primeira chamada completa havia passado; as
+duas capturas ficam preservadas. Repetidos isoladamente, channel backend passou
+3 testes com 17 assercoes e round-trip passou 4 testes com 18 assercoes. Isso
+sustenta interferencia de carga local, mas nao substitui o CI Linux no futuro
+commit exato.
+
+### Fechamento da identidade da conexao SQLite no quinto candidato
+
+A revisao final antes do commit encontrou uma janela Linux restante entre a
+ultima conferencia do nome e a abertura interna do SQLite. A correcao foi
+endurecida sem apagar o checkpoint anterior: o addon fotografa os descritores
+do processo antes da abertura e exige que a conexao SQLite viva acrescente um
+descritor com o mesmo dispositivo/inode do arquivo fixado pelo plano. Essa
+prova ocorre antes de pragmas, criacao de schema ou SQL transacional; a ausencia
+da confirmacao falha fechado. O seam de troca de arquivo agora ocupa exatamente
+esse intervalo e prova que um substituto aberto nao recebe escrita. No Windows,
+o bloqueio nativo de delete/rename permanece e o contrato de confirmacao tambem
+e obrigatorio.
+
+O primeiro lote de gates finais executou build junto de testes que haviam
+carregado o addon Windows. A recompilacao nao conseguiu remover o diretorio do
+prebuild ainda aberto e falhou com `EACCES`; essa captura fica registrada e nao
+conta como build verde. O mesmo lote encontrou apenas uma quebra de linha do
+formatador em `spec-db.ts`. O formatador oficial corrigiu o arquivo, a
+rechecagem isolada passou e o build completo passou isoladamente depois que o
+processo de teste liberou o addon.
+
+O primeiro gate SDK da arvore final repetiu o timeout conhecido de cinco
+segundos no arquivo inalterado de integracao do channel backend: 74 testes
+passaram e um expirou. A recaptura isolada passou 3 testes com 17 assercoes. Em
+seguida, o comando oficial completo `test:sdk` passou os 75 testes com 297
+assercoes e o check de drift. As capturas falha e verde ficam preservadas.
+
+O comando Markdown global expos a baseline preexistente do repositorio: 429
+problemas em 381 arquivos, na maioria specs alheias ao dominio, e portanto nao
+fica verde nem sobre a base rejeitada. Nenhum documento fora do escopo foi
+reescrito. O mesmo lint, limitado aos sete Markdown alterados nesta correcao,
+passou sem problemas.
+
+A leitura manual final do nativo tambem encontrou que a limpeza Linux tratava
+o nome de estagio ausente como remocao concluida. Depois do seam adversarial
+mover o original fixado para o nome reservado de recuperacao, isso pularia sua
+limpeza. O helper agora so retorna sucesso quando encontra e remove o inode
+esperado; a ausencia manda o chamador tentar o nome de recuperacao e falhar em
+ambos continua sendo erro explicito.
+
+A prova Linux de descritores foi separada da validacao de entradas de specs:
+pipes, sockets e outros descritores nao regulares do processo sao ignorados, em
+vez de virarem falsos arquivos inseguros. A baseline e capturada depois do seam
+determinista, impedindo que um descritor do proprio hook sirva como prova do
+SQLite. O seam de primitiva forcada agora mira o `mkdir` de `specs` pelo nome e
+exercita a remocao tanto de `.ravi/specs` quanto do pai `.ravi` criado pela
+operacao.
+
+A conexao SQLite de escrita agora abre com criacao desabilitada. Somente a
+camada nativa pode criar o arquivo planejado e fixado; se o nome publico sumir
+no intervalo final, o SQLite nao pode recriar um nome sem autorizacao antes da
+prova da conexao. Ha casos deterministas tanto para nome ausente quanto para um
+banco substituto existente.
+
+### Captura local final da correcao do quinto NO-GO
+
+A arvore final passou 41 testes SPECS e 149 assercoes no Windows, com os dois
+casos exclusivos de Linux explicitamente pulados. O recorte CLI passou 39/150,
+quality passou 40/90 e a recaptura SDK completa passou 75/297. Passaram tambem
+build completo, typecheck, compilacao cruzada, fronteira do pacote nativo,
+geracao e drift do SDK TypeScript, dois OpenAPI, Swift gerado, Biome focado,
+Markdown do escopo, diff check e gates de spec/cobertura runtime.
+
+A fronteira ignorada de prebuild contem apenas os dois runtimes esperados.
+Linux x64 tem 3.499.576 bytes e SHA-256
+`9957A178093D4C39A9F3BCB3F21DB7C9A96753E805B2BBBD479158BF1B8836AB`;
+Windows x64 tem 904.704 bytes e SHA-256
+`0AEE2901300A908EF0F6DF4FB699A02C601698907E152CDBAB85DADD70A23440`.
+Windows executou o addon em Bun e Node. Linux apenas compilou, e a geracao/drift
+Swift ocorreu sem compilador Swift neste host. Nao houve pacote, push, PR,
+merge ou VPS.

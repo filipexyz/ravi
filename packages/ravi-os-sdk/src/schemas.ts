@@ -67789,7 +67789,16 @@ export const SpecsFacadeNewApplyReturnSchema = {
                 "cwd": {
                   "type": "string"
                 },
+                "dbBinding": {
+                  "type": "string"
+                },
+                "dbParentExists": {
+                  "type": "boolean"
+                },
                 "dbPath": {
+                  "type": "string"
+                },
+                "rootBinding": {
                   "type": "string"
                 },
                 "specsRoot": {
@@ -67803,7 +67812,10 @@ export const SpecsFacadeNewApplyReturnSchema = {
                 "cwd",
                 "specsRoot",
                 "dbPath",
-                "workspaceIdentity"
+                "workspaceIdentity",
+                "rootBinding",
+                "dbBinding",
+                "dbParentExists"
               ],
               "type": "object"
             },
@@ -68000,7 +68012,16 @@ export const SpecsFacadeNewPlanReturnSchema = {
         "cwd": {
           "type": "string"
         },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
         "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
           "type": "string"
         },
         "specsRoot": {
@@ -68014,7 +68035,10 @@ export const SpecsFacadeNewPlanReturnSchema = {
         "cwd",
         "specsRoot",
         "dbPath",
-        "workspaceIdentity"
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
       ],
       "type": "object"
     },
@@ -68328,7 +68352,16 @@ export const SpecsFacadeNewReadbackReturnSchema = {
         "cwd": {
           "type": "string"
         },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
         "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
           "type": "string"
         },
         "specsRoot": {
@@ -68342,7 +68375,10 @@ export const SpecsFacadeNewReadbackReturnSchema = {
         "cwd",
         "specsRoot",
         "dbPath",
-        "workspaceIdentity"
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
       ],
       "type": "object"
     },
@@ -68573,7 +68609,16 @@ export const SpecsFacadeNewRecoverReturnSchema = {
             "cwd": {
               "type": "string"
             },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
             "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
               "type": "string"
             },
             "specsRoot": {
@@ -68587,7 +68632,10 @@ export const SpecsFacadeNewRecoverReturnSchema = {
             "cwd",
             "specsRoot",
             "dbPath",
-            "workspaceIdentity"
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
           ],
           "type": "object"
         },
@@ -68826,7 +68874,16 @@ export const SpecsFacadeNewVerifyReturnSchema = {
             "cwd": {
               "type": "string"
             },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
             "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
               "type": "string"
             },
             "specsRoot": {
@@ -68840,7 +68897,10 @@ export const SpecsFacadeNewVerifyReturnSchema = {
             "cwd",
             "specsRoot",
             "dbPath",
-            "workspaceIdentity"
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
           ],
           "type": "object"
         },
@@ -69072,7 +69132,16 @@ export const SpecsFacadeSyncApplyReturnSchema = {
                 "cwd": {
                   "type": "string"
                 },
+                "dbBinding": {
+                  "type": "string"
+                },
+                "dbParentExists": {
+                  "type": "boolean"
+                },
                 "dbPath": {
+                  "type": "string"
+                },
+                "rootBinding": {
                   "type": "string"
                 },
                 "specsRoot": {
@@ -69086,7 +69155,10 @@ export const SpecsFacadeSyncApplyReturnSchema = {
                 "cwd",
                 "specsRoot",
                 "dbPath",
-                "workspaceIdentity"
+                "workspaceIdentity",
+                "rootBinding",
+                "dbBinding",
+                "dbParentExists"
               ],
               "type": "object"
             },
@@ -69261,7 +69333,16 @@ export const SpecsFacadeSyncPlanReturnSchema = {
         "cwd": {
           "type": "string"
         },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
         "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
           "type": "string"
         },
         "specsRoot": {
@@ -69275,7 +69356,10 @@ export const SpecsFacadeSyncPlanReturnSchema = {
         "cwd",
         "specsRoot",
         "dbPath",
-        "workspaceIdentity"
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
       ],
       "type": "object"
     },
@@ -69550,7 +69634,16 @@ export const SpecsFacadeSyncReadbackReturnSchema = {
         "cwd": {
           "type": "string"
         },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
         "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
           "type": "string"
         },
         "specsRoot": {
@@ -69564,7 +69657,10 @@ export const SpecsFacadeSyncReadbackReturnSchema = {
         "cwd",
         "specsRoot",
         "dbPath",
-        "workspaceIdentity"
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
       ],
       "type": "object"
     },
@@ -69777,7 +69873,16 @@ export const SpecsFacadeSyncRecoverReturnSchema = {
             "cwd": {
               "type": "string"
             },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
             "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
               "type": "string"
             },
             "specsRoot": {
@@ -69791,7 +69896,10 @@ export const SpecsFacadeSyncRecoverReturnSchema = {
             "cwd",
             "specsRoot",
             "dbPath",
-            "workspaceIdentity"
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
           ],
           "type": "object"
         },
@@ -70012,7 +70120,16 @@ export const SpecsFacadeSyncVerifyReturnSchema = {
             "cwd": {
               "type": "string"
             },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
             "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
               "type": "string"
             },
             "specsRoot": {
@@ -70026,7 +70143,10 @@ export const SpecsFacadeSyncVerifyReturnSchema = {
             "cwd",
             "specsRoot",
             "dbPath",
-            "workspaceIdentity"
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
           ],
           "type": "object"
         },

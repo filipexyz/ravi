@@ -128,6 +128,7 @@ export interface ApplyPreparedSpecCreationOptions {
   existing: "error" | "noop";
   existingDirectory?: "error" | "populate";
   beforePromote?: (stagingPath: string) => void;
+  beforeNativePromote?: (stagingPath: string, originalRecoveryPath: string) => void;
 }
 
 export interface AppliedSpecCreation extends NewSpecResult {

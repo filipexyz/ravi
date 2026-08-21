@@ -358,3 +358,133 @@ before an authorized push. No package, push, PR, or VPS access occurred in this
 checkpoint. The implementation may be committed locally because every locally
 available relevant gate is green, but promotion remains NO-GO until Ubuntu CI
 executes the exact commit and a fresh independent review finds no blocker.
+
+## Revision note: 2026-08-21, fifth independent review NO-GO
+
+Independent review rejected commit
+`7ded59741deb6451f98cd39d77763543719f28af` before package, push, or PR. The
+review found two high-severity races: Linux could publish a replacement staging
+directory between verification and `renameat2`, and facade sync could validate
+the Ravi database path before SQLite reopened a different object by name.
+
+The same review found that `planHash` omitted the real specs-root identity, a
+Linux `openat2` failure after `mkdirat` could leave empty operation-created
+directories, and the canonical SPEC/CHECKS did not state or exercise the native
+guarantees. The compiled Linux addon had not executed on Linux, so compilation
+and reproducible bytes were not runtime evidence.
+
+The replacement implementation adds a deterministic seam after the final stage
+identity check and a verified rename rollback that removes a substituted inode
+from the public target. It binds root and database identities into the plan,
+keeps database handles pinned through SQLite, adds deterministic directory/file
+swap seams immediately before database access, and rolls back empty directories
+created before a forced `openat2` failure. Windows currently passes the native
+and facade cases; Linux-only cases remain unexecuted locally and require Ubuntu
+CI on the eventual exact commit. No package, push, PR, merge, or VPS action is
+authorized by this correction checkpoint.
+
+## Revision note: 2026-08-21, fifth-candidate local gate recapture
+
+The first quality-test run shared the host with SDK, OpenAPI, Swift, and native
+package checks. Thirty-nine quality tests passed, while the docs-only case
+exceeded its fixed five-second hook limit. That parallel result is retained as
+a failed capture and is not counted as a green gate.
+
+The isolated rerun passed all 40 quality tests with 90 assertions. The complete
+Windows specs suite passed 40 tests with 147 assertions and skipped the two
+Linux-only cases explicitly. The applicable CLI suite passed 39 tests with 150
+assertions. Typecheck, full build, SDK tests and drift, both OpenAPI checks,
+Swift generation drift, native package-boundary check, focused Biome, Markdown
+lint, and diff check passed. The quality runner examined the 90-file accumulated
+branch diff, indexed 274 specs, and passed both spec and runtime coverage gates.
+
+Both native targets compile and the Windows addon executes in Bun and Node.
+Linux execution, the Linux-only final-promotion rollback, the real
+`openat2`-unavailable rollback, and Swift compilation remain unavailable on
+this host. They are mandatory CI evidence after any future authorized push.
+
+## Revision note: 2026-08-21, SDK timeout recapture
+
+A second complete SDK invocation, run only to recover its compact summary,
+reported 73 passes and two five-second setup/cleanup timeouts in the unchanged
+channel-backend and SDK round-trip integration files. The earlier complete SDK
+invocation had passed, so the contradictory second capture is retained rather
+than overwritten.
+
+Each affected file was then run independently. Channel backend passed 3 tests
+with 17 assertions, and SDK round-trip passed 4 tests with 18 assertions. No
+source in either timed-out subsystem changed in this correction. The isolated
+results support a host-load diagnosis but do not replace Linux CI on the exact
+future commit.
+
+## Revision note: 2026-08-21, SQLite connection witness
+
+A final pre-commit audit found that a descriptor-relative parent path plus
+before/after name checks still left a Linux interval between the last check and
+SQLite's own open. The candidate was tightened before commit: the native layer
+now snapshots process descriptors, invokes SQLite, and requires the live
+connection to add a descriptor whose device/inode is exactly the file pinned by
+the approved plan. This confirmation runs before pragmas, schema creation, or
+transactional SQL; omitting it fails closed. The existing deterministic
+file-swap seam now runs in that exact interval, so a replacement can be opened
+for the test but cannot reach SQL. Windows retains its stronger native sharing
+barrier and performs the same required confirmation contract.
+
+The first final-gate batch ran build beside tests that had loaded the Windows
+addon. Its native rebuild could not remove the in-use prebuild directory and
+failed with `EACCES`; that capture is retained and is not a green build. The
+same batch also found one formatter-only line wrap in `spec-db.ts`. The official
+formatter fixed that file, its isolated recheck passed, and the full build then
+passed in isolation after the test process had released the addon.
+
+The first final-tree SDK gate repeated the known five-second hook timeout in
+the unchanged channel-backend integration file: 74 tests passed and one timed
+out. Its isolated recapture passed 3 tests with 17 assertions. A subsequent
+complete official `test:sdk` run passed all 75 tests with 297 assertions and
+its SDK drift check. Both the failed and successful captures remain recorded.
+
+The repository-wide Markdown command reported its pre-existing baseline of 429
+issues across 381 files, overwhelmingly in unrelated specs, and is not green on
+the rejected base commit. No out-of-scope documents were rewritten. The same
+Markdown engine, restricted to all seven Markdown files changed by this
+correction, reported zero issues.
+
+The final manual native review also found that Linux cleanup interpreted an
+absent staging name as a successful removal. After the adversarial promotion
+seam moved the pinned original to its reserved recovery name, that result would
+have skipped recovery-name cleanup. The helper now returns success only after
+finding and removing the expected inode; absence causes the caller to try the
+recovery name, and failure at both names remains explicit.
+
+The Linux descriptor witness was then separated from specs-entry validation:
+process pipes, sockets, and other non-regular descriptors are ignored instead
+of being misclassified as unsafe specs files. Its baseline is captured after
+the deterministic swap seam, so descriptors opened by a test hook cannot serve
+as SQLite's proof. The forced primitive seam now targets the `specs` mkdir by
+name, exercising removal of both the newly created `.ravi/specs` and its
+operation-created `.ravi` parent.
+
+SQLite write connections now open with creation disabled. The native layer is
+the only component allowed to create the pinned planned file; if its public
+name disappears in the final interval, SQLite cannot recreate an unapproved
+name before connection proof. A deterministic case covers both the absent name
+and the existing substituted database.
+
+## Revision note: 2026-08-21, final local correction capture
+
+The final Windows specs run passed 41 tests with 149 assertions and explicitly
+skipped the two Linux-only cases. The applicable CLI run passed 39 tests with
+150 assertions; the quality tests passed 40 with 90 assertions; the complete
+SDK recapture passed 75 with 297 assertions. Full build, typecheck, cross-build,
+native package boundary, generated TypeScript SDK, both OpenAPI snapshots,
+generated Swift drift, focused Biome, scoped Markdown, diff, spec, and runtime
+coverage gates passed.
+
+The ignored prebuild boundary contains only the two expected runtime files.
+Linux x64 is 3,499,576 bytes with SHA-256
+`9957A178093D4C39A9F3BCB3F21DB7C9A96753E805B2BBBD479158BF1B8836AB`;
+Windows x64 is 904,704 bytes with SHA-256
+`0AEE2901300A908EF0F6DF4FB699A02C601698907E152CDBAB85DADD70A23440`.
+Windows executed the addon in Bun and Node. Linux compiled but did not execute,
+and Swift generation/drift ran without a Swift compiler on this host. No
+package, push, PR, merge, or VPS operation occurred.

@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -54,7 +55,7 @@ describe("specs native safe filesystem", () => {
     mkdirSync(dirname(spec), { recursive: true });
     writeFileSync(spec, "native payload", "utf8");
 
-    expect(nativeSpecsImplementation()).toBe("node-api-handles-v1");
+    expect(nativeSpecsImplementation()).toBe("node-api-handles-v2");
     expect(
       captureNativeSpecsTree(cwd).entries.find((entry) => entry.relativePath === "channels/SPEC.md")?.content,
     ).toBe("native payload");
@@ -69,7 +70,7 @@ describe("specs native safe filesystem", () => {
       "node",
       [
         "-e",
-        "const addon=require(process.argv[1]);const value=addon.snapshot(process.argv[2]);if(addon.implementation!=='node-api-handles-v1'||value.entries[1]?.content!=='native payload')process.exit(9)",
+        "const addon=require(process.argv[1]);const value=addon.snapshot(process.argv[2]);if(addon.implementation!=='node-api-handles-v2'||value.entries[1]?.content!=='native payload')process.exit(9)",
         addon,
         cwd,
       ],
@@ -147,6 +148,7 @@ describe("specs native safe filesystem", () => {
         existingDirectory: "error",
         stagingName: ".channels.ravi-stage-native-link",
         stagingPath: join(cwd, ".ravi", "specs", ".channels.ravi-stage-native-link"),
+        originalRecoveryPath: join(cwd, ".ravi", "specs", ".channels.ravi-stage-native-link.original"),
         beforePromote: () => {
           linked = createDirectoryLink(outside, target);
           return true;
@@ -176,6 +178,7 @@ describe("specs native safe filesystem", () => {
         existingDirectory: "error",
         stagingName: ".channels.ravi-stage-native-tamper",
         stagingPath,
+        originalRecoveryPath: `${stagingPath}.original`,
         beforePromote: (path) => {
           writeFileSync(join(path, "EXTRA.md"), "tampered", "utf8");
           return true;
@@ -186,4 +189,83 @@ describe("specs native safe filesystem", () => {
     expect(existsSync(join(cwd, ".ravi", "specs", "channels"))).toBe(false);
     expect(existsSync(stagingPath)).toBe(false);
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "removes a substituted stage from the public target after the final identity check",
+    () => {
+      const cwd = makeWorkspace();
+      const snapshot = captureNativeSpecsTree(cwd);
+      const specsRoot = join(cwd, ".ravi", "specs");
+      const stagingPath = join(specsRoot, ".channels.ravi-stage-native-final-swap");
+      const originalRecoveryPath = `${stagingPath}.original`;
+      const rollbackPath = `${stagingPath}.rollback`;
+      const targetPath = join(specsRoot, "channels");
+
+      try {
+        createNativeSpec({
+          workspacePath: cwd,
+          expectedWorkspaceIdentity: snapshot.workspaceIdentity,
+          expectedRootBinding: snapshot.rootBinding,
+          targetSegments: ["channels"],
+          files: [{ name: "SPEC.md", content: "safe payload" }],
+          requireAncestors: false,
+          existing: "error",
+          existingDirectory: "error",
+          stagingName: ".channels.ravi-stage-native-final-swap",
+          stagingPath,
+          originalRecoveryPath,
+          beforeNativePromote: (path, recoveryPath) => {
+            renameSync(path, recoveryPath);
+            mkdirSync(path);
+            writeFileSync(join(path, "SPEC.md"), "substituted payload", "utf8");
+            return true;
+          },
+        });
+        throw new Error("Expected final staging substitution to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(NativeSpecsSafetyError);
+        expect((error as NativeSpecsSafetyError).code).toBe("PROMOTION_IDENTITY_CHANGED");
+      }
+
+      expect(existsSync(targetPath)).toBe(false);
+      expect(existsSync(originalRecoveryPath)).toBe(false);
+      expect(readFileSync(join(rollbackPath, "SPEC.md"), "utf8")).toBe("substituted payload");
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "rolls back directories created before a forced openat2 availability failure",
+    () => {
+      const previous = process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR;
+      process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR = "specs";
+      try {
+        for (const precreateRavi of [false, true]) {
+          const cwd = makeWorkspace();
+          if (precreateRavi) mkdirSync(join(cwd, ".ravi"));
+          const snapshot = captureNativeSpecsTree(cwd);
+          const stagingPath = join(cwd, ".ravi", "specs", ".channels.ravi-stage-openat2");
+          expect(() =>
+            createNativeSpec({
+              workspacePath: cwd,
+              expectedWorkspaceIdentity: snapshot.workspaceIdentity,
+              expectedRootBinding: snapshot.rootBinding,
+              targetSegments: ["channels"],
+              files: [{ name: "SPEC.md", content: "safe payload" }],
+              requireAncestors: false,
+              existing: "error",
+              existingDirectory: "error",
+              stagingName: ".channels.ravi-stage-openat2",
+              stagingPath,
+              originalRecoveryPath: `${stagingPath}.original`,
+            }),
+          ).toThrow(NativeSpecsSafetyError);
+          expect(existsSync(join(cwd, ".ravi", "specs"))).toBe(false);
+          expect(existsSync(join(cwd, ".ravi"))).toBe(precreateRavi);
+        }
+      } finally {
+        if (previous === undefined) delete process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR;
+        else process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR = previous;
+      }
+    },
+  );
 });

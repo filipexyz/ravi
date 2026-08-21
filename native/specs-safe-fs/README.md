@@ -23,3 +23,10 @@ The addon supports x64 Windows and Linux through Node-API version 8. A missing
 addon or unavailable operating-system primitive is a hard failure; there is no
 path-based fallback.
 
+The same addon also pins the Ravi SQLite parent and file for facade operations.
+Linux gives SQLite a descriptor-relative path under `/proc/self/fd`, snapshots
+the process descriptors before open, and requires the new SQLite connection to
+hold the pinned inode before any pragma or SQL runs. Windows keeps NT handles
+open with sharing that permits database reads and writes but denies
+delete/rename replacement. The plan hash carries the real specs-root and
+database identities returned by this layer.

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
+import { captureNativeDatabaseBinding, NativeSpecsSafetyError, withNativeDatabaseBinding } from "./native-safe-fs.js";
 import type { SpecRecord, SpecsIndexInspection } from "./types.js";
 
 interface SpecIndexRow {
@@ -126,12 +127,19 @@ export interface ReplaceSpecsIndexOptions {
   beforeTransaction?: () => void;
 }
 
-export function replaceSpecsIndex(
+function configureSpecsDatabase(db: Database): void {
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA synchronous = NORMAL");
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function replaceSpecsIndexInDatabase(
+  db: Database,
   rootPath: string,
   specs: SpecRecord[],
-  options: ReplaceSpecsIndexOptions = {},
+  options: ReplaceSpecsIndexOptions,
 ): boolean {
-  const db = getDb();
   options.beforeTransaction?.();
   return executeWrite(
     db,
@@ -190,6 +198,44 @@ export function replaceSpecsIndex(
   );
 }
 
+export function replaceSpecsIndex(
+  rootPath: string,
+  specs: SpecRecord[],
+  options: ReplaceSpecsIndexOptions = {},
+): boolean {
+  const db = getDb();
+  return replaceSpecsIndexInDatabase(db, rootPath, specs, options);
+}
+
+export function replaceSpecsIndexBound(
+  rootPath: string,
+  specs: SpecRecord[],
+  databasePath: string,
+  expectedBinding: string,
+  options: ReplaceSpecsIndexOptions & { beforeOpen?: () => void; beforeCallback?: (safePath: string) => void } = {},
+): boolean {
+  return withNativeDatabaseBinding(
+    {
+      databasePath,
+      expectedBinding,
+      write: true,
+      create: true,
+      ...(options.beforeOpen ? { beforeOpen: options.beforeOpen } : {}),
+      ...(options.beforeCallback ? { beforeCallback: options.beforeCallback } : {}),
+    },
+    (safePath, confirmOpen) => {
+      const db = new Database(safePath, { create: false, readwrite: true });
+      try {
+        confirmOpen();
+        configureSpecsDatabase(db);
+        return replaceSpecsIndexInDatabase(db, rootPath, specs, options);
+      } finally {
+        db.close();
+      }
+    },
+  );
+}
+
 export function listIndexedSpecs(rootPath: string): SpecRecord[] {
   ensureSpecsIndexSchema();
   const rows = getDb()
@@ -232,5 +278,51 @@ export function inspectSpecsIndex(
     };
   } finally {
     db.close();
+  }
+}
+
+export function inspectSpecsIndexBound(
+  rootPath: string,
+  specs: SpecRecord[],
+  databasePath: string,
+  expectedBinding = captureNativeDatabaseBinding(databasePath).binding,
+): SpecsIndexInspection {
+  const empty = {
+    dbPath: databasePath,
+    schemaExists: false,
+    matches: false,
+    indexedTotal: 0,
+    sourceTotal: specs.length,
+    indexedIds: [] as string[],
+    sourceIds: specs.map((spec) => spec.id),
+  };
+  try {
+    return withNativeDatabaseBinding(
+      { databasePath, expectedBinding, write: false, create: false },
+      (safePath, confirmOpen) => {
+        const db = new Database(safePath, { readonly: true, create: false });
+        try {
+          confirmOpen();
+          if (!specsIndexSchemaExists(db)) return empty;
+          const indexed = (
+            db.query("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
+          ).map(rowToSpec);
+          return {
+            dbPath: databasePath,
+            schemaExists: true,
+            matches: sameSpecs(indexed, specs),
+            indexedTotal: indexed.length,
+            sourceTotal: specs.length,
+            indexedIds: indexed.map((spec) => spec.id),
+            sourceIds: specs.map((spec) => spec.id),
+          };
+        } finally {
+          db.close();
+        }
+      },
+    );
+  } catch (error) {
+    if (error instanceof NativeSpecsSafetyError && error.code === "DB_NOT_FOUND") return empty;
+    throw error;
   }
 }

@@ -38,16 +38,20 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - Companion files SHOULD use Diataxis roles: `WHY.md` for rationale, `RUNBOOK.md` for operational steps, and `CHECKS.md` for validation.
 - `ravi specs` commands MUST support `--json` so agents can consume them without parsing human output.
 - `specs facade plan` MUST NOT create directories, files, index rows, or other durable state.
-- A facade plan MUST bind canonical `cwd`, the `.ravi/specs` root, the Ravi database target, normalized input, intended effects, and current safety blockers into `planHash`.
+- A facade plan MUST bind canonical `cwd`, the real filesystem identity of the `.ravi/specs` root or its nearest existing anchor, the real parent/file identity of the Ravi database target, normalized input, intended effects, and current safety blockers into `planHash`.
 - A blocked facade plan MUST become stale when its blocker set changes and MUST be planned again before apply.
 - Mutation MUST use strict current-plan freshness. Observation of an originally executable `new` plan MUST still classify later target changes as divergent.
 - Facade `new` MUST block when ancestor `SPEC.md` files are missing and MUST reject orphan targets or symbolic links without overwrite.
 - Facade exact replay MUST reject unexpected files in the target and MUST expose them through the blocker and readback.
 - A new spec quartet MUST become visible as one directory promotion; a failed write MUST NOT expose a partial target quartet.
+- Linux promotion MUST verify the pinned staging identity, use `renameat2(RENAME_NOREPLACE)`, verify the published identity, and move any divergent published target out of the public name through a checked no-replace rollback. Rollback errors MUST NOT be ignored.
 - Reapplying an identical facade `new` plan to an exact target MUST return `noop`; legacy `new` MUST preserve both its existing collision error and its compatibility behavior for a pre-created directory without `SPEC.md`.
 - `sync` MUST compare source and index before replacement and MUST report whether the index changed.
 - Facade `sync` MUST replace the index from the exact captured plan snapshot, without rereading Markdown between validation and write.
-- The facade database binding MUST be canonical and MUST reject observed symbolic-link components before writes.
+- The facade database binding MUST be canonical and MUST reject symbolic links or reparse points while opening each existing component relative to a pinned parent.
+- Facade SQLite access MUST keep the planned database parent and file identities pinned through the transaction. Linux MUST address the pinned parent through `/proc/self/fd` and MUST prove that the opened SQLite connection holds a new descriptor for the pinned inode before any pragma or SQL; Windows MUST deny delete/rename sharing while allowing SQLite read/write access. Missing connection proof MUST fail closed.
+- Linux MUST use `openat2` with no-link, beneath, no-magic-link, and no-cross-mount resolution for confined opens. Windows MUST use relative NT opens with reparse-point rejection. Neither platform MAY fall back to path checks.
+- If a required Linux primitive is unavailable after `.ravi` or `.ravi/specs` was created, the operation MUST remove each directory it created when still empty and identity-matched; an unverifiable rollback MUST fail explicitly.
 - Public facade schemas MUST correlate each operation with only its valid input, target, effects, observation, state, readback, verification, and recovery shapes.
 - Facade `readback`, `verify`, and `recover` MUST be read-only and MUST expose file targets, ancestors, and index state. Recovery MUST NOT replay an effect.
 - Project links MAY attach specs as context, but specs MUST remain reusable outside any single project.

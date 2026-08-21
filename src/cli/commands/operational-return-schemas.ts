@@ -1289,7 +1289,15 @@ export const specsSyncReturnSchema = z
   .passthrough();
 
 const specsFacadeBindingReturnSchema = z
-  .object({ cwd: z.string(), specsRoot: z.string(), dbPath: z.string(), workspaceIdentity: z.string() })
+  .object({
+    cwd: z.string(),
+    specsRoot: z.string(),
+    dbPath: z.string(),
+    workspaceIdentity: z.string(),
+    rootBinding: z.string(),
+    dbBinding: z.string(),
+    dbParentExists: z.boolean(),
+  })
   .strict();
 
 const specsFacadeIndexReturnSchema = z

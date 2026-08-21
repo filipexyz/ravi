@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -67,6 +68,22 @@ struct OpenedEntry {
   EntryInfo info;
 };
 
+struct DatabaseState {
+  std::vector<Handle> path_handles;
+  std::optional<Handle> file;
+  std::string absolute_path;
+  std::string file_name;
+  std::string binding;
+  std::string safe_path;
+  bool parent_exists = false;
+  bool file_existed = false;
+  bool file_created = false;
+};
+
+struct DatabaseAccessWitness {
+  std::vector<std::pair<std::uintptr_t, std::string>> handles;
+};
+
 Handle open_workspace(const std::string& absolute_path);
 std::optional<OpenedEntry> open_entry_at(const Handle& parent, const std::string& name);
 std::optional<OpenedEntry> open_writable_file_at(const Handle& parent, const std::string& name);
@@ -84,7 +101,16 @@ void promote_directory_no_replace(
     const Handle& parent,
     const std::string& staging_name,
     const Handle& staging,
-    const std::string& target_name);
-void remove_private_tree(const Handle& parent, const std::string& name, const Handle& expected_directory) noexcept;
+    const std::string& target_name,
+    const std::string& recovery_name,
+    const std::function<void()>& immediately_before_rename);
+bool remove_private_tree(const Handle& parent, const std::string& name, const Handle& expected_directory);
+bool remove_empty_directory_at(const Handle& parent, const std::string& name, const Handle& expected_directory);
+
+DatabaseState open_database_state(const std::string& absolute_path);
+void pin_database_file_for_write(DatabaseState& state, bool create_if_missing);
+bool database_path_matches_state(const DatabaseState& state);
+DatabaseAccessWitness capture_database_access_witness();
+bool database_connection_matches_state(const DatabaseState& state, const DatabaseAccessWitness& witness);
 
 }  // namespace ravi::specs_safe_fs
