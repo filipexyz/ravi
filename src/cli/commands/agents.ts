@@ -84,6 +84,7 @@ import {
   readRuntimeModelBrokerSelection,
   resolveRequiredRuntimeModelBrokerSelection,
 } from "../../runtime/model-broker.js";
+import { revokeLiveRuntimeContextsForAgent } from "../../runtime/context-registry.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -1350,7 +1351,13 @@ export class AgentsCommands {
     }
 
     const nextDefaults = buildAgentRuntimePermissionsDefaults(agent.defaults, after);
+    // Sweep before the config write so a revocation failure cannot leave the
+    // mutation applied with all previous authority snapshots still live.
+    // Sweep again after the write to catch a context issued concurrently from
+    // the old configuration while the mutation was in progress.
+    revokeLiveRuntimeContextsForAgent(id);
     updateAgent(id, { defaults: nextDefaults });
+    revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
       action: "permissions" as const,

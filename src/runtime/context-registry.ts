@@ -141,6 +141,35 @@ export function revokeAgentRuntimeContextsForSession(
   );
 }
 
+/**
+ * Revoke every live authority snapshot issued for an agent.
+ *
+ * Runtime capabilities are immutable snapshots. Changing an agent's stored
+ * permission profile without revoking those snapshots leaves the old
+ * authority usable until expiry or the next turn rotation. Permission
+ * mutations call this helper so reductions take effect immediately and
+ * expansions only appear in a newly issued context.
+ */
+export function revokeLiveRuntimeContextsForAgent(
+  agentId: string,
+  options: RevokeRuntimeContextOptions = {},
+): RevokeContextResult[] {
+  const contexts = dbListContexts({ agentId, includeInactive: false });
+  const liveContextIds = new Set(contexts.map((context) => context.contextId));
+  const roots = contexts.filter((context) => {
+    const parentContextId = context.metadata?.parentContextId;
+    return typeof parentContextId !== "string" || !liveContextIds.has(parentContextId);
+  });
+
+  return roots.map((context) =>
+    revokeRuntimeContext(context.contextId, {
+      cascade: options.cascade,
+      reason: options.reason ?? "agent_permissions_changed",
+      revokedAt: options.revokedAt,
+    }),
+  );
+}
+
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
   return dedupeCapabilities(materializeSubjectCapabilities("agent", agentId));
 }

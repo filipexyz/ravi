@@ -178,17 +178,15 @@ describe("createCodexRuntimeProvider", () => {
       const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
       const raviHookGroup = preToolUse.find(
         (group: any) =>
-          typeof group?.matcher === "string" &&
-          group.matcher.includes("Bash") &&
-          group.matcher.includes("shell") &&
-          group.matcher.includes("Read") &&
+          group?.matcher === "^(Bash|shell)$" &&
           Array.isArray(group?.hooks) &&
-          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex native tool permission gate"),
+          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
       );
 
       expect(raviHookGroup).toBeDefined();
       expect(raviHookGroup.hooks[0]?.command).toContain("context");
-      expect(raviHookGroup.hooks[0]?.command).toContain("codex-tool-hook");
+      expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(raviHookGroup.hooks[0]?.command).not.toContain("codex-tool-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
     } finally {
       if (originalHome === undefined) {
@@ -1377,28 +1375,28 @@ process.on("SIGTERM", () => {
     expect(calls[0]?.effort).toBe("xhigh");
   });
 
-  it.each([
-    "max",
-    "ultra",
-  ] as const)("propagates the %s effort to the mocked exec transport without renaming the model", async (effort) => {
-    const { calls, transport } = createMockTransport([
-      () => ({
-        events: (async function* () {
-          yield { type: "thread.started", thread_id: `thread_${effort}` };
-          yield { type: "turn.started" };
-          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
-        })(),
-      }),
-    ]);
+  it.each(["max", "ultra"] as const)(
+    "propagates the %s effort to the mocked exec transport without renaming the model",
+    async (effort) => {
+      const { calls, transport } = createMockTransport([
+        () => ({
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: `thread_${effort}` };
+            yield { type: "turn.started" };
+            yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+          })(),
+        }),
+      ]);
 
-    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
-    const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
+      const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+      const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
 
-    await collectEvents(session.events);
+      await collectEvents(session.events);
 
-    expect(calls[0]?.effort).toBe(effort);
-    expect(calls[0]?.model).toBe("gpt-5.6-sol");
-  });
+      expect(calls[0]?.effort).toBe(effort);
+      expect(calls[0]?.model).toBe("gpt-5.6-sol");
+    },
+  );
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
