@@ -12,6 +12,7 @@ import { classifyTurnProvenance } from "./turn-provenance.js";
 import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
+const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
@@ -143,6 +144,23 @@ export class RuntimePromptSubscription {
               break;
             }
 
+            try {
+              // Keep the JetStream work item durable until the dispatcher has
+              // accepted the prompt. Provider/bootstrap failures can happen
+              // before a turn exists, so acknowledging earlier loses the only
+              // retryable copy.
+              await this.options.handlePrompt(sessionName, prompt);
+            } catch (error) {
+              log.error("Failed to handle prompt before acknowledgement", {
+                sessionName,
+                subject: msg.subject,
+                retryDelayMs: PROMPT_DISPATCH_RETRY_DELAY_MS,
+                error,
+              });
+              msg.nak(PROMPT_DISPATCH_RETRY_DELAY_MS);
+              continue;
+            }
+
             msg.ack();
             this.promptsReceived++;
 
@@ -169,9 +187,6 @@ export class RuntimePromptSubscription {
                   error,
                 });
               });
-            this.options.handlePrompt(sessionName, prompt).catch((err) => {
-              log.error("Failed to handle prompt", err);
-            });
           }
 
           if (!this.options.isRunning() || intakeFenced) {

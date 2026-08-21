@@ -94,11 +94,15 @@ describe("RuntimePromptSubscription", () => {
     });
   });
 
-  it("ACKs and dispatches a prompt only after the intake fence accepts it", async () => {
+  it("ACKs a prompt only after the intake fence and dispatch both accept it", async () => {
     const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "continue" });
     consumedMessages = [message];
     const canAcceptPrompt = mock(() => true);
-    const handlePrompt = mock(async () => {});
+    const callOrder: string[] = [];
+    message.ack = mock(() => callOrder.push("ack"));
+    const handlePrompt = mock(async () => {
+      callOrder.push("dispatch");
+    });
     const subscription = new RuntimePromptSubscription({
       isRunning: () => running,
       canAcceptPrompt,
@@ -115,7 +119,32 @@ describe("RuntimePromptSubscription", () => {
     expect(message.ack).toHaveBeenCalledTimes(1);
     expect(message.nak).not.toHaveBeenCalled();
     expect(handlePrompt).toHaveBeenCalledWith("dev", { prompt: "continue" });
+    expect(callOrder).toEqual(["dispatch", "ack"]);
     expect(subscription.promptsReceived).toBe(1);
+  });
+
+  it("delays redelivery without ACKing or counting a prompt when dispatch fails", async () => {
+    const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "retry me" });
+    consumedMessages = [message];
+    const handlePrompt = mock(async () => {
+      throw new Error("dispatch failed");
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => !subscription.active);
+
+    expect(handlePrompt).toHaveBeenCalledTimes(1);
+    expect(message.nak).toHaveBeenCalledWith(5_000);
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(subscription.promptsReceived).toBe(0);
   });
 
   it("NAKs and stops the pull before ACK or dispatch when intake is fenced", async () => {
