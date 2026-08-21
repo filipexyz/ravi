@@ -21153,7 +21153,7 @@ export const CommandsListReturnSchema = {
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "argumentHint": {
             "anyOf": [
@@ -21280,21 +21280,6 @@ export const CommandsListReturnSchema = {
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "token",
-          "title",
-          "description",
-          "argumentHint",
-          "arguments",
-          "disabled",
-          "scope",
-          "path",
-          "relativePath",
-          "shadowedBy",
-          "shadows",
-          "issues"
-        ],
         "type": "object"
       },
       "type": "array"
@@ -21357,8 +21342,133 @@ export const CommandsListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "argumentHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arguments": {
+            "items": {},
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "level",
+                "code",
+                "message",
+                "id",
+                "scope",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "shadowedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shadows": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "type": "array"

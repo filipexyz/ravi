@@ -3,8 +3,31 @@ import { expectedErrorToContractError, pickFields, unexpectedErrorToContractErro
 import { fail } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
 import { CliTerminationRequest, rethrowCliTermination } from "./process-output.js";
+import { shouldEmitCommandAudit } from "./decorators.js";
 
 describe("agent-first CLI foundation contract", () => {
+  it("limits audit opt-out to low-risk effect-free reads", () => {
+    expect(shouldEmitCommandAudit(undefined, "missing")).toBe(true);
+    expect(
+      shouldEmitCommandAudit(
+        { kind: "read", resource: "commands", action: "list", risk: "low", effectClass: "none", audit: "none" },
+        "commands.list",
+      ),
+    ).toBe(false);
+    expect(() =>
+      shouldEmitCommandAudit(
+        { kind: "mutate", resource: "commands", action: "write", risk: "low", audit: "none" },
+        "commands.write",
+      ),
+    ).toThrow('audit "none" is limited to low-risk reads');
+    expect(() =>
+      shouldEmitCommandAudit(
+        { kind: "read", resource: "secrets", action: "show", risk: "medium", audit: "none" },
+        "secrets.show",
+      ),
+    ).toThrow('audit "none" is limited to low-risk reads');
+  });
+
   it("preserves explicitly public expected failures with their typed metadata", () => {
     const expected = new CliExpectedError("The requested agent was not found.", "AGENT_NOT_FOUND", 1, {
       publicMessage: true,
@@ -88,6 +111,8 @@ describe("agent-first CLI foundation contract", () => {
   it("keeps the projection API compatible for callers not migrated yet", () => {
     const rows = pickFields([{ id: "main", name: "Main" }], "id");
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
+    expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id"]);
+    expect(JSON.parse(JSON.stringify(rows))).toEqual([{ id: "main" }]);
   });
 
   it("routes direct legacy fail termination through the top-level flush boundary", () => {

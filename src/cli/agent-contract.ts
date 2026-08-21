@@ -154,22 +154,8 @@ export function pickFields<T>(items: T[], fields?: string, options?: PickFieldsO
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const picked: Record<string, unknown> = {};
-    const requested = new Set(keys);
-    for (const key of Object.keys(record)) {
-      if (requested.has(key)) {
-        picked[key] = record[key];
-        continue;
-      }
-
-      // Keep the complete row available to @Returns validation while exposing
-      // only requested fields through JSON/Object.keys. The gateway validates
-      // handlers before serializing their original return value.
-      Object.defineProperty(picked, key, {
-        value: record[key],
-        enumerable: false,
-        configurable: false,
-        writable: false,
-      });
+    for (const key of keys) {
+      if (Object.hasOwn(record, key)) picked[key] = record[key];
     }
     return picked as T;
   });

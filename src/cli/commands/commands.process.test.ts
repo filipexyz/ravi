@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -35,7 +36,6 @@ function runCli(args: string[]): CliResult {
       ...withoutRaviRuntimeContextEnv(),
       RAVI_HOME: stateDir,
       RAVI_STATE_DIR: stateDir,
-      RAVI_SUPPRESS_AUDIT_EVENTS: "1",
     },
   });
   return {
@@ -67,25 +67,67 @@ function sourceDigest(): SourceFileDigest[] {
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-async function logicalStateDigest(): Promise<string> {
-  const { dbGetAgent, dbListRoutes, closeRouterDb } = await import("../../router/router-db.js");
-  const { listSessions, closeSessionStore } = await import("../../router/sessions.js");
-  const value = JSON.stringify({
-    agent: dbGetAgent("main"),
-    routes: dbListRoutes(),
-    sessions: listSessions(),
-  });
-  closeSessionStore();
-  closeRouterDb();
-  return createHash("sha256").update(value).digest("hex");
+function stateFileDigest(): SourceFileDigest[] {
+  const files: SourceFileDigest[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) {
+        files.push({
+          path: relative(stateDir, path).replaceAll("\\", "/"),
+          sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
+        });
+      }
+    }
+  };
+  visit(stateDir);
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function logicalStateDigest(): string {
+  const path = join(stateDir, "ravi.db");
+  if (!existsSync(path)) return createHash("sha256").update("missing").digest("hex");
+  const database = new Database(path, { readonly: true, create: false });
+  try {
+    const tableNames = (
+      database
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        .all() as Array<{ name: string }>
+    ).map((row) => row.name);
+    const snapshot = tableNames.map((table) => {
+      const escaped = table.replaceAll('"', '""');
+      const rows = (database.prepare(`SELECT * FROM "${escaped}"`).all() as Array<Record<string, unknown>>)
+        .map((row) => JSON.stringify(row))
+        .sort();
+      return { table, rows };
+    });
+    return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+  } finally {
+    database.close();
+  }
+}
+
+function captureState(): { sources: SourceFileDigest[]; files: SourceFileDigest[]; logical: string } {
+  const logical = logicalStateDigest();
+  return { sources: sourceDigest(), files: stateFileDigest(), logical };
+}
+
+function expectStateUnchanged(before: ReturnType<typeof captureState>): void {
+  const after = captureState();
+  expect(after.sources).toEqual(before.sources);
+  expect(after.logical).toBe(before.logical);
+  expect(after.files).toEqual(before.files);
 }
 
 function expectReadOnlySuccess(args: string[]): Record<string, unknown> {
-  const before = sourceDigest();
+  const before = captureState();
   const result = runCli(args);
 
   expect(result).toMatchObject({ status: 0, stderr: "" });
-  expect(sourceDigest()).toEqual(before);
+  expectStateUnchanged(before);
 
   return JSON.parse(result.stdout) as Record<string, unknown>;
 }
@@ -107,12 +149,12 @@ beforeAll(async () => {
   const { dbUpdateAgent, closeRouterDb } = await import("../../router/router-db.js");
   dbUpdateAgent("main", { cwd: agentCwd });
   closeRouterDb();
-  logicalStateBefore = await logicalStateDigest();
+  logicalStateBefore = logicalStateDigest();
 });
 
 afterAll(async () => {
   try {
-    expect(await logicalStateDigest()).toBe(logicalStateBefore);
+    expect(logicalStateDigest()).toBe(logicalStateBefore);
   } finally {
     await cleanupIsolatedRaviState(stateDir);
     rmSync(agentCwd, { recursive: true, force: true });
@@ -121,13 +163,13 @@ afterAll(async () => {
 
 describe("commands process contract", () => {
   it("prints group help with exit 0 when no operation is supplied", () => {
-    const before = sourceDigest();
+    const before = captureState();
     const result = runCli(["commands"]);
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
     expect(result.stdout).toContain("Usage: ravi commands");
     expect(result.stdout).toContain("list [options]");
-    expect(sourceDigest()).toEqual(before);
+    expectStateUnchanged(before);
   });
 
   it("list is paginated, projected, and leaves command sources unchanged", () => {
@@ -178,7 +220,7 @@ describe("commands process contract", () => {
     },
   ] as const) {
     it(`returns one typed exit-2 envelope for ${testCase.name}`, () => {
-      const before = sourceDigest();
+      const before = captureState();
       const result = runCli([...testCase.args]);
 
       expect(result).toMatchObject({ status: 2, stderr: "" });
@@ -189,7 +231,7 @@ describe("commands process contract", () => {
       };
       expect(payload).toMatchObject({ success: false, error: { code: testCase.code } });
       if (testCase.acceptedFields) expect(payload.error.acceptedFields).toContain("id");
-      expect(sourceDigest()).toEqual(before);
+      expectStateUnchanged(before);
     });
   }
 });

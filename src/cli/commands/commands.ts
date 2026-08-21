@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { configStore } from "../../config-store.js";
+import { dbReadAgentDirectorySnapshot } from "../../router/router-db.js";
 import {
   discoverRaviCommands,
   normalizeRaviCommandId,
@@ -62,15 +62,19 @@ function normalizeCommandName(name: string, site: ContractCallSite): string {
  * envelope with real similar ids from the local config.
  */
 function resolveAgent(agentId: string | undefined, site: ContractCallSite): AgentConfig {
-  const config = configStore.getConfig();
-  const resolvedAgentId = agentId?.trim() || config.defaultAgent;
-  const agent = config.agents[resolvedAgentId];
+  const snapshot = dbReadAgentDirectorySnapshot();
+  const agents = Object.fromEntries(snapshot.agents.map((agent) => [agent.id, agent]));
+  if (snapshot.agents.length === 0) {
+    agents.main = { id: "main", cwd: process.cwd() };
+  }
+  const resolvedAgentId = agentId?.trim() || (snapshot.agents.length === 0 ? "main" : snapshot.defaultAgent);
+  const agent = agents[resolvedAgentId];
   if (!agent) {
     contractFail(site.op, "AGENT_NOT_FOUND", `Agent not found: ${resolvedAgentId}`, {
       asJson: site.asJson,
       details: {
         suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-        suggestions: suggestSimilar(resolvedAgentId, Object.keys(config.agents)),
+        suggestions: suggestSimilar(resolvedAgentId, Object.keys(agents)),
       },
     });
   }
@@ -176,7 +180,7 @@ function normalizeRestArgs(rest?: string[]): string[] {
 })
 export class RaviCommandsCommands {
   @Command({ name: "list", description: "List Ravi commands" })
-  @CommandAccess({ kind: "read", resource: "commands", action: "list", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "list", risk: "low", audit: "none" })
   @Returns(commandsListReturnSchema)
   list(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
@@ -257,7 +261,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "show", description: "Show one Ravi command" })
-  @CommandAccess({ kind: "read", resource: "commands", action: "show", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "show", risk: "low", audit: "none" })
   @Returns(commandShowReturnSchema)
   show(
     @Arg("name", { description: "Command name, with or without #" }) name: string,
@@ -288,7 +292,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "validate", description: "Validate Ravi command files" })
-  @CommandAccess({ kind: "read", resource: "commands", action: "validate", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "validate", risk: "low", audit: "none" })
   @Returns(commandValidateReturnSchema)
   validate(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
@@ -322,7 +326,7 @@ export class RaviCommandsCommands {
   }
 
   @Command({ name: "run", description: "Render a Ravi command into its composed prompt" })
-  @CommandAccess({ kind: "read", resource: "commands", action: "render", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "commands", action: "render", risk: "low", audit: "none" })
   @Returns(commandRunReturnSchema)
   run(
     @Arg("name", { description: "Command name, with or without #" }) name: string,

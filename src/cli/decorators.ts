@@ -83,6 +83,8 @@ export interface CommandAccessOptions {
   redactions?: string[];
   localOperator?: boolean;
   requiresConfirmation?: boolean;
+  /** Audit transport policy. `none` is reserved for proven effect-free inspection domains. */
+  audit?: "emit" | "none";
   notes?: string;
 }
 
@@ -146,6 +148,24 @@ export function resolveCommandSafetyMetadata(
     requiresConfirmation,
     classificationSource,
   };
+}
+
+/**
+ * Resolve whether a command may emit audit transport.
+ *
+ * Opting out is intentionally narrow: only low-risk reads whose resolved
+ * effect is `none` may do so. Invalid declarations fail before execution
+ * rather than silently creating an unaudited mutation path.
+ */
+export function shouldEmitCommandAudit(access: CommandAccessOptions | undefined, commandName = "command"): boolean {
+  if (access?.audit !== "none") return true;
+  const safety = resolveCommandSafetyMetadata(access, commandName);
+  if (safety.operationKind !== "read" || safety.effectClass !== "none" || safety.risk !== "low") {
+    throw new Error(
+      `Invalid audit metadata for ${commandName}: audit "none" is limited to low-risk reads with effectClass "none".`,
+    );
+  }
+  return false;
 }
 
 export interface GroupOptions {

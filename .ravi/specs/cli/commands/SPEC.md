@@ -45,8 +45,8 @@ COMMANDS operation has a write brake or a valid exit-3 path.
    before agent resolution with `INVALID_COMMAND_NAME`, exit 2, and a safe
    correction hint. They MUST NOT become `UNHANDLED_ERROR`.
 5. After name validation, an unknown `--agent` MUST exit 1 with
-   `AGENT_NOT_FOUND` and suggestions from local config before command
-   discovery starts.
+   `AGENT_NOT_FOUND` and suggestions from the read-only agent directory
+   snapshot before command discovery starts.
 6. `list` MUST reject non-integer, zero, negative, fractional, or over-limit
    pagination as `USAGE_ERROR`, exit 2. `limit` is 1 through 500; `offset` is
    an integer of zero or greater.
@@ -58,13 +58,20 @@ COMMANDS operation has a write brake or a valid exit-3 path.
    `argumentHint`, `arguments`, `disabled`, `scope`, `path`, `relativePath`,
    `shadowedBy`, `shadows`, and `issues`. Handler, return schema, generated
    surface, and this spec MUST remain coherent with this set.
+   A compact projection MUST serialize as exactly the requested non-empty
+   subset and its published schema MUST accept that JSON without hidden
+   properties.
 9. `validate` keeps its pre-existing exit-1 verdict through
    `process.exitCode` when command files contain errors. That is a validation
    result, not a contract error envelope.
 10. Repeating an operation against unchanged files and config MUST preserve
     JSON values, ordering, pagination continuation, and rendered prompt hash.
-11. `list`, `show`, `validate`, and `run` MUST leave command files, config,
-    sessions, and runtime transport unchanged.
+11. `list`, `show`, `validate`, and `run` MUST leave command files, every
+    SQLite table, every runtime state file, and runtime transport unchanged.
+    They MUST resolve agents without schema initialization or writable SQLite
+    access and MUST NOT emit command audit transport events.
+    The audit opt-out policy MUST reject any operation that is not a low-risk
+    read with resolved effect class `none`.
 12. A thrown `ContractError` MUST preserve its exit code through CLI, tool,
     gateway, and agent-context dispatchers.
 13. Invoking bare `ravi commands` MUST print the group help and exit 0. It is
@@ -143,5 +150,9 @@ taxonomy, and the absence of write effects.
   projection behavior.
 - Return schema changes without regenerated surfaces create tool and SDK
   drift even when direct CLI calls still work.
+- A return schema that validates complete non-enumerable properties before
+  JSON serialization is invalid; only the serialized public projection counts.
+- Opening the normal config store for discovery can initialize SQLite or alter
+  WAL/SHM files even when table rows are unchanged.
 - Bare-help behavior is opt-in through group metadata; enabling it globally
   would change unrelated domains and is outside this contract.

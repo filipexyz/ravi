@@ -76,16 +76,14 @@ mock.module("../context.js", () => ({
   },
 }));
 
-mock.module("../../config-store.js", () => ({
-  configStore: {
-    getConfig: () => ({
-      defaultAgent: "main",
-      agents: {
-        main: { id: "main", cwd: "/tmp/agents/main" },
-        vendas: { id: "vendas", cwd: "/tmp/agents/vendas" },
-      },
-    }),
-  },
+mock.module("../../router/router-db.js", () => ({
+  dbReadAgentDirectorySnapshot: () => ({
+    defaultAgent: "main",
+    agents: [
+      { id: "main", cwd: "/tmp/agents/main" },
+      { id: "vendas", cwd: "/tmp/agents/vendas" },
+    ],
+  }),
 }));
 
 mock.module("../../commands/index.js", () => ({
@@ -304,16 +302,35 @@ describe("commands read-only surface and compact mode", () => {
     expect(payload).toMatchObject({ prompt: "rendered:restart:ativar commands" });
   });
 
-  it("list --fields narrows each item to the requested fields", async () => {
+  it("list --fields survives JSON round-trip under the published Returns schema", async () => {
     const commands = new RaviCommandsCommands();
     const payload = await silenced(() => commands.list(undefined, true, undefined, undefined, undefined, "id,scope"));
+    const serializedPayload = JSON.parse(JSON.stringify(payload));
 
     expect(payload.items).toHaveLength(2);
     for (const item of payload.items as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["id", "scope"]);
+      expect(Object.getOwnPropertyNames(item).sort()).toEqual(["id", "scope"]);
     }
+    expect(payload.items).toBe(payload.commands);
     expect(payload.commands).toEqual(payload.items);
-    expect(commandsListReturnSchema.safeParse(payload).success).toBe(true);
+    expect(serializedPayload.items).toEqual(payload.items);
+    expect(serializedPayload.commands).toEqual(serializedPayload.items);
+    expect(commandsListReturnSchema.safeParse(serializedPayload).success).toBe(true);
+  });
+
+  it("list Returns accepts complete records and rejects arbitrary projected fields", async () => {
+    const commands = new RaviCommandsCommands();
+    const completePayload = await silenced(() => commands.list(undefined, true));
+    const projectedPayload = await silenced(() =>
+      commands.list(undefined, true, undefined, undefined, undefined, "id"),
+    );
+    const invalidPayload = JSON.parse(JSON.stringify(projectedPayload));
+    invalidPayload.items[0].unknown = "not-public";
+    invalidPayload.commands[0].unknown = "not-public";
+
+    expect(commandsListReturnSchema.safeParse(JSON.parse(JSON.stringify(completePayload))).success).toBe(true);
+    expect(commandsListReturnSchema.safeParse(invalidPayload).success).toBe(false);
   });
 
   it("list paginates deterministically and emits a reproducible next command", async () => {

@@ -1038,29 +1038,38 @@ export const commandIssueReturnSchema = z
   })
   .passthrough();
 
-export const commandRecordReturnSchema = z
-  .object({
-    id: z.string(),
-    token: z.string(),
-    title: z.string().nullable(),
-    description: z.string().nullable(),
-    argumentHint: z.string().nullable(),
-    arguments: z.array(z.unknown()),
-    disabled: z.boolean(),
-    scope: z.string(),
-    path: z.string(),
-    relativePath: z.string(),
-    shadowedBy: z.string().nullable(),
-    shadows: z.array(z.string()),
-    issues: z.array(commandIssueReturnSchema),
-  })
-  .passthrough();
+const commandRecordReturnShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.unknown()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandIssueReturnSchema),
+};
+
+export const commandRecordReturnSchema = z.object(commandRecordReturnShape).passthrough();
+
+const projectedCommandRecordReturnSchema = z
+  .object(commandRecordReturnShape)
+  .partial()
+  .strict()
+  .refine((record) => Object.keys(record).length > 0, {
+    message: "A projected command must contain at least one field.",
+  });
 
 export const commandsListReturnSchema = pagedItemsReturnSchema
   .extend({
     agent: looseObjectSchema,
     locations: looseObjectSchema,
-    commands: z.array(commandRecordReturnSchema),
+    items: z.array(projectedCommandRecordReturnSchema),
+    commands: z.array(projectedCommandRecordReturnSchema),
     issues: z.array(commandIssueReturnSchema),
   })
   .passthrough();

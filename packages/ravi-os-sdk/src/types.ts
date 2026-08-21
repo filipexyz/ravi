@@ -3931,12 +3931,12 @@ export type CommandsListInput = {
 export type CommandsListReturn = {
   agent: Record<string, unknown>;
   commands: Array<{
-    argumentHint: string | null;
-    arguments: unknown[];
-    description: string | null;
-    disabled: boolean;
-    id: string;
-    issues: Array<{
+    argumentHint?: string | null;
+    arguments?: unknown[];
+    description?: string | null;
+    disabled?: boolean;
+    id?: string;
+    issues?: Array<{
       code: string;
       id: string | null;
       level: string;
@@ -3945,14 +3945,13 @@ export type CommandsListReturn = {
       scope: string | null;
       [k: string]: unknown;
     }>;
-    path: string;
-    relativePath: string;
-    scope: string;
-    shadowedBy: string | null;
-    shadows: string[];
-    title: string | null;
-    token: string;
-    [k: string]: unknown;
+    path?: string;
+    relativePath?: string;
+    scope?: string;
+    shadowedBy?: string | null;
+    shadows?: string[];
+    title?: string | null;
+    token?: string;
   }>;
   issues: Array<{
     code: string;
@@ -3963,7 +3962,29 @@ export type CommandsListReturn = {
     scope: string | null;
     [k: string]: unknown;
   }>;
-  items: Array<Record<string, unknown>>;
+  items: Array<{
+    argumentHint?: string | null;
+    arguments?: unknown[];
+    description?: string | null;
+    disabled?: boolean;
+    id?: string;
+    issues?: Array<{
+      code: string;
+      id: string | null;
+      level: string;
+      message: string;
+      path: string | null;
+      scope: string | null;
+      [k: string]: unknown;
+    }>;
+    path?: string;
+    relativePath?: string;
+    scope?: string;
+    shadowedBy?: string | null;
+    shadows?: string[];
+    title?: string | null;
+    token?: string;
+  }>;
   locations: Record<string, unknown>;
   pagination: {
     hasMore: boolean;

@@ -1606,3 +1606,20 @@ de configuracao sem inicializacao ou escrita, impedir auditoria por politica
 declarada do dominio, comparar todos os arquivos e tabelas relevantes, testar o
 help compartilhado e regenerar todos os contratos. O candidato rejeitado fica
 em NO-GO definitivo.
+
+### Recaptura do substituto de COMMANDS
+
+O substituto removeu campos ocultos, publicou schema de projecao parcial
+estrito, passou o retorno por round-trip JSON e usa leitura SQLite dedicada sem
+inicializacao ou escrita. CLI, tool e gateway compartilham `audit: none`; a
+politica agora recusa esse opt-out fora de leituras de baixo risco e efeito
+`none`.
+
+Passaram nove testes de processo com 51 assercoes sem supressao de auditoria,
+41 testes isolados de gateway com 171 assercoes, 12 testes do router com 60
+assercoes, 75 testes SDK com 297 assercoes, build, typecheck, Biome, Markdown e
+todos os checks gerados. Uma captura paralela do gateway teve dois timeouts e
+foi descartada; a repeticao isolada passou. O primeiro quality gate bloqueou a
+falta do teste aprovado de router; depois dos dois casos nativos, o runner
+passou sobre 35 caminhos e indexou 274 specs. Commit, pacote, auditoria
+independente e CI Linux ainda sao obrigatorios; segue NO-GO para push ou PR.

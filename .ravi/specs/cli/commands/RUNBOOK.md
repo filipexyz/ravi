@@ -42,18 +42,22 @@ Expected results, in order:
 - `USAGE_ERROR`, exit 2;
 - a rendered prompt preview with no session publication.
 
-For a zero-write check, hash the configured agent and global command
-directories before and after every call. Repeating unchanged calls must retain
+For a zero-effect check, hash the configured agent and global command
+directories, every runtime state file (including SQLite WAL/SHM files), and a
+stable dump of every SQLite table before and after every call. Run without
+`RAVI_SUPPRESS_AUDIT_EVENTS`; COMMANDS declares transport-free inspection and
+must not contact the audit transport. Repeating unchanged calls must retain
 values, ordering, `pagination.nextCommand`, and
-`metadata.renderedPromptSha256`. In an isolated test process, set
-`RAVI_SUPPRESS_AUDIT_EVENTS=1` so transport evidence does not alter the state
-being inspected; suppression does not change command semantics.
+`metadata.renderedPromptSha256`.
 
 ## Repository Validation
 
 ```bash
 bun test src/cli/commands/commands.test.ts
+bun test src/cli/commands/commands.process.test.ts
 bun test src/commands/index.test.ts
+bun test src/cli/tools-export.test.ts
+bun test src/sdk/gateway/dispatcher.test.ts
 bun run sdk:generate
 bun run sdk:check
 bun run typecheck

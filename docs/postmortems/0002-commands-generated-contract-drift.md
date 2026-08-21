@@ -4,7 +4,7 @@
 
 **Severity:** medium
 
-**Status:** corrected locally; gate rerun pending
+**Status:** open; replacement candidate in validation
 
 **Project:** Ravi
 
@@ -112,3 +112,51 @@ configuration through a genuinely read-only path, suppress domain audit effects
 by declared policy rather than test environment, compare all relevant SQLite
 tables and state files, add focused group-help tests, and repeat every generated
 artifact and package review. This candidate remains permanently NO-GO.
+
+## Revision note: 2026-08-21, replacement implementation
+
+The replacement removes non-enumerable projection fields and publishes a
+strict non-empty subset schema for the 13 documented command fields. Native
+tests validate the return only after JSON round-trip and reject arbitrary
+projected keys. The shared gateway fixture was migrated to the same honest
+projection contract.
+
+Agent lookup now uses a dedicated read-only SQLite snapshot that bypasses the
+normal config store, schema initialization, migrations, and writable database
+singleton. COMMANDS declares `audit: none`; CLI, exported-tool, and gateway
+paths skip audit transport for both allowed and denied calls. The process test
+no longer sets the suppression environment variable and compares command
+sources, every SQLite table, and every runtime state file before and after each
+operation.
+
+Focused unit, process, gateway, typecheck, and formatting captures are green at
+this checkpoint. Generated TypeScript, OpenAPI, and Swift artifacts, full
+build, quality gates, exact commit/package, fresh independent review, and Linux
+CI must still be repeated. No push, PR, merge, remote call, or VPS action has
+occurred.
+
+## Revision note: 2026-08-21, replacement gate recapture
+
+Generated TypeScript, both OpenAPI snapshots, and Swift artifacts were rebuilt
+and passed their deterministic checks. The SDK suite passed 75 tests with 297
+assertions, the build and typecheck passed, and focused formatting and Markdown
+lint were clean. The installed-process slice passed nine tests with 51
+assertions while comparing all SQLite tables and state files without audit
+suppression.
+
+One parallel gateway run exceeded two inherited five-second timeouts while the
+process suite was consuming the same host. That capture was discarded; the
+isolated rerun passed all 41 tests with 171 assertions. The first quality-gate
+run correctly rejected the new router read path because its approved focused
+test was absent from the diff. Two native router cases were added: one proves a
+missing database is not created, and one proves an existing agent snapshot
+does not alter any state file. The router file then passed 12 tests with 60
+assertions, and the repeated quality runner passed over 35 accumulated paths
+with 274 specs indexed.
+
+A final adversarial review narrowed `audit: none` itself. Shared policy now
+throws unless the command is a low-risk read with resolved effect class
+`none`; CLI, tool export, and gateway use the same resolver. The focused
+foundation test proves mutations and medium-risk reads cannot opt out. Exact
+commit, package, independent review, and Linux CI remain mandatory, so the
+replacement is still NO-GO for push or PR at this checkpoint.

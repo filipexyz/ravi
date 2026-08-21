@@ -12,6 +12,7 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  shouldEmitCommandAudit,
   type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
@@ -89,6 +90,7 @@ function resolveCommandPath(
  */
 export function registerCommands(program: CommanderCommand, classes: CommandClass[]): void {
   const seen = new Map<string, { cls: CommandClass; method: string }>();
+  const bareHelpGroups = new Map<string, CommanderCommand>();
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
@@ -119,7 +121,7 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
     const segments = groupMeta.name.split(".");
     const group = resolveCommandPath(program, segments, groupMeta.description, groupMeta.aliases);
     if (groupMeta.showHelpOnBare) {
-      group.action(() => group.outputHelp());
+      bareHelpGroups.set(groupMeta.name, group);
     }
 
     const instance = new cls();
@@ -135,6 +137,12 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope, commandAccessMap.get(cmdMeta.method));
     }
+  }
+
+  for (const [groupPath, group] of bareHelpGroups) {
+    // A dotted group can share its node with a direct parent command. Preserve
+    // that direct handler regardless of class registration order.
+    if (!seen.has(groupPath)) group.action(() => group.outputHelp());
   }
 }
 
@@ -251,6 +259,7 @@ function registerCommand(
       return;
     }
 
+    const auditEnabled = shouldEmitCommandAudit(access, toolName);
     const accessResult = enforceCliCommandAuthorization({
       group: groupName,
       command: cmdMeta.name,
@@ -266,19 +275,22 @@ function registerCommand(
         accessResult.errorMessage,
       );
       renderContractError(contractError, input.json === true);
-      await emitCliAuditEvent({
-        group: groupName,
-        name: cmdMeta.name,
-        tool: toolName,
-        input: auditInput,
-        outcome: "denied",
-        exitCode: 1,
-        errorCode: "PERMISSION_DENIED",
-        status: "completed",
-        closeLazyConnection: false,
-      });
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
+      if (auditEnabled) {
+        await emitCliAuditEvent({
+          group: groupName,
+          name: cmdMeta.name,
+          tool: toolName,
+          input: auditInput,
+          outcome: "denied",
+          exitCode: 1,
+          errorCode: "PERMISSION_DENIED",
+          status: "completed",
+          closeLazyConnection: false,
+        });
+        const { flushAuditAndExit } = await import("../permissions/scope.js");
+        await flushAuditAndExit(1);
+      }
+      return terminateCliProcess(1);
     }
 
     // Execute and emit single event with input + output
@@ -319,18 +331,20 @@ function registerCommand(
       }
     }
 
-    await emitCliAuditEvent({
-      group: groupName,
-      name: cmdMeta.name,
-      tool: toolName,
-      input: auditInput,
-      outcome,
-      exitCode: contractExitCode ?? undefined,
-      errorCode: contractErrorCode,
-      status: "completed",
-      durationMs: Date.now() - startTime,
-      closeLazyConnection: true,
-    });
+    if (auditEnabled) {
+      await emitCliAuditEvent({
+        group: groupName,
+        name: cmdMeta.name,
+        tool: toolName,
+        input: auditInput,
+        outcome,
+        exitCode: contractExitCode ?? undefined,
+        errorCode: contractErrorCode,
+        status: "completed",
+        durationMs: Date.now() - startTime,
+        closeLazyConnection: true,
+      });
+    }
 
     if (contractExitCode !== null) return terminateCliProcess(contractExitCode);
   });

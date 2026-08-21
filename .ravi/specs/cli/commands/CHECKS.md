@@ -11,7 +11,8 @@
   discovery, after command-name validation where applicable.
 - Invalid `limit` and `offset` MUST exit 2 with `USAGE_ERROR`, never exit 1
   with `COMMAND_FAILED`.
-- Valid `--fields` MUST project equal `items` and `commands` rows.
+- Valid `--fields` MUST project equal `items` and `commands` rows, and the
+  serialized partial rows MUST validate against the published return schema.
 - One unknown field, alone or mixed with valid fields, MUST exit 2 with the
   stable `acceptedFields` set, including when no commands are discovered. It
   MUST never produce `{}` rows with exit 0.
@@ -26,8 +27,11 @@
   and ordering.
 - Repeating a paginated list MUST preserve `pagination.nextCommand`.
 - Repeating a render MUST preserve `metadata.renderedPromptSha256`.
-- `list`, `show`, `validate`, and `run` MUST leave command files, config,
-  sessions, and runtime transport unchanged.
+- `list`, `show`, `validate`, and `run` MUST leave command files, every SQLite
+  table, every runtime state file, and runtime transport unchanged without a
+  test-only audit suppression variable.
+- Agent resolution MUST use read-only SQLite access and MUST NOT initialize
+  schema, enable writable WAL behavior, or create missing state.
 - `run` MUST remain a pure renderer and MUST NOT publish to a session.
 - No COMMANDS operation may exit 3.
 - `validate` MUST preserve its exit-1 file verdict when validation errors
@@ -39,6 +43,10 @@
   Ravi Spec, and shipped COMMANDS skill MUST remain coherent.
 - The skill MUST document name validation, pagination, strict fields, exit
   taxonomy, and the absence of write effects.
+- CLI, exported-tool, and gateway paths MUST all honor the declared
+  transport-free policy for COMMANDS.
+- The shared audit policy MUST reject opt-out declarations on mutations,
+  effectful reads, and reads above low risk.
 - `bun test src/cli/commands/commands.test.ts` SHOULD pass after every change
   to this surface.
 - SDK generation/check, typecheck, build, quality gate, and documentation lint

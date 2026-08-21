@@ -4889,12 +4889,12 @@ public struct CommandsListReturn: Codable, Sendable {
   public var agent: [String: RaviJSON]
   public var commands: [RaviJSON]
   public var issues: [RaviJSON]
-  public var items: [[String: RaviJSON]]
+  public var items: [RaviJSON]
   public var locations: [String: RaviJSON]
   public var pagination: RaviJSON
   public var total: Double
 
-  public init(agent: [String: RaviJSON], commands: [RaviJSON], issues: [RaviJSON], items: [[String: RaviJSON]], locations: [String: RaviJSON], pagination: RaviJSON, total: Double) {
+  public init(agent: [String: RaviJSON], commands: [RaviJSON], issues: [RaviJSON], items: [RaviJSON], locations: [String: RaviJSON], pagination: RaviJSON, total: Double) {
     self.agent = agent
     self.commands = commands
     self.issues = issues

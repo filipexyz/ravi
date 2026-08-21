@@ -29,6 +29,15 @@ class NegatedToolCommands {
   }
 }
 
+@Group({ name: "quiet", description: "Effect-free inspection fixture", scope: "open" })
+class QuietToolCommands {
+  @Command({ name: "inspect", description: "Inspect without contacting audit transport" })
+  @CommandAccess({ kind: "read", resource: "quiet", action: "inspect", risk: "low", audit: "none" })
+  inspect() {
+    console.log(JSON.stringify({ ok: true }));
+  }
+}
+
 const context: ContextRecord = {
   contextId: "ctx_negated_test",
   contextKey: "rctx_negated_test",
@@ -36,6 +45,22 @@ const context: ContextRecord = {
   agentId: "negated-test",
   capabilities: [{ permission: "read", objectType: "negated", objectId: "run", source: "test" }],
   createdAt: Date.now(),
+};
+
+const quietContext: ContextRecord = {
+  contextId: "ctx_quiet_test",
+  contextKey: "rctx_quiet_test",
+  kind: "test-runtime",
+  agentId: "quiet-test",
+  capabilities: [{ permission: "read", objectType: "quiet", objectId: "inspect", source: "test" }],
+  createdAt: Date.now(),
+};
+
+const quietDeniedContext: ContextRecord = {
+  ...quietContext,
+  contextId: "ctx_quiet_denied_test",
+  contextKey: "rctx_quiet_denied_test",
+  capabilities: [],
 };
 
 @Group({ name: "media", description: "Media authorization fixture", scope: "open" })
@@ -253,6 +278,33 @@ describe("tools export surface", () => {
       expect(denied).toMatchObject({ outcome: "denied", exitCode: 1 });
       expect(emits).toBe(0);
     } finally {
+      nats.emit = originalEmit;
+    }
+  });
+
+  it("does not contact the global audit transport for audit:none, without global suppression", async () => {
+    const originalEmit = nats.emit;
+    const suppressed = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    let emits = 0;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    try {
+      const tool = extractTools([QuietToolCommands])[0];
+      const allowed = await runWithContext({ agentId: quietContext.agentId, context: quietContext }, () =>
+        tool!.handler({}),
+      );
+      const denied = await runWithContext({ agentId: quietDeniedContext.agentId, context: quietDeniedContext }, () =>
+        tool!.handler({}),
+      );
+
+      expect(allowed).toMatchObject({ isError: false, outcome: "succeeded" });
+      expect(denied).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
+      expect(emits).toBe(0);
+    } finally {
+      if (suppressed === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppressed;
       nats.emit = originalEmit;
     }
   });

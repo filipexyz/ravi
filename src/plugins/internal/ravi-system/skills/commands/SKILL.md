@@ -37,6 +37,10 @@ Campos desconhecidos não são ignorados: o pedido inteiro falha com exit 2 e
 `acceptedFields`, inclusive se a lista estiver vazia. `--limit` aceita de 1 a
 500; `--offset` aceita zero ou mais; ambos exigem inteiros.
 
+A projecao JSON contem somente os campos pedidos e continua valida no contrato
+publicado depois de serializar. As quatro operacoes consultam o diretorio de
+agents sem inicializar ou alterar SQLite e nao publicam auditoria de transporte.
+
 Exemplos:
 
 ```bash

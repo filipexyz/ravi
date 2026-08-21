@@ -11,6 +11,7 @@ import {
   getOptionsMetadata,
   getScopeMetadata,
   resolveCommandSafetyMetadata,
+  shouldEmitCommandAudit,
   type ArgMetadata,
   type CommandAccessOptions,
   type CommandSafetyMetadata,
@@ -237,6 +238,7 @@ function buildHandler(
     const agentId = ctx?.agentId;
     const startTime = Date.now();
     const auditInput = redactCommandAccessInput(access, toolArgs);
+    const auditEnabled = shouldEmitCommandAudit(access, toolName);
     const accessResult = enforceCliCommandAuthorization({
       group,
       command,
@@ -251,7 +253,7 @@ function buildHandler(
         accessResult.errorMessage,
       );
       const envelope = JSON.stringify(contractError.envelope());
-      if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
+      if (auditEnabled && process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
         nats
           .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
             tool: toolName,
@@ -360,7 +362,7 @@ function buildHandler(
 
     const text = output.join("\n").trim() || "(no output)";
 
-    if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
+    if (auditEnabled && process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
       nats
         .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
           tool: toolName,
