@@ -1388,3 +1388,124 @@ TypeScript/Swift foram alinhados em commit dedicado, com `GIT_SHA` preservado.
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. O
 head final com este registro e os snapshots atualizados ainda precisa passar a
 CI completa antes de restaurar o veredito **APPROVE**.
+
+---
+
+## FASE 9 - fundacao compartilhada de CLI agent-first (2026-08-21)
+
+Esta fase inicia em estado **DRAFT**. Ela adiciona a fronteira comum de saida,
+erros publicos tipados, validadores de campos e paginacao e metadados
+descobríveis de operacao, efeito, risco e confirmacao. As regras de negocio e a
+prova de ausencia de efeito de cada mutacao continuam pertencendo aos PRs de
+dominio.
+
+A primeira candidata foi classificada como **NO-GO** pela revisao independente:
+os gates `test:agent-contract` e `test:sdk` excederam limites de tempo, os dois
+testes centrais novos nao estavam listados em `CHECKS.md` e a spec prometia
+rigidez de campos e classificacao real alem do recorte migrado. O ocorrido esta
+registrado em `docs/postmortems/0001-cli-foundation-gates-no-go.md`.
+
+O recorte factual desta fase e:
+
+- `agents list` e o primeiro comando com campos estritos; os demais permanecem
+  legados ate o PR de seu dominio;
+- leituras sao projetadas como `none`, enquanto mutacoes sem revisao permanecem
+  visivelmente `unclassified`;
+- a prova sintetica valida o mecanismo comum de freio, nao substitui a prova de
+  uma mutacao real;
+- a fronteira de flush cobre comandos registrados de execucao unica; loops
+  interativos e callbacks de ciclo de vida permanecem excecoes declaradas;
+- o limite maximo de paginacao deixa de ser reduzido silenciosamente e passa a
+  falhar como erro de uso.
+
+Promocao para `active`, commit, push e PR ficam condicionados aos gates oficiais
+aplicaveis e a uma nova revisao independente do SHA exato.
+
+### Terceira revisao independente e liberacao para PR
+
+A terceira revisao independente classificou a candidata local como
+**CLOSABILITY_READY · INDEPENDENTLY_VERIFIED · LIVE_UNAUTHORIZED**. Ela
+confirmou a supressao NATS em chamadas permitidas e negadas, a mascara restrita
+ao literal de `GIT_SHA`, a taxonomia de exit e a coerencia entre codigo, Ravi
+Spec, ADR, runbook e postmortem.
+
+No estado aprovado, `test:sdk` passou com 75 testes e 297 assercoes,
+`tools-export` com 14 testes e 65 assercoes, typecheck, build, quality gate
+sobre 34 caminhos e lint documental passaram. O `test:agent-contract` passou
+fora das mesmas duas falhas de portabilidade de `artifacts/store.test.ts`
+reproduzidas na `dev` no Windows. O pacote instalavel local tem SHA-256
+`581CA4862028E0A91C5025B9AE575188F8E16C1AA857731088F13DE436DF4B75`.
+
+Este GO autoriza commit, push e abertura da PR. A spec permanece `draft` e
+qualquer merge ou uso na VPS continua condicionado a CI Linux verde no commit
+exato e a autorizacao humana de implantacao.
+
+### Correcao da espera de saida sem limite
+
+A auditoria posterior ao primeiro commit encontrou uma espera sem prazo quando
+o Bun mantinha o indicador de buffer ativo. A fundacao passou a verificar o
+progresso em intervalos curtos, interromper a espera depois de cinco segundos,
+garantir a terminacao em `finally` e remover a segunda descarga no encerramento
+global.
+
+O teste nativo agora cobre stream permanentemente preso e processo-filho que
+excede seu prazo, alem dos caminhos reais de JSON maior que 64 KiB, falha e
+versao. O recorte focado passou com 23 testes e 93 assercoes; metadados,
+paginacao e runtime passaram com 27 testes e 107 assercoes; `test:sdk` passou
+com 75 testes e 297 assercoes, seguido de `sdk:check`. Typecheck, build, quality
+gate dos 34 caminhos e lint documental tambem passaram.
+
+O GO anterior fica superado pela mudanca de codigo. Novo commit, pacote e
+revisao independente do SHA exato sao obrigatorios antes de push e PR.
+
+### Primeira CI Linux da PR 426
+
+O run Linux `32450827025` do SHA
+`677cd83857fe6b6d2f92e66b3fd2dd61d4928f3c` passou pela suite de canais e
+avancou ate os testes da CLI, mas falhou ao carregar sincronamente o bundle do
+daemon. O top-level await adicionado pela fronteira de saida tornou o bundle
+incompativel com o `require` usado pelo PM2, embora a execucao direta local
+continuasse funcional.
+
+O caminho de versao foi movido para `bootstrapCli` e a promessa raiz voltou a
+ser iniciada sem top-level await. A CI vermelha invalida o GO e o pacote do SHA
+anterior. Nova validacao integral, pacote, revisao independente e CI Linux sao
+obrigatorios.
+
+Na revalidacao local, uma selecao ampliada incluiu indevidamente
+`src/runtime/codex-provider.test.ts`: 20 casos de scripts `.mjs` temporarios
+falharam com `ENOENT` no Windows e 50 passaram. O recorte correto da fundacao,
+sem esse arquivo alheio, passou com 27 testes e 107 assercoes. A suite integral
+permanece sob autoridade da CI Linux do novo SHA.
+
+O bundle corrigido foi carregado sincronamente por `require` e `daemon status`
+terminou com codigo 0. O recorte de saida e erros passou com 23 testes e 93
+assercoes; o SDK completo passou com 75 testes e 297 assercoes, seguido de
+`sdk:check`. Typecheck, build integral, quality gate dos 34 caminhos e lint
+documental tambem passaram. O fechamento ainda depende de commit exato, revisao
+independente, novo pacote e CI Linux verde no mesmo SHA.
+
+A segunda CI Linux, run `32451955010` no SHA
+`ec6d13ccdcbcdb90b7b8a224c90a4f8892e2af16`, passou build, typecheck e o teste
+sincrono do daemon, mas falhou em dois casos de `sdk.test.ts`. Catches antigos
+do SDK recapturavam o sinal privado de termino de `fail()` e substituiam a
+mensagem publica por `CLI termination requested.`.
+
+A correcao relanca a mesma instancia privada antes de qualquer conversao de
+erro e concentra todos os catches externos do SDK nesse funil. Os dois testes
+agora exigem codigo 1, exatamente uma mensagem publica e ausencia do texto
+interno. O recorte afetado passou com 26 testes e 74 assercoes. Os testes de
+comandos posteriores ao SDK tambem passaram; somente o cleanup de
+`tasks-profiles.test.ts` repetiu os tres `EBUSY` ja conhecidos da base Windows.
+O NO-GO permanece ate novo commit, pacote, revisao independente e CI Linux.
+
+Na revalidacao final da segunda correcao, contexto, sinal, saida nativa, SDK,
+ferramentas e gateway passaram com 86 testes e 310 assercoes. O processo real
+passou com 11 testes e 63 assercoes; o SDK completo passou com 75 testes e 297
+assercoes, seguido de `sdk:check`. Typecheck, build integral e quality gate dos
+36 caminhos passaram.
+
+O primeiro `biome check` apontou apenas finais de linha misturados nos dois
+arquivos SDK editados no Windows. A formatacao oficial corrigiu o problema; o
+check e os 20 testes dos arquivos formatados passaram. Novo SHA, pacote, revisao
+independente e CI Linux verde continuam obrigatorios.

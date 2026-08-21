@@ -41,6 +41,7 @@ import {
   type RemoteDispatchResult,
   type RemoteGatewayConfig,
 } from "./remote-gateway.js";
+import { terminateCliProcess, writeProcessStdout } from "./process-output.js";
 
 type CommandClass = new () => object;
 
@@ -230,7 +231,7 @@ function registerCommand(
     } catch (error) {
       if (!(error instanceof ContractError)) throw error;
       renderContractError(error, input.json === true);
-      process.exit(error.exitCode);
+      return terminateCliProcess(error.exitCode);
     }
 
     // The target gateway owns authorization for its context key. Performing a
@@ -293,7 +294,7 @@ function registerCommand(
           renderContractError(error, input.json === true);
           throw error;
         }
-        process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
+        await writeProcessStdout(new Uint8Array(await returnValue.arrayBuffer()));
       }
     } catch (err) {
       const op = commandOperation(groupName, cmdMeta.name);
@@ -328,7 +329,7 @@ function registerCommand(
       closeLazyConnection: true,
     });
 
-    if (contractExitCode !== null) process.exit(contractExitCode);
+    if (contractExitCode !== null) return terminateCliProcess(contractExitCode);
   });
 }
 
@@ -383,7 +384,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       },
     );
     renderContractError(error, input.input.json === true);
-    process.exit(error.exitCode);
+    return terminateCliProcess(error.exitCode);
   }
 
   let result;
@@ -401,21 +402,21 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       suggestedAction: "Check gateway availability and retry",
     });
     renderContractError(error, input.input.json === true);
-    process.exit(error.exitCode);
+    return terminateCliProcess(error.exitCode);
   }
 
   const remoteError = remoteGatewayErrorToContractError(op, result);
   if (remoteError) {
     renderContractError(remoteError, input.input.json === true);
-    process.exit(remoteError.exitCode);
+    return terminateCliProcess(remoteError.exitCode);
   }
-  printRemoteResponse(result);
+  await printRemoteResponse(result);
   if (!result.ok) {
-    process.exit(remoteGatewayExitCode(result));
+    return terminateCliProcess(remoteGatewayExitCode(result));
   }
 }
 
-function printRemoteResponse(result: RemoteDispatchResult): void {
+async function printRemoteResponse(result: RemoteDispatchResult): Promise<void> {
   const output = remoteDispatchOutput(result);
-  if (output.value.length > 0) process.stdout.write(output.value);
+  if (output.value.length > 0) await writeProcessStdout(output.value);
 }

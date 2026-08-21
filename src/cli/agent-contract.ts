@@ -19,7 +19,8 @@
  */
 import type { Command as CommanderCommand, CommanderError } from "commander";
 import { getContext } from "./context.js";
-import { CliExpectedError } from "./expected-error.js";
+import { CliExpectedError, cliUsageError } from "./expected-error.js";
+import { requestCliTermination } from "./process-output.js";
 import { sanitizePublicValue } from "./redaction.js";
 
 export const CONTRACT_EXIT_ERROR = 1;
@@ -34,6 +35,7 @@ export interface ContractErrorDetails {
   suggestedAction?: string;
   suggestions?: string[];
   acceptedFlags?: string[];
+  acceptedFields?: string[];
   [key: string]: unknown;
 }
 
@@ -99,8 +101,77 @@ export function contractFailureOutcome(error: Pick<ContractError, "code" | "exit
 
 export function expectedErrorToContractError(op: string, error: unknown): ContractError | null {
   if (!(error instanceof CliExpectedError)) return null;
-  return new ContractError(op, error.code, "Command could not be completed.", error.exitCode, {
-    suggestedAction: `Inspect the command input and retry '${op}'`,
+  return new ContractError(
+    op,
+    error.code,
+    error.publicMessage ? error.message : "Command could not be completed.",
+    error.exitCode,
+    {
+      ...error.details,
+      retryable: error.retryable,
+      suggestedAction: error.suggestedAction ?? `Inspect the command input and retry '${op}'`,
+    },
+  );
+}
+
+export interface PickFieldsOptions {
+  /** Stable public field set supplied by the owning domain. */
+  acceptedFields: readonly string[];
+}
+
+function parseRequestedFields(fields?: string): string[] {
+  return [
+    ...new Set(
+      (fields ?? "")
+        .split(",")
+        .map((key) => key.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function validateRequestedFields(keys: readonly string[], acceptedFields: readonly string[]): string[] {
+  const stableAcceptedFields = [...new Set(acceptedFields)];
+  const accepted = new Set(stableAcceptedFields);
+  if (keys.some((key) => !accepted.has(key))) {
+    throw cliUsageError("--fields contains one or more unknown fields.", {
+      suggestedAction: "Retry with only fields listed in acceptedFields",
+      details: { acceptedFields: stableAcceptedFields },
+    });
+  }
+  return stableAcceptedFields;
+}
+
+/**
+ * Compact mode (7.9): keep only the requested top-level fields of each item.
+ * Migrated callers supply a stable public field set so validation does not
+ * depend on the first result row and also works for empty result sets.
+ */
+export function pickFields<T>(items: T[], fields?: string, options?: PickFieldsOptions): T[] {
+  const keys = parseRequestedFields(fields);
+  if (keys.length === 0) return items;
+  if (options) validateRequestedFields(keys, options.acceptedFields);
+  return items.map((item) => {
+    const record = item as Record<string, unknown>;
+    const picked: Record<string, unknown> = {};
+    const requested = new Set(keys);
+    for (const key of Object.keys(record)) {
+      if (requested.has(key)) {
+        picked[key] = record[key];
+        continue;
+      }
+
+      // Keep the complete row available to @Returns validation while exposing
+      // only requested fields through JSON/Object.keys. The gateway validates
+      // handlers before serializing their original return value.
+      Object.defineProperty(picked, key, {
+        value: record[key],
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+    }
+    return picked as T;
   });
 }
 
@@ -270,7 +341,7 @@ function commandTree(root: CommanderCommand): CommanderCommand[] {
 }
 
 function failUsage(command: CommanderCommand, error: CommanderError): never {
-  if (COMMANDER_PASSTHROUGH_CODES.has(error.code)) process.exit(error.exitCode);
+  if (COMMANDER_PASSTHROUGH_CODES.has(error.code)) requestCliTermination(error.exitCode);
   const commandPath = opPath(command);
   const op = commandPath || "cli";
   const usage = `ravi ${commandPath ? `${commandPath} ` : ""}${command.usage()}`.trim();
@@ -373,38 +444,4 @@ export function suggestSimilar(query: string, candidates: Array<string | null | 
     .sort((a, b) => b.score - a.score)
     .slice(0, max)
     .map((entry) => entry.candidate);
-}
-
-/**
- * Compact mode (7.9): keep only the requested top-level fields of each item.
- * Unknown fields are ignored; without `fields` the list passes through.
- */
-export function pickFields<T>(items: T[], fields?: string): T[] {
-  const keys = (fields ?? "")
-    .split(",")
-    .map((key) => key.trim())
-    .filter(Boolean);
-  if (keys.length === 0) return items;
-  return items.map((item) => {
-    const record = item as Record<string, unknown>;
-    const picked: Record<string, unknown> = {};
-    const requested = new Set(keys);
-    for (const key of Object.keys(record)) {
-      if (requested.has(key)) {
-        picked[key] = record[key];
-        continue;
-      }
-
-      // Keep the complete row available to @Returns validation while exposing
-      // only requested fields through JSON/Object.keys. The gateway validates
-      // handlers before serializing their original return value.
-      Object.defineProperty(picked, key, {
-        value: record[key],
-        enumerable: false,
-        configurable: false,
-        writable: false,
-      });
-    }
-    return picked as T;
-  });
 }

@@ -1,11 +1,24 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AppsCommands } from "./commands/apps.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { fail, runWithContext } from "./context.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
-import { extractTools } from "./tools-export.js";
+import { createSdkTools } from "./tool-definitions.js";
+import { extractTools, generateManifest, manifestToJSON } from "./tools-export.js";
+import { nats } from "../nats.js";
+
+const previousSuppressAuditEvents = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+
+beforeAll(() => {
+  process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+});
+
+afterAll(() => {
+  if (previousSuppressAuditEvents === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+  else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAuditEvents;
+});
 
 @Group({ name: "negated", description: "Negated option fixture", scope: "open" })
 class NegatedToolCommands {
@@ -112,6 +125,28 @@ class CliOnlyToolCommands {
   }
 }
 
+let confirmedEffectCount = 0;
+
+@Group({ name: "effect-metadata", description: "Effect metadata fixture", scope: "open" })
+class EffectMetadataCommands {
+  @Command({ name: "apply", description: "Apply one externally visible effect" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "effect-metadata",
+    action: "apply",
+    risk: "high",
+    effectClass: "external",
+    requiresConfirmation: true,
+  })
+  apply(@Option({ flags: "--execute", description: "Apply the external effect" }) execute = false) {
+    if (!execute) {
+      contractDryRun("effect-metadata apply", { effect: "external" }, { asJson: true });
+    }
+    confirmedEffectCount += 1;
+    console.log(JSON.stringify({ applied: true }));
+  }
+}
+
 const mediaContext: ContextRecord = {
   contextId: "ctx_media_authorization_test",
   contextKey: "rctx_media_authorization_test",
@@ -150,6 +185,15 @@ const appsContext: ContextRecord = {
   createdAt: Date.now(),
 };
 
+const effectMetadataContext: ContextRecord = {
+  contextId: "ctx_effect_metadata_test",
+  contextKey: "rctx_effect_metadata_test",
+  kind: "test-runtime",
+  agentId: "effect-metadata-test",
+  capabilities: [{ permission: "mutate", objectType: "effect-metadata", objectId: "apply", source: "test" }],
+  createdAt: Date.now(),
+};
+
 describe("tools export negated options", () => {
   it("uses one semantic grant and the same no-prefixed logical contract as CLI and gateway calls", async () => {
     const tool = extractTools([NegatedToolCommands]).find((candidate) => candidate.name === "negated_run");
@@ -166,6 +210,74 @@ describe("tools export negated options", () => {
 describe("tools export surface", () => {
   it("never exports commands marked @CliOnly", () => {
     expect(extractTools([CliOnlyToolCommands]).map((tool) => tool.name)).toEqual(["terminal_status"]);
+  });
+
+  it("exports operation, effect, risk, and confirmation metadata to every agent manifest", () => {
+    const tool = extractTools([EffectMetadataCommands])[0];
+    expect(tool?.metadata.safety).toEqual({
+      operationKind: "mutate",
+      effectClass: "external",
+      risk: "high",
+      requiresConfirmation: true,
+      classificationSource: "declared",
+    });
+
+    const expected = {
+      operationKind: "mutate",
+      effectClass: "external",
+      risk: "high",
+      requiresConfirmation: true,
+      classificationSource: "declared",
+    };
+    expect(generateManifest([tool!])[0]).toMatchObject(expected);
+    expect(JSON.parse(manifestToJSON([tool!]))[0]).toMatchObject(expected);
+    expect(createSdkTools([EffectMetadataCommands])[0]).toMatchObject(expected);
+  });
+
+  it("does not contact the global audit transport for allowed or denied calls when suppressed", async () => {
+    const originalEmit = nats.emit;
+    let emits = 0;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    try {
+      const tool = extractTools([NegatedToolCommands])[0];
+      await runWithContext({ agentId: context.agentId, context }, () => tool!.handler({}));
+
+      const deniedTool = extractTools([MediaAuthorizationCommands]).find(
+        (candidate) => candidate.name === "media_remove",
+      );
+      const denied = await runWithContext({ agentId: mediaContext.agentId, context: mediaContext }, () =>
+        deniedTool!.handler({}),
+      );
+      expect(denied).toMatchObject({ outcome: "denied", exitCode: 1 });
+      expect(emits).toBe(0);
+    } finally {
+      nats.emit = originalEmit;
+    }
+  });
+
+  it("blocks a declared confirmation path before its first effect", async () => {
+    confirmedEffectCount = 0;
+    const tool = extractTools([EffectMetadataCommands])[0];
+
+    const blocked = await runWithContext(
+      { agentId: effectMetadataContext.agentId, context: effectMetadataContext },
+      () => tool!.handler({}),
+    );
+    expect(blocked).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
+    expect(JSON.parse(blocked.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true },
+    });
+    expect(confirmedEffectCount).toBe(0);
+
+    const applied = await runWithContext(
+      { agentId: effectMetadataContext.agentId, context: effectMetadataContext },
+      () => tool!.handler({ execute: true }),
+    );
+    expect(applied).toMatchObject({ isError: false, outcome: "succeeded" });
+    expect(confirmedEffectCount).toBe(1);
   });
 });
 

@@ -13,6 +13,7 @@ import { closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
+import { terminateCliProcess } from "../cli/process-output.js";
 
 /**
  * Flush pending audit events and exit the process.
@@ -21,7 +22,7 @@ import type { ScopeType } from "../cli/decorators.js";
 export async function flushAuditAndExit(code: number): Promise<never> {
   await flushPermissionAuditEvents();
   await closeNats();
-  process.exit(code);
+  return terminateCliProcess(code);
 }
 
 interface ScopeDenialDiagnosis {

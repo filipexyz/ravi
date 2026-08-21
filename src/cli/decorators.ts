@@ -36,11 +36,43 @@ export type CommandAccessKind = "read" | "mutate";
 export type CommandAccessRisk = "low" | "medium" | "high" | "destructive";
 export type CommandAccessContextRequirement = "actor" | "surface" | "session" | "executorAgent" | "resource";
 
+/**
+ * State-effect classification exposed to agent consumers.
+ *
+ * `unclassified` is a fail-visible migration value for legacy mutations. It
+ * must not be interpreted as safe; domain PRs replace it with the actual
+ * effect class once their operation contracts are proven.
+ */
+export type CommandEffectClass =
+  | "none"
+  | "local-reversible"
+  | "external"
+  | "destructive"
+  | "authority-expansion"
+  | "triggered-work"
+  | "containment"
+  | "cost-threshold"
+  | "conditional"
+  | "unclassified";
+
+export type CommandSafetyClassificationSource = "declared" | "inferred-read" | "legacy-unclassified" | "missing";
+
+/** Stable, agent-discoverable projection of the command safety contract. */
+export interface CommandSafetyMetadata {
+  operationKind: CommandAccessKind | "unknown";
+  effectClass: CommandEffectClass;
+  risk: CommandAccessRisk | "unknown";
+  requiresConfirmation: boolean;
+  classificationSource: CommandSafetyClassificationSource;
+}
+
 export interface CommandAccessOptions {
   kind: CommandAccessKind;
   resource: string;
   action: string;
   risk: CommandAccessRisk;
+  /** Actual state effect. Domain migrations should declare this explicitly. */
+  effectClass?: CommandEffectClass;
   requiresContext?: CommandAccessContextRequirement[];
   resourceId?: string;
   /** Require the concrete resource candidate; semantic and legacy command grants cannot substitute for it. */
@@ -52,6 +84,68 @@ export interface CommandAccessOptions {
   localOperator?: boolean;
   requiresConfirmation?: boolean;
   notes?: string;
+}
+
+const ALWAYS_CONFIRMED_EFFECTS = new Set<CommandEffectClass>([
+  "external",
+  "destructive",
+  "authority-expansion",
+  "triggered-work",
+  "cost-threshold",
+]);
+
+const IMMEDIATE_EFFECTS = new Set<CommandEffectClass>(["none", "local-reversible", "containment"]);
+
+/**
+ * Resolve the public safety metadata without silently classifying legacy
+ * mutations. Invalid explicit declarations fail during registry/tool export,
+ * before consumers can receive a contradictory manifest.
+ */
+export function resolveCommandSafetyMetadata(
+  access: CommandAccessOptions | undefined,
+  commandName = "command",
+): CommandSafetyMetadata {
+  if (!access) {
+    return {
+      operationKind: "unknown",
+      effectClass: "unclassified",
+      risk: "unknown",
+      requiresConfirmation: false,
+      classificationSource: "missing",
+    };
+  }
+
+  const effectClass = access.effectClass ?? (access.kind === "read" ? "none" : "unclassified");
+  const classificationSource: CommandSafetyClassificationSource = access.effectClass
+    ? "declared"
+    : access.kind === "read"
+      ? "inferred-read"
+      : "legacy-unclassified";
+  const requiresConfirmation = access.requiresConfirmation === true;
+
+  if (access.kind === "read" && effectClass !== "none") {
+    throw new Error(`Invalid safety metadata for ${commandName}: read operations must declare effectClass "none".`);
+  }
+  if (access.kind === "read" && requiresConfirmation) {
+    throw new Error(`Invalid safety metadata for ${commandName}: read operations cannot require effect confirmation.`);
+  }
+  if (access.kind === "mutate" && effectClass === "none") {
+    throw new Error(`Invalid safety metadata for ${commandName}: mutations cannot declare effectClass "none".`);
+  }
+  if (classificationSource === "declared" && ALWAYS_CONFIRMED_EFFECTS.has(effectClass) && !requiresConfirmation) {
+    throw new Error(`Invalid safety metadata for ${commandName}: effectClass "${effectClass}" requires confirmation.`);
+  }
+  if (classificationSource === "declared" && IMMEDIATE_EFFECTS.has(effectClass) && requiresConfirmation) {
+    throw new Error(`Invalid safety metadata for ${commandName}: effectClass "${effectClass}" must remain immediate.`);
+  }
+
+  return {
+    operationKind: access.kind,
+    effectClass,
+    risk: access.risk,
+    requiresConfirmation,
+    classificationSource,
+  };
 }
 
 export interface GroupOptions {

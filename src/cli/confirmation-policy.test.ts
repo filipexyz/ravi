@@ -1,7 +1,21 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 
-import { getRegistry } from "./registry-snapshot.js";
+import { Command, CommandAccess, Group } from "./decorators.js";
+import { buildRegistry, getRegistry } from "./registry-snapshot.js";
+
+@Group({ name: "invalid-effect", description: "Invalid effect fixture", scope: "open" })
+class InvalidEffectCommands {
+  @Command({ name: "send", description: "Missing required confirmation" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "invalid-effect",
+    action: "send",
+    risk: "high",
+    effectClass: "external",
+  })
+  send() {}
+}
 
 function executeOption(command: ReturnType<typeof getRegistry>["commands"][number]) {
   return command.options.find((option) => option.name === "execute" || option.flags.includes("--execute"));
@@ -9,6 +23,36 @@ function executeOption(command: ReturnType<typeof getRegistry>["commands"][numbe
 
 describe("global confirmation policy metadata", () => {
   const commands = getRegistry().commands;
+
+  it("publishes complete safety metadata matching every registered access declaration", () => {
+    const invalid = commands
+      .filter((command) => {
+        const access = command.access;
+        if (!access) return true;
+        const expectedEffect = access.effectClass ?? (access.kind === "read" ? "none" : "unclassified");
+        const expectedSource = access.effectClass
+          ? "declared"
+          : access.kind === "read"
+            ? "inferred-read"
+            : "legacy-unclassified";
+        return (
+          command.safety.operationKind !== access.kind ||
+          command.safety.effectClass !== expectedEffect ||
+          command.safety.risk !== access.risk ||
+          command.safety.requiresConfirmation !== (access.requiresConfirmation === true) ||
+          command.safety.classificationSource !== expectedSource
+        );
+      })
+      .map((command) => ({ command: command.fullName, access: command.access, safety: command.safety }));
+
+    expect(invalid).toEqual([]);
+  });
+
+  it("fails closed when a precise consequential effect omits confirmation", () => {
+    expect(() => buildRegistry([InvalidEffectCommands])).toThrow(
+      'Invalid safety metadata for invalid-effect.send: effectClass "external" requires confirmation.',
+    );
+  });
 
   it("authorizes every command exposing --execute as a mutation", () => {
     const invalid = commands
