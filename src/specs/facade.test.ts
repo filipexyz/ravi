@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   applySpecsFacadePlan,
@@ -11,7 +20,8 @@ import {
   SpecsFacadeError,
   verifySpecsFacade,
 } from "./facade.js";
-import { createSpec } from "./service.js";
+import { listIndexedSpecs } from "./spec-db.js";
+import { applyPreparedSpecCreation, createSpec, prepareSpecCreation } from "./service.js";
 
 const tempRoots: string[] = [];
 let isolatedStateDir: string | null = null;
@@ -52,6 +62,18 @@ describe("specs facade", () => {
     expect(plan.planHash).toHaveLength(64);
     expect(existsSync(join(cwd, ".ravi"))).toBe(false);
     expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(false);
+  });
+
+  it("rejects an invalid id when the facade service is called directly", () => {
+    const cwd = makeWorkspace();
+    try {
+      buildSpecsFacadePlan({ operation: "new", cwd, id: "a/b/c/d", title: "Invalid", kind: "feature" });
+      throw new Error("Expected direct facade validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("INVALID_SPEC_INTENT");
+    }
+    expect(existsSync(join(cwd, ".ravi"))).toBe(false);
   });
 
   it("blocks a facade creation with missing ancestor specs", () => {
@@ -112,6 +134,64 @@ describe("specs facade", () => {
     expect(verifySpecsFacade(intent, plan.planHash).outcome).toBe("confirmed");
   });
 
+  it("reports post-apply file changes as divergent and requires manual review", () => {
+    const cwd = makeWorkspace();
+    const intent = {
+      operation: "new" as const,
+      cwd,
+      id: "channels",
+      title: "Channels",
+      kind: "domain" as const,
+      full: true,
+    };
+    const plan = buildSpecsFacadePlan(intent);
+    applySpecsFacadePlan(intent, plan.planHash);
+    const specPath = join(cwd, ".ravi", "specs", "channels", "SPEC.md");
+    writeFileSync(specPath, `${readFileSync(specPath, "utf8")}\nExternally changed.\n`, "utf8");
+
+    const verification = verifySpecsFacade(intent, plan.planHash);
+    expect(verification.outcome).toBe("divergent");
+    expect(verification.readback.files[0]).toMatchObject({ exists: true, regularFile: true, matches: false });
+    expect(recoverSpecsFacade(intent, plan.planHash)).toMatchObject({
+      outcome: "divergent",
+      action: "manual_review",
+      replay: false,
+    });
+    expect(() => applySpecsFacadePlan(intent, plan.planHash)).toThrow("plan hash does not match");
+  });
+
+  it("treats unexpected target files as divergence instead of exact replay", () => {
+    const cwd = makeWorkspace();
+    const intent = {
+      operation: "new" as const,
+      cwd,
+      id: "channels",
+      title: "Channels",
+      kind: "domain" as const,
+      full: true,
+    };
+    const plan = buildSpecsFacadePlan(intent);
+    applySpecsFacadePlan(intent, plan.planHash);
+    const unexpected = join(cwd, ".ravi", "specs", "channels", "NOTES.md");
+    writeFileSync(unexpected, "unapproved", "utf8");
+
+    const current = buildSpecsFacadePlan(intent);
+    expect(current.executable).toBe(false);
+    expect(current.blockers[0]).toMatchObject({
+      code: "SPEC_TARGET_CONFLICT",
+      details: { unexpectedFiles: [unexpected] },
+    });
+
+    const verification = verifySpecsFacade(intent, plan.planHash);
+    expect(verification.outcome).toBe("divergent");
+    expect(verification.readback.unexpectedFiles).toEqual([unexpected]);
+    expect(recoverSpecsFacade(intent, plan.planHash)).toMatchObject({
+      outcome: "divergent",
+      action: "manual_review",
+    });
+    expect(() => applySpecsFacadePlan(intent, plan.planHash)).toThrow(SpecsFacadeError);
+  });
+
   it("rejects a stale hash before writing", () => {
     const cwd = makeWorkspace();
     const planned = { operation: "new" as const, cwd, id: "channels", title: "Channels", kind: "domain" as const };
@@ -137,6 +217,41 @@ describe("specs facade", () => {
     const third = buildSpecsFacadePlan({ ...input, cwd: firstCwd });
     expect(third.binding.dbPath).not.toBe(first.binding.dbPath);
     expect(third.planHash).not.toBe(first.planHash);
+  });
+
+  it("canonicalizes a relative database binding without creating it", () => {
+    const cwd = makeWorkspace();
+    const relativeState = `.ravi-relative-state-${Date.now()}`;
+    process.env.RAVI_STATE_DIR = relativeState;
+    const plan = buildSpecsFacadePlan({ operation: "new", cwd, id: "channels", title: "Channels", kind: "domain" });
+
+    expect(plan.binding.dbPath).toBe(resolve(relativeState, "ravi.db"));
+    expect(resolve(plan.binding.dbPath)).toBe(plan.binding.dbPath);
+    expect(existsSync(resolve(relativeState))).toBe(false);
+  });
+
+  it("rejects a symbolic link in the database binding when supported", () => {
+    const cwd = makeWorkspace();
+    const stateParent = makeWorkspace();
+    const realState = join(stateParent, "real-state");
+    const linkedState = join(stateParent, "linked-state");
+    mkdirSync(realState);
+    try {
+      symlinkSync(realState, linkedState, "junction");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+    process.env.RAVI_STATE_DIR = linkedState;
+
+    try {
+      buildSpecsFacadePlan({ operation: "sync", cwd });
+      throw new Error("Expected unsafe database binding to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_DB_PATH");
+    }
+    expect(existsSync(join(realState, "ravi.db"))).toBe(false);
   });
 
   it("does not overwrite an orphan target directory", () => {
@@ -189,5 +304,70 @@ describe("specs facade", () => {
       action: "none",
       replay: false,
     });
+  });
+
+  it("sync writes the exact validated snapshot when Markdown changes before the write", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const specPath = join(cwd, ".ravi", "specs", "channels", "SPEC.md");
+    const intent = { operation: "sync" as const, cwd };
+    const plan = buildSpecsFacadePlan(intent);
+
+    const result = applySpecsFacadePlan(intent, plan.planHash, {
+      afterValidation: () => {
+        const changed = readFileSync(specPath, "utf8").replace('title: "Channels"', 'title: "Changed"');
+        writeFileSync(specPath, changed, "utf8");
+        expect(changed).toContain('title: "Changed"');
+      },
+    });
+
+    expect(result).toMatchObject({ operation: "sync", state: "applied", changed: true });
+    expect(result.verification.outcome).toBe("confirmed");
+    expect(listIndexedSpecs(join(cwd, ".ravi", "specs"))[0]?.title).toBe("Channels");
+    expect(() => verifySpecsFacade(intent, plan.planHash)).toThrow("plan hash does not match");
+  });
+
+  it("cleans staging and exposes no target when promotion is interrupted", () => {
+    const cwd = makeWorkspace();
+    const prepared = prepareSpecCreation({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
+
+    expect(() =>
+      applyPreparedSpecCreation(prepared, {
+        requireAncestors: true,
+        existing: "noop",
+        beforePromote: () => {
+          throw new Error("injected promotion failure");
+        },
+      }),
+    ).toThrow("injected promotion failure");
+    expect(existsSync(prepared.directoryPath)).toBe(false);
+    const parentEntries = existsSync(join(cwd, ".ravi", "specs")) ? readdirSync(join(cwd, ".ravi", "specs")) : [];
+    expect(parentEntries.some((entry) => entry.includes("ravi-stage"))).toBe(false);
+  });
+
+  it("lets exactly one competing creator promote the target without partial files", () => {
+    const cwd = makeWorkspace();
+    const prepared = prepareSpecCreation({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
+    let competitorState: string | null = null;
+
+    expect(() =>
+      applyPreparedSpecCreation(prepared, {
+        requireAncestors: true,
+        existing: "noop",
+        beforePromote: () => {
+          competitorState = applyPreparedSpecCreation(prepared, {
+            requireAncestors: true,
+            existing: "noop",
+          }).status;
+        },
+      }),
+    ).toThrow();
+
+    expect(String(competitorState)).toBe("created");
+    expect(
+      ["SPEC.md", "WHY.md", "RUNBOOK.md", "CHECKS.md"].every((name) => existsSync(join(prepared.directoryPath, name))),
+    ).toBe(true);
+    const parentEntries = readdirSync(join(cwd, ".ravi", "specs"));
+    expect(parentEntries.some((entry) => entry.includes("ravi-stage"))).toBe(false);
   });
 });

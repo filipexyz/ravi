@@ -38,3 +38,14 @@ behavior, while the facade is strict and exact replay is a visible `noop`.
 
 The complete decision and rejected alternatives are recorded in
 `docs/adr/0002-specs-facade-binding-and-atomic-writes.md`.
+
+The approved hash identifies an intended effect, while readback describes what
+exists now. Keeping those concepts separate lets the facade reject stale write
+authority but still explain a post-apply edit as divergence. Sync likewise
+consumes the snapshot that produced its hash; rescanning before the write would
+authorize content the caller never reviewed.
+
+Legacy `new` retains its historical ability to populate a directory that was
+created in advance and has no `SPEC.md`. That narrow compatibility path cannot
+use whole-directory promotion, so the stronger orphan-directory rejection and
+atomic quartet guarantee remain facade guarantees.

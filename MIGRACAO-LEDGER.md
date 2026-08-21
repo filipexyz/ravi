@@ -1847,3 +1847,124 @@ partir do bundle instalado, a ajuda descobriu `plan`, `apply`, `readback`,
 A candidata esta pronta para commit local e revisao independente do SHA exato.
 Push, PR, merge e VPS continuam bloqueados ate os respectivos gates e
 autorizacoes.
+
+### NO-GO da primeira revisao independente de specs
+
+A auditoria independente reprovou o commit
+`fc0e273f89bae486a2e089524c9ea85e8251caab`. O facade sync podia validar o
+snapshot A e, ao reler a arvore no servico legado, gravar o snapshot B. Alem
+disso, uma alteracao normal depois de `new` mudava os blockers e fazia
+readback/verify/recover falharem como `PLAN_STALE`, sem entregar
+`divergent`/`manual_review` e os hashes observados.
+
+Tambem foram apontados binding SQLite nao canonico e sem rejeicao de links,
+quebra do diretorio orfao aceito pelo `new` legado, unions publicas que
+aceitavam combinacoes impossiveis e lacunas na matriz nativa. O pacote SHA-256
+`80C2ED8F658DFE26397C15C9FCEA0F92BA25B8989EE3E274A7A770CB012E5D9B` fica
+formalmente reprovado. Nenhum push, PR de dominio, merge ou acesso a VPS
+ocorreu. O registro completo esta em
+`docs/postmortems/0006-specs-independent-review-no-go.md`.
+
+Novo codigo, SHA, pacote, gates e revisao independente sao obrigatorios antes
+de reconsiderar push ou abertura de PR.
+
+### Revisao corretiva apos o NO-GO de specs
+
+O facade agora grava no `sync` exatamente o snapshot de Markdown usado para
+calcular e validar o hash, sem uma segunda leitura silenciosa. O `apply`
+continua exigindo o plano atual, mas `readback`, `verify` e `recover` reconhecem
+a identidade de um plano `new` originalmente executavel e mostram uma edicao
+posterior como `divergent`/`manual_review`; o hash antigo nao ganha permissao de
+sobrescrever.
+
+O binding do banco foi tornado absoluto, revalidado antes da escrita e
+recusado quando um componente existente e link simbolico. A compatibilidade do
+`new` legado com diretorio pre-criado sem `SPEC.md` foi restaurada, enquanto o
+facade mantem a recusa desse alvo orfao. Os contratos publicos agora separam
+estruturalmente `new` e `sync`.
+
+Passaram neste ponto 21 testes nativos de servico/facade com 79 assercoes, 12
+testes do CLI de specs com 65 assercoes, typecheck e Biome dos fontes alterados.
+A matriz inclui mudanca posterior ao apply, troca da fonte depois da validacao
+do sync, falha antes da promocao, criadores concorrentes, banco relativo/link,
+id invalido direto, compatibilidade legada e rejeicao de payloads publicos
+misturados. Artefatos gerados, gates completos, novo pacote e nova auditoria
+independente ainda sao obrigatorios; push e PR continuam em NO-GO.
+
+### Recaptura do gate de qualidade do SDK
+
+A primeira geracao depois da correcao deixou OpenAPI e Swift deterministas,
+mas `test:sdk` reprovou os cinco retornos do facade como novos contratos
+fracos. As unions geradas estavam correlacionadas; o analisador interno nao
+reconheceu os itens das tuplas vazia/unitaria e as classificou como arrays sem
+tipo.
+
+Nenhuma excecao foi adicionada ao baseline. As tuplas serao expressas como
+arrays tipados com limite zero ou tamanho exato um, preservando o contrato e
+tornando-o verificavel pelo gate oficial. Todas as geracoes e checks ficam
+superados e devem ser repetidos; o candidato continua em NO-GO.
+
+### Recaptura da lista do quality gate local
+
+A primeira chamada local do quality gate depois da geracao recebeu uma colecao
+PowerShell aninhada. O runner viu apenas `System.Object[]` e o postmortem nao
+rastreado, pulou os gates e imprimiu um falso `PASSED`. Essa saida foi
+descartada e nao vale como evidencia do produto.
+
+O gate deve ser repetido com as saidas do Git emitidas em uma lista plana,
+incluindo os arquivos nao rastreados. O candidato permanece em NO-GO.
+
+### Suite completa local interrompida no grupo channels
+
+`bun run test` iniciou pelo grupo de channels e encontrou um teste Slack nao
+alterado que espera o sufixo misto `/attachments/`, enquanto o Windows emitiu
+`\\attachments\\`. Depois de registrar a falha, o processo permaneceu ativo e
+consumindo CPU por varios minutos sem concluir o grupo, por isso foi
+interrompido. A execucao e incompleta e nao vale como suite verde.
+
+O teste separado do pacote Swift nem iniciou porque `swift` nao esta instalado
+neste host Windows. Isso e indisponibilidade local, nao aprovacao nem defeito do
+produto. O caso Slack sera recapturado isoladamente e os demais grupos nativos
+serao executados em partes. O CI Linux no SHA exato continua obrigatorio.
+
+### Limites confirmados da recaptura no Windows
+
+O caso Slack foi reproduzido isoladamente e confirmou uma expectativa herdada
+que mistura a raiz temporaria do Windows com o sufixo POSIX `/attachments/`; o
+runtime devolve os separadores nativos. O candidato nao altera fonte nem teste
+do Slack em relacao a `origin/dev`.
+
+Os demais grupos nativos foram recapturados separadamente. O grupo central
+registrou 585 passes, 8 falhas e 1 erro; tasks/projects registrou 247 passes, 5
+skips e 16 falhas. As falhas ficam fora do diff de specs e se concentram nos
+timeouts herdados de cinco segundos dos adapters, em premissas de caminho/perfil
+do Windows e no matcher existente do smoke de projects. O wrapper
+`test:cli-commands` usa um `for` POSIX indisponivel no PowerShell; o teste de
+specs alterado foi executado diretamente e passou. Nenhuma dessas execucoes
+parciais e apresentada como suite completa verde.
+
+O Biome global tambem encontrou conversoes CRLF herdadas em fontes alheios ao
+dominio. Os oito fontes realmente alterados pelo candidato passaram. Checks
+gerados e CI Linux no commit exato continuam obrigatorios.
+
+### Arquivos inesperados e nova recaptura dos gates
+
+A revisao final do coordenador encontrou que o replay exato comparava os quatro
+arquivos esperados, mas nao recusava arquivos adicionais no diretorio alvo.
+Esse alvo poderia ser tratado como `noop` seguro. A comparacao, o readback, a
+verificacao, a recuperacao, os blockers, os schemas publicos, a documentacao e
+os testes agora incluem arquivos inesperados. Um arquivo extra gera conflito
+no plano atual e `divergent`/`manual_review` no plano original; novo apply com
+hash antigo continua recusado.
+
+A primeira repeticao focada revelou ainda que a injecao de mudanca do teste de
+sync procurava um titulo YAML sem aspas, enquanto o gerador escreve o titulo
+entre aspas. O teste agora confirma que a mutacao ocorreu antes de validar o
+isolamento do snapshot. A repeticao passou 34 testes com 151 assercoes.
+
+Depois de nova geracao, passaram 75 testes do SDK com 297 assercoes e
+`sdk:check`, os dois checks OpenAPI, o check do SDK Swift gerado, typecheck,
+build completo, Biome focado, quality gate limpo sobre 70 caminhos rastreados
+com 274 specs indexadas e lint dos 9 documentos aplicaveis. Teste local do
+pacote Swift, pacote exato, nova auditoria independente e CI Linux ainda sao
+obrigatorios. O candidato continua em NO-GO para push ou PR neste ponto.

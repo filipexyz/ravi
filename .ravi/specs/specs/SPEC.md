@@ -40,10 +40,15 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - `specs facade plan` MUST NOT create directories, files, index rows, or other durable state.
 - A facade plan MUST bind canonical `cwd`, the `.ravi/specs` root, the Ravi database target, normalized input, intended effects, and current safety blockers into `planHash`.
 - A blocked facade plan MUST become stale when its blocker set changes and MUST be planned again before apply.
+- Mutation MUST use strict current-plan freshness. Observation of an originally executable `new` plan MUST still classify later target changes as divergent.
 - Facade `new` MUST block when ancestor `SPEC.md` files are missing and MUST reject orphan targets or symbolic links without overwrite.
+- Facade exact replay MUST reject unexpected files in the target and MUST expose them through the blocker and readback.
 - A new spec quartet MUST become visible as one directory promotion; a failed write MUST NOT expose a partial target quartet.
-- Reapplying an identical facade `new` plan to an exact target MUST return `noop`; legacy `new` MUST preserve its existing collision error.
+- Reapplying an identical facade `new` plan to an exact target MUST return `noop`; legacy `new` MUST preserve both its existing collision error and its compatibility behavior for a pre-created directory without `SPEC.md`.
 - `sync` MUST compare source and index before replacement and MUST report whether the index changed.
+- Facade `sync` MUST replace the index from the exact captured plan snapshot, without rereading Markdown between validation and write.
+- The facade database binding MUST be canonical and MUST reject observed symbolic-link components before writes.
+- Public facade schemas MUST correlate each operation with only its valid input, target, effects, observation, state, readback, verification, and recovery shapes.
 - Facade `readback`, `verify`, and `recover` MUST be read-only and MUST expose file targets, ancestors, and index state. Recovery MUST NOT replay an effect.
 - Project links MAY attach specs as context, but specs MUST remain reusable outside any single project.
 - The new specs system MUST remain separate from the legacy `src/spec` planning flow until that legacy flow is intentionally removed.
@@ -66,3 +71,5 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - The new `src/specs` domain is confused with legacy `src/spec`, causing accidental coupling to the old planning runtime.
 - A plan is generated in one workspace or state directory and applied against another target.
 - A broad catch converts a typed facade usage error into a generic execution error.
+- A second source scan writes data that was never approved by the copied sync hash.
+- Independent unions let a generated client combine a `new` operation with a `sync` target or result.

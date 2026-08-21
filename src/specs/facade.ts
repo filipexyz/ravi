@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, parse, resolve } from "node:path";
 import { getRaviDbPath } from "../router/router-db.js";
 import {
   applyPreparedSpecCreation,
@@ -8,7 +8,7 @@ import {
   inspectPreparedSpecCreation,
   listSpecs,
   prepareSpecCreation,
-  syncSpecs,
+  syncSpecsSnapshot,
 } from "./service.js";
 import { inspectSpecsIndex } from "./spec-db.js";
 import type { NewSpecInput, PreparedSpecCreation, SpecKind, SpecRecord } from "./types.js";
@@ -52,6 +52,7 @@ export interface SpecsFacadeReadback {
   target: Record<string, unknown>;
   ancestors: Array<Record<string, unknown>>;
   files: Array<Record<string, unknown>>;
+  unexpectedFiles: string[];
   index: ReturnType<typeof inspectSpecsIndex>;
   observedAt: string;
 }
@@ -61,6 +62,17 @@ export interface SpecsFacadeVerification {
   planHash: string;
   outcome: "confirmed" | "absent" | "divergent";
   readback: SpecsFacadeReadback;
+}
+
+export interface ApplySpecsFacadePlanOptions {
+  /** Verification seam used to prove that writes consume the captured snapshot. */
+  afterValidation?: () => void;
+}
+
+interface SpecsFacadePlanState {
+  plan: SpecsFacadePlan;
+  prepared: PreparedSpecCreation | null;
+  specs: SpecRecord[];
 }
 
 export class SpecsFacadeError extends Error {
@@ -97,6 +109,25 @@ function canonicalCwd(cwd?: string): string {
   return realpathSync(path);
 }
 
+function canonicalDatabasePath(): string {
+  const path = resolve(getRaviDbPath());
+  const root = parse(path).root;
+  let current = root;
+  for (const segment of path
+    .slice(root.length)
+    .split(/[\\/]+/)
+    .filter(Boolean)) {
+    current = join(current, segment);
+    if (!existsSync(current)) continue;
+    if (lstatSync(current).isSymbolicLink()) {
+      throw new SpecsFacadeError("UNSAFE_DB_PATH", `Unsafe symbolic link in Ravi database path: ${current}`, {
+        path: current,
+      });
+    }
+  }
+  return path;
+}
+
 function planHash(
   plan: Omit<SpecsFacadePlan, "planHash" | "executable" | "blockers" | "observation">,
   blockers: SpecsFacadePlan["blockers"],
@@ -129,11 +160,21 @@ function bindingForCwd(cwd?: string): SpecsFacadePlan["binding"] {
   return {
     cwd: canonical,
     specsRoot: getSpecsRoot(canonical),
-    dbPath: getRaviDbPath(),
+    dbPath: canonicalDatabasePath(),
   };
 }
 
-function newPlan(intent: Extract<SpecsFacadeIntent, { operation: "new" }>): SpecsFacadePlan {
+function assertCurrentDatabaseBinding(expectedPath: string): void {
+  const currentPath = canonicalDatabasePath();
+  if (currentPath !== expectedPath) {
+    throw new SpecsFacadeError("PLAN_STALE", "Ravi database binding changed after planning", {
+      expectedDbPath: expectedPath,
+      currentDbPath: currentPath,
+    });
+  }
+}
+
+function newPlanState(intent: Extract<SpecsFacadeIntent, { operation: "new" }>): SpecsFacadePlanState {
   let prepared: PreparedSpecCreation;
   try {
     prepared = prepareSpecCreation(intent as NewSpecInput);
@@ -156,7 +197,11 @@ function newPlan(intent: Extract<SpecsFacadeIntent, { operation: "new" }>): Spec
     blockers.push({
       code: "SPEC_TARGET_CONFLICT",
       message: `Spec already exists with different content: ${prepared.id}`,
-      details: { divergentFiles: inspection.divergentFiles, missingFiles: inspection.missingFiles },
+      details: {
+        divergentFiles: inspection.divergentFiles,
+        missingFiles: inspection.missingFiles,
+        unexpectedFiles: inspection.unexpectedFiles,
+      },
     });
   } else if (inspection.targetDirectoryExists && !inspection.targetSpecExists) {
     blockers.push({
@@ -184,23 +229,27 @@ function newPlan(intent: Extract<SpecsFacadeIntent, { operation: "new" }>): Spec
     })),
   };
   return {
-    ...hashable,
-    planHash: planHash(hashable, blockers),
-    executable: blockers.length === 0,
-    blockers,
-    observation: {
-      ancestors: prepared.ancestors.map((entry) => ({ id: entry.id, path: entry.path, exists: entry.exists })),
-      target: inspection,
-      replay: inspection.exactMatch ? "noop" : "create",
+    prepared,
+    specs: [],
+    plan: {
+      ...hashable,
+      planHash: planHash(hashable, blockers),
+      executable: blockers.length === 0,
+      blockers,
+      observation: {
+        ancestors: prepared.ancestors.map((entry) => ({ id: entry.id, path: entry.path, exists: entry.exists })),
+        target: inspection,
+        replay: inspection.exactMatch ? "noop" : "create",
+      },
     },
   };
 }
 
-function syncPlan(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>): SpecsFacadePlan {
+function syncPlanState(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>): SpecsFacadePlanState {
   const binding = bindingForCwd(intent.cwd);
   const specs = listSpecs({ cwd: binding.cwd });
   const source = specs.map(comparableIndexSpec);
-  const index = inspectSpecsIndex(binding.specsRoot, specs);
+  const index = inspectSpecsIndex(binding.specsRoot, specs, binding.dbPath);
   const sourceDigest = sha256(canonicalJson(source));
   const hashable = {
     schemaVersion: "specs.agent-first/v1" as const,
@@ -219,31 +268,64 @@ function syncPlan(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>): Sp
     ],
   };
   return {
-    ...hashable,
-    planHash: planHash(hashable, []),
-    executable: true,
-    blockers: [],
-    observation: {
-      sourceFiles: specs.map((spec) => ({ id: spec.id, path: spec.path })),
-      index,
-      replay: index.matches ? "noop" : "sync",
+    prepared: null,
+    specs,
+    plan: {
+      ...hashable,
+      planHash: planHash(hashable, []),
+      executable: true,
+      blockers: [],
+      observation: {
+        sourceFiles: specs.map((spec) => ({ id: spec.id, path: spec.path })),
+        index,
+        replay: index.matches ? "noop" : "sync",
+      },
     },
   };
 }
 
 export function buildSpecsFacadePlan(intent: SpecsFacadeIntent): SpecsFacadePlan {
-  return intent.operation === "new" ? newPlan(intent) : syncPlan(intent);
+  return captureSpecsFacadePlan(intent).plan;
 }
 
-function assertExpectedPlan(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadePlan {
-  const plan = buildSpecsFacadePlan(intent);
+function captureSpecsFacadePlan(intent: SpecsFacadeIntent): SpecsFacadePlanState {
+  return intent.operation === "new" ? newPlanState(intent) : syncPlanState(intent);
+}
+
+function hashablePlan(plan: SpecsFacadePlan) {
+  return {
+    schemaVersion: plan.schemaVersion,
+    operation: plan.operation,
+    binding: plan.binding,
+    input: plan.input,
+    target: plan.target,
+    effects: plan.effects,
+  };
+}
+
+function assertExpectedPlan(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadePlanState {
+  const state = captureSpecsFacadePlan(intent);
+  const plan = state.plan;
   if (!expectedPlanHash.trim() || plan.planHash !== expectedPlanHash.trim()) {
     throw new SpecsFacadeError("PLAN_STALE", "Specs facade plan hash does not match the current intent and target", {
       expectedPlanHash: expectedPlanHash.trim() || null,
       currentPlanHash: plan.planHash,
     });
   }
-  return plan;
+  return state;
+}
+
+function assertExpectedObservationPlan(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadePlanState {
+  const state = captureSpecsFacadePlan(intent);
+  const expected = expectedPlanHash.trim();
+  const executableHash = planHash(hashablePlan(state.plan), []);
+  if (!expected || (state.plan.planHash !== expected && (intent.operation !== "new" || executableHash !== expected))) {
+    throw new SpecsFacadeError("PLAN_STALE", "Specs facade plan hash does not match the intended observed effect", {
+      expectedPlanHash: expected || null,
+      currentPlanHash: state.plan.planHash,
+    });
+  }
+  return state;
 }
 
 function fileReadback(path: string, expectedSha256?: string): Record<string, unknown> {
@@ -264,62 +346,91 @@ function fileReadback(path: string, expectedSha256?: string): Record<string, unk
 }
 
 export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadeReadback {
-  const plan = assertExpectedPlan(intent, expectedPlanHash);
-  const specs = listSpecs({ cwd: plan.binding.cwd });
+  const state = assertExpectedObservationPlan(intent, expectedPlanHash);
+  const plan = state.plan;
+  assertCurrentDatabaseBinding(plan.binding.dbPath);
   if (intent.operation === "new") {
-    const prepared = prepareSpecCreation(intent as NewSpecInput);
+    const prepared = state.prepared!;
+    const specs = listSpecs({ cwd: plan.binding.cwd });
+    const inspection = inspectPreparedSpecCreation(prepared);
     return {
       schemaVersion: plan.schemaVersion,
       operation: plan.operation,
-      planHash: plan.planHash,
+      planHash: expectedPlanHash.trim(),
       binding: plan.binding,
       target: plan.target,
       ancestors: prepared.ancestors.map((entry) => ({ id: entry.id, path: entry.path, exists: entry.exists })),
       files: plan.effects.map((effect) => fileReadback(String(effect.path), String(effect.contentSha256))),
-      index: inspectSpecsIndex(plan.binding.specsRoot, specs),
+      unexpectedFiles: inspection.unexpectedFiles,
+      index: inspectSpecsIndex(plan.binding.specsRoot, specs, plan.binding.dbPath),
       observedAt: new Date().toISOString(),
     };
   }
 
+  return readbackCapturedSync(state, expectedPlanHash.trim());
+}
+
+function readbackCapturedSync(state: SpecsFacadePlanState, expectedPlanHash: string): SpecsFacadeReadback {
+  const plan = state.plan;
+  assertCurrentDatabaseBinding(plan.binding.dbPath);
   return {
     schemaVersion: plan.schemaVersion,
     operation: plan.operation,
-    planHash: plan.planHash,
+    planHash: expectedPlanHash,
     binding: plan.binding,
     target: plan.target,
     ancestors: [],
-    files: specs.map((spec) => fileReadback(spec.path)),
-    index: inspectSpecsIndex(plan.binding.specsRoot, specs),
+    files: state.specs.map((spec) => fileReadback(spec.path)),
+    unexpectedFiles: [],
+    index: inspectSpecsIndex(plan.binding.specsRoot, state.specs, plan.binding.dbPath),
     observedAt: new Date().toISOString(),
   };
 }
 
-export function verifySpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadeVerification {
-  const readback = readbackSpecsFacade(intent, expectedPlanHash);
+function classifySpecsFacadeReadback(
+  operation: SpecsFacadeOperation,
+  expectedPlanHash: string,
+  readback: SpecsFacadeReadback,
+): SpecsFacadeVerification {
   let outcome: SpecsFacadeVerification["outcome"];
-  if (intent.operation === "new") {
+  if (operation === "new") {
     const existing = readback.files.filter((file) => file.exists === true);
     outcome =
       existing.length === 0
         ? "absent"
-        : readback.files.every((file) => file.matches === true)
+        : readback.unexpectedFiles.length === 0 && readback.files.every((file) => file.matches === true)
           ? "confirmed"
           : "divergent";
   } else {
     outcome = readback.index.matches ? "confirmed" : readback.index.schemaExists ? "divergent" : "absent";
   }
-  return { operation: intent.operation, planHash: readback.planHash, outcome, readback };
+  return { operation, planHash: expectedPlanHash, outcome, readback };
 }
 
-export function applySpecsFacadePlan(intent: SpecsFacadeIntent, expectedPlanHash: string) {
-  const plan = assertExpectedPlan(intent, expectedPlanHash);
+export function verifySpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadeVerification {
+  return classifySpecsFacadeReadback(
+    intent.operation,
+    expectedPlanHash.trim(),
+    readbackSpecsFacade(intent, expectedPlanHash),
+  );
+}
+
+export function applySpecsFacadePlan(
+  intent: SpecsFacadeIntent,
+  expectedPlanHash: string,
+  options: ApplySpecsFacadePlanOptions = {},
+) {
+  const state = assertExpectedPlan(intent, expectedPlanHash);
+  const plan = state.plan;
   if (!plan.executable) {
     const blocker = plan.blockers[0]!;
     throw new SpecsFacadeError(blocker.code, blocker.message, blocker.details);
   }
+  assertCurrentDatabaseBinding(plan.binding.dbPath);
+  options.afterValidation?.();
 
   if (intent.operation === "new") {
-    const result = applyPreparedSpecCreation(prepareSpecCreation(intent as NewSpecInput), {
+    const result = applyPreparedSpecCreation(state.prepared!, {
       requireAncestors: true,
       existing: "noop",
     });
@@ -332,8 +443,9 @@ export function applySpecsFacadePlan(intent: SpecsFacadeIntent, expectedPlanHash
     return { operation: intent.operation, state: result.status, changed: result.changed, verification };
   }
 
-  const result = syncSpecs({ cwd: plan.binding.cwd });
-  const verification = verifySpecsFacade(intent, plan.planHash);
+  assertCurrentDatabaseBinding(plan.binding.dbPath);
+  const result = syncSpecsSnapshot(state.specs, { cwd: plan.binding.cwd });
+  const verification = classifySpecsFacadeReadback("sync", plan.planHash, readbackCapturedSync(state, plan.planHash));
   if (verification.outcome !== "confirmed") {
     throw new SpecsFacadeError("INDEX_READBACK_DIVERGENT", "Specs index did not match the Markdown source", {
       outcome: verification.outcome,

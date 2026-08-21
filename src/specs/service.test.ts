@@ -68,6 +68,19 @@ describe("specs service", () => {
     expect(existsSync(join(cwd, ".ravi/specs/channels/presence/lifecycle/SPEC.md"))).toBe(true);
   });
 
+  it("preserves legacy creation into a pre-created directory without SPEC.md", () => {
+    const cwd = makeWorkspace();
+    const target = join(cwd, ".ravi", "specs", "channels");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "WHY.md"), "legacy placeholder", "utf8");
+
+    const result = createSpec({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
+
+    expect(result.spec).toMatchObject({ id: "channels", title: "Channels" });
+    expect(existsSync(join(target, "SPEC.md"))).toBe(true);
+    expect(readFileSync(join(target, "WHY.md"), "utf8")).toContain("# Channels / WHY");
+  });
+
   it("lists and filters specs from markdown source of truth", () => {
     const cwd = makeWorkspace();
     createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });

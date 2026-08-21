@@ -23550,26 +23550,7 @@ public struct SpecsFacadeApplyOptions: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadeApplyReturn: Codable, Sendable {
-  public var changed: Bool
-  public var operation: String
-  public var state: String
-  public var verification: RaviJSON
-
-  public init(changed: Bool, operation: String, state: String, verification: RaviJSON) {
-    self.changed = changed
-    self.operation = operation
-    self.state = state
-    self.verification = verification
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case changed = "changed"
-    case operation = "operation"
-    case state = "state"
-    case verification = "verification"
-  }
-}
+public typealias SpecsFacadeApplyReturn = RaviJSON
 
 public struct SpecsFacadePlanOptions: Codable, Sendable {
   public var full: Bool?
@@ -23601,44 +23582,7 @@ public struct SpecsFacadePlanOptions: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadePlanReturn: Codable, Sendable {
-  public var binding: RaviJSON
-  public var blockers: [RaviJSON]
-  public var effects: [RaviJSON]
-  public var executable: Bool
-  public var input: RaviJSON
-  public var observation: RaviJSON
-  public var operation: String
-  public var planHash: String
-  public var schemaVersion: String
-  public var target: RaviJSON
-
-  public init(binding: RaviJSON, blockers: [RaviJSON], effects: [RaviJSON], executable: Bool, input: RaviJSON, observation: RaviJSON, operation: String, planHash: String, schemaVersion: String, target: RaviJSON) {
-    self.binding = binding
-    self.blockers = blockers
-    self.effects = effects
-    self.executable = executable
-    self.input = input
-    self.observation = observation
-    self.operation = operation
-    self.planHash = planHash
-    self.schemaVersion = schemaVersion
-    self.target = target
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case binding = "binding"
-    case blockers = "blockers"
-    case effects = "effects"
-    case executable = "executable"
-    case input = "input"
-    case observation = "observation"
-    case operation = "operation"
-    case planHash = "planHash"
-    case schemaVersion = "schemaVersion"
-    case target = "target"
-  }
-}
+public typealias SpecsFacadePlanReturn = RaviJSON
 
 public struct SpecsFacadeReadbackOptions: Codable, Sendable {
   public var full: Bool?
@@ -23670,41 +23614,7 @@ public struct SpecsFacadeReadbackOptions: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadeReadbackReturn: Codable, Sendable {
-  public var ancestors: [RaviJSON]
-  public var binding: RaviJSON
-  public var files: [RaviJSON]
-  public var index: RaviJSON
-  public var observedAt: String
-  public var operation: String
-  public var planHash: String
-  public var schemaVersion: String
-  public var target: RaviJSON
-
-  public init(ancestors: [RaviJSON], binding: RaviJSON, files: [RaviJSON], index: RaviJSON, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: RaviJSON) {
-    self.ancestors = ancestors
-    self.binding = binding
-    self.files = files
-    self.index = index
-    self.observedAt = observedAt
-    self.operation = operation
-    self.planHash = planHash
-    self.schemaVersion = schemaVersion
-    self.target = target
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case ancestors = "ancestors"
-    case binding = "binding"
-    case files = "files"
-    case index = "index"
-    case observedAt = "observedAt"
-    case operation = "operation"
-    case planHash = "planHash"
-    case schemaVersion = "schemaVersion"
-    case target = "target"
-  }
-}
+public typealias SpecsFacadeReadbackReturn = RaviJSON
 
 public struct SpecsFacadeRecoverOptions: Codable, Sendable {
   public var full: Bool?
@@ -23736,32 +23646,7 @@ public struct SpecsFacadeRecoverOptions: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadeRecoverReturn: Codable, Sendable {
-  public var action: String
-  public var operation: String
-  public var outcome: String
-  public var planHash: String
-  public var readback: RaviJSON
-  public var replay: Bool
-
-  public init(action: String, operation: String, outcome: String, planHash: String, readback: RaviJSON, replay: Bool) {
-    self.action = action
-    self.operation = operation
-    self.outcome = outcome
-    self.planHash = planHash
-    self.readback = readback
-    self.replay = replay
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case action = "action"
-    case operation = "operation"
-    case outcome = "outcome"
-    case planHash = "planHash"
-    case readback = "readback"
-    case replay = "replay"
-  }
-}
+public typealias SpecsFacadeRecoverReturn = RaviJSON
 
 public struct SpecsFacadeVerifyOptions: Codable, Sendable {
   public var full: Bool?
@@ -23793,26 +23678,7 @@ public struct SpecsFacadeVerifyOptions: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadeVerifyReturn: Codable, Sendable {
-  public var operation: String
-  public var outcome: String
-  public var planHash: String
-  public var readback: RaviJSON
-
-  public init(operation: String, outcome: String, planHash: String, readback: RaviJSON) {
-    self.operation = operation
-    self.outcome = outcome
-    self.planHash = planHash
-    self.readback = readback
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case operation = "operation"
-    case outcome = "outcome"
-    case planHash = "planHash"
-    case readback = "readback"
-  }
-}
+public typealias SpecsFacadeVerifyReturn = RaviJSON
 
 public struct SpecsGetOptions: Codable, Sendable {
   public var mode: String?

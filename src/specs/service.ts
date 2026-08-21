@@ -600,7 +600,8 @@ export function inspectPreparedSpecCreation(prepared: PreparedSpecCreation): Spe
   return {
     targetDirectoryExists,
     targetSpecExists,
-    exactMatch: targetSpecExists && missingFiles.length === 0 && divergentFiles.length === 0,
+    exactMatch:
+      targetSpecExists && missingFiles.length === 0 && divergentFiles.length === 0 && unexpectedFiles.length === 0,
     matchingFiles,
     missingFiles,
     divergentFiles,
@@ -631,7 +632,26 @@ export function applyPreparedSpecCreation(
     );
   }
   if (inspection.targetDirectoryExists) {
-    throw new Error(`Spec target directory already exists without SPEC.md: ${prepared.id}`);
+    if (options.existingDirectory !== "populate") {
+      throw new Error(`Spec target directory already exists without SPEC.md: ${prepared.id}`);
+    }
+    assertNoSymlinkOnExistingPath(prepared.cwd, prepared.directoryPath);
+    for (const file of prepared.files) {
+      if (existsSync(file.path)) {
+        const stat = lstatSync(file.path);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+          throw new Error(`Unsafe existing file in legacy spec target: ${file.relativePath}`);
+        }
+      }
+      writeFileSync(file.path, file.content, "utf8");
+    }
+    return {
+      spec: getSpec(prepared.id, { cwd: prepared.cwd }),
+      createdFiles: prepared.files.map((file) => file.path.split("\\").join("/")),
+      missingAncestors: prepared.missingAncestors,
+      changed: true,
+      status: "created",
+    };
   }
 
   const parent = dirname(prepared.directoryPath);
@@ -645,6 +665,7 @@ export function applyPreparedSpecCreation(
     for (const file of prepared.files) {
       writeFileSync(join(stagingPath, file.fileName), file.content, { encoding: "utf8", flag: "wx" });
     }
+    options.beforePromote?.(stagingPath);
     assertNoSymlinkOnExistingPath(prepared.cwd, parent);
     renameSync(stagingPath, prepared.directoryPath);
     renamed = true;
@@ -667,6 +688,7 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
   const result = applyPreparedSpecCreation(prepareSpecCreation(input), {
     requireAncestors: false,
     existing: "error",
+    existingDirectory: "populate",
   });
   return {
     spec: result.spec,
@@ -675,9 +697,13 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
   };
 }
 
-export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
+export function syncSpecsSnapshot(specs: SpecRecord[], options: SyncSpecsOptions = {}): SyncSpecsResult {
   const rootPath = getSpecsRoot(options.cwd);
-  const specs = listSpecs(options);
+  for (const spec of specs) {
+    if (spec.rootPath !== rootPath || relativeInside(rootPath, spec.path).startsWith("..")) {
+      throw new Error(`Spec snapshot is not bound to root: ${spec.id}`);
+    }
+  }
   const changed = replaceSpecsIndex(rootPath, specs);
   return {
     rootPath,
@@ -685,6 +711,10 @@ export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
     specs,
     changed,
   };
+}
+
+export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
+  return syncSpecsSnapshot(listSpecs(options), options);
 }
 
 export function specExists(id: string, options: GetSpecOptions = {}): boolean {

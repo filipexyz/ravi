@@ -29,12 +29,18 @@
     do not overwrite.
 11. Use `facade verify` for a classified result and `facade recover` for the
     safe next action. Recovery reports `replay:false` and never applies.
+12. `UNSAFE_DB_PATH`: remove the symbolic-link component from the configured
+    Ravi state path and plan again. Do not copy the database through the link.
+13. `verify` returning `divergent` after a successful `new` means the files no
+    longer match the approved hashes. Preserve the files, inspect readback, and
+    follow `manual_review`; an old hash is not authority to overwrite them.
 
 ## Validation
 
 ```bash
 bun test src/cli/commands/specs.test.ts
 bun test src/specs/service.test.ts src/specs/facade.test.ts
+bun run typecheck
 ```
 
 Live checks (use a scratch workspace; all reads/dry-safe ops):

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
+import { relative, resolve } from "node:path";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import type { SpecRecord, SpecsIndexInspection } from "./types.js";
@@ -188,8 +188,12 @@ export function listIndexedSpecs(rootPath: string): SpecRecord[] {
   return rows.map(rowToSpec);
 }
 
-export function inspectSpecsIndex(rootPath: string, specs: SpecRecord[]): SpecsIndexInspection {
-  const dbPath = getRaviDbPath();
+export function inspectSpecsIndex(
+  rootPath: string,
+  specs: SpecRecord[],
+  databasePath = resolve(getRaviDbPath()),
+): SpecsIndexInspection {
+  const dbPath = resolve(databasePath);
   const empty = {
     dbPath,
     schemaExists: false,

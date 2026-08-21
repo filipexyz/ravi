@@ -71,6 +71,20 @@ planning and readback without changing those compatibility commands.
     MUST NOT accept a caller-provided `cwd`, specs root, or database path flag.
 13. `planHash` MUST bind the current blocker set. If a blocked context becomes
     executable, the old hash MUST be rejected as stale before any mutation.
+14. Facade `apply` MUST require the exact current plan, while `readback`,
+    `verify`, and `recover` for an originally executable `new` plan MUST report
+    later file changes as `divergent` instead of hiding them behind
+    `PLAN_STALE`.
+15. Facade `sync` MUST write the exact Markdown snapshot approved by the copied
+    hash. A source change after validation MUST NOT silently replace that
+    snapshot during the same apply.
+16. Public facade return schemas MUST discriminate `new` from `sync`; operation,
+    input, target, effects, observation, state, and nested verification MUST NOT
+    admit cross-operation combinations.
+17. The database binding MUST be absolute and canonical. An observed symbolic
+    link in that binding MUST fail with `UNSAFE_DB_PATH` before database writes.
+18. Exact `new` replay MUST require no unexpected target files. Blockers and
+    readback MUST expose every unexpected path for review.
 
 ## Write classification (brake decision per op)
 
@@ -91,6 +105,7 @@ planning and readback without changing those compatibility commands.
 | stale facade hash | `PLAN_STALE` | 1 |
 | missing facade ancestor | `SPEC_ANCESTORS_MISSING` | 1 |
 | orphan/divergent target | `SPEC_TARGET_CONFLICT` | 1 |
+| symbolic link in database binding | `UNSAFE_DB_PATH` | 1 |
 
 ## Internal consumers
 
@@ -119,3 +134,6 @@ the CI quality gate — all keep working unchanged because `sync` is unbraked.
   BEFORE a dynamic import of `./specs.js`.
 - A broad facade catch can recapture `ContractError`; the facade error funnel
   MUST rethrow the exact typed signal before generic conversion.
+- Changing a completed target is an observation, not permission to overwrite:
+  verification MUST return `divergent` and recovery MUST return
+  `manual_review`, while another apply with the old hash remains stale.

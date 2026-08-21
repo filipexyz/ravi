@@ -1325,7 +1325,13 @@ const specsFacadeBlockerReturnSchema = z
     details: z
       .union([
         z.object({ ancestors: z.array(z.string()) }).strict(),
-        z.object({ divergentFiles: z.array(z.string()), missingFiles: z.array(z.string()) }).strict(),
+        z
+          .object({
+            divergentFiles: z.array(z.string()),
+            missingFiles: z.array(z.string()),
+            unexpectedFiles: z.array(z.string()),
+          })
+          .strict(),
       ])
       .optional(),
   })
@@ -1374,20 +1380,40 @@ const specsFacadeSyncObservationReturnSchema = z
   })
   .strict();
 
-export const specsFacadePlanReturnSchema = z
+const specsFacadePlanCommonReturnSchema = z
   .object({
     schemaVersion: z.literal("specs.agent-first/v1"),
-    operation: z.enum(["new", "sync"]),
     planHash: z.string(),
     executable: z.boolean(),
     blockers: z.array(specsFacadeBlockerReturnSchema),
     binding: specsFacadeBindingReturnSchema,
-    input: z.union([specsFacadeNewInputReturnSchema, z.object({ source: z.literal("workspace") }).strict()]),
-    target: z.union([specsFacadeNewTargetReturnSchema, specsFacadeSyncTargetReturnSchema]),
-    effects: z.array(z.union([specsFacadeCreateEffectReturnSchema, specsFacadeSyncEffectReturnSchema])),
-    observation: z.union([specsFacadeNewObservationReturnSchema, specsFacadeSyncObservationReturnSchema]),
   })
   .strict();
+
+const specsFacadeNewPlanReturnSchema = specsFacadePlanCommonReturnSchema
+  .extend({
+    operation: z.literal("new"),
+    input: specsFacadeNewInputReturnSchema,
+    target: specsFacadeNewTargetReturnSchema,
+    effects: z.array(specsFacadeCreateEffectReturnSchema),
+    observation: specsFacadeNewObservationReturnSchema,
+  })
+  .strict();
+
+const specsFacadeSyncPlanReturnSchema = specsFacadePlanCommonReturnSchema
+  .extend({
+    operation: z.literal("sync"),
+    input: z.object({ source: z.literal("workspace") }).strict(),
+    target: specsFacadeSyncTargetReturnSchema,
+    effects: z.array(specsFacadeSyncEffectReturnSchema).length(1),
+    observation: specsFacadeSyncObservationReturnSchema,
+  })
+  .strict();
+
+export const specsFacadePlanReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewPlanReturnSchema,
+  specsFacadeSyncPlanReturnSchema,
+]);
 
 const specsFacadeFileReturnSchema = z.union([
   z.object({ path: z.string(), exists: z.literal(false), expectedSha256: z.string().nullable() }).strict(),
@@ -1411,44 +1437,103 @@ const specsFacadeFileReturnSchema = z.union([
     .strict(),
 ]);
 
-export const specsFacadeReadbackReturnSchema = z
+const specsFacadeReadbackCommonReturnSchema = z
   .object({
     schemaVersion: z.literal("specs.agent-first/v1"),
-    operation: z.enum(["new", "sync"]),
     planHash: z.string(),
     binding: specsFacadeBindingReturnSchema,
-    target: z.union([specsFacadeNewTargetReturnSchema, specsFacadeSyncTargetReturnSchema]),
-    ancestors: z.array(specsFacadeAncestorReturnSchema),
     files: z.array(specsFacadeFileReturnSchema),
+    unexpectedFiles: z.array(z.string()),
     index: specsFacadeIndexReturnSchema,
     observedAt: z.string(),
   })
   .strict();
 
-export const specsFacadeVerificationReturnSchema = z
+const specsFacadeNewReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+  .extend({
+    operation: z.literal("new"),
+    target: specsFacadeNewTargetReturnSchema,
+    ancestors: z.array(specsFacadeAncestorReturnSchema),
+  })
+  .strict();
+
+const specsFacadeSyncReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+  .extend({
+    operation: z.literal("sync"),
+    target: specsFacadeSyncTargetReturnSchema,
+    ancestors: z.array(specsFacadeAncestorReturnSchema).max(0),
+  })
+  .strict();
+
+export const specsFacadeReadbackReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewReadbackReturnSchema,
+  specsFacadeSyncReadbackReturnSchema,
+]);
+
+const specsFacadeNewVerificationReturnSchema = z
   .object({
-    operation: z.enum(["new", "sync"]),
+    operation: z.literal("new"),
     planHash: z.string(),
     outcome: z.enum(["confirmed", "absent", "divergent"]),
-    readback: specsFacadeReadbackReturnSchema,
+    readback: specsFacadeNewReadbackReturnSchema,
   })
   .strict();
 
-export const specsFacadeApplyReturnSchema = z
+const specsFacadeSyncVerificationReturnSchema = z
   .object({
-    operation: z.enum(["new", "sync"]),
-    state: z.enum(["created", "applied", "noop"]),
-    changed: z.boolean(),
-    verification: specsFacadeVerificationReturnSchema,
+    operation: z.literal("sync"),
+    planHash: z.string(),
+    outcome: z.enum(["confirmed", "absent", "divergent"]),
+    readback: specsFacadeSyncReadbackReturnSchema,
   })
   .strict();
 
-export const specsFacadeRecoveryReturnSchema = specsFacadeVerificationReturnSchema
+export const specsFacadeVerificationReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewVerificationReturnSchema,
+  specsFacadeSyncVerificationReturnSchema,
+]);
+
+const specsFacadeNewApplyReturnSchema = z
+  .object({
+    operation: z.literal("new"),
+    state: z.enum(["created", "noop"]),
+    changed: z.boolean(),
+    verification: specsFacadeNewVerificationReturnSchema,
+  })
+  .strict();
+
+const specsFacadeSyncApplyReturnSchema = z
+  .object({
+    operation: z.literal("sync"),
+    state: z.enum(["applied", "noop"]),
+    changed: z.boolean(),
+    verification: specsFacadeSyncVerificationReturnSchema,
+  })
+  .strict();
+
+export const specsFacadeApplyReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewApplyReturnSchema,
+  specsFacadeSyncApplyReturnSchema,
+]);
+
+const specsFacadeNewRecoveryReturnSchema = specsFacadeNewVerificationReturnSchema
   .extend({
     action: z.enum(["none", "replan_and_apply", "manual_review"]),
     replay: z.literal(false),
   })
   .strict();
+
+const specsFacadeSyncRecoveryReturnSchema = specsFacadeSyncVerificationReturnSchema
+  .extend({
+    action: z.enum(["none", "replan_and_apply", "manual_review"]),
+    replay: z.literal(false),
+  })
+  .strict();
+
+export const specsFacadeRecoveryReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewRecoveryReturnSchema,
+  specsFacadeSyncRecoveryReturnSchema,
+]);
 
 export const taskRecordReturnSchema = looseObjectSchema;
 export const taskEventReturnSchema = looseObjectSchema;

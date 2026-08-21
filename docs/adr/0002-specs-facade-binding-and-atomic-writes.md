@@ -27,6 +27,8 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
   database path, normalized input, exact file-content hashes, current safety
   blockers, and, for `sync`, the source index digest. A changed blocker set
   makes the old plan stale. No CLI option accepts an arbitrary filesystem root.
+- The database binding is absolute and rejects any observed symbolic-link
+  component before planning or applying database work.
 - Facade `new` blocks when required ancestor `SPEC.md` files are absent. The
   legacy `new` command preserves its explicit compatibility behavior and still
   reports missing ancestors after creation.
@@ -38,9 +40,16 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
 - Legacy `new` and facade `new` delegate to the same atomic writer. Legacy
   `sync` and facade `sync` delegate to the same compare-before-replace index
   service.
+- Facade `sync` writes the exact in-memory Markdown snapshot used to produce
+  the approved hash; it does not perform a second source scan after validation.
 - `readback`, `verify`, and `recover` are read-only. They expose the bound
   targets, ancestor state, expected versus observed file hashes, and SQLite
-  index state. Recovery never replays an effect.
+  index state. Observation recognizes the identity of an originally executable
+  `new` plan so later changes are reported as divergence, while apply retains
+  strict current-plan freshness. Recovery never replays an effect.
+- Public return contracts are discriminated by operation so generated clients
+  cannot combine `new` inputs, targets, effects, states, or readbacks with
+  `sync` payloads.
 
 ## Alternatives considered
 
@@ -56,6 +65,9 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
   still share the visible target.
 - **Make legacy `new` idempotent.** Rejected because existing users rely on a
   collision being visible. Idempotent replay belongs to the facade contract.
+- **Remove legacy orphan-directory population.** Rejected as an undocumented
+  compatibility break. That narrow legacy path remains file-by-file; facade
+  creation rejects orphan directories and keeps whole-directory promotion.
 
 ## Consequences
 
@@ -64,6 +76,10 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
 - Local creation no longer exposes a partially written target directory under
   ordinary filesystem rename guarantees.
 - A stale or differently bound hash is rejected before mutation.
+- A post-apply edit remains observable as `divergent`/`manual_review` without
+  granting authority to overwrite it with the old hash.
+- Sync cannot silently index a Markdown version that appeared after the copied
+  plan was validated.
 - The facade call is intentionally more explicit: callers must retain the hash
   and repeat the normalized intention because no plan record is persisted.
 - A filesystem that cannot provide ordinary same-parent rename semantics is not

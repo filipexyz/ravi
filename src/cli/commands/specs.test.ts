@@ -21,6 +21,13 @@ mock.module("../context.js", () => ({
 const { SpecsCommands, SpecsFacadeCommands } = await import("./specs.js");
 const { ContractError } = await import("../agent-contract.js");
 const { getCommandAccessMetadata } = await import("../decorators.js");
+const {
+  specsFacadeApplyReturnSchema,
+  specsFacadePlanReturnSchema,
+  specsFacadeReadbackReturnSchema,
+  specsFacadeRecoveryReturnSchema,
+  specsFacadeVerificationReturnSchema,
+} = await import("./operational-return-schemas.js");
 
 setDefaultTimeout(20_000);
 
@@ -263,6 +270,58 @@ describe("SpecsFacadeCommands", () => {
       commands.readback("new", plan.planHash, "channels", "Channels", "domain", false, true),
     );
     expect(JSON.parse(readback.output)).toMatchObject({ operation: "new", files: [{ exists: true, matches: true }] });
+  });
+
+  it("publishes correlated new and sync return contracts", () => {
+    makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    const newPlan = captureConsole(() => commands.plan("new", "channels", "Channels", "domain", false, true))
+      .result as Record<string, unknown>;
+    const newPlanHash = String(newPlan.planHash);
+    const newApply = captureConsole(() =>
+      commands.apply("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newReadback = captureConsole(() =>
+      commands.readback("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newVerification = captureConsole(() =>
+      commands.verify("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newRecovery = captureConsole(() =>
+      commands.recover("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+
+    const syncPlan = captureConsole(() => commands.plan("sync", undefined, undefined, undefined, false, true))
+      .result as Record<string, unknown>;
+    const syncPlanHash = String(syncPlan.planHash);
+    const syncApply = captureConsole(() =>
+      commands.apply("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncReadback = captureConsole(() =>
+      commands.readback("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncVerification = captureConsole(() =>
+      commands.verify("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncRecovery = captureConsole(() =>
+      commands.recover("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+
+    const contractCases = [
+      [specsFacadePlanReturnSchema, newPlan, syncPlan],
+      [specsFacadeApplyReturnSchema, newApply, syncApply],
+      [specsFacadeReadbackReturnSchema, newReadback, syncReadback],
+      [specsFacadeVerificationReturnSchema, newVerification, syncVerification],
+      [specsFacadeRecoveryReturnSchema, newRecovery, syncRecovery],
+    ] as const;
+
+    for (const [schema, newValue, syncValue] of contractCases) {
+      expect(schema.safeParse(newValue).success).toBe(true);
+      expect(schema.safeParse(syncValue).success).toBe(true);
+      expect(schema.safeParse({ ...newValue, operation: "sync" }).success).toBe(false);
+      expect(schema.safeParse({ ...syncValue, operation: "new" }).success).toBe(false);
+    }
   });
 
   it("returns typed usage errors for invalid facade operation and kind", () => {

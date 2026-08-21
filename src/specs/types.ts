@@ -122,6 +122,8 @@ export interface SpecCreationInspection {
 export interface ApplyPreparedSpecCreationOptions {
   requireAncestors: boolean;
   existing: "error" | "noop";
+  existingDirectory?: "error" | "populate";
+  beforePromote?: (stagingPath: string) => void;
 }
 
 export interface AppliedSpecCreation extends NewSpecResult {
