@@ -50,11 +50,6 @@ function isRootVersionRequest(args: string[]): boolean {
   return args.length === 1 && (args[0] === "--version" || args[0] === "-V");
 }
 
-if (isRootVersionRequest(process.argv.slice(2))) {
-  await writeProcessStdout(`${pkg.version}\n`);
-  await terminateCliProcess(0);
-}
-
 program
   .name("ravi")
   .description("Ravi Bot CLI - Claude-powered bot management")
@@ -321,7 +316,7 @@ program
 // migrated domain nodes, including unknown command suggestions.
 installRootUsageContract(program);
 
-await bootstrapCli().catch(async (error: unknown) => {
+void bootstrapCli().catch(async (error: unknown) => {
   if (error instanceof CliTerminationRequest) {
     return terminateCliProcess(error.exitCode);
   }
@@ -359,6 +354,11 @@ await bootstrapCli().catch(async (error: unknown) => {
 });
 
 async function bootstrapCli(): Promise<void> {
+  if (isRootVersionRequest(process.argv.slice(2))) {
+    await writeProcessStdout(`${pkg.version}\n`);
+    return terminateCliProcess(0);
+  }
+
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
 
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {

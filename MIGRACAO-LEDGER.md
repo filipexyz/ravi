@@ -1457,3 +1457,30 @@ gate dos 34 caminhos e lint documental tambem passaram.
 
 O GO anterior fica superado pela mudanca de codigo. Novo commit, pacote e
 revisao independente do SHA exato sao obrigatorios antes de push e PR.
+
+### Primeira CI Linux da PR 426
+
+O run Linux `32450827025` do SHA
+`677cd83857fe6b6d2f92e66b3fd2dd61d4928f3c` passou pela suite de canais e
+avancou ate os testes da CLI, mas falhou ao carregar sincronamente o bundle do
+daemon. O top-level await adicionado pela fronteira de saida tornou o bundle
+incompativel com o `require` usado pelo PM2, embora a execucao direta local
+continuasse funcional.
+
+O caminho de versao foi movido para `bootstrapCli` e a promessa raiz voltou a
+ser iniciada sem top-level await. A CI vermelha invalida o GO e o pacote do SHA
+anterior. Nova validacao integral, pacote, revisao independente e CI Linux sao
+obrigatorios.
+
+Na revalidacao local, uma selecao ampliada incluiu indevidamente
+`src/runtime/codex-provider.test.ts`: 20 casos de scripts `.mjs` temporarios
+falharam com `ENOENT` no Windows e 50 passaram. O recorte correto da fundacao,
+sem esse arquivo alheio, passou com 27 testes e 107 assercoes. A suite integral
+permanece sob autoridade da CI Linux do novo SHA.
+
+O bundle corrigido foi carregado sincronamente por `require` e `daemon status`
+terminou com codigo 0. O recorte de saida e erros passou com 23 testes e 93
+assercoes; o SDK completo passou com 75 testes e 297 assercoes, seguido de
+`sdk:check`. Typecheck, build integral, quality gate dos 34 caminhos e lint
+documental tambem passaram. O fechamento ainda depende de commit exato, revisao
+independente, novo pacote e CI Linux verde no mesmo SHA.

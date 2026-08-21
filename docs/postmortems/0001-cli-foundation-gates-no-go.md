@@ -160,3 +160,44 @@ depois de 250 ms e só resolve ou rejeita o timeout quando observa `close`.
 Erros de sinalização após o timeout também aguardam esse fechamento. O ledger
 foi alinhado à evidência final; nova execução e nova revisão do SHA exato
 continuam obrigatórias.
+
+## Nota de revisão — 2026-08-21 (primeira CI Linux da PR 426)
+
+A CI Linux do SHA `677cd83857fe6b6d2f92e66b3fd2dd61d4928f3c` falhou no
+teste nativo do daemon que carrega o bundle da CLI de forma síncrona. A nova
+fronteira havia introduzido `await` no nível principal para a versão e para o
+bootstrap. O bundle continuava executável diretamente, mas deixou de poder ser
+carregado por `require`, retornando status 1 no contrato usado pelo PM2.
+
+A correção move o caminho de versão para dentro de `bootstrapCli` e inicia a
+promessa com `void`, mantendo toda espera de saída dentro da cadeia assíncrona
+sem criar top-level await. O resultado vermelho permanece como evidência
+histórica; o GO, pacote e SHA anteriores estão superados. Testes do daemon,
+saída, build, pacote e revisão independente devem ser repetidos antes de novo
+push.
+
+## Nota de revisão — 2026-08-21 (recorte local ampliado no Windows)
+
+Uma tentativa local incluiu por engano todo o arquivo
+`src/runtime/codex-provider.test.ts` junto dos quatro testes da fundação. Nesse
+arquivo, 20 casos que iniciam scripts temporários falharam com `ENOENT` porque o
+Windows não executa diretamente os arquivos `.mjs` usados como falsos binários.
+Os 50 casos restantes passaram. Esse arquivo não pertence ao recorte de 27
+testes da fundação e a falha não toca o código corrigido do bootstrap.
+
+O comando correto, sem `codex-provider.test.ts`, passou com 27 testes e 107
+asserções. A CI Linux continua sendo a autoridade para a suíte integral e deve
+passar no SHA corrigido antes de qualquer novo GO.
+
+## Nota de revisão — 2026-08-21 (correção revalidada localmente)
+
+O bundle corrigido foi carregado de forma síncrona por `require` e executou
+`daemon status` com código 0. Os testes focados de saída e erros passaram com 23
+casos e 93 asserções; segurança, paginação e projeção de runtime passaram com 27
+casos e 107 asserções; a suíte completa do SDK passou com 75 casos e 297
+asserções, seguida de `sdk:check`.
+
+Typecheck, build integral, quality gate dos 34 caminhos e lint dos documentos
+alterados também passaram. Isso fecha a revalidação local, mas não restaura o
+GO: ainda são obrigatórios commit exato, revisão independente, novo pacote e CI
+Linux verde no mesmo SHA.
