@@ -4,6 +4,10 @@
 
 - A native process test MUST parse a piped JSON response larger than 64 KiB.
 - Success and failure paths MUST complete pending output before process exit.
+- A permanently stuck stream MUST hit a bounded flush timeout without a busy
+  loop, and termination MUST still complete.
+- Native child-process checks MUST kill and observe a timed-out child before
+  returning, so a failed check cannot leave an orphan process.
 - The test MUST exercise the real CLI process boundary.
 - Direct `fail()` termination MUST route through the top-level flush boundary.
 - Native isolated tool tests with `RAVI_SUPPRESS_AUDIT_EVENTS=1` MUST NOT contact

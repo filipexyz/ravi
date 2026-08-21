@@ -129,3 +129,19 @@ A publicação deve usar o commit já aprovado pelos gates focados e pela revis�
 independente, com o hook local explicitamente dispensado apenas para acionar a
 CI Linux. Merge, pacote promovido e VPS continuam bloqueados até a CI do SHA
 exato concluir todos os jobs obrigatórios.
+
+## Nota de revisão — 2026-08-21 (espera de saída sem limite)
+
+A investigação independente do congelamento descartou regressão no Slack, mas
+encontrou um bloqueador real na nova fronteira de saída: enquanto o Bun
+mantivesse `writableLength` ou `writableNeedDrain`, o código repetia
+`setImmediate` sem prazo máximo. Um indicador preso poderia consumir CPU e
+impedir o encerramento indefinidamente. A descarga adicional no `finally` da
+CLI repetia a mesma exposição.
+
+A correção troca a repetição por verificações espaçadas, com limite de cinco
+segundos, remove a segunda descarga e garante `process.exit` em `finally`. O
+teste nativo agora prova o limite com um stream permanentemente preso e mata,
+observa e rejeita um processo-filho que ultrapassa seu próprio prazo. Assim, o
+caminho normal continua comprovando saída integral, enquanto uma anomalia do
+stream não cria laço de CPU nem processo órfão.

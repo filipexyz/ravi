@@ -7,6 +7,9 @@
    parsed.
 3. If the payload is incomplete, inspect the common output writer and all
    immediate `process.exit()` paths before changing a domain command.
+4. If a process remains alive with no output progress, confirm that the common
+   writer reaches its five-second flush bound and that termination runs from the
+   guaranteed cleanup path. Never replace the bound with an unbounded poll.
 
 The migrated boundary covers registered one-shot CLI commands. The remaining
 direct exits are explicit lifecycle exceptions: daemon log/follow callbacks,

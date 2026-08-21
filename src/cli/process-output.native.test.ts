@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { waitUntilProcessOutputFlushed, type ProcessOutputStream } from "./process-output.js";
 
 setDefaultTimeout(90_000);
 
@@ -29,9 +30,9 @@ function isolatedCliEnv(): NodeJS.ProcessEnv {
   };
 }
 
-function runNativeCli(args: string[]): Promise<CliProcessResult> {
+function runNativeProcess(args: string[], timeoutMs: number): Promise<CliProcessResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["src/cli/index.ts", ...args], {
+    const child = spawn(process.execPath, args, {
       cwd: process.cwd(),
       env: isolatedCliEnv(),
       stdio: ["ignore", "pipe", "pipe"],
@@ -39,11 +40,32 @@ function runNativeCli(args: string[]): Promise<CliProcessResult> {
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let settled = false;
+    let timeoutError: Error | null = null;
+    const timeout = setTimeout(() => {
+      timeoutError = new Error(`Native process did not exit within ${timeoutMs}ms: ${args.join(" ")}`);
+      if (!child.kill()) {
+        settled = true;
+        reject(timeoutError);
+      }
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", reject);
+    child.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.once("close", (status) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (timeoutError) {
+        reject(timeoutError);
+        return;
+      }
       resolve({
         status,
         stdout: Buffer.concat(stdout),
@@ -53,7 +75,54 @@ function runNativeCli(args: string[]): Promise<CliProcessResult> {
   });
 }
 
+function runNativeCli(args: string[]): Promise<CliProcessResult> {
+  return runNativeProcess(["src/cli/index.ts", ...args], 30_000);
+}
+
 describe("native CLI process output integrity", () => {
+  it("bounds a permanently stuck output stream without busy-spinning", async () => {
+    const stuckStream: ProcessOutputStream = {
+      destroyed: false,
+      writableEnded: false,
+      writableLength: 1,
+      writableNeedDrain: true,
+      write: () => false,
+    };
+    const startedAt = performance.now();
+
+    await expect(waitUntilProcessOutputFlushed(stuckStream, 20)).rejects.toThrow(
+      "CLI output did not flush within 20ms.",
+    );
+
+    const elapsedMs = performance.now() - startedAt;
+    expect(elapsedMs).toBeGreaterThanOrEqual(15);
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("kills and observes a child process that exceeds its native timeout", async () => {
+    const startedAt = performance.now();
+
+    await expect(runNativeProcess(["-e", "setInterval(() => {}, 1000)"], 100)).rejects.toThrow(
+      "Native process did not exit within 100ms",
+    );
+
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+  });
+
+  it("preserves termination when a native process stream never reports progress", async () => {
+    const script = [
+      'Object.defineProperty(process.stdout, "writableLength", { get: () => 1 });',
+      'Object.defineProperty(process.stdout, "writableNeedDrain", { get: () => true });',
+      'const { terminateCliProcess } = await import("./src/cli/process-output.ts");',
+      "await terminateCliProcess(7, 20);",
+    ].join("\n");
+
+    const result = await runNativeProcess(["-e", script], 2_000);
+
+    expect(result.status).toBe(7);
+    expect(result.stderr.byteLength).toBe(0);
+  });
+
   it("delivers a complete piped JSON document larger than 64 KiB", async () => {
     const result = await runNativeCli(["tools", "list", "--json", "--limit", "500"]);
 

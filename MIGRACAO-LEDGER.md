@@ -1439,3 +1439,21 @@ reproduzidas na `dev` no Windows. O pacote instalavel local tem SHA-256
 Este GO autoriza commit, push e abertura da PR. A spec permanece `draft` e
 qualquer merge ou uso na VPS continua condicionado a CI Linux verde no commit
 exato e a autorizacao humana de implantacao.
+
+### Correcao da espera de saida sem limite
+
+A auditoria posterior ao primeiro commit encontrou uma espera sem prazo quando
+o Bun mantinha o indicador de buffer ativo. A fundacao passou a verificar o
+progresso em intervalos curtos, interromper a espera depois de cinco segundos,
+garantir a terminacao em `finally` e remover a segunda descarga no encerramento
+global.
+
+O teste nativo agora cobre stream permanentemente preso e processo-filho que
+excede seu prazo, alem dos caminhos reais de JSON maior que 64 KiB, falha e
+versao. O recorte focado passou com 22 testes e 91 assercoes; metadados,
+paginacao e runtime passaram com 27 testes e 107 assercoes; `test:sdk` passou
+com 75 testes e 297 assercoes, seguido de `sdk:check`. Typecheck, build, quality
+gate dos 34 caminhos e lint documental tambem passaram.
+
+O GO anterior fica superado pela mudanca de codigo. Novo commit, pacote e
+revisao independente do SHA exato sao obrigatorios antes de push e PR.

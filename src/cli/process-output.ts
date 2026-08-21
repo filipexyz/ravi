@@ -1,5 +1,7 @@
 type ProcessOutputChunk = string | Uint8Array;
 type CliExitCode = number | string;
+const DEFAULT_OUTPUT_FLUSH_TIMEOUT_MS = 5_000;
+const OUTPUT_FLUSH_POLL_INTERVAL_MS = 4;
 
 export class CliTerminationRequest extends Error {
   readonly exitCode: CliExitCode;
@@ -20,21 +22,29 @@ export function requestCliTermination(code: CliExitCode): never {
   throw new CliTerminationRequest(code);
 }
 
-type ProcessOutputStream = Pick<
+export type ProcessOutputStream = Pick<
   NodeJS.WriteStream,
   "destroyed" | "writableEnded" | "writableLength" | "writableNeedDrain" | "write"
 >;
 
-function nextEventLoopTurn(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+function waitForOutputProgress(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-async function waitUntilFlushed(stream: ProcessOutputStream): Promise<void> {
+export async function waitUntilProcessOutputFlushed(
+  stream: ProcessOutputStream,
+  timeoutMs = DEFAULT_OUTPUT_FLUSH_TIMEOUT_MS,
+): Promise<void> {
+  const startedAt = performance.now();
   while (stream.writableLength > 0 || stream.writableNeedDrain) {
     if (stream.destroyed || stream.writableEnded) {
       throw new Error("CLI output stream became unavailable before pending output completed.");
     }
-    await nextEventLoopTurn();
+    const remainingMs = timeoutMs - (performance.now() - startedAt);
+    if (remainingMs <= 0) {
+      throw new Error(`CLI output did not flush within ${timeoutMs}ms.`);
+    }
+    await waitForOutputProgress(Math.min(OUTPUT_FLUSH_POLL_INTERVAL_MS, remainingMs));
   }
 }
 
@@ -44,7 +54,7 @@ async function writeAndWait(stream: ProcessOutputStream, chunk: ProcessOutputChu
   }
 
   stream.write(chunk);
-  await waitUntilFlushed(stream);
+  await waitUntilProcessOutputFlushed(stream);
 }
 
 export function writeProcessStdout(chunk: ProcessOutputChunk): Promise<void> {
@@ -60,11 +70,20 @@ export function writeProcessStderr(chunk: ProcessOutputChunk): Promise<void> {
  * complete when stdout or stderr is connected to a pipe without relying on
  * write callbacks, which Bun does not consistently invoke for process streams.
  */
-export async function flushProcessOutput(): Promise<void> {
-  await Promise.all([waitUntilFlushed(process.stdout), waitUntilFlushed(process.stderr)]);
+export async function flushProcessOutput(timeoutMs = DEFAULT_OUTPUT_FLUSH_TIMEOUT_MS): Promise<void> {
+  await Promise.all([
+    waitUntilProcessOutputFlushed(process.stdout, timeoutMs),
+    waitUntilProcessOutputFlushed(process.stderr, timeoutMs),
+  ]);
 }
 
-export async function terminateCliProcess(code: CliExitCode): Promise<never> {
-  await flushProcessOutput();
-  process.exit(code);
+export async function terminateCliProcess(
+  code: CliExitCode,
+  flushTimeoutMs = DEFAULT_OUTPUT_FLUSH_TIMEOUT_MS,
+): Promise<never> {
+  try {
+    await flushProcessOutput(flushTimeoutMs);
+  } finally {
+    process.exit(code);
+  }
 }

@@ -41,6 +41,9 @@ belongs to this capability; business rules remain in domain specs.
   boundary before pending stdout, stderr, audit, and required transport work has
   completed or failed explicitly. Interactive loops and child-process lifecycle
   callbacks remain explicit migration exceptions listed in `RUNBOOK.md`.
+- Output flushing MUST be bounded. A stream that never reports progress MUST
+  time out without busy-spinning, and the requested process termination MUST
+  still occur so a broken pipe cannot hold the CLI indefinitely.
 - Large JSON responses MUST be emitted as one complete document when stdout is
   a pipe.
 - Expected failures MUST carry a public, typed, non-secret message. Unexpected
@@ -104,6 +107,9 @@ for a read, or retained as a legacy unknown.
 
 - A native process test receives a valid JSON payload larger than 64 KiB through
   a pipe with no truncation and exit code `0`.
+- A synthetic stuck stream reaches its bounded timeout without holding the
+  process, and a native timed-out child is killed and observed before the test
+  returns.
 - Expected safe messages remain visible; unexpected internal messages do not
   leak.
 - Unknown `--fields` values fail before projection with `acceptedFields` and

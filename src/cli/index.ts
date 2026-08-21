@@ -36,12 +36,7 @@ import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
-import {
-  CliTerminationRequest,
-  flushProcessOutput,
-  terminateCliProcess,
-  writeProcessStdout,
-} from "./process-output.js";
+import { CliTerminationRequest, terminateCliProcess, writeProcessStdout } from "./process-output.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -326,44 +321,42 @@ program
 // migrated domain nodes, including unknown command suggestions.
 installRootUsageContract(program);
 
-await bootstrapCli()
-  .catch(async (error: unknown) => {
-    if (error instanceof CliTerminationRequest) {
-      return terminateCliProcess(error.exitCode);
+await bootstrapCli().catch(async (error: unknown) => {
+  if (error instanceof CliTerminationRequest) {
+    return terminateCliProcess(error.exitCode);
+  }
+  if (error instanceof ContractError) {
+    // Contract helpers render once and throw. Audit the semantic outcome before
+    // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
+    if (!wasContractErrorAudited(error)) {
+      const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
+      await emitCliAuditEvent({
+        group,
+        name: operationParts.join("_") || "root",
+        tool: error.op.replace(/\s+/g, "_"),
+        outcome: contractFailureOutcome(error),
+        exitCode: error.exitCode,
+        errorCode: error.code,
+        status: "completed",
+        closeLazyConnection: true,
+      });
     }
-    if (error instanceof ContractError) {
-      // Contract helpers render once and throw. Audit the semantic outcome before
-      // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
-      if (!wasContractErrorAudited(error)) {
-        const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
-        await emitCliAuditEvent({
-          group,
-          name: operationParts.join("_") || "root",
-          tool: error.op.replace(/\s+/g, "_"),
-          outcome: contractFailureOutcome(error),
-          exitCode: error.exitCode,
-          errorCode: error.code,
-          status: "completed",
-          closeLazyConnection: true,
-        });
-      }
-      return terminateCliProcess(error.exitCode);
-    }
-    const contractError = unexpectedErrorToContractError("cli bootstrap");
-    renderContractError(contractError, process.argv.includes("--json"));
-    await emitCliAuditEvent({
-      group: "cli",
-      name: "bootstrap",
-      tool: "cli_bootstrap",
-      outcome: contractFailureOutcome(contractError),
-      exitCode: contractError.exitCode,
-      errorCode: contractError.code,
-      status: "completed",
-      closeLazyConnection: true,
-    });
-    return terminateCliProcess(contractError.exitCode);
-  })
-  .finally(() => flushProcessOutput());
+    return terminateCliProcess(error.exitCode);
+  }
+  const contractError = unexpectedErrorToContractError("cli bootstrap");
+  renderContractError(contractError, process.argv.includes("--json"));
+  await emitCliAuditEvent({
+    group: "cli",
+    name: "bootstrap",
+    tool: "cli_bootstrap",
+    outcome: contractFailureOutcome(contractError),
+    exitCode: contractError.exitCode,
+    errorCode: contractError.code,
+    status: "completed",
+    closeLazyConnection: true,
+  });
+  return terminateCliProcess(contractError.exitCode);
+});
 
 async function bootstrapCli(): Promise<void> {
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
