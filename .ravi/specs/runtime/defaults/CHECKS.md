@@ -23,10 +23,12 @@ bun test src/cli/commands/settings.test.ts src/cli/commands/sessions.test.ts
 
 ## Resolution Checks
 
-- Stored `runtime.defaultModel` wins over `RAVI_MODEL`.
-- `RAVI_MODEL` is used only when no stored/session/agent/preset model exists.
-- Stored `runtime.defaultProvider` wins over the hardcoded default.
-- Session/agent/preset values win over stored globals and env.
-- A missing or disabled preset does not swallow into env.
-- `sessions info` reports the same provider/model/effort and sources as launch
-  and does not invent a model from a provider-only override.
+- Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
+- Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
+  model exists.
+- Stored `runtime.defaultProvider` MUST win over the hardcoded default.
+- Session/agent/preset values MUST win over stored globals and env.
+- A missing or disabled preset MUST reject launch and MUST NOT swallow into
+  env.
+- `sessions info` MUST report the same provider/model/effort and sources as
+  launch and MUST NOT invent a model from a provider-only override.
