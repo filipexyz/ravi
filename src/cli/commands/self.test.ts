@@ -23,6 +23,7 @@ type FakeContext = {
 
 let inlineContext: FakeContext | undefined;
 let resolvedContext: FakeContext | undefined;
+let resolutionFailure: Error | undefined;
 let resolvedContextOptions: unknown;
 let session: Record<string, unknown> | null = null;
 let chatBinding: Record<string, unknown> | null = null;
@@ -73,8 +74,10 @@ mock.module("../../runtime/context-registry.js", () => ({
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
   resolveRuntimeContextOrThrow: (_key: string, options?: unknown) => {
     resolvedContextOptions = options;
-    if (!resolvedContext) throw new Error("Context not found");
-    return resolvedContext;
+    if (resolutionFailure) throw resolutionFailure;
+    const trusted = resolvedContext ?? inlineContext;
+    if (!trusted) throw new Error("Context not found");
+    return trusted;
   },
 }));
 
@@ -100,6 +103,9 @@ mock.module("./self-read-snapshot.js", () => ({
 const { SelfCommands, SELF_CONTEXT_FIELDS, SELF_ENVIRONMENT_CONTRACT } = await import("./self.js");
 const { CliExpectedError } = await import("../expected-error.js");
 const { getCommandAccessMetadata, getGroupMetadata } = await import("../decorators.js");
+const { extractTools } = await import("../tools-export.js");
+const { buildRegistry } = await import("../registry-snapshot.js");
+const { dispatch } = await import("../../sdk/gateway/dispatcher.js");
 const {
   selfChatReturnSchema,
   selfContextReturnSchema,
@@ -150,6 +156,7 @@ function fakeContext(overrides: Partial<FakeContext> = {}): FakeContext {
 function seedLinkedContext(): void {
   inlineContext = fakeContext();
   resolvedContext = undefined;
+  resolutionFailure = undefined;
   session = {
     sessionKey: "agent:main:main",
     name: "main",
@@ -191,6 +198,7 @@ function seedLinkedContext(): void {
     instanceId: "main",
     platformChatId: "120363@g.us",
     normalizedChatId: "120363@g.us",
+    agentId: "main",
     chatType: "group",
     title: "Ravi Main",
     firstSeenAt: 1000,
@@ -257,6 +265,7 @@ describe("SelfCommands", () => {
     restoreActorEnv();
     inlineContext = undefined;
     resolvedContext = undefined;
+    resolutionFailure = undefined;
     session = null;
     chatBinding = null;
     chat = null;
@@ -347,6 +356,120 @@ describe("SelfCommands", () => {
     expect(payload.identity.contextId).toBe("ctx_env_123");
     expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
     expect(JSON.stringify(payload)).not.toContain("rctx_env_secret");
+  });
+
+  it("rejects an inline context that does not match the trusted registry", () => {
+    inlineContext = fakeContext({ agentId: "victim" });
+    resolvedContext = fakeContext({ agentId: "main" });
+
+    let failure: unknown;
+    try {
+      new SelfCommands().whoami(true);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ code: "SELF_CONTEXT_DIVERGENT", exitCode: 1, publicMessage: true });
+  });
+
+  it("rejects a fabricated context through the local tool handler", async () => {
+    const capabilities = [{ permission: "read", objectType: "self", objectId: "*" }];
+    inlineContext = fakeContext({ agentId: "victim", capabilities });
+    resolvedContext = fakeContext({ agentId: "main", capabilities });
+    const tool = extractTools([SelfCommands]).find((candidate) => candidate.name === "self_whoami");
+
+    const result = await tool!.handler({});
+    const payload = JSON.parse(result.content[0]?.text ?? "{}") as { error?: { code?: string } };
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    expect(payload.error?.code).toBe("SELF_CONTEXT_DIVERGENT");
+  });
+
+  it("rejects a fabricated context through the gateway dispatcher", async () => {
+    const capabilities = [{ permission: "read", objectType: "self", objectId: "*" }];
+    inlineContext = fakeContext({ agentId: "victim", capabilities });
+    resolvedContext = fakeContext({ agentId: "main", capabilities });
+    const command = buildRegistry([SelfCommands]).commands.find((candidate) => candidate.fullName === "self.whoami");
+
+    const result = await dispatch(
+      command!,
+      {},
+      { agentId: "victim", sessionKey: "agent:main:main", sessionName: "main" },
+      { contextRecord: inlineContext as never },
+    );
+    const payload = (await result.response.json()) as { error?: { code?: string }; data?: unknown };
+
+    expect(result.response.status).toBe(422);
+    expect(payload.error?.code).toBe("SELF_CONTEXT_DIVERGENT");
+    expect(JSON.stringify(payload)).not.toContain("C:/other-agent");
+    expect(payload).not.toHaveProperty("data.identity");
+  });
+
+  it.each([
+    ["Context not found", "SELF_CONTEXT_NOT_FOUND"],
+    ["Context expired", "SELF_CONTEXT_EXPIRED"],
+    ["Context revoked", "SELF_CONTEXT_REVOKED"],
+  ])("rejects an unavailable trusted context: %s", (message, code) => {
+    resolutionFailure = new Error(message);
+
+    let failure: unknown;
+    try {
+      new SelfCommands().whoami(true);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ code, exitCode: 1, publicMessage: true });
+  });
+
+  it("rejects a session owned by another agent without exposing its cwd", () => {
+    session = {
+      ...session,
+      agentId: "other-agent",
+      agentCwd: "C:/other-agent/private",
+    };
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => lines.push(String(value));
+    let failure: unknown;
+    try {
+      new SelfCommands().whoami(true);
+    } catch (error) {
+      failure = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(failure).toMatchObject({
+      code: "SELF_AUTHORITY_DIVERGENT",
+      exitCode: 1,
+      publicMessage: true,
+      details: { relation: "session_agent" },
+    });
+    expect(lines.join("\n")).not.toContain("other-agent");
+    expect(lines.join("\n")).not.toContain("C:/other-agent/private");
+  });
+
+  it.each([
+    ["binding_agent", () => (chatBinding = { ...(chatBinding ?? {}), agentId: "other-agent" })],
+    ["chat_agent", () => (chat = { ...(chat ?? {}), agentId: "other-agent" })],
+    ["route_agent", () => (boundRoute = { ...(boundRoute ?? {}), agent: "other-agent" })],
+    ["runtime_provider", () => (session = { ...(session ?? {}), runtimeProvider: "claude" })],
+  ])("fails closed when %s disagrees with the registered context", (relation, mutateFixture) => {
+    mutateFixture();
+
+    let failure: unknown;
+    try {
+      new SelfCommands().whoami(true);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: "SELF_AUTHORITY_DIVERGENT",
+      exitCode: 1,
+      details: { relation },
+    });
   });
 
   it("keeps recent message lookup bounded by --limit", () => {

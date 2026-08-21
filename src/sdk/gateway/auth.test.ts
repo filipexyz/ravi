@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ContextRecord } from "../../router/router-db.js";
 
 const actualRegistry = await import("../../runtime/context-registry.js");
@@ -10,13 +10,14 @@ const context: ContextRecord = {
   capabilities: [],
   createdAt: 1000,
 };
+let resolvedRecord: ContextRecord | null = context;
 let resolutionOptions: unknown;
 
 mock.module("../../runtime/context-registry.js", () => ({
   ...actualRegistry,
   resolveRuntimeContext: (_token: string, options?: unknown) => {
     resolutionOptions = options;
-    return context;
+    return resolvedRecord;
   },
 }));
 
@@ -25,6 +26,11 @@ const { resolveAuth } = await import("./auth.js");
 afterAll(() => mock.restore());
 
 describe("gateway auth context resolution", () => {
+  beforeEach(() => {
+    resolvedRecord = context;
+    resolutionOptions = undefined;
+  });
+
   it("uses read-only no-touch resolution for read commands", () => {
     const resolved = resolveAuth(
       new Request("http://localhost/api/v1/self/whoami", {
@@ -47,5 +53,24 @@ describe("gateway auth context resolution", () => {
     );
 
     expect(resolutionOptions).toEqual({ touch: true });
+  });
+
+  it.each([
+    ["unknown", null],
+    ["expired", { ...context, expiresAt: Date.now() - 1 }],
+    ["revoked", { ...context, revokedAt: Date.now() - 1 }],
+  ] as const)("rejects a %s context before gateway dispatch", (reason, record) => {
+    resolvedRecord = record;
+
+    const resolved = resolveAuth(
+      new Request("http://localhost/api/v1/self/whoami", {
+        headers: { authorization: "Bearer rctx_gateway_auth" },
+      }),
+      {},
+      { readOnly: true },
+    );
+
+    expect(resolved).toMatchObject({ authenticated: false, contextRecord: null, reason });
+    expect(resolutionOptions).toEqual({ touch: false, readOnly: true });
   });
 });

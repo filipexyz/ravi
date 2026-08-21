@@ -132,3 +132,39 @@ two Windows artifact-store failures reproduced at foundation `560517a4`: a
 blob expectation and symlink creation denied with `EPERM`. These remain a
 known base limitation rather than a SELF regression. No version change,
 package, push, PR, merge, VPS operation, or Linux CI run occurred.
+
+## Revision note: 2026-08-21, rejected integration claim corrected
+
+The previous statement that the rejected candidate
+`0ea16d276b8323f411f8451dd9feb50c88390dc5` fully integrated the approved
+COMMANDS tree was false. `e91cfec9c85c84f4051910996e26634ad64459eb`
+was not an ancestor of that SHA: the line contained only a partial replay of
+the final COMMANDS commit, not the approved six-commit sequence from the
+foundation. Historical text remains intact. The rejected candidate remains
+**NO-GO** and is preserved at `backup/self-rejected-0ea16d27`.
+
+The corrective branch was rebuilt directly on `e91cfec9`, making the approved
+COMMANDS tree a real ancestor before the SELF commits. SELF tools now resolve
+the supplied context key again from the trusted registry through a read-only,
+no-touch path. They reject fabricated, missing, expired, revoked, or materially
+changed contexts with typed failures. Agent, session, binding, conversation,
+route, and runtime authority must agree conjunctively before data is exposed;
+a cross-agent session fails without disclosing the foreign working directory
+or agent data. Native local-tool and gateway tests cover these refusals.
+
+The focused SELF, COMMANDS, registry, tools, gateway, router, quality, SDK,
+typecheck, build, generation, and TypeScript/OpenAPI/Swift drift gates passed.
+The required COMMANDS process test passed 11/11 with 57 assertions. A first
+isolated context-registry run hit a cold-start timeout and was discarded; its
+clean rerun passed 14/14. One reapplied dispatcher test omitted the now-required
+`name` fixture, correctly received HTTP 400, and passed 42/42 after the fixture
+was corrected. Generator runs logged unavailable local NATS at
+`127.0.0.1:4222` but completed successfully and deterministically.
+
+The broad `test:agent-contract` chain is not called green on Windows. It ended
+with 13/15 artifact-store tests. A direct comparison at the exact approved
+COMMANDS worktree reproduced the same two failures: a POSIX-separator blob-path
+expectation and symlink creation denied with `EPERM`. They are therefore not a
+SELF regression. No version change, package, push, PR, merge, VPS operation, or
+Linux CI run occurred; real Swift compilation remains outside this local
+evidence.

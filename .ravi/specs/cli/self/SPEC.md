@@ -131,3 +131,26 @@ their policy.
   deployment evidence; typed missing/partial paths remain valid without it.
 - Env actor identifiers are operational identity data, not secrets. They may
   appear in actor output, but the environment declaration never prints values.
+
+## Security addendum: trusted context and conjunctive authority
+
+This addendum extends the earlier context-resolution and error tables. An
+inline tool or gateway context is a transport claim, not a source of truth.
+Before returning any SELF payload, Ravi MUST resolve its context key again from
+the trusted registry with `touch: false, readOnly: true`. Unknown, expired and
+revoked records MUST fail as `SELF_CONTEXT_NOT_FOUND`,
+`SELF_CONTEXT_EXPIRED` and `SELF_CONTEXT_REVOKED`. A material difference
+between the inline claim and the registered record MUST fail as
+`SELF_CONTEXT_DIVERGENT`.
+
+When related operational records exist, authority is conjunctive. Context,
+session, chat binding, chat, route and runtime provider MUST agree on the same
+agent/session/runtime before SELF exposes their data. Any contradiction MUST
+fail as `SELF_AUTHORITY_DIVERGENT`, identify only the failed relation, and MUST
+NOT include the foreign record, agent working directory or other protected
+data. Missing optional data may still use the documented degraded section
+statuses when no contradictory ownership fact exists.
+
+These checks apply equally to direct CLI, local tools and gateway dispatch.
+Validation MUST NOT refresh TTL, `lastUsedAt`, schema, journal mode or any
+durable state.

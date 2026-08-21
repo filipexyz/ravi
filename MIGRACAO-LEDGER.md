@@ -59,7 +59,7 @@ checks passarem.
 | 24 | work-objects | work-objects.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/work-objects |
 | 25 | commands | commands.ts | commands | **MIGRADO** | cli/commands |
 | 26 | settings | settings.ts | settings | **MIGRADO** | cli/settings |
-| 27 | self | self.ts | (sem skill — decisão documentada) | **MIGRADO + FACHADA AGENT-FIRST** | cli/self (atualizada) |
+| 27 | self | self.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/self |
 | 28 | feedback | feedback.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/feedback |
 | 29 | rules | rules.ts | ravi-rules (dev) | **MIGRADO** | cli/rules |
 | 30 | specs | specs.ts | specs | **MIGRADO** | cli/specs |
@@ -1983,3 +1983,49 @@ fundacao `560517a4`: expectativa de blob e criacao de symlink negada por
 Nao houve alteracao de versao, pacote, push, PR, merge ou operacao na VPS. A
 compilacao Swift permanece reservada a um host que possua o compilador; neste
 host, a geracao e o drift deterministico passaram.
+
+### Adendo corretivo: a integracao declarada em `0ea16d27` era falsa
+
+A alegacao anterior de integracao completa de COMMANDS no candidato rejeitado
+`0ea16d276b8323f411f8451dd9feb50c88390dc5` era falsa. O commit aprovado
+`e91cfec9c85c84f4051910996e26634ad64459eb` nao era ancestral daquele SHA; a
+linha continha apenas um replay parcial do ultimo commit, e nao a sequencia
+aprovada de seis commits desde a fundacao. Nenhuma linha historica foi removida
+para corrigir o registro. O SHA rejeitado foi preservado na branch de seguranca
+`backup/self-rejected-0ea16d27` e continua **NO-GO**.
+
+A linha removida da fotografia historica da tabela fica restaurada literalmente
+abaixo; ela nao substitui o estado vigente registrado pelos adendos posteriores:
+
+```text
+| 27 | self | self.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/self |
+```
+
+A branch corretiva foi reconstruida sobre o proprio `e91cfec9`, tornando a
+arvore COMMANDS aprovada ancestral real antes das mudancas SELF. A leitura de
+contexto SELF agora resolve novamente a chave no registro confiavel em modo
+somente leitura e sem atualizar TTL ou `lastSeen`. Contexto fabricado,
+inexistente, expirado, revogado ou materialmente divergente e rejeitado com
+erro tipado. Agente, sessao, binding, conversa, rota e runtime precisam
+concordar em conjunto antes da exposicao; uma sessao de outro agente falha sem
+revelar `cwd` ou dados do agente estrangeiro. Os caminhos locais de tools e do
+gateway receberam testes nativos para essas recusas.
+
+Os gates focados de SELF, COMMANDS, registry, tools, gateway, router, quality,
+SDK, typecheck, build, geradores e drift TypeScript/OpenAPI/Swift passaram. O
+teste de processo COMMANDS passou os 11 casos com 57 assercoes. A primeira
+execucao isolada de context-registry teve um timeout de inicializacao no host;
+a repeticao limpa passou 14/14. Um teste do dispatcher reaplicado usou uma
+fixture sem o `name` agora obrigatorio, falhou corretamente com HTTP 400 e
+passou 42/42 depois da correcao da fixture. Os geradores registraram NATS local
+indisponivel em `127.0.0.1:4222`, mas concluiram com sucesso e produziram saida
+deterministica.
+
+O encadeamento amplo `test:agent-contract` nao e declarado verde no Windows:
+terminou no artifact store com 13/15. A execucao comparativa no worktree exato
+de COMMANDS `e91cfec9` reproduziu literalmente as mesmas duas falhas, uma
+expectativa com separador POSIX no caminho do blob e a criacao de symlink
+negada por `EPERM`; portanto elas nao foram introduzidas por SELF. Biome,
+Markdown e `git diff --check` devem permanecer verdes no fechamento. Nao houve
+alteracao de versao, pacote, push, PR, merge ou operacao na VPS. Linux CI e
+compilacao Swift real continuam fora desta prova local.

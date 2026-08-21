@@ -223,3 +223,18 @@ It MUST NOT reveal:
 - Environment-derived actors are `partial` and `unverified`.
 - All eight operations remain read-only and context resolution never touches
   `lastUsedAt`.
+
+## Security addendum: no trust by transport
+
+An inline context supplied by a local tool or gateway is never authoritative
+by itself. SELF MUST confirm the context key against the trusted registry by a
+read-only, no-touch lookup and MUST reject unknown, expired, revoked or
+materially different records before returning identity, capabilities or
+operational data.
+
+For every related record that exists, the context agent, session owner, chat
+binding owner, chat owner, route owner and runtime provider MUST agree. A
+cross-agent session or any other contradiction is a typed failure, not a
+degraded success, and its response MUST NOT reveal the foreign working
+directory or record contents. This rule applies to CLI, local tool and gateway
+execution paths.

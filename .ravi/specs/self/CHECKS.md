@@ -65,3 +65,13 @@ normative: false
 - `ravi self route` explains why the current agent/session was selected.
 - Route output distinguishes route match, fallback, and manual binding.
 - Route output uses canonical chat/session/agent ids.
+
+## Security addendum checks
+
+- Inline tool/gateway context is confirmed against the trusted registry with a
+  read-only, no-touch lookup before SELF returns data.
+- Unknown, expired, revoked and materially altered contexts fail with distinct
+  public codes.
+- Existing session, binding, chat, route and runtime facts agree with the same
+  registered agent. Contradictions fail as `SELF_AUTHORITY_DIVERGENT` without
+  exposing the foreign record or working directory.

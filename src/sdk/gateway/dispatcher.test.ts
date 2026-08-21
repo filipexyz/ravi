@@ -360,7 +360,7 @@ describe("dispatch — body shape (flat-only)", () => {
     const audits = captureAudits();
     const success = await dispatch(
       findCmd("demo.quiet"),
-      {},
+      { name: "visible" },
       {},
       { contextRecord: demoContext, emitAudit: audits.emit },
     );

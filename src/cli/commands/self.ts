@@ -418,6 +418,7 @@ export class SelfCommands {
       includeParticipants: options.depth === "full",
       messageLimit: options.limit,
     });
+    this.assertConjunctiveAuthority(context, snapshot);
     const session = this.resolveCurrentSession(sessionCandidates, snapshot.session);
     const route = this.buildRouteSection(session.data, snapshot.binding, snapshot.boundRoute, snapshot.sessionRoutes);
     const chat = this.buildChatSection(context, snapshot.binding, snapshot.chat, options.depth, snapshot.participants);
@@ -459,25 +460,84 @@ export class SelfCommands {
 
   private requireResolvedContext(): ContextRecord {
     const inlineContext = getContext({ localOnly: true })?.context;
-    if (inlineContext) return inlineContext;
-
-    const contextKey = process.env[RAVI_CONTEXT_KEY_ENV];
+    const contextKey = inlineContext?.contextKey ?? process.env[RAVI_CONTEXT_KEY_ENV];
     if (!contextKey) {
       throwSelfError(
         "SELF_CONTEXT_REQUIRED",
-        `Missing ${RAVI_CONTEXT_KEY_ENV}. Ravi self needs an inline or registered runtime context.`,
+        `Missing ${RAVI_CONTEXT_KEY_ENV} or a registered inline Ravi runtime context. Ravi self cannot trust identity by itself.`,
         "Run 'ravi context whoami --json' to inspect the active credential, then retry inside that context",
       );
     }
 
     try {
-      return resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+      const trusted = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+      if (inlineContext && !sameMaterialContext(inlineContext, trusted)) {
+        throwSelfError(
+          "SELF_CONTEXT_DIVERGENT",
+          "The inline runtime context differs from the registered context.",
+          "Discard the inline context and authenticate again with the active registered context",
+          { relation: "inline_context_to_registry" },
+        );
+      }
+      return trusted;
     } catch (error) {
-      throwSelfError(
-        "SELF_CONTEXT_UNAVAILABLE",
-        `Failed to resolve context: ${error instanceof Error ? error.message : String(error)}`,
-        "Refresh or select a valid Ravi context credential, then retry",
-      );
+      if (error instanceof CliExpectedError) throw error;
+      const reason = contextResolutionFailure(error);
+      throwSelfError(reason.code, reason.message, "Refresh or select a valid Ravi context credential, then retry", {
+        relation: "context_to_registry",
+      });
+    }
+  }
+
+  private assertConjunctiveAuthority(context: ContextRecord, snapshot: ReturnType<typeof readSelfSnapshot>): void {
+    const agentId = context.agentId;
+    if (!agentId) {
+      throwSelfAuthorityError("context_agent", "The registered context has no agent identity.");
+    }
+
+    const session = snapshot.session;
+    if (session) {
+      assertSelfAuthority(session.agentId === agentId, "session_agent");
+      if (context.sessionKey) assertSelfAuthority(session.sessionKey === context.sessionKey, "session_key");
+      if (context.sessionName && session.name) {
+        assertSelfAuthority(session.name === context.sessionName, "session_name");
+      }
+
+      const contextRuntime = stringField(context.metadata ?? {}, "runtimeProvider");
+      if (contextRuntime && session.runtimeProvider) {
+        assertSelfAuthority(session.runtimeProvider === contextRuntime, "runtime_provider");
+      }
+      if (context.source?.channel && session.channel) {
+        assertSelfAuthority(session.channel === context.source.channel, "session_channel");
+      }
+      if (context.source?.accountId && session.accountId) {
+        assertSelfAuthority(session.accountId === context.source.accountId, "session_account");
+      }
+    }
+
+    const binding = snapshot.binding;
+    if (binding) {
+      assertSelfAuthority(Boolean(session) && binding.sessionKey === session?.sessionKey, "binding_session");
+      if (binding.agentId) assertSelfAuthority(binding.agentId === agentId, "binding_agent");
+    }
+
+    const chat = snapshot.chat;
+    if (chat) {
+      if (chat.agentId) assertSelfAuthority(chat.agentId === agentId, "chat_agent");
+      if (binding) assertSelfAuthority(chat.id === binding.chatId, "chat_binding");
+      if (context.source?.channel) assertSelfAuthority(chat.channel === context.source.channel, "chat_channel");
+    }
+
+    const routes = [snapshot.boundRoute, ...snapshot.sessionRoutes].filter(
+      (route): route is RouteConfig & { id: number } => Boolean(route),
+    );
+    for (const route of routes) {
+      assertSelfAuthority(route.agent === agentId, "route_agent");
+      if (route.session && session?.name) assertSelfAuthority(route.session === session.name, "route_session");
+      if (context.source?.accountId) assertSelfAuthority(route.accountId === context.source.accountId, "route_account");
+      if (route.channel && context.source?.channel) {
+        assertSelfAuthority(route.channel === context.source.channel, "route_channel");
+      }
     }
   }
 
@@ -719,6 +779,69 @@ function throwSelfError(
     suggestedAction,
     details,
   });
+}
+
+function contextResolutionFailure(error: unknown): { code: string; message: string } {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("revoked")) {
+    return { code: "SELF_CONTEXT_REVOKED", message: "The registered Ravi context is revoked." };
+  }
+  if (message.includes("expired")) {
+    return { code: "SELF_CONTEXT_EXPIRED", message: "The registered Ravi context is expired." };
+  }
+  if (message.includes("not found")) {
+    return { code: "SELF_CONTEXT_NOT_FOUND", message: "The Ravi context does not exist in the trusted registry." };
+  }
+  return { code: "SELF_CONTEXT_UNAVAILABLE", message: "The trusted Ravi context could not be resolved." };
+}
+
+function sameMaterialContext(candidate: ContextRecord, trusted: ContextRecord): boolean {
+  return stableJson(materialContext(candidate)) === stableJson(materialContext(trusted));
+}
+
+function materialContext(context: ContextRecord): Record<string, unknown> {
+  return {
+    contextId: context.contextId,
+    contextKey: context.contextKey,
+    kind: context.kind,
+    agentId: context.agentId ?? null,
+    sessionKey: context.sessionKey ?? null,
+    sessionName: context.sessionName ?? null,
+    source: context.source ?? null,
+    capabilities: context.capabilities,
+    metadata: context.metadata ?? null,
+    createdAt: context.createdAt,
+    expiresAt: context.expiresAt ?? null,
+    revokedAt: context.revokedAt ?? null,
+  };
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortJsonValue(entry)]),
+  );
+}
+
+function assertSelfAuthority(condition: boolean, relation: string): asserts condition {
+  if (condition) return;
+  throwSelfAuthorityError(relation, "The registered context and operational records do not agree.");
+}
+
+function throwSelfAuthorityError(relation: string, message: string): never {
+  throwSelfError(
+    "SELF_AUTHORITY_DIVERGENT",
+    message,
+    "Refresh the runtime context and retry only after the session ownership is consistent",
+    { relation },
+  );
 }
 
 function serializeContext(context: ContextRecord): SelfContextSummary {

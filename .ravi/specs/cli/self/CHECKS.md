@@ -35,3 +35,17 @@
 - Human `self context` MUST render Actor, Chat and Route exactly once each.
 - `bun test src/cli/commands/self.test.ts` SHOULD pass after any change to the
   self contract surface.
+
+## Security addendum checks
+
+- A fabricated inline context MUST fail through the local tool handler and the
+  gateway dispatcher even when it grants itself SELF read capability.
+- Unknown, expired and revoked registered contexts MUST retain distinct typed
+  errors and MUST be resolved with `touch: false, readOnly: true`.
+- Material changes to agent, session, source, capabilities, metadata, creation,
+  expiry or revocation facts MUST produce `SELF_CONTEXT_DIVERGENT`.
+- A session owned by another agent MUST produce
+  `SELF_AUTHORITY_DIVERGENT` before any identity, working directory, chat,
+  route or recent-message data is returned.
+- Binding owner, chat owner, route owner and runtime provider contradictions
+  MUST fail closed with only the failed relation in public details.
