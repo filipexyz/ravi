@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -378,6 +379,41 @@ describe("SpecsFacadeCommands", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ContractError);
       expect((error as InstanceType<typeof ContractError>).envelope().error.code).toBe("USAGE_ERROR");
+    }
+  });
+
+  it("returns the stable sidecar error envelope from every facade JSON command", () => {
+    makeWorkspace();
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    const database = new Database(databasePath);
+    database.exec("CREATE TABLE seed (value TEXT)");
+    database.close();
+
+    const commands = new SpecsFacadeCommands();
+    const plan = captureConsole(() => commands.plan("sync", undefined, undefined, undefined, false, true)).result as {
+      planHash: string;
+    };
+    writeFileSync(`${databasePath}-wal`, "partial", "utf8");
+
+    const invocations = [
+      () => commands.plan("sync", undefined, undefined, undefined, false, true),
+      () => commands.apply("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.readback("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.verify("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.recover("sync", plan.planHash, undefined, undefined, undefined, false, true),
+    ];
+
+    for (const invoke of invocations) {
+      let thrown: unknown;
+      try {
+        captureConsole(invoke);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.envelope().error.code).toBe("DB_SIDECAR_STATE_INCOMPLETE");
     }
   });
 });

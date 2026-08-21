@@ -567,3 +567,23 @@ with 112 assertions. The first proof setup stopped on `EBUSY` before exercising
 the reader; after explicitly releasing Bun's SQLite mapping, the valid run
 passed. Remaining gates and the final SHA are not claimed in this note. No
 package, push, PR, merge, or VPS operation occurred.
+
+## Revision note: 2026-08-21, rejection of `e4d2f3e1`
+
+Candidate `e4d2f3e1dab4df659c0a01166316792076a7c02f` is invalid. A partial
+sidecar state raised `NativeSpecsSafetyError` outside the typed facade
+boundary, allowing JSON commands to fall through the generic error path.
+Normal WAL reading also preserved the database and WAL but changed bytes in
+the `-shm` file, contradicting the claimed durable read-only behavior.
+
+The facade now converts that failure to `SpecsFacadeError` with stable code
+`DB_SIDECAR_STATE_INCOMPLETE`. One test exercised JSON `plan`, `apply`,
+`readback`, `verify`, and `recover`; all five produced the typed envelope with
+exit 1, for 1 test and 15 assertions. For a complete WAL set, inspection uses
+a private process-local copy and opens the original database as `immutable`
+only to prove its native identity. The combined `plan`, `readback`, `verify`,
+and `recover` proof left the original database, `-wal`, and `-shm` byte-for-byte
+unchanged; together with the absent-sidecar case it passed 2 tests with 10
+assertions. The first version of this proof correctly detected one changed
+`-shm` byte and was rejected before the fix. Remaining gates and the final SHA
+are not claimed. No package, push, PR, merge, or VPS operation occurred.

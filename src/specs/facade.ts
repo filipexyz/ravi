@@ -119,6 +119,19 @@ function captureFacadeSpecsTree(cwd: string): CapturedSpecsTree {
   }
 }
 
+function inspectFacadeSpecsIndex(
+  rootPath: string,
+  specs: SpecRecord[],
+  databasePath: string,
+  expectedBinding: string,
+): ReturnType<typeof inspectSpecsIndexBound> {
+  try {
+    return inspectSpecsIndexBound(rootPath, specs, databasePath, expectedBinding);
+  } catch (error) {
+    return throwFacadeSpecsError(error);
+  }
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
@@ -330,7 +343,7 @@ function syncPlanState(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>
     throw error;
   }
   const source = specs.map(comparableIndexSpec);
-  const index = inspectSpecsIndexBound(binding.specsRoot, specs, binding.dbPath, binding.dbBinding);
+  const index = inspectFacadeSpecsIndex(binding.specsRoot, specs, binding.dbPath, binding.dbBinding);
   const sourceDigest = sha256(canonicalJson(source));
   const blockers: SpecsFacadePlan["blockers"] = binding.dbParentExists
     ? []
@@ -488,7 +501,7 @@ export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash:
         fileReadback(observedTree, String(effect.path), String(effect.contentSha256)),
       ),
       unexpectedFiles: inspection.unexpectedFiles,
-      index: inspectSpecsIndexBound(plan.binding.specsRoot, specs, plan.binding.dbPath, plan.binding.dbBinding),
+      index: inspectFacadeSpecsIndex(plan.binding.specsRoot, specs, plan.binding.dbPath, plan.binding.dbBinding),
       observedAt: new Date().toISOString(),
     };
   }
@@ -515,7 +528,7 @@ function readbackCapturedSync(state: SpecsFacadePlanState, expectedPlanHash: str
     ancestors: [],
     files: state.specs.map((spec) => fileReadback(observedTree, spec.path)),
     unexpectedFiles: [],
-    index: inspectSpecsIndexBound(plan.binding.specsRoot, state.specs, plan.binding.dbPath, currentDatabase.binding),
+    index: inspectFacadeSpecsIndex(plan.binding.specsRoot, state.specs, plan.binding.dbPath, currentDatabase.binding),
     observedAt: new Date().toISOString(),
   };
 }

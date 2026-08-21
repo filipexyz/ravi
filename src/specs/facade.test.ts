@@ -602,6 +602,31 @@ describe("specs facade", () => {
     expect(existsSync(`${databasePath}-shm`)).toBe(false);
   });
 
+  it("leaves an existing WAL database byte-identical across every facade read operation", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "sync" as const, cwd };
+    const seedPlan = buildSpecsFacadePlan(intent);
+    applySpecsFacadePlan(intent, seedPlan.planHash);
+
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    const writer = new Database(databasePath, { readwrite: true, create: false });
+    try {
+      writer.exec("PRAGMA journal_mode = WAL; CREATE TABLE wal_probe (value TEXT); INSERT INTO wal_probe VALUES ('x')");
+      const durablePaths = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
+      const before = durablePaths.map((path) => readFileSync(path));
+
+      const plan = buildSpecsFacadePlan(intent);
+      expect(readbackSpecsFacade(intent, plan.planHash).index.matches).toBe(true);
+      expect(verifySpecsFacade(intent, plan.planHash).outcome).toBe("confirmed");
+      expect(recoverSpecsFacade(intent, plan.planHash)).toMatchObject({ outcome: "confirmed", replay: false });
+
+      expect(durablePaths.map((path) => readFileSync(path))).toEqual(before);
+    } finally {
+      writer.close();
+    }
+  });
+
   it("never opens a replacement SQLite directory after the native binding is pinned", () => {
     const cwd = makeWorkspace();
     createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });

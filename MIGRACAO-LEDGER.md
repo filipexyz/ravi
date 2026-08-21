@@ -2329,3 +2329,23 @@ facade passou 30/112. A primeira preparacao da prova parou em `EBUSY` antes de
 exercitar a leitura; depois de liberar explicitamente o mapeamento SQLite do
 Bun, a execucao valida passou. Gates restantes e SHA final ainda nao sao
 alegados neste adendo. Nao houve pacote, push, PR, merge ou VPS.
+
+### Retificacao do candidato `e4d2f3e1` por erro e snapshot WAL incompletos
+
+O candidato `e4d2f3e1dab4df659c0a01166316792076a7c02f` fica invalidado. O estado
+parcial de sidecars lancava `NativeSpecsSafetyError` fora da fronteira tipada
+da facade, permitindo que comandos JSON seguissem pelo caminho generico. Alem
+disso, a leitura WAL normal preservava o banco e o WAL, mas alterava bytes do
+arquivo `-shm`, contrariando a alegacao de leitura sem efeito duravel.
+
+A facade agora converte a falha para `SpecsFacadeError` com o codigo estavel
+`DB_SIDECAR_STATE_INCOMPLETE`. Uma prova unica percorreu `plan`, `apply`,
+`readback`, `verify` e `recover` em JSON: os cinco retornaram envelope tipado e
+exit 1, totalizando 1 teste/15 assercoes. Para WAL completo, a leitura usa uma
+copia privada descartada no mesmo processo e abre o banco original como
+`immutable` apenas para confirmar sua identidade nativa. A prova conjunta de
+`plan`, `readback`, `verify` e `recover` passou com o banco, `-wal` e `-shm`
+originais byte a byte inalterados; junto com o caso sem sidecars, foram 2
+testes/10 assercoes. A primeira versao dessa prova detectou corretamente um
+byte alterado no `-shm` e foi rejeitada antes da correcao. Gates restantes e
+SHA final ainda nao sao alegados. Nao houve pacote, push, PR, merge ou VPS.

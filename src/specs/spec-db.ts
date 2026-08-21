@@ -1,6 +1,7 @@
 import { constants, Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
@@ -64,7 +65,13 @@ function specsIndexSchemaExists(db: Database): boolean {
   return row?.present === 1;
 }
 
-function openSpecsIndexReadonly(databasePath: string): Database {
+function openImmutableDatabase(databasePath: string): Database {
+  const immutableUrl = pathToFileURL(databasePath);
+  immutableUrl.searchParams.set("immutable", "1");
+  return new Database(immutableUrl.href, constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI);
+}
+
+function withSpecsIndexReadonly<T>(databasePath: string, inspect: (db: Database) => T, confirmOpen?: () => void): T {
   const walExists = existsSync(`${databasePath}-wal`);
   const shmExists = existsSync(`${databasePath}-shm`);
   if (walExists !== shmExists) {
@@ -74,11 +81,40 @@ function openSpecsIndexReadonly(databasePath: string): Database {
       "Readonly specs inspection requires both SQLite WAL sidecars or neither sidecar.",
     );
   }
-  if (walExists) return new Database(databasePath, { readonly: true, create: false });
+  if (!walExists) {
+    const db = openImmutableDatabase(databasePath);
+    try {
+      confirmOpen?.();
+      return inspect(db);
+    } finally {
+      db.close();
+    }
+  }
 
-  const immutableUrl = pathToFileURL(databasePath);
-  immutableUrl.searchParams.set("immutable", "1");
-  return new Database(immutableUrl.href, constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI);
+  if (confirmOpen) {
+    const proof = openImmutableDatabase(databasePath);
+    try {
+      confirmOpen();
+    } finally {
+      proof.close();
+    }
+  }
+
+  const snapshotDirectory = mkdtempSync(join(tmpdir(), "ravi-specs-readonly-"));
+  const snapshotPath = join(snapshotDirectory, "ravi.db");
+  try {
+    copyFileSync(databasePath, snapshotPath);
+    copyFileSync(`${databasePath}-wal`, `${snapshotPath}-wal`);
+    copyFileSync(`${databasePath}-shm`, `${snapshotPath}-shm`);
+    const snapshot = new Database(snapshotPath, { readonly: true, create: false });
+    try {
+      return inspect(snapshot);
+    } finally {
+      snapshot.close();
+    }
+  } finally {
+    rmSync(snapshotDirectory, { recursive: true, force: true });
+  }
 }
 
 export function ensureSpecsIndexSchema(): boolean {
@@ -279,8 +315,7 @@ export function inspectSpecsIndex(
   };
   if (!existsSync(dbPath)) return empty;
 
-  const db = openSpecsIndexReadonly(dbPath);
-  try {
+  return withSpecsIndexReadonly(dbPath, (db) => {
     if (!specsIndexSchemaExists(db)) return empty;
     const indexed = (
       db.query("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
@@ -294,9 +329,7 @@ export function inspectSpecsIndex(
       indexedIds: indexed.map((spec) => spec.id),
       sourceIds: specs.map((spec) => spec.id),
     };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export function inspectSpecsIndexBound(
@@ -317,27 +350,26 @@ export function inspectSpecsIndexBound(
   try {
     return withNativeDatabaseBinding(
       { databasePath, expectedBinding, write: false, create: false },
-      (safePath, confirmOpen) => {
-        const db = openSpecsIndexReadonly(safePath);
-        try {
-          confirmOpen();
-          if (!specsIndexSchemaExists(db)) return empty;
-          const indexed = (
-            db.query("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
-          ).map(rowToSpec);
-          return {
-            dbPath: databasePath,
-            schemaExists: true,
-            matches: sameSpecs(indexed, specs),
-            indexedTotal: indexed.length,
-            sourceTotal: specs.length,
-            indexedIds: indexed.map((spec) => spec.id),
-            sourceIds: specs.map((spec) => spec.id),
-          };
-        } finally {
-          db.close();
-        }
-      },
+      (safePath, confirmOpen) =>
+        withSpecsIndexReadonly(
+          safePath,
+          (db) => {
+            if (!specsIndexSchemaExists(db)) return empty;
+            const indexed = (
+              db.query("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
+            ).map(rowToSpec);
+            return {
+              dbPath: databasePath,
+              schemaExists: true,
+              matches: sameSpecs(indexed, specs),
+              indexedTotal: indexed.length,
+              sourceTotal: specs.length,
+              indexedIds: indexed.map((spec) => spec.id),
+              sourceIds: specs.map((spec) => spec.id),
+            };
+          },
+          confirmOpen,
+        ),
     );
   } catch (error) {
     if (error instanceof NativeSpecsSafetyError && error.code === "DB_NOT_FOUND") return empty;
