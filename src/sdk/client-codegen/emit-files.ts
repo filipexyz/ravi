@@ -381,8 +381,7 @@ export function emitVersion(input: EmitVersionInput): string {
  * the generated SDK surface is byte-stable. Mask the value before comparison
  * so drift detection reflects real registry/codegen changes.
  */
-const GIT_SHA_LINE_RE = /^export const GIT_SHA = .*$/m;
-const GIT_SHA_MASK = 'export const GIT_SHA = "<masked-for-drift-check>";';
+const GIT_SHA_VALUE_RE = /^(export const GIT_SHA = )"(?:\\.|[^"\\])*"([ \t]*;[ \t]*)$/m;
 
 export type GeneratedSdkFile = "client.ts" | "schemas.ts" | "types.ts" | "version.ts" | "streaming.generated.ts";
 
@@ -392,24 +391,32 @@ export interface SdkSourceComparison {
 }
 
 export function compareSdkSource(file: GeneratedSdkFile, stored: string, generated: string): SdkSourceComparison {
+  const canonicalStored = normalizeLineEndings(stored);
+  const canonicalGenerated = normalizeLineEndings(generated);
   if (file === "version.ts") {
-    const a = maskGitSha(stored);
-    const b = maskGitSha(generated);
+    const a = maskGitSha(canonicalStored);
+    const b = maskGitSha(canonicalGenerated);
     if (a === b) return { equal: true };
     return {
       equal: false,
-      reason: `byte mismatch ignoring GIT_SHA (stored=${stored.length}, live=${generated.length})`,
+      reason: `source mismatch ignoring GIT_SHA and line endings (stored=${stored.length}, live=${generated.length})`,
     };
   }
-  if (stored === generated) return { equal: true };
+  if (canonicalStored === canonicalGenerated) return { equal: true };
   return {
     equal: false,
-    reason: `byte mismatch (stored=${stored.length}, live=${generated.length})`,
+    reason: `source mismatch ignoring line endings (stored=${stored.length}, live=${generated.length})`,
   };
 }
 
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
+}
+
 function maskGitSha(source: string): string {
-  return source.replace(GIT_SHA_LINE_RE, GIT_SHA_MASK);
+  return source.replace(GIT_SHA_VALUE_RE, (_match, prefix: string, suffix: string) => {
+    return `${prefix}"<masked-for-drift-check>"${suffix}`;
+  });
 }
 
 /* -------------------------------------------------------------------------- */

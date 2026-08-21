@@ -15,9 +15,11 @@ import {
   methodName,
   namespaceName,
   optionsTypeName,
+  pascalCase,
   propertyName,
   returnSchemaName,
   returnTypeName,
+  swiftTypeName,
   uniquePropertyNames,
 } from "./naming.js";
 import { jsonSchemaToSwift, type JsonSchema } from "./json-schema-to-swift.js";
@@ -67,6 +69,15 @@ export function emitAllSwift(registry: RegistrySnapshot, options: EmitSwiftOptio
 
 export function emitSwiftTypes(commands: CommandRegistryEntry[]): string {
   const lines: string[] = [HEADER, "", "import Foundation", ""];
+  const namedReturnSchemas = collectNamedReturnSchemas(commands);
+  if (namedReturnSchemas.size > 0) {
+    lines.push(renderGeneratedCodingKey(), "");
+    for (const [title, schema] of [...namedReturnSchemas.entries()].sort(([left], [right]) =>
+      left.localeCompare(right),
+    )) {
+      lines.push(renderNamedReturnStruct(swiftTypeName(title), schema), "");
+    }
+  }
   for (const cmd of commands) {
     const optionsDecl = renderOptionsStruct(cmd);
     if (optionsDecl) {
@@ -75,6 +86,175 @@ export function emitSwiftTypes(commands: CommandRegistryEntry[]): string {
     lines.push(renderReturnDeclaration(cmd), "");
   }
   return ensureTrailingNewline(lines.join("\n"));
+}
+
+function collectNamedReturnSchemas(commands: CommandRegistryEntry[]): Map<string, JsonSchema> {
+  const schemas = new Map<string, JsonSchema>();
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      return;
+    }
+    const schema = value as JsonSchema;
+    const title = (schema as { title?: unknown }).title;
+    if (typeof title === "string" && title.trim() && isNamedObjectSchema(schema) && !schemas.has(title)) {
+      schemas.set(title, schema);
+    }
+    for (const nested of Object.values(schema)) visit(nested);
+  };
+
+  for (const command of commands) visit(buildReturnSchema(command));
+  return schemas;
+}
+
+function isNamedObjectSchema(schema: JsonSchema): boolean {
+  if (findNamedObjectShape(schema)) return true;
+  const alternatives = (schema as { anyOf?: JsonSchema[] }).anyOf;
+  return Array.isArray(alternatives) && alternatives.length > 0 && alternatives.every(isObjectWithProperties);
+}
+
+function findNamedObjectShape(schema: JsonSchema): JsonSchema | null {
+  if (isObjectWithProperties(schema)) return schema;
+  const intersections = (schema as { allOf?: JsonSchema[] }).allOf;
+  if (!Array.isArray(intersections)) return null;
+  return intersections.find(isObjectWithProperties) ?? null;
+}
+
+function renderGeneratedCodingKey(): string {
+  return [
+    "private struct RaviGeneratedCodingKey: CodingKey {",
+    "  let stringValue: String",
+    "  let intValue: Int?",
+    "",
+    "  init?(stringValue: String) {",
+    "    self.stringValue = stringValue",
+    "    self.intValue = nil",
+    "  }",
+    "",
+    "  init?(intValue: Int) {",
+    "    self.stringValue = String(intValue)",
+    "    self.intValue = intValue",
+    "  }",
+    "}",
+  ].join("\n");
+}
+
+function renderNamedReturnStruct(name: string, schema: JsonSchema): string {
+  const normalized = normalizeNamedObjectSchema(schema);
+  const props = normalized.properties;
+  const required = normalized.required;
+  const rawNames = Object.keys(props).sort();
+  const swiftNames = uniquePropertyNames(rawNames);
+  const fields = rawNames.map((rawName) => {
+    const swiftName = swiftNames.get(rawName)!;
+    const { schema: valueSchema, nullable } = unwrapNullableSchema(props[rawName]);
+    const isRequired = required.has(rawName);
+    const isOptional = nullable || !isRequired;
+    return {
+      rawName,
+      swiftName,
+      swiftType: jsonSchemaToSwift(valueSchema),
+      isRequired,
+      isOptional,
+    };
+  });
+  const lines = [
+    `public struct ${name}: Codable, Sendable {`,
+    ...fields.map((field) => `  public var ${field.swiftName}: ${field.swiftType}${field.isOptional ? "?" : ""}`),
+    "",
+    "  enum CodingKeys: String, CodingKey, CaseIterable {",
+    ...fields.map((field) => `    case ${field.swiftName} = ${JSON.stringify(field.rawName)}`),
+    "  }",
+    "",
+    "  public init(from decoder: Decoder) throws {",
+    "    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)",
+    "    let allowedKeys = Set(CodingKeys.allCases.map(\\.rawValue))",
+    "    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {",
+    `      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "${name} contains an unknown field."))`,
+    "    }",
+  ];
+  if (normalized.requiresAtLeastOne) {
+    lines.push(
+      "    guard !rawContainer.allKeys.isEmpty else {",
+      `      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "${name} requires at least one field."))`,
+      "    }",
+    );
+  }
+  lines.push("    let container = try decoder.container(keyedBy: CodingKeys.self)");
+  for (const field of fields) {
+    if (field.isRequired && field.isOptional) {
+      lines.push(
+        `    guard container.contains(.${field.swiftName}) else {`,
+        `      throw DecodingError.keyNotFound(CodingKeys.${field.swiftName}, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field ${field.rawName}."))`,
+        "    }",
+      );
+    }
+    const decodeMethod = field.isOptional ? "decodeIfPresent" : "decode";
+    lines.push(
+      `    self.${field.swiftName} = try container.${decodeMethod}(${field.swiftType}.self, forKey: .${field.swiftName})`,
+    );
+  }
+  lines.push(
+    "  }",
+    "",
+    "  public func encode(to encoder: Encoder) throws {",
+    "    var container = encoder.container(keyedBy: CodingKeys.self)",
+  );
+  for (const field of fields) {
+    appendReturnFieldEncoding(lines, field);
+  }
+  lines.push("  }", "}");
+  return lines.join("\n");
+}
+
+function normalizeNamedObjectSchema(schema: JsonSchema): {
+  properties: Record<string, JsonSchema>;
+  required: Set<string>;
+  requiresAtLeastOne: boolean;
+} {
+  if (isObjectWithProperties(schema)) {
+    return {
+      properties: (schema as { properties: Record<string, JsonSchema> }).properties,
+      required: new Set((schema as { required?: string[] }).required ?? []),
+      requiresAtLeastOne: false,
+    };
+  }
+
+  const objectShape = findNamedObjectShape(schema);
+  if (objectShape) {
+    const intersections = (schema as { allOf?: JsonSchema[] }).allOf ?? [];
+    return {
+      properties: (objectShape as { properties: Record<string, JsonSchema> }).properties,
+      required: new Set((objectShape as { required?: string[] }).required ?? []),
+      requiresAtLeastOne: intersections.some((part) => Array.isArray((part as { anyOf?: unknown[] }).anyOf)),
+    };
+  }
+
+  const alternatives = (schema as { anyOf: JsonSchema[] }).anyOf;
+  const properties = (alternatives[0] as { properties: Record<string, JsonSchema> }).properties;
+  const requiredSets = alternatives.map(
+    (alternative) => new Set((alternative as { required?: string[] }).required ?? []),
+  );
+  const required = new Set(
+    Object.keys(properties).filter((key) => requiredSets.every((requiredSet) => requiredSet.has(key))),
+  );
+  return { properties, required, requiresAtLeastOne: true };
+}
+
+function unwrapNullableSchema(schema: JsonSchema): { schema: JsonSchema; nullable: boolean } {
+  const alternatives = (schema as { anyOf?: JsonSchema[] }).anyOf;
+  if (Array.isArray(alternatives)) {
+    const nonNull = alternatives.filter((alternative) => (alternative as { type?: unknown }).type !== "null");
+    if (nonNull.length === 1 && nonNull.length !== alternatives.length) {
+      return { schema: nonNull[0], nullable: true };
+    }
+  }
+  const type = (schema as { type?: unknown }).type;
+  if (Array.isArray(type) && type.includes("null")) {
+    const nonNull = type.filter((value) => value !== "null");
+    if (nonNull.length === 1) return { schema: { ...schema, type: nonNull[0] }, nullable: true };
+  }
+  return { schema, nullable: false };
 }
 
 function renderOptionsStruct(cmd: CommandRegistryEntry): string | null {
@@ -146,30 +326,73 @@ function renderReturnDeclaration(cmd: CommandRegistryEntry): string {
   }
 
   if (isObjectWithProperties(schema)) {
+    if ((schema as { "x-ravi-swift-nested"?: unknown })["x-ravi-swift-nested"] === true) {
+      return renderDeepReturnStructs(name, schema);
+    }
     return renderReturnStruct(name, schema);
   }
   return `public typealias ${name} = ${jsonSchemaToSwift(schema)}`;
 }
 
 function renderReturnStruct(name: string, schema: JsonSchema): string {
+  return renderSwiftStruct(name, schema, (_rawName, propertySchema) => jsonSchemaToSwift(propertySchema));
+}
+
+function renderDeepReturnStructs(name: string, schema: JsonSchema): string {
+  const declarations: string[] = [];
+  const emitted = new Set<string>();
+
+  const visit = (structName: string, structSchema: JsonSchema): void => {
+    if (emitted.has(structName)) return;
+    emitted.add(structName);
+    const declaration = renderSwiftStruct(structName, structSchema, (rawName, propertySchema) => {
+      if (isObjectWithProperties(propertySchema)) {
+        const childName = `${structName}${pascalCase(rawName)}`;
+        visit(childName, propertySchema);
+        return childName;
+      }
+      if ((propertySchema as { type?: unknown }).type === "array") {
+        const items = (propertySchema as { items?: JsonSchema | JsonSchema[] }).items;
+        if (items && !Array.isArray(items) && isObjectWithProperties(items)) {
+          const childName = `${structName}${pascalCase(rawName)}Item`;
+          visit(childName, items);
+          return `[${childName}]`;
+        }
+      }
+      return jsonSchemaToSwift(propertySchema);
+    });
+    declarations.push(declaration);
+  };
+
+  visit(name, schema);
+  return declarations.join("\n\n");
+}
+
+function renderSwiftStruct(
+  name: string,
+  schema: JsonSchema,
+  resolveType: (rawName: string, schema: JsonSchema) => string,
+): string {
   const props = (schema as { properties?: Record<string, JsonSchema> }).properties ?? {};
   const required = new Set((schema as { required?: string[] }).required ?? []);
   const rawNames = Object.keys(props).sort();
   const swiftNames = uniquePropertyNames(rawNames);
   const fields = rawNames.map((rawName) => {
     const swiftName = swiftNames.get(rawName)!;
-    const swiftType = jsonSchemaToSwift(props[rawName]);
+    const { schema: valueSchema, nullable } = unwrapNullableSchema(props[rawName]);
+    const swiftType = resolveType(rawName, valueSchema);
     const isRequired = required.has(rawName);
-    return { rawName, swiftName, swiftType, isRequired };
+    const isOptional = nullable || !isRequired;
+    return { rawName, swiftName, swiftType, isRequired, isOptional };
   });
 
   const lines: string[] = [
     `public struct ${name}: Codable, Sendable {`,
-    ...fields.map((field) => `  public var ${field.swiftName}: ${field.swiftType}${field.isRequired ? "" : "?"}`),
+    ...fields.map((field) => `  public var ${field.swiftName}: ${field.swiftType}${field.isOptional ? "?" : ""}`),
     "",
   ];
   const initParams = fields.map((field) => {
-    const type = `${field.swiftType}${field.isRequired ? "" : "?"}`;
+    const type = `${field.swiftType}${field.isOptional ? "?" : ""}`;
     const suffix = field.isRequired ? "" : " = nil";
     return `${field.swiftName}: ${type}${suffix}`;
   });
@@ -184,8 +407,61 @@ function renderReturnStruct(name: string, schema: JsonSchema): string {
     lines.push(`    case ${field.swiftName} = ${JSON.stringify(field.rawName)}`);
   }
   lines.push("  }");
+  if (!fields.some((field) => field.isRequired && field.isOptional)) {
+    lines.push("}");
+    return lines.join("\n");
+  }
+  lines.push("", "  public init(from decoder: Decoder) throws {");
+  lines.push("    let container = try decoder.container(keyedBy: CodingKeys.self)");
+  for (const field of fields) {
+    if (field.isRequired && field.isOptional) {
+      lines.push(
+        `    guard container.contains(.${field.swiftName}) else {`,
+        `      throw DecodingError.keyNotFound(CodingKeys.${field.swiftName}, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field ${field.rawName}."))`,
+        "    }",
+      );
+    }
+    const decodeMethod = field.isOptional ? "decodeIfPresent" : "decode";
+    lines.push(
+      `    self.${field.swiftName} = try container.${decodeMethod}(${field.swiftType}.self, forKey: .${field.swiftName})`,
+    );
+  }
+  lines.push(
+    "  }",
+    "",
+    "  public func encode(to encoder: Encoder) throws {",
+    "    var container = encoder.container(keyedBy: CodingKeys.self)",
+  );
+  for (const field of fields) {
+    appendReturnFieldEncoding(lines, field);
+  }
+  lines.push("  }");
   lines.push("}");
   return lines.join("\n");
+}
+
+interface SwiftReturnField {
+  swiftName: string;
+  isRequired: boolean;
+  isOptional: boolean;
+}
+
+function appendReturnFieldEncoding(lines: string[], field: SwiftReturnField): void {
+  if (!field.isRequired) {
+    lines.push(`    try container.encodeIfPresent(self.${field.swiftName}, forKey: .${field.swiftName})`);
+    return;
+  }
+  if (!field.isOptional) {
+    lines.push(`    try container.encode(self.${field.swiftName}, forKey: .${field.swiftName})`);
+    return;
+  }
+  lines.push(
+    `    if let value = self.${field.swiftName} {`,
+    `      try container.encode(value, forKey: .${field.swiftName})`,
+    "    } else {",
+    `      try container.encodeNil(forKey: .${field.swiftName})`,
+    "    }",
+  );
 }
 
 function isObjectWithProperties(schema: JsonSchema): boolean {

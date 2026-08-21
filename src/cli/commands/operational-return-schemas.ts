@@ -1038,32 +1038,98 @@ export const commandIssueReturnSchema = z
   })
   .passthrough();
 
-export const commandRecordReturnSchema = z
-  .object({
-    id: z.string(),
-    token: z.string(),
-    title: z.string().nullable(),
-    description: z.string().nullable(),
-    argumentHint: z.string().nullable(),
-    arguments: z.array(z.unknown()),
-    disabled: z.boolean(),
-    scope: z.string(),
-    path: z.string(),
-    relativePath: z.string(),
-    shadowedBy: z.string().nullable(),
-    shadows: z.array(z.string()),
-    issues: z.array(commandIssueReturnSchema),
-  })
-  .passthrough();
+const commandRecordReturnShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.unknown()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandIssueReturnSchema),
+};
 
-export const commandsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    agent: looseObjectSchema,
-    locations: looseObjectSchema,
-    commands: z.array(commandRecordReturnSchema),
-    issues: z.array(commandIssueReturnSchema),
+export const commandRecordReturnSchema = z.object(commandRecordReturnShape).passthrough();
+
+const commandsListIssueReturnSchema = z
+  .object({
+    level: z.enum(["error", "warning"]),
+    code: z.string(),
+    message: z.string(),
+    id: z.string().nullable(),
+    scope: z.string().nullable(),
+    path: z.string().nullable(),
   })
-  .passthrough();
+  .strict()
+  .meta({ title: "CommandsListIssue" });
+
+const commandsListItemShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.string()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandsListIssueReturnSchema),
+};
+
+const commandsListItemSubsetSchema = z.object(commandsListItemShape).partial().strict();
+const commandsListItemFields = new Set(Object.keys(commandsListItemShape));
+const projectedCommandRecordVariants = Object.entries(commandsListItemShape).map(([requiredKey, schema]) =>
+  z.object({ [requiredKey]: schema }).passthrough(),
+);
+const projectedCommandRecordReturnSchema = z
+  .intersection(
+    commandsListItemSubsetSchema,
+    z.union(projectedCommandRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !commandsListItemFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected command fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "CommandsListItem" });
+
+const commandsListAgentReturnSchema = z
+  .object({ id: z.string(), cwd: z.string() })
+  .strict()
+  .meta({ title: "CommandsListAgent" });
+const commandsListLocationsReturnSchema = z
+  .object({ agent: z.string().nullable(), global: z.string() })
+  .strict()
+  .meta({ title: "CommandsListLocations" });
+const commandsListFiltersReturnSchema = z.object({ tag: z.string() }).strict().meta({ title: "CommandsListFilters" });
+const commandsListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "CommandsListPagination" });
+
+export const commandsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: commandsListPaginationReturnSchema,
+    filters: commandsListFiltersReturnSchema.optional(),
+    agent: commandsListAgentReturnSchema,
+    locations: commandsListLocationsReturnSchema,
+    items: z.array(projectedCommandRecordReturnSchema),
+    commands: z.array(projectedCommandRecordReturnSchema),
+    issues: z.array(commandsListIssueReturnSchema),
+  })
+  .strict();
 
 export const commandShowReturnSchema = z
   .object({
@@ -1218,8 +1284,260 @@ export const specsSyncReturnSchema = z
     status: z.literal("synced"),
     total: z.number(),
     rootPath: z.string(),
+    changed: z.boolean(),
   })
   .passthrough();
+
+const specsFacadeBindingReturnSchema = z
+  .object({
+    cwd: z.string(),
+    specsRoot: z.string(),
+    dbPath: z.string(),
+    workspaceIdentity: z.string(),
+    rootBinding: z.string(),
+    dbBinding: z.string(),
+    dbParentExists: z.boolean(),
+  })
+  .strict();
+
+const specsFacadeIndexReturnSchema = z
+  .object({
+    dbPath: z.string(),
+    schemaExists: z.boolean(),
+    matches: z.boolean(),
+    indexedTotal: z.number(),
+    sourceTotal: z.number(),
+    indexedIds: z.array(z.string()),
+    sourceIds: z.array(z.string()),
+  })
+  .strict();
+
+const specsFacadeAncestorReturnSchema = z.object({ id: z.string(), path: z.string(), exists: z.boolean() }).strict();
+
+const specsFacadeCreationInspectionReturnSchema = z
+  .object({
+    targetDirectoryExists: z.boolean(),
+    targetSpecExists: z.boolean(),
+    exactMatch: z.boolean(),
+    matchingFiles: z.array(z.string()),
+    missingFiles: z.array(z.string()),
+    divergentFiles: z.array(z.string()),
+    unexpectedFiles: z.array(z.string()),
+  })
+  .strict();
+
+const specsFacadeBlockerReturnSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    details: z
+      .object({
+        ancestors: z.array(z.string()).optional(),
+        divergentFiles: z.array(z.string()).optional(),
+        missingFiles: z.array(z.string()).optional(),
+        unexpectedFiles: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const specsFacadeNewInputReturnSchema = z
+  .object({ id: z.string(), title: z.string(), kind: z.enum(["domain", "capability", "feature"]), full: z.boolean() })
+  .strict();
+
+const specsFacadeNewTargetReturnSchema = z.object({ id: z.string(), directoryPath: z.string() }).strict();
+
+const specsFacadeSyncTargetReturnSchema = z.object({ dbPath: z.string(), rootPath: z.string() }).strict();
+
+const specsFacadeCreateEffectReturnSchema = z
+  .object({
+    type: z.literal("create-file"),
+    path: z.string(),
+    contentSha256: z.string(),
+    overwrite: z.literal(false),
+  })
+  .strict();
+
+const specsFacadeSyncEffectReturnSchema = z
+  .object({
+    type: z.literal("replace-index-if-changed"),
+    dbPath: z.string(),
+    rootPath: z.string(),
+    sourceDigest: z.string(),
+    sourceTotal: z.number(),
+  })
+  .strict();
+
+const specsFacadeNewObservationReturnSchema = z
+  .object({
+    ancestors: z.array(specsFacadeAncestorReturnSchema),
+    target: specsFacadeCreationInspectionReturnSchema,
+    replay: z.enum(["noop", "create"]),
+  })
+  .strict();
+
+const specsFacadeSyncObservationReturnSchema = z
+  .object({
+    sourceFiles: z.array(z.object({ id: z.string(), path: z.string() }).strict()),
+    index: specsFacadeIndexReturnSchema,
+    replay: z.enum(["noop", "sync"]),
+  })
+  .strict();
+
+const specsFacadePlanCommonReturnSchema = z
+  .object({
+    schemaVersion: z.literal("specs.agent-first/v1"),
+    planHash: z.string(),
+    executable: z.boolean(),
+    blockers: z.array(specsFacadeBlockerReturnSchema),
+    binding: specsFacadeBindingReturnSchema,
+  })
+  .strict();
+
+export const specsFacadeNewPlanReturnSchema = specsFacadePlanCommonReturnSchema
+  .extend({
+    operation: z.literal("new"),
+    input: specsFacadeNewInputReturnSchema,
+    target: specsFacadeNewTargetReturnSchema,
+    effects: z.array(specsFacadeCreateEffectReturnSchema),
+    observation: specsFacadeNewObservationReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeSyncPlanReturnSchema = specsFacadePlanCommonReturnSchema
+  .extend({
+    operation: z.literal("sync"),
+    input: z.object({ source: z.literal("workspace") }).strict(),
+    target: specsFacadeSyncTargetReturnSchema,
+    effects: z.array(specsFacadeSyncEffectReturnSchema).length(1),
+    observation: specsFacadeSyncObservationReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadePlanReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewPlanReturnSchema,
+  specsFacadeSyncPlanReturnSchema,
+]);
+
+const specsFacadeFileReturnSchema = z
+  .object({
+    path: z.string(),
+    exists: z.boolean(),
+    regularFile: z.boolean().optional(),
+    actualSha256: z.string().optional(),
+    expectedSha256: z.string().nullable(),
+    matches: z.boolean().optional(),
+  })
+  .strict();
+
+const specsFacadeReadbackCommonReturnSchema = z
+  .object({
+    schemaVersion: z.literal("specs.agent-first/v1"),
+    planHash: z.string(),
+    binding: specsFacadeBindingReturnSchema,
+    files: z.array(specsFacadeFileReturnSchema),
+    unexpectedFiles: z.array(z.string()),
+    index: specsFacadeIndexReturnSchema,
+    observedAt: z.string(),
+  })
+  .strict();
+
+export const specsFacadeNewReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+  .extend({
+    operation: z.literal("new"),
+    target: specsFacadeNewTargetReturnSchema,
+    ancestors: z.array(specsFacadeAncestorReturnSchema),
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeSyncReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+  .extend({
+    operation: z.literal("sync"),
+    target: specsFacadeSyncTargetReturnSchema,
+    ancestors: z.array(specsFacadeAncestorReturnSchema).max(0),
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeReadbackReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewReadbackReturnSchema,
+  specsFacadeSyncReadbackReturnSchema,
+]);
+
+export const specsFacadeNewVerificationReturnSchema = z
+  .object({
+    operation: z.literal("new"),
+    planHash: z.string(),
+    outcome: z.enum(["confirmed", "absent", "divergent"]),
+    readback: specsFacadeNewReadbackReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeSyncVerificationReturnSchema = z
+  .object({
+    operation: z.literal("sync"),
+    planHash: z.string(),
+    outcome: z.enum(["confirmed", "absent", "divergent"]),
+    readback: specsFacadeSyncReadbackReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeVerificationReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewVerificationReturnSchema,
+  specsFacadeSyncVerificationReturnSchema,
+]);
+
+export const specsFacadeNewApplyReturnSchema = z
+  .object({
+    operation: z.literal("new"),
+    state: z.enum(["created", "noop"]),
+    changed: z.boolean(),
+    verification: specsFacadeNewVerificationReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeSyncApplyReturnSchema = z
+  .object({
+    operation: z.literal("sync"),
+    state: z.enum(["applied", "noop"]),
+    changed: z.boolean(),
+    verification: specsFacadeSyncVerificationReturnSchema,
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeApplyReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewApplyReturnSchema,
+  specsFacadeSyncApplyReturnSchema,
+]);
+
+export const specsFacadeNewRecoveryReturnSchema = specsFacadeNewVerificationReturnSchema
+  .extend({
+    action: z.enum(["none", "replan_and_apply", "manual_review"]),
+    replay: z.literal(false),
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeSyncRecoveryReturnSchema = specsFacadeSyncVerificationReturnSchema
+  .extend({
+    action: z.enum(["none", "replan_and_apply", "manual_review"]),
+    replay: z.literal(false),
+  })
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
+
+export const specsFacadeRecoveryReturnSchema = z.discriminatedUnion("operation", [
+  specsFacadeNewRecoveryReturnSchema,
+  specsFacadeSyncRecoveryReturnSchema,
+]);
 
 export const taskRecordReturnSchema = looseObjectSchema;
 export const taskEventReturnSchema = looseObjectSchema;

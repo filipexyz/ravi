@@ -1,5 +1,5 @@
 import { runWithContext } from "../cli/context.js";
-import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
+import { getAllCommandClasses, createSdkTools, type SdkToolDefinition } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
 import { logger } from "../utils/logger.js";
 
@@ -89,13 +89,24 @@ function getRuntimeDynamicToolDefinitions(): ExportedTool[] {
 
 function getRuntimeDynamicToolSpecs(): RuntimeDynamicToolSpec[] {
   if (!cachedRuntimeDynamicToolSpecs) {
-    cachedRuntimeDynamicToolSpecs = createSdkTools(getAllCommandClasses()).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    }));
+    cachedRuntimeDynamicToolSpecs = createSdkTools(getAllCommandClasses()).map(projectRuntimeDynamicToolSpec);
   }
   return cachedRuntimeDynamicToolSpecs;
+}
+
+export function projectRuntimeDynamicToolSpec(tool: SdkToolDefinition): RuntimeDynamicToolSpec {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    safety: {
+      operationKind: tool.operationKind,
+      effectClass: tool.effectClass,
+      risk: tool.risk,
+      requiresConfirmation: tool.requiresConfirmation,
+      classificationSource: tool.classificationSource,
+    },
+  };
 }
 
 function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDynamicToolSpec[] {

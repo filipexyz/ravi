@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
+import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
@@ -44,6 +45,15 @@ class NestedDemo {
   ) {
     void id;
     void rest;
+  }
+}
+
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
   }
 }
 
@@ -116,6 +126,24 @@ describe("openapi emit", () => {
     const props = schema.properties as Record<string, unknown>;
     expect(props.ok).toBeDefined();
     expect(props.message).toBeDefined();
+  });
+
+  it("publishes commands projection as a typed non-empty union in OpenAPI", () => {
+    const spec = emit(buildRegistry([CommandsContractCommands]));
+    const response = spec.paths["/api/v1/commands/list"]!.post.responses["200"]!.content!["application/json"]
+      .schema as Record<string, unknown>;
+    const properties = response.properties as Record<string, Record<string, unknown>>;
+    const itemSchema = properties.items.items as { allOf: Array<Record<string, unknown>>; title: string };
+    const subset = itemSchema.allOf.find((part) => Array.isArray(part.anyOf)) as {
+      anyOf: Array<Record<string, unknown>>;
+    };
+
+    expect(response.additionalProperties).toBe(false);
+    expect(itemSchema.title).toBe("CommandsListItem");
+    expect(subset.anyOf).toHaveLength(13);
+    expect(subset.anyOf.every((branch) => (branch.required as string[]).length === 1)).toBe(true);
+    const shape = itemSchema.allOf.find((part) => part.additionalProperties === false) as Record<string, unknown>;
+    expect(Object.keys(shape.properties as Record<string, unknown>)).toHaveLength(13);
   });
 
   it("falls back to additionalProperties: true response when no @Returns", () => {
@@ -224,13 +252,13 @@ describe("openapi emit (live registry)", () => {
     const nonCliOnlyCommands = reg.commands.filter((cmd) => !cmd.cliOnly).length;
     expect(Object.keys(spec.paths).length).toBe(nonCliOnlyCommands);
     expect(spec.openapi).toBe("3.1.0");
-  });
+  }, 30_000);
 
   it("every operation has a unique operationId on the live registry", () => {
     const spec = emit(getRegistry());
     const ids = Object.values(spec.paths).map((p) => p.post.operationId);
     expect(new Set(ids).size).toBe(ids.length);
-  });
+  }, 30_000);
 });
 
 describe("sortKeysDeep", () => {

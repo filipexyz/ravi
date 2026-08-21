@@ -7,8 +7,6 @@ status: draft
 normative: false
 ---
 
-# Ravi Commands Runbook
-
 ## Add a Global Command
 
 ```bash
@@ -38,13 +36,16 @@ If the same command exists globally, the agent command shadows it.
 ## Inspect Resolution
 
 ```bash
+ravi commands
 ravi commands list --agent <agent> --json
+ravi commands list --agent <agent> --limit 50 --offset 0 --fields id,scope --json
 ravi commands show review-pr --agent <agent> --json
-ravi commands run review-pr --agent <agent> -- 123 high
+ravi commands run review-pr --agent <agent> --json -- 123 high
 ```
 
 Check:
 
+- bare group help exits 0 and lists the four operations;
 - selected source scope;
 - source path;
 - whether another command is shadowed;
@@ -64,7 +65,7 @@ Unknown commands are passed through as ordinary chat text. If a `#name` did not 
 
 ## Debug a Bad Prompt
 
-1. Run `ravi commands show <name> --agent <agent> --json` and inspect the rendered preview.
+1. Run `ravi commands run <name> --agent <agent> --json -- <args>` and inspect the rendered preview.
 2. Check placeholder spelling: `$ARGUMENTS`, `$ARGUMENTS[0]`, `$0`, or named args declared in `arguments`.
 3. Inspect `ravi sessions trace <session> --json` for command metadata.
 4. Confirm the composed prompt, not the raw command text, was dispatched.

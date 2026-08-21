@@ -23,3 +23,25 @@
   returning empty suggestions instead of throwing a second error.
 - `bun test src/cli/commands/specs.test.ts` SHOULD pass after any change to
   the specs contract surface.
+- `specs facade plan` MUST have `effectClass:none` and leave files and SQLite
+  unchanged; `facade apply` MUST declare `local-reversible` and require the
+  exact copied hash, not `--execute`.
+- Invalid facade operation/kind MUST preserve `USAGE_ERROR` through the outer
+  catch. Missing ancestors, stale hashes, and conflicts MUST keep their typed
+  execution codes.
+- A blocked plan hash MUST fail as stale if its blockers change before apply.
+- A completed `new` target changed afterward MUST verify as `divergent` and
+  recover as `manual_review`; applying the old hash MUST still fail stale.
+- An additional target file MUST appear in `unexpectedFiles`, make verification
+  divergent, and prevent a `noop` replay.
+- A sync source changed after plan validation MUST write the captured approved
+  snapshot, never a silent second scan.
+- Relative database state MUST bind to one absolute path, and an observed
+  symbolic-link component MUST fail with `UNSAFE_DB_PATH` without creating the
+  database.
+- `facade readback|verify|recover` MUST show target files, ancestors, and index
+  state without writes; recovery MUST report `replay:false`.
+- Return-schema checks MUST accept real `new` and `sync` payloads and reject
+  either payload when only its operation discriminator is swapped.
+- The facade commands MUST be present in registry, SDK, OpenAPI, and help
+  discovery with declared return schemas.

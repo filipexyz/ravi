@@ -89,6 +89,53 @@ export interface NewSpecResult {
   missingAncestors: SpecChainEntry[];
 }
 
+export interface PreparedSpecFile {
+  fileName: SpecContextFile["fileName"];
+  path: string;
+  relativePath: string;
+  content: string;
+}
+
+export interface PreparedSpecCreation {
+  cwd: string;
+  rootPath: string;
+  id: string;
+  title: string;
+  kind: SpecKind;
+  full: boolean;
+  directoryPath: string;
+  files: PreparedSpecFile[];
+  ancestors: SpecChainEntry[];
+  missingAncestors: SpecChainEntry[];
+  securityBinding: {
+    workspaceIdentity: string;
+    rootBinding: string;
+  };
+}
+
+export interface SpecCreationInspection {
+  targetDirectoryExists: boolean;
+  targetSpecExists: boolean;
+  exactMatch: boolean;
+  matchingFiles: string[];
+  missingFiles: string[];
+  divergentFiles: string[];
+  unexpectedFiles: string[];
+}
+
+export interface ApplyPreparedSpecCreationOptions {
+  requireAncestors: boolean;
+  existing: "error" | "noop";
+  existingDirectory?: "error" | "populate";
+  beforePromote?: (stagingPath: string) => void;
+  beforeNativePromote?: (stagingPath: string, originalRecoveryPath: string) => void;
+}
+
+export interface AppliedSpecCreation extends NewSpecResult {
+  changed: boolean;
+  status: "created" | "noop";
+}
+
 export interface SyncSpecsOptions {
   cwd?: string;
 }
@@ -97,4 +144,15 @@ export interface SyncSpecsResult {
   rootPath: string;
   total: number;
   specs: SpecRecord[];
+  changed: boolean;
+}
+
+export interface SpecsIndexInspection {
+  dbPath: string;
+  schemaExists: boolean;
+  matches: boolean;
+  indexedTotal: number;
+  sourceTotal: number;
+  indexedIds: string[];
+  sourceIds: string[];
 }

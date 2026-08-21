@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -18,8 +19,22 @@ mock.module("../context.js", () => ({
   },
 }));
 
-const { SpecsCommands } = await import("./specs.js");
+const { SpecsCommands, SpecsFacadeCommands, SpecsFacadeNewCommands, SpecsFacadeSyncCommands } = await import(
+  "./specs.js"
+);
 const { ContractError } = await import("../agent-contract.js");
+const { getCliOnlyMetadata, getCommandAccessMetadata } = await import("../decorators.js");
+const { buildRegistry } = await import("../registry-snapshot.js");
+const { buildInputSchema, buildReturnSchema } = await import("../../sdk/client-codegen/registry-shape.js");
+const {
+  specsFacadeApplyReturnSchema,
+  specsFacadePlanReturnSchema,
+  specsFacadeReadbackReturnSchema,
+  specsFacadeRecoveryReturnSchema,
+  specsFacadeVerificationReturnSchema,
+} = await import("./operational-return-schemas.js");
+
+setDefaultTimeout(20_000);
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
@@ -220,5 +235,185 @@ describe("specs agent-first contract", () => {
 
     const synced = captureConsole(() => commands.sync(true));
     expect(JSON.parse(synced.output)).toMatchObject({ status: "synced", total: 1 });
+  });
+});
+
+describe("SpecsFacadeCommands", () => {
+  it("declares reads and local reversible writes explicitly", () => {
+    const legacy = getCommandAccessMetadata(SpecsCommands);
+    const facade = getCommandAccessMetadata(SpecsFacadeCommands);
+
+    expect(legacy.get("new")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(legacy.get("sync")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(facade.get("plan")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("apply")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(facade.get("readback")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("verify")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("recover")).toMatchObject({ kind: "read", effectClass: "none" });
+  });
+
+  it("keeps the generic CLI compatible while publishing operation-specific SDK contracts", () => {
+    expect([...getCliOnlyMetadata(SpecsFacadeCommands)].sort()).toEqual([
+      "apply",
+      "plan",
+      "readback",
+      "recover",
+      "verify",
+    ]);
+
+    const registry = buildRegistry([SpecsFacadeCommands, SpecsFacadeNewCommands, SpecsFacadeSyncCommands]);
+    const generic = registry.commands.filter((command) => command.groupPath === "specs.facade");
+    expect(generic).toHaveLength(5);
+    expect(generic.every((command) => command.cliOnly === true)).toBe(true);
+
+    const newPlan = registry.commands.find((command) => command.fullName === "specs.facade.new.plan")!;
+    const syncPlan = registry.commands.find((command) => command.fullName === "specs.facade.sync.plan")!;
+    const syncApply = registry.commands.find((command) => command.fullName === "specs.facade.sync.apply")!;
+    expect(buildInputSchema(newPlan)).toMatchObject({
+      type: "object",
+      required: ["id", "kind", "title"],
+      properties: { id: {}, kind: {}, title: {}, full: {} },
+      additionalProperties: false,
+    });
+    expect(buildInputSchema(syncPlan)).toEqual({ type: "object", properties: {}, additionalProperties: false });
+    expect(buildInputSchema(syncApply)).toMatchObject({
+      type: "object",
+      required: ["planHash"],
+      properties: { planHash: {} },
+      additionalProperties: false,
+    });
+    expect(buildReturnSchema(newPlan)).toMatchObject({ type: "object", properties: { operation: { const: "new" } } });
+    expect(buildReturnSchema(syncPlan)).toMatchObject({
+      type: "object",
+      properties: { operation: { const: "sync" } },
+    });
+  });
+
+  it("plans without writing and applies the copied hash with independent readback", () => {
+    const cwd = makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    const planned = captureConsole(() => commands.plan("new", "channels", "Channels", "domain", false, true));
+    const plan = JSON.parse(planned.output) as { planHash: string; executable: boolean };
+    expect(plan.executable).toBe(true);
+    expect(existsSync(join(cwd, ".ravi"))).toBe(false);
+
+    const applied = captureConsole(() =>
+      commands.apply("new", plan.planHash, "channels", "Channels", "domain", false, true),
+    );
+    expect(JSON.parse(applied.output)).toMatchObject({
+      operation: "new",
+      state: "created",
+      changed: true,
+      verification: { outcome: "confirmed" },
+    });
+
+    const readback = captureConsole(() =>
+      commands.readback("new", plan.planHash, "channels", "Channels", "domain", false, true),
+    );
+    expect(JSON.parse(readback.output)).toMatchObject({ operation: "new", files: [{ exists: true, matches: true }] });
+  });
+
+  it("publishes correlated new and sync return contracts", () => {
+    makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    const newPlan = captureConsole(() => commands.plan("new", "channels", "Channels", "domain", false, true))
+      .result as Record<string, unknown>;
+    const newPlanHash = String(newPlan.planHash);
+    const newApply = captureConsole(() =>
+      commands.apply("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newReadback = captureConsole(() =>
+      commands.readback("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newVerification = captureConsole(() =>
+      commands.verify("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+    const newRecovery = captureConsole(() =>
+      commands.recover("new", newPlanHash, "channels", "Channels", "domain", false, true),
+    ).result as Record<string, unknown>;
+
+    const syncPlan = captureConsole(() => commands.plan("sync", undefined, undefined, undefined, false, true))
+      .result as Record<string, unknown>;
+    const syncPlanHash = String(syncPlan.planHash);
+    const syncApply = captureConsole(() =>
+      commands.apply("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncReadback = captureConsole(() =>
+      commands.readback("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncVerification = captureConsole(() =>
+      commands.verify("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+    const syncRecovery = captureConsole(() =>
+      commands.recover("sync", syncPlanHash, undefined, undefined, undefined, false, true),
+    ).result as Record<string, unknown>;
+
+    const contractCases = [
+      [specsFacadePlanReturnSchema, newPlan, syncPlan],
+      [specsFacadeApplyReturnSchema, newApply, syncApply],
+      [specsFacadeReadbackReturnSchema, newReadback, syncReadback],
+      [specsFacadeVerificationReturnSchema, newVerification, syncVerification],
+      [specsFacadeRecoveryReturnSchema, newRecovery, syncRecovery],
+    ] as const;
+
+    for (const [schema, newValue, syncValue] of contractCases) {
+      expect(schema.safeParse(newValue).success).toBe(true);
+      expect(schema.safeParse(syncValue).success).toBe(true);
+      expect(schema.safeParse({ ...newValue, operation: "sync" }).success).toBe(false);
+      expect(schema.safeParse({ ...syncValue, operation: "new" }).success).toBe(false);
+    }
+  });
+
+  it("returns typed usage errors for invalid facade operation and kind", () => {
+    makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    expect(() => captureConsole(() => commands.plan("remove", undefined, undefined, undefined, false, true))).toThrow(
+      ContractError,
+    );
+    try {
+      captureConsole(() => commands.plan("new", "channels", "Channels", "bogus", false, true));
+      throw new Error("expected facade plan to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect((error as InstanceType<typeof ContractError>).envelope().error.code).toBe("USAGE_ERROR");
+    }
+  });
+
+  it("returns the stable sidecar error envelope from every facade JSON command", () => {
+    makeWorkspace();
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    const database = new Database(databasePath);
+    database.exec("CREATE TABLE seed (value TEXT)");
+    database.close();
+
+    const commands = new SpecsFacadeCommands();
+    const plan = captureConsole(() => commands.plan("sync", undefined, undefined, undefined, false, true)).result as {
+      planHash: string;
+    };
+    writeFileSync(`${databasePath}-wal`, "partial", "utf8");
+
+    const invocations = [
+      () => commands.plan("sync", undefined, undefined, undefined, false, true),
+      () => commands.apply("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.readback("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.verify("sync", plan.planHash, undefined, undefined, undefined, false, true),
+      () => commands.recover("sync", plan.planHash, undefined, undefined, undefined, false, true),
+    ];
+
+    for (const invoke of invocations) {
+      let thrown: unknown;
+      try {
+        captureConsole(invoke);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.envelope().error.code).toBe("DB_SIDECAR_STATE_INCOMPLETE");
+    }
   });
 });

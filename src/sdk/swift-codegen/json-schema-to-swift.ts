@@ -5,10 +5,15 @@
  * shapes when safe; fall back to RaviJSON for complex unions.
  */
 
+import { swiftTypeName } from "./naming.js";
+
 export type JsonSchema = Record<string, unknown>;
 
 export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string {
   if (!schema || typeof schema !== "object") return "RaviJSON";
+
+  const title = (schema as { title?: unknown }).title;
+  if (typeof title === "string" && title.trim()) return swiftTypeName(title);
 
   const constValue = (schema as { const?: unknown }).const;
   if (constValue !== undefined) return literalType(constValue);
@@ -23,7 +28,15 @@ export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string
     return "RaviJSON";
   }
 
-  if (Array.isArray((schema as { anyOf?: unknown[] }).anyOf)) return "RaviJSON";
+  const anyOf = (schema as { anyOf?: unknown[] }).anyOf;
+  if (Array.isArray(anyOf)) {
+    const nonNull = anyOf.filter((branch) => !isNullSchema(branch));
+    if (nonNull.length === 1 && nonNull.length !== anyOf.length) {
+      const swiftType = jsonSchemaToSwift(nonNull[0] as JsonSchema);
+      return swiftType === "RaviJSON" ? swiftType : `${swiftType}?`;
+    }
+    return "RaviJSON";
+  }
   if (Array.isArray((schema as { oneOf?: unknown[] }).oneOf)) return "RaviJSON";
   if (Array.isArray((schema as { allOf?: unknown[] }).allOf)) return "RaviJSON";
 
@@ -63,6 +76,12 @@ export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string
     default:
       return "RaviJSON";
   }
+}
+
+function isNullSchema(schema: unknown): boolean {
+  if (!schema || typeof schema !== "object") return false;
+  const candidate = schema as { type?: unknown; const?: unknown };
+  return candidate.type === "null" || candidate.const === null;
 }
 
 function literalType(value: unknown): string {

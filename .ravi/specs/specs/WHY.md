@@ -22,3 +22,30 @@ This avoids two failure modes:
 - Central registry as source of truth: rejected because it duplicates Markdown and creates drift.
 - Free-form notes only: rejected because agents need stable ids, kinds, and validation hooks.
 - Audit engine in the MVP: deferred because the first useful primitive is reliable retrieval and project linking.
+
+## Facade decision
+
+The agent-first path separates planning, application, and independent
+readback without persisting a plan. The caller repeats the normalized intent
+with the returned hash, which keeps `plan` a real read and binds later work to
+the same workspace, specs root, database, and file contents.
+
+Creation uses a private sibling directory followed by one rename because
+cleaning up direct file-by-file writes cannot protect against process crashes.
+Missing ancestors are not inferred: their titles, owners, and invariants are
+human knowledge. Legacy `new` keeps its established permissive ancestor
+behavior, while the facade is strict and exact replay is a visible `noop`.
+
+The complete decision and rejected alternatives are recorded in
+`docs/adr/0002-specs-facade-binding-and-atomic-writes.md`.
+
+The approved hash identifies an intended effect, while readback describes what
+exists now. Keeping those concepts separate lets the facade reject stale write
+authority but still explain a post-apply edit as divergence. Sync likewise
+consumes the snapshot that produced its hash; rescanning before the write would
+authorize content the caller never reviewed.
+
+Legacy `new` retains its historical ability to populate a directory that was
+created in advance and has no `SPEC.md`. That narrow compatibility path cannot
+use whole-directory promotion, so the stronger orphan-directory rejection and
+atomic quartet guarantee remain facade guarantees.

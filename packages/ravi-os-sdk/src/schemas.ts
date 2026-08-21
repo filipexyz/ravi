@@ -21123,7 +21123,7 @@ export const CommandsListInputSchema = {
       "type": "string"
     },
     "fields": {
-      "description": "Compact mode: keep only these fields of each item",
+      "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
       "type": "string"
     },
     "limit": {
@@ -21144,164 +21144,438 @@ export const CommandsListInputSchema = {
 
 /** JSON Schema for the return shape of `commands.list`. */
 export const CommandsListReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "cwd"
+      ],
+      "title": "CommandsListAgent",
       "type": "object"
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
-        "properties": {
-          "argumentHint": {
-            "anyOf": [
-              {
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arguments": {
-            "items": {},
-            "type": "array"
-          },
-          "description": {
-            "anyOf": [
-              {
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "disabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issues": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "id": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "level": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "path": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "scope": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+              "relativePath": {
+                "type": "string"
               },
-              "required": [
-                "level",
-                "code",
-                "message",
-                "id",
-                "scope",
-                "path"
-              ],
-              "type": "object"
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
             },
-            "type": "array"
+            "type": "object"
           },
-          "path": {
-            "type": "string"
-          },
-          "relativePath": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "shadowedBy": {
+          {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
-              }
-            ]
-          },
-          "shadows": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
               }
             ]
-          },
-          "token": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "token",
-          "title",
-          "description",
-          "argumentHint",
-          "arguments",
-          "disabled",
-          "scope",
-          "path",
-          "relativePath",
-          "shadowedBy",
-          "shadows",
-          "issues"
         ],
-        "type": "object"
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "title": "CommandsListFilters",
+      "type": "object"
+    },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -21317,6 +21591,10 @@ export const CommandsListReturnSchema = {
             ]
           },
           "level": {
+            "enum": [
+              "error",
+              "warning"
+            ],
             "type": "string"
           },
           "message": {
@@ -21351,25 +21629,434 @@ export const CommandsListReturnSchema = {
           "scope",
           "path"
         ],
+        "title": "CommandsListIssue",
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
+                "type": "string"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
     "locations": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "global": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "global"
+      ],
+      "title": "CommandsListLocations",
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21411,11 +22098,9 @@ export const CommandsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
+      "title": "CommandsListPagination",
       "type": "object"
     },
     "total": {
@@ -21425,9 +22110,9 @@ export const CommandsListReturnSchema = {
   "required": [
     "total",
     "pagination",
-    "items",
     "agent",
     "locations",
+    "items",
     "commands",
     "issues"
   ],
@@ -67002,6 +67687,2613 @@ export const SlackWorkObjectsValidateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `specs.facade.new.apply`. */
+export const SpecsFacadeNewApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "full": {
+      "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Spec id",
+      "type": "string"
+    },
+    "kind": {
+      "description": "domain|capability|feature",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    },
+    "title": {
+      "description": "Spec title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "planHash",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.new.apply`. */
+export const SpecsFacadeNewApplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "operation": {
+      "const": "new",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "created",
+        "noop"
+      ],
+      "type": "string"
+    },
+    "verification": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "new",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "confirmed",
+            "absent",
+            "divergent"
+          ],
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "readback": {
+          "additionalProperties": false,
+          "properties": {
+            "ancestors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "path",
+                  "exists"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "binding": {
+              "additionalProperties": false,
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "dbBinding": {
+                  "type": "string"
+                },
+                "dbParentExists": {
+                  "type": "boolean"
+                },
+                "dbPath": {
+                  "type": "string"
+                },
+                "rootBinding": {
+                  "type": "string"
+                },
+                "specsRoot": {
+                  "type": "string"
+                },
+                "workspaceIdentity": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cwd",
+                "specsRoot",
+                "dbPath",
+                "workspaceIdentity",
+                "rootBinding",
+                "dbBinding",
+                "dbParentExists"
+              ],
+              "type": "object"
+            },
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "actualSha256": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "expectedSha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "matches": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "regularFile": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "path",
+                  "exists",
+                  "expectedSha256"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "index": {
+              "additionalProperties": false,
+              "properties": {
+                "dbPath": {
+                  "type": "string"
+                },
+                "indexedIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "indexedTotal": {
+                  "type": "number"
+                },
+                "matches": {
+                  "type": "boolean"
+                },
+                "schemaExists": {
+                  "type": "boolean"
+                },
+                "sourceIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sourceTotal": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "dbPath",
+                "schemaExists",
+                "matches",
+                "indexedTotal",
+                "sourceTotal",
+                "indexedIds",
+                "sourceIds"
+              ],
+              "type": "object"
+            },
+            "observedAt": {
+              "type": "string"
+            },
+            "operation": {
+              "const": "new",
+              "type": "string"
+            },
+            "planHash": {
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": "specs.agent-first/v1",
+              "type": "string"
+            },
+            "target": {
+              "additionalProperties": false,
+              "properties": {
+                "directoryPath": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "directoryPath"
+              ],
+              "type": "object"
+            },
+            "unexpectedFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "planHash",
+            "binding",
+            "files",
+            "unexpectedFiles",
+            "index",
+            "observedAt",
+            "operation",
+            "target",
+            "ancestors"
+          ],
+          "type": "object",
+          "x-ravi-swift-nested": true
+        }
+      },
+      "required": [
+        "operation",
+        "planHash",
+        "outcome",
+        "readback"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    }
+  },
+  "required": [
+    "operation",
+    "state",
+    "changed",
+    "verification"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.new.plan`. */
+export const SpecsFacadeNewPlanInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "full": {
+      "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Spec id",
+      "type": "string"
+    },
+    "kind": {
+      "description": "domain|capability|feature",
+      "type": "string"
+    },
+    "title": {
+      "description": "Spec title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.new.plan`. */
+export const SpecsFacadeNewPlanReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "binding": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
+          "type": "string"
+        },
+        "specsRoot": {
+          "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "specsRoot",
+        "dbPath",
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
+      ],
+      "type": "object"
+    },
+    "blockers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": false,
+            "properties": {
+              "ancestors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "divergentFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "missingFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "unexpectedFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "effects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "contentSha256": {
+            "type": "string"
+          },
+          "overwrite": {
+            "const": false,
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "const": "create-file",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "contentSha256",
+          "overwrite"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "executable": {
+      "type": "boolean"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "full": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "domain",
+            "capability",
+            "feature"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "full"
+      ],
+      "type": "object"
+    },
+    "observation": {
+      "additionalProperties": false,
+      "properties": {
+        "ancestors": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "exists"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "replay": {
+          "enum": [
+            "noop",
+            "create"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "divergentFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "exactMatch": {
+              "type": "boolean"
+            },
+            "matchingFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "missingFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "targetDirectoryExists": {
+              "type": "boolean"
+            },
+            "targetSpecExists": {
+              "type": "boolean"
+            },
+            "unexpectedFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "targetDirectoryExists",
+            "targetSpecExists",
+            "exactMatch",
+            "matchingFiles",
+            "missingFiles",
+            "divergentFiles",
+            "unexpectedFiles"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "ancestors",
+        "target",
+        "replay"
+      ],
+      "type": "object"
+    },
+    "operation": {
+      "const": "new",
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "specs.agent-first/v1",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "directoryPath": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "directoryPath"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planHash",
+    "executable",
+    "blockers",
+    "binding",
+    "operation",
+    "input",
+    "target",
+    "effects",
+    "observation"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.new.readback`. */
+export const SpecsFacadeNewReadbackInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "full": {
+      "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Spec id",
+      "type": "string"
+    },
+    "kind": {
+      "description": "domain|capability|feature",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    },
+    "title": {
+      "description": "Spec title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "planHash",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.new.readback`. */
+export const SpecsFacadeNewReadbackReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ancestors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exists": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "exists"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "binding": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
+          "type": "string"
+        },
+        "specsRoot": {
+          "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "specsRoot",
+        "dbPath",
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
+      ],
+      "type": "object"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actualSha256": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "expectedSha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matches": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "regularFile": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "expectedSha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "index": {
+      "additionalProperties": false,
+      "properties": {
+        "dbPath": {
+          "type": "string"
+        },
+        "indexedIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "indexedTotal": {
+          "type": "number"
+        },
+        "matches": {
+          "type": "boolean"
+        },
+        "schemaExists": {
+          "type": "boolean"
+        },
+        "sourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sourceTotal": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dbPath",
+        "schemaExists",
+        "matches",
+        "indexedTotal",
+        "sourceTotal",
+        "indexedIds",
+        "sourceIds"
+      ],
+      "type": "object"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "operation": {
+      "const": "new",
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "specs.agent-first/v1",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "directoryPath": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "directoryPath"
+      ],
+      "type": "object"
+    },
+    "unexpectedFiles": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planHash",
+    "binding",
+    "files",
+    "unexpectedFiles",
+    "index",
+    "observedAt",
+    "operation",
+    "target",
+    "ancestors"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.new.recover`. */
+export const SpecsFacadeNewRecoverInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "full": {
+      "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Spec id",
+      "type": "string"
+    },
+    "kind": {
+      "description": "domain|capability|feature",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    },
+    "title": {
+      "description": "Spec title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "planHash",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.new.recover`. */
+export const SpecsFacadeNewRecoverReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "none",
+        "replan_and_apply",
+        "manual_review"
+      ],
+      "type": "string"
+    },
+    "operation": {
+      "const": "new",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "confirmed",
+        "absent",
+        "divergent"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "ancestors": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "exists"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "type": "string"
+            },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
+            "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
+              "type": "string"
+            },
+            "specsRoot": {
+              "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cwd",
+            "specsRoot",
+            "dbPath",
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
+          ],
+          "type": "object"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actualSha256": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "expectedSha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "regularFile": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "exists",
+              "expectedSha256"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "index": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "indexedIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indexedTotal": {
+              "type": "number"
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "schemaExists": {
+              "type": "boolean"
+            },
+            "sourceIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceTotal": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dbPath",
+            "schemaExists",
+            "matches",
+            "indexedTotal",
+            "sourceTotal",
+            "indexedIds",
+            "sourceIds"
+          ],
+          "type": "object"
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "operation": {
+          "const": "new",
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "specs.agent-first/v1",
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "directoryPath": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "directoryPath"
+          ],
+          "type": "object"
+        },
+        "unexpectedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "planHash",
+        "binding",
+        "files",
+        "unexpectedFiles",
+        "index",
+        "observedAt",
+        "operation",
+        "target",
+        "ancestors"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    },
+    "replay": {
+      "const": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "operation",
+    "planHash",
+    "outcome",
+    "readback",
+    "action",
+    "replay"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.new.verify`. */
+export const SpecsFacadeNewVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "full": {
+      "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Spec id",
+      "type": "string"
+    },
+    "kind": {
+      "description": "domain|capability|feature",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    },
+    "title": {
+      "description": "Spec title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "planHash",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.new.verify`. */
+export const SpecsFacadeNewVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "operation": {
+      "const": "new",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "confirmed",
+        "absent",
+        "divergent"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "ancestors": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "exists"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "type": "string"
+            },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
+            "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
+              "type": "string"
+            },
+            "specsRoot": {
+              "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cwd",
+            "specsRoot",
+            "dbPath",
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
+          ],
+          "type": "object"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actualSha256": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "expectedSha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "regularFile": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "exists",
+              "expectedSha256"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "index": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "indexedIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indexedTotal": {
+              "type": "number"
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "schemaExists": {
+              "type": "boolean"
+            },
+            "sourceIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceTotal": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dbPath",
+            "schemaExists",
+            "matches",
+            "indexedTotal",
+            "sourceTotal",
+            "indexedIds",
+            "sourceIds"
+          ],
+          "type": "object"
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "operation": {
+          "const": "new",
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "specs.agent-first/v1",
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "directoryPath": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "directoryPath"
+          ],
+          "type": "object"
+        },
+        "unexpectedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "planHash",
+        "binding",
+        "files",
+        "unexpectedFiles",
+        "index",
+        "observedAt",
+        "operation",
+        "target",
+        "ancestors"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    }
+  },
+  "required": [
+    "operation",
+    "planHash",
+    "outcome",
+    "readback"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.sync.apply`. */
+export const SpecsFacadeSyncApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planHash"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.sync.apply`. */
+export const SpecsFacadeSyncApplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "operation": {
+      "const": "sync",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "applied",
+        "noop"
+      ],
+      "type": "string"
+    },
+    "verification": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "sync",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "confirmed",
+            "absent",
+            "divergent"
+          ],
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "readback": {
+          "additionalProperties": false,
+          "properties": {
+            "ancestors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "path",
+                  "exists"
+                ],
+                "type": "object"
+              },
+              "maxItems": 0,
+              "type": "array"
+            },
+            "binding": {
+              "additionalProperties": false,
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "dbBinding": {
+                  "type": "string"
+                },
+                "dbParentExists": {
+                  "type": "boolean"
+                },
+                "dbPath": {
+                  "type": "string"
+                },
+                "rootBinding": {
+                  "type": "string"
+                },
+                "specsRoot": {
+                  "type": "string"
+                },
+                "workspaceIdentity": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cwd",
+                "specsRoot",
+                "dbPath",
+                "workspaceIdentity",
+                "rootBinding",
+                "dbBinding",
+                "dbParentExists"
+              ],
+              "type": "object"
+            },
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "actualSha256": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "expectedSha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "matches": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "regularFile": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "path",
+                  "exists",
+                  "expectedSha256"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "index": {
+              "additionalProperties": false,
+              "properties": {
+                "dbPath": {
+                  "type": "string"
+                },
+                "indexedIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "indexedTotal": {
+                  "type": "number"
+                },
+                "matches": {
+                  "type": "boolean"
+                },
+                "schemaExists": {
+                  "type": "boolean"
+                },
+                "sourceIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sourceTotal": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "dbPath",
+                "schemaExists",
+                "matches",
+                "indexedTotal",
+                "sourceTotal",
+                "indexedIds",
+                "sourceIds"
+              ],
+              "type": "object"
+            },
+            "observedAt": {
+              "type": "string"
+            },
+            "operation": {
+              "const": "sync",
+              "type": "string"
+            },
+            "planHash": {
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": "specs.agent-first/v1",
+              "type": "string"
+            },
+            "target": {
+              "additionalProperties": false,
+              "properties": {
+                "dbPath": {
+                  "type": "string"
+                },
+                "rootPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dbPath",
+                "rootPath"
+              ],
+              "type": "object"
+            },
+            "unexpectedFiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "planHash",
+            "binding",
+            "files",
+            "unexpectedFiles",
+            "index",
+            "observedAt",
+            "operation",
+            "target",
+            "ancestors"
+          ],
+          "type": "object",
+          "x-ravi-swift-nested": true
+        }
+      },
+      "required": [
+        "operation",
+        "planHash",
+        "outcome",
+        "readback"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    }
+  },
+  "required": [
+    "operation",
+    "state",
+    "changed",
+    "verification"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.sync.plan`. */
+export const SpecsFacadeSyncPlanInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.sync.plan`. */
+export const SpecsFacadeSyncPlanReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "binding": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
+          "type": "string"
+        },
+        "specsRoot": {
+          "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "specsRoot",
+        "dbPath",
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
+      ],
+      "type": "object"
+    },
+    "blockers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": false,
+            "properties": {
+              "ancestors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "divergentFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "missingFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "unexpectedFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "effects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "dbPath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          },
+          "sourceDigest": {
+            "type": "string"
+          },
+          "sourceTotal": {
+            "type": "number"
+          },
+          "type": {
+            "const": "replace-index-if-changed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "dbPath",
+          "rootPath",
+          "sourceDigest",
+          "sourceTotal"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "executable": {
+      "type": "boolean"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "workspace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "observation": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "indexedIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indexedTotal": {
+              "type": "number"
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "schemaExists": {
+              "type": "boolean"
+            },
+            "sourceIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceTotal": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dbPath",
+            "schemaExists",
+            "matches",
+            "indexedTotal",
+            "sourceTotal",
+            "indexedIds",
+            "sourceIds"
+          ],
+          "type": "object"
+        },
+        "replay": {
+          "enum": [
+            "noop",
+            "sync"
+          ],
+          "type": "string"
+        },
+        "sourceFiles": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sourceFiles",
+        "index",
+        "replay"
+      ],
+      "type": "object"
+    },
+    "operation": {
+      "const": "sync",
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "specs.agent-first/v1",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "dbPath": {
+          "type": "string"
+        },
+        "rootPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dbPath",
+        "rootPath"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planHash",
+    "executable",
+    "blockers",
+    "binding",
+    "operation",
+    "input",
+    "target",
+    "effects",
+    "observation"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.sync.readback`. */
+export const SpecsFacadeSyncReadbackInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planHash"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.sync.readback`. */
+export const SpecsFacadeSyncReadbackReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ancestors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exists": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "exists"
+        ],
+        "type": "object"
+      },
+      "maxItems": 0,
+      "type": "array"
+    },
+    "binding": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "dbBinding": {
+          "type": "string"
+        },
+        "dbParentExists": {
+          "type": "boolean"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "rootBinding": {
+          "type": "string"
+        },
+        "specsRoot": {
+          "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "specsRoot",
+        "dbPath",
+        "workspaceIdentity",
+        "rootBinding",
+        "dbBinding",
+        "dbParentExists"
+      ],
+      "type": "object"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actualSha256": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "expectedSha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matches": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "regularFile": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "expectedSha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "index": {
+      "additionalProperties": false,
+      "properties": {
+        "dbPath": {
+          "type": "string"
+        },
+        "indexedIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "indexedTotal": {
+          "type": "number"
+        },
+        "matches": {
+          "type": "boolean"
+        },
+        "schemaExists": {
+          "type": "boolean"
+        },
+        "sourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sourceTotal": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dbPath",
+        "schemaExists",
+        "matches",
+        "indexedTotal",
+        "sourceTotal",
+        "indexedIds",
+        "sourceIds"
+      ],
+      "type": "object"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "operation": {
+      "const": "sync",
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "specs.agent-first/v1",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "dbPath": {
+          "type": "string"
+        },
+        "rootPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dbPath",
+        "rootPath"
+      ],
+      "type": "object"
+    },
+    "unexpectedFiles": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planHash",
+    "binding",
+    "files",
+    "unexpectedFiles",
+    "index",
+    "observedAt",
+    "operation",
+    "target",
+    "ancestors"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.sync.recover`. */
+export const SpecsFacadeSyncRecoverInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planHash"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.sync.recover`. */
+export const SpecsFacadeSyncRecoverReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "none",
+        "replan_and_apply",
+        "manual_review"
+      ],
+      "type": "string"
+    },
+    "operation": {
+      "const": "sync",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "confirmed",
+        "absent",
+        "divergent"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "ancestors": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "exists"
+            ],
+            "type": "object"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "type": "string"
+            },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
+            "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
+              "type": "string"
+            },
+            "specsRoot": {
+              "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cwd",
+            "specsRoot",
+            "dbPath",
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
+          ],
+          "type": "object"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actualSha256": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "expectedSha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "regularFile": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "exists",
+              "expectedSha256"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "index": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "indexedIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indexedTotal": {
+              "type": "number"
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "schemaExists": {
+              "type": "boolean"
+            },
+            "sourceIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceTotal": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dbPath",
+            "schemaExists",
+            "matches",
+            "indexedTotal",
+            "sourceTotal",
+            "indexedIds",
+            "sourceIds"
+          ],
+          "type": "object"
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "operation": {
+          "const": "sync",
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "specs.agent-first/v1",
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "dbPath",
+            "rootPath"
+          ],
+          "type": "object"
+        },
+        "unexpectedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "planHash",
+        "binding",
+        "files",
+        "unexpectedFiles",
+        "index",
+        "observedAt",
+        "operation",
+        "target",
+        "ancestors"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    },
+    "replay": {
+      "const": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "operation",
+    "planHash",
+    "outcome",
+    "readback",
+    "action",
+    "replay"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.facade.sync.verify`. */
+export const SpecsFacadeSyncVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planHash": {
+      "description": "Exact hash returned by plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planHash"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.facade.sync.verify`. */
+export const SpecsFacadeSyncVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "operation": {
+      "const": "sync",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "confirmed",
+        "absent",
+        "divergent"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "ancestors": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "exists"
+            ],
+            "type": "object"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "type": "string"
+            },
+            "dbBinding": {
+              "type": "string"
+            },
+            "dbParentExists": {
+              "type": "boolean"
+            },
+            "dbPath": {
+              "type": "string"
+            },
+            "rootBinding": {
+              "type": "string"
+            },
+            "specsRoot": {
+              "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cwd",
+            "specsRoot",
+            "dbPath",
+            "workspaceIdentity",
+            "rootBinding",
+            "dbBinding",
+            "dbParentExists"
+          ],
+          "type": "object"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actualSha256": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "expectedSha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "regularFile": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "exists",
+              "expectedSha256"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "index": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "indexedIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indexedTotal": {
+              "type": "number"
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "schemaExists": {
+              "type": "boolean"
+            },
+            "sourceIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sourceTotal": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dbPath",
+            "schemaExists",
+            "matches",
+            "indexedTotal",
+            "sourceTotal",
+            "indexedIds",
+            "sourceIds"
+          ],
+          "type": "object"
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "operation": {
+          "const": "sync",
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "specs.agent-first/v1",
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "dbPath",
+            "rootPath"
+          ],
+          "type": "object"
+        },
+        "unexpectedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "planHash",
+        "binding",
+        "files",
+        "unexpectedFiles",
+        "index",
+        "observedAt",
+        "operation",
+        "target",
+        "ancestors"
+      ],
+      "type": "object",
+      "x-ravi-swift-nested": true
+    }
+  },
+  "required": [
+    "operation",
+    "planHash",
+    "outcome",
+    "readback"
+  ],
+  "type": "object",
+  "x-ravi-swift-nested": true
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `specs.get`. */
 export const SpecsGetInputSchema = {
   "additionalProperties": false,
@@ -67224,6 +70516,9 @@ export const SpecsSyncInputSchema = {
 export const SpecsSyncReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "rootPath": {
       "type": "string"
     },
@@ -67238,7 +70533,8 @@ export const SpecsSyncReturnSchema = {
   "required": [
     "status",
     "total",
-    "rootPath"
+    "rootPath",
+    "changed"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

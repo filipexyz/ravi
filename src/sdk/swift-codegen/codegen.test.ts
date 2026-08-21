@@ -1,7 +1,12 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -12,6 +17,33 @@ class ArtifactsCommands {
   @Returns(z.object({ id: z.string(), kind: z.string(), links: z.array(z.object({ targetId: z.string() })) }))
   show(@Arg("id") _id: string) {
     return { id: "x", kind: "report", links: [] };
+  }
+
+  @Command({ name: "inspect-deep", description: "Inspect a deeply typed artifact" })
+  @Returns(
+    z
+      .object({
+        binding: z.object({ cwd: z.string(), expectedSha256: z.string().nullable() }).strict(),
+        files: z.array(z.object({ path: z.string(), exists: z.boolean() }).strict()),
+      })
+      .strict()
+      .meta({ "x-ravi-swift-nested": true }),
+  )
+  inspectDeep() {
+    return { binding: { cwd: "/tmp", expectedSha256: null }, files: [] };
+  }
+
+  @Command({ name: "nullable", description: "Exercise nullable return fields" })
+  @Returns(
+    z.object({
+      requiredNullable: z.string().nullable(),
+      optionalNullable: z.string().nullable().optional(),
+      optionalValue: z.string().optional(),
+      requiredValue: z.string(),
+    }),
+  )
+  nullable() {
+    return { requiredNullable: null, requiredValue: "x" };
   }
 
   @Command({ name: "blob", description: "Stream artifact bytes" })
@@ -100,6 +132,15 @@ class CollisionCommands {
   }
 }
 
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -166,11 +207,111 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.client).toContain("return try await transport.callBinary");
   });
 
+  it("emits typed commands projection models without RaviJSON", () => {
+    const output = emitAllSwift(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct CommandsListItem: Codable, Sendable");
+    expect(output.types).toContain("public var arguments: [String]?");
+    expect(output.types).toContain("public var issues: [CommandsListIssue]?");
+    expect(output.types).toContain("CommandsListItem requires at least one field.");
+    expect(output.types).toContain("CommandsListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [CommandsListItem]");
+    expect(output.types).toContain("public var agent: CommandsListAgent");
+    expect(output.types).not.toContain("RaviJSON");
+  });
+
   it("emits Swift return structs for top-level object schemas", () => {
     const { output } = emitMockSwiftSdk();
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("distinguishes required nullable return keys from truly optional keys", () => {
+    const { output } = emitMockSwiftSdk();
+
+    expect(output.types).toContain("public var requiredNullable: String?");
+    expect(output.types).toContain("public var optionalNullable: String?");
+    expect(output.types).not.toContain("public var optionalNullable: String??");
+    expect(output.types).toContain("guard container.contains(.requiredNullable) else {");
+    expect(output.types).toContain(
+      "self.requiredNullable = try container.decodeIfPresent(String.self, forKey: .requiredNullable)",
+    );
+    expect(output.types).toContain("try container.encodeNil(forKey: .requiredNullable)");
+    expect(output.types).not.toContain("guard container.contains(.optionalNullable) else {");
+    expect(output.types).not.toContain("guard container.contains(.optionalValue) else {");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalNullable, forKey: .optionalNullable)");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalValue, forKey: .optionalValue)");
+  });
+
+  it("round-trips required nullable keys when a Swift compiler is available", () => {
+    const { output } = emitMockSwiftSdk();
+    const marker = "public struct ArtifactsNullableReturn: Codable, Sendable {";
+    const start = output.types.indexOf(marker);
+    const end = output.types.indexOf("\n\npublic ", start + marker.length);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const generatedStruct = output.types.slice(start, end);
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-nullable-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${generatedStruct}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(ArtifactsNullableReturn.self, from: Data(#"{"requiredValue":"x"}"#.utf8))
+  fatalError("missing requiredNullable was accepted")
+} catch DecodingError.keyNotFound(_, _) {
+  // Expected: a required nullable key must still be present.
+}
+
+let decoded = try decoder.decode(
+  ArtifactsNullableReturn.self,
+  from: Data(#"{"requiredNullable":null,"requiredValue":"x"}"#.utf8)
+)
+guard decoded.requiredNullable == nil else { fatalError("null did not decode as nil") }
+let encoded = try JSONEncoder().encode(decoded)
+let object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+guard object["requiredNullable"] is NSNull else { fatalError("required null key was omitted") }
+guard object["optionalNullable"] == nil else { fatalError("optional absent key was emitted") }
+guard object["optionalValue"] == nil else { fatalError("optional absent value was emitted") }
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("emits opt-in nested Swift return structs without RaviJSON fields", () => {
+    const { output } = emitMockSwiftSdk();
+    const start = output.types.indexOf("public struct ArtifactsInspectDeepReturnBinding");
+    const end = output.types.indexOf("public struct ArtifactsShowReturn");
+    const declarations = output.types.slice(start, end);
+
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturnBinding: Codable, Sendable");
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturnFilesItem: Codable, Sendable");
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturn: Codable, Sendable");
+    expect(declarations).toContain("public var binding: ArtifactsInspectDeepReturnBinding");
+    expect(declarations).toContain("public var files: [ArtifactsInspectDeepReturnFilesItem]");
+    expect(declarations).toContain("guard container.contains(.expectedSha256) else {");
+    expect(declarations).toContain("try container.encodeNil(forKey: .expectedSha256)");
+    expect(declarations).not.toContain("RaviJSON");
   });
 
   it("disambiguates property names that normalize to the same Swift identifier", () => {
@@ -253,6 +394,11 @@ describe("swift-codegen :: jsonSchemaToSwift", () => {
     expect(jsonSchemaToSwift({ enum: [1, 2] })).toBe("Int");
     expect(jsonSchemaToSwift({ enum: [1, 2.5] })).toBe("Double");
     expect(jsonSchemaToSwift({ enum: ["active", 1] })).toBe("RaviJSON");
+  });
+
+  it("emits a typed Swift optional for a nullable primitive", () => {
+    expect(jsonSchemaToSwift({ anyOf: [{ type: "string" }, { type: "null" }] })).toBe("String?");
+    expect(jsonSchemaToSwift({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe("RaviJSON");
   });
 });
 

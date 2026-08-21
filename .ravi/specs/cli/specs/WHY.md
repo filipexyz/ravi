@@ -31,3 +31,24 @@ set by `cli` for `--value`.
 blob whose value is the content itself, while `list` is the scan surface
 where agents were dragging full records (path, title, tags, timestamps) just
 to see ids and kinds.
+
+The facade does not contradict the unbraked compatibility surface. `plan` is
+a real read, and `apply` is an explicitly named local-reversible step bound by
+the copied hash. Requiring an additional `--execute` would add ceremony without
+creating a second independent decision. Existing `new` and `sync` remain
+immediate because CI and established scripts already invoke them directly.
+
+Plans are stateless. Persisting a plan would make a command advertised as read
+write to the Ravi database. Repeating normalized input is more verbose, but it
+makes the target binding visible and leaves no hidden plan lifecycle to prune.
+
+Application and observation intentionally use different freshness rules.
+Application accepts only the exact current plan because it can mutate state.
+Observation recognizes the identity of an originally executable `new` plan so
+that a later edit is visible as `divergent` and leads to `manual_review` rather
+than becoming an opaque stale-plan error.
+
+Sync applies the immutable in-memory snapshot used to calculate the hash. It
+does not rescan Markdown between validation and replacement. The public return
+contracts mirror this separation with distinct `new` and `sync` variants so a
+generated client cannot mistake one operation's target or state for the other.

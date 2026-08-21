@@ -30,11 +30,14 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.4",
+        "@oven/zig": "0.12.0-dev.1286",
         "@types/node": "^22.0.0",
         "@types/qrcode-terminal": "^0.12.2",
         "@types/react": "^19.2.10",
         "@types/ws": "^8.18.1",
         "bun-types": "^1.3.8",
+        "node-addon-api": "8.9.2",
+        "node-api-headers": "1.9.0",
         "typescript": "^5.6.0",
       },
     },
@@ -175,6 +178,20 @@
     "@opentui/core-win32-x64": ["@opentui/core-win32-x64@0.1.81", "", { "os": "win32", "cpu": "x64" }, "sha512-l8R2Ni1CR4eHi3DTmSkEL/EjHAtOZ/sndYs3VVw+Ej2esL3Mf0W7qSO5S0YNBanz2VXZhbkmM6ERm9keH8RD3w=="],
 
     "@opentui/react": ["@opentui/react@0.1.81", "", { "dependencies": { "@opentui/core": "0.1.81", "react-reconciler": "^0.32.0" }, "peerDependencies": { "react": ">=19.0.0", "react-devtools-core": "^7.0.1", "ws": "^8.18.0" } }, "sha512-Qlgt2j081EdYxBgNpiHQEw3I/Kgw+UZLCx6IliSetF7wGw4nXWPLSgCsa5aZpVj25/vzZnHyEkTZcx8Pq8xn8Q=="],
+
+    "@oven/zig": ["@oven/zig@0.12.0-dev.1286", "", { "optionalDependencies": { "@oven/zig-darwin-arm64": "0.12.0-dev.1286+cc394431a", "@oven/zig-darwin-x64": "0.12.0-dev.1286+cc394431a", "@oven/zig-linux-arm64": "0.12.0-dev.1286+cc394431a", "@oven/zig-linux-x64": "0.12.0-dev.1286+cc394431a", "@oven/zig-win32-arm64": "0.12.0-dev.1286+cc394431a", "@oven/zig-win32-x64": "0.12.0-dev.1286+cc394431a" }, "bin": { "zig": "zig" } }, "sha512-3a0pWrUiuWuqCjSI5yPX5WD2PNNYaHH4nkzQVuo9eg6hvTU8vqk0hCNegw7mJCVjwoslT0zyoEq19QRqX7T89A=="],
+
+    "@oven/zig-darwin-arm64": ["@oven/zig-darwin-arm64@0.12.0-dev.1286", "", { "os": "darwin", "cpu": "arm64" }, "sha512-NgD2mUxLHi2Tx2T2MXbylaHwDTUTWdanwj1aCY4OY72YD2ODXaNBN2pfXqH8DI1rXzc2pSDTvtg44KWHwkdEzQ=="],
+
+    "@oven/zig-darwin-x64": ["@oven/zig-darwin-x64@0.12.0-dev.1286", "", { "os": "darwin", "cpu": "x64" }, "sha512-W+hTSAbfHHtzcMtYcft5Z2pT5t4m9VWEfjVNRVMuKRkIOGCZniP/1gPNzxSRFf2b98SoqaARZtU7YUCWYTnV0g=="],
+
+    "@oven/zig-linux-arm64": ["@oven/zig-linux-arm64@0.12.0-dev.1286", "", { "os": "linux", "cpu": "arm64" }, "sha512-hPc9boRWfZjz+7LwFAeGD2GtbtQd4pfoplkrA3r4QzYig5NcFXGWoSsrp7iFqpJ7fq2KZPIKVaAJjH1VD4b05A=="],
+
+    "@oven/zig-linux-x64": ["@oven/zig-linux-x64@0.12.0-dev.1286", "", { "os": "linux", "cpu": "x64" }, "sha512-8vT8FO4smHeurOHFdJ7zyUvOifxkTtii2Y7+lEkkSKBEHozsHUKSnElSV8q7hNl3pH5Rl4u/rw9eWsF+ejGNLg=="],
+
+    "@oven/zig-win32-arm64": ["@oven/zig-win32-arm64@0.12.0-dev.1286", "", { "os": "win32", "cpu": "arm64" }, "sha512-3xRKfL4Ww0ExbMD8t8SoUp4m6Bd1vYUG3IbmdpYEIltY21cp6KE7TmKGR4z2IfljuvQSD7RsBpVPIpAC0ZN0pg=="],
+
+    "@oven/zig-win32-x64": ["@oven/zig-win32-x64@0.12.0-dev.1286", "", { "os": "win32", "cpu": "x64" }, "sha512-gFHG4Euq1YYoJNJPolCremn3+A3zhuJ+B0v5JG+wqphokWzvGifyIirbI/318HA3uMKRGHBDQO7yBZhn476m3g=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
@@ -601,6 +618,10 @@
     "negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
 
     "nkeys.js": ["nkeys.js@1.1.0", "", { "dependencies": { "tweetnacl": "1.0.3" } }, "sha512-tB/a0shZL5UZWSwsoeyqfTszONTt4k2YS0tuQioMOD180+MbombYVgzDUYHlx+gejYK6rgf08n/2Df99WY0Sxg=="],
+
+    "node-addon-api": ["node-addon-api@8.9.2", "", {}, "sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg=="],
+
+    "node-api-headers": ["node-api-headers@1.9.0", "", {}, "sha512-2oNILP4jXwRB4ywnYKjVk1YyJ96n2D4EOVJO6S3oYZ5PtbJrw3Yt9TpAuX3nBLMuzn74rnfGQrv13pS9vC+YiA=="],
 
     "node-domexception": ["node-domexception@1.0.0", "", {}, "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ=="],
 

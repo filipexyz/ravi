@@ -1,12 +1,25 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { replaceSpecsIndex } from "./spec-db.js";
+import {
+  captureNativeSpecsTree,
+  createNativeSpec,
+  NativeSpecsSafetyError,
+  type NativeSpecsEntry,
+  type NativeSpecsSnapshot,
+} from "./native-safe-fs.js";
 import type {
+  AppliedSpecCreation,
+  ApplyPreparedSpecCreationOptions,
   GetSpecContextOptions,
   GetSpecOptions,
   ListSpecsOptions,
   NewSpecInput,
   NewSpecResult,
+  PreparedSpecCreation,
+  PreparedSpecFile,
+  SpecCreationInspection,
   SpecChainEntry,
   SpecContext,
   SpecContextFile,
@@ -33,6 +46,29 @@ type FrontmatterValue = string | string[] | boolean;
 interface ParsedSpecFile {
   frontmatter: Record<string, FrontmatterValue>;
   body: string;
+}
+
+export interface CapturedSpecsTree {
+  cwd: string;
+  rootPath: string;
+  workspaceIdentity: string;
+  rootBinding: string;
+  rootExists: boolean;
+  entries: NativeSpecsEntry[];
+}
+
+export class UnsafeSpecsTreeError extends Error {
+  constructor(readonly unsafePath: string) {
+    super(`Unsafe symbolic link or non-regular entry in specs tree: ${unsafePath}`);
+    this.name = "UnsafeSpecsTreeError";
+  }
+}
+
+function translateNativeSafetyError(error: unknown): never {
+  if (error instanceof NativeSpecsSafetyError) {
+    throw new UnsafeSpecsTreeError(error.unsafePath || ".ravi/specs");
+  }
+  throw error;
 }
 
 function normalizeText(value: string, label: string): string {
@@ -192,16 +228,43 @@ function parseSpecFile(content: string, path: string): ParsedSpecFile {
   return { frontmatter, body };
 }
 
-function recordFromSpecFile(rootPath: string, path: string): SpecRecord {
-  const normalizedPath = resolve(path);
+function absoluteEntryPath(rootPath: string, relativePath: string): string {
+  return join(rootPath, ...relativePath.split("/"));
+}
+
+function entryMap(snapshot: CapturedSpecsTree): Map<string, NativeSpecsEntry> {
+  return new Map(snapshot.entries.map((entry) => [entry.relativePath, entry]));
+}
+
+export function captureSpecsTree(cwd?: string, onEntry?: (relativePath: string) => void): CapturedSpecsTree {
+  const canonical = canonicalWorkspace(cwd);
+  try {
+    const native: NativeSpecsSnapshot = captureNativeSpecsTree(canonical, onEntry);
+    return {
+      cwd: canonical,
+      rootPath: getSpecsRoot(canonical),
+      workspaceIdentity: native.workspaceIdentity,
+      rootBinding: native.rootBinding,
+      rootExists: native.rootExists,
+      entries: native.entries,
+    };
+  } catch (error) {
+    return translateNativeSafetyError(error);
+  }
+}
+
+function recordFromSpecEntry(snapshot: CapturedSpecsTree, entry: NativeSpecsEntry): SpecRecord {
+  if (entry.kind !== "file" || entry.content === undefined) {
+    throw new UnsafeSpecsTreeError(absoluteEntryPath(snapshot.rootPath, entry.relativePath));
+  }
+  const normalizedPath = absoluteEntryPath(snapshot.rootPath, entry.relativePath);
   const specDirPath = dirname(normalizedPath);
   const pathId = normalizeSpecId(
-    relative(rootPath, specDirPath)
+    relative(snapshot.rootPath, specDirPath)
       .split(/[\\/]+/)
       .join("/"),
   );
-  const stat = statSync(normalizedPath);
-  const { frontmatter } = parseSpecFile(readFileSync(normalizedPath, "utf8"), normalizedPath);
+  const { frontmatter } = parseSpecFile(entry.content, normalizedPath);
   const id = normalizeSpecId(scalarToString(frontmatter.id, "id"));
   if (id !== pathId) {
     throw new Error(`Spec id mismatch in ${normalizedPath}: frontmatter id ${id} must match path ${pathId}.`);
@@ -225,10 +288,10 @@ function recordFromSpecFile(rootPath: string, path: string): SpecRecord {
   }
 
   return {
-    rootPath,
+    rootPath: snapshot.rootPath,
     id,
     path: normalizedPath,
-    relativePath: relativeSpecPath(rootPath, normalizedPath),
+    relativePath: relativeSpecPath(snapshot.rootPath, normalizedPath),
     kind,
     domain,
     ...(parts[1] ? { capability: parts[1] } : {}),
@@ -240,35 +303,37 @@ function recordFromSpecFile(rootPath: string, path: string): SpecRecord {
     owners: valueToArray(frontmatter.owners),
     status,
     normative: scalarToBoolean(frontmatter.normative, true),
-    mtime: Math.floor(stat.mtimeMs),
+    mtime: Math.floor(entry.mtimeMs),
     updatedAt: Date.now(),
   };
 }
 
-function findSpecFiles(rootPath: string): string[] {
-  if (!existsSync(rootPath)) return [];
-  const found: string[] = [];
-
-  const visit = (dir: string, depth: number) => {
-    if (depth > 3) return;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        visit(path, depth + 1);
-      } else if (entry.isFile() && entry.name === SPEC_FILE) {
-        found.push(path);
-      }
-    }
-  };
-
-  visit(rootPath, 0);
-  return found.sort();
+export function assertSafeSpecsTree(rootPath: string): void {
+  const normalizedRoot = resolve(rootPath);
+  const cwd = dirname(dirname(normalizedRoot));
+  if (getSpecsRoot(cwd) !== normalizedRoot) {
+    throw new UnsafeSpecsTreeError(normalizedRoot);
+  }
+  captureSpecsTree(cwd);
 }
 
 export function listSpecs(options: ListSpecsOptions = {}): SpecRecord[] {
-  const rootPath = getSpecsRoot(options.cwd);
-  return findSpecFiles(rootPath)
-    .map((path) => recordFromSpecFile(rootPath, path))
+  const snapshot = captureSpecsTree(options.cwd);
+  return listSpecsFromCapturedTree(snapshot, options);
+}
+
+export function listSpecsFromCapturedTree(
+  snapshot: CapturedSpecsTree,
+  options: Omit<ListSpecsOptions, "cwd"> = {},
+): SpecRecord[] {
+  return snapshot.entries
+    .filter(
+      (entry) =>
+        entry.kind === "file" &&
+        entry.relativePath.split("/").length <= 4 &&
+        entry.relativePath.endsWith(`/${SPEC_FILE}`),
+    )
+    .map((entry) => recordFromSpecEntry(snapshot, entry))
     .filter((spec) => {
       if (options.domain && spec.domain !== normalizeSpecId(options.domain)) return false;
       if (options.kind && spec.kind !== options.kind) return false;
@@ -278,24 +343,23 @@ export function listSpecs(options: ListSpecsOptions = {}): SpecRecord[] {
 }
 
 export function getSpec(id: string, options: GetSpecOptions = {}): SpecRecord {
-  const rootPath = getSpecsRoot(options.cwd);
+  const snapshot = captureSpecsTree(options.cwd);
   const normalizedId = normalizeSpecId(id);
-  const path = specFilePath(rootPath, normalizedId);
-  if (!existsSync(path)) {
-    throw new Error(`Spec not found: ${normalizedId}`);
-  }
-  return recordFromSpecFile(rootPath, path);
+  const entry = entryMap(snapshot).get(`${normalizedId}/${SPEC_FILE}`);
+  if (!entry || entry.kind !== "file") throw new Error(`Spec not found: ${normalizedId}`);
+  return recordFromSpecEntry(snapshot, entry);
 }
 
-function chainEntryForId(rootPath: string, id: string): SpecChainEntry {
-  const path = specFilePath(rootPath, id);
+function chainEntryForId(snapshot: CapturedSpecsTree, id: string): SpecChainEntry {
+  const path = specFilePath(snapshot.rootPath, id);
   const kind = expectedKindForId(id);
-  if (!existsSync(path)) {
+  const entry = entryMap(snapshot).get(`${id}/${SPEC_FILE}`);
+  if (!entry || entry.kind !== "file") {
     return {
       id,
       kind,
       path,
-      relativePath: relativeSpecPath(rootPath, path),
+      relativePath: relativeSpecPath(snapshot.rootPath, path),
       exists: false,
     };
   }
@@ -303,9 +367,9 @@ function chainEntryForId(rootPath: string, id: string): SpecChainEntry {
     id,
     kind,
     path,
-    relativePath: relativeSpecPath(rootPath, path),
+    relativePath: relativeSpecPath(snapshot.rootPath, path),
     exists: true,
-    spec: recordFromSpecFile(rootPath, path),
+    spec: recordFromSpecEntry(snapshot, entry),
   };
 }
 
@@ -325,20 +389,21 @@ function filesForMode(mode: SpecContextMode): Array<(typeof ALL_CONTEXT_FILES)[n
 }
 
 function readContextFile(
-  rootPath: string,
+  snapshot: CapturedSpecsTree,
   entry: SpecChainEntry,
   fileName: SpecContextFile["fileName"],
 ): SpecContextFile {
-  const path = join(specDir(rootPath, entry.id), fileName);
-  const exists = existsSync(path);
+  const path = join(specDir(snapshot.rootPath, entry.id), fileName);
+  const nativeEntry = entryMap(snapshot).get(`${entry.id}/${fileName}`);
+  const exists = nativeEntry?.kind === "file";
   return {
     specId: entry.id,
     kind: entry.kind,
     fileName,
     path,
-    relativePath: relativeSpecPath(rootPath, path),
+    relativePath: relativeSpecPath(snapshot.rootPath, path),
     exists,
-    ...(exists ? { content: readFileSync(path, "utf8") } : {}),
+    ...(exists ? { content: nativeEntry!.content! } : {}),
   };
 }
 
@@ -372,22 +437,22 @@ function renderSpecContext(files: SpecContextFile[]): string {
 }
 
 export function getSpecContext(id: string, options: GetSpecContextOptions = {}): SpecContext {
-  const rootPath = getSpecsRoot(options.cwd);
+  const snapshot = captureSpecsTree(options.cwd);
   const normalizedId = normalizeSpecId(id);
   const mode = options.mode ?? "rules";
-  const chain = chainIdsForSpec(normalizedId).map((chainId) => chainEntryForId(rootPath, chainId));
+  const chain = chainIdsForSpec(normalizedId).map((chainId) => chainEntryForId(snapshot, chainId));
   const target = chain.at(-1);
   if (!target?.exists) {
     throw new Error(`Spec not found: ${normalizedId}`);
   }
 
   const fileNames = filesForMode(mode);
-  const files = chain.flatMap((entry) => fileNames.map((fileName) => readContextFile(rootPath, entry, fileName)));
+  const files = chain.flatMap((entry) => fileNames.map((fileName) => readContextFile(snapshot, entry, fileName)));
   const existingFiles = files.filter((file) => file.exists);
   return {
     id: normalizedId,
     mode,
-    rootPath,
+    rootPath: snapshot.rootPath,
     chain,
     files,
     requirements: extractRequirements(existingFiles),
@@ -463,8 +528,26 @@ function companionTemplate(fileName: (typeof COMPANION_FILES)[number], title: st
   }
 }
 
-export function createSpec(input: NewSpecInput): NewSpecResult {
-  const rootPath = getSpecsRoot(input.cwd);
+function canonicalWorkspace(cwd?: string): string {
+  const absolute = resolve(cwd ?? process.cwd());
+  if (!existsSync(absolute)) {
+    throw new Error(`Workspace not found: ${absolute}`);
+  }
+  return realpathSync(absolute);
+}
+
+function relativeInside(rootPath: string, targetPath: string): string {
+  const candidate = relative(rootPath, targetPath);
+  if (candidate === "" || (!candidate.startsWith("..") && !isAbsolute(candidate))) {
+    return candidate;
+  }
+  throw new Error(`Unsafe spec path outside workspace: ${targetPath}`);
+}
+
+export function prepareSpecCreation(input: NewSpecInput): PreparedSpecCreation {
+  const snapshot = captureSpecsTree(input.cwd);
+  const cwd = snapshot.cwd;
+  const rootPath = snapshot.rootPath;
   const id = normalizeSpecId(input.id);
   const kind = normalizeSpecKind(input.kind);
   const expectedKind = expectedKindForId(id);
@@ -473,43 +556,225 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
   }
 
   const title = normalizeText(input.title, "Spec title");
-  const dir = specDir(rootPath, id);
-  const path = join(dir, SPEC_FILE);
-  if (existsSync(path)) {
-    throw new Error(`Spec already exists: ${id}`);
-  }
+  const directoryPath = specDir(rootPath, id);
 
-  mkdirSync(dir, { recursive: true });
-  const createdFiles: string[] = [];
-  writeFileSync(path, `${buildSpecFrontmatter({ id, title, kind })}${buildSpecBody(title)}`, "utf8");
-  createdFiles.push(path);
-
-  if (input.full) {
-    for (const fileName of COMPANION_FILES) {
-      const companionPath = join(dir, fileName);
-      writeFileSync(companionPath, companionTemplate(fileName, title), "utf8");
-      createdFiles.push(companionPath);
-    }
-  }
-
-  const spec = getSpec(id, { cwd: input.cwd });
-  const missingAncestors = chainIdsForSpec(id)
+  const requestedFiles: PreparedSpecFile["fileName"][] =
+    input.full === true ? [SPEC_FILE, ...COMPANION_FILES] : [SPEC_FILE];
+  const files = requestedFiles.map((fileName) => {
+    const path = join(directoryPath, fileName);
+    const content =
+      fileName === SPEC_FILE
+        ? `${buildSpecFrontmatter({ id, title, kind })}${buildSpecBody(title)}`
+        : companionTemplate(fileName, title);
+    return {
+      fileName,
+      path,
+      relativePath: relativeSpecPath(rootPath, path),
+      content,
+    };
+  });
+  const ancestors = chainIdsForSpec(id)
     .slice(0, -1)
-    .map((chainId) => chainEntryForId(rootPath, chainId))
-    .filter((entry) => !entry.exists);
+    .map((chainId) => chainEntryForId(snapshot, chainId));
 
-  return { spec, createdFiles, missingAncestors };
+  return {
+    cwd,
+    rootPath,
+    id,
+    title,
+    kind,
+    full: input.full === true,
+    directoryPath,
+    files,
+    ancestors,
+    missingAncestors: ancestors.filter((entry) => !entry.exists),
+    securityBinding: {
+      workspaceIdentity: snapshot.workspaceIdentity,
+      rootBinding: snapshot.rootBinding,
+    },
+  };
 }
 
-export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
+export function inspectPreparedSpecCreation(prepared: PreparedSpecCreation): SpecCreationInspection {
+  const snapshot = captureSpecsTree(prepared.cwd);
+  if (
+    snapshot.workspaceIdentity !== prepared.securityBinding.workspaceIdentity ||
+    snapshot.rootBinding !== prepared.securityBinding.rootBinding
+  ) {
+    throw new UnsafeSpecsTreeError(prepared.rootPath);
+  }
+  const entries = entryMap(snapshot);
+  const targetNode = entries.get(prepared.id);
+  const targetDirectoryExists = targetNode !== undefined;
+  const targetSpec = entries.get(`${prepared.id}/${SPEC_FILE}`);
+  const targetSpecExists = targetSpec?.kind === "file";
+  const matchingFiles: string[] = [];
+  const missingFiles: string[] = [];
+  const divergentFiles: string[] = [];
+
+  for (const file of prepared.files) {
+    const entry = entries.get(`${prepared.id}/${file.fileName}`);
+    if (!entry) {
+      missingFiles.push(file.path);
+      continue;
+    }
+    if (entry.kind !== "file" || entry.content !== file.content) {
+      divergentFiles.push(file.path);
+      continue;
+    }
+    matchingFiles.push(file.path);
+  }
+
+  const expectedNames = new Set(prepared.files.map((file) => file.fileName));
+  const targetPrefix = `${prepared.id}/`;
+  const unexpectedFiles = targetDirectoryExists
+    ? snapshot.entries
+        .filter((entry) => {
+          if (!entry.relativePath.startsWith(targetPrefix)) return false;
+          const remainder = entry.relativePath.slice(targetPrefix.length);
+          return !remainder.includes("/") && !expectedNames.has(remainder as (typeof ALL_CONTEXT_FILES)[number]);
+        })
+        .map((entry) => absoluteEntryPath(snapshot.rootPath, entry.relativePath))
+    : [];
+
+  return {
+    targetDirectoryExists,
+    targetSpecExists,
+    exactMatch:
+      targetSpecExists && missingFiles.length === 0 && divergentFiles.length === 0 && unexpectedFiles.length === 0,
+    matchingFiles,
+    missingFiles,
+    divergentFiles,
+    unexpectedFiles,
+  };
+}
+
+function assertCurrentPreparedAncestors(prepared: PreparedSpecCreation): void {
+  const snapshot = captureSpecsTree(prepared.cwd);
+  const missing = prepared.ancestors
+    .map((entry) => chainEntryForId(snapshot, entry.id))
+    .filter((entry) => !entry.exists);
+  if (missing.length > 0) {
+    throw new Error(`Missing ancestor specs for ${prepared.id}: ${missing.map((entry) => entry.id).join(", ")}`);
+  }
+}
+
+export function applyPreparedSpecCreation(
+  prepared: PreparedSpecCreation,
+  options: ApplyPreparedSpecCreationOptions,
+): AppliedSpecCreation {
+  if (options.requireAncestors) {
+    assertCurrentPreparedAncestors(prepared);
+  }
+  const stagingName = `.${basename(prepared.directoryPath)}.ravi-stage-${randomUUID()}`;
+  const stagingPath = join(dirname(prepared.directoryPath), stagingName);
+  const originalRecoveryPath = `${stagingPath}.original`;
+  let result: ReturnType<typeof createNativeSpec>;
+  let callbackError: unknown;
+  try {
+    result = createNativeSpec({
+      workspacePath: prepared.cwd,
+      expectedWorkspaceIdentity: prepared.securityBinding.workspaceIdentity,
+      expectedRootBinding: prepared.securityBinding.rootBinding,
+      targetSegments: prepared.id.split("/"),
+      files: prepared.files.map((file) => ({ name: file.fileName, content: file.content })),
+      requireAncestors: options.requireAncestors,
+      existing: options.existing,
+      existingDirectory: options.existingDirectory ?? "error",
+      stagingName,
+      stagingPath,
+      originalRecoveryPath,
+      ...(options.beforePromote
+        ? {
+            beforePromote: (path: string) => {
+              try {
+                options.beforePromote!(path);
+                return true;
+              } catch (error) {
+                callbackError = error;
+                return false;
+              }
+            },
+          }
+        : {}),
+      ...(options.beforeNativePromote
+        ? {
+            beforeNativePromote: (path: string, recoveryPath: string) => {
+              try {
+                options.beforeNativePromote!(path, recoveryPath);
+                return true;
+              } catch (error) {
+                callbackError = error;
+                return false;
+              }
+            },
+          }
+        : {}),
+    });
+  } catch (error) {
+    if (callbackError !== undefined) throw callbackError;
+    if (error instanceof NativeSpecsSafetyError) {
+      if (error.code === "SPEC_ALREADY_EXISTS") throw new Error(`Spec already exists: ${prepared.id}`);
+      if (error.code === "SPEC_ANCESTORS_MISSING") {
+        throw new Error(`Missing ancestor specs for ${prepared.id}`);
+      }
+      throw new UnsafeSpecsTreeError(error.unsafePath || prepared.rootPath);
+    }
+    throw error;
+  }
+
+  const targetSnapshot: CapturedSpecsTree = {
+    cwd: prepared.cwd,
+    rootPath: prepared.rootPath,
+    workspaceIdentity: prepared.securityBinding.workspaceIdentity,
+    rootBinding: prepared.securityBinding.rootBinding,
+    rootExists: true,
+    entries: result.entries.map((entry) => ({ ...entry, relativePath: `${prepared.id}/${entry.relativePath}` })),
+  };
+  const specEntry = entryMap(targetSnapshot).get(`${prepared.id}/${SPEC_FILE}`);
+  if (!specEntry) throw new UnsafeSpecsTreeError(prepared.directoryPath);
+
+  return {
+    spec: recordFromSpecEntry(targetSnapshot, specEntry),
+    createdFiles: result.status === "created" ? prepared.files.map((file) => file.path) : [],
+    missingAncestors: prepared.missingAncestors,
+    changed: result.status === "created",
+    status: result.status,
+  };
+}
+
+export function createSpec(input: NewSpecInput): NewSpecResult {
+  const result = applyPreparedSpecCreation(prepareSpecCreation(input), {
+    requireAncestors: false,
+    existing: "error",
+    existingDirectory: "populate",
+  });
+  return {
+    spec: result.spec,
+    createdFiles: result.createdFiles,
+    missingAncestors: result.missingAncestors,
+  };
+}
+
+export function syncSpecsSnapshot(specs: SpecRecord[], options: SyncSpecsOptions = {}): SyncSpecsResult {
   const rootPath = getSpecsRoot(options.cwd);
-  const specs = listSpecs(options);
-  replaceSpecsIndex(rootPath, specs);
+  assertSafeSpecsTree(rootPath);
+  for (const spec of specs) {
+    if (spec.rootPath !== rootPath || relativeInside(rootPath, spec.path).startsWith("..")) {
+      throw new Error(`Spec snapshot is not bound to root: ${spec.id}`);
+    }
+  }
+  const changed = replaceSpecsIndex(rootPath, specs);
   return {
     rootPath,
     total: specs.length,
     specs,
+    changed,
   };
+}
+
+export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
+  return syncSpecsSnapshot(listSpecs(options), options);
 }
 
 export function specExists(id: string, options: GetSpecOptions = {}): boolean {

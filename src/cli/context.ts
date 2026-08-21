@@ -11,6 +11,7 @@ import { getRuntimeContextFromEnv, resolveRuntimeContext, RAVI_CONTEXT_KEY_ENV }
 import type { ContextRecord } from "../router/router-db.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
 import { CliExpectedError } from "./expected-error.js";
+import { requestCliTermination } from "./process-output.js";
 
 /**
  * Context available to CLI tools during execution
@@ -218,5 +219,5 @@ export function fail(message: string): never {
     throw new CliExpectedError(message);
   }
   console.error(message);
-  process.exit(1);
+  requestCliTermination(1);
 }

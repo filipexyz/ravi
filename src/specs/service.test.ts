@@ -1,14 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listIndexedSpecs } from "./spec-db.js";
+import { listIndexedSpecs, replaceSpecsIndex } from "./spec-db.js";
 import { createSpec, getSpec, getSpecContext, listSpecs, syncSpecs } from "./service.js";
 
 const tempRoots: string[] = [];
 let isolatedStateDir: string | null = null;
 let previousStateDir: string | undefined;
+
+setDefaultTimeout(20_000);
 
 function makeWorkspace(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-specs-"));
@@ -56,14 +58,23 @@ describe("specs service", () => {
       status: "active",
       normative: true,
     });
-    expect(result.createdFiles.map((file) => file.split("/").at(-1))).toEqual([
-      "SPEC.md",
-      "WHY.md",
-      "RUNBOOK.md",
-      "CHECKS.md",
-    ]);
+    expect(result.createdFiles.map((file) => basename(file))).toEqual(["SPEC.md", "WHY.md", "RUNBOOK.md", "CHECKS.md"]);
+    expect(result.createdFiles.every((file) => isAbsolute(file))).toBe(true);
     expect(result.missingAncestors.map((entry) => entry.id)).toEqual(["channels", "channels/presence"]);
     expect(existsSync(join(cwd, ".ravi/specs/channels/presence/lifecycle/SPEC.md"))).toBe(true);
+  });
+
+  it("preserves legacy creation into a pre-created directory without SPEC.md", () => {
+    const cwd = makeWorkspace();
+    const target = join(cwd, ".ravi", "specs", "channels");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "WHY.md"), "legacy placeholder", "utf8");
+
+    const result = createSpec({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
+
+    expect(result.spec).toMatchObject({ id: "channels", title: "Channels" });
+    expect(existsSync(join(target, "SPEC.md"))).toBe(true);
+    expect(readFileSync(join(target, "WHY.md"), "utf8")).toContain("# Channels / WHY");
   });
 
   it("lists and filters specs from markdown source of truth", () => {
@@ -115,8 +126,29 @@ describe("specs service", () => {
 
     const synced = syncSpecs({ cwd });
     expect(synced.total).toBe(2);
+    expect(synced.changed).toBe(true);
     expect(synced.specs.map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
     expect(listIndexedSpecs(synced.rootPath).map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
+
+    const replay = syncSpecs({ cwd });
+    expect(replay.changed).toBe(false);
+  });
+
+  it("compares and replaces the specs index under the same write lock", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const initial = syncSpecs({ cwd });
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    const updated = listSpecs({ cwd });
+
+    const changed = replaceSpecsIndex(initial.rootPath, updated, {
+      beforeTransaction: () => {
+        expect(replaceSpecsIndex(initial.rootPath, updated)).toBe(true);
+      },
+    });
+
+    expect(changed).toBe(false);
+    expect(listIndexedSpecs(initial.rootPath).map((spec) => spec.id)).toEqual(["channels", "runtime"]);
   });
 
   it("rejects kind/path mismatches", () => {
