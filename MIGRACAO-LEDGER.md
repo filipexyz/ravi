@@ -1623,3 +1623,18 @@ foi descartada; a repeticao isolada passou. O primeiro quality gate bloqueou a
 falta do teste aprovado de router; depois dos dois casos nativos, o runner
 passou sobre 35 caminhos e indexou 274 specs. Commit, pacote, auditoria
 independente e CI Linux ainda sao obrigatorios; segue NO-GO para push ou PR.
+
+### Captura do pacote substituto de COMMANDS
+
+O commit `e78e106c5b63df66d16ecccec2f70e29ccfdc844` gerou pacote de
+4.945.479 bytes com SHA-256
+`C763E1991CDED3A0E2BD50A237FE2F0C6D8BEEB3C018A5239AC140BBB7D42845`.
+Uma instalacao vazia resolveu 367 pacotes; o Bun bloqueou dois postinstalls de
+dependencias pela politica padrao, mas instalou o binario e o bundle do Ravi.
+
+O bundle instalado passou help, list compacto, show, validate, preview de run,
+erro `COMMAND_NOT_FOUND` exit 1 e fields invalido exit 2. Os sete processos nao
+emitiram stderr, nao criaram arquivo de estado e nao alteraram o fixture. Como
+este registro muda o commit, o primeiro arquivo fica apenas como diagnostico;
+o pacote final deve ser reconstruido, rehashado, reinstalado e auditado no novo
+SHA antes de push ou PR.

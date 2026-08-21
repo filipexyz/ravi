@@ -160,3 +160,23 @@ throws unless the command is a low-risk read with resolved effect class
 foundation test proves mutations and medium-risk reads cannot opt out. Exact
 commit, package, independent review, and Linux CI remain mandatory, so the
 replacement is still NO-GO for push or PR at this checkpoint.
+
+## Revision note: 2026-08-21, replacement package capture
+
+Commit `e78e106c5b63df66d16ecccec2f70e29ccfdc844` produced an eight-file
+package of 4,945,479 bytes with SHA-256
+`C763E1991CDED3A0E2BD50A237FE2F0C6D8BEEB3C018A5239AC140BBB7D42845`.
+An empty Bun project installed 367 packages from that archive. Bun reported two
+dependency postinstall scripts as blocked by its default trust policy; the Ravi
+package still installed with its binary and bundle intact.
+
+The installed bundle, executed directly on Windows, passed bare help, compact
+list, show, validate, and rendered run preview. It also returned exit 1 with
+`COMMAND_NOT_FOUND` and exit 2 with `USAGE_ERROR` for invalid fields. All seven
+processes had empty stderr, the isolated runtime state remained empty, and the
+command fixture hash was unchanged.
+
+This note changes the candidate commit, so that first archive is retained as
+diagnostic evidence only. The final archive must be rebuilt after the
+documentation commit, rehashed, reinstalled, and independently reviewed before
+push or PR. Linux CI remains mandatory after an authorized push.
