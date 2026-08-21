@@ -1484,3 +1484,28 @@ assercoes; o SDK completo passou com 75 testes e 297 assercoes, seguido de
 `sdk:check`. Typecheck, build integral, quality gate dos 34 caminhos e lint
 documental tambem passaram. O fechamento ainda depende de commit exato, revisao
 independente, novo pacote e CI Linux verde no mesmo SHA.
+
+A segunda CI Linux, run `32451955010` no SHA
+`ec6d13ccdcbcdb90b7b8a224c90a4f8892e2af16`, passou build, typecheck e o teste
+sincrono do daemon, mas falhou em dois casos de `sdk.test.ts`. Catches antigos
+do SDK recapturavam o sinal privado de termino de `fail()` e substituiam a
+mensagem publica por `CLI termination requested.`.
+
+A correcao relanca a mesma instancia privada antes de qualquer conversao de
+erro e concentra todos os catches externos do SDK nesse funil. Os dois testes
+agora exigem codigo 1, exatamente uma mensagem publica e ausencia do texto
+interno. O recorte afetado passou com 26 testes e 74 assercoes. Os testes de
+comandos posteriores ao SDK tambem passaram; somente o cleanup de
+`tasks-profiles.test.ts` repetiu os tres `EBUSY` ja conhecidos da base Windows.
+O NO-GO permanece ate novo commit, pacote, revisao independente e CI Linux.
+
+Na revalidacao final da segunda correcao, contexto, sinal, saida nativa, SDK,
+ferramentas e gateway passaram com 86 testes e 310 assercoes. O processo real
+passou com 11 testes e 63 assercoes; o SDK completo passou com 75 testes e 297
+assercoes, seguido de `sdk:check`. Typecheck, build integral e quality gate dos
+36 caminhos passaram.
+
+O primeiro `biome check` apontou apenas finais de linha misturados nos dois
+arquivos SDK editados no Windows. A formatacao oficial corrigiu o problema; o
+check e os 20 testes dos arquivos formatados passaram. Novo SHA, pacote, revisao
+independente e CI Linux verde continuam obrigatorios.

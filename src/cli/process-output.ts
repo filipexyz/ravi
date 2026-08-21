@@ -22,6 +22,10 @@ export function requestCliTermination(code: CliExitCode): never {
   throw new CliTerminationRequest(code);
 }
 
+export function rethrowCliTermination(error: unknown): void {
+  if (error instanceof CliTerminationRequest) throw error;
+}
+
 export type ProcessOutputStream = Pick<
   NodeJS.WriteStream,
   "destroyed" | "writableEnded" | "writableLength" | "writableNeedDrain" | "write"

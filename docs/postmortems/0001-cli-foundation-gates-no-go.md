@@ -201,3 +201,37 @@ Typecheck, build integral, quality gate dos 34 caminhos e lint dos documentos
 alterados também passaram. Isso fecha a revalidação local, mas não restaura o
 GO: ainda são obrigatórios commit exato, revisão independente, novo pacote e CI
 Linux verde no mesmo SHA.
+
+## Nota de revisão — 2026-08-21 (segunda CI Linux da PR 426)
+
+A CI Linux `32451955010` do SHA
+`ec6d13ccdcbcdb90b7b8a224c90a4f8892e2af16` confirmou build, typecheck e o
+carregamento síncrono do daemon, mas encontrou duas falhas em
+`src/cli/commands/sdk.test.ts`. Chamadas diretas legadas recebiam a mensagem
+privada `CLI termination requested.` no lugar da mensagem pública original.
+
+O sinal de término lançado por `fail()` estava sendo capturado pelos blocos de
+tratamento do SDK e convertido em uma segunda falha. A correção adiciona um
+helper compartilhado que relança exatamente a mesma instância privada, faz
+todos os tratamentos externos do SDK usarem esse helper e reforça os testes
+para exigir código 1, uma única mensagem pública e nenhum vazamento do sinal.
+
+O recorte diretamente afetado passou com 26 testes e 74 asserções. Todos os
+arquivos de comandos posteriores ao SDK na sequência da CI também passaram,
+exceto `tasks-profiles.test.ts`: suas três verificações chegaram ao cleanup e
+falharam apenas com o `EBUSY` de pastas temporárias já reproduzido e documentado
+na base Windows. O resultado da CI mantém o NO-GO; novo commit, pacote, revisão
+independente e CI Linux continuam obrigatórios.
+
+## Nota de revisão — 2026-08-21 (segunda correção revalidada localmente)
+
+O recorte de contexto, sinal, saída nativa, SDK, ferramentas e gateway passou
+com 86 testes e 310 asserções. O smoke no processo real passou com 11 testes e
+63 asserções; o SDK completo passou com 75 testes e 297 asserções, seguido de
+`sdk:check`. Typecheck, build integral e quality gate dos 36 caminhos passaram.
+
+O primeiro `biome check` detectou somente finais de linha misturados nos dois
+arquivos do SDK editados no Windows. O formatador oficial corrigiu os arquivos;
+a repetição passou, assim como os 20 testes dos dois arquivos formatados. O lint
+documental também deve passar antes do commit. Esses resultados não restauram o
+GO sem novo SHA, pacote, revisão independente e CI Linux verde.

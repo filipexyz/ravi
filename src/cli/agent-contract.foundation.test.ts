@@ -2,7 +2,7 @@ import { describe, expect, it, spyOn } from "bun:test";
 import { expectedErrorToContractError, pickFields, unexpectedErrorToContractError } from "./agent-contract.js";
 import { fail } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
-import { CliTerminationRequest } from "./process-output.js";
+import { CliTerminationRequest, rethrowCliTermination } from "./process-output.js";
 
 describe("agent-first CLI foundation contract", () => {
   it("preserves explicitly public expected failures with their typed metadata", () => {
@@ -103,5 +103,18 @@ describe("agent-first CLI foundation contract", () => {
 
     expect(failure).toBeInstanceOf(CliTerminationRequest);
     expect((failure as CliTerminationRequest).exitCode).toBe(1);
+  });
+
+  it("preserves the exact private termination signal through legacy catches", () => {
+    const signal = new CliTerminationRequest(3);
+    let observed: unknown;
+
+    try {
+      rethrowCliTermination(signal);
+    } catch (error) {
+      observed = error;
+    }
+
+    expect(observed).toBe(signal);
   });
 });
