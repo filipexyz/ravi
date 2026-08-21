@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
@@ -51,9 +51,7 @@ function cleanAllPrebuilds(): void {
 
 function verifyPublishedPrebuilds(requiredPlatforms: SupportedPlatform[] = []): void {
   const requiredDirectories = new Set(requiredPlatforms.map((platform) => `${platform}-x64`));
-  const actualDirectories = existsSync(prebuildRoot)
-    ? readdirSync(prebuildRoot, { withFileTypes: true })
-    : [];
+  const actualDirectories = existsSync(prebuildRoot) ? readdirSync(prebuildRoot, { withFileTypes: true }) : [];
 
   for (const entry of actualDirectories) {
     if (!entry.isDirectory() || !supportedPlatforms.some((platform) => entry.name === `${platform}-x64`)) {
@@ -125,7 +123,21 @@ function normalizeWindowsPeTimestamps(path: string): void {
   writeFileSync(path, image);
 }
 
-function zigExecutable(): string {
+function relativeCompilerPath(path: string): string {
+  return relative(projectRoot, path).split(sep).join("/");
+}
+
+function pathMapArgs(path: string, replacement: string): string[] {
+  const absolutePath = resolve(path);
+  const spellings = new Set([absolutePath, absolutePath.replaceAll("\\", "/")]);
+  return [...spellings].flatMap((spelling) => [
+    `-ffile-prefix-map=${spelling}=${replacement}`,
+    `-fdebug-prefix-map=${spelling}=${replacement}`,
+    `-fmacro-prefix-map=${spelling}=${replacement}`,
+  ]);
+}
+
+function zigToolchain(): { executable: string; root: string } {
   if (process.arch !== "x64") {
     throw new Error(`The specs native layer currently supports x64 builds, got ${process.arch}.`);
   }
@@ -133,7 +145,7 @@ function zigExecutable(): string {
   const packageRoot = dirname(require.resolve(`${packageName}/package.json`));
   const executable = join(packageRoot, process.platform === "win32" ? "zig.exe" : "zig");
   if (!existsSync(executable)) throw new Error(`Zig compiler not found at ${executable}.`);
-  return executable;
+  return { executable, root: packageRoot };
 }
 
 function build(platform: SupportedPlatform): void {
@@ -141,7 +153,7 @@ function build(platform: SupportedPlatform): void {
   const outputDirectory = join(prebuildRoot, `${platform}-x64`);
   resetGeneratedDirectory(temporaryDirectory, temporaryRoot);
   const temporaryOutput = join(temporaryDirectory, addonName);
-  const zig = zigExecutable();
+  const zig = zigToolchain();
 
   const target = platform === "win32" ? "x86_64-windows-gnu" : "x86_64-linux-gnu.2.17";
   const platformSource = join(sourceRoot, platform === "win32" ? "platform_windows.cc" : "platform_linux.cc");
@@ -155,19 +167,25 @@ function build(platform: SupportedPlatform): void {
     target,
     "-DNAPI_VERSION=8",
     "-DNODE_ADDON_API_DISABLE_DEPRECATED",
-    `-I${nodeHeaders.include_dir}`,
-    `-I${nodeAddonInclude}`,
-    `-I${sourceRoot}`,
-    join(sourceRoot, "addon.cc"),
-    platformSource,
+    "-fdebug-compilation-dir=.",
+    ...pathMapArgs(projectRoot, "."),
+    ...pathMapArgs(zig.root, ".zig"),
+    ...pathMapArgs(nodeHeaders.include_dir, ".node-api-headers"),
+    ...pathMapArgs(nodeAddonInclude, ".node-addon-api"),
+    `-I${relativeCompilerPath(nodeHeaders.include_dir)}`,
+    `-I${relativeCompilerPath(nodeAddonInclude)}`,
+    `-I${relativeCompilerPath(sourceRoot)}`,
+    relativeCompilerPath(join(sourceRoot, "addon.cc")),
+    relativeCompilerPath(platformSource),
     ...(platform === "win32"
-      ? [join(sourceRoot, "napi_dynamic_windows.cc"), "-lntdll"]
+      ? [relativeCompilerPath(join(sourceRoot, "napi_dynamic_windows.cc")), "-lntdll"]
       : ["-Wl,--allow-shlib-undefined"]),
+    "-Wl,--strip-debug",
     "-o",
-    temporaryOutput,
+    relativeCompilerPath(temporaryOutput),
   ];
   try {
-    const result = spawnSync(zig, args, {
+    const result = spawnSync(zig.executable, args, {
       cwd: projectRoot,
       env: { ...process.env, SOURCE_DATE_EPOCH: "0" },
       stdio: "inherit",

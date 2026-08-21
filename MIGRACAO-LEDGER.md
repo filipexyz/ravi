@@ -2349,3 +2349,20 @@ originais byte a byte inalterados; junto com o caso sem sidecars, foram 2
 testes/10 assercoes. A primeira versao dessa prova detectou corretamente um
 byte alterado no `-shm` e foi rejeitada antes da correcao. Gates restantes e
 SHA final ainda nao sao alegados. Nao houve pacote, push, PR, merge ou VPS.
+
+### Retificacao de release do candidato `f222ac05` por caminhos nativos
+
+O candidato `f222ac05a1d65bd5c7d95d00ea494ad54ec39117` preserva o GO funcional
+da facade Specs e seus testes. Ele fica invalidado somente como candidato de
+release/pacote porque o addon Windows incorporava as raizes absolutas do
+worktree e do compilador Zig. A normalizacao do timestamp PE nao removia essa
+dependencia do local de build.
+
+O build nativo agora usa entradas e saida relativas, diretorio de compilacao
+neutro e prefix maps suportados pelo Zig/Clang para fonte, headers e toolchain.
+Metadados de debug sem funcao no runtime sao omitidos pelo linker, e a
+normalizacao PE existente foi preservada. Uma prova nativa versionada constroi
+Linux e Windows em duas raizes fisicas diferentes, rejeita as raizes absolutas,
+exige bytes e SHA-256 identicos e carrega/exercita o addon do host. Gates e SHA
+finais ainda nao sao alegados neste adendo. Nao houve pacote final, push, PR,
+merge ou VPS.

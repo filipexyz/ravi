@@ -587,3 +587,20 @@ unchanged; together with the absent-sidecar case it passed 2 tests with 10
 assertions. The first version of this proof correctly detected one changed
 `-shm` byte and was rejected before the fix. Remaining gates and the final SHA
 are not claimed. No package, push, PR, merge, or VPS operation occurred.
+
+## Revision note: 2026-08-21, release rejection of `f222ac05`
+
+Candidate `f222ac05a1d65bd5c7d95d00ea494ad54ec39117` retains the functional GO
+for the Specs facade and its tests. It is invalid only as a release/package
+candidate because the Windows addon contained absolute worktree and Zig
+compiler roots. Normalizing the PE timestamp did not remove that dependency on
+the build location.
+
+The native build now uses relative inputs and output, a neutral compilation
+directory, and Zig/Clang prefix maps for source, headers, and toolchain.
+Non-runtime debug metadata is omitted by the linker, and the existing PE
+normalization remains. A versioned native proof builds Linux and Windows in two
+distinct physical roots, rejects the absolute roots, requires identical bytes
+and SHA-256 values, and loads/exercises the host addon. Final gates and SHA are
+not claimed in this note. No final package, push, PR, merge, or VPS operation
+occurred.
