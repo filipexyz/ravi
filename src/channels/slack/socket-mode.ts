@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve as resolvePathname } from "node:path";
 import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import {
@@ -9,6 +11,8 @@ import {
 } from "../../contacts.js";
 import { publish } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { evaluateFilter } from "../../triggers/filter.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import {
   attachChatToSession,
   commitMatchedRoute,
@@ -727,6 +731,7 @@ export class SlackSocketModeService {
 
     const interaction = this.normalizeInteractionEnvelope(envelope);
     if (interaction) {
+      if (await this.handleNativeImmediateInteraction(interaction)) return "processed";
       await this.publishInteraction("ravi.inbound.interaction", interaction);
       return "processed";
     }
@@ -1269,6 +1274,7 @@ export class SlackSocketModeService {
       containerType: stringField(container, "type"),
       viewId: stringField(view, "id"),
       viewCallbackId: stringField(view, "callback_id"),
+      viewPrivateMetadata: stringField(view, "private_metadata"),
       actionId: stringField(firstAction, "action_id"),
       blockId: stringField(firstAction, "block_id"),
       actionType: stringField(firstAction, "type"),
@@ -1282,6 +1288,50 @@ export class SlackSocketModeService {
         (Array.isArray(record.response_urls) && record.response_urls.length > 0),
       receivedAt: Date.now(),
     });
+  }
+
+  private async handleNativeImmediateInteraction(interaction: Record<string, unknown>): Promise<boolean> {
+    if (stringField(interaction, "interactionType") !== "block_actions") return false;
+    if (stringField(interaction, "actionId") !== "agent_factory_open_modal") return false;
+    if (stringField(interaction, "blockId") !== "agent_factory_actions") return false;
+
+    const triggerId = stringField(interaction, "triggerId");
+    if (!triggerId) {
+      log.warn("Slack agent factory modal action did not include a trigger_id", {
+        accountId: this.options.accountId,
+        channelId: stringField(interaction, "channelId"),
+      });
+      return true;
+    }
+
+    const modalViewFile = resolveAgentFactoryModalViewFile(interaction);
+    if (!modalViewFile) {
+      log.warn("Slack agent factory modal view file was not resolved", {
+        accountId: this.options.accountId,
+        channelId: stringField(interaction, "channelId"),
+      });
+      return false;
+    }
+
+    try {
+      const view = JSON.parse(readFileSync(modalViewFile, "utf8")) as Record<string, unknown>;
+      view.private_metadata = agentFactoryModalPrivateMetadata(interaction);
+      await this.webClient.viewsOpen({ triggerId, view });
+      log.info("Opened Slack agent factory modal through native immediate handler", {
+        accountId: this.options.accountId,
+        channelId: stringField(interaction, "channelId"),
+        modalViewFile,
+      });
+      return true;
+    } catch (error) {
+      log.warn("Slack native immediate modal handler failed; shell fallback skipped", {
+        accountId: this.options.accountId,
+        channelId: stringField(interaction, "channelId"),
+        modalViewFile,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
   }
 
   private normalizeWorkObjectEventEnvelope(envelope: SlackSocketEnvelope): Record<string, unknown> | null {
@@ -2306,6 +2356,66 @@ function compactInteractionPayload(input: Record<string, unknown>): Record<strin
     if (value !== undefined && value !== null && value !== "") output[key] = value;
   }
   return output;
+}
+
+function resolveAgentFactoryModalViewFile(interaction: Record<string, unknown>): string | undefined {
+  const triggers = dbListTriggers({ enabledOnly: true });
+  for (const trigger of triggers) {
+    if (trigger.topic !== "ravi.inbound.interaction") continue;
+    if (trigger.executionType !== "shell") continue;
+    if (!trigger.shellCommand?.includes("agent-factory/handler.ts")) continue;
+    if (!evaluateFilter(trigger.filter, interaction)) continue;
+
+    const modalViewFile = modalViewFileFromAgentFactoryShellCommand(trigger.shellCommand);
+    if (modalViewFile && existsSync(modalViewFile)) return modalViewFile;
+  }
+  return undefined;
+}
+
+function modalViewFileFromAgentFactoryShellCommand(command: string): string | undefined {
+  const handlerToken = matchShellToken(command, /agent-factory\/handler\.ts$/);
+  if (!handlerToken) return undefined;
+
+  const cwd = parseShellCd(command) ?? process.cwd();
+  const handlerPath = isAbsolute(handlerToken) ? handlerToken : resolvePathname(cwd, handlerToken);
+  return join(dirname(handlerPath), "modal-view.json");
+}
+
+function parseShellCd(command: string): string | undefined {
+  const match = command.match(/(?:^|\s|&&|\|\|)cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
+  return match?.[1] ? unquoteShellToken(match[1]) : undefined;
+}
+
+function matchShellToken(command: string, predicate: RegExp): string | undefined {
+  for (const match of command.matchAll(/"[^"]+"|'[^']+'|[^\s;&|]+/g)) {
+    const token = unquoteShellToken(match[0] ?? "");
+    if (predicate.test(token)) return token;
+  }
+  return undefined;
+}
+
+function unquoteShellToken(token: string): string {
+  const trimmed = token.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function agentFactoryModalPrivateMetadata(interaction: Record<string, unknown>): string {
+  return JSON.stringify(
+    compactInteractionPayload({
+      source: "slack.socket_mode.native_agent_factory",
+      accountId: stringField(interaction, "accountId"),
+      instanceId: stringField(interaction, "instanceId"),
+      envelopeId: stringField(interaction, "envelopeId"),
+      userId: stringField(interaction, "userId"),
+      sourceChannelId: stringField(interaction, "channelId"),
+      sourceMessageTs: stringField(interaction, "messageTs"),
+      targetMessageId: stringField(interaction, "targetMessageId"),
+      createdAt: new Date().toISOString(),
+    }),
+  );
 }
 
 function syncSlackSessionSubscription(
