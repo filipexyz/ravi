@@ -1949,3 +1949,51 @@ arvore e a arvore rejeitada eram exatamente `8704fff8b9086a4a2f352cfe345ee00280e
 A branch antiga `feat/routes-agent-first` e o SHA rejeitado permanecem
 preservados; nao houve reset, rebase, force, pacote, push, PR, merge ou operacao
 em VPS.
+
+### NO-GO de ROUTES para projecao e consistencia WAL
+
+A auditoria independente rejeitou o candidato
+`50ead276c15f527e5b68b211d845f5bd567d3aa5`. A sintaxe de `--fields`
+descartava tokens vazios, inclusive valor vazio e virgula final, em vez de
+falhar com o contrato de uso. Quando o campo escolhido era opcional e estava
+ausente, a projecao tambem podia serializar `{}` em vez de preservar a chave
+com `null`. Separadamente, `readRoutesSnapshot` executava as consultas em
+leituras SQLite independentes e podia combinar fatos de commits diferentes
+enquanto o daemon escrevia em WAL. Esse SHA e invalido para pacote ou
+promocao.
+
+A correcao preserva o comportamento legado de chamadas sem conjunto declarado,
+mas faz chamadas com `acceptedFields` rejeitarem qualquer nome vazio com
+`USAGE_ERROR`, exit 2 e a lista estavel de campos aceitos. O projetor de
+ROUTES materializa como `null` somente o campo opcional explicitamente
+selecionado; sem `--fields`, a omissao original e preservada. O leitor agora
+envolve descoberta de schema, settings, agentes, rotas, instancias, canais e
+tags na mesma transacao de leitura. Um teste nativo deterministico usa duas
+conexoes em WAL, confirma uma escrita entre a leitura de settings e as demais
+consultas e prova que o retorno inteiro permanece no snapshot anterior. Nao
+houve bancada externa, pacote, push, PR, merge ou operacao em VPS.
+
+### Recaptura local da correcao de projecao e WAL
+
+Na arvore final anterior ao commit, passaram 33 testes de ROUTES com 154
+assercoes, 11 testes do leitor em processo real com 60 assercoes e toda a
+suite do router com 160 testes e 512 assercoes. A fundacao de contrato passou
+11/30; Commands passou 26/114 e 11 processos reais/57; Agents passou 51/143.
+O SDK passou 77/314, OpenAPI 24/68 e o gerador Swift 24/98. Typecheck, build,
+segunda geracao byte-identica, drifts de TypeScript, dos dois OpenAPI e de
+Swift, quality runner sobre 36 caminhos e 275 specs, Biome, Markdown e
+`git diff --check` passaram. O host nao possui `swiftc`, portanto nao ha
+alegacao de compilacao Swift local.
+
+Uma captura combinada de registry, tools, gateway e skill gate foi descartada:
+97 casos passaram e um skill gate fora do delta ultrapassou o timeout fixo de
+cinco segundos. O mesmo caso isolado completou suas seis assercoes, mas levou
+cerca de 30 segundos; com o timeout nativo elevado para 30 segundos ele passou.
+Nao existe diferenca em `src/runtime` entre Commands `e91cfec9` e esta arvore,
+entao isso fica registrado como limitacao temporal preexistente do host, e nao
+como gate padrao verde. O primeiro quality test tambem perdeu um hook por 82
+milissegundos no limite de cinco segundos; a repeticao nativa com 30 segundos
+passou os 40 testes e 90 assercoes. As geracoes registraram falha da auditoria
+NATS opcional sem servidor local, mas retornaram exit 0; a prova dedicada de
+ROUTES com armadilha NATS permaneceu verde. Nao houve bancada externa, pacote,
+push, PR, merge ou operacao em VPS.

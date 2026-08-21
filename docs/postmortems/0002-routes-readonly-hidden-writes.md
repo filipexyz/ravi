@@ -169,3 +169,41 @@ introducing the snapshot API.
   candidate shared tree `8704fff8`. The old branch and rejected SHA remain
   preserved; no reset, rebase, force, package, push, PR, merge or VPS operation
   occurred.
+- 2026-08-21: independent review rejected candidate `50ead276`. Declared
+  `--fields` parsing silently removed empty names, so an empty value, interior
+  empty token, or trailing comma did not fail with the stable accepted field
+  set. A selected optional route field absent from storage could serialize as
+  `{}` rather than as an explicit `null`. The read-only snapshot also ran its
+  schema and data queries outside one read transaction, allowing WAL commits
+  to produce a result assembled from different moments. This SHA is
+  permanently invalid for package or promotion.
+- 2026-08-21: the correction rejects empty declared field names with
+  `USAGE_ERROR`, exit 2, and `acceptedFields`, while preserving legacy callers
+  that do not declare a field set. ROUTES materializes only an explicitly
+  selected absent optional field as `null`; without `--fields`, the original
+  omission is preserved. All schema and data reads now execute in
+  one SQLite read transaction. A deterministic native test uses a second WAL
+  connection to commit changed settings, agents, routes, and instances midway
+  through the reader and proves the returned snapshot contains only the
+  pre-commit values. No external testbench, package, push, PR, merge, or VPS
+  operation occurred.
+- 2026-08-21: the corrected pre-commit tree passed 33 ROUTES tests with 154
+  assertions, 11 real-process reader tests with 60 assertions, all 160 router
+  tests with 512 assertions, 11 foundation tests with 30 assertions, 26
+  Commands tests with 114 assertions, 11 Commands process tests with 57
+  assertions, and 51 Agents tests with 143 assertions. SDK passed 77/314,
+  OpenAPI 24/68, and Swift codegen 24/98. Typecheck, build, byte-identical
+  repeated generation, all SDK/OpenAPI/Swift drift checks, the quality runner
+  over 36 paths and 275 indexed specs, Biome, Markdown, and diff check passed.
+  This host has no `swiftc`, so local Swift compilation is not claimed.
+- 2026-08-21: a combined registry/tools/gateway/skill capture is not green
+  evidence: 97 tests passed and one unrelated skill-gate case exceeded its
+  fixed five-second timeout. The isolated case completed all six assertions
+  in about 30 seconds and passed with Bun's native 30-second timeout. No
+  `src/runtime` file differs from binding Commands `e91cfec9`, so this remains
+  an honestly recorded host timing limitation rather than a ROUTES regression.
+  The first quality test similarly exceeded a hook timeout by 82 milliseconds;
+  its native 30-second rerun passed all 40 tests and 90 assertions. Codegen
+  commands logged failed best-effort NATS audit connections while exiting zero;
+  the dedicated ROUTES NATS trap remained green. No external testbench,
+  package, push, PR, merge, or VPS operation occurred.

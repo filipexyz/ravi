@@ -9,4 +9,4 @@ export const SDK_VERSION = "0.2.1";
 export const REGISTRY_HASH = "sha256:e02607657dae8963cc5df6d37a9b56bb43c398fffc56e5e635f3a525aabc948f";
 
 /** Git SHA of the source tree at codegen time. `"unknown"` outside git. */
-export const GIT_SHA = "96f7bedb9429";
+export const GIT_SHA = "50ead276c15f";

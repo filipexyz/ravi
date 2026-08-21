@@ -108,6 +108,23 @@ describe("agent-first CLI foundation contract", () => {
     });
   });
 
+  it("rejects empty declared field tokens with the stable accepted field set", () => {
+    for (const fields of ["", "id,", ",id", "id,,name", "id,   ,name"]) {
+      let failure: unknown;
+      try {
+        pickFields([{ id: "main", name: "Main" }], fields, { acceptedFields: ["id", "name"] });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(expectedErrorToContractError("agents list", failure)?.envelope().error).toMatchObject({
+        code: "USAGE_ERROR",
+        message: "--fields must be a comma-separated list without empty field names.",
+        acceptedFields: ["id", "name"],
+      });
+    }
+  });
+
   it("keeps the projection API compatible for callers not migrated yet", () => {
     const rows = pickFields([{ id: "main", name: "Main" }], "id");
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
@@ -125,6 +142,22 @@ describe("agent-first CLI foundation contract", () => {
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
     expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id"]);
     expect(JSON.parse(JSON.stringify(rows))).toEqual([{ id: "review" }]);
+  });
+
+  it("can materialize only an explicitly selected absent field as null", () => {
+    const row = { id: "main", name: "Main" };
+    const fullRows = pickFields([row], undefined, {
+      acceptedFields: ["id", "name", "policy"],
+      absentSelectedFields: "null",
+    });
+    const projectedRows = pickFields([row], "policy", {
+      acceptedFields: ["id", "name", "policy"],
+      absentSelectedFields: "null",
+    });
+
+    expect(fullRows).toEqual([row]);
+    expect(JSON.parse(JSON.stringify(fullRows))).toEqual([{ id: "main", name: "Main" }]);
+    expect(JSON.parse(JSON.stringify(projectedRows))).toEqual([{ policy: null }]);
   });
 
   it("routes direct legacy fail termination through the top-level flush boundary", () => {

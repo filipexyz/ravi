@@ -20,6 +20,11 @@ export interface ReadOnlyRoutesSnapshot {
 
 type SqlRow = Record<string, unknown>;
 
+interface ReadRoutesSnapshotHooks {
+  /** Deterministic native-test seam; production callers leave this unset. */
+  afterSettingsRead?: () => void;
+}
+
 export class RoutesSnapshotSchemaError extends Error {
   readonly table: string;
   readonly missingColumns: string[];
@@ -295,7 +300,10 @@ function buildRouterConfig(
   };
 }
 
-export function readRoutesSnapshot(env: NodeJS.ProcessEnv = process.env): ReadOnlyRoutesSnapshot {
+export function readRoutesSnapshot(
+  env: NodeJS.ProcessEnv = process.env,
+  hooks: ReadRoutesSnapshotHooks = {},
+): ReadOnlyRoutesSnapshot {
   const dbPath = join(getRaviStateDir(env), "ravi.db");
   if (!existsSync(dbPath)) {
     return {
@@ -317,21 +325,24 @@ export function readRoutesSnapshot(env: NodeJS.ProcessEnv = process.env): ReadOn
   const database = new Database(dbPath, { readonly: true, create: false });
   try {
     database.exec("PRAGMA busy_timeout = 1000");
-    const tables = tableNames(database);
-    const settings = readSettings(database, tables);
-    const agents = readAgents(database, tables);
-    const routes = readRoutes(database, tables);
-    const instances = readInstances(database, tables);
-    const channels = readChannels(database, tables);
-    return {
-      dbPath,
-      databaseExists: true,
-      routes,
-      instances,
-      channels,
-      tags: readRouteTags(database, tables),
-      routerConfig: buildRouterConfig(agents, routes, instances, channels, settings),
-    };
+    return database.transaction(() => {
+      const tables = tableNames(database);
+      const settings = readSettings(database, tables);
+      hooks.afterSettingsRead?.();
+      const agents = readAgents(database, tables);
+      const routes = readRoutes(database, tables);
+      const instances = readInstances(database, tables);
+      const channels = readChannels(database, tables);
+      return {
+        dbPath,
+        databaseExists: true,
+        routes,
+        instances,
+        channels,
+        tags: readRouteTags(database, tables),
+        routerConfig: buildRouterConfig(agents, routes, instances, channels, settings),
+      };
+    })();
   } finally {
     database.close();
   }

@@ -650,7 +650,7 @@ function buildRouteListPayload(
       tags: listRouteTags(route.id, snapshot),
     })),
     fields,
-    { acceptedFields: ROUTE_LIST_FIELDS },
+    { acceptedFields: ROUTE_LIST_FIELDS, absentSelectedFields: "null" },
   );
   return {
     instance: name ?? null,

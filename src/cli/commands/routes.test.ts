@@ -1031,6 +1031,59 @@ describe("instances/routes agent-first contract", () => {
     ]);
   });
 
+  it("rejects empty --fields tokens with the stable route field contract", () => {
+    for (const fields of ["", "pattern,", ",pattern", "pattern,,agent", "pattern,   ,agent"]) {
+      const thrown = captureThrown(() =>
+        new RoutesCommands().list(undefined, true, undefined, undefined, undefined, fields),
+      );
+
+      expect((thrown as { code?: string }).code).toBe("USAGE_ERROR");
+      expect((thrown as { exitCode?: number }).exitCode).toBe(2);
+      expect((thrown as { details?: { acceptedFields?: string[] } }).details?.acceptedFields).toEqual([
+        "id",
+        "accountId",
+        "pattern",
+        "agent",
+        "priority",
+        "policy",
+        "session",
+        "channel",
+        "dmScope",
+        "tags",
+      ]);
+    }
+  });
+
+  it("projects a requested absent optional route field as explicit null", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales", priority: 7 }];
+
+    const payload = captureJson(() => {
+      new RoutesCommands().list(undefined, true, undefined, undefined, undefined, "policy");
+    });
+
+    expect(payload.items).toEqual([{ policy: null }]);
+    expect(payload.routes).toEqual([{ policy: null }]);
+  });
+
+  it("preserves absent optional route fields when compact projection is not requested", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales", priority: 7 }];
+
+    const payload = captureJson(() => {
+      new RoutesCommands().list(undefined, true);
+    });
+    const item = (payload.items as Array<Record<string, unknown>>)[0];
+
+    expect(item).toEqual({
+      id: 1,
+      accountId: "main",
+      pattern: "5511*",
+      agent: "sales",
+      priority: 7,
+      tags: [],
+    });
+    expect(Object.hasOwn(item, "policy")).toBe(false);
+  });
+
   it("returns typed pagination causes and preserves the next-page command", () => {
     routes = [
       { id: 1, accountId: "main", pattern: "1", agent: "main" },

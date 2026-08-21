@@ -284,12 +284,97 @@ describe("readRoutesSnapshot", () => {
     }
   });
 
+  it("keeps every route query on one WAL snapshot while a concurrent writer commits", () => {
+    const stateDir = createStateDir();
+    const database = new Database(join(stateDir, "ravi.db"));
+    try {
+      database.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA wal_autocheckpoint = 0;
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE agents (id TEXT PRIMARY KEY, cwd TEXT NOT NULL);
+        CREATE TABLE routes (id INTEGER PRIMARY KEY, pattern TEXT, account_id TEXT, agent_id TEXT, priority INTEGER);
+        CREATE TABLE instances (name TEXT PRIMARY KEY, channel TEXT, agent TEXT);
+        INSERT INTO settings VALUES ('defaultAgent', 'before');
+        INSERT INTO agents VALUES ('before', '/agents/before');
+        INSERT INTO agents VALUES ('after', '/agents/after');
+        INSERT INTO instances VALUES ('main', 'whatsapp', 'before');
+        INSERT INTO routes VALUES (1, 'before-pattern', 'main', 'before', 1);
+      `);
+
+      let writerCommitted = false;
+      let hookCalls = 0;
+      const snapshot = readRoutesSnapshot(
+        { ...process.env, RAVI_STATE_DIR: stateDir },
+        {
+          afterSettingsRead: () => {
+            hookCalls += 1;
+            database.transaction(() => {
+              database.prepare("UPDATE settings SET value = 'after' WHERE key = 'defaultAgent'").run();
+              database.prepare("UPDATE agents SET cwd = '/agents/after-committed' WHERE id = 'after'").run();
+              database.prepare("UPDATE instances SET agent = 'after' WHERE name = 'main'").run();
+              database.prepare("UPDATE routes SET pattern = 'after-pattern', agent_id = 'after' WHERE id = 1").run();
+            })();
+            writerCommitted = true;
+          },
+        },
+      );
+
+      expect(hookCalls).toBe(1);
+      expect(writerCommitted).toBe(true);
+      expect(database.prepare("SELECT value FROM settings WHERE key = 'defaultAgent'").get()).toEqual({
+        value: "after",
+      });
+      expect(database.prepare("SELECT pattern, agent_id FROM routes WHERE id = 1").get()).toEqual({
+        pattern: "after-pattern",
+        agent_id: "after",
+      });
+      expect(snapshot.routes).toEqual([expect.objectContaining({ id: 1, pattern: "before-pattern", agent: "before" })]);
+      expect(snapshot.instances).toEqual([expect.objectContaining({ name: "main", agent: "before" })]);
+      expect(snapshot.routerConfig.defaultAgent).toBe("before");
+      expect(snapshot.routerConfig.accountAgents).toEqual({ main: "before" });
+      expect(snapshot.routerConfig.agents.after?.cwd).toBe("/agents/after");
+    } finally {
+      database.close();
+    }
+  });
+
   it("keeps routes list from creating state through the real CLI process", () => {
     const stateDir = createStateDir();
     const result = runRoutesCli(stateDir, ["list", "--json"]);
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(result.stdout)).toMatchObject({ total: 0, items: [], routes: [] });
+    expect(readdirSync(stateDir)).toEqual([]);
+  });
+
+  it("rejects malformed route field lists through the real CLI with acceptedFields", () => {
+    const stateDir = createStateDir();
+    for (const fields of ["", "pattern,,agent", "pattern,"]) {
+      const result = runRoutesCli(stateDir, ["list", "--json", "--fields", fields]);
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        success: false,
+        op: "routes list",
+        error: {
+          code: "USAGE_ERROR",
+          acceptedFields: [
+            "id",
+            "accountId",
+            "pattern",
+            "agent",
+            "priority",
+            "policy",
+            "session",
+            "channel",
+            "dmScope",
+            "tags",
+          ],
+        },
+      });
+    }
     expect(readdirSync(stateDir)).toEqual([]);
   });
 
@@ -375,11 +460,13 @@ describe("readRoutesSnapshot", () => {
     const trap = startNatsConnectionTrap(createStateDir());
     const natsEnv = { NATS_URL: trap.natsUrl };
     let list;
+    let optionalFieldList;
     let humanList;
     let show;
     let explain;
     try {
       list = runRoutesCli(stateDir, ["list", "main", "--json", "--fields", "pattern,agent,channel"], natsEnv);
+      optionalFieldList = runRoutesCli(stateDir, ["list", "main", "--json", "--fields", "policy"], natsEnv);
       humanList = runRoutesCli(stateDir, ["list", "main"], natsEnv);
       show = runRoutesCli(stateDir, ["show", "main", "123@g.us", "--json"], natsEnv);
       explain = runRoutesCli(stateDir, ["explain", "main", "group:123", "--channel", "WHATSAPP", "--json"], natsEnv);
@@ -391,6 +478,8 @@ describe("readRoutesSnapshot", () => {
 
     expect(list).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(list.stdout).items).toEqual([{ pattern: "123@g.us", agent: "sales", channel: "whatsapp" }]);
+    expect(optionalFieldList).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(optionalFieldList.stdout).items).toEqual([{ policy: null }]);
     expect(humanList).toMatchObject({ status: 0, stderr: "" });
     expect(humanList.stdout).toContain("123@g.us");
     expect(humanList.stdout).toContain("sales");

@@ -117,6 +117,8 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
 export interface PickFieldsOptions {
   /** Stable public field set supplied by the owning domain. */
   acceptedFields: readonly string[];
+  /** Serialize an explicitly selected but absent field as JSON null. */
+  absentSelectedFields?: "omit" | "null";
   /**
    * `legacy-compatible` keeps non-selected fields non-enumerable so strict
    * pre-serialization @Returns validators used by older domains still see the
@@ -126,15 +128,16 @@ export interface PickFieldsOptions {
   projection?: "legacy-compatible" | "serialized-only";
 }
 
-function parseRequestedFields(fields?: string): string[] {
-  return [
-    ...new Set(
-      (fields ?? "")
-        .split(",")
-        .map((key) => key.trim())
-        .filter(Boolean),
-    ),
-  ];
+function parseRequestedFields(fields?: string, acceptedFields?: readonly string[]): string[] {
+  if (fields === undefined) return [];
+  const tokens = fields.split(",");
+  if (acceptedFields && tokens.some((key) => key.trim().length === 0)) {
+    throw cliUsageError("--fields must be a comma-separated list without empty field names.", {
+      suggestedAction: "Retry with only non-empty fields listed in acceptedFields",
+      details: { acceptedFields: [...new Set(acceptedFields)] },
+    });
+  }
+  return [...new Set(tokens.map((key) => key.trim()).filter(Boolean))];
 }
 
 function validateRequestedFields(keys: readonly string[], acceptedFields: readonly string[]): string[] {
@@ -155,16 +158,21 @@ function validateRequestedFields(keys: readonly string[], acceptedFields: readon
  * depend on the first result row and also works for empty result sets.
  */
 export function pickFields<T>(items: T[], fields?: string, options?: PickFieldsOptions): T[] {
-  const keys = parseRequestedFields(fields);
+  const keys = parseRequestedFields(fields, options?.acceptedFields);
   if (keys.length === 0) return items;
   if (options) validateRequestedFields(keys, options.acceptedFields);
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const picked: Record<string, unknown> = {};
     const requested = new Set(keys);
+    if (options?.absentSelectedFields === "null") {
+      for (const key of keys) {
+        if (!Object.hasOwn(record, key) || record[key] === undefined) picked[key] = null;
+      }
+    }
     for (const key of Object.keys(record)) {
       if (requested.has(key)) {
-        picked[key] = record[key];
+        if (!Object.hasOwn(picked, key)) picked[key] = record[key];
         continue;
       }
       if (options?.projection === "serialized-only") continue;
