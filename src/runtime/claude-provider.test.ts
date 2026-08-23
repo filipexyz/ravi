@@ -307,6 +307,109 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
+  it("does not emit Claude assistant billing errors as agent messages", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        error: "rate_limit",
+        uuid: "claude-rate-limit",
+        session_id: "claude-session-rate-limit",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "You're out of extra usage · resets Aug 24 at 6am (America/Sao_Paulo)",
+            },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "claude-session-rate-limit",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(findEventsByType(events, "assistant.message")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      recoverable: true,
+      error: expect.stringContaining("rate_limit"),
+      rawEvent: {
+        type: "assistant",
+        error: "rate_limit",
+      },
+    });
+  });
+
+  it("treats a nominal success result with is_error as a failed turn", async () => {
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        api_error_status: 429,
+        result: "You're out of extra usage",
+        session_id: "claude-session-error-success",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({
+        recoverable: true,
+        error: expect.stringContaining("http_429"),
+      }),
+    ]);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {

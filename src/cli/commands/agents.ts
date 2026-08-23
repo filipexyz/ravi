@@ -715,6 +715,9 @@ export class AgentsCommands {
     const normalizedProvider = provider?.trim() || undefined;
     const normalizedModel = model?.trim() || undefined;
     const normalizedModelPreset = modelPreset?.trim() || undefined;
+    if (!normalizedProvider && !normalizedModelPreset) {
+      fail("--provider is required when creating an agent without --model-preset");
+    }
     if (normalizedModel && normalizedModelPreset) {
       fail("--model and --model-preset are mutually exclusive. Provide only one.");
     }
@@ -1108,10 +1111,8 @@ export class AgentsCommands {
     if (key === "model") {
       validateAgentModelValue(agent.provider, value);
     }
+    const changesRuntimeProvider = key === "provider" && (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID) !== value;
     if (key === "provider") {
-      if (agent.model) {
-        validateAgentModelValue(value, agent.model);
-      }
       // A provider write must stay compatible with any selected preset.
       if (agent.modelPresetId) {
         const preset = getRuntimeModelPreset(agent.modelPresetId);
@@ -1207,7 +1208,9 @@ export class AgentsCommands {
           ? agent.modelPresetId
             ? { model: parsedValue as string, modelPresetId: null }
             : { model: parsedValue as string }
-          : { [key]: parsedValue };
+          : key === "provider" && changesRuntimeProvider && agent.model
+            ? { provider: parsedValue as string, model: null }
+            : { [key]: parsedValue };
       updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
@@ -1226,6 +1229,9 @@ export class AgentsCommands {
             typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
           }`,
         );
+        if (key === "provider" && changesRuntimeProvider && agent.model) {
+          console.log(`  Model cleared: ${agent.model} (select a model compatible with ${parsedValue})`);
+        }
         printAgentSessionOverrideSummary(payload.sessionOverrides);
       }
       emitConfigChanged();

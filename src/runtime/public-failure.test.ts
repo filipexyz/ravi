@@ -56,9 +56,6 @@ describe("public runtime failures", () => {
     expect(formatUserFacingTurnFailure("Runtime provider requires full access for this agent.")).toBe(
       "Error: Runtime provider requires full access for this agent.",
     );
-    expect(formatUserFacingTurnFailure("Usage limit reached. Try again after 14:30.")).toBe(
-      "Error: Usage limit reached. Try again after 14:30.",
-    );
     expect(formatUserFacingTurnFailure("See https://status.openai.com for updates.")).toBe(
       "Error: See https://status.openai.com for updates.",
     );
@@ -71,17 +68,20 @@ describe("public runtime failures", () => {
     expect(formatUserFacingTurnFailure("Account cannot call /v1/responses; verify access.")).toBe(
       "Error: Account cannot call /v1/responses; verify access.",
     );
-    expect(formatUserFacingTurnFailure("RateLimitError: Usage limit reached. Try again later.")).toBe(
-      "Error: RateLimitError: Usage limit reached. Try again later.",
-    );
-    expect(formatUserFacingTurnFailure("AuthenticationError: Sign in again to continue.")).toBe(
-      "Error: AuthenticationError: Sign in again to continue.",
-    );
-    expect(formatUserFacingTurnFailure("PermissionError: This model requires organization verification.")).toBe(
-      "Error: PermissionError: This model requires organization verification.",
-    );
-    expect(formatUserFacingTurnFailure("Organization acme is not defined for this account.")).toBe(
-      "Error: Organization acme is not defined for this account.",
+  });
+
+  it.each([
+    "Usage limit reached. Try again after 14:30.",
+    "RateLimitError: Usage limit reached. Try again later.",
+    "AuthenticationError: Sign in again to continue.",
+    "PermissionError: This model requires organization verification.",
+    "Organization acme is not defined for this account.",
+    "Claude provider error (rate_limit): You're out of extra usage · resets Aug 24 at 6am",
+    "Claude provider error (oauth_org_not_allowed)",
+    "Claude provider error (billing_error)",
+  ])("hides provider account and billing detail: %s", (raw) => {
+    expect(formatUserFacingTurnFailure(raw)).toBe(
+      "Error: The agent is temporarily unavailable. Please try again later.",
     );
   });
 

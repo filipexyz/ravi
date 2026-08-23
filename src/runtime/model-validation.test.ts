@@ -19,6 +19,18 @@ describe("validateRuntimeModelSelector", () => {
     expect(validateRuntimeModelSelector("codex", "   ").ok).toBe(false);
   });
 
+  it("rejects model families that belong to another built-in provider", () => {
+    expect(validateRuntimeModelSelector("claude", "gpt-5.6-sol")).toEqual({
+      ok: false,
+      error: "Invalid Claude model selector: 'gpt-5.6-sol' belongs to the Codex/OpenAI model family",
+    });
+    expect(validateRuntimeModelSelector("codex", "sonnet")).toEqual({
+      ok: false,
+      error: "Invalid Codex model selector: 'sonnet' belongs to the Claude model family",
+    });
+    expect(validateRuntimeModelSelector("claude", "sonnet")).toEqual({ ok: true });
+  });
+
   it("continues rejecting Pi provider-only selectors", () => {
     expect(validateRuntimeModelSelector("pi", "kimi-coding").ok).toBe(false);
     expect(validateRuntimeModelSelector("pi", "kimi-coding/kimi-for-coding")).toEqual({ ok: true });

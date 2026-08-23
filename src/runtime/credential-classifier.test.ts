@@ -74,6 +74,44 @@ describe("runtime credential classifier", () => {
     expect(signal.retryableByCredential).toBe(false);
   });
 
+  it("classifies Claude SDK assistant error codes", () => {
+    const rateLimit = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      providerCode: "rate_limit",
+      message: "You're out of extra usage · resets later",
+      source: "sdk-error",
+    });
+    const authentication = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      providerCode: "authentication_failed",
+      source: "sdk-error",
+    });
+    const organization = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      providerCode: "oauth_org_not_allowed",
+      source: "sdk-error",
+    });
+
+    expect(rateLimit).toMatchObject({
+      kind: "rate_limited",
+      confidence: "high",
+      retryableByCredential: true,
+    });
+    expect(authentication).toMatchObject({
+      kind: "auth_invalid",
+      scope: "credential",
+      retryableByCredential: true,
+    });
+    expect(organization).toMatchObject({
+      kind: "permission_denied",
+      scope: "organization",
+      retryableByCredential: true,
+    });
+  });
+
   it("classifies Codex context window exhaustion as a request context limit", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

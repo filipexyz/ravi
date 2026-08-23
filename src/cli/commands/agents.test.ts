@@ -316,15 +316,38 @@ describe("AgentsCommands set model validation", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
-  it("rejects switching to Pi when the existing model selector is provider-only", async () => {
-    currentAgent = { id: "dev", cwd: "/tmp/dev", model: "kimi-coding" };
+  it("clears the previous provider model when switching providers", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "codex", model: "gpt-5.6-sol" };
     const commands = new AgentsCommands();
 
-    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow(
-      "Invalid Pi model selector: 'kimi-coding' is a provider id",
-    );
+    await commands.set("dev", "provider", "claude", true);
 
-    expect(updateAgentCalls).toHaveLength(0);
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          provider: "claude",
+          model: null,
+        },
+      },
+    ]);
+    expect(currentAgent).toMatchObject({ provider: "claude", model: null });
+  });
+
+  it("keeps a model when only making the effective default provider explicit", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", model: "gpt-5.6-sol" };
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "provider", "codex", true);
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          provider: "codex",
+        },
+      },
+    ]);
   });
 
   it("accepts Pi provider/model selectors", async () => {
@@ -410,6 +433,17 @@ describe("AgentsCommands set model validation", () => {
 
     expect(() => commands.create("dev", "/tmp/dev", "pi", "kimi-coding", true, true)).toThrow(
       "Invalid Pi model selector: 'kimi-coding' is a provider id",
+    );
+
+    expect(createAgentCalls).toHaveLength(0);
+  });
+
+  it("requires an explicit provider when creating an agent without a model preset", () => {
+    currentAgent = null;
+    const commands = new AgentsCommands();
+
+    expect(() => commands.create("dev", "/tmp/dev", undefined, undefined, true, true)).toThrow(
+      "--provider is required when creating an agent without --model-preset",
     );
 
     expect(createAgentCalls).toHaveLength(0);
@@ -630,7 +664,7 @@ describe("AgentsCommands model preset mutations", () => {
   });
 
   it("clears the preset when a direct model is written", async () => {
-    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", modelPresetId: "fast-sonnet" };
     const commands = new AgentsCommands();
 
     await commands.set("dev", "model", "sonnet", true);
