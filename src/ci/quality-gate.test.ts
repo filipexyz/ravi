@@ -327,6 +327,13 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("accepts the focused outbound consumer regression for channel delivery changes", () => {
+    const result = runCoverageGate(["src/channels/outbound-consumer.ts", "src/channels/outbound-consumer.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/channels/"]);
+  });
+
   it("requires a focused native channel test in the diff", () => {
     const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);

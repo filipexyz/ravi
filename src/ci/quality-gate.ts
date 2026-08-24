@@ -25,6 +25,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/": [
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
+    "src/channels/outbound-consumer.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
