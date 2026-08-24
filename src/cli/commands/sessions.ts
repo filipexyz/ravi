@@ -14,7 +14,9 @@ import {
   declareCommandReturns,
   pagedItemsReturnSchema,
   sessionGoalReturnSchema,
+  sessionRecapReturnSchema,
 } from "./operational-return-schemas.js";
+import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -450,6 +452,10 @@ export function buildCurrentSessionReadCommand(): string {
   return "ravi sessions read --json";
 }
 
+export function buildCurrentSessionRecapCommand(): string {
+  return "ravi sessions recap --json";
+}
+
 export function buildCurrentSessionCreateThreadCommand(message = "<initial-message>", model = "<model>"): string {
   return `ravi sessions create-thread ${quoteCliArg(message)} --model ${model}`;
 }
@@ -471,7 +477,7 @@ export function buildSessionActionsPromptHint(): string {
     `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
     `To create a Slack work branch, run \`${buildCurrentSessionCreateThreadCommand()}\`; omit \`--model\` to inherit the normal model.`,
     `Inside a Slack thread, close silently with \`${buildCurrentSessionCloseThreadCommand()}\` or return a result with \`${buildCurrentSessionCloseThreadCommand("<result>")}\`.`,
-    "For reactions, stickers, media, and transcript reads, follow the command-specific `usage.tools` constraints.",
+    "For reactions, stickers, media, transcript reads, and recaps, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
   ].join("\n");
 }
@@ -563,6 +569,18 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Do not expose raw internal transcript details unless needed.",
       ],
       promptHint: "Use `ravi sessions read --json` to inspect recent session context.",
+    },
+    recapSession: {
+      id: "session.recap",
+      tool: "ravi sessions recap",
+      command: buildCurrentSessionRecapCommand(),
+      useWhen: "Pull a bounded session recap instead of dumping the transcript or reading MEMORY.md.",
+      constraints: [
+        "Use `--json` for the structured recap object.",
+        "Recap is computed on read and does not invent missing summary, pinned, or decision fields.",
+        "A chat attach is not permission to recap another session.",
+      ],
+      promptHint: "Use `ravi sessions recap --json` for a bounded projection of this session.",
     },
     createThread: {
       id: "thread.create",
@@ -1033,6 +1051,14 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
         promptHint: toolHints.readSession.promptHint,
         constraints: toolHints.readSession.constraints,
       },
+      {
+        id: "session.recap",
+        status: "available",
+        description: "Compute a bounded recap of this session.",
+        command: buildCurrentSessionRecapCommand(),
+        promptHint: toolHints.recapSession.promptHint,
+        constraints: toolHints.recapSession.constraints,
+      },
     ],
     recentOwnMessages: {
       total: recentOwnMessages.total,
@@ -1177,6 +1203,127 @@ function printNormalizedMessages(messages: NormalizedTranscriptMessage[]): void 
 function parseReadMessageCount(countStr: string | undefined): number {
   const count = Number.parseInt(countStr ?? "20", 10);
   return Number.isFinite(count) && count > 0 ? count : 20;
+}
+
+type SessionReadTranscript = {
+  messages: NormalizedTranscriptMessage[];
+  totalMessages: number;
+  transcript: {
+    available: boolean;
+    source?: string;
+    reason?: string;
+    sessionName?: string;
+    chatId?: string;
+    chatIdVariants?: string[];
+    agentId?: string;
+    providerSessionId?: string;
+    path?: string;
+    runtimeProvider?: string | null;
+  };
+};
+
+function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): SessionReadTranscript {
+  const sessionLabel = session.name ?? session.sessionKey;
+  const chatHistory = getRecentHistory(sessionLabel, maxMessages);
+  if (chatHistory.length > 0) {
+    const messages = chatHistory.map(normalizeChatDbMessage);
+    return {
+      messages,
+      totalMessages: countHistory(sessionLabel),
+      transcript: {
+        available: true,
+        source: "chat-db",
+        sessionName: sessionLabel,
+      },
+    };
+  }
+
+  const chatIdVariants = resolveSessionChatIdVariants(session);
+  const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
+  if (chatDbByChat.length > 0) {
+    const messages = chatDbByChat.map(normalizeChatDbMessage);
+    return {
+      messages,
+      totalMessages: countHistoryByChatIds(chatIdVariants, session.agentId),
+      transcript: {
+        available: true,
+        source: "chat-db-chat-id",
+        chatId: resolveSessionChatId(session),
+        chatIdVariants,
+        agentId: session.agentId,
+      },
+    };
+  }
+
+  const messageMetadata = readMessageMetadataFallback(session, maxMessages);
+  if (messageMetadata.length > 0) {
+    return {
+      messages: messageMetadata,
+      totalMessages: messageMetadata.length,
+      transcript: {
+        available: true,
+        source: "message-metadata",
+        chatId: resolveSessionChatId(session),
+        chatIdVariants,
+      },
+    };
+  }
+
+  const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
+  if (!providerSessionId) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: {
+        available: false,
+        reason: "No runtime session",
+      },
+    };
+  }
+
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const agent = loadRouterConfig().agents[session.agentId];
+  const transcript = locateRuntimeTranscript({
+    runtimeProvider: session.runtimeProvider,
+    providerSessionId,
+    agentCwd: session.agentCwd,
+    remote: agent?.remote,
+  });
+
+  if (!transcript.path) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: {
+        available: false,
+        reason: transcript.reason ?? "Transcript not found",
+        providerSessionId,
+      },
+    };
+  }
+
+  const raw = readFileSync(transcript.path, "utf-8");
+  const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
+  const recent = messages.slice(-maxMessages);
+  return {
+    messages: recent,
+    totalMessages: messages.length,
+    transcript: {
+      available: true,
+      source: "provider-transcript",
+      path: transcript.path,
+      providerSessionId,
+      runtimeProvider: session.runtimeProvider ?? null,
+    },
+  };
+}
+
+function loadSessionGoalSafe(sessionKey: string): ReturnType<typeof getSessionGoal> {
+  try {
+    return getSessionGoal(sessionKey);
+  } catch {
+    return null;
+  }
 }
 
 function extractExternalMessageId(value: string | null | undefined): string | null {
@@ -4641,152 +4788,121 @@ export class SessionCommands {
 
     const maxMessages = parseReadMessageCount(countStr);
     const sessionLabel = session.name ?? target;
-    const chatHistory = getRecentHistory(sessionLabel, maxMessages);
-    if (chatHistory.length > 0) {
-      const messages = chatHistory.map(normalizeChatDbMessage);
-      const totalMessages = countHistory(sessionLabel);
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "chat-db",
-            sessionName: sessionLabel,
-          },
-          messages,
-          totalMessages,
-          count: messages.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} messages\n`);
-      printNormalizedMessages(messages);
-      return;
-    }
-
-    const chatIdVariants = resolveSessionChatIdVariants(session);
-    const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
-    if (chatDbByChat.length > 0) {
-      const messages = chatDbByChat.map(normalizeChatDbMessage);
-      const totalMessages = countHistoryByChatIds(chatIdVariants, session.agentId);
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "chat-db-chat-id",
-            chatId: resolveSessionChatId(session),
-            chatIdVariants,
-            agentId: session.agentId,
-          },
-          messages,
-          totalMessages,
-          count: messages.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} same-chat messages\n`);
-      printNormalizedMessages(messages);
-      return;
-    }
-
-    const messageMetadata = readMessageMetadataFallback(session, maxMessages);
-    if (messageMetadata.length > 0) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "message-metadata",
-            chatId: resolveSessionChatId(session),
-            chatIdVariants,
-          },
-          messages: messageMetadata,
-          totalMessages: messageMetadata.length,
-          count: messageMetadata.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messageMetadata.length} message metadata entries\n`);
-      printNormalizedMessages(messageMetadata);
-      return;
-    }
-
-    const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
-    if (!providerSessionId) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: false,
-            reason: "No runtime session",
-          },
-          messages: [],
-          totalMessages: 0,
-          count: 0,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-      console.log("⚠️  No runtime session — no history available");
-      return;
-    }
-
-    const { readFileSync } = require("node:fs");
-    const agent = loadRouterConfig().agents[session.agentId];
-    const transcript = locateRuntimeTranscript({
-      runtimeProvider: session.runtimeProvider,
-      providerSessionId,
-      agentCwd: session.agentCwd,
-      remote: agent?.remote,
-    });
-
-    if (!transcript.path) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: false,
-            reason: transcript.reason ?? "Transcript not found",
-            providerSessionId,
-          },
-          messages: [],
-          totalMessages: 0,
-          count: 0,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-      console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
-      return;
-    }
-
-    const raw = readFileSync(transcript.path, "utf-8") as string;
-    const _lines = raw.trim().split("\n").filter(Boolean);
-
-    const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
-
-    const recent = messages.slice(-maxMessages);
+    const loaded = loadSessionReadTranscript(session, maxMessages);
     if (structuredResult) {
       const payload = {
         session: buildSessionJson(session),
-        transcript: {
-          available: true,
-          source: "provider-transcript",
-          path: transcript.path,
-          providerSessionId,
-          runtimeProvider: session.runtimeProvider ?? null,
-        },
-        messages: recent,
-        totalMessages: messages.length,
-        count: recent.length,
+        transcript: loaded.transcript,
+        messages: loaded.messages,
+        totalMessages: loaded.totalMessages,
+        count: loaded.messages.length,
       };
       return returnStructuredResult(payload, asJson);
     }
 
-    console.log(`\n💬 ${sessionLabel} — last ${recent.length} of ${messages.length} provider transcript messages\n`);
-    printNormalizedMessages(recent);
+    if (!loaded.transcript.available) {
+      const reason = loaded.transcript.reason ?? "No history available";
+      console.log(reason === "No runtime session" ? "⚠️  No runtime session — no history available" : `⚠️  ${reason}`);
+      return;
+    }
+
+    const source = loaded.transcript.source;
+    const suffix =
+      source === "chat-db-chat-id"
+        ? " same-chat messages"
+        : source === "message-metadata"
+          ? " message metadata entries"
+          : source === "provider-transcript"
+            ? " provider transcript messages"
+            : " messages";
+    if (source === "message-metadata") {
+      console.log(`\n💬 ${sessionLabel} — last ${loaded.messages.length}${suffix}\n`);
+    } else {
+      console.log(`\n💬 ${sessionLabel} — last ${loaded.messages.length} of ${loaded.totalMessages}${suffix}\n`);
+    }
+    printNormalizedMessages(loaded.messages);
+  }
+
+  @Command({
+    name: "recap",
+    description: "Compute a bounded recap of a session (identity, goal, recent tail)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "recap",
+    risk: "low",
+  })
+  recap(
+    @Arg("nameOrKey", {
+      description: "Optional session name/key override (defaults to current session)",
+      required: false,
+    })
+    nameOrKey?: string,
+    @Option({
+      flags: "-n, --count <count>",
+      description: "Recent user/assistant messages to include (default: 8, max: 40)",
+    })
+    countStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const structuredResult = shouldReturnStructuredResult(asJson);
+    const target = nameOrKey?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions recap --json inside a session, or ravi sessions recap <name> --json outside one.",
+      );
+      return;
+    }
+
+    const session = this.resolveRecapTarget(target, asJson);
+    if (!session) return;
+
+    const tailLimit = parseSessionRecapTailCount(countStr);
+    const loaded = loadSessionReadTranscript(session, tailLimit);
+    const recap = buildSessionRecap({
+      session,
+      goal: loadSessionGoalSafe(session.sessionKey),
+      tailLimit,
+      history: {
+        available: loaded.transcript.available,
+        ...(loaded.transcript.source ? { source: loaded.transcript.source } : {}),
+        ...(loaded.transcript.reason ? { reason: loaded.transcript.reason } : {}),
+        totalMessages: loaded.totalMessages,
+        messages: loaded.messages.map((message) => ({
+          role: message.role,
+          text: message.text,
+          time: message.time,
+        })),
+      },
+    });
+
+    if (structuredResult) {
+      return returnStructuredResult(recap, asJson);
+    }
+
+    console.log(formatSessionRecap(recap));
+    return recap;
+  }
+
+  private resolveRecapTarget(nameOrKey: string, asJson?: boolean): SessionEntry | null {
+    let session = resolveSession(nameOrKey);
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+
+    if (!session) {
+      failSessionNotFound("sessions recap", nameOrKey, asJson);
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey)) {
+      failSessionNotFound("sessions recap", nameOrKey, asJson);
+    }
+
+    return session;
   }
 
   private readMessageMeta(session: SessionEntry, requestedMessageId: string): unknown {
@@ -6416,6 +6532,7 @@ declareCommandReturns(SessionCommands, {
   list: pagedItemsReturnSchema,
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,
+  recap: sessionRecapReturnSchema,
   rename: commandEnvelopeReturnSchema,
   reset: commandEnvelopeReturnSchema,
   send: sessionSendReturnSchema,

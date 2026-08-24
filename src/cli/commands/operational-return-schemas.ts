@@ -2737,6 +2737,60 @@ export const sessionGoalReturnSchema = z
   })
   .strict();
 
+const sessionRecapIdentitySchema = z
+  .object({
+    sessionKey: z.string(),
+    name: z.string().nullable(),
+    displayName: z.string().nullable(),
+    agentId: z.string(),
+    compactionCount: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const sessionRecapRecentItemSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    text: z.string(),
+    textTruncated: z.boolean(),
+    time: z.string(),
+  })
+  .strict();
+
+export const sessionRecapReturnSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    computed: z.literal(true),
+    persisted: z.literal(false),
+    session: sessionRecapIdentitySchema,
+    goal: sessionGoalObjectSchema.nullable(),
+    summary: z.string().nullable(),
+    pinned: z.array(z.string()),
+    decisions: z.array(z.string()),
+    openLoops: z.array(z.string()),
+    recent: z
+      .object({
+        available: z.boolean(),
+        source: z.string().nullable(),
+        reason: z.string().nullable(),
+        limit: z.number().int().nonnegative(),
+        totalMessages: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        omittedTools: z.literal(true),
+        items: z.array(sessionRecapRecentItemSchema),
+      })
+      .strict(),
+    sources: z
+      .object({
+        sessionRow: z.literal(true),
+        goal: z.boolean(),
+        history: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
 // ============================================================================
 // Runtime model presets
 // ============================================================================

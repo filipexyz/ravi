@@ -58893,6 +58893,348 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRecapInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "description": "Recent user/assistant messages to include (default: 8, max: 40)",
+        "type": "string"
+      },
+      "nameOrKey": {
+        "description": "Optional session name/key override (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRecapReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "computed": {
+        "const": true,
+        "type": "boolean"
+      },
+      "decisions": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "goal": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "blockedReason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "goalId": {
+                "type": "string"
+              },
+              "objective": {
+                "type": "string"
+              },
+              "projectId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "budget_limited",
+                  "blocked",
+                  "complete"
+                ],
+                "type": "string"
+              },
+              "taskId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeUsedSeconds": {
+                "type": "number"
+              },
+              "tokenBudget": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tokensUsed": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "goalId",
+              "objective",
+              "status",
+              "tokenBudget",
+              "tokensUsed",
+              "timeUsedSeconds",
+              "taskId",
+              "projectId",
+              "blockedReason",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "openLoops": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "persisted": {
+        "const": false,
+        "type": "boolean"
+      },
+      "pinned": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "recent": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "textTruncated": {
+                  "type": "boolean"
+                },
+                "time": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "text",
+                "textTruncated",
+                "time"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "omittedTools": {
+            "const": true,
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalMessages": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "source",
+          "reason",
+          "limit",
+          "totalMessages",
+          "truncated",
+          "omittedTools",
+          "items"
+        ],
+        "type": "object"
+      },
+      "schemaVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "session": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "compactionCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "name",
+          "displayName",
+          "agentId",
+          "compactionCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "sources": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "type": "boolean"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionRow": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionRow",
+          "goal",
+          "history"
+        ],
+        "type": "object"
+      },
+      "summary": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "computed",
+      "persisted",
+      "session",
+      "goal",
+      "summary",
+      "pinned",
+      "decisions",
+      "openLoops",
+      "recent",
+      "sources"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRenameInputSchema = #"""
   {
     "additionalProperties": false,

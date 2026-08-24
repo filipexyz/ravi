@@ -7,7 +7,9 @@
 2. `ravi sessions info <session> --json` — inspect one session, including
    `effectiveProvider`, `effectiveModel`, `modelSource`, `modelPresetId`, and
    `modelPresetVersion`.
-3. `ravi sessions actions --json` — canonical conversational action surface.
+3. `ravi sessions recap <session> --json` — bounded computed recap (identity,
+   goal if present, empty structured fields, recent user/assistant tail).
+4. `ravi sessions actions --json` — canonical conversational action surface.
 
 ## Lifecycle
 
