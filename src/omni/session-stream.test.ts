@@ -73,7 +73,7 @@ describe("session prompt JetStream infrastructure", () => {
     await ensureSessionPromptInfrastructure(currentJsm as never);
     await ensureSessionPromptInfrastructure(currentJsm as never);
 
-    expect(streamInfo).toHaveBeenCalledTimes(1);
+    expect(streamInfo).toHaveBeenCalledTimes(2);
     expect(consumerInfo).toHaveBeenCalledTimes(1);
   });
 
@@ -95,7 +95,7 @@ describe("session prompt JetStream infrastructure", () => {
     await ensureSessionPromptInfrastructure(currentJsm as never);
     await ensureSessionPromptInfrastructure(currentJsm as never, { force: true });
 
-    expect(streamInfo).toHaveBeenCalledTimes(2);
+    expect(streamInfo).toHaveBeenCalledTimes(4);
     expect(consumerInfo).toHaveBeenCalledTimes(2);
   });
 
@@ -143,6 +143,26 @@ describe("session prompt JetStream infrastructure", () => {
 
     expect(consumerAdd).toHaveBeenCalledTimes(1);
     expect(consumerInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("recreates a stale consumer when its sequence is ahead of the stream", async () => {
+    const consumerDelete = mock(async () => true);
+    const consumerAdd = mock(async () => ({}));
+    currentJsm = makePromptJsm({
+      streams: {
+        info: mock(async () => ({ state: { last_seq: 16 } })),
+      },
+      consumers: {
+        info: mock(async () => ({ ack_floor: { stream_seq: 3_276 }, delivered: { stream_seq: 3_276 } })),
+        delete: consumerDelete,
+        add: consumerAdd,
+      },
+    });
+
+    await ensureSessionConsumer(currentJsm as never);
+
+    expect(consumerDelete).toHaveBeenCalledWith("SESSION_PROMPTS", "ravi-prompts");
+    expect(consumerAdd).toHaveBeenCalledTimes(1);
   });
 
   it("announces a sourced prompt to the runtime after its durable publish", async () => {

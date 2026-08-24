@@ -147,11 +147,22 @@ export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void
   await ensureLegacyConsumersCleaned(jsm);
 
   try {
-    await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
-    log.debug("Session consumer already exists", { consumerName: CONSUMER_NAME });
-    return;
-  } catch {
-    // Consumer doesn't exist — create it
+    const consumerInfo = await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
+    const streamInfo = await jsm.streams.info(SESSION_STREAM);
+    if (isStaleSessionConsumer(consumerInfo, streamInfo)) {
+      log.warn("Deleting stale session prompt consumer", {
+        consumerName: CONSUMER_NAME,
+        consumerStreamSeq: maxConsumerStreamSeq(consumerInfo),
+        streamLastSeq: streamLastSeq(streamInfo),
+      });
+      await jsm.consumers.delete(SESSION_STREAM, CONSUMER_NAME);
+    } else {
+      log.debug("Session consumer already exists", { consumerName: CONSUMER_NAME });
+      return;
+    }
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    // Consumer doesn't exist — create it.
   }
 
   try {
@@ -308,6 +319,34 @@ async function ensureConsumerExistsAfterRace(jsm: JetStreamManager, originalErro
 function isNotFoundError(err: unknown): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   return message.includes("not found") || message.includes("deleted");
+}
+
+function isStaleSessionConsumer(consumerInfo: unknown, streamInfo: unknown): boolean {
+  const consumerSeq = maxConsumerStreamSeq(consumerInfo);
+  const lastSeq = streamLastSeq(streamInfo);
+  return consumerSeq > 0 && lastSeq >= 0 && consumerSeq > lastSeq;
+}
+
+function maxConsumerStreamSeq(info: unknown): number {
+  const record = info as {
+    ack_floor?: { stream_seq?: unknown };
+    delivered?: { stream_seq?: unknown };
+  };
+  return Math.max(toNumber(record.ack_floor?.stream_seq), toNumber(record.delivered?.stream_seq));
+}
+
+function streamLastSeq(info: unknown): number {
+  const record = info as { state?: { last_seq?: unknown } };
+  return toNumber(record.state?.last_seq, -1);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
 function isPromptPublishInfrastructureError(err: unknown): boolean {
