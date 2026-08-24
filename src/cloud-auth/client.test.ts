@@ -92,6 +92,8 @@ describe("ConsoleApiClient", () => {
 
     expect(config.clientId).toBe("ravi-cli");
     expect(device.userCode).toBe("ABC");
+    expect(device.verificationUri).toBe("https://console.example/cli/authorize");
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABC");
     expect(credentials).toMatchObject({
       consoleUrl: "https://console.example",
       installationId: "ins_123",
@@ -132,6 +134,71 @@ describe("ConsoleApiClient", () => {
         body: null,
       },
     ]);
+  });
+
+  it("constructs verification_uri_complete from verification_uri and user_code when omitted", async () => {
+    const fetchImpl = mock(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/cli/auth/config") {
+        return jsonResponse({
+          configured: true,
+          clientId: "ravi-cli",
+          mode: "console_device",
+          endpoints: {
+            deviceAuthorization: "https://console.example/api/cli/auth/device",
+            token: null,
+          },
+        });
+      }
+      if (path === "/api/cli/auth/device") {
+        return jsonResponse({
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://console.example/cli/authorize",
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+    });
+    const client = new ConsoleApiClient({ consoleUrl: "https://console.example/", fetch: fetchImpl });
+    const device = await client.startDeviceAuthorization(await client.getAuthConfig());
+
+    expect(device.verificationUri).toBe("https://console.example/cli/authorize");
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABCD-EFGH");
+    expect(new URL(device.verificationUriComplete).searchParams.get("user_code")).toBe("ABCD-EFGH");
+  });
+
+  it("does not treat a bare verification_uri_complete as the URL to open", async () => {
+    const fetchImpl = mock(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/cli/auth/config") {
+        return jsonResponse({
+          configured: true,
+          clientId: "ravi-cli",
+          mode: "console_device",
+          endpoints: {
+            deviceAuthorization: "https://console.example/api/cli/auth/device",
+            token: null,
+          },
+        });
+      }
+      if (path === "/api/cli/auth/device") {
+        return jsonResponse({
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://console.example/cli/authorize",
+          verification_uri_complete: "https://console.example/cli/authorize",
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+    });
+    const client = new ConsoleApiClient({ consoleUrl: "https://console.example/", fetch: fetchImpl });
+    const device = await client.startDeviceAuthorization(await client.getAuthConfig());
+
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABCD-EFGH");
   });
 
   it("creates artifact upload sessions through the CLI bearer endpoint", async () => {

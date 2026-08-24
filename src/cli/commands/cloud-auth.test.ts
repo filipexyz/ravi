@@ -114,9 +114,103 @@ describe("cloud auth root command handlers", () => {
     });
     expect(payload.session.accessTokenExpiresAt).toBe("2026-05-10T00:00:00.000Z");
     expect(payload.auth.authorizationUrl).toBe("https://console.example/device?user_code=ABC");
+    expect(payload.auth.verificationUriComplete).toBe("https://console.example/device?user_code=ABC");
+    expect(payload.auth.verificationUri).toBe("https://console.example/device?user_code=ABC");
+    expect(new URL(payload.auth.authorizationUrl).searchParams.get("user_code")).toBe("ABC");
     expect(encoded).not.toContain("login-access-secret");
     expect(encoded).not.toContain("login-refresh-secret");
     expect(encoded).not.toContain("provider-secret");
+  });
+
+  it("prints and opens the authorize URL with user_code even when Console omits the complete URI", async () => {
+    const opened: string[] = [];
+    const client = {
+      getAuthConfig: mock(async () => ({
+        configured: true,
+        clientId: "ravi-cli",
+        mode: "console_device",
+        endpoints: {
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
+        },
+      })),
+      startDeviceAuthorization: mock(async () => ({
+        verificationUri: "https://console.example/cli/authorize",
+        userCode: "ABCD-EFGH",
+        deviceCode: "device-secret",
+        interval: 1,
+      })),
+      exchange: mock(async (input: CredentialExchangeInput) => ({
+        ...makeCredentials(),
+        installationId: input.installationId,
+      })),
+    } as unknown as ConsoleApiClient;
+
+    const { output } = await captureConsole(() =>
+      runLogin(
+        { console: "https://console.example", open: true, poll: false },
+        {
+          client,
+          readCredentials: () => null,
+          writeCredentials: () => {},
+          openExternal: (url) => {
+            opened.push(url);
+          },
+        },
+      ),
+    );
+
+    const completeUrl = "https://console.example/cli/authorize?user_code=ABCD-EFGH";
+    expect(opened).toEqual([completeUrl]);
+    expect(output).toContain(`Verification URL: ${completeUrl}`);
+    expect(output).toContain("Code: ABCD-EFGH");
+    expect(output).not.toMatch(/Verification URL: https:\/\/console\.example\/cli\/authorize$/m);
+  });
+
+  it("returns the complete authorize URL from JSON login when only the bare verification URI is present", async () => {
+    const client = {
+      getAuthConfig: mock(async () => ({
+        configured: true,
+        clientId: "ravi-cli",
+        mode: "console_device",
+        endpoints: {
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
+        },
+      })),
+      startDeviceAuthorization: mock(async () => ({
+        verificationUriComplete: "https://console.example/cli/authorize",
+        verificationUri: "https://console.example/cli/authorize",
+        userCode: "ABCD-EFGH",
+        deviceCode: "device-secret",
+        interval: 1,
+      })),
+      exchange: mock(async (input: CredentialExchangeInput) => ({
+        ...makeCredentials(),
+        installationId: input.installationId,
+      })),
+    } as unknown as ConsoleApiClient;
+
+    const { output } = await captureConsole(() =>
+      runLogin(
+        { console: "https://console.example", json: true, open: false, poll: false },
+        {
+          client,
+          readCredentials: () => null,
+          writeCredentials: () => {},
+        },
+      ),
+    );
+    const payload = JSON.parse(output);
+    const completeUrl = "https://console.example/cli/authorize?user_code=ABCD-EFGH";
+
+    expect(payload.auth.authorizationUrl).toBe(completeUrl);
+    expect(payload.auth.verificationUriComplete).toBe(completeUrl);
+    expect(payload.auth.verificationUri).toBe(completeUrl);
+    expect(payload.auth.userCode).toBe("ABCD-EFGH");
+    expect(new URL(payload.auth.authorizationUrl).searchParams.get("user_code")).toBe("ABCD-EFGH");
+    expect(payload.auth.authorizationUrl).not.toBe("https://console.example/cli/authorize");
+    expect(payload.auth.verificationUri).not.toBe("https://console.example/cli/authorize");
   });
 
   it("revokes on logout, deletes local credentials, and redacts JSON output", async () => {
