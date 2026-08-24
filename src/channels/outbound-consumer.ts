@@ -579,7 +579,7 @@ function classifyNativeOutboundFailure(
   retryable: boolean;
   reasonCode?: "missing_connection" | "missing_scope" | "permission_denied" | "invalid_target";
 } {
-  if (job.request.content.type !== "chat_action" || job.request.channelId.toLowerCase() !== "slack") {
+  if (job.request.channelId.toLowerCase() !== "slack") {
     return { retryable: true };
   }
   const normalized = message.toLowerCase();

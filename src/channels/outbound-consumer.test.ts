@@ -176,6 +176,38 @@ describe("channel outbound consumer", () => {
     );
   });
 
+  it("acknowledges permanent Slack text authentication failures instead of redelivering forever", async () => {
+    const emitEvent = mock(async () => {});
+    const delivery: NativeTextDelivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async () => {
+        throw new Error("Slack chat.postMessage failed: account_inactive");
+      }),
+    };
+
+    const result = await processChannelOutboundJob(makeJob(), {
+      deliveries: [delivery],
+      emitEvent,
+      persistDelivery: false,
+    });
+
+    expect(result).toMatchObject({
+      disposition: "ack",
+      status: "failed",
+      retryable: false,
+      phase: "send",
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "failed",
+        retryable: false,
+        unavailableReasonCode: "missing_connection",
+      }),
+    );
+  });
+
   it("dispatches chat actions only through a matching native action adapter", async () => {
     const emitEvent = mock(async () => {});
     const actionDelivery = makeActionDelivery();
