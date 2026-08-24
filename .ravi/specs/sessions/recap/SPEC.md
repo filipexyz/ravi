@@ -17,6 +17,8 @@ applies_to:
   - src/sessions/recap.test.ts
   - src/cli/commands/sessions.ts
   - src/cli/commands/sessions.test.ts
+  - src/prompt-builder.ts
+  - src/prompt-builder.test.ts
 owners:
   - ravi-dev
 status: draft
@@ -65,7 +67,8 @@ v0 is **computed on read**. It MUST NOT:
 - add a recap column or table;
 - persist a recap on compact;
 - write or read `MEMORY.md`;
-- auto-inject recap text into the live system prompt;
+- auto-inject recap text into the live system prompt (the Session Boundary
+  MAY name the command; it MUST NOT embed a computed recap);
 - implement FTS or `session_search`;
 - invent narrative with an LLM.
 
@@ -133,6 +136,26 @@ Recap is a session read. Authorization MUST match `sessions read`:
 - unauthorized or hidden sessions MUST appear missing (`SESSION_NOT_FOUND`);
 - the command MUST NOT suggest other session names on not-found.
 
+## Session Boundary
+
+The live system prompt Session Boundary (`session.boundary`) MUST:
+
+- keep the current session as the only conversational context for the reply;
+- name `ravi sessions recap --json` as a same-session history tool alongside
+  `sessions read` and `sessions trace`;
+- allow recap of another session only via
+  `ravi sessions recap <nameOrKey> --json` when the caller has
+  `access session:<id>`;
+- state that unauthorized or hidden sessions appear missing
+  (`SESSION_NOT_FOUND`);
+- state that a chat attach is not permission to recap;
+- forbid recovering missing context by dumping another DM/group/chat, reading
+  `MEMORY.md`, or using unrelated filesystem notes;
+- state that recap is not injected into the prompt.
+
+The Session Boundary MUST NOT tell agents they can never recover context from
+another session. The authorized recap CLI is the allowed path.
+
 ## Actions Catalog
 
 `ravi sessions actions --json` MUST advertise `session.recap` as an available
@@ -152,5 +175,5 @@ advertises `session.read`.
 ## Validation
 
 ```bash
-bun test src/sessions/recap.test.ts src/cli/commands/sessions.test.ts
+bun test src/sessions/recap.test.ts src/cli/commands/sessions.test.ts src/prompt-builder.test.ts
 ```

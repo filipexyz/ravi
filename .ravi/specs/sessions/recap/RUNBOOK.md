@@ -15,6 +15,8 @@ When the recap looks empty:
 
 When another agent needs context:
 
-- prefer `sessions recap --json` for a bounded brief;
+- prefer `ravi sessions recap <nameOrKey> --json` for a bounded brief;
+- that requires `access session:<id>`; unauthorized sessions appear missing;
 - use `sessions read --json` only when the tail itself is the question;
-- use `sessions trace` for operational incidents, not conversation recap.
+- use `sessions trace` for operational incidents, not conversation recap;
+- do not dump another chat, `MEMORY.md`, or filesystem notes as recovery.

@@ -29,6 +29,16 @@ normative: false
 - Unauthorized session MUST appear missing (`access session:<id>`).
 - A chat attach MUST NOT grant recap permission.
 
+## Session Boundary
+
+- `session.boundary` MUST name `ravi sessions recap --json` alongside
+  `sessions read` and `sessions trace`.
+- It MUST allow recap of another session only via
+  `ravi sessions recap <nameOrKey> --json` with `access session:<id>`.
+- It MUST forbid dumping other chats, `MEMORY.md`, and filesystem notes.
+- It MUST NOT auto-inject recap text.
+- It MUST NOT say agents can never recover context from another session.
+
 ## Actions
 
 - `ravi sessions actions --json` MUST include `session.recap` as available.
@@ -39,4 +49,5 @@ normative: false
 ```bash
 bun test src/sessions/recap.test.ts
 bun test src/cli/commands/sessions.test.ts
+bun test src/prompt-builder.test.ts
 ```

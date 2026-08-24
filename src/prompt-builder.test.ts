@@ -149,7 +149,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/^## Runtime[\s\S]+## Legacy Extra/);
   });
 
-  it("instructs agents to recover missing context only from the current session", () => {
+  it("names recap as a same-session tool and allows authorized recap of another session", () => {
     const prompt = buildSystemPrompt(
       "main",
       {
@@ -163,8 +163,17 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("## Session Boundary");
     expect(prompt).toContain("current session (main-dm-615153)");
+    expect(prompt).toContain("ravi sessions recap --json");
     expect(prompt).toContain("ravi sessions read --json");
-    expect(prompt).toContain("Never recover missing context from another DM/group/session");
+    expect(prompt).toContain("ravi sessions recap main-dm-615153 --json");
+    expect(prompt).toContain("access session:<id>");
+    expect(prompt).toContain("SESSION_NOT_FOUND");
+    expect(prompt).toContain("A chat attach is not permission to recap");
+    expect(prompt).toContain(
+      "Never recover missing context by dumping another DM, group, or chat, reading `MEMORY.md`",
+    );
+    expect(prompt).toContain("Do not expect a recap to be injected into this prompt");
+    expect(prompt).not.toContain("Never recover missing context from another DM/group/session");
   });
 
   describe("proactive scheduling prompt", () => {

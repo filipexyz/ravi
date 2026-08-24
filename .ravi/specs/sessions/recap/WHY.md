@@ -50,6 +50,14 @@ Determinism beats a cheap-looking paragraph. Empty `summary` / `pinned` /
 `decisions` fields tell the caller the source does not have them. An optional
 summarizer MAY be added later, off by default.
 
+## Why The Prompt Names Recap But Does Not Inject It
+
+The Session Boundary used to say "never recover missing context from another
+session." That blocked the actual use case: another agent pulling a recap of a
+session it is allowed to see. Naming `ravi sessions recap --json` teaches the
+allowed path. Injecting the recap body would dump session state into every
+turn and reopen the MEMORY.md-in-prompt debate.
+
 ## Why Not Unify Transcript Split
 
 `sessions read` already has a chat-db / chat-id / metadata / provider-transcript

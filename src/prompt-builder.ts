@@ -224,12 +224,16 @@ export function buildRuntimeInfo(agentId: string, ctx: ChannelContext, sessionNa
 
 function sessionBoundaryText(sessionName?: string): string {
   const sessionRef = sessionName ? `current session (${sessionName})` : "current session";
+  const currentRecap = "ravi sessions recap --json";
+  const namedRecap = `ravi sessions recap ${sessionName ?? "<nameOrKey>"} --json`;
   return [
     `Treat the ${sessionRef} as the only conversational context for this reply.`,
     `DMs, groups, channels, and threads are separate contexts even when the same people participate.`,
-    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read --json\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
-    `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
-    `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
+    `If local context looks incomplete, use same-session history tools such as \`${currentRecap}\`, \`ravi sessions read --json\`, or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
+    `To recap another session you are allowed to see, run \`${namedRecap}\`. That requires \`access session:<id>\`; unauthorized or hidden sessions appear missing (\`SESSION_NOT_FOUND\`). A chat attach is not permission to recap.`,
+    `Never recover missing context by dumping another DM, group, or chat, reading \`MEMORY.md\`, or using unrelated filesystem notes.`,
+    `Do not expect a recap to be injected into this prompt; call the recap command when you need it.`,
+    `If same-session durable history is unavailable and you cannot recap an authorized session, ask the user for the missing context instead of guessing.`,
   ].join("\n");
 }
 

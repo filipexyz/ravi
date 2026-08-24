@@ -147,6 +147,8 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 - Widening an empty chat scope to every message authored by the session's agent.
 - Letting threads, observers, or knowledge collapse into the session concept.
 - Treating agent-cwd `MEMORY.md` or Knowledge threads as a session recap.
+- Session Boundary telling agents they can never recover context from another
+  session — that blocks authorized `sessions recap <nameOrKey>`.
 
 ## Effective Model And Presets
 
