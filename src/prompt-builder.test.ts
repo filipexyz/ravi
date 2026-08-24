@@ -165,7 +165,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("current session (main-dm-615153)");
     expect(prompt).toContain("ravi sessions recap --json");
     expect(prompt).toContain("ravi sessions read --json");
-    expect(prompt).toContain("ravi sessions recap main-dm-615153 --json");
+    expect(prompt).toContain("ravi sessions recap <nameOrKey> --json");
+    expect(prompt).not.toContain("ravi sessions recap main-dm-615153 --json");
     expect(prompt).toContain("access session:<id>");
     expect(prompt).toContain("SESSION_NOT_FOUND");
     expect(prompt).toContain("A chat attach is not permission to recap");
