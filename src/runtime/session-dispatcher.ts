@@ -84,11 +84,14 @@ import {
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
 const PROVIDER_TURN_INACTIVE_REASON = "provider_turn_inactive";
+const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
 const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
+const MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS = 2;
 const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
   [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
   [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
+  [PROVIDER_TRANSPORT_FAILURE_REASON]: MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS,
 };
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";

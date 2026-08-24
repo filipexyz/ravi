@@ -1148,9 +1148,10 @@ describe("runtime session trace instrumentation", () => {
       materializedOutput: false,
     });
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["trace-skill"]);
-    expect(
-      (getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot).loadedSkills,
-    ).toEqual(["trace-skill"]);
+    const persistedSkillVisibility = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as
+      | RuntimeSkillVisibilitySnapshot
+      | undefined;
+    expect(persistedSkillVisibility?.loadedSkills).toEqual(["trace-skill"]);
     expect(events[1]).toMatchObject({
       eventType: "tool.start",
       canonicalChatId: "chat_1",
@@ -3428,6 +3429,86 @@ describe("runtime session trace instrumentation", () => {
       },
     ]);
     expect(streaming.done).toBe(true);
+  });
+
+  it("replays a recoverable provider transport failure before any effect instead of exposing INTERNAL", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "survive a transient websocket close",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-transport-failure-before-effect");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Codex CLI exited without a terminal event (code 0)",
+          recoverable: true,
+          failureKind: "transport",
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "survive a transient websocket close",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_transport_failure" }]);
+    expect(streaming.done).toBe(true);
+  });
+
+  it("does not replay a provider transport failure after a tool effect", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate this effect",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-transport-failure-after-effect");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Codex CLI exited without a terminal event (code 0)",
+          recoverable: true,
+          failureKind: "transport",
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "failed", startedTool: true });
   });
 
   it("does not remove a replacement runtime when the previous event loop exits", async () => {

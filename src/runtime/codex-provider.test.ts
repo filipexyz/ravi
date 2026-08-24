@@ -1242,6 +1242,27 @@ process.on("SIGTERM", () => {
     ).toEqual(["rctx_first", "rctx_second"]);
   });
 
+  it("classifies a clean exit without a terminal event as a recoverable transport failure", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {})(),
+        result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["retry me"]));
+
+    const events = await collectEvents(session.events);
+
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({
+        error: "Codex CLI exited without a terminal event (code 0)",
+        recoverable: true,
+        failureKind: "transport",
+      }),
+    ]);
+  });
+
   it("maps CLI completion events and composes prompts with system instructions", async () => {
     const { calls, transport } = createMockTransport([
       () => ({
