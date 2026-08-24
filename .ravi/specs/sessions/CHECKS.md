@@ -8,7 +8,7 @@
   subscriptions.
 - Deleting a session MUST cascade to delete its subscriptions.
 - Session visibility MUST be enforced: principals MUST only list, inspect, read,
-  trace, or mutate sessions they own or hold `access`/`modify` grants for.
+  recap, trace, or mutate sessions they own or hold `access`/`modify` grants for.
 
 ## Effective Model Checks
 

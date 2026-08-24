@@ -11882,6 +11882,66 @@ export type SessionsReadReturn = ({
   [k: string]: unknown;
 });
 
+/** Input shape for `sessions.recap`. */
+export type SessionsRecapInput = {
+  count?: string;
+  nameOrKey?: string;
+};
+
+/** Return shape for `sessions.recap`. */
+export type SessionsRecapReturn = {
+  computed: true;
+  decisions: string[];
+  goal: ({
+    blockedReason: string | null;
+    createdAt: number;
+    goalId: string;
+    objective: string;
+    projectId: string | null;
+    sessionKey: string;
+    status: "active" | "paused" | "budget_limited" | "blocked" | "complete";
+    taskId: string | null;
+    timeUsedSeconds: number;
+    tokenBudget: number | null;
+    tokensUsed: number;
+    updatedAt: number;
+  }) | null;
+  openLoops: string[];
+  persisted: false;
+  pinned: string[];
+  recent: {
+    available: boolean;
+    items: Array<{
+      role: "user" | "assistant";
+      text: string;
+      textTruncated: boolean;
+      time: string;
+    }>;
+    limit: number;
+    omittedTools: true;
+    reason: string | null;
+    source: string | null;
+    totalMessages: number;
+    truncated: boolean;
+  };
+  schemaVersion: 1;
+  session: {
+    agentId: string;
+    compactionCount: number;
+    createdAt: number;
+    displayName: string | null;
+    name: string | null;
+    sessionKey: string;
+    updatedAt: number;
+  };
+  sources: {
+    goal: boolean;
+    history: string | null;
+    sessionRow: true;
+  };
+  summary: string | null;
+};
+
 /** Input shape for `sessions.rename`. */
 export type SessionsRenameInput = {
   nameOrKey: string;

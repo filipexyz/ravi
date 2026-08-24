@@ -8,6 +8,7 @@ capabilities:
   - actions
   - visibility
   - provider-runtime
+  - recap
 tags:
   - sessions
   - runtime
@@ -19,6 +20,7 @@ applies_to:
   - src/omni/consumer.ts
   - src/runtime/host-event-loop.ts
   - src/cli/commands/sessions.ts
+  - src/sessions/recap.ts
   - src/prompt-builder.ts
 owners:
   - ravi-dev
@@ -37,7 +39,8 @@ This domain is the semantic owner above:
 - transport surfaces (channels, chats — see `channels/chats`);
 - provider runtime state (resume/fork/replay — see `runtime/session-continuity`);
 - visibility into live token/skill state (see `runtime/session-visibility`);
-- portable subject context (see `threads`).
+- portable subject context (see `threads`);
+- a computed session recap (see `sessions/recap`).
 
 Those capabilities all *reference* a session, but they MUST NOT redefine what a session is.
 
@@ -50,7 +53,8 @@ Sessions own:
 - which chats can dispatch input into the session (attach);
 - which chat receives the session's external output (attach);
 - last-source provenance for trace/correlation;
-- session lifecycle: create, rename, reset, delete, ephemeral TTL.
+- session lifecycle: create, rename, reset, delete, ephemeral TTL;
+- the session recap projection (computed on read; see `sessions/recap`).
 
 Sessions do NOT own:
 
@@ -58,6 +62,7 @@ Sessions do NOT own:
 - chat membership of humans (owned by `channels/chats` and `chat_participants`);
 - provider session state (owned by `runtime/session-continuity`);
 - thread/subject context (owned by `threads`);
+- Knowledge threads or agent-cwd `MEMORY.md` (recap is a session projection, not semantic memory);
 - identity resolution (owned by `contacts/identity-graph`).
 
 ## Definitions
@@ -83,9 +88,9 @@ Sessions do NOT own:
 - `ravi sessions list --json`, `ravi sessions info --json`, and runtime trace payloads SHOULD expose both effective runtime value and source where available.
 - Deletion of a session MUST cascade to delete its subscriptions.
 - Session visibility is authorization-bearing. Runtime principals MUST only
-  list, inspect, read, trace, or mutate sessions they own or have explicit
+  list, inspect, read, recap, trace, or mutate sessions they own or have explicit
   grants for.
-- `access session:<id>` authorizes session discovery/read/trace beyond the
+- `access session:<id>` authorizes session discovery/read/recap/trace beyond the
   current own session.
 - `modify session:<id>` authorizes session mutation beyond the current own
   session.
@@ -116,7 +121,8 @@ The action catalog MUST include existing executable conversational/channel comma
 - `message.react` via `ravi react send`;
 - `sticker.send` via `ravi stickers send`;
 - `media.send` via `ravi media send`;
-- `session.read` via `ravi sessions read --json`.
+- `session.read` via `ravi sessions read --json`;
+- `session.recap` via `ravi sessions recap --json`.
 
 Actions that are conceptually useful but do not have an implemented command MUST be listed as `planned`, not documented as executable.
 
@@ -126,8 +132,9 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 
 - `bun test src/router/sessions.test.ts src/router/sessions.rename.test.ts src/router/commit-matched-route.test.ts`
 - `bun test src/cli/commands/sessions.test.ts src/prompt-builder.test.ts`
-- Scope tests SHOULD cover `sessions list/info/read/trace` filtering through
+- Scope tests SHOULD cover `sessions list/info/read/recap/trace` filtering through
   `access session:<id>` and mutation through `modify session:<id>`.
+- `bun test src/sessions/recap.test.ts`
 
 ## Known Failure Modes
 
@@ -139,6 +146,7 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 - Marking a not-yet-implemented action as available instead of `planned`.
 - Widening an empty chat scope to every message authored by the session's agent.
 - Letting threads, observers, or knowledge collapse into the session concept.
+- Treating agent-cwd `MEMORY.md` or Knowledge threads as a session recap.
 
 ## Effective Model And Presets
 

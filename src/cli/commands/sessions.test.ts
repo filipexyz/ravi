@@ -65,6 +65,9 @@ let renameRouteReferencesUpdated = 0;
 let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
+let scopeEnforced = false;
+let canAccess = true;
+let sessionGoal: Record<string, unknown> | null = null;
 
 function defaultTurnUsageSummary(): Record<string, unknown> {
   return {
@@ -341,12 +344,24 @@ mock.module("../../adapters/index.js", () => ({
 }));
 
 mock.module("../../permissions/scope.js", () => ({
-  getScopeContext: () => undefined,
-  isScopeEnforced: () => false,
-  canAccessSession: () => true,
+  getScopeContext: () => (scopeEnforced ? { agentId: "dev" } : undefined),
+  isScopeEnforced: () => scopeEnforced,
+  canAccessSession: () => canAccess,
   canModifySession: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
+}));
+
+mock.module("../../runtime/session-goals.js", () => ({
+  getSessionGoal: () => sessionGoal,
+  accountSessionGoalUsage: () => null,
+  blockSessionGoal: () => null,
+  clearSessionGoal: () => false,
+  completeSessionGoal: () => null,
+  createSessionGoal: () => null,
+  pauseActiveSessionGoal: () => null,
+  replaceSessionGoal: () => null,
+  resumeSessionGoal: () => null,
 }));
 
 mock.module("../../transcripts.js", () => ({
@@ -401,6 +416,7 @@ const {
   buildCurrentSessionMediaSendCommand,
   buildCurrentSessionReactionCommand,
   buildCurrentSessionReadCommand,
+  buildCurrentSessionRecapCommand,
   buildCurrentSessionStickerSendCommand,
   buildSessionActionsPromptHint,
   buildSessionActionsCommand,
@@ -445,6 +461,9 @@ async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
 
 beforeEach(() => {
   toolContext = undefined;
+  scopeEnforced = false;
+  canAccess = true;
+  sessionGoal = null;
   chatHistory = [];
   chatHistoryByChat = [];
   messageMetadataRows = [];
@@ -901,6 +920,7 @@ describe("SessionCommands attach hints", () => {
     expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave --execute");
     expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png" --execute');
     expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
+    expect(buildCurrentSessionRecapCommand()).toBe("ravi sessions recap --json");
     expect(buildCurrentSessionCreateThreadCommand("investigue", "gpt-5.6")).toBe(
       'ravi sessions create-thread "investigue" --model gpt-5.6',
     );
@@ -991,6 +1011,25 @@ describe("SessionCommands attach hints", () => {
       id: "media.send",
       tool: "ravi media send",
       command: 'ravi media send "<file-path>" --execute',
+    });
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "session.read",
+          status: "available",
+          command: "ravi sessions read --json",
+        }),
+        expect.objectContaining({
+          id: "session.recap",
+          status: "available",
+          command: "ravi sessions recap --json",
+        }),
+      ]),
+    );
+    expect(payload.usage.tools.recapSession).toMatchObject({
+      id: "session.recap",
+      tool: "ravi sessions recap",
+      command: "ravi sessions recap --json",
     });
     expect(payload.surfaces.subscriptions[0]).toMatchObject({
       chatId: "chat_ae70f8bc7ec999d2e2048219",
@@ -2141,6 +2180,138 @@ describe("SessionCommands read", () => {
     expect(payload.transcript.chatIdVariants).toContain("63295117615153@lid");
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0].text).toContain("histórico certo da DM");
+  });
+});
+
+describe("SessionCommands recap", () => {
+  beforeEach(() => {
+    resolvedSession = {
+      sessionKey: "agent:main:dm:615153",
+      name: "main-dm-615153",
+      displayName: "Luis DM",
+      agentId: "main",
+      agentCwd: "/tmp/main",
+      compactionCount: 3,
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+  });
+
+  it("computes a bounded recap from session row, goal, and recent history", () => {
+    sessionGoal = {
+      sessionKey: "agent:main:dm:615153",
+      goalId: "goal-1",
+      objective: "Prepare the pricing brief",
+      status: "blocked",
+      tokenBudget: null,
+      tokensUsed: 12,
+      timeUsedSeconds: 40,
+      taskId: null,
+      projectId: null,
+      blockedReason: "Waiting on Rafa",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "user",
+        content: "qual o status?",
+        created_at: "2026-04-20 04:29:35",
+      },
+      {
+        id: 2,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "ainda bloqueado",
+        created_at: "2026-04-20 04:30:48",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().recap("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.computed).toBe(true);
+    expect(payload.persisted).toBe(false);
+    expect(payload.session).toMatchObject({
+      sessionKey: "agent:main:dm:615153",
+      name: "main-dm-615153",
+      displayName: "Luis DM",
+      agentId: "main",
+      compactionCount: 3,
+    });
+    expect(payload.goal.objective).toBe("Prepare the pricing brief");
+    expect(payload.summary).toBeNull();
+    expect(payload.pinned).toEqual([]);
+    expect(payload.decisions).toEqual([]);
+    expect(payload.openLoops).toEqual(["Waiting on Rafa"]);
+    expect(payload.recent.omittedTools).toBe(true);
+    expect(payload.recent.source).toBe("chat-db");
+    expect(payload.recent.items.map((item: { text: string }) => item.text)).toEqual([
+      "qual o status?",
+      "ainda bloqueado",
+    ]);
+  });
+
+  it("returns an empty recap when history is missing", () => {
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().recap("main-dm-615153", undefined, true);
+      }),
+    );
+
+    expect(payload.recent.available).toBe(false);
+    expect(payload.recent.items).toEqual([]);
+    expect(payload.goal).toBeNull();
+    expect(payload.summary).toBeNull();
+  });
+
+  it("prints a compact human recap without crashing on empty history", () => {
+    const output = captureLogs(() => {
+      new SessionCommands().recap("main-dm-615153");
+    });
+
+    expect(output).toContain("Session recap: main-dm-615153");
+    expect(output).toContain("goal: (none)");
+    expect(output).toContain("summary: (empty)");
+  });
+
+  it("cloaks a missing session as SESSION_NOT_FOUND", async () => {
+    resolvedSession = null;
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        new SessionCommands().recap("ghost", undefined, true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().op).toBe("sessions recap");
+    expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
+    expect(contractError.envelope().error.suggestions).toBeUndefined();
+  });
+
+  it("cloaks an unauthorized session as missing", async () => {
+    scopeEnforced = true;
+    canAccess = false;
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        new SessionCommands().recap("main-dm-615153", undefined, true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
   });
 });
 

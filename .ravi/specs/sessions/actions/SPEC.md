@@ -47,7 +47,8 @@ Flat action status MUST describe whether at least one listed surface can
 execute the action. `availabilityBySurface` MUST preserve differences between
 attached channels.
 
-`session.read` is a session action and is independent of channel capabilities.
+`session.read` and `session.recap` are session actions and are independent of
+channel capabilities.
 Conceptually useful actions without an executable command MUST be `planned`.
 
 `thread.create` and `thread.close` are stable session action ids.

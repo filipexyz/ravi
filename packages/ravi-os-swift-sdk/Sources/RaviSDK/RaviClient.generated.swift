@@ -4341,6 +4341,15 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "read", body: requestBody, as: SessionsReadReturn.self)
   }
 
+  public func recap(_ nameOrKey: String? = nil, _ options: SessionsRecapOptions = .init()) async throws -> SessionsRecapReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let nameOrKey {
+      requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "recap", body: requestBody, as: SessionsRecapReturn.self)
+  }
+
   public func rename(_ nameOrKey: String, _ newName: String) async throws -> SessionsRenameReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)

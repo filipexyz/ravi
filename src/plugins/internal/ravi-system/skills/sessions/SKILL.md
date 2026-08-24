@@ -66,6 +66,9 @@ ravi sessions info <name>
 # Ler histórico durável da sessão (normalizado, sem tool calls; atravessa restarts/resets de provider)
 ravi sessions read <name> [-n count]
 
+# Recap computado e limitado de uma sessão (identidade, goal, cauda recente; sem MEMORY.md)
+ravi sessions recap <name> [--json]
+
 # Inspecionar timeline operacional persistida em SQLite
 ravi sessions trace <name> --since 2h --explain
 ```

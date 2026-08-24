@@ -4,6 +4,7 @@
 ravi sessions actions --json
 ravi sessions subscriptions
 ravi sessions read --json
+ravi sessions recap --json
 ravi sessions create-thread "Initial work" --model <model>
 ravi sessions close-thread --return "Result for the parent"
 ```

@@ -19394,6 +19394,66 @@ public struct SessionsReadOptions: Codable, Sendable {
 
 public typealias SessionsReadReturn = RaviJSON
 
+public struct SessionsRecapOptions: Codable, Sendable {
+  public var count: String?
+
+  public init(count: String? = nil) {
+    self.count = count
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case count = "count"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.count {
+      body["count"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsRecapReturn: Codable, Sendable {
+  public var computed: Bool
+  public var decisions: [String]
+  public var goal: RaviJSON
+  public var openLoops: [String]
+  public var persisted: Bool
+  public var pinned: [String]
+  public var recent: RaviJSON
+  public var schemaVersion: Int
+  public var session: RaviJSON
+  public var sources: RaviJSON
+  public var summary: RaviJSON
+
+  public init(computed: Bool, decisions: [String], goal: RaviJSON, openLoops: [String], persisted: Bool, pinned: [String], recent: RaviJSON, schemaVersion: Int, session: RaviJSON, sources: RaviJSON, summary: RaviJSON) {
+    self.computed = computed
+    self.decisions = decisions
+    self.goal = goal
+    self.openLoops = openLoops
+    self.persisted = persisted
+    self.pinned = pinned
+    self.recent = recent
+    self.schemaVersion = schemaVersion
+    self.session = session
+    self.sources = sources
+    self.summary = summary
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case computed = "computed"
+    case decisions = "decisions"
+    case goal = "goal"
+    case openLoops = "openLoops"
+    case persisted = "persisted"
+    case pinned = "pinned"
+    case recent = "recent"
+    case schemaVersion = "schemaVersion"
+    case session = "session"
+    case sources = "sources"
+    case summary = "summary"
+  }
+}
+
 public typealias SessionsRenameReturn = [String: RaviJSON]
 
 public struct SessionsResetOptions: Codable, Sendable {

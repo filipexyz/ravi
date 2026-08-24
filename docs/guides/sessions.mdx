@@ -99,6 +99,25 @@ ravi sessions read <name> -n 50
 
 Returns normalized message history (user and assistant messages only, no tool calls). Messages are read from the SDK transcript JSONL file. Silent responses (`@@SILENT@@`) are excluded.
 
+## Session Recap
+
+A recap is a bounded, computed projection of one session. Another agent can call it to learn what happened without dumping the transcript or reading agent-scoped `MEMORY.md`.
+
+```bash
+# Compact human recap
+ravi sessions recap <name>
+
+# Structured payload for another agent
+ravi sessions recap <name> --json
+
+# Bound the recent user/assistant tail (default: 8, max: 40)
+ravi sessions recap <name> -n 12 --json
+```
+
+v0 is computed on read from the session row, `session_goals` if present, and the same recent history used by `sessions read`. Empty `summary` / `pinned` / `decisions` fields mean those sources do not exist yet — the command does not invent narrative. Persist-on-compact and session search are out of this slice.
+
+Authorization matches `sessions read` (`access session:<id>`). A chat attach is not permission to recap.
+
 ## Inspecting Session Trace
 
 Use `sessions trace` when you need to understand what happened in a real session
@@ -394,6 +413,7 @@ Sessions respect REBAC permissions. When scope enforcement is active:
 
 - `sessions list` only shows accessible sessions
 - `sessions info` returns "not found" for inaccessible sessions
+- `sessions recap` returns "not found" for inaccessible sessions
 - `sessions send/ask/answer` cannot target sessions outside the caller's scope
 - Modify operations (rename, reset, delete, set-model, set-thinking, set-ttl, extend, keep) require modify permission
 

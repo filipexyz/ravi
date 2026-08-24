@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "b9151d6e7c765be5"
+    "version": "974539f51e40ffb4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -72455,6 +72455,374 @@
         },
         "security": [],
         "summary": "Read message history of a session (normalized)",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/recap": {
+      "post": {
+        "operationId": "sessions.recap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "description": "Recent user/assistant messages to include (default: 8, max: 40)",
+                    "type": "string"
+                  },
+                  "nameOrKey": {
+                    "description": "Optional session name/key override (defaults to current session)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "computed": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "decisions": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "goal": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "blockedReason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "goalId": {
+                              "type": "string"
+                            },
+                            "objective": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sessionKey": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "active",
+                                "paused",
+                                "budget_limited",
+                                "blocked",
+                                "complete"
+                              ],
+                              "type": "string"
+                            },
+                            "taskId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "timeUsedSeconds": {
+                              "type": "number"
+                            },
+                            "tokenBudget": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "tokensUsed": {
+                              "type": "number"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "sessionKey",
+                            "goalId",
+                            "objective",
+                            "status",
+                            "tokenBudget",
+                            "tokensUsed",
+                            "timeUsedSeconds",
+                            "taskId",
+                            "projectId",
+                            "blockedReason",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "openLoops": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "persisted": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "pinned": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "recent": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "role": {
+                                "enum": [
+                                  "user",
+                                  "assistant"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "textTruncated": {
+                                "type": "boolean"
+                              },
+                              "time": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "role",
+                              "text",
+                              "textTruncated",
+                              "time"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "limit": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "omittedTools": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "totalMessages": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "source",
+                        "reason",
+                        "limit",
+                        "totalMessages",
+                        "truncated",
+                        "omittedTools",
+                        "items"
+                      ],
+                      "type": "object"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "session": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "compactionCount": {
+                          "type": "number"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "displayName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sessionKey": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "sessionKey",
+                        "name",
+                        "displayName",
+                        "agentId",
+                        "compactionCount",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "sources": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "goal": {
+                          "type": "boolean"
+                        },
+                        "history": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sessionRow": {
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "sessionRow",
+                        "goal",
+                        "history"
+                      ],
+                      "type": "object"
+                    },
+                    "summary": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "computed",
+                    "persisted",
+                    "session",
+                    "goal",
+                    "summary",
+                    "pinned",
+                    "decisions",
+                    "openLoops",
+                    "recent",
+                    "sources"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Compute a bounded recap of a session (identity, goal, recent tail)",
         "tags": [
           "sessions"
         ]
