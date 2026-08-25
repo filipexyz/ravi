@@ -25,6 +25,13 @@ import {
   materializeSubjectCapabilities,
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
+import {
+  ensureCodexBashHookConfig,
+  inspectCodexHookConfig,
+  RAVI_CODEX_BASH_HOOK_COMMAND,
+  RAVI_CODEX_BASH_HOOK_MATCHER,
+  RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND,
+} from "../../runtime/codex-hooks.js";
 import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import {
@@ -2579,44 +2586,86 @@ function buildCronTargetsCheck(deps: DoctorDeps): LegacyDoctorCheck {
 }
 
 function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): LegacyDoctorCheck {
-  if (!deps.exists(hooksPath)) {
+  const raw = deps.exists(hooksPath) ? safeReadDoctorFile(hooksPath, deps) : null;
+  const before = inspectCodexHookConfig(raw, hooksPath);
+  let repaired = false;
+  let after = before;
+
+  if (!before.ok) {
+    try {
+      const result = ensureCodexBashHookConfig(dirname(hooksPath));
+      repaired = result.changed;
+      after = inspectCodexHookConfig(deps.exists(hooksPath) ? safeReadDoctorFile(hooksPath, deps) : null, hooksPath);
+    } catch (error) {
+      return {
+        id: "codex.bash-hook",
+        title: "Global Codex bash hook",
+        status: "fail",
+        summary: before.reasons[0] ?? "failed to inspect or rewrite ~/.codex/hooks.json",
+        details: [hooksPath, ...before.reasons, error instanceof Error ? error.message : String(error)],
+        fixHint: buildCodexHookFixHint(before),
+        data: {
+          path: hooksPath,
+          exists: before.exists,
+          valid: false,
+          matcherOk: before.matcherOk,
+          staleCommand: before.staleCommand,
+          preferredCommand: before.preferredCommand,
+          repaired: false,
+          reasons: before.reasons,
+        },
+      };
+    }
+  }
+
+  if (!after.ok) {
     return {
       id: "codex.bash-hook",
       title: "Global Codex bash hook",
       status: "fail",
-      summary: "global Codex hooks file is missing",
-      details: [hooksPath],
-      fixHint: "materialize ~/.codex/hooks.json through the Codex provider or restart the daemon",
-      data: { path: hooksPath, exists: false, valid: false },
+      summary: after.reasons[0] ?? "global Codex hooks file exists but Ravi bash governance is missing",
+      details: [hooksPath, ...after.reasons],
+      fixHint: buildCodexHookFixHint(after),
+      data: {
+        path: hooksPath,
+        exists: after.exists,
+        valid: false,
+        matcherOk: after.matcherOk,
+        staleCommand: after.staleCommand,
+        preferredCommand: after.preferredCommand,
+        repaired,
+        reasons: after.reasons,
+      },
     };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(deps.readFile(hooksPath));
-  } catch (error) {
+  if (before.staleCommand || !before.matcherOk || before.staleStatus) {
     return {
       id: "codex.bash-hook",
       title: "Global Codex bash hook",
       status: "fail",
-      summary: "global Codex hooks file is not valid JSON",
-      details: [hooksPath, error instanceof Error ? error.message : String(error)],
-      fixHint: "rewrite ~/.codex/hooks.json with the Ravi bash hook group",
-      data: { path: hooksPath, exists: true, valid: false },
-    };
-  }
-
-  const valid = hasRaviCodexBashHook(parsed);
-  if (!valid) {
-    return {
-      id: "codex.bash-hook",
-      title: "Global Codex bash hook",
-      status: "fail",
-      summary: "global Codex hooks file exists but Ravi bash governance is missing",
-      details: [hooksPath],
+      summary: before.staleCommand
+        ? `stale PreToolUse command \`${RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND}\` was rewritten to \`${RAVI_CODEX_BASH_HOOK_COMMAND}\``
+        : !before.matcherOk
+          ? `invalid PreToolUse matcher was rewritten to \`${RAVI_CODEX_BASH_HOOK_MATCHER}\``
+          : "legacy Ravi Codex hook group was rewritten to the bash-only matcher",
+      details: [
+        hooksPath,
+        ...before.reasons,
+        repaired ? "rewrote ~/.codex/hooks.json" : "hooks file already matched after reread",
+      ],
       fixHint:
-        "rewrite ~/.codex/hooks.json so `PreToolUse` for `^(Bash|shell)$` points at `ravi context codex-bash-hook`",
-      data: { path: hooksPath, exists: true, valid: false },
+        "respawn the live Codex app-server without wiping session history so it reloads hooks.json; stale `codex-tool-hook` invocations are now accepted as an alias",
+      data: {
+        path: hooksPath,
+        exists: true,
+        valid: true,
+        matcherOk: before.matcherOk,
+        staleCommand: before.staleCommand,
+        preferredCommand: before.preferredCommand,
+        repaired,
+        reasons: before.reasons,
+      },
     };
   }
 
@@ -2626,47 +2675,34 @@ function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): LegacyDoctorC
     status: "ok",
     summary: "Ravi Codex bash governance is present in ~/.codex/hooks.json",
     details: [hooksPath],
-    data: { path: hooksPath, exists: true, valid: true },
+    data: {
+      path: hooksPath,
+      exists: true,
+      valid: true,
+      matcherOk: true,
+      staleCommand: false,
+      preferredCommand: true,
+      repaired: false,
+    },
   };
 }
 
-function hasRaviCodexBashHook(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
+function safeReadDoctorFile(path: string, deps: DoctorDeps): string | null {
+  try {
+    return deps.readFile(path);
+  } catch {
+    return null;
   }
+}
 
-  const hooks = (value as Record<string, unknown>).hooks;
-  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
-    return false;
+function buildCodexHookFixHint(inspection: { staleCommand: boolean; matcherOk: boolean }): string {
+  if (inspection.staleCommand) {
+    return `rewrite ~/.codex/hooks.json so PreToolUse uses \`ravi context ${RAVI_CODEX_BASH_HOOK_COMMAND}\` instead of \`${RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND}\``;
   }
-
-  const preToolUse = (hooks as Record<string, unknown>).PreToolUse;
-  if (!Array.isArray(preToolUse)) {
-    return false;
+  if (!inspection.matcherOk) {
+    return `rewrite ~/.codex/hooks.json so PreToolUse matcher is exactly \`${RAVI_CODEX_BASH_HOOK_MATCHER}\``;
   }
-
-  return preToolUse.some((group) => {
-    if (!group || typeof group !== "object" || Array.isArray(group)) {
-      return false;
-    }
-    const matcher = (group as Record<string, unknown>).matcher;
-    const handlers = (group as Record<string, unknown>).hooks;
-    if (matcher !== "^(Bash|shell)$" || !Array.isArray(handlers)) {
-      return false;
-    }
-    return handlers.some((handler) => {
-      if (!handler || typeof handler !== "object" || Array.isArray(handler)) {
-        return false;
-      }
-      const record = handler as Record<string, unknown>;
-      return (
-        record.type === "command" &&
-        record.statusMessage === "ravi codex bash permission gate" &&
-        typeof record.command === "string" &&
-        record.command.includes("codex-bash-hook")
-      );
-    });
-  });
+  return `rewrite ~/.codex/hooks.json so \`PreToolUse\` for \`${RAVI_CODEX_BASH_HOOK_MATCHER}\` points at \`ravi context ${RAVI_CODEX_BASH_HOOK_COMMAND}\``;
 }
 
 function printDoctorReport(report: DoctorReport, options: { full?: boolean } = {}): void {

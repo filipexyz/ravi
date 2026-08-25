@@ -29,7 +29,8 @@ ravi sessions runtime fork <session> --json
 - Confirm the Codex app-server process receives `RAVI_CONTEXT_KEY`.
 - If the session reuses an existing app-server process, confirm the provider respawned it when the `RAVI_*` env signature changed.
 - Confirm the Codex app-server was launched with `shell_environment_policy.inherit=all`, `shell_environment_policy.ignore_default_excludes=true`, and an `include_only` glob allowlist containing `RAVI_*`.
-- Confirm `~/.codex/hooks.json` points the `^(Bash|shell)$` hook at `ravi context codex-bash-hook` or repo `bin/ravi context codex-bash-hook`, not a test file.
+- Confirm `~/.codex/hooks.json` points the `^(Bash|shell)$` hook at `ravi context codex-bash-hook` or repo `bin/ravi context codex-bash-hook`, not a test file and not `codex-tool-hook`.
+- If doctor reports a stale `codex-tool-hook` command or an invalid matcher, it rewrites the Ravi group. The live Codex app-server still has to respawn to reload the file. `ravi context codex-tool-hook` remains a deprecated alias so a stale worker does not hard-block Bash, including Pages `list` / `published` / `publish`.
 - Confirm the Bash hook returns `{}` for allowed Bash calls. It is a permission/skill-gate hook, not an env injector.
 - Confirm the shell command env contains `RAVI_CONTEXT_KEY`; if it does not, debug `shell_environment_policy`, not the hook output.
 - Confirm model-initiated Ravi actions use shell commands, for example `ravi tasks list`, not native Codex dynamic tools.

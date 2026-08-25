@@ -183,6 +183,11 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 
 O upload de conteúdo do Pages é `ravi pages publish`.
 
+Em sessões Codex, `ravi pages list|published|publish` passam por Bash/shell e pelo
+PreToolUse `ravi context codex-bash-hook`. O nome legado `codex-tool-hook` é só
+alias; se o hook falhar com `unknown command`, leitura e publish de Pages
+ficam bloqueados junto com qualquer outra ferramenta local.
+
 Para proteger uma rota já publicada sem reenviar o conteúdo (`set`/`remove` são freados; o `set` sem `--execute` nem pede a senha):
 
 ```bash

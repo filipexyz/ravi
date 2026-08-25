@@ -36,6 +36,7 @@ Ensine o agent a:
 - checar capacidade com `ravi context check`
 - pedir approval com `ravi context authorize`
 - auditar/inspecionar com `ravi context list/info/revoke`
+- tratar `ravi context codex-tool-hook` como alias depreciado de `ravi context codex-bash-hook` (mesmo acesso e payload). Hooks gerados devem continuar emitindo `codex-bash-hook`.
 
 ## Fluxo Canonico
 

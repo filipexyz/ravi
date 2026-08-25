@@ -209,6 +209,86 @@ describe("inspectDoctor", () => {
     expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
   });
 
+  it("fails and rewrites a stale codex-tool-hook command", () => {
+    const deps = makeHealthyDeps();
+    const hooksPath = join(deps.homeDir(), ".codex", "hooks.json");
+    writeFileSync(
+      hooksPath,
+      JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "^(Bash|shell)$",
+                hooks: [
+                  {
+                    type: "command",
+                    command: "ravi context codex-tool-hook",
+                    statusMessage: "ravi codex native tool permission gate",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "codex.bash-hook");
+    const finding = report.findings.find((item) => item.id === "codex.bash-hook");
+    expect(check?.status).toBe("fail");
+    expect(check?.data?.staleCommand).toBe(true);
+    expect(finding?.summary).toContain("codex-tool-hook");
+    expect(finding?.summary).toContain("codex-bash-hook");
+
+    const rewritten = JSON.parse(readFileSync(hooksPath, "utf8"));
+    expect(rewritten.hooks.PreToolUse).toHaveLength(1);
+    expect(rewritten.hooks.PreToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+    expect(rewritten.hooks.PreToolUse[0]?.hooks[0]?.command).toContain("codex-bash-hook");
+    expect(rewritten.hooks.PreToolUse[0]?.hooks[0]?.command).not.toContain("codex-tool-hook");
+  });
+
+  it("fails and repairs an invalid PreToolUse matcher", () => {
+    const deps = makeHealthyDeps();
+    const hooksPath = join(deps.homeDir(), ".codex", "hooks.json");
+    writeFileSync(
+      hooksPath,
+      JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "^(Bash|shell|exec_command|view_image)$",
+                hooks: [
+                  {
+                    type: "command",
+                    command: "ravi context codex-bash-hook",
+                    statusMessage: "ravi codex bash permission gate",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "codex.bash-hook");
+    const finding = report.findings.find((item) => item.id === "codex.bash-hook");
+    expect(check?.status).toBe("fail");
+    expect(check?.data?.matcherOk).toBe(false);
+    expect(finding?.summary).toContain("^(Bash|shell)$");
+
+    const rewritten = JSON.parse(readFileSync(hooksPath, "utf8"));
+    expect(rewritten.hooks.PreToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+  });
+
   it("passes the disk/temp pressure check when free space is healthy", () => {
     const deps = makeHealthyDeps();
     const report = inspectDoctor(deps);

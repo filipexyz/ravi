@@ -158,7 +158,7 @@ describe("createCodexRuntimeProvider", () => {
     expect(synced).toEqual([{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }]);
   });
 
-  it("materializes the global Codex native tool hook in ~/.codex/hooks.json", () => {
+  it("materializes the global Codex bash hook in ~/.codex/hooks.json", () => {
     const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
     const originalHome = process.env.HOME;
     process.env.HOME = home;
@@ -188,6 +188,61 @@ describe("createCodexRuntimeProvider", () => {
       expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain("codex-tool-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+  });
+
+  it("replaces a stale codex-tool-hook group instead of leaving it beside the bash hook", () => {
+    const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+
+    try {
+      const hooksPath = join(home, ".codex", "hooks.json");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(
+        hooksPath,
+        JSON.stringify(
+          {
+            hooks: {
+              PreToolUse: [
+                {
+                  matcher: "^(Read|Bash|shell|exec_command|view_image)$",
+                  hooks: [
+                    {
+                      type: "command",
+                      command: "ravi context codex-tool-hook",
+                      statusMessage: "ravi codex native tool permission gate",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const provider = createCodexRuntimeProvider();
+      provider.prepareSession?.({
+        agentId: "main",
+        cwd: "/tmp/ravi-codex",
+        plugins: [],
+      });
+
+      const payload = JSON.parse(readFileSync(hooksPath, "utf8"));
+      const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
+      expect(preToolUse).toHaveLength(1);
+      expect(preToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+      expect(preToolUse[0]?.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(preToolUse[0]?.hooks[0]?.command).not.toContain("codex-tool-hook");
+      expect(preToolUse[0]?.hooks[0]?.statusMessage).toBe("ravi codex bash permission gate");
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
