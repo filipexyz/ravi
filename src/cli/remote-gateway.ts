@@ -3,10 +3,13 @@
  *
  * Spec: `runtime/context-keys`, `sdk/auth`, `sdk/gateway`.
  *
- * When `RAVI_GATEWAY_URL` is set (or, in the future, `gateway.url` from
- * `~/.ravi/config.toml`), every decorated CLI command transparently turns into
- * a `POST /api/v1/<group-segments>/<command>` request authenticated with the
- * resolved runtime context-key (`rctx_*`).
+ * When `RAVI_GATEWAY_URL` is set (http(s) or `unix://`), every decorated CLI
+ * command transparently turns into a `POST /api/v1/<group-segments>/<command>`
+ * request authenticated with the resolved runtime context-key (`rctx_*`).
+ *
+ * Isolated CLIs (`RAVI_CONTEXT_KEY` set) also auto-bridge to the host unix
+ * socket at `~/.ravi/cli-gateway.sock` when that socket is connectable. They
+ * MUST NOT auto-open raw loopback HTTP.
  *
  * The remote dispatcher is intentionally minimal: it builds a flat JSON body
  * (matching `src/sdk/gateway/dispatcher.ts`), forwards successful responses
@@ -15,6 +18,13 @@
  * local mode without trusting arbitrary remote error fields.
  */
 
+import { request as httpRequest } from "node:http";
+import {
+  HOST_CLI_GATEWAY_ENV,
+  HOST_CLI_GATEWAY_INTERNAL_ENV,
+  getHostCliGatewaySocketPath,
+  probeUnixSocket,
+} from "../isolation/execution-plane.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
 import {
@@ -27,6 +37,7 @@ import { sanitizePublicValue } from "./redaction.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
+export const HOST_CLI_GATEWAY_URL_PREFIX = "unix://";
 // The authenticated target gateway owns the protocol code. Preserve it for
 // transport parity, but reject free-form strings; a shared code catalog would
 // be a broader contract change than this boundary repair.
@@ -88,12 +99,17 @@ const REMOTE_PLAN_MAX_PROPERTIES = 64;
 export interface RemoteGatewayConfig {
   url: string;
   /** Source of the configuration value, used for log/error messages. */
-  source: "env";
+  source: "env" | "host-socket";
+  socketPath?: string;
 }
 
 export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op = "cli"): RemoteGatewayConfig | null {
   const raw = env[REMOTE_GATEWAY_URL_ENV]?.trim();
   if (!raw) return null;
+  const unix = parseUnixGatewayUrl(raw);
+  if (unix) {
+    return { url: `${HOST_CLI_GATEWAY_URL_PREFIX}${unix}`, source: "env", socketPath: unix };
+  }
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -104,11 +120,63 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
   return { url: raw.replace(/\/+$/, ""), source: "env" };
 }
 
+export interface ResolveRemoteGatewayConfigOptions {
+  probeSocket?: (socketPath: string) => Promise<boolean>;
+  stateDir?: string;
+}
+
+/**
+ * Resolve an explicit HTTP(S)/unix gateway, or auto-bridge to the host unix
+ * socket when this process is an isolated CLI (`RAVI_CONTEXT_KEY`) and the
+ * socket is actually connectable. Never auto-sets a loopback HTTP URL.
+ */
+export async function resolveRemoteGatewayConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  op = "cli",
+  options: ResolveRemoteGatewayConfigOptions = {},
+): Promise<RemoteGatewayConfig | null> {
+  const explicit = getRemoteGatewayConfig(env, op);
+  if (explicit) return explicit;
+  return resolveAutoHostCliGateway(env, options);
+}
+
+export async function resolveAutoHostCliGateway(
+  env: NodeJS.ProcessEnv = process.env,
+  options: ResolveRemoteGatewayConfigOptions = {},
+): Promise<RemoteGatewayConfig | null> {
+  if (!shouldAutoUseHostCliGateway(env)) return null;
+  const socketPath = getHostCliGatewaySocketPath(options.stateDir);
+  const probe = options.probeSocket ?? probeUnixSocket;
+  if (!(await probe(socketPath))) return null;
+  return {
+    url: `${HOST_CLI_GATEWAY_URL_PREFIX}${socketPath}`,
+    source: "host-socket",
+    socketPath,
+  };
+}
+
+export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env[REMOTE_GATEWAY_URL_ENV]?.trim()) return false;
+  const disabled = env[HOST_CLI_GATEWAY_ENV]?.trim();
+  if (disabled === "0" || disabled?.toLowerCase() === "false" || disabled?.toLowerCase() === "off") return false;
+  if (env[HOST_CLI_GATEWAY_INTERNAL_ENV]?.trim() === "1") return false;
+  return Boolean(env.RAVI_CONTEXT_KEY?.trim());
+}
+
+export function parseUnixGatewayUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("unix:")) return null;
+  let rest = trimmed.slice("unix:".length);
+  if (rest.startsWith("//")) rest = rest.slice(2);
+  if (!rest.startsWith("/")) return null;
+  return rest.replace(/\/+$/, "") || null;
+}
+
 function invalidRemoteGatewayError(op: string): ContractError {
   return new ContractError(
     op,
     "REMOTE_GATEWAY_INVALID",
-    `${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) URL.`,
+    `${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) or unix socket URL.`,
     CONTRACT_EXIT_USAGE,
     { suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
   );
@@ -374,32 +442,88 @@ function isCompleteContractErrorBody(value: unknown, expectedOp?: string): value
 
 export async function dispatchRemote(input: RemoteDispatchInput): Promise<RemoteDispatchResult> {
   const path = `/api/v1/${[...input.groupSegments, input.command].join("/")}`;
-  const url = `${input.config.url}${path}`;
+  const socketPath = input.config.socketPath ?? parseUnixGatewayUrl(input.config.url);
+  const url = socketPath ? `http://ravi-cli-gateway.local${path}` : `${input.config.url}${path}`;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${input.contextKey}`,
+    ...(socketPath ? { "x-ravi-gateway-internal": "1" } : {}),
+  };
+  const body = JSON.stringify(input.body);
+  const timeoutMs = input.timeoutMs ?? REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS;
+
+  if (socketPath && !input.fetchImpl) {
+    return fetchViaUnixSocket({ socketPath, path, headers, body, timeoutMs });
+  }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const fetchFn = input.fetchImpl ?? fetch;
     const response = await fetchFn(url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${input.contextKey}`,
-      },
-      body: JSON.stringify(input.body),
+      headers,
+      body,
       signal: controller.signal,
-    });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const text = new TextDecoder().decode(bytes);
-    return {
-      status: response.status,
-      ok: response.ok,
-      body: text,
-      bodyBytes: bytes,
-      contentType: response.headers.get("content-type"),
-    };
+      ...(socketPath ? { unix: socketPath } : {}),
+    } as RequestInit);
+    return await remoteResultFromResponse(response);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchViaUnixSocket(input: {
+  socketPath: string;
+  path: string;
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+}): Promise<RemoteDispatchResult> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        socketPath: input.socketPath,
+        path: input.path,
+        method: "POST",
+        headers: input.headers,
+        timeout: input.timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on("end", () => {
+          const bytes = new Uint8Array(Buffer.concat(chunks));
+          resolve({
+            status: res.statusCode ?? 500,
+            ok: (res.statusCode ?? 500) >= 200 && (res.statusCode ?? 500) < 300,
+            body: new TextDecoder().decode(bytes),
+            bodyBytes: bytes,
+            contentType: typeof res.headers["content-type"] === "string" ? res.headers["content-type"] : null,
+          });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy(new Error("Host CLI gateway request timed out"));
+    });
+    req.write(input.body);
+    req.end();
+  });
+}
+
+async function remoteResultFromResponse(response: Response): Promise<RemoteDispatchResult> {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return {
+    status: response.status,
+    ok: response.ok,
+    body: new TextDecoder().decode(bytes),
+    bodyBytes: bytes,
+    contentType: response.headers.get("content-type"),
+  };
 }
 
 /**

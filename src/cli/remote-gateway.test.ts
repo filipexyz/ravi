@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
+  resolveRemoteGatewayConfig,
   remoteDispatchOutput,
   remoteGatewayErrorToContractError,
   remoteGatewayExitCode,
@@ -44,7 +45,7 @@ describe("remote gateway response bytes", () => {
 describe("remote gateway configuration", () => {
   it("distinguishes an unset gateway from an invalid configured URL", () => {
     expect(getRemoteGatewayConfig({})).toBeNull();
-    for (const value of ["not a URL", "file:///tmp/ravi"]) {
+    for (const value of ["not a URL", "file:///tmp/ravi", "unix:relative.sock"]) {
       let failure: unknown;
       try {
         getRemoteGatewayConfig({ RAVI_GATEWAY_URL: value });
@@ -53,6 +54,60 @@ describe("remote gateway configuration", () => {
       }
       expect(failure).toMatchObject({ code: "REMOTE_GATEWAY_INVALID", exitCode: 2 });
     }
+  });
+
+  it("accepts an explicit unix socket URL without opening loopback HTTP", () => {
+    expect(getRemoteGatewayConfig({ RAVI_GATEWAY_URL: "unix:///home/user/.ravi/cli-gateway.sock" })).toEqual({
+      url: "unix:///home/user/.ravi/cli-gateway.sock",
+      source: "env",
+      socketPath: "/home/user/.ravi/cli-gateway.sock",
+    });
+  });
+
+  it("auto-bridges isolated CLIs to a reachable host unix socket", async () => {
+    const config = await resolveRemoteGatewayConfig(
+      { RAVI_CONTEXT_KEY: "rctx_test" },
+      "pages published",
+      {
+        stateDir: "/home/user/.ravi",
+        probeSocket: async (socketPath) => socketPath === "/home/user/.ravi/cli-gateway.sock",
+      },
+    );
+
+    expect(config).toEqual({
+      url: "unix:///home/user/.ravi/cli-gateway.sock",
+      source: "host-socket",
+      socketPath: "/home/user/.ravi/cli-gateway.sock",
+    });
+  });
+
+  it("does not auto-bridge without a context key, a reachable socket, or when disabled", async () => {
+    expect(
+      await resolveRemoteGatewayConfig({}, "pages published", {
+        stateDir: "/home/user/.ravi",
+        probeSocket: async () => true,
+      }),
+    ).toBeNull();
+    expect(
+      await resolveRemoteGatewayConfig(
+        { RAVI_CONTEXT_KEY: "rctx_test", RAVI_HOST_CLI_GATEWAY: "0" },
+        "pages published",
+        { stateDir: "/home/user/.ravi", probeSocket: async () => true },
+      ),
+    ).toBeNull();
+    expect(
+      await resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {
+        stateDir: "/home/user/.ravi",
+        probeSocket: async () => false,
+      }),
+    ).toBeNull();
+    expect(
+      await resolveRemoteGatewayConfig(
+        { RAVI_CONTEXT_KEY: "rctx_test", RAVI_GATEWAY_URL: "https://gateway.example" },
+        "pages published",
+        { stateDir: "/home/user/.ravi", probeSocket: async () => true },
+      ),
+    ).toEqual({ url: "https://gateway.example", source: "env" });
   });
 });
 

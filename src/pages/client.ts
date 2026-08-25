@@ -1,5 +1,6 @@
 import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../cloud-auth/client.js";
-import { CloudAuthError } from "../cloud-auth/errors.js";
+import { CloudAuthError, classifyConsoleNetworkError } from "../cloud-auth/errors.js";
+import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 
@@ -427,9 +428,7 @@ function requireStoredCredentials(credentials: CloudCredentials | null, consoleU
 
 function normalizePagesError(error: unknown): CloudAuthError {
   if (error instanceof CloudAuthError) return error;
-  return new CloudAuthError("SERVER_UNAVAILABLE", error instanceof Error ? error.message : String(error), {
-    cause: error,
-  });
+  return classifyConsoleNetworkError(error, inspectExecutionPlane());
 }
 
 function normalizeSiteListPayload(payload: unknown): PageSitePayload[] {

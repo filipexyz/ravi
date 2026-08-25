@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown } from "./errors.js";
+import { CloudAuthError, classifyConsoleNetworkError, cloudAuthErrorFromUnknown } from "./errors.js";
 
 describe("cloudAuthErrorFromUnknown", () => {
   it("preserves an already classified cloud error", () => {
@@ -22,6 +22,32 @@ describe("cloudAuthErrorFromUnknown", () => {
   });
 });
 
+describe("classifyConsoleNetworkError", () => {
+  it("keeps host Console outages as SERVER_UNAVAILABLE", () => {
+    const error = Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+    expect(classifyConsoleNetworkError(error, { plane: "host" })).toMatchObject({
+      code: "SERVER_UNAVAILABLE",
+    });
+  });
+
+  it("maps sandbox network failures to HOST_UNREACHABLE without mentioning pi", () => {
+    const error = Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+    const classified = classifyConsoleNetworkError(error, { plane: "provider-sandbox" });
+
+    expect(classified).toMatchObject({
+      code: "HOST_UNREACHABLE",
+      message: "Console is unreachable from this provider sandbox. The host CLI can reach Console.",
+    });
+    const contract = cloudErrorToContractError("pages published", classified);
+    expect(contract).toMatchObject({
+      code: "HOST_UNREACHABLE",
+      details: { retryable: false },
+    });
+    expect(contract.details.suggestedAction).toContain("host");
+    expect(JSON.stringify(contract.envelope())).not.toContain("pi");
+  });
+});
+
 describe("cloudErrorToContractError", () => {
   it.each([
     ["AUTH_REQUIRED", "Console authentication is required.", false],
@@ -34,6 +60,7 @@ describe("cloudErrorToContractError", () => {
     ["PAYLOAD_INVALID", "Console request input was invalid.", false],
     ["RATE_LIMITED", "Console request was rate limited.", true],
     ["SERVER_UNAVAILABLE", "Console service is unavailable.", true],
+    ["HOST_UNREACHABLE", "Console is unreachable from this provider sandbox. The host CLI can reach Console.", false],
     ["CREDENTIALS_INVALID", "Console credentials are invalid.", false],
     ["CLOUD_PUBLISH_NOT_IMPLEMENTED", "Console publishing is unavailable for this command.", false],
   ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {

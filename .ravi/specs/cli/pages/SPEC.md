@@ -72,7 +72,13 @@ contract errors rethrow first, recognizable Console not-found failures map to
 8. `pages list` and `pages published` MUST accept `--fields a,b,c`.
 9. A thrown `ContractError` MUST pass through `runPagesCommand`'s
    CloudAuthError funnel untouched (rethrow-first, model: mail.ts).
-10. `pages domains --execute` MUST be one idempotent setup command. When
+10. When Console HTTPS fails from a provider sandbox, `pages published`,
+    `pages list`, and `pages publish` MUST surface `HOST_UNREACHABLE` rather
+    than `SERVER_UNAVAILABLE`. The host CLI remaining able to publish/read
+    proves Console is up. Isolated CLIs MAY use the host unix-socket CLI
+    gateway when `RAVI_CONTEXT_KEY` is set and `~/.ravi/cli-gateway.sock` is
+    reachable. They MUST NOT auto-open raw `127.0.0.1`.
+11. `pages domains --execute` MUST be one idempotent setup command. When
     ownership or Pages DNS is not ready, the CLI MUST recognize
     `DOMAIN_SETUP_REQUIRED`, surface the Console-authored DNS instruction, exit
     1, and tell the operator to rerun the same command after propagation. This
@@ -103,6 +109,7 @@ is added it MUST arrive braked.
 | Console route not found | `ROUTE_NOT_FOUND` + listing suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | domain setup saved but waiting for DNS/provider readiness | `DOMAIN_SETUP_REQUIRED` + exact safe DNS action | 1 |
+| Console HTTPS failed from a provider sandbox | `HOST_UNREACHABLE` + host CLI suggestedAction | 1 |
 | other Console failures (auth, payload, rate limit) | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers

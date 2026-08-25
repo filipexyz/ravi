@@ -178,6 +178,7 @@ Recognized auth/publish errors include:
 - `PAYLOAD_INVALID`
 - `RATE_LIMITED`
 - `SERVER_UNAVAILABLE`
+- `HOST_UNREACHABLE` — Console HTTPS failed from a provider sandbox. The host CLI can still reach Console. This is not a generic Console outage and MUST NOT be inferred from unused runtime providers such as `pi`.
 
 Human output SHOULD show the next useful action. JSON output MUST include the
 safe error code.

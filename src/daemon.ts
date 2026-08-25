@@ -41,6 +41,7 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
+import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
 import {
   buildDaemonRestartResumePrompt,
@@ -186,6 +187,7 @@ let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
+let hostCliGateway: HostCliGatewayHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
@@ -260,6 +262,11 @@ async function shutdown(signal: string) {
 
     if (webhookHttpServer) {
       await webhookHttpServer.stop();
+    }
+
+    if (hostCliGateway) {
+      await hostCliGateway.stop();
+      hostCliGateway = null;
     }
 
     // Stop omni consumer
@@ -422,6 +429,16 @@ export async function startDaemon() {
     log.info("Webhook HTTP server ready", { url: webhookHttpServer.url });
   } else {
     log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
+  }
+
+  try {
+    hostCliGateway = await startHostCliGateway();
+    if (hostCliGateway) {
+      log.info("Host CLI gateway ready", { socketPath: hostCliGateway.socketPath });
+    }
+  } catch (error) {
+    log.error("Host CLI gateway failed to start", error);
+    hostCliGateway = null;
   }
 
   log.info("Daemon ready");
