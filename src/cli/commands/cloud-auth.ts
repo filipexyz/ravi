@@ -17,6 +17,7 @@ import {
 } from "../../cloud-auth/storage.js";
 import type { CloudCredentials, ConsoleAuthConfig, ConsoleMeResponse } from "../../cloud-auth/types.js";
 import { DEFAULT_CONSOLE_URL } from "../../cloud-auth/types.js";
+import { completeVerificationUri } from "../../cloud-auth/verification-uri.js";
 
 export interface CloudLoginOptions {
   console?: string;
@@ -58,9 +59,8 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   const installationId = existing?.consoleUrl === consoleUrl ? existing.installationId : crypto.randomUUID();
   const config = await client.getAuthConfig();
   const deviceAuth = await client.startDeviceAuthorization(config);
-  const authUrl = deviceAuth.verificationUriComplete;
-  const verificationUrl = deviceAuth.verificationUri;
   const userCode = deviceAuth.userCode;
+  const authUrl = resolveAuthorizeUrl(deviceAuth, config);
   const openBrowser = options.open !== false;
 
   if (authUrl && openBrowser) {
@@ -72,7 +72,7 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   }
 
   if (!options.json) {
-    printLoginStart({ consoleUrl, authUrl, verificationUrl, userCode, openBrowser });
+    printLoginStart({ consoleUrl, authUrl, userCode, openBrowser });
   }
 
   const credentials = await exchangeUntilComplete({
@@ -312,32 +312,52 @@ function safeAuthConfig(
     interval?: number | null;
   },
 ): Record<string, unknown> {
+  const authorizationUrl = resolveAuthorizeUrl(deviceAuth, config);
   return redactCloudAuthPayload({
     provider: config.provider ?? null,
-    authorizationUrl: firstString(
-      deviceAuth?.verificationUriComplete,
-      config.verificationUriComplete,
-      config.authorizationUrl,
-      config.authUrl,
-      config.loginUrl,
-    ),
-    verificationUri: firstString(deviceAuth?.verificationUri, config.verificationUri, config.verificationUrl),
+    authorizationUrl,
+    verificationUriComplete: authorizationUrl,
+    verificationUri: authorizationUrl,
     userCode: firstString(deviceAuth?.userCode, config.userCode),
     expiresIn: deviceAuth?.expiresIn ?? config.expiresIn ?? null,
     interval: deviceAuth?.interval ?? config.interval ?? null,
   });
 }
 
+function resolveAuthorizeUrl(
+  deviceAuth:
+    | {
+        verificationUriComplete?: string;
+        verificationUri?: string;
+        userCode?: string;
+      }
+    | undefined,
+  config: ConsoleAuthConfig,
+): string | undefined {
+  const userCode = firstString(deviceAuth?.userCode, config.userCode);
+  const candidate = firstString(
+    deviceAuth?.verificationUriComplete,
+    config.verificationUriComplete,
+    config.authorizationUrl,
+    config.authUrl,
+    config.loginUrl,
+    deviceAuth?.verificationUri,
+    config.verificationUri,
+    config.verificationUrl,
+  );
+  if (!candidate) return undefined;
+  return userCode ? completeVerificationUri(candidate, userCode) : candidate;
+}
+
 function printLoginStart(input: {
   consoleUrl: string;
   authUrl?: string;
-  verificationUrl?: string;
   userCode?: string;
   openBrowser: boolean;
 }): void {
   console.log(`Ravi Cloud login: ${input.consoleUrl}`);
   if (input.openBrowser && input.authUrl) console.log("Opening browser for authentication...");
-  if (input.verificationUrl) console.log(`Verification URL: ${input.verificationUrl}`);
+  if (input.authUrl) console.log(`Verification URL: ${input.authUrl}`);
   if (input.userCode) console.log(`Code: ${input.userCode}`);
 }
 

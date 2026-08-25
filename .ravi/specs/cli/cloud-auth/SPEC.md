@@ -74,13 +74,28 @@ Commands consumed by agents MUST support `--json`.
 `ravi login` SHOULD open a browser when possible and MUST also print a fallback
 verification URL/code for headless or remote environments.
 
+When Console issues a device `user_code`, the URL that humans and agents open
+MUST already include it as the `user_code` query parameter:
+
+`https://<console>/cli/authorize?user_code=<CODE>`
+
+The CLI MUST NOT present the bare `/cli/authorize` page as the link to open.
+That page does not bind the pending device grant. If Console omits
+`verification_uri_complete`, the CLI MUST construct it from `verification_uri`
+plus the issued `user_code` (URL-encoded). The printed code MAY still be shown
+as a fallback, but the URL itself MUST already contain it.
+
+`--json` MUST expose the same complete URL on `auth.authorizationUrl` and any
+other URL field agents copy (`verificationUriComplete`, `verificationUri`).
+
 ## Auth Flow
 
 The CLI SHOULD implement a browser/device OAuth flow:
 
 1. Fetch public auth config from Console.
 2. Start provider login using public client metadata.
-3. Display verification URL and user code when provided.
+3. Display the complete verification URL (with `user_code`) and the user code
+   when provided.
 4. Poll or receive completion according to the provider flow.
 5. Send the provider access token to the Console exchange endpoint.
 6. Store only Ravi-owned CLI credentials returned by Console.
@@ -170,6 +185,10 @@ safe error code.
 ## Acceptance Criteria
 
 - `ravi login` can link a local CLI without storing provider or browser secrets.
+- `ravi login` human output and `--json` expose
+  `https://<console>/cli/authorize?user_code=<CODE>` as the URL to open whenever
+  a device `user_code` exists. The bare `/cli/authorize` URL is never the link
+  to follow.
 - `ravi login --help` identifies the Console contract and default, does not
   expose `--endpoint`, and the root command does not expose a product-linking
   command.

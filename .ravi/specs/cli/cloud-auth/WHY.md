@@ -19,6 +19,13 @@ semantics.
 The CLI should prove the human through the browser, then operate with CLI
 credentials issued for that local installation.
 
+The complete authorize URL must carry `user_code`. Console's bare
+`/cli/authorize` page does not attach the pending device grant, so a human or
+agent who opens that page can approve a session the CLI will never receive.
+Printing the code on a separate line is not enough: operators and agents copy
+the first URL they see. If Console omits `verification_uri_complete`, the CLI
+must add `user_code` itself rather than falling back to the bare URI.
+
 ## Why Keep Local Artifacts Offline-Capable
 
 Artifacts are a Ravi primitive. Cloud publishing is an extension of that

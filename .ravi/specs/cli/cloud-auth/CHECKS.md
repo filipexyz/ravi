@@ -24,6 +24,9 @@ ravi whoami --json
 Expected:
 
 - auth completes through browser/device flow;
+- the printed Verification URL and JSON `auth.authorizationUrl` /
+  `auth.verificationUriComplete` include `?user_code=<issued-code>`;
+- the bare `/cli/authorize` URL is never presented as the link to open;
 - `whoami` returns user, organization, installation, scopes, and expiry;
 - no raw token appears in stdout/stderr.
 
