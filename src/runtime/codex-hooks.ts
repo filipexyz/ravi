@@ -118,7 +118,7 @@ export function inspectParsedCodexHookConfig(value: unknown, hooksPath: string):
     };
   }
 
-  const matcherOk = raviGroups.some((group) => group.matcher === RAVI_CODEX_BASH_HOOK_MATCHER);
+  const matcherOk = raviGroups.some((group) => asRecord(group)?.matcher === RAVI_CODEX_BASH_HOOK_MATCHER);
   const preferredCommand = raviGroups.some((group) =>
     listHookCommands(group).some(
       (command) =>
