@@ -25,7 +25,11 @@ import {
   materializeSubjectCapabilities,
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
-import { inspectExecutionPlane, looksLikeRaviSourceTree, type ExecutionPlaneSnapshot } from "../../isolation/execution-plane.js";
+import {
+  inspectExecutionPlane,
+  looksLikeRaviSourceTree,
+  type ExecutionPlaneSnapshot,
+} from "../../isolation/execution-plane.js";
 import {
   DEFAULT_RUNTIME_PROVIDER_ID,
   getRuntimeCompatibilityIssues,
@@ -2592,7 +2596,10 @@ function providersUsedByRegisteredAgents(deps: DoctorDeps): RuntimeProviderId[] 
       used.add(DEFAULT_RUNTIME_PROVIDER_ID);
     }
     for (const agent of agents) {
-      const provider = typeof agent.provider === "string" && agent.provider.trim() ? agent.provider.trim() : DEFAULT_RUNTIME_PROVIDER_ID;
+      const provider =
+        typeof agent.provider === "string" && agent.provider.trim()
+          ? agent.provider.trim()
+          : DEFAULT_RUNTIME_PROVIDER_ID;
       used.add(provider);
     }
   } catch {

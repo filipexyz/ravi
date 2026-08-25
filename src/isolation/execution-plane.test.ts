@@ -92,9 +92,7 @@ describe("inspectExecutionPlane", () => {
 
 describe("looksLikeRaviSourceTree", () => {
   it("accepts a tree that has provider-runtime source", () => {
-    expect(
-      looksLikeRaviSourceTree("/repo", existsFrom(["/repo/src/permissions/provider-runtime.ts"])),
-    ).toBe(true);
+    expect(looksLikeRaviSourceTree("/repo", existsFrom(["/repo/src/permissions/provider-runtime.ts"]))).toBe(true);
   });
 
   it("accepts a tree that has doctor and pages sources", () => {
@@ -113,9 +111,7 @@ describe("looksLikeRaviSourceTree", () => {
 
 describe("isNetworkIsolationError", () => {
   it("recognizes fetch and socket failures", () => {
-    expect(isNetworkIsolationError(Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" }))).toBe(
-      true,
-    );
+    expect(isNetworkIsolationError(Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" }))).toBe(true);
     expect(isNetworkIsolationError(new Error("unable to connect"))).toBe(true);
     expect(isNetworkIsolationError(new Error("payload was invalid"))).toBe(false);
   });

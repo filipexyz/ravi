@@ -14,11 +14,7 @@ import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getRaviStateDir } from "../utils/paths.js";
 import { logger } from "../utils/logger.js";
-import {
-  HOST_CLI_GATEWAY_ENV,
-  getHostCliGatewaySocketPath,
-  probeUnixSocket,
-} from "../isolation/execution-plane.js";
+import { HOST_CLI_GATEWAY_ENV, getHostCliGatewaySocketPath, probeUnixSocket } from "../isolation/execution-plane.js";
 import { createGatewayHandlerContext, handleGatewayRequest } from "../sdk/gateway/server.js";
 import type { GatewayConfig, GatewayHandlerContext } from "../sdk/gateway/server.js";
 
@@ -112,9 +108,7 @@ export async function startHostCliGateway(
   };
 }
 
-export async function hostCliGatewayReachable(
-  socketPath = getHostCliGatewaySocketPath(),
-): Promise<boolean> {
+export async function hostCliGatewayReachable(socketPath = getHostCliGatewaySocketPath()): Promise<boolean> {
   return probeUnixSocket(socketPath);
 }
 
@@ -154,11 +148,7 @@ async function handleUnixRequest(
   });
 
   const response =
-    (handleRequest
-      ? await handleRequest(request)
-      : ctx
-        ? await handleGatewayRequest(request, ctx)
-        : null) ??
+    (handleRequest ? await handleRequest(request) : ctx ? await handleGatewayRequest(request, ctx) : null) ??
     new Response(JSON.stringify({ error: "NotFound" }), {
       status: 404,
       headers: { "content-type": "application/json" },

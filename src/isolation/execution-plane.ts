@@ -47,14 +47,10 @@ export function getHostCliGatewaySocketPath(stateDir = getRaviStateDir()): strin
   return join(stateDir, HOST_CLI_GATEWAY_SOCKET_NAME);
 }
 
-export function looksLikeRaviSourceTree(
-  cwd: string,
-  exists: (path: string) => boolean = existsSync,
-): boolean {
+export function looksLikeRaviSourceTree(cwd: string, exists: (path: string) => boolean = existsSync): boolean {
   if (exists(join(cwd, "src", "permissions", "provider-runtime.ts"))) return true;
   return (
-    exists(join(cwd, "src", "cli", "commands", "doctor.ts")) &&
-    exists(join(cwd, "src", "cli", "commands", "pages.ts"))
+    exists(join(cwd, "src", "cli", "commands", "doctor.ts")) && exists(join(cwd, "src", "cli", "commands", "pages.ts"))
   );
 }
 
