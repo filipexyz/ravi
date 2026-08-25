@@ -527,6 +527,8 @@ export type RuntimeEvent =
       type: "turn.failed";
       error: string;
       recoverable?: boolean;
+      /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */
+      failureKind?: "transport";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({

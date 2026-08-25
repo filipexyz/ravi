@@ -865,6 +865,7 @@ async function* normalizeCodexEvents(
         }
 
         const stderrMessage = result.stderr.trim();
+        const missingTerminalEvent = !lastErrorMessage && !stderrMessage;
         const metadata = buildCodexEventMetadata(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
@@ -874,6 +875,7 @@ async function* normalizeCodexEvents(
             lastErrorMessage ??
             (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
           recoverable: true,
+          failureKind: missingTerminalEvent ? "transport" : undefined,
           metadata,
         });
         if (terminal) {
@@ -1020,7 +1022,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     pendingRequests.clear();
   };
 
-  const handleChildTermination = (exitCode: number | null, signal: NodeJS.Signals | null, error?: Error) => {
+  const handleChildTermination = (
+    expectedTransport: CodexTransport,
+    exitCode: number | null,
+    signal: NodeJS.Signals | null,
+    error?: Error,
+  ) => {
+    // A planned env refresh replaces the process and transport. Late close or
+    // websocket callbacks from the retired generation must not tear down or
+    // fail the turn already owned by its replacement.
+    if (transport !== expectedTransport) {
+      return;
+    }
     if (closed && child === null && transport === null) {
       // Already cleaned up — guard against duplicate close/error events from
       // both the child process and the websocket layer.
@@ -1073,6 +1086,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
+        if (transport !== newTransport || intentionalChildRestart) {
+          return;
+        }
         try {
           const parsed = JSON.parse(line) as CodexJsonRpcMessage;
           routeAppServerMessage(parsed);
@@ -1084,6 +1100,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
       },
       onTransportError: (error) => {
+        if (transport !== newTransport || intentionalChildRestart) {
+          return;
+        }
         if (activeTurn) {
           settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
         }
@@ -1103,11 +1122,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     log.info("codex spawn", { pid: newTransport.child.pid, transport: newTransport.kind });
 
     newTransport.child.on("error", (error) => {
-      handleChildTermination(1, null, error);
+      handleChildTermination(newTransport, 1, null, error);
     });
 
     newTransport.child.on("close", (exitCode, signal) => {
-      handleChildTermination(exitCode, signal);
+      handleChildTermination(newTransport, exitCode, signal);
     });
 
     // For WebSocket transport, we must wait for the listener to be ready
@@ -1115,7 +1134,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     try {
       await newTransport.ready;
     } catch (error) {
-      handleChildTermination(1, null, error instanceof Error ? error : new Error(String(error)));
+      handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   };

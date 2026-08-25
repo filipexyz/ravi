@@ -12,6 +12,7 @@ export function isRuntimeTerminalEvent(event: RuntimeEvent): event is RuntimeTer
 export interface RuntimeFailedTerminalInput {
   error: string;
   recoverable?: boolean;
+  failureKind?: "transport";
   rawEvent?: Record<string, unknown>;
   metadata?: RuntimeEventMetadata;
 }
@@ -54,6 +55,7 @@ export function createRuntimeTerminalEventTracker(): RuntimeTerminalEventTracker
         type: "turn.failed",
         error: input.error,
         recoverable: input.recoverable,
+        ...(input.failureKind ? { failureKind: input.failureKind } : {}),
         ...(input.rawEvent ? { rawEvent: input.rawEvent } : {}),
         ...(input.metadata ? { metadata: input.metadata } : {}),
       };

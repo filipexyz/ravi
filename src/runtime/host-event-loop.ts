@@ -98,6 +98,7 @@ const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
@@ -2032,9 +2033,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
               const internalAbortReason = streaming.internalAbortReason;
               const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+              const transportRecoverable =
+                event.recoverable !== false &&
+                event.failureKind === "transport" &&
+                getRuntimeTurnReplaySafety(streaming, crashRecovery).replayable;
               return {
                 internalAbortReason,
-                suppressedRecoverable: interruptedRecoverable || internalRecoverable,
+                suppressedRecoverable: interruptedRecoverable || internalRecoverable || transportRecoverable,
+                recoveryReason: transportRecoverable
+                  ? PROVIDER_TRANSPORT_FAILURE_REASON
+                  : (internalAbortReason ?? "recoverable_interrupt_failure"),
               };
             })()
           : undefined;
@@ -2887,6 +2895,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "turn.failed") {
         const internalAbortReason = receivedFailureClassification?.internalAbortReason;
+        const recoveryReason = receivedFailureClassification?.recoveryReason;
         const suppressedRecoverable = receivedFailureClassification?.suppressedRecoverable ?? false;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
         const currentTurnReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
@@ -2925,7 +2934,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           await emitRuntimeEvent({
             type: "turn.interrupted",
             provider: runtimeSession.provider,
-            reason: internalAbortReason ?? "recoverable_interrupt_failure",
+            reason: recoveryReason,
             metadata: event.metadata,
           });
           await releasePendingProviderRawEvent(correlatedProviderRawEvent);
@@ -2933,7 +2942,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           recordTerminalTraceOnce({
             status: "interrupted",
             eventType: "turn.interrupted",
-            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            abortReason: recoveryReason,
             error: null,
             payloadJson: {
               recoverable: event.recoverable ?? true,
@@ -2948,7 +2957,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
             error: null,
-            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            abortReason: recoveryReason,
           });
         }
 
@@ -2963,7 +2972,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.internalAbortReason = undefined;
 
         if (suppressedRecoverable) {
-          const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
+          const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
           markRuntimeLiveIdle(sessionName, "turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
