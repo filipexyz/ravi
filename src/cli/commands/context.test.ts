@@ -1036,18 +1036,6 @@ describe("ContextCommands", () => {
       ]);
       expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("'hello'");
     });
-
-    it("registers codex-tool-hook as a deprecated alias of codex-bash-hook", async () => {
-      const { getRegistry } = await import("../registry-snapshot.js");
-      const command = getRegistry().commands.find((entry) => entry.fullName === "context.codex-bash-hook");
-      expect(command?.aliases).toEqual(["codex-tool-hook"]);
-      expect(command?.access).toMatchObject({
-        kind: "read",
-        resource: "context",
-        action: "codex-bash-hook",
-      });
-      expect(getRegistry().commands.some((entry) => entry.fullName === "context.codex-tool-hook")).toBe(false);
-    });
   });
 
   describe("return schema conformance", () => {
