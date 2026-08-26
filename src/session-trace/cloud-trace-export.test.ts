@@ -507,7 +507,7 @@ describe("cloud trace export", () => {
     expect(inspectSyncRecord(second.outboxId!)?.record.status).toBe("acked");
   });
 
-  it("moves the export cursor before TTL pruning can delete exported event rows", () => {
+  it("does not let a stale export cursor block the local trace TTL", () => {
     recordSessionEvent({
       sessionKey: "agent:dev",
       eventType: "turn.complete",
@@ -523,7 +523,7 @@ describe("cloud trace export", () => {
     enqueueTraceExportBatch({ limit: 1, now: 3 });
     expect(getSyncCursor("runtime_trace", "session_events_enqueued")?.cursorValue).toBe("1");
     const prune = dbPruneStaleRows({ dryRun: true, now: 10 * 24 * 60 * 60 * 1000 });
-    expect(prune.sessionEvents).toBe(1);
+    expect(prune.sessionEvents).toBe(2);
   });
 });
 

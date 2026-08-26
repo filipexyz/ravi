@@ -22,6 +22,9 @@ import type { ChannelOutboundJob } from "./outbound-stream.js";
 function processChannelOutboundJob(job: ChannelOutboundJob, options: ChannelOutboundConsumerOptions) {
   return processChannelOutboundJobWithNats(job, {
     flushNats: async () => {},
+    // Unit tests must never write delivery traces into the operator's live
+    // Ravi database. Tests that exercise trace behavior pass an explicit spy.
+    recordDeliveryTrace: () => null,
     ...options,
   });
 }
@@ -173,6 +176,41 @@ describe("channel outbound consumer", () => {
         reason: "send_error",
         error: "slack unavailable",
       }),
+    );
+  });
+
+  it("emits retry telemetry without persisting duplicate failure traces", async () => {
+    const emitEvent = mock(async () => {});
+    const recordDeliveryTrace = mock(() => null);
+    const delivery: NativeTextDelivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async () => {
+        throw new Error("slack unavailable");
+      }),
+    };
+
+    const first = await processChannelOutboundJob(makeJob(), {
+      deliveries: [delivery],
+      emitEvent,
+      persistDelivery: false,
+      deliveryAttempt: 1,
+      recordDeliveryTrace,
+    });
+    const retry = await processChannelOutboundJob(makeJob(), {
+      deliveries: [delivery],
+      emitEvent,
+      persistDelivery: false,
+      deliveryAttempt: 2,
+      recordDeliveryTrace,
+    });
+
+    expect(first).toMatchObject({ disposition: "nak", retryable: true, phase: "send" });
+    expect(retry).toMatchObject({ disposition: "nak", retryable: true, phase: "send" });
+    expect(recordDeliveryTrace).toHaveBeenCalledTimes(1);
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({ status: "failed", reason: "send_error", retryable: true }),
     );
   });
 

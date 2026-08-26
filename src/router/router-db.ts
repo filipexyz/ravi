@@ -10332,25 +10332,6 @@ const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollu
 const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
-const TRACE_EXPORT_CURSOR_DOMAIN = "runtime_trace";
-const TRACE_EXPORT_SESSION_EVENTS_CURSOR = "session_events_enqueued";
-
-function getTraceExportSessionEventsCursor(db: Database): number | null {
-  const row = db
-    .prepare("SELECT cursor_value FROM sync_cursors WHERE domain = ? AND cursor_key = ?")
-    .get(TRACE_EXPORT_CURSOR_DOMAIN, TRACE_EXPORT_SESSION_EVENTS_CURSOR) as { cursor_value: string | null } | undefined;
-  if (!row?.cursor_value) return null;
-  const cursor = Number(row.cursor_value);
-  return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
-}
-
-function hasSessionEventsAtOrBeforeCursor(db: Database, cursor: number): boolean {
-  const row = db.prepare("SELECT 1 AS found FROM session_events WHERE id <= ? LIMIT 1").get(cursor) as
-    | { found: number }
-    | undefined;
-  return Boolean(row);
-}
-
 /**
  * Delete message metadata older than 7 days.
  * Returns number of rows deleted.
@@ -10404,7 +10385,6 @@ export interface DbPruneOptions {
 export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const db = getDb();
   const now = options.now ?? Date.now();
-  const traceExportCursor = getTraceExportSessionEventsCursor(db);
   const result: DbPruneResult = {
     messageMetadata: 0,
     sessionEvents: 0,
@@ -10419,28 +10399,18 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   if (options.dryRun) {
     const count = (sql: string, threshold: number): number =>
       Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
-    const countSessionEvents = (): number => {
-      if (traceExportCursor === null) {
-        return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
-      }
-      if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
-        return 0;
-      }
-      return Number(
-        (
-          db
-            .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
-            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as {
-            c: number;
-          }
-        ).c ?? 0,
-      );
-    };
     result.messageMetadata = count(
       "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
       now - MESSAGE_META_TTL_MS,
     );
-    result.sessionEvents = countSessionEvents();
+    // The local TTL is a hard retention boundary. An optional cloud-export
+    // cursor must not pin an unbounded local backlog when export is disabled,
+    // unlinked, or stale. The exporter already tolerates gaps and resumes from
+    // the first surviving id above its cursor.
+    result.sessionEvents = count(
+      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
+      now - SESSION_EVENTS_TTL_MS,
+    );
     result.sessionTraceBlobs = count(
       "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
       now - SESSION_TRACE_BLOBS_TTL_MS,
@@ -10461,22 +10431,8 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
     db.prepare(sql).run(threshold);
     return getDbChanges();
   };
-  const deleteSessionEvents = (): number => {
-    if (traceExportCursor === null) {
-      return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
-    }
-    if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
-      return 0;
-    }
-    db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
-      now - SESSION_EVENTS_TTL_MS,
-      traceExportCursor,
-    );
-    return getDbChanges();
-  };
-
   result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
-  result.sessionEvents = deleteSessionEvents();
+  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
   result.sessionTraceBlobs = runDelete(
     "DELETE FROM session_trace_blobs WHERE created_at < ?",
     now - SESSION_TRACE_BLOBS_TTL_MS,
