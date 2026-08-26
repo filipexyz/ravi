@@ -118,7 +118,7 @@ describe("isNetworkIsolationError", () => {
 });
 
 describe("probeUnixSocket", () => {
-  it("returns false for a missing socket", async () => {
-    expect(await probeUnixSocket("/tmp/ravi-missing-cli-gateway.sock")).toBe(false);
+  it("returns false for a missing socket without rejecting", async () => {
+    await expect(probeUnixSocket("/tmp/ravi-missing-cli-gateway.sock")).resolves.toBe(false);
   });
 });

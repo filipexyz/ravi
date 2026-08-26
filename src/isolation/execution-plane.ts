@@ -7,7 +7,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { createConnection } from "node:net";
+import { Socket } from "node:net";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
 
@@ -118,22 +118,26 @@ export function inspectExecutionPlane(input: InspectExecutionPlaneInput = {}): E
 }
 
 export async function probeUnixSocket(socketPath: string, timeoutMs = 250): Promise<boolean> {
+  if (!socketPath || !existsSync(socketPath)) return false;
   return new Promise((resolve) => {
-    const socket = createConnection({ path: socketPath });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve(false);
-    }, timeoutMs);
-    socket.once("connect", () => {
+    let settled = false;
+    const socket = new Socket();
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      socket.end();
-      resolve(true);
-    });
-    socket.once("error", () => {
-      clearTimeout(timer);
+      socket.removeAllListeners();
       socket.destroy();
-      resolve(false);
-    });
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    socket.once("error", () => finish(false));
+    socket.once("connect", () => finish(true));
+    try {
+      socket.connect({ path: socketPath });
+    } catch {
+      finish(false);
+    }
   });
 }
 

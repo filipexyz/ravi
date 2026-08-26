@@ -65,14 +65,10 @@ describe("remote gateway configuration", () => {
   });
 
   it("auto-bridges isolated CLIs to a reachable host unix socket", async () => {
-    const config = await resolveRemoteGatewayConfig(
-      { RAVI_CONTEXT_KEY: "rctx_test" },
-      "pages published",
-      {
-        stateDir: "/home/user/.ravi",
-        probeSocket: async (socketPath) => socketPath === "/home/user/.ravi/cli-gateway.sock",
-      },
-    );
+    const config = await resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {
+      stateDir: "/home/user/.ravi",
+      probeSocket: async (socketPath) => socketPath === "/home/user/.ravi/cli-gateway.sock",
+    });
 
     expect(config).toEqual({
       url: "unix:///home/user/.ravi/cli-gateway.sock",
@@ -108,6 +104,25 @@ describe("remote gateway configuration", () => {
         { stateDir: "/home/user/.ravi", probeSocket: async () => true },
       ),
     ).toEqual({ url: "https://gateway.example", source: "env" });
+  });
+
+  it("does not throw when an isolated CLI probes a missing host socket", async () => {
+    await expect(
+      resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {
+        stateDir: "/tmp/ravi-missing-host-cli-gateway-state",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("treats a throwing socket probe as unreachable instead of crashing the CLI", async () => {
+    await expect(
+      resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {
+        stateDir: "/home/user/.ravi",
+        probeSocket: async () => {
+          throw Object.assign(new Error("connect ENOENT"), { code: "ENOENT" });
+        },
+      }),
+    ).resolves.toBeNull();
   });
 });
 
@@ -235,35 +250,38 @@ describe("remote gateway exit taxonomy", () => {
     [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
     [3, "blocked", "WRITE_REQUIRES_EXECUTE", "Remote command was blocked by policy."],
-  ] as const)("projects a complete exit %i/%s response into a safe local contract", (exitCode, outcome, code, message) => {
-    const error = remoteGatewayErrorToContractError(
-      "commands list",
-      result({
-        status: 409,
-        body: JSON.stringify({
-          success: false,
-          op: "commands list",
-          exitCode,
-          outcome,
-          providerBody: "PRIVATE_MESSAGE_8K2R",
-          plan: { token: "SENTINEL_SECRET_7M4Q" },
-          error: {
-            code,
-            message: "PRIVATE_MESSAGE_8K2R",
-            retryable: true,
-            metadata: { secret: "SENTINEL_SECRET_7M4Q" },
-          },
+  ] as const)(
+    "projects a complete exit %i/%s response into a safe local contract",
+    (exitCode, outcome, code, message) => {
+      const error = remoteGatewayErrorToContractError(
+        "commands list",
+        result({
+          status: 409,
+          body: JSON.stringify({
+            success: false,
+            op: "commands list",
+            exitCode,
+            outcome,
+            providerBody: "PRIVATE_MESSAGE_8K2R",
+            plan: { token: "SENTINEL_SECRET_7M4Q" },
+            error: {
+              code,
+              message: "PRIVATE_MESSAGE_8K2R",
+              retryable: true,
+              metadata: { secret: "SENTINEL_SECRET_7M4Q" },
+            },
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(error).toMatchObject({ op: "commands list", code, exitCode, message, details: { retryable: true } });
-    const serialized = JSON.stringify(error?.envelope());
-    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
-    expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
-    expect(serialized).not.toContain("providerBody");
-    expect(serialized).not.toContain("metadata");
-  });
+      expect(error).toMatchObject({ op: "commands list", code, exitCode, message, details: { retryable: true } });
+      const serialized = JSON.stringify(error?.envelope());
+      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+      expect(serialized).not.toContain("providerBody");
+      expect(serialized).not.toContain("metadata");
+    },
+  );
 
   it("rejects an invalid remote error code instead of reflecting it", () => {
     const error = remoteGatewayErrorToContractError(

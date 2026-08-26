@@ -147,7 +147,11 @@ export async function resolveAutoHostCliGateway(
   if (!shouldAutoUseHostCliGateway(env)) return null;
   const socketPath = getHostCliGatewaySocketPath(options.stateDir);
   const probe = options.probeSocket ?? probeUnixSocket;
-  if (!(await probe(socketPath))) return null;
+  try {
+    if (!(await probe(socketPath))) return null;
+  } catch {
+    return null;
+  }
   return {
     url: `${HOST_CLI_GATEWAY_URL_PREFIX}${socketPath}`,
     source: "host-socket",
