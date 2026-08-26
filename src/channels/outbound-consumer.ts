@@ -231,7 +231,7 @@ export async function processChannelOutboundJob(
   const adapter = findNativeOutboundAdapter(job, options);
   if (options.persistDelivery === false) {
     if (!adapter) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
-    return processWithoutReceiptLedger(job, adapter, emitEvent, recordTrace, t0);
+    return processWithoutReceiptLedger(job, adapter, emitEvent, recordTrace, t0, deliveryAttempt);
   }
 
   const receiptStore = options.receiptStore ?? sqliteChannelOutboundReceiptStore;
@@ -374,7 +374,7 @@ export async function processChannelOutboundJob(
         });
       }
       try {
-        await emitDelivery(emitEvent, recordTrace, job, {
+        await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
           status: "failed",
           reason: "send_error",
           error: message,
@@ -475,6 +475,7 @@ async function processWithoutReceiptLedger(
   emitEvent: typeof nats.emit,
   recordTrace: typeof recordDeliveryTrace,
   t0: number,
+  deliveryAttempt?: number,
 ): Promise<ChannelOutboundProcessingResult> {
   const emitId = job.request.origin.emitId;
   const target = job.request.target;
@@ -485,7 +486,7 @@ async function processWithoutReceiptLedger(
   } catch (error) {
     const message = errorMessage(error);
     const failure = classifyNativeOutboundFailure(job, message);
-    await emitDelivery(emitEvent, recordTrace, job, {
+    await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
       status: "failed",
       reason: "send_error",
       error: message,
@@ -900,7 +901,7 @@ async function emitMissingAdapter(
 ): Promise<ChannelOutboundProcessingResult> {
   const error = `No native delivery adapter registered for channel: ${job.request.channelId}`;
   const retryDelayMs = missingAdapterRetryDelayMs(deliveryAttempt);
-  await emitDelivery(emitEvent, recordTrace, job, {
+  await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
     status: "failed",
     reason: "missing_adapter",
     error,
@@ -933,6 +934,18 @@ export function missingAdapterRetryDelayMs(deliveryAttempt: number | undefined):
     CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_BASE_MS * 2 ** exponent,
     CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_MAX_MS,
   );
+}
+
+function traceRecorderForAttempt(
+  recordTrace: typeof recordDeliveryTrace,
+  deliveryAttempt: number | undefined,
+): typeof recordDeliveryTrace {
+  // JetStream redeliveries still emit live delivery telemetry, but persisting
+  // the same failure on every retry can turn a provider outage into an
+  // unbounded SQLite write amplifier. The first failure plus the eventual
+  // terminal delivery are sufficient for the durable trace.
+  if (deliveryAttempt === undefined || deliveryAttempt <= 1) return recordTrace;
+  return () => null;
 }
 
 function deliveryResultFromReceipt(receipt: ChannelOutboundReceipt): NativeOutboundDeliveryResult {

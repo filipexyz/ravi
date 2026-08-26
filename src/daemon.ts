@@ -195,7 +195,7 @@ export function getBotInstance(): RaviBot | null {
   return bot;
 }
 
-async function shutdown(signal: string) {
+async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
 
@@ -291,7 +291,15 @@ async function shutdown(signal: string) {
 
   clearTimeout(shutdownTimeout);
   log.info("Daemon stopped", { pid: process.pid });
-  process.exit(0);
+  process.exit(exitCode);
+}
+
+function restartAfterFatalRuntimeError(error: Error): void {
+  log.error("Fatal runtime ownership error; exiting for supervised restart", {
+    pid: process.pid,
+    error,
+  });
+  void shutdown("fatal runtime ownership error", 1);
 }
 
 export async function startDaemon() {
@@ -333,7 +341,7 @@ export async function startDaemon() {
   log.info("RAVI_EVENTS stream ready");
 
   // Step 5: Start bot
-  bot = new RaviBot({ config });
+  bot = new RaviBot({ config, onFatalRuntimeError: restartAfterFatalRuntimeError });
   await bot.start();
   log.info("Bot started");
 

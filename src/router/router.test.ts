@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
+import { recordSessionEvent } from "../session-trace/session-trace-db.js";
+import { getSyncCursor } from "../sync/db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateAgent,
@@ -14,6 +17,7 @@ import {
   dbListChannels,
   dbListContexts,
   dbPruneContexts,
+  dbPruneStaleRows,
   dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
@@ -135,6 +139,25 @@ describe("router context queries", () => {
         .map((context) => context.contextId)
         .sort(),
     ).toEqual(["active", "expired-recent"]);
+  });
+
+  it("does not let a stale trace export cursor block the local retention TTL", () => {
+    recordSessionEvent({
+      sessionKey: "agent:dev",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      timestamp: 1,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:dev",
+      eventType: "turn.complete",
+      eventGroup: "runtime",
+      timestamp: 2,
+    });
+    enqueueTraceExportBatch({ limit: 1, now: 3 });
+
+    expect(getSyncCursor("runtime_trace", "session_events_enqueued")?.cursorValue).toBe("1");
+    expect(dbPruneStaleRows({ dryRun: true, now: 10 * DAY }).sessionEvents).toBe(2);
   });
 
   it("creates trace indexes, shell trigger columns, and the reaction ledger during schema bootstrap", () => {

@@ -164,8 +164,12 @@ messages. It should only map the row owned by the resolved session/run to
 ## Export Efficiency
 
 The exporter SHOULD maintain a local export cursor or trace-export outbox so
-local trace TTL pruning cannot delete unexported accepted events without an
-explicit policy decision.
+local trace TTL pruning cannot delete unexported accepted events inside the
+configured local retention window without an explicit policy decision. TTL
+expiry is that policy boundary: a disabled, unlinked, or stale exporter MUST
+NOT pin an unbounded local SQLite backlog after the local retention window.
+The exporter MUST tolerate deleted id gaps and resume from the first surviving
+event above its cursor.
 
 Local installations often contain historical `session_events` rows from before
 cloud trace export was enabled. The exporter MUST NOT replay an unbounded old
