@@ -15,8 +15,10 @@ tags:
   - app-server
 applies_to:
   - src/runtime/codex-provider.ts
+  - src/runtime/codex-hooks.ts
   - src/plugins/codex-skills.ts
   - src/runtime/codex-provider.test.ts
+  - src/runtime/codex-hooks.test.ts
 owners:
   - ravi-dev
 status: active
@@ -85,7 +87,11 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - A reused Codex app-server process MUST be respawned before the next turn when its Ravi env signature differs from the current runtime env.
 - The provider MUST launch the Codex app-server with `shell_environment_policy.inherit=all`, `shell_environment_policy.ignore_default_excludes=true`, and an `include_only` glob allowlist that includes `RAVI_*` plus minimal core shell variables. This is required because Codex default shell env exclusions can strip env names containing `KEY`.
 - The global Codex Bash hook command MUST resolve to a stable Ravi CLI entrypoint such as `bin/ravi` or the bundled CLI, never to a test file or transient runner script.
-- The global Codex Bash hook matcher MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
+- Generated hooks MUST emit `ravi context codex-bash-hook` as the preferred command. They MUST NOT emit `codex-tool-hook` as the preferred command.
+- The CLI MUST accept `ravi context codex-tool-hook` as a deprecated alias of `codex-bash-hook` with the same access and payload so stale `~/.codex/hooks.json` files and in-memory Codex workers cannot hard-block Bash, including `ravi pages list|published|publish`.
+- The global Codex Bash hook matcher MUST be exactly `^(Bash|shell)$`. It MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
+- Rematerializing hooks MUST replace legacy Ravi groups (old status `ravi codex native tool permission gate`, old command `codex-tool-hook`, or a non-canonical matcher) instead of appending a second group beside them.
+- A reused Codex app-server process MUST be respawned before the next turn when `hooks.json` changes. Thread/resume MUST keep session history.
 - The global Codex Bash hook MUST enforce Ravi shell permissions and runtime skill gates only. It MUST NOT rely on `PreToolUse.updatedInput` to inject env because current Codex rejects unsupported updated input for this hook.
 - Ravi provider-owned grants such as `full-access` authorize Ravi's permission layer only. They MUST NOT be documented as a bypass for provider-native hooks, global Codex hooks, or external PreToolUse transforms that may still deny a shell command after Ravi allows it.
 - The shell env bridge MUST NOT print or embed `RAVI_CONTEXT_KEY` directly in user-visible command text or traces.
@@ -103,6 +109,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 ## Validation
 
 - `bun test src/runtime/codex-provider.test.ts`
+- `bun test src/runtime/codex-hooks.test.ts`
 - `bun test src/runtime/provider-contract.test.ts`
 - `bun test src/runtime/model-catalog.test.ts`
 - `bun test src/plugins/codex-skills.test.ts`

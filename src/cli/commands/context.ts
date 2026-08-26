@@ -590,6 +590,9 @@ export class ContextCommands {
   @Command({
     name: "codex-bash-hook",
     description: "Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context",
+    aliases: ["codex-tool-hook"],
+    helpAfter:
+      "codex-tool-hook is a deprecated compatibility alias for stale Codex sessions and hooks.json files. It uses the same access and payload as codex-bash-hook. Generated hooks must keep emitting codex-bash-hook.",
   })
   @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low" })
   codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {

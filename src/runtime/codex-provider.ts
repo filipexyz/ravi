@@ -1,11 +1,9 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { logger } from "../utils/logger.js";
+import { ensureCodexBashHookConfig } from "./codex-hooks.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -63,8 +61,6 @@ const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
-const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_BASH_HOOK_MATCHER = "^(Bash|shell)$";
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
 const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
@@ -946,6 +942,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let bootstrapPromise: Promise<void> | null = null;
   let activeTurn: AppServerTurnState | null = null;
   let activeSpawnEnvSignature: string | null = null;
+  let activeHookConfigSignature: string | null = null;
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
   let resumedThreadResponse: Record<string, unknown> | null = null;
@@ -1065,12 +1062,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     child = null;
     activeSpawnEnvSignature = null;
+    activeHookConfigSignature = null;
   };
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
-    if (shouldMaterializeCodexHookForCommand(command)) {
-      ensureCodexBashHookConfig(input.env?.CODEX_HOME);
-    }
+    const hookResult = shouldMaterializeCodexHookForCommand(command)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      : null;
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
     // diagnosing silent hangs in the JSON-RPC layer.
@@ -1113,6 +1111,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     transport = newTransport;
     child = newTransport.child;
     activeSpawnEnvSignature = buildCodexAppServerEnvSignature(input.env);
+    activeHookConfigSignature = hookResult?.signature ?? null;
     closed = false;
     nextRequestId = 1;
     pendingRequests = new Map();
@@ -1834,12 +1833,21 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   }
 
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
+    const hookResult = shouldMaterializeCodexHookForCommand(command)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      : null;
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
-    if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
-      log.info("codex env changed; respawning app-server", {
-        pid: child.pid,
-        envKeys: listCodexAppServerEnvSignatureKeys(input.env),
-      });
+    const hookChanged =
+      hookResult !== null && activeHookConfigSignature !== null && hookResult.signature !== activeHookConfigSignature;
+    if (!closed && child && !bootstrapPromise && (activeSpawnEnvSignature !== nextEnvSignature || hookChanged)) {
+      log.info(
+        hookChanged ? "codex hooks changed; respawning app-server" : "codex env changed; respawning app-server",
+        {
+          pid: child.pid,
+          envKeys: listCodexAppServerEnvSignatureKeys(input.env),
+          hookChanged,
+        },
+      );
       intentionalChildRestart = true;
       try {
         await close();
@@ -3455,116 +3463,9 @@ function extractAppServerErrorMessage(params: Record<string, unknown>): string |
   return extractJsonRpcError(params.error);
 }
 
-function ensureCodexBashHookConfig(configDir = getGlobalCodexConfigDir()): void {
-  const hooksPath = join(configDir, "hooks.json");
-  mkdirSync(configDir, { recursive: true });
-
-  const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath));
-  const nextJson = JSON.stringify(nextConfig, null, 2) + "\n";
-  const currentJson = existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : null;
-  if (currentJson !== nextJson) {
-    writeFileSync(hooksPath, nextJson, "utf8");
-  }
-}
-
-function getGlobalCodexConfigDir(): string {
-  return join(process.env.HOME ?? homedir(), ".codex");
-}
-
-function readCodexHooksConfig(path: string): Record<string, unknown> {
-  if (!existsSync(path)) {
-    return { hooks: {} };
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return asRecord(parsed) ?? { hooks: {} };
-  } catch {
-    return { hooks: {} };
-  }
-}
-
-function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string, unknown> {
-  const hooks = asRecord(config.hooks) ?? {};
-  const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
-  const raviGroup = {
-    matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
-    hooks: [
-      {
-        type: "command",
-        command: buildRaviCodexHookCommand(),
-        statusMessage: RAVI_CODEX_BASH_HOOK_STATUS,
-      },
-    ],
-  };
-
-  const nextPreToolUse = preToolUse.filter((group) => !isRaviCodexHookGroup(group));
-  nextPreToolUse.push(raviGroup);
-
-  return {
-    ...config,
-    hooks: {
-      ...hooks,
-      PreToolUse: nextPreToolUse,
-    },
-  };
-}
-
-function isRaviCodexHookGroup(value: unknown): boolean {
-  const group = asRecord(value);
-  if (!group) {
-    return false;
-  }
-
-  const handlers = Array.isArray(group.hooks) ? group.hooks : [];
-  return handlers.some((handler) => {
-    const entry = asRecord(handler);
-    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS;
-  });
-}
-
 function shouldMaterializeCodexHookForCommand(command: string): boolean {
   const commandName = basename(command);
   return commandName === "codex" || commandName === "codex.exe";
-}
-
-function buildRaviCodexHookCommand(): string {
-  const configuredRaviBin = process.env.RAVI_BIN?.trim();
-  if (configuredRaviBin) {
-    return [configuredRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
-  }
-
-  const bundlePath = process.argv[1];
-  if (isRunnableRaviCliEntrypoint(bundlePath)) {
-    return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
-  }
-
-  const sourceRaviBin = resolveSourceRaviBinPath();
-  if (sourceRaviBin) {
-    return [sourceRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
-  }
-
-  return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
-}
-
-function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {
-  if (!entrypoint || !existsSync(entrypoint)) {
-    return false;
-  }
-  if (/\.test\.[cm]?[jt]sx?$/.test(entrypoint)) {
-    return false;
-  }
-  return entrypoint.endsWith("/dist/bundle/index.js") || entrypoint.endsWith("/src/cli/index.ts");
-}
-
-function resolveSourceRaviBinPath(): string | null {
-  try {
-    const modulePath = fileURLToPath(import.meta.url);
-    const candidate = join(dirname(dirname(dirname(modulePath))), "bin", "ravi");
-    return existsSync(candidate) ? candidate : null;
-  } catch {
-    return null;
-  }
 }
 
 function buildCodexAppServerEnvSignature(env: NodeJS.ProcessEnv): string {
@@ -3588,13 +3489,6 @@ function listCodexAppServerEnvSignatureKeys(env: NodeJS.ProcessEnv): string[] {
         CODEX_APP_SERVER_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
     )
     .sort((left, right) => left.localeCompare(right));
-}
-
-function shellEscape(value: string): string {
-  if (value.length === 0) {
-    return "''";
-  }
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 const CODEX_APP_SERVER_OPTOUT_METHODS = [
