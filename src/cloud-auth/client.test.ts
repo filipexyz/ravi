@@ -324,6 +324,46 @@ describe("ConsoleApiClient", () => {
     }
   });
 
+  it("maps sandbox Console fetch failures to HOST_UNREACHABLE", async () => {
+    const previousPlane = process.env.RAVI_EXECUTION_PLANE;
+    process.env.RAVI_EXECUTION_PLANE = "provider-sandbox";
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () => {
+        throw Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+      },
+    });
+
+    try {
+      await expect(client.requestJson("GET", "/api/cli/projects/rbbt-lab/pages/published")).rejects.toMatchObject({
+        code: "HOST_UNREACHABLE",
+      });
+    } finally {
+      if (previousPlane === undefined) delete process.env.RAVI_EXECUTION_PLANE;
+      else process.env.RAVI_EXECUTION_PLANE = previousPlane;
+    }
+  });
+
+  it("keeps host Console fetch failures as SERVER_UNAVAILABLE", async () => {
+    const previousPlane = process.env.RAVI_EXECUTION_PLANE;
+    process.env.RAVI_EXECUTION_PLANE = "host";
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () => {
+        throw Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+      },
+    });
+
+    try {
+      await expect(client.requestJson("GET", "/api/cli/projects/rbbt-lab/pages/published")).rejects.toMatchObject({
+        code: "SERVER_UNAVAILABLE",
+      });
+    } finally {
+      if (previousPlane === undefined) delete process.env.RAVI_EXECUTION_PLANE;
+      else process.env.RAVI_EXECUTION_PLANE = previousPlane;
+    }
+  });
+
   it("maps OAuth device authorization pending responses", async () => {
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",

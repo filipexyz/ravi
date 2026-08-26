@@ -94,6 +94,15 @@ function makeHealthyDeps() {
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
     listRegisteredRuntimeProviderIds: () => ["codex", "claude"] as any,
+    inspectExecutionPlane: () =>
+      ({
+        plane: "host",
+        runtimeContext: false,
+        hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: true, cliGatewaySocket: false },
+        markers: [],
+        daemonIsolationLikely: false,
+        sourceTree: true,
+      }) as any,
     getConfiguredPermissionProviders: () => [{ id: "operator-control" }, { id: "context-capabilities" }] as any,
     getConfiguredCapabilityMaterializers: () =>
       [
@@ -400,6 +409,15 @@ describe("inspectDoctor", () => {
               },
             ]
           : [],
+      inspectExecutionPlane: () =>
+        ({
+          plane: "host",
+          runtimeContext: false,
+          hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: false, cliGatewaySocket: false },
+          markers: [],
+          daemonIsolationLikely: false,
+          sourceTree: false,
+        }) as any,
       checkAppManifests: () => [] as any,
       discoverAppManifests: () => [] as any,
       getRegistry: () => ({ commands: [] }) as any,
@@ -647,6 +665,83 @@ describe("inspectDoctor", () => {
     const cronCheck = report.checks.find((check) => check.id === "cron.targets");
     expect(cronCheck).toBeDefined();
     expect(cronCheck!.status).toBe("pass");
+  });
+
+  it("does not fail restricted providers for unused built-in pi", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      listRegisteredRuntimeProviderIds: () => ["codex", "claude", "pi"] as any,
+      dbListAgents: () => [{ id: "main", cwd: "/agents/main", provider: "codex" }] as any,
+      getRuntimeCompatibilityIssues: (provider) =>
+        provider === "pi"
+          ? [
+              {
+                code: "restricted_tool_access_unsupported",
+                message:
+                  "Runtime provider 'pi' requires full tool and executable access because Ravi permission hooks are unsupported",
+              },
+            ]
+          : [],
+    });
+
+    expect(report.checks.find((check) => check.id === "runtime.providers")?.status).toBe("pass");
+    expect(JSON.stringify(report.checks.find((check) => check.id === "runtime.providers"))).not.toContain("pi");
+  });
+
+  it("does not treat a sandboxed daemon probe as host-offline", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      inspectCliRuntimeTarget: () => ({
+        ...deps.inspectCliRuntimeTarget(),
+        daemon: { online: false, execPath: null, cwd: null, matchesCli: null },
+      }),
+      inspectExecutionPlane: () =>
+        ({
+          plane: "provider-sandbox",
+          runtimeContext: true,
+          hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: true, cliGatewaySocket: true },
+          markers: ["codex-sandbox", "runtime-context-key"],
+          daemonIsolationLikely: true,
+          sourceTree: false,
+        }) as any,
+    });
+
+    const daemon = report.checks.find((check) => check.id === "runtime.daemon");
+    const isolation = report.checks.find((check) => check.id === "runtime.isolation");
+    expect(daemon?.status).toBe("skip");
+    expect(daemon?.severity).toBe("warn");
+    expect(daemon?.data).toMatchObject({ isolated: true, plane: "provider-sandbox" });
+    expect(isolation?.status).toBe("pass");
+    expect(isolation?.severity).toBe("warn");
+    expect(JSON.stringify(isolation)).not.toContain("pi");
+  });
+
+  it("skips provider-runtime source checks outside a Ravi source tree", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      cwd: () => "/agents/main",
+      exists: (path: string) => path === deps.getRaviStateDir() || path === deps.getRaviDbPath(),
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.provider_runtime_boundaries")?.status).toBe("skip");
+  });
+
+  it("fails provider-runtime boundaries only inside a Ravi source tree", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      cwd: () => "/repo",
+      exists: (path: string) =>
+        path === "/repo/src/cli/commands/doctor.ts" ||
+        path === "/repo/src/cli/commands/pages.ts" ||
+        path === deps.getRaviStateDir() ||
+        path === deps.getRaviDbPath(),
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.provider_runtime_boundaries")?.status).toBe("fail");
   });
 });
 

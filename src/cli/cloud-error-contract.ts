@@ -49,6 +49,8 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Console request was rate limited.";
     case "SERVER_UNAVAILABLE":
       return "Console service is unavailable.";
+    case "HOST_UNREACHABLE":
+      return "Console is unreachable from this provider sandbox. The host CLI can reach Console.";
     case "CREDENTIALS_INVALID":
       return "Console credentials are invalid.";
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
@@ -90,6 +92,8 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "wait for the provider rate limit to reset, then retry";
     case "SERVER_UNAVAILABLE":
       return "retry when the provider is available";
+    case "HOST_UNREACHABLE":
+      return "run the same `ravi pages` command on the host, or retry after the host CLI gateway socket is available";
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "use a supported publish path";
   }

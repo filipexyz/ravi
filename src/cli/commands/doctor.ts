@@ -26,13 +26,22 @@ import {
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
 import {
+  inspectExecutionPlane,
+  looksLikeRaviSourceTree,
+  type ExecutionPlaneSnapshot,
+} from "../../isolation/execution-plane.js";
+import {
   ensureCodexBashHookConfig,
   inspectCodexHookConfig,
   RAVI_CODEX_BASH_HOOK_COMMAND,
   RAVI_CODEX_BASH_HOOK_MATCHER,
   RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND,
 } from "../../runtime/codex-hooks.js";
-import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  getRuntimeCompatibilityIssues,
+  listRegisteredRuntimeProviderIds,
+} from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import {
   dbGetAgent,
@@ -197,6 +206,12 @@ type DoctorDeps = {
     },
   ) => RuntimeCompatibilityIssue[];
   listRegisteredRuntimeProviderIds: typeof listRegisteredRuntimeProviderIds;
+  inspectExecutionPlane: (input?: {
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    stateDir?: string;
+    exists?: (path: string) => boolean;
+  }) => ExecutionPlaneSnapshot;
   getConfiguredPermissionProviders: typeof getConfiguredPermissionProviders;
   getConfiguredCapabilityMaterializers: typeof getConfiguredCapabilityMaterializers;
   authorizePermission: typeof authorizePermission;
@@ -249,6 +264,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
+  inspectExecutionPlane,
   getConfiguredPermissionProviders,
   getConfiguredCapabilityMaterializers,
   authorizePermission,
@@ -422,7 +438,8 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   const insightsDbPath = join(stateDir, "insights.db");
   const codexHooksPath = join(deps.homeDir(), ".codex", "hooks.json");
 
-  addCheck(checks, () => buildDaemonCheck(runtimeTarget));
+  addCheck(checks, () => buildDaemonCheck(runtimeTarget, deps));
+  addCheck(checks, () => buildIsolationCheck(deps));
   addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
   addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
@@ -757,7 +774,7 @@ function inferDomain(id: string): string {
   return "runtime";
 }
 
-function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
+function buildDaemonCheck(summary: CliRuntimeTargetSummary, deps: DoctorDeps): LegacyDoctorCheck {
   if (summary.daemon.online) {
     return {
       id: "runtime.daemon",
@@ -773,6 +790,29 @@ function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
     };
   }
 
+  const isolation = inspectIsolation(deps);
+  if (isolation.daemonIsolationLikely) {
+    return {
+      id: "runtime.daemon",
+      title: "Live daemon",
+      status: "skip",
+      severity: "warn",
+      summary: "live daemon is not visible from this provider sandbox; host state is present",
+      details: [
+        `execution plane: ${isolation.plane}`,
+        `host sqlite: ${isolation.hostEvidence.sqliteDb ? "present" : "missing"}`,
+        `cli bundle: ${summary.cliBundlePath ?? "-"}`,
+      ],
+      fixHint: "inspect the daemon from a host terminal, not from the provider sandbox",
+      data: {
+        online: false,
+        isolated: true,
+        plane: isolation.plane,
+        cliBundle: summary.cliBundlePath,
+      },
+    };
+  }
+
   return {
     id: "runtime.daemon",
     title: "Live daemon",
@@ -783,6 +823,68 @@ function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
     data: {
       online: false,
       cliBundle: summary.cliBundlePath,
+    },
+  };
+}
+
+function inspectIsolation(deps: DoctorDeps): ExecutionPlaneSnapshot {
+  return deps.inspectExecutionPlane({
+    cwd: deps.cwd(),
+    stateDir: deps.getRaviStateDir(),
+    exists: deps.exists,
+  });
+}
+
+function buildIsolationCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const isolation = inspectIsolation(deps);
+  const details = [
+    `execution plane: ${isolation.plane}`,
+    `runtime context: ${isolation.runtimeContext ? "yes" : "no"}`,
+    `source tree: ${isolation.sourceTree ? "yes" : "no"}`,
+    `host state dir: ${isolation.hostEvidence.stateDir ? "present" : "missing"}`,
+    `host sqlite: ${isolation.hostEvidence.sqliteDb ? "present" : "missing"}`,
+    `host credentials: ${isolation.hostEvidence.cloudCredentials ? "present" : "missing"}`,
+    `host cli gateway socket: ${isolation.hostEvidence.cliGatewaySocket ? "present" : "missing"}`,
+    ...(isolation.markers.length > 0 ? [`markers: ${isolation.markers.join(", ")}`] : []),
+  ];
+
+  if (isolation.plane === "provider-sandbox") {
+    return {
+      id: "runtime.isolation",
+      domain: "runtime",
+      title: "Execution plane",
+      status: "ok",
+      severity: "warn",
+      summary: "this CLI is running inside a provider sandbox; host Pages/daemon probes may be unreachable",
+      details,
+      fixHint:
+        "use the host CLI or the host unix-socket CLI gateway for Pages publish/read; do not treat unused providers as the cause",
+      data: {
+        plane: isolation.plane,
+        runtimeContext: isolation.runtimeContext,
+        hostEvidence: isolation.hostEvidence,
+        markers: isolation.markers,
+        daemonIsolationLikely: isolation.daemonIsolationLikely,
+        sourceTree: isolation.sourceTree,
+        stateDirPresent: isolation.hostEvidence.stateDir,
+      },
+    };
+  }
+
+  return {
+    id: "runtime.isolation",
+    domain: "runtime",
+    title: "Execution plane",
+    status: "ok",
+    summary: "this CLI is running on the host execution plane",
+    details,
+    data: {
+      plane: isolation.plane,
+      runtimeContext: isolation.runtimeContext,
+      hostEvidence: isolation.hostEvidence,
+      markers: isolation.markers,
+      daemonIsolationLikely: isolation.daemonIsolationLikely,
+      sourceTree: isolation.sourceTree,
     },
   };
 }
@@ -2201,6 +2303,20 @@ function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDocto
 }
 
 function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  if (!looksLikeRaviSourceTree(deps.cwd(), deps.exists)) {
+    return {
+      id: "permissions.provider_runtime_boundaries",
+      domain: "permissions",
+      title: "Permission provider runtime boundaries",
+      status: "skip",
+      severity: "info",
+      summary: "cwd is not a Ravi source tree; skipped provider-runtime source check",
+      details: ["agent or sandbox cwd is not the Ravi repository"],
+      fixHint: "run this check from the Ravi source checkout, not from an agent workspace",
+      data: { skipped: true, reason: "not_source_tree" },
+    };
+  }
+
   const providerRuntimePath = join(deps.cwd(), "src", "permissions", "provider-runtime.ts");
   const enginePath = join(deps.cwd(), "src", "permissions", "engine.ts");
   const providerRuntimeSource = deps.exists(providerRuntimePath) ? deps.readFile(providerRuntimePath) : "";
@@ -2441,7 +2557,7 @@ function buildUnexpectedFailureCheck(id: string, title: string, error: unknown):
 }
 
 function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const providers = deps.listRegisteredRuntimeProviderIds();
+  const providers = providersUsedByRegisteredAgents(deps);
   const results = providers.map((provider) => ({
     provider,
     issues: deps.getRuntimeCompatibilityIssues(provider, { toolAccessMode: "restricted" }),
@@ -2453,14 +2569,15 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
       id: "runtime.providers",
       title: "Restricted provider compatibility",
       status: "fail",
-      summary: `${failing.length} runtime providers do not support restricted tool access`,
+      summary: `${failing.length} used runtime providers do not support restricted tool access`,
       details: failing.flatMap((entry) => entry.issues.map((issue) => `${entry.provider}: ${issue.message}`)),
-      fixHint: "bring provider capabilities back in sync before relying on restricted sessions",
+      fixHint: "bring the providers used by registered agents back in sync before relying on restricted sessions",
       data: {
         failing: failing.map((entry) => ({
           provider: entry.provider,
           issues: entry.issues.map((issue) => issue.code),
         })),
+        checked: providers,
       },
     };
   }
@@ -2469,12 +2586,33 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
     id: "runtime.providers",
     title: "Restricted provider compatibility",
     status: "ok",
-    summary: "registered runtime providers support restricted tool access",
+    summary: "runtime providers used by registered agents support restricted tool access",
     details: results.map((entry) => `${entry.provider}: restricted tool access supported`),
     data: {
       providers: results.map((entry) => entry.provider),
     },
   };
+}
+
+function providersUsedByRegisteredAgents(deps: DoctorDeps): RuntimeProviderId[] {
+  const registered = deps.listRegisteredRuntimeProviderIds();
+  const used = new Set<string>();
+  try {
+    const agents = deps.dbListAgents();
+    if (agents.length === 0) {
+      used.add(DEFAULT_RUNTIME_PROVIDER_ID);
+    }
+    for (const agent of agents) {
+      const provider =
+        typeof agent.provider === "string" && agent.provider.trim()
+          ? agent.provider.trim()
+          : DEFAULT_RUNTIME_PROVIDER_ID;
+      used.add(provider);
+    }
+  } catch {
+    used.add(DEFAULT_RUNTIME_PROVIDER_ID);
+  }
+  return registered.filter((id) => used.has(id));
 }
 
 const CRON_TARGET_STATUS: Record<CronTargetState, LegacyDoctorCheckStatus> = {

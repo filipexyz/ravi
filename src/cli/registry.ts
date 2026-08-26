@@ -33,7 +33,7 @@ import { emitCliAuditEvent } from "./audit.js";
 import { getContext, runWithContext } from "./context.js";
 import {
   dispatchRemote,
-  getRemoteGatewayConfig,
+  resolveRemoteGatewayConfig,
   remoteGatewayErrorToContractError,
   remoteGatewayExitCode,
   remoteDispatchOutput,
@@ -226,7 +226,7 @@ function registerCommand(
 
     let remoteConfig: RemoteGatewayConfig | null;
     try {
-      remoteConfig = getRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
+      remoteConfig = await resolveRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
     } catch (error) {
       if (!(error instanceof ContractError)) throw error;
       renderContractError(error, input.json === true);

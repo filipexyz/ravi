@@ -1,5 +1,6 @@
+import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { fetchWithTimeout } from "../utils/paths.js";
-import { CloudAuthError, normalizeCloudAuthErrorCode } from "./errors.js";
+import { CloudAuthError, classifyConsoleNetworkError, normalizeCloudAuthErrorCode } from "./errors.js";
 import type {
   CloudAuthOrganization,
   CloudAuthUser,
@@ -133,9 +134,7 @@ export class ConsoleApiClient {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (error) {
-      throw new CloudAuthError("SERVER_UNAVAILABLE", `Console request failed: ${errorMessage(error)}`, {
-        cause: error,
-      });
+      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
     }
 
     const payload = await readJsonBody(response);
