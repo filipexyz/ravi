@@ -163,6 +163,7 @@ describe("evaluateSkillGate", () => {
       ruleId: "apps",
     });
     expect(runtimeSkillGateForCommand("bin/ravi context codex-bash-hook")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("bin/ravi context codex-tool-hook")).toBeUndefined();
     expect(runtimeSkillGateForCommand('echo "ravi tasks list"')).toBeUndefined();
   });
 });

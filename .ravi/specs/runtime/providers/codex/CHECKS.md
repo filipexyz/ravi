@@ -20,6 +20,10 @@
 
 ## Regression Cases
 
+- Generated `hooks.json` command contains `codex-bash-hook` and does not contain `codex-tool-hook`.
+- `ravi context codex-tool-hook` is a registered alias of `codex-bash-hook`.
+- Doctor fails on a stale `codex-tool-hook` command and on a matcher other than `^(Bash|shell)$`.
+- Rematerialize replaces a legacy wide-matcher `codex-tool-hook` group instead of leaving it in place.
 - Dynamic tool handler throws.
 - Dynamic tool handler returns no content.
 - Dynamic tool handler returns image content.
