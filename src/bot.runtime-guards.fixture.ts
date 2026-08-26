@@ -94,6 +94,7 @@ type RuntimeHandle = {
 const emittedEvents: Array<{ topic: string; data: any }> = [];
 const sessions = new Map<string, SessionState>();
 const createdBots: Array<{ stop(): Promise<void> }> = [];
+const fatalRuntimeErrors: Error[] = [];
 let activeProvider: RuntimeProviderId = "claude";
 let runtimeStartCalls: RuntimeStartRequest[] = [];
 let runtimePrepareImpl: (
@@ -752,6 +753,7 @@ function createBot(options: { startCrashRecovery?: boolean } = {}) {
       logLevel: "error",
       apiKey: "fake",
     } as any,
+    onFatalRuntimeError: (error) => fatalRuntimeErrors.push(error),
   });
   if (options.startCrashRecovery !== false) {
     (bot as any).crashRecovery.start();
@@ -941,6 +943,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 describe("RaviBot runtime guards", () => {
   beforeEach(async () => {
     emittedEvents.length = 0;
+    fatalRuntimeErrors.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
     delete process.env.RAVI_BIN;
@@ -2129,6 +2132,7 @@ describe("RaviBot runtime guards", () => {
 describe("RaviBot streaming session lifecycle", () => {
   beforeEach(async () => {
     emittedEvents.length = 0;
+    fatalRuntimeErrors.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
     activeProvider = "claude";
@@ -2224,7 +2228,7 @@ describe("RaviBot streaming session lifecycle", () => {
     createdBots.splice(createdBots.indexOf(bot), 1);
   });
 
-  it("fences intake and closes runtime sessions when crash recovery ownership is lost", async () => {
+  it("fences intake, closes runtime sessions, and requests a supervised restart when ownership is lost", async () => {
     const bot = createBot({ startCrashRecovery: false });
     await bot.start();
     const abortController = new AbortController();
@@ -2250,15 +2254,19 @@ describe("RaviBot streaming session lifecycle", () => {
       pendingAbort: false,
     });
 
+    const crashRecovery = (bot as any).crashRecovery;
     expect((bot as any).promptSubscription.healthTimer).not.toBeNull();
-    (bot as any).crashRecovery.enterFailClosed("test ownership loss");
+    crashRecovery.now = () => crashRecovery.boot.leaseExpiresAt;
+    expect(() => crashRecovery.heartbeatNow()).toThrow("Crash recovery boot lease expired before heartbeat");
+    const ownershipError = crashRecovery.ownershipFailure;
 
     expect(bot.canAcceptRuntimePrompt()).toBe(false);
     expect((bot as any).promptSubscription.healthTimer).toBeNull();
     expect((bot as any).streamingSessions.size).toBe(0);
     expect(abortController.signal.aborted).toBe(true);
     expect(interrupt).toHaveBeenCalledTimes(1);
-    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "active" });
+    expect(crashRecovery.boot).toMatchObject({ status: "active" });
+    expect(fatalRuntimeErrors).toEqual([ownershipError]);
 
     await bot.stop();
     createdBots.splice(createdBots.indexOf(bot), 1);

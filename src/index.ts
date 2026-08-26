@@ -9,7 +9,13 @@ async function main(): Promise<void> {
     const config = loadConfig();
     logger.setLevel(config.logLevel);
 
-    const bot = new RaviBot({ config });
+    const bot = new RaviBot({
+      config,
+      onFatalRuntimeError: (error) => {
+        logger.error("Fatal runtime ownership error; exiting for supervised restart", error);
+        process.exit(1);
+      },
+    });
 
     // Handle shutdown signals
     const shutdown = async () => {

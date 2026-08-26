@@ -32,6 +32,12 @@ type StreamingSession = RuntimeHostStreamingSession;
 
 export interface RaviBotOptions {
   config: Config;
+  /**
+   * Called after the runtime has fenced prompt intake and closed every provider
+   * because crash-recovery ownership can no longer be proven. The process host
+   * must terminate non-zero so its supervisor can start a fresh boot epoch.
+   */
+  onFatalRuntimeError: (error: RuntimeCrashRecoveryOwnershipLostError) => void;
 }
 
 export interface RaviBotStopOptions {
@@ -49,6 +55,7 @@ export class RaviBot {
   private readonly crashRecovery: RuntimeCrashRecoveryCoordinator;
   private readonly hostSubscriptions: RuntimeHostSubscriptions;
   private readonly promptSubscription: RuntimePromptSubscription;
+  private readonly onFatalRuntimeError: RaviBotOptions["onFatalRuntimeError"];
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
   /** Resolves when the JetStream consumer is active and ready to receive messages */
@@ -61,6 +68,7 @@ export class RaviBot {
       this.resolveConsumerReady = resolve;
     });
     this.config = options.config;
+    this.onFatalRuntimeError = options.onFatalRuntimeError;
     logger.setLevel(options.config.logLevel);
     const maxConcurrentSessions = resolveRuntimeSessionPoolMax();
     const interactiveReservedSessions = resolveRuntimeInteractiveReservedSlots(undefined, maxConcurrentSessions);
@@ -131,6 +139,14 @@ export class RaviBot {
       log.error("Failed to close runtime sessions after crash recovery ownership loss", {
         instanceId: this.instanceId,
         error: shutdownError,
+      });
+    }
+    try {
+      this.onFatalRuntimeError(error);
+    } catch (fatalHandlerError) {
+      log.error("Fatal runtime error handler failed after crash recovery ownership loss", {
+        instanceId: this.instanceId,
+        error: fatalHandlerError,
       });
     }
   }
