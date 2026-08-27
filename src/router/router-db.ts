@@ -42,6 +42,11 @@ const DEFAULT_RAVI_STATE_DIR = getRaviStateDir({});
 const DEFAULT_DB_PATH = join(DEFAULT_RAVI_STATE_DIR, "ravi.db");
 const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 const IDENTITY_CHAT_BACKFILL_KEY = "identity_chat_backfill_v1";
+const RUNTIME_DEFAULT_PROVIDER_SETTING_KEY = "runtime.defaultProvider";
+// Persist the runtime default on ordinary agent rows. Leaving provider NULL
+// made an agent silently follow whatever default a later Ravi version chose,
+// which looked like the provider changed by itself after an upgrade.
+const DEFAULT_PERSISTED_AGENT_RUNTIME_PROVIDER = "codex";
 
 // ============================================================================
 // Schemas (safe to access at import time - no I/O)
@@ -2722,6 +2727,25 @@ function getDb(): Database {
     log.info("Added model_preset_id column to agents table");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
+  const storedRuntimeDefaultProvider = db
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(RUNTIME_DEFAULT_PROVIDER_SETTING_KEY) as { value: string } | null;
+  const persistedAgentRuntimeProvider =
+    storedRuntimeDefaultProvider?.value.trim() || DEFAULT_PERSISTED_AGENT_RUNTIME_PROVIDER;
+  const providerBackfill = db
+    .prepare(
+      `UPDATE agents
+       SET provider = ?
+       WHERE (provider IS NULL OR TRIM(provider) = '')
+         AND model_preset_id IS NULL`,
+    )
+    .run(persistedAgentRuntimeProvider);
+  if (providerBackfill.changes > 0) {
+    log.info("Persisted the effective runtime provider for legacy agents", {
+      provider: persistedAgentRuntimeProvider,
+      agents: providerBackfill.changes,
+    });
+  }
 
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
@@ -8881,6 +8905,11 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
   const validated = AgentInputSchema.parse(input);
   const now = Date.now();
   const s = getStatements();
+  const provider =
+    validated.provider ??
+    (validated.modelPresetId
+      ? null
+      : dbGetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING_KEY)?.trim() || DEFAULT_PERSISTED_AGENT_RUNTIME_PROVIDER);
 
   // Verify matrix account exists if specified
   if (validated.matrixAccount) {
@@ -8897,7 +8926,7 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
       validated.cwd,
       validated.model ?? null,
       validated.effort ?? null,
-      validated.provider ?? null,
+      provider,
       validated.modelPresetId ?? null,
       validated.remote ?? null,
       validated.remoteUser ?? null,

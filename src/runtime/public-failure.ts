@@ -1,6 +1,7 @@
 const MAX_TURN_FAILURE_RESPONSE = 320;
 const INTERNAL_RUNTIME_FAILURE_MESSAGE =
   "The agent could not complete this request because of an internal runtime error. Please try again.";
+const PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
 
 const INTERNAL_ERROR_PATTERNS = [
   /\b(?:ENOENT|EACCES|EPERM|ENOTDIR|EISDIR|EMFILE|ENFILE|scandir|ERR_[A-Z0-9_]+)\b/i,
@@ -20,6 +21,13 @@ const INTERNAL_ERROR_PATTERNS = [
   /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/\S+/i,
 ];
 
+const PROVIDER_ACCOUNT_FAILURE_PATTERNS = [
+  /\b(?:rate[_ -]?limit(?:ed|error)?|usage limit|out of extra usage|quota exhausted)\b/i,
+  /\b(?:authentication_failed|authenticationerror|oauth_org_not_allowed|billing_error|billingerror)\b/i,
+  /\b(?:invalid|expired|revoked)\s+(?:api key|oauth token|credential)\b/i,
+  /\borganization\b.*\b(?:account|oauth|token|verification)\b/i,
+];
+
 export function publicRuntimeFailureDetail(error: unknown): string {
   const raw = runtimeFailureText(error);
   if (raw === null) {
@@ -31,6 +39,10 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     .map((line) => line.trim())
     .find(Boolean);
   const detail = (firstLine ?? raw.trim()).replace(/^(?:Error:\s*)+/i, "").trim();
+
+  if (PROVIDER_ACCOUNT_FAILURE_PATTERNS.some((pattern) => pattern.test(detail))) {
+    return PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
+  }
 
   if (!detail || INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(detail))) {
     return INTERNAL_RUNTIME_FAILURE_MESSAGE;

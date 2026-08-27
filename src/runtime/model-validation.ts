@@ -40,6 +40,26 @@ export function validateRuntimeModelSelector(providerId: string, model: string):
     return { ok: false, error: `Invalid model: '${model}' cannot contain whitespace` };
   }
 
+  const lower = value.toLowerCase();
+  if (
+    providerId === "claude" &&
+    (lower.startsWith("gpt-") || lower.startsWith("codex-") || /^o\d(?:-|$)/.test(lower))
+  ) {
+    return {
+      ok: false,
+      error: `Invalid Claude model selector: '${value}' belongs to the Codex/OpenAI model family`,
+    };
+  }
+  if (
+    providerId === "codex" &&
+    (lower.startsWith("claude-") || lower === "sonnet" || lower === "haiku" || lower === "opus")
+  ) {
+    return {
+      ok: false,
+      error: `Invalid Codex model selector: '${value}' belongs to the Claude model family`,
+    };
+  }
+
   if (providerId !== "pi") {
     return { ok: true };
   }

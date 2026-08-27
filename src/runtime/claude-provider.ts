@@ -4,6 +4,7 @@ import {
   type Options,
   type PermissionResult,
   type Query,
+  type SDKAssistantMessageError,
 } from "@anthropic-ai/claude-agent-sdk";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -577,6 +578,44 @@ function resolveExecutableFromPath(command: string, env: Record<string, string |
   return undefined;
 }
 
+const RECOVERABLE_CLAUDE_ASSISTANT_ERRORS = new Set<SDKAssistantMessageError>([
+  "rate_limit",
+  "overloaded",
+  "server_error",
+  "unknown",
+]);
+
+function extractClaudeAssistantText(message: any): string {
+  const blocks = Array.isArray(message.message?.content) ? message.message.content : [];
+  return blocks
+    .filter((block: any) => block?.type === "text" && typeof block.text === "string")
+    .map((block: any) => block.text.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatClaudeProviderFailure(input: { code?: unknown; details?: unknown; errors?: unknown }): string {
+  const code = typeof input.code === "string" && input.code.trim() ? input.code.trim() : undefined;
+  const errors = Array.isArray(input.errors)
+    ? input.errors.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const details =
+    errors.length > 0
+      ? errors.join("; ")
+      : typeof input.details === "string" && input.details.trim()
+        ? input.details.trim()
+        : undefined;
+  const prefix = code ? `Claude provider error (${code})` : "Claude turn failed";
+  return details ? `${prefix}: ${details}` : prefix;
+}
+
+function isRecoverableClaudeFailure(code: unknown, status: unknown): boolean {
+  if (typeof status === "number") {
+    return status === 429 || status >= 500;
+  }
+  return typeof code === "string" && RECOVERABLE_CLAUDE_ASSISTANT_ERRORS.has(code as SDKAssistantMessageError);
+}
+
 async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
@@ -600,6 +639,22 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
     }
 
     if (message.type === "assistant") {
+      if (typeof message.error === "string" && message.error.trim()) {
+        yield {
+          type: "turn.failed",
+          error: formatClaudeProviderFailure({
+            code: message.error,
+            details: extractClaudeAssistantText(message),
+          }),
+          recoverable: isRecoverableClaudeFailure(message.error, undefined),
+          rawEvent,
+        };
+        // Claude Code can follow an errored assistant frame with a nominal
+        // `result/success` carrying zero usage. Ending normalization here keeps
+        // that bookkeeping frame from turning the failed provider call into a
+        // successful Ravi turn or exposing the provider's billing text.
+        return;
+      }
       const blocks = Array.isArray(message.message?.content) ? message.message.content : [];
       let text = "";
 
@@ -644,14 +699,20 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
     }
 
     if (message.type === "result") {
-      if (message.subtype && message.subtype !== "success") {
+      const apiErrorStatus =
+        typeof message.api_error_status === "number" && Number.isFinite(message.api_error_status)
+          ? message.api_error_status
+          : undefined;
+      const hasApiErrorStatus = apiErrorStatus !== undefined && apiErrorStatus >= 400;
+      if ((message.subtype && message.subtype !== "success") || message.is_error === true || hasApiErrorStatus) {
         yield {
           type: "turn.failed",
-          error:
-            Array.isArray(message.errors) && message.errors.length > 0
-              ? message.errors.join("; ")
-              : "Claude turn failed",
-          recoverable: true,
+          error: formatClaudeProviderFailure({
+            code: apiErrorStatus ? `http_${apiErrorStatus}` : message.subtype,
+            details: message.result,
+            errors: message.errors,
+          }),
+          recoverable: isRecoverableClaudeFailure(message.subtype, apiErrorStatus),
           rawEvent,
         };
         continue;

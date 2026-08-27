@@ -120,7 +120,13 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }
 
-  if (input.status === 401 || code === "authentication_error" || type === "authentication_error") {
+  if (
+    input.status === 401 ||
+    code === "authentication_error" ||
+    type === "authentication_error" ||
+    code === "authentication_failed" ||
+    type === "authentication_failed"
+  ) {
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }
   if (
@@ -131,16 +137,32 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   ) {
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }
-  if (input.status === 429 || code === "rate_limit_error" || type === "rate_limit_error") {
+  if (
+    input.status === 429 ||
+    code === "rate_limit_error" ||
+    type === "rate_limit_error" ||
+    code === "rate_limit" ||
+    type === "rate_limit" ||
+    text.includes("out of extra usage")
+  ) {
     if (text.includes("quota") || text.includes("monthly") || text.includes("exceeded your current quota")) {
       return { kind: "quota_exhausted", confidence: "high", scope: "account" };
     }
     return { kind: "rate_limited", confidence: "high", scope: inferLimitScope(text) };
   }
+  if (code === "oauth_org_not_allowed" || type === "oauth_org_not_allowed") {
+    return { kind: "permission_denied", confidence: "high", scope: "organization" };
+  }
   if (input.status === 403 || code === "permission_error" || type === "permission_error") {
     return { kind: "permission_denied", confidence: "medium", scope: inferPermissionScope(text) };
   }
-  if (input.status === 529 || input.status === 503 || text.includes("overloaded")) {
+  if (
+    input.status === 529 ||
+    input.status === 503 ||
+    code === "overloaded" ||
+    type === "overloaded" ||
+    text.includes("overloaded")
+  ) {
     return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
   }
   if (input.status && input.status >= 500) {

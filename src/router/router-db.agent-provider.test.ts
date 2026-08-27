@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { dbCreateAgent, dbGetAgent, dbUpdateAgent } from "./router-db.js";
+import { dbCreateAgent, dbGetAgent, dbSetSetting, dbUpdateAgent } from "./router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 const TEST_AGENT_IDS = ["test-provider-agent-a", "test-provider-agent-b"];
@@ -56,14 +56,25 @@ describe("Agent provider persistence", () => {
     expect(loaded?.provider).toBe("codex");
   });
 
-  it("defaults to undefined provider when not set", () => {
+  it("persists the effective default provider when not set", () => {
     dbCreateAgent({
       id: "test-provider-agent-a",
       cwd: "/tmp/test-provider-agent-a",
     });
 
     const loaded = dbGetAgent("test-provider-agent-a");
-    expect(loaded?.provider).toBeUndefined();
+    expect(loaded?.provider).toBe("codex");
+  });
+
+  it("persists the configured global provider when not set", () => {
+    dbSetSetting("runtime.defaultProvider", "claude");
+    dbCreateAgent({
+      id: "test-provider-agent-a",
+      cwd: "/tmp/test-provider-agent-a",
+    });
+
+    const loaded = dbGetAgent("test-provider-agent-a");
+    expect(loaded?.provider).toBe("claude");
   });
 
   it("persists remote execution settings", () => {
