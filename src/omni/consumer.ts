@@ -68,6 +68,7 @@ import {
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
+import { isBroadcastJid } from "../utils/phone.js";
 import type {
   MessageActorMetadata,
   MessageContext,
@@ -603,6 +604,20 @@ export class OmniConsumer {
 
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
+
+    // WhatsApp Status and broadcast-list feeds are not conversations. Treating
+    // their shared chat id as a DM makes different authors repeatedly
+    // canonicalize the same chat into their own contact history. Besides mixing
+    // unrelated histories, that merge is synchronous and can starve daemon
+    // heartbeats. Filter before any chat/contact persistence as defense in depth
+    // even when the channel plugin emits a broadcast event.
+    if (channelType.replace(/-baileys$/, "") === "whatsapp" && isBroadcastJid(payload.chatId)) {
+      log.debug("Ignoring WhatsApp broadcast feed", {
+        instanceId,
+        broadcastKind: payload.chatId.toLowerCase() === "status@broadcast" ? "status" : "broadcast",
+      });
+      return;
+    }
 
     const handlerStartedAt = Date.now();
     const pluginReceivedAtMs = resolvePluginReceivedAtMs(event, payload);

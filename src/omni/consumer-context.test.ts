@@ -992,6 +992,50 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("ignores WhatsApp Status before chat or contact persistence", async () => {
+    contactIntakeMode = "pending";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-status-broadcast",
+      type: "message.received",
+      payload: {
+        externalId: "msg-status-broadcast",
+        chatId: "status@broadcast",
+        from: "5511999904321@s.whatsapp.net",
+        content: {
+          type: "image",
+          text: "status must not become a private chat",
+        },
+        rawPayload: {
+          pushName: "Status Author",
+          resolvedSenderPhone: "5511999904321",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "history-sync",
+      },
+      timestamp: 1_777_777_777_000,
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(0);
+    expect(chatMessageCalls).toHaveLength(0);
+    expect(chatParticipantCalls).toHaveLength(0);
+    expect(messageMetaSaveCalls).toHaveLength(0);
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
+  });
+
   it("captures old timestamp messages without replaying them to runtime", async () => {
     contactIntakeMode = "pending";
     const sender = {
