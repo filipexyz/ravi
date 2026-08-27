@@ -6,6 +6,7 @@ const emitCalls: Array<{ topic: string; payload: Record<string, unknown> }> = []
 
 let running = false;
 let consumedMessages: FakePromptMessage[] = [];
+let stopRunningAfterConsume = true;
 
 interface FakePromptMessage {
   data: Uint8Array;
@@ -18,11 +19,14 @@ const fakeConsumer = {
   consume: mock(async (options: Record<string, unknown>) => {
     consumeCalls.push(options);
     const messages = [...consumedMessages];
+    consumedMessages = [];
     return (async function* () {
       try {
         yield* messages;
       } finally {
-        running = false;
+        if (stopRunningAfterConsume) {
+          running = false;
+        }
       }
     })();
   }),
@@ -63,6 +67,7 @@ afterAll(() => {
 
 beforeEach(() => {
   running = true;
+  stopRunningAfterConsume = true;
   consumedMessages = [];
   consumeCalls.length = 0;
   emitCalls.length = 0;
@@ -169,6 +174,69 @@ describe("RuntimePromptSubscription", () => {
     expect(message.ack).not.toHaveBeenCalled();
     expect(handlePrompt).not.toHaveBeenCalled();
     expect(subscription.promptsReceived).toBe(0);
+  });
+
+  it("records onIntakeFenced when crash-recovery intake is closed", async () => {
+    const message = makePromptMessage("ravi.session.main.prompt", { prompt: "stored after fence" });
+    consumedMessages = [message];
+    const onIntakeFenced = mock(() => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => false,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt: mock(async () => {}),
+      onIntakeFenced,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => !subscription.active);
+
+    expect(onIntakeFenced).toHaveBeenCalledWith({
+      sessionName: "main",
+      subject: "ravi.session.main.prompt",
+      reason: "crash_recovery_not_accepting",
+    });
+    expect(message.nak).toHaveBeenCalledTimes(1);
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it("resubscribes after a transient fence and dispatches Slack-sourced inbound", async () => {
+    stopRunningAfterConsume = false;
+    const fenced = makePromptMessage("ravi.session.main.prompt", { prompt: "held during fence" });
+    const slack = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "@ravi ping",
+      source: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+    });
+    consumedMessages = [fenced];
+    let accept = false;
+    const handlePrompt = mock(async () => {
+      running = false;
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => accept,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+      intakeFenceRetryMs: 20,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => fenced.nak.mock.calls.length === 1 && consumeCalls.length === 1);
+
+    accept = true;
+    consumedMessages = [slack];
+    await waitUntil(() => handlePrompt.mock.calls.length === 1);
+
+    expect(handlePrompt).toHaveBeenCalledWith("main", {
+      prompt: "@ravi ping",
+      source: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+    });
+    expect(slack.ack).toHaveBeenCalledTimes(1);
+    expect(fenced.ack).not.toHaveBeenCalled();
   });
 });
 

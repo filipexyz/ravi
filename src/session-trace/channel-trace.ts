@@ -72,6 +72,13 @@ export interface RecordPromptPublishedTraceInput {
   timestamp?: number;
 }
 
+export interface RecordPromptIntakeFencedTraceInput {
+  sessionName: string;
+  reason: string;
+  subject?: string;
+  timestamp?: number;
+}
+
 export interface RecordResponseEmittedTraceInput {
   sessionName: string;
   response: ResponseMessage;
@@ -442,6 +449,25 @@ export function recordRouteRejectedTrace(input: RecordRouteRejectedTraceInput): 
     timestamp: input.timestamp,
     source: input.source,
     payloadJson: payload,
+  });
+}
+
+export function recordPromptIntakeFencedTrace(input: RecordPromptIntakeFencedTraceInput): SessionEventRecord | null {
+  const session = getSessionByName(input.sessionName);
+  if (!session) return null;
+
+  return recordSessionEvent({
+    sessionKey: session.sessionKey,
+    sessionName: input.sessionName,
+    agentId: session.agentId,
+    eventType: "prompt.intake_fenced",
+    eventGroup: "prompt",
+    status: "fenced",
+    timestamp: input.timestamp,
+    payloadJson: {
+      reason: input.reason,
+      subject: input.subject ?? null,
+    },
   });
 }
 

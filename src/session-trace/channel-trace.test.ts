@@ -7,6 +7,7 @@ import {
   normalizeSessionTraceSource,
   recordChannelMessageReceivedTrace,
   recordDeliveryTrace,
+  recordPromptIntakeFencedTrace,
   recordPromptPublishedTrace,
   recordResponseEmittedTrace,
   recordRouteResolvedTrace,
@@ -210,6 +211,33 @@ describe("channel session trace", () => {
       actorType: "agent",
       actorAgentId: "main",
       contactId: null,
+    });
+  });
+
+  it("records a dedicated prompt.intake_fenced event", () => {
+    const sessionKey = "agent:main:main";
+    const sessionName = "main";
+    getOrCreateSession(sessionKey, "main", "/tmp/ravi-agent");
+    updateSessionName(sessionKey, sessionName);
+
+    const recorded = recordPromptIntakeFencedTrace({
+      sessionName,
+      reason: "crash_recovery_not_accepting",
+      subject: "ravi.session.main.prompt",
+      timestamp: 42,
+    });
+    expect(recorded).not.toBeNull();
+
+    const events = listSessionEvents(sessionKey);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventType: "prompt.intake_fenced",
+      eventGroup: "prompt",
+      status: "fenced",
+      payloadJson: {
+        reason: "crash_recovery_not_accepting",
+        subject: "ravi.session.main.prompt",
+      },
     });
   });
 });

@@ -691,8 +691,7 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
-      log.error("No agent found for prompt", { sessionName, agentId });
-      return;
+      this.failPromptIntake(sessionName, prompt, "no_agent", { agentId });
     }
 
     const isGroup = sessionEntry?.chatType === "group" || sessionName.includes(":group:");
@@ -792,8 +791,7 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
-      log.error("No agent found for prompt", { sessionName, agentId });
-      return;
+      this.failPromptIntake(sessionName, prompt, "no_agent", { agentId });
     }
     const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
     const modelBrokerPlan = await planRuntimeModelBrokerRoute({
@@ -1147,6 +1145,7 @@ export class RuntimeSessionDispatcher {
     }
 
     if (existing?.done) {
+      log.info("Streaming: relaunching after idle-complete runtime session", { sessionName });
       this.releaseRuntimeSessionSlot(sessionName);
     }
 
@@ -1313,6 +1312,30 @@ export class RuntimeSessionDispatcher {
       },
     });
     await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+  }
+
+  private failPromptIntake(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    reason: string,
+    extra: Record<string, unknown> = {},
+  ): never {
+    const sessionEntry = getSessionByName(sessionName);
+    const message = `Runtime prompt intake failed (${reason})`;
+    log.error(message, { sessionName, reason, ...extra });
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: prompt._agentId ?? sessionEntry?.agentId,
+      eventType: "dispatch.intake_failed",
+      eventGroup: "dispatch",
+      status: "failed",
+      source: prompt.source,
+      messageId: prompt.context?.messageId,
+      error: message,
+      payloadJson: { reason, ...extra },
+    });
+    throw new Error(message);
   }
 
   private prepareDaemonRestartResumePrompt(

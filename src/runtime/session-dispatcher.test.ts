@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { nats } from "../nats.js";
+import { configStore } from "../config-store.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
@@ -2508,6 +2509,92 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
     expect(dispatcher.streamingSessions.has("task-blocked-work")).toBe(false);
     expect(dispatcher.streamingSessions.has("main")).toBe(true);
+  });
+
+  it("throws a visible intake failure instead of silently dropping a prompt with no agent", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-no-agent-intake-");
+    try {
+      getOrCreateSession("agent:main:main", "main", stateDir, { name: "main" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const getConfig = spyOn(configStore, "getConfig").mockReturnValue({
+        ...configStore.getConfig(),
+        agents: {},
+        defaultAgent: "missing",
+      });
+
+      await expect(
+        dispatcher.handlePrompt("main", {
+          prompt: "hello after reroute",
+          source: { channel: "whatsapp", accountId: "main", chatId: "5511999999999" },
+        }),
+      ).rejects.toThrow("Runtime prompt intake failed (no_agent)");
+
+      getConfig.mockRestore();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("cold-starts Slack inbound after an idle-complete runtime session", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-idle-complete-");
+    try {
+      getOrCreateSession("agent:main:main", "main", stateDir, { name: "main" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const startStreamingSession = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      dispatcher.streamingSessions.set(
+        "main",
+        createActiveSession({
+          agentId: "main",
+          done: true,
+        }),
+      );
+
+      await dispatcher.handlePromptImmediate("main", {
+        prompt: "@ravi ping",
+        source: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      });
+
+      expect(startStreamingSession).toHaveBeenCalledTimes(1);
+      expect(startStreamingSession.mock.calls[0]?.[1]._daemonRestartResume).toBeUndefined();
+      expect(dispatcher.streamingSessions.has("main")).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("cold-starts WhatsApp inbound after a missing_snapshot skip-resume", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-resume-inbound-");
+    try {
+      const sessionKey = "agent:main:main";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: "main" });
+      configStore.refresh();
+      dbUpsertDaemonRestartEpoch({
+        restartEpoch: "epoch-missing-snapshot",
+        reason: "crash-recovery-fenced snapshot",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      dbMarkDaemonRestartResumeDelivered({
+        restartEpoch: "epoch-missing-snapshot",
+        sessionKey,
+        sessionName: "main",
+      });
+      const dispatcher = createDispatcher();
+      const startStreamingSession = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+
+      await dispatcher.handlePromptImmediate("main", {
+        prompt: "oi",
+        source: { channel: "whatsapp", accountId: "main", chatId: "5511999999999" },
+        _daemonRestartResume: undefined,
+      });
+
+      expect(startStreamingSession).toHaveBeenCalledTimes(1);
+      expect(startStreamingSession.mock.calls[0]?.[1]._daemonRestartResume).toBeUndefined();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("keeps queued runtime starts parked when model change caller immediately restarts the same session", async () => {

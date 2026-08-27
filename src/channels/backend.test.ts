@@ -343,6 +343,7 @@ describe("channel backend ingress", () => {
       prompt: resolved.prompt,
     });
     expect(publishPrompt).toHaveBeenCalledTimes(1);
+    expect(publishPrompt.mock.calls[0]?.[0]).toBe(resolved.session.name);
     expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({
       ...resolved.prompt,
       _channelBackend: {
