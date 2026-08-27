@@ -2838,6 +2838,7 @@ export type ChannelsRestartReturn = {
   action: string;
   changed: boolean;
   pm2Status?: number | null;
+  previousPid?: number;
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;
@@ -2971,6 +2972,7 @@ export type ChannelsStartReturn = {
   action: string;
   changed: boolean;
   pm2Status?: number | null;
+  previousPid?: number;
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;
@@ -3138,6 +3140,7 @@ export type ChannelsStopReturn = {
   action: string;
   changed: boolean;
   pm2Status?: number | null;
+  previousPid?: number;
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;

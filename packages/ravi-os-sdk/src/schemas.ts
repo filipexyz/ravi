@@ -15860,6 +15860,9 @@ export const ChannelsRestartReturnSchema = {
         }
       ]
     },
+    "previousPid": {
+      "type": "number"
+    },
     "reason": {
       "type": "string"
     },
@@ -16549,6 +16552,9 @@ export const ChannelsStartReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "previousPid": {
+      "type": "number"
     },
     "reason": {
       "type": "string"
@@ -17417,6 +17423,9 @@ export const ChannelsStopReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "previousPid": {
+      "type": "number"
     },
     "reason": {
       "type": "string"
