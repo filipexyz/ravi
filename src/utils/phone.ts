@@ -126,6 +126,15 @@ export function isGroup(jid: string): boolean {
   return GROUP_JID_RE.test(jid) || jid.startsWith("group:");
 }
 
+/**
+ * WhatsApp broadcast identifiers are transport feeds, not peer chats.
+ * In particular, `status@broadcast` must never enter DM/contact
+ * canonicalization because every status author shares that chat id.
+ */
+export function isBroadcastJid(jid: string): boolean {
+  return jid.trim().toLowerCase().endsWith("@broadcast");
+}
+
 export function isLid(jid: string): boolean {
   return LID_JID_RE.test(jid) || jid.startsWith("lid:");
 }
