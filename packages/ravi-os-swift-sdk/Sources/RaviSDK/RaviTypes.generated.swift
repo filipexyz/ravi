@@ -3646,15 +3646,17 @@ public struct ChannelsRestartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
   public var pm2Status: RaviJSON?
+  public var previousPid: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, previousPid: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
+    self.previousPid = previousPid
     self.reason = reason
     self.runnerEnv = runnerEnv
     self.status = status
@@ -3665,6 +3667,7 @@ public struct ChannelsRestartReturn: Codable, Sendable {
     case action = "action"
     case changed = "changed"
     case pm2Status = "pm2Status"
+    case previousPid = "previousPid"
     case reason = "reason"
     case runnerEnv = "runnerEnv"
     case status = "status"
@@ -3745,15 +3748,17 @@ public struct ChannelsStartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
   public var pm2Status: RaviJSON?
+  public var previousPid: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, previousPid: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
+    self.previousPid = previousPid
     self.reason = reason
     self.runnerEnv = runnerEnv
     self.status = status
@@ -3764,6 +3769,7 @@ public struct ChannelsStartReturn: Codable, Sendable {
     case action = "action"
     case changed = "changed"
     case pm2Status = "pm2Status"
+    case previousPid = "previousPid"
     case reason = "reason"
     case runnerEnv = "runnerEnv"
     case status = "status"
@@ -3802,15 +3808,17 @@ public struct ChannelsStopReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
   public var pm2Status: RaviJSON?
+  public var previousPid: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, previousPid: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
+    self.previousPid = previousPid
     self.reason = reason
     self.runnerEnv = runnerEnv
     self.status = status
@@ -3821,6 +3829,7 @@ public struct ChannelsStopReturn: Codable, Sendable {
     case action = "action"
     case changed = "changed"
     case pm2Status = "pm2Status"
+    case previousPid = "previousPid"
     case reason = "reason"
     case runnerEnv = "runnerEnv"
     case status = "status"

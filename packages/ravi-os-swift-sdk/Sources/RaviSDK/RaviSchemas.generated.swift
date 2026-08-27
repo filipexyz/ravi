@@ -15984,6 +15984,9 @@ public enum RaviSchemas {
           }
         ]
       },
+      "previousPid": {
+        "type": "number"
+      },
       "reason": {
         "type": "string"
       },
@@ -16679,6 +16682,9 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "previousPid": {
+        "type": "number"
       },
       "reason": {
         "type": "string"
@@ -17551,6 +17557,9 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "previousPid": {
+        "type": "number"
       },
       "reason": {
         "type": "string"
