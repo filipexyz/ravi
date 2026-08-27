@@ -57,6 +57,7 @@ import {
   watchForLeadershipVacancy,
   releaseLeadership,
 } from "./leader/index.js";
+import { reconcileManagedChannelRunner } from "./channels/runner-liveness.js";
 
 const log = logger.child("daemon");
 
@@ -294,11 +295,25 @@ async function shutdown(signal: string, exitCode = 0) {
   process.exit(exitCode);
 }
 
+async function reconcileChannelRunnerAfterDaemonStart(): Promise<void> {
+  try {
+    const result = await reconcileManagedChannelRunner();
+    if (result.action === "bounce_failed" || result.action === "unconfirmed") {
+      log.error("Channel runner reconcile after daemon start did not confirm Slack transport", result);
+    }
+  } catch (error) {
+    log.error("Channel runner reconcile after daemon start failed", { error });
+  }
+}
+
 function restartAfterFatalRuntimeError(error: Error): void {
   log.error("Fatal runtime ownership error; exiting for supervised restart", {
     pid: process.pid,
     error,
   });
+  if (shuttingDown) {
+    process.exit(1);
+  }
   void shutdown("fatal runtime ownership error", 1);
 }
 
@@ -379,6 +394,7 @@ export async function startDaemon() {
 
   await gateway.start();
   log.info("Gateway started");
+  await reconcileChannelRunnerAfterDaemonStart();
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).

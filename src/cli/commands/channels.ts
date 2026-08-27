@@ -11,6 +11,7 @@ import {
   type ChannelRunnerHealthProbeResult,
   type ChannelRunnerHealthSnapshot,
 } from "../../channels/health.js";
+import { bounceManagedChannelRunnerProcess, decideChannelRunnerStartAction } from "../../channels/runner-liveness.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
@@ -146,6 +147,7 @@ const channelsMutationReturnSchema = z
     runnerEnv: runnerEnvReturnSchema.optional(),
     status: channelsStatusReturnSchema.optional(),
     reason: z.string().optional(),
+    previousPid: z.number().optional(),
   })
   .strict();
 
@@ -638,21 +640,75 @@ export class ChannelsCommands {
   @Command({ name: "start", description: "Start the channel runner via PM2" })
   @CommandAccess({ kind: "mutate", resource: "channels", action: "start", risk: "high" })
   @Returns(channelsMutationReturnSchema)
-  start(
+  async start(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
 
     if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
+      const running = getPm2Process(CHANNELS_PM2_PROCESS_NAME);
+      const pid = running?.pid;
+      const health =
+        Number.isSafeInteger(pid) && (pid ?? 0) > 0
+          ? await probeChannelRunnerHealth({ pid: pid as number })
+          : ({ reachable: false, reason: "pid_mismatch" } as const);
+      const decision = decideChannelRunnerStartAction({
+        pm2Online: true,
+        pid,
+        health,
+      });
+      if (decision.action === "already_running") {
+        const payload = {
+          action: "start" as const,
+          changed: false,
+          reason: "already_running",
+          status: await buildChannelsLiveStatusJson(),
+        };
+        if (asJson) printJson(payload);
+        else console.log("Channel runner is already running");
+        return payload;
+      }
+      if (decision.action === "unconfirmed") {
+        fail(
+          "Channel runner PM2 process is online but health could not be confirmed (NATS unavailable). Refusing to no-op.",
+        );
+      }
+      if (decision.action !== "bounce") {
+        return { action: "not_managed" as const, changed: false };
+      }
+
+      const target = requireRuntimeTarget(build);
+      const runnerEnv = buildRunnerPm2Env();
+      const bounced = bounceManagedChannelRunnerProcess({
+        target,
+        reason: `stale_${decision.reason}`,
+        previousPid: decision.pid,
+        persist: true,
+        runnerEnv,
+        runPm2: (args, opts) =>
+          asJson
+            ? runPm2Quiet(args, { cwd: opts?.cwd ?? target.cwd, envOverrides: opts?.envOverrides ?? runnerEnv })
+            : runPm2(args, opts?.envOverrides ?? runnerEnv, { cwd: opts?.cwd ?? target.cwd }),
+        persistPm2: persistPm2ProcessList,
+      });
       const payload = {
         action: "start" as const,
-        changed: false,
-        reason: "already_running",
-        status: buildChannelsStatusJson(),
+        changed: bounced.ok,
+        reason: `stale_${decision.reason}`,
+        previousPid: decision.pid,
+        pm2Status: bounced.pm2Status,
+        target,
+        runnerEnv: publicRunnerEnv(runnerEnv),
+        status: await buildChannelsLiveStatusJson(),
       };
-      if (asJson) printJson(payload);
-      else console.log("Channel runner is already running");
+      if (asJson) {
+        printJson(payload);
+        if (!bounced.ok) fail("Failed to bounce stale channel runner");
+        return payload;
+      }
+      if (!bounced.ok) fail("Failed to bounce stale channel runner");
+      console.log(`Channel runner bounced (stale ${decision.reason}, previous PID ${decision.pid})`);
       return payload;
     }
 

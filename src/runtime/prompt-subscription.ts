@@ -13,6 +13,14 @@ import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
 const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
+export const DEFAULT_PROMPT_INTAKE_FENCE_RETRY_MS = 5_000;
+export const PROMPT_INTAKE_FENCED_REASON = "crash_recovery_not_accepting";
+
+export interface PromptIntakeFencedEvent {
+  sessionName: string;
+  subject: string;
+  reason: typeof PROMPT_INTAKE_FENCED_REASON;
+}
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
@@ -22,6 +30,8 @@ export interface RuntimePromptSubscriptionOptions {
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
+  onIntakeFenced?(event: PromptIntakeFencedEvent): void;
+  intakeFenceRetryMs?: number;
 }
 
 export class RuntimePromptSubscription {
@@ -136,10 +146,20 @@ export class RuntimePromptSubscription {
             }
             if (!canAcceptPrompt) {
               intakeFenced = true;
-              log.warn("Runtime prompt intake fenced before acknowledgement", {
+              const event = {
                 sessionName,
                 subject: msg.subject,
-              });
+                reason: PROMPT_INTAKE_FENCED_REASON,
+              } as const;
+              log.warn("Runtime prompt intake fenced before acknowledgement", event);
+              try {
+                this.options.onIntakeFenced?.(event);
+              } catch (error) {
+                log.warn("Failed to record runtime prompt intake fence", {
+                  sessionName,
+                  error,
+                });
+              }
               msg.nak();
               break;
             }
@@ -221,8 +241,9 @@ export class RuntimePromptSubscription {
         running: this.options.isRunning(),
         promptsReceived: this.promptsReceived,
       });
-      if (this.options.isRunning() && !intakeFenced) {
-        setTimeout(() => this.subscribe(), 1000);
+      if (this.options.isRunning()) {
+        const retryMs = intakeFenced ? (this.options.intakeFenceRetryMs ?? DEFAULT_PROMPT_INTAKE_FENCE_RETRY_MS) : 1000;
+        setTimeout(() => this.subscribe(), retryMs);
       }
     }
   }

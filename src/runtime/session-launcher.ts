@@ -100,7 +100,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
   const sessionIdentity = resolveRuntimeSessionIdentity({ sessionName, prompt });
-  if (!sessionIdentity) return;
+  if (!sessionIdentity) {
+    throw new Error("Runtime prompt intake failed (unresolved_identity)");
+  }
   let modelBrokerPlanClaim: ClaimedRuntimeModelBrokerPlan | undefined;
   if (prompt._modelBrokerTurnId) {
     const selection = resolveRequiredRuntimeModelBrokerSelection(
@@ -144,7 +146,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     throw error;
   }
   if (!resolvedSession) {
-    return;
+    throw new Error("Runtime prompt intake failed (unresolved_session)");
   }
 
   const {

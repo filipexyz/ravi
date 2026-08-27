@@ -22,6 +22,50 @@ mock.module("../context.js", () => ({
   },
 }));
 
+const actualHealth = await import("../../channels/health.js");
+const healthProbeOverride: {
+  current:
+    | ((options: { pid: number }) => Promise<import("../../channels/health.js").ChannelRunnerHealthProbeResult>)
+    | null;
+} = { current: null };
+mock.module("../../channels/health.js", () => ({
+  ...actualHealth,
+  probeChannelRunnerHealth: async (options: { pid: number }) => {
+    if (healthProbeOverride.current) return healthProbeOverride.current(options);
+    return actualHealth.probeChannelRunnerHealth(options);
+  },
+}));
+
+const actualPm2 = await import("../../pm2.js");
+const pm2Override: {
+  running: boolean;
+  process: ReturnType<typeof actualPm2.getPm2Process>;
+} = { running: false, process: undefined };
+mock.module("../../pm2.js", () => ({
+  ...actualPm2,
+  isPm2Available: () => true,
+  isPm2ProcessRunning: (name: string) =>
+    name === "ravi-channels" ? pm2Override.running : actualPm2.isPm2ProcessRunning(name),
+  getPm2Process: (name: string) =>
+    name === "ravi-channels" && pm2Override.process !== undefined ? pm2Override.process : actualPm2.getPm2Process(name),
+}));
+
+const actualLiveness = await import("../../channels/runner-liveness.js");
+const bounceOverride = {
+  current: null as
+    | null
+    | ((
+        ...args: Parameters<typeof actualLiveness.bounceManagedChannelRunnerProcess>
+      ) => ReturnType<typeof actualLiveness.bounceManagedChannelRunnerProcess>),
+};
+mock.module("../../channels/runner-liveness.js", () => ({
+  ...actualLiveness,
+  bounceManagedChannelRunnerProcess: (...args: Parameters<typeof actualLiveness.bounceManagedChannelRunnerProcess>) => {
+    if (bounceOverride.current) return bounceOverride.current(...args);
+    return actualLiveness.bounceManagedChannelRunnerProcess(...args);
+  },
+}));
+
 const {
   buildChannelsLiveStatusJson,
   ChannelsCommands,
@@ -44,6 +88,10 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
   process.env = { ...ORIGINAL_ENV };
+  healthProbeOverride.current = null;
+  pm2Override.running = false;
+  pm2Override.process = undefined;
+  bounceOverride.current = null;
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -128,6 +176,50 @@ describe("channels runner lifecycle", () => {
     expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(bundlePath)} channels run`);
     expect(pm2Log).toContain("save --force");
   }, 20_000);
+
+  it("bounces an online-but-unreachable runner instead of no-op already_running", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-channels-start-bounce-"));
+    tempDirs.push(root);
+    const bundlePath = join(root, "dist", "bundle", "index.js");
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(bundlePath, "", "utf8");
+    process.env.RAVI_BUNDLE = bundlePath;
+    process.env.RAVI_DAEMON_CWD = root;
+
+    pm2Override.running = true;
+    pm2Override.process = {
+      name: "ravi-channels",
+      pm_id: 2,
+      pid: 5661,
+      status: "online",
+      cpu: 0,
+      memory: 0,
+    };
+    healthProbeOverride.current = async () => ({ reachable: false, reason: "timeout" });
+    const bounce = mock((input: { reason: string; previousPid?: number | null }) => ({
+      ok: true,
+      pm2Status: 0,
+      previousPid: input.previousPid ?? 5661,
+      reason: input.reason,
+    }));
+    bounceOverride.current = bounce as never;
+
+    const commands = new ChannelsCommands();
+    const payload = await commands.start(undefined, true);
+
+    expect(payload).toMatchObject({
+      action: "start",
+      changed: true,
+      reason: "stale_timeout",
+      previousPid: 5661,
+    });
+    expect(bounce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "stale_timeout",
+        previousPid: 5661,
+      }),
+    );
+  });
 });
 
 describe("channels config commands", () => {

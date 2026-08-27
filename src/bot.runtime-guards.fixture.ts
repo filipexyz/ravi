@@ -2218,6 +2218,7 @@ describe("RaviBot streaming session lifecycle", () => {
     }
 
     expect(stopError).toMatchObject({ name: "RuntimeCrashRecoveryOwnershipLostError" });
+    expect(fatalRuntimeErrors[0]).toBe(stopError as Error);
     expect(crashRecovery.ownershipFailure).toBe(stopError);
     expect(crashRecovery.heartbeatTimer).toBeNull();
     expect(crashRecovery.boot).toMatchObject({ status: "active" });

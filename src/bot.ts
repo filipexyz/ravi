@@ -14,6 +14,7 @@ import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
 import { RuntimePromptSubscription } from "./runtime/prompt-subscription.js";
 import { notifyRuntimeRecoveryExhausted } from "./runtime/runtime-recovery-alert.js";
 import { safeEmit } from "./runtime/safe-emit.js";
+import { recordPromptIntakeFencedTrace } from "./session-trace/channel-trace.js";
 import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
 import { resolveRuntimeInteractiveReservedSlots, resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
 import { resolveGlobalRuntimeModel } from "./runtime/runtime-defaults.js";
@@ -100,6 +101,25 @@ export class RaviBot {
       getRuntimeSessionPoolSnapshot: () => this.sessionDispatcher.getRuntimeSessionPoolSnapshot(),
       markConsumerReady: () => this.markConsumerReady(),
       handlePrompt: (sessionName, prompt) => this.handlePrompt(sessionName, prompt),
+      onIntakeFenced: (event) => {
+        recordPromptIntakeFencedTrace({
+          sessionName: event.sessionName,
+          reason: event.reason,
+          subject: event.subject,
+        });
+        safeEmit(`ravi.session.${event.sessionName}.runtime`, {
+          type: "prompt.intake_fenced",
+          sessionName: event.sessionName,
+          reason: event.reason,
+          subject: event.subject,
+          timestamp: new Date().toISOString(),
+        }).catch((error) => {
+          log.warn("Failed to emit prompt intake fence event", {
+            sessionName: event.sessionName,
+            error,
+          });
+        });
+      },
     });
   }
 
@@ -124,22 +144,18 @@ export class RaviBot {
     });
     this.running = false;
     this.promptSubscription.stopHealthCheck();
-    if (this.stopping) {
-      // stop() already owns a full dispatcher sweep. Re-entering shutdownAll
-      // from a terminal ledger failure would interrupt the same provider twice
-      // and could clear the map underneath the outer sweep.
-      return;
-    }
-    try {
-      // Per-attempt ownership callbacks run before this host callback and
-      // detach their ledger bindings. Dispatcher shutdown can therefore close
-      // providers without attempting a stale terminal write.
-      this.sessionDispatcher.shutdownAll();
-    } catch (shutdownError) {
-      log.error("Failed to close runtime sessions after crash recovery ownership loss", {
-        instanceId: this.instanceId,
-        error: shutdownError,
-      });
+    if (!this.stopping) {
+      try {
+        // Per-attempt ownership callbacks run before this host callback and
+        // detach their ledger bindings. Dispatcher shutdown can therefore close
+        // providers without attempting a stale terminal write.
+        this.sessionDispatcher.shutdownAll();
+      } catch (shutdownError) {
+        log.error("Failed to close runtime sessions after crash recovery ownership loss", {
+          instanceId: this.instanceId,
+          error: shutdownError,
+        });
+      }
     }
     try {
       this.onFatalRuntimeError(error);
