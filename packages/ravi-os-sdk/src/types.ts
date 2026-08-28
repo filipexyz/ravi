@@ -11842,6 +11842,7 @@ export type SessionsReadInput = {
   count?: string;
   messageId?: string;
   nameOrKey?: string;
+  visibility?: boolean;
   workspace?: boolean;
 };
 
@@ -12088,10 +12089,12 @@ export type SessionsSendInput = {
   agent?: string;
   barrier?: string;
   channel?: string;
+  effort?: string;
   immediate?: boolean;
   interactive?: boolean;
   nameOrKey: string;
   prompt?: string;
+  raw?: boolean;
   steer?: boolean;
   thread?: string;
   threadOwner?: string;

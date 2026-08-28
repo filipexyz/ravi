@@ -5685,6 +5685,7 @@ export class RaviClient {
     read: async (nameOrKey?: string, options?: {
       count?: string;
       messageId?: string;
+      visibility?: boolean;
       workspace?: boolean;
     }): Promise<SessionsReadReturn> => {
       return this.transport.call({
@@ -5811,8 +5812,10 @@ export class RaviClient {
       agent?: string;
       barrier?: string;
       channel?: string;
+      effort?: string;
       immediate?: boolean;
       interactive?: boolean;
+      raw?: boolean;
       steer?: boolean;
       thread?: string;
       threadOwner?: string;
