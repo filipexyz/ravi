@@ -16,11 +16,16 @@ Decisions specific to this domain:
   change would put exit-3 friction inside "make it private NOW". The brake
   keys off the requested value: `public` → dry-run; `private`/`protected_link`
   → immediate. The rule is directional exposure, not the op name.
-- **Brake before scope resolution.** `pages create`, `pages domains` and
-  `pages publish` resolve the Console project scope before publishing; the
-  brake fires even before that, so a
+- **Brake before scope resolution.** `pages create`, `pages domains`,
+  `pages publish` and `pages ship` resolve the Console project scope before
+  publishing; the brake fires even before that, so a
   dry-run works offline and unauthenticated — the plan shows the parsed
   intent (`(Console scope default)` placeholders) instead of resolved refs.
+- **One-shot `ship`, host-only `create`.** Agents were choreographing
+  `create` + `publish` (or worse, `artifacts publish`) to get a URL.
+  `create` stays a host record. `ship` ensures the host (reuse existing slug)
+  and publishes in one command. The `pages` skill teaches only `ship` as
+  “create a page”.
 - **Brake before the password prompt.** A `password set` dry-run must never
   read a secret; the plan carries site/action and `routePresent` metadata only.
 - **Message-based not-found mapping.** Console reports unknown sites/routes as
@@ -36,6 +41,6 @@ Decisions specific to this domain:
   public by accident; the check stays ahead of the brake so a dry-run already
   surfaces the payload error.
 
-Pages has no dedicated skill — the `artifacts` skill hosts the Pages guidance
-today. That gap is registered in the SPEC for a follow-up wave, as is the
-parser-level usage contract (owned by `src/cli/index.ts`, outside this wave).
+The dedicated `pages` skill (`ravi-system-pages`) is the discovery surface.
+The `artifacts` skill only points “hospedar HTML → skill pages”. The
+parser-level usage contract remains owned by `src/cli/index.ts`.

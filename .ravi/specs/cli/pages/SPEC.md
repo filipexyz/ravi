@@ -16,7 +16,10 @@ applies_to:
   - src/cli/commands/pages.ts
   - src/cli/agent-contract.ts
   - src/pages/client.ts
+  - src/pages/ship.ts
   - src/artifacts/publish-client.ts
+  - src/plugins/internal/ravi-system/skills/pages/SKILL.md
+  - src/cli/skill-gates.ts
 owners:
   - ravi-dev
 status: active
@@ -56,7 +59,11 @@ contract errors rethrow first, recognizable Console not-found failures map to
    `sourceKind`, path-basename-only `sourceName`, `route`, `visibility` and
    `entrypointPresent`. Raw source paths and title/description content MUST be
    absent. The dry-run MUST NOT call Console at all — not even the project
-   scope resolution.
+   scope resolution. `pages ship` MUST default to dry-run and require
+   `--execute` before credential, project or provider resolution. Its plan MUST
+   contain `project`, `slug`, `titlePresent`, `contentKind`, `route`,
+   `visibility` and `entrypoint`. Body text and filesystem paths MUST be
+   absent. Public visibility still requires `--execute`.
 5. `pages password set` and `pages password remove` MUST default to dry-run
    and require `--execute`. The `set` dry-run MUST fire BEFORE the hidden
    password prompt (a dry-run never reads secret material) and its plan MUST
@@ -90,6 +97,7 @@ contract errors rethrow first, recognizable Console not-found failures map to
 
 | op | class | brake |
 |---|---|---|
+| ship | ensures a host (create-or-reuse) then uploads bytes and activates a hosted route (external exposure, high) | dry-run + `--execute` |
 | publish | uploads bytes + (default) activates a public hosted route (external exposure, high) | dry-run + `--execute` |
 | password set | flips the route access policy on a live site (high) | dry-run + `--execute`, braked before the secret prompt |
 | password remove | widens who can reach the route, up to fully public (high) | dry-run + `--execute`, visibility validated first |
@@ -114,17 +122,20 @@ is added it MUST arrive braked.
 
 ## Internal consumers
 
-`ravi pages create` and `ravi pages publish` are taught in `AGENTS.md`
-("Ravi Pages Publishing"), in the `artifacts` skill, and in the
-`contentPublishCommand` hint returned by
-`pages create` (`src/pages/client.ts`) — the skill and the hint carry
-`--execute`, and AGENTS.md carries it for both create and publish.
+The agent happy path is `ravi pages ship`, taught by the `pages` skill
+(`ravi skills show pages` / `ravi skills show ravi-system-pages`) and by
+`AGENTS.md` ("Ravi Pages Publishing"). `create` stays host-only.
+`publish` stays the advanced upload primitive (including an existing `art_*`).
+The `contentPublishCommand` hint returned by `pages create`
+(`src/pages/client.ts`) still points at `pages publish --execute`.
+The `artifacts` skill MUST NOT teach Pages publishing; it points at skill
+`pages`.
+
+The default skill gate `pages` (`/^pages(?:[._]|$)/` → `ravi-system-pages`)
+MUST load the skill for `ravi pages …` and `pages.password`.
 
 ## Known gaps
 
-- Pages has NO dedicated skill: the `artifacts` skill hosts the Pages
-  publishing/password guidance today. A `pages` skill is a registered gap for
-  a follow-up wave.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
   `acceptedFlags`.
 - The Console not-found mapping is message-based (`site|route ... not found`);
@@ -135,9 +146,12 @@ is added it MUST arrive braked.
 
 - `bun test src/cli/commands/pages.test.ts` green (contract block included),
   no new failures vs the `dev` baseline.
-- Live checks on the local CLI: `pages create p s --json` and `pages domains p
-  s docs.example.com --json` → exit 3 before credentials; `pages publish p s
-  ./site --json` → exit 3, no Console call; with `--execute` → publishes;
+- Live checks on the local CLI: `pages ship --title T --body "<p>x</p>" --json`
+  → exit 3 before credentials; with `--execute` → ensure-site + publish and
+  JSON `{url,site,slug,route,visibility,artifactId}`; `pages create p s --json`
+  and `pages domains p s docs.example.com --json` → exit 3 before credentials;
+  `pages publish p s ./site --json` → exit 3, no Console call; with `--execute`
+  → publishes;
   `pages password set p s --json`
   → exit 3 without prompting; `pages visibility p s public --json` → exit 3;
   `pages visibility p s private --json` → immediate write; `pages list --json

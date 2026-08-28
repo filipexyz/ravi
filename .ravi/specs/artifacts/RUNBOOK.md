@@ -56,30 +56,12 @@ lifecycle was bypassed.
 
 ## Publish HTML To Ravi Pages
 
-1. Put the page in a local directory. For raw HTML, write `index.html`.
+Hospedar HTML → skill `pages` (`ravi skills show pages`). The one-shot is
+`ravi pages ship`; do not choreograph `create` + `publish`.
 
 ```bash
-mkdir -p /tmp/ravi-page
-$EDITOR /tmp/ravi-page/index.html
+ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json --execute
 ```
 
-2. Ensure the target site exists. This only creates/updates the site record.
-
-```bash
-ravi pages create <project-ref> <site-slug> --visibility public --execute
-```
-
-3. Publish content through the Pages command.
-
-```bash
-ravi pages publish <project-ref> <site-slug> /tmp/ravi-page --route / --visibility public --entrypoint index.html --execute
-```
-
-4. If the HTML was already registered as an artifact package, publish the
-artifact id instead of the directory.
-
-```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
-```
-
-Pages publishing is handled through `ravi pages publish`.
+If the HTML is already a local `art_*`, use advanced `ravi pages publish`
+with that artifact id. Do not use `artifacts publish` as the Pages happy path.
