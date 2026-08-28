@@ -19365,17 +19365,20 @@ public typealias SessionsPruneReturn = [String: RaviJSON]
 public struct SessionsReadOptions: Codable, Sendable {
   public var count: String?
   public var messageId: String?
+  public var visibility: Bool?
   public var workspace: Bool?
 
-  public init(count: String? = nil, messageId: String? = nil, workspace: Bool? = nil) {
+  public init(count: String? = nil, messageId: String? = nil, visibility: Bool? = nil, workspace: Bool? = nil) {
     self.count = count
     self.messageId = messageId
+    self.visibility = visibility
     self.workspace = workspace
   }
 
   enum CodingKeys: String, CodingKey {
     case count = "count"
     case messageId = "messageId"
+    case visibility = "visibility"
     case workspace = "workspace"
   }
 
@@ -19385,6 +19388,9 @@ public struct SessionsReadOptions: Codable, Sendable {
     }
     if let value = self.messageId {
       body["messageId"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visibility {
+      body["visibility"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.workspace {
       body["workspace"] = try RaviJSON.fromEncodable(value)
@@ -19831,8 +19837,10 @@ public struct SessionsSendOptions: Codable, Sendable {
   public var agent: String?
   public var barrier: String?
   public var channel: String?
+  public var effort: String?
   public var immediate: Bool?
   public var interactive: Bool?
+  public var raw: Bool?
   public var steer: Bool?
   public var thread: String?
   public var threadOwner: String?
@@ -19842,12 +19850,14 @@ public struct SessionsSendOptions: Codable, Sendable {
   public var to: String?
   public var wait: Bool?
 
-  public init(agent: String? = nil, barrier: String? = nil, channel: String? = nil, immediate: Bool? = nil, interactive: Bool? = nil, steer: Bool? = nil, thread: String? = nil, threadOwner: String? = nil, threadScope: String? = nil, threadSummary: String? = nil, threadTitle: String? = nil, to: String? = nil, wait: Bool? = nil) {
+  public init(agent: String? = nil, barrier: String? = nil, channel: String? = nil, effort: String? = nil, immediate: Bool? = nil, interactive: Bool? = nil, raw: Bool? = nil, steer: Bool? = nil, thread: String? = nil, threadOwner: String? = nil, threadScope: String? = nil, threadSummary: String? = nil, threadTitle: String? = nil, to: String? = nil, wait: Bool? = nil) {
     self.agent = agent
     self.barrier = barrier
     self.channel = channel
+    self.effort = effort
     self.immediate = immediate
     self.interactive = interactive
+    self.raw = raw
     self.steer = steer
     self.thread = thread
     self.threadOwner = threadOwner
@@ -19862,8 +19872,10 @@ public struct SessionsSendOptions: Codable, Sendable {
     case agent = "agent"
     case barrier = "barrier"
     case channel = "channel"
+    case effort = "effort"
     case immediate = "immediate"
     case interactive = "interactive"
+    case raw = "raw"
     case steer = "steer"
     case thread = "thread"
     case threadOwner = "threadOwner"
@@ -19884,11 +19896,17 @@ public struct SessionsSendOptions: Codable, Sendable {
     if let value = self.channel {
       body["channel"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.effort {
+      body["effort"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.immediate {
       body["immediate"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.interactive {
       body["interactive"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.raw {
+      body["raw"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.steer {
       body["steer"] = try RaviJSON.fromEncodable(value)

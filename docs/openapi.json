@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "974539f51e40ffb4"
+    "version": "ed4eadad24f79552"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -72289,6 +72289,10 @@
                     "description": "Optional session name/key override (defaults to current session)",
                     "type": "string"
                   },
+                  "visibility": {
+                    "description": "Include the skill catalog from runtimeSessionParams.skillVisibility",
+                    "type": "boolean"
+                  },
                   "workspace": {
                     "description": "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
                     "type": "boolean"
@@ -73578,6 +73582,10 @@
                     "description": "Override delivery channel",
                     "type": "string"
                   },
+                  "effort": {
+                    "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
+                    "type": "string"
+                  },
                   "immediate": {
                     "description": "Deliver immediately instead of queueing as a follow-up",
                     "type": "boolean"
@@ -73593,6 +73601,10 @@
                   "prompt": {
                     "description": "Prompt to send (omit for interactive mode)",
                     "type": "string"
+                  },
+                  "raw": {
+                    "description": "Send the prompt without [System] Inform wrapping",
+                    "type": "boolean"
                   },
                   "steer": {
                     "description": "Steer the active turn after safe tool barriers",
@@ -73623,7 +73635,7 @@
                     "type": "string"
                   },
                   "wait": {
-                    "description": "Wait for response (chat mode)",
+                    "description": "Wait for this turn's reply (CLI transcript or delivered chat)",
                     "type": "boolean"
                   }
                 },
