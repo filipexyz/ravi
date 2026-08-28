@@ -5427,19 +5427,10 @@ export class SessionCommands {
 
     if (channelOverride && toOverride) {
       source = { channel: channelOverride, accountId: "", chatId: toOverride };
-    } else if (session.lastChannel && session.lastTo) {
-      // Derive threadId from session key (lastTo doesn't carry it)
-      const derived = deriveSourceFromSessionKey(session.sessionKey);
-      source = {
-        channel: session.lastChannel,
-        accountId: session.lastAccountId ?? "",
-        chatId: session.lastTo,
-        ...(derived?.threadId ? { threadId: derived.threadId } : {}),
-      };
-    } else {
-      const derived = deriveSourceFromSessionKey(session.sessionKey);
-      if (derived) source = derived;
     }
+    // Session-relay without --channel/--to is not inbound chat. Leftover
+    // lastChannel/lastTo and session-key derivation must not become
+    // prompt.source / currentSource / emit target.
 
     if (session.lastContext) {
       try {

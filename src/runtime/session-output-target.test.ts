@@ -120,6 +120,21 @@ describe("resolveSessionOutputTarget", () => {
     });
   });
 
+  it("does not use the default output for a session-relay destination turn", () => {
+    const session = getOrCreateSession("agent:dev:s-relay-dest", "dev", "/tmp/dev");
+    const outputChat = makeChat("relay-default-output");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+
+    const result = resolveSessionOutputTarget({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
+      allowDefaultOutput: false,
+    });
+
+    expect(result.source).toBe("unresolved");
+    expect(result.target).toBeNull();
+  });
+
   it("returns the default output for a source-less turn", () => {
     const session = getOrCreateSession("agent:dev:s-default", "dev", "/tmp/dev");
     const outputChat = makeChat("default-output");

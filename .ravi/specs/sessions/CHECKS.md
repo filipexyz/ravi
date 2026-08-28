@@ -28,4 +28,7 @@
   when no `.response` event is emitted.
 - Default `sessions read --json` MUST omit `runtimeSessionParams.skillVisibility`.
 - Operator `sessions send` without a caller session MUST NOT wrap `[System] Inform:`.
+- Operator / HTTP / app `sessions.send` without `--channel`/`--to` MUST NOT
+  emit to leftover `lastChannel` or the default output attachment. Persist
+  MUST still store the assistant row for `sessions.read`.
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.

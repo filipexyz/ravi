@@ -827,6 +827,7 @@ describe("SessionCommands delivery barriers", () => {
       await commands.send("dev", "hello");
     });
 
+    expect(publishedPrompts[0]?.payload.source).toBeUndefined();
     expect(publishedPrompts[0]?.payload.context).toEqual({
       channelId: "slack",
       channelName: "Slack",

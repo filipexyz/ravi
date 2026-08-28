@@ -7,6 +7,7 @@ import {
   persistSessionSurfaceHintOnUserRow,
   resolvePersistedUserText,
   resolveRuntimePromptText,
+  SESSION_RELAY_SURFACE_HINT,
   SOURCELESS_SURFACE_HINT,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
@@ -42,6 +43,7 @@ describe("session surface hint", () => {
   it("keeps source-less and CLI hint builders for the model-facing header", () => {
     expect(buildSessionSurfaceHint(undefined)).toBe(SOURCELESS_SURFACE_HINT);
     expect(buildSessionSurfaceHint(undefined, { cliDestination: true })).toBe(CLI_SURFACE_HINT);
+    expect(buildSessionSurfaceHint(undefined, { sessionRelay: true })).toBe(SESSION_RELAY_SURFACE_HINT);
   });
 
   it("keeps operator CLI-only user rows raw and puts the CLI header on the runtime prompt", () => {
@@ -64,8 +66,8 @@ describe("session surface hint", () => {
     expect(resolvePersistedUserText(httpOperator)).toBe("hello from gateway");
     expect(httpOperator.prompt).not.toContain("waiting CLI");
     expect(httpOperator.prompt).not.toContain("no inbound chat");
-    expect(httpOperator._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
-    expect(resolveRuntimePromptText(httpOperator)).toBe(`${SOURCELESS_SURFACE_HINT}\nhello from gateway`);
+    expect(httpOperator._sessionSurfaceHintText).toBe(SESSION_RELAY_SURFACE_HINT);
+    expect(resolveRuntimePromptText(httpOperator)).toBe(`${SESSION_RELAY_SURFACE_HINT}\nhello from gateway`);
     expect(
       persistSessionSurfaceHintOnUserRow({
         prompt: "hello from gateway",
@@ -82,8 +84,8 @@ describe("session surface hint", () => {
     });
     expect(resolvePersistedUserText(decorated)).toBe("operator text");
     expect(decorated.prompt).not.toContain("[session surface]");
-    expect(decorated._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
-    expect(resolveRuntimePromptText(decorated)).toBe(`${SOURCELESS_SURFACE_HINT}\noperator text`);
+    expect(decorated._sessionSurfaceHintText).toBe(SESSION_RELAY_SURFACE_HINT);
+    expect(resolveRuntimePromptText(decorated)).toBe(`${SESSION_RELAY_SURFACE_HINT}\noperator text`);
     expect(resolveRuntimePromptText(decorated)).not.toContain("Slack chat");
   });
 

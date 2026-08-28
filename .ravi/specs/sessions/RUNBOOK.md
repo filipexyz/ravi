@@ -33,3 +33,6 @@
 An inbound turn returns to its attached source chat or thread. The default
 output attachment is used only for a turn with no inbound source. An
 unattached inbound source MUST fail closed instead of falling back elsewhere.
+Operator / HTTP `sessions.send` without `--channel`/`--to` MUST NOT emit to
+leftover `lastChannel` or the default attachment; read the assistant row
+from `sessions.read`.

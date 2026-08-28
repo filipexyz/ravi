@@ -4,6 +4,7 @@ import { getOrCreateSession } from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveRuntimePromptSource, rotateRuntimeProviderEnvironment } from "./runtime-request-builder.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 
 let stateDir: string | null = null;
 
@@ -56,6 +57,69 @@ describe("resolveRuntimePromptSource", () => {
       canonicalChatId: chat.id,
       instanceId: "main",
     });
+  });
+
+  it("does not copy leftover lastChannel onto session-relay HTTP send", () => {
+    const session = getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+    session.lastChannel = "whatsapp";
+    session.lastAccountId = "main";
+    session.lastTo = "5511999999999@s.whatsapp.net";
+
+    expect(
+      resolveRuntimePromptSource(
+        {
+          prompt: "hello from gateway",
+          source: {
+            channel: "whatsapp",
+            accountId: "main",
+            chatId: "5511999999999@s.whatsapp.net",
+          },
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        },
+        session,
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveRuntimePromptSource(
+        {
+          prompt: "hello from gateway",
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        },
+        session,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("still resolves a real inbound WhatsApp source and strips tui", () => {
+    const session = getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+    session.lastChannel = "whatsapp";
+    session.lastTo = "old@s.whatsapp.net";
+
+    const inbound = resolveRuntimePromptSource(
+      {
+        prompt: "from whatsapp",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "new@s.whatsapp.net",
+        },
+      },
+      session,
+    );
+    expect(inbound).toMatchObject({
+      channel: "whatsapp",
+      chatId: "new@s.whatsapp.net",
+    });
+
+    expect(
+      resolveRuntimePromptSource(
+        {
+          prompt: "local tui",
+          source: { channel: "tui", accountId: "", chatId: "" },
+        },
+        session,
+      ),
+    ).toBeUndefined();
   });
 });
 

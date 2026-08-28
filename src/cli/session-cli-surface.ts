@@ -47,7 +47,8 @@ export function buildSessionSendPrompt(input: SessionSendPromptInput): string {
 export function isCliWaitDestination(input: CliWaitDestinationInput): boolean {
   if (input.channelOverride?.trim() || input.toOverride?.trim()) return false;
   if (input.source?.channel?.trim() && input.source?.chatId?.trim()) return false;
-  if (input.hasOutputAttachment) return false;
+  // Default output attach is not a chat destination for operator session-relay.
+  // Persist + `sessions.read` / CLI transcript are the sink.
   return true;
 }
 
@@ -59,10 +60,7 @@ export function snapshotTranscriptCursor(messages: Array<{ id: number }>): numbe
   return messages.reduce((max, message) => Math.max(max, message.id), 0);
 }
 
-export function readThisTurnAssistantText(
-  messages: TranscriptMessageLike[],
-  afterId: number,
-): { text: string } | null {
+export function readThisTurnAssistantText(messages: TranscriptMessageLike[], afterId: number): { text: string } | null {
   const newer = messages.filter((message) => message.id > afterId);
   const lastAssistant = [...newer].reverse().find((message) => message.role === "assistant");
   if (!lastAssistant) return null;
@@ -83,9 +81,7 @@ export async function waitForThisTurnAssistantText(input: WaitForThisTurnAssista
   }
 }
 
-export function omitSkillVisibilityFromSessionJson(
-  sessionJson: Record<string, unknown>,
-): Record<string, unknown> {
+export function omitSkillVisibilityFromSessionJson(sessionJson: Record<string, unknown>): Record<string, unknown> {
   const params = sessionJson.runtimeSessionParams;
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     return sessionJson;

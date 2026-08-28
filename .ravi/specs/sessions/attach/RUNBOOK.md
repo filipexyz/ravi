@@ -8,7 +8,9 @@
    default output marker.
 3. Confirm the trace keeps one source for the whole physical turn.
 4. Confirm messages from another chat/thread stay queued until that turn ends.
-5. For a source-less turn, inspect the default attachment.
+5. For a source-less cron/heartbeat/follow-up turn, inspect the default
+   attachment. For operator / HTTP `sessions.send` without `--channel`/`--to`,
+   leftover `lastChannel` and the default attachment MUST NOT receive emit.
 6. If an inbound source is unattached, fail closed instead of using the
    default.
 7. For CLI-only `sessions send -w`, read this turn's assistant transcript
