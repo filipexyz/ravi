@@ -16,6 +16,8 @@
   `modelSource`, `modelPresetId`, and `modelPresetVersion`.
 - A session `modelOverride` MUST win over the agent selection and be reported as
   `session_override`.
+- Last-used `session.runtimeProvider` MUST be reported as `providerSource=last_used`
+  when no session `set-provider` override is present.
 - Applying or updating a preset MUST NOT mutate session state.
 
 ## Commands

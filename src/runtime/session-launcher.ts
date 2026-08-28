@@ -1,12 +1,7 @@
 import { runWithContext } from "../cli/context.js";
 import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import {
-  updateRuntimeProviderState,
-  updateSessionContext,
-  updateSessionDisplayName,
-  updateSessionSource,
-} from "../router/index.js";
+import { updateSessionContext, updateSessionDisplayName, updateSessionSource } from "../router/index.js";
 import { dbGetSetting } from "../router/router-db.js";
 import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
@@ -356,19 +351,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
-    updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
-      ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
-      ...(canResumeStoredSession && storedRuntimeSessionParams
-        ? { runtimeSessionParams: storedRuntimeSessionParams }
-        : {}),
-      ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
-        ? {
-            runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
-          }
-        : {}),
-    });
-    session.runtimeProvider = runtimeProviderId;
-    if (persistedRuntimeProviderSessionId) {
+    // Do not stamp last-used `runtimeProvider` until a successful authenticated
+    // turn. A failed Claude `/login` stub used to overwrite Codex here.
+    if (canResumeStoredSession && persistedRuntimeProviderSessionId) {
       session.runtimeSessionParams = storedRuntimeSessionParams;
       session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
       session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;

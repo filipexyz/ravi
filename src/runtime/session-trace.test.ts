@@ -382,15 +382,20 @@ async function runTraceLoop(
 }
 
 describe("runtime session trace instrumentation", () => {
+  let natsEmitSpy: ReturnType<typeof spyOn> | undefined;
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
     crashRecovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "trace-test" });
     crashRecovery.start();
     resetUserFacingRuntimeLimitSuppressionsForTest();
+    natsEmitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
   });
 
   afterEach(async () => {
+    natsEmitSpy?.mockRestore();
+    natsEmitSpy = undefined;
     resetUserFacingRuntimeLimitSuppressionsForTest();
     if (crashRecovery.acceptingDeliveries) {
       crashRecovery.stopGracefully("test_cleanup");
@@ -2291,6 +2296,59 @@ describe("runtime session trace instrumentation", () => {
         .filter(({ role }) => role === "assistant")
         .map(({ content }) => content),
     ).toEqual(["Final answer only."]);
+  });
+
+  it("classifies a provider login stub as turn.failed and keeps it off the transcript", async () => {
+    updateRuntimeProviderState(SESSION_KEY, "codex", {
+      providerSessionId: "codex-thread",
+      runtimeSessionDisplayId: "codex-thread",
+    });
+    const session = getSession(SESSION_KEY);
+    expect(session?.runtimeProvider).toBe("codex");
+
+    const streaming = makeStreamingSession({ agentMode: "active" });
+    seedAdapterTrace(streaming, "turn-login-stub");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const outbound: unknown[] = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      outbound.push({ topic, data });
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Not logged in · Please run /login" },
+        {
+          type: "turn.complete",
+          providerSessionId: "claude-fresh",
+          usage: { inputTokens: 0, outputTokens: 0 },
+        },
+      ]),
+      {
+        session: session ?? makeSession(),
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual([]);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "turn.failed")).toBe(true);
+    expect(JSON.stringify(outbound)).not.toContain("/login");
+    expect(JSON.stringify(outbound)).not.toContain("Not logged in");
+
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.runtimeProvider).toBe("codex");
+    expect(persisted?.providerSessionId).toBe("codex-thread");
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.status).toBe("failed");
+    expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
   });
 
   it("records provider turn interruptions as terminal interrupted turns", async () => {

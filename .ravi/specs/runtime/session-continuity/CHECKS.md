@@ -41,3 +41,7 @@
 - Rebase preserves actor metadata and source message ids.
 - Rebase fails closed when the target message id cannot be matched to a prompt atom.
 - Repeated inactivity recovery is bounded and cannot resend the same logical delivery indefinitely.
+- After daemon restart, resume MUST pick last-used / snapshot provider when no explicit override is present.
+- Stored provider session ids MUST remain when agent or global default differs from last-used.
+- Stored provider session ids MUST clear only on an explicit provider change.
+- A `/login` or `Not logged in` stub MUST be recorded as `turn.failed` and MUST NOT persist on the session transcript.

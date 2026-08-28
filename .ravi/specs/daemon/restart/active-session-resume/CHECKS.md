@@ -24,4 +24,7 @@
 - The 1h window is enforced before event persistence.
 - Idle sessions are not woken.
 - Duplicate `(restart_epoch, session_key)` delivery is impossible.
+- Resume MUST select last-used / snapshot provider when no explicit override is present.
+- Resume MUST NOT treat the snapshot provider as a launch override that clears a compatible stored id.
+- A `/login` or `Not logged in` stub MUST NOT persist on `main` or emit to WhatsApp/Slack via `lastChannel`.
 

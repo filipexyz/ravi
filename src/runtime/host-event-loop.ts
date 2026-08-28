@@ -32,6 +32,7 @@ import {
 } from "./context-window-recovery.js";
 import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
   reportRuntimeModelBrokerAttempt,
   type ModelBrokerAttemptFeedbackResult,
@@ -1713,6 +1714,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
     session.runtimeSessionParams = runtimeSessionParams;
     runtimeSession.skillVisibility = skillVisibility;
+    const lastUsedMatchesCurrent =
+      Boolean(session.runtimeProvider) && session.runtimeProvider === runtimeSession.provider;
+    if (!lastUsedMatchesCurrent) {
+      return runtimeSessionParams;
+    }
     if (persistedSessionId) {
       updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
         runtimeSessionParams,
@@ -1968,9 +1974,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (next.done) {
         break;
       }
-      const event = next.value;
+      let event = next.value;
       if (streaming.done) {
         break;
+      }
+      if (
+        event.type === "turn.complete" &&
+        (streaming._providerAuthFailure || isRuntimeProviderLoginStub(responseText))
+      ) {
+        const error = streaming._providerAuthFailure ?? responseText.trim();
+        streaming._providerAuthFailure = undefined;
+        responseText = "";
+        channelResponseText = "";
+        event = {
+          type: "turn.failed",
+          error,
+          recoverable: false,
+          rawEvent: event.rawEvent,
+        };
       }
       const awaitsToolResultDelivery =
         event.type === "tool.completed" &&
@@ -2399,6 +2420,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               recordAssistantState(false);
               log.info("Silent response (no response requested)", {
                 sessionName,
+              });
+              await emitLegacyProviderEvent({ type: "silent" });
+              await emitRuntimeEvent({
+                type: "silent",
+                provider: runtimeSession.provider,
+              });
+            } else if (isRuntimeProviderLoginStub(messageText)) {
+              suppressProviderRawForCurrentTurn = true;
+              streaming._providerAuthFailure = messageText.trim();
+              log.warn("Provider login stub classified as auth failure", {
+                sessionName,
+                provider: runtimeSession.provider,
               });
               await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({
@@ -3196,7 +3229,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         const channelBackendFailure = streaming.currentChannelBackend !== undefined;
-        await projectRuntimeEventToChannel(event);
+        const loginStubFailure = isRuntimeProviderLoginStub(event.error);
+        if (!loginStubFailure) {
+          await projectRuntimeEventToChannel(event);
+        }
         await emitRuntimeEvent({
           ...stripRuntimeRawEvent(event),
           provider: runtimeSession.provider,
@@ -3230,7 +3266,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
-        if (streaming.agentMode !== "sentinel" && !channelBackendFailure) {
+        if (streaming.agentMode !== "sentinel" && !channelBackendFailure && !loginStubFailure) {
           const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
             error: event.error,
             scope: buildUserFacingFailureSuppressionScope({

@@ -16,10 +16,22 @@ export type RuntimeProviderSource =
   | "launch_override"
   | "observation_override"
   | "session_override"
+  | "last_used"
+  | "restart_snapshot"
   | "agent_preset"
   | "agent_default"
   | "global_default"
   | "runtime_default";
+
+const EXPLICIT_RUNTIME_PROVIDER_SOURCES = new Set<RuntimeProviderSource>([
+  "launch_override",
+  "observation_override",
+  "session_override",
+]);
+
+export function isExplicitRuntimeProviderSource(source: RuntimeProviderSource): boolean {
+  return EXPLICIT_RUNTIME_PROVIDER_SOURCES.has(source);
+}
 
 export type RuntimeModelSource =
   | "session_override"
@@ -68,6 +80,8 @@ export function resolveRequestedRuntimeProvider(input: {
   runtimeProviderIdOverride?: RuntimeProviderId;
   observationProviderId?: RuntimeProviderId;
   sessionProviderOverride?: RuntimeProviderId | null;
+  lastUsedProvider?: RuntimeProviderId | null;
+  restartSnapshotProvider?: RuntimeProviderId | null;
   agent: Pick<AgentConfig, "model" | "modelPresetId" | "provider">;
   defaults?: ResolvedRuntimeDefaults;
   defaultsDeps?: RuntimeDefaultsDeps;
@@ -106,6 +120,26 @@ export function resolveRequestedRuntimeProvider(input: {
     };
   }
 
+  const lastUsed = input.lastUsedProvider?.trim() || undefined;
+  if (lastUsed) {
+    return {
+      value: lastUsed as RuntimeProviderId,
+      source: "last_used",
+      warning: agentSelection.warning,
+      error: agentSelection.error,
+    };
+  }
+
+  const restartSnapshot = input.restartSnapshotProvider?.trim() || undefined;
+  if (restartSnapshot) {
+    return {
+      value: restartSnapshot as RuntimeProviderId,
+      source: "restart_snapshot",
+      warning: agentSelection.warning,
+      error: agentSelection.error,
+    };
+  }
+
   if (agentSelection.modelSource === "agent_preset") {
     return {
       value: agentSelection.effectiveProvider as RuntimeProviderId,
@@ -136,7 +170,7 @@ export function resolveRequestedRuntimeProvider(input: {
 export function resolveEffectiveSessionRuntime(input: {
   session: Pick<
     SessionEntry,
-    "agentId" | "runtimeProviderOverride" | "modelOverride" | "effortOverride" | "thinkingLevel"
+    "agentId" | "runtimeProvider" | "runtimeProviderOverride" | "modelOverride" | "effortOverride" | "thinkingLevel"
   >;
   agent?: Pick<AgentConfig, "model" | "modelPresetId" | "provider" | "effort"> | null;
   defaults?: ResolvedRuntimeDefaults;
@@ -147,6 +181,7 @@ export function resolveEffectiveSessionRuntime(input: {
   const agent = input.agent ?? {};
   const provider = resolveRequestedRuntimeProvider({
     sessionProviderOverride: input.session.runtimeProviderOverride,
+    lastUsedProvider: input.session.runtimeProvider,
     agent,
     defaults,
     lookupPreset: input.lookupPreset,

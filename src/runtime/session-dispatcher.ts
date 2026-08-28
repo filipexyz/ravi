@@ -813,6 +813,8 @@ export class RuntimeSessionDispatcher {
           observationProviderId:
             prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
           sessionProviderOverride: sessionRuntimeProviderOverride,
+          lastUsedProvider: sessionEntry?.runtimeProvider,
+          restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
           agent,
         }).value;
     let retainReleasedSlot = false;

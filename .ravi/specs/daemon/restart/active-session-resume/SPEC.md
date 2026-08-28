@@ -67,6 +67,7 @@ A session MUST NOT be eligible when all of the following are true:
 - The event MUST include restart epoch metadata so delivery is idempotent.
 - The event MUST tell the agent to continue prior work, not ask the user to restate the task.
 - The event MUST NOT override the session output target. Normal session output resolution still applies.
+- A login / not-logged-in stub produced by the wrong or unauthenticated provider MUST NOT be persisted as assistant transcript and MUST NOT be delivered to `lastChannel` or the session chat binding.
 - The event MUST NOT be emitted to sessions whose last eligible activity is older than 1 hour.
 
 ## Idempotency
@@ -81,7 +82,9 @@ A session MUST NOT be eligible when all of the following are true:
 Before or during shutdown, Ravi SHOULD persist a best-effort runtime activity snapshot for live sessions. The snapshot SHOULD include:
 
 - session key and canonical session name.
-- agent id and provider id.
+- agent id and provider id. Resume MUST carry that snapshot provider as a
+  last-used hint on `_daemonRestartResume.runtimeProvider`, not as a launch
+  override that would clear a compatible stored provider session.
 - runtime activity (`idle`, `thinking`, `streaming`, `compacting`, `awaiting_approval`, `blocked`, or equivalent).
 - `turnActive`, pending message count, pending start state, pending abort state, active tool state, approval wait state, and delivery barrier state.
 - `last_activity_at` and `stopped_at`.

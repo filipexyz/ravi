@@ -45,6 +45,24 @@ describe("daemon restart crash-recovery resume mode", () => {
     }
   });
 
+  it("carries the snapshot provider as a last-used resume hint", () => {
+    expect(
+      buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-codex",
+        reason: "pm2-restart",
+        sessionKey: "agent:main:main",
+        mode: "continue",
+        runtimeProvider: "codex",
+      }),
+    ).toMatchObject({
+      _daemonRestartResume: {
+        restartEpoch: "epoch-codex",
+        sessionKey: "agent:main:main",
+        runtimeProvider: "codex",
+      },
+    });
+  });
+
   it("never builds a prompt for skip mode", () => {
     expect(
       buildDaemonRestartResumePrompt({

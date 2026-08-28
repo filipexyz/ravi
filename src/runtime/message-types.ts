@@ -101,6 +101,11 @@ export interface DaemonRestartResumePromptMetadata {
   sessionKey?: string;
   /** Wake the runtime with persisted pending successors only; never append a generic continuation. */
   pendingOnly?: true;
+  /**
+   * Last-used / live provider captured on the restart snapshot. Resume selection
+   * treats this as a last-used hint, not a launch override.
+   */
+  runtimeProvider?: RuntimeProviderId;
 }
 
 export interface ChannelBackendPromptMetadata {

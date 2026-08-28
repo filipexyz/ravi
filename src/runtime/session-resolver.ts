@@ -11,7 +11,7 @@ import { logger } from "../utils/logger.js";
 import { createRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import { resolveRuntimeDefaults } from "./runtime-defaults.js";
-import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
+import { isExplicitRuntimeProviderSource, resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
@@ -82,11 +82,19 @@ export function resolveRuntimeSession(options: {
       ? undefined
       : sessionEntry?.runtimeProviderOverride;
   const defaults = resolveRuntimeDefaults();
-  const runtimeProviderId = resolveRequestedRuntimeProvider({
+  let storedRuntimeSessionParams = session.runtimeSessionParams;
+  let storedProviderSessionId =
+    session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
+  const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
+  const requestedProvider = resolveRequestedRuntimeProvider({
     runtimeProviderIdOverride: options.runtimeProviderIdOverride,
     observationProviderId:
       options.prompt._observation && options.prompt._runtimeProviderId ? options.prompt._runtimeProviderId : undefined,
     sessionProviderOverride: sessionRuntimeProviderOverride,
+    // Only the recorded last-used column. A leftover Claude sdkSessionId must
+    // not be treated as last-used or every pre-column session stays on Claude.
+    lastUsedProvider: session.runtimeProvider,
+    restartSnapshotProvider: options.prompt._daemonRestartResume?.runtimeProvider,
     agent,
     defaults: {
       ...defaults,
@@ -95,14 +103,10 @@ export function resolveRuntimeSession(options: {
           ? defaults.provider
           : { value: options.defaultRuntimeProviderId, source: "runtime_default" },
     },
-  }).value;
+  });
+  const runtimeProviderId = requestedProvider.value;
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
-
-  let storedRuntimeSessionParams = session.runtimeSessionParams;
-  let storedProviderSessionId =
-    session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
-  const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
   const sessionStateValidation = validateRuntimeSessionState({
     capabilities: runtimeCapabilities,
@@ -136,22 +140,37 @@ export function resolveRuntimeSession(options: {
   };
 
   if (storedProviderSessionId && !canResumeStoredSession) {
-    log.info("Clearing stale provider session state", {
-      sessionName: options.sessionName,
-      dbSessionKey,
-      storedProvider: storedRuntimeProvider,
-      requestedProvider: runtimeProviderId,
-      resumeDecision,
-    });
-    clearProviderSession(session.sessionKey);
-    session.runtimeSessionParams = undefined;
-    session.runtimeSessionDisplayId = undefined;
-    session.providerSessionId = undefined;
-    session.sdkSessionId = undefined;
-    session.runtimeProvider = undefined;
-    storedRuntimeSessionParams = undefined;
-    storedProviderSessionId = undefined;
-    resumeDecision.staleCleared = true;
+    const explicitProviderChange =
+      resumeDecision.reason === "provider_mismatch" && isExplicitRuntimeProviderSource(requestedProvider.source);
+    const shouldClearStoredProvider = resumeDecision.reason !== "provider_mismatch" || explicitProviderChange;
+    if (shouldClearStoredProvider) {
+      log.info("Clearing stale provider session state", {
+        sessionName: options.sessionName,
+        dbSessionKey,
+        storedProvider: storedRuntimeProvider,
+        requestedProvider: runtimeProviderId,
+        requestedProviderSource: requestedProvider.source,
+        resumeDecision,
+      });
+      clearProviderSession(session.sessionKey);
+      session.runtimeSessionParams = undefined;
+      session.runtimeSessionDisplayId = undefined;
+      session.providerSessionId = undefined;
+      session.sdkSessionId = undefined;
+      session.runtimeProvider = undefined;
+      storedRuntimeSessionParams = undefined;
+      storedProviderSessionId = undefined;
+      resumeDecision.staleCleared = true;
+    } else {
+      log.info("Keeping stored provider session; requested provider is not an explicit change", {
+        sessionName: options.sessionName,
+        dbSessionKey,
+        storedProvider: storedRuntimeProvider,
+        requestedProvider: runtimeProviderId,
+        requestedProviderSource: requestedProvider.source,
+        resumeDecision,
+      });
+    }
   }
 
   return {

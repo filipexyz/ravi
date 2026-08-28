@@ -28,6 +28,12 @@ bun test src/cli/commands/settings.test.ts src/cli/commands/sessions.test.ts
   model exists.
 - Stored `runtime.defaultProvider` MUST win over the hardcoded default.
 - Session/agent/preset values MUST win over stored globals and env.
+- Last-used `session.runtimeProvider` MUST win over agent/global defaults when
+  no launch, observation, or session `set-provider` override is present.
+- A daemon-restart snapshot provider MUST win over agent/global defaults when
+  last-used is missing and no explicit override is present.
+- An implicit default mismatch MUST NOT clear a compatible stored provider
+  session id.
 - A missing or disabled preset MUST reject launch and MUST NOT swallow into
   env.
 - `sessions info` MUST report the same provider/model/effort and sources as

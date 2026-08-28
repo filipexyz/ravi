@@ -135,6 +135,8 @@ export interface RuntimeHostStreamingSession {
   onTurnComplete: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" - session needs reset */
   _promptTooLong?: boolean;
+  /** Login / not-logged-in stub classified as an auth failure, not assistant text. */
+  _providerAuthFailure?: string;
   /** Whether the SDK is currently compacting (do not interrupt during compaction) */
   compacting: boolean;
   /**

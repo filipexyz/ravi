@@ -57,13 +57,20 @@ precedence knobs. This capability does not add a fifth override namespace.
 Provider, model, and effort are independent axes. Highest first:
 
 1. launch / observation / prompt / dispatch / task / profile override
-2. session override
-3. agent preset or direct agent value
-4. stored global setting (`runtime.defaultProvider`, `runtime.defaultModel`,
+2. session override (`ravi sessions set-provider`)
+3. last-used `session.runtimeProvider` (source `last_used`) or daemon-restart
+   snapshot provider (source `restart_snapshot`)
+4. agent preset or direct agent value
+5. stored global setting (`runtime.defaultProvider`, `runtime.defaultModel`,
    `runtime.defaultEffort`) — source `global_default`
-5. env fallback (`RAVI_MODEL` only; no provider/effort env sibling) — source
+6. env fallback (`RAVI_MODEL` only; no provider/effort env sibling) — source
    `env_fallback`
-6. hardcoded last resort — source `runtime_default`
+7. hardcoded last resort — source `runtime_default`
+
+Last-used and restart-snapshot providers are continuity hints, not explicit
+overrides. They MUST win over agent/global defaults when no launch,
+observation, or session `set-provider` override is present. They MUST NOT
+clear a compatible stored provider session id.
 
 A stored setting MUST win over env. Env MUST NOT win over a stored
 agent/session/settings/preset value.
