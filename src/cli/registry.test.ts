@@ -208,6 +208,49 @@ describe("registerCommands", () => {
     ]);
   });
 
+  it("omits --json from the remote gateway body while keeping it for local rendering", async () => {
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [ShadowDirectCommands]);
+
+    const previousGatewayUrl = process.env.RAVI_GATEWAY_URL;
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const originalFetch = globalThis.fetch;
+    const originalLog = console.log;
+    const originalExit = process.exit;
+    const bodies: unknown[] = [];
+
+    process.env.RAVI_GATEWAY_URL = "https://gateway.example.test";
+    process.env.RAVI_CONTEXT_KEY = "rctx_remote_only";
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    globalThis.fetch = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    console.log = () => {};
+    process.exit = ((code?: number) => {
+      throw new Error(`unexpected process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      await runWithContext({}, () => program.parseAsync(["node", "test", "shadow", "item", "demo", "--json"]));
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.log = originalLog;
+      process.exit = originalExit;
+      if (previousGatewayUrl === undefined) delete process.env.RAVI_GATEWAY_URL;
+      else process.env.RAVI_GATEWAY_URL = previousGatewayUrl;
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(bodies).toEqual([{ id: "demo" }]);
+    expect(JSON.stringify(bodies)).not.toContain('"json"');
+  });
+
   it("renders a projected contract instead of a raw non-success remote body", async () => {
     const program = new CommanderCommand();
     program.exitOverride();

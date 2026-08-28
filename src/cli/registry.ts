@@ -31,6 +31,7 @@ import { cloudErrorToContractError, commandOperation, renderCloudContractError }
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import { getContext, runWithContext } from "./context.js";
+import { omitRenderingFlags } from "./registry-snapshot.js";
 import {
   dispatchRemote,
   resolveRemoteGatewayConfig,
@@ -391,7 +392,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
     result = await dispatchRemote({
       groupSegments: input.groupSegments,
       command: input.command,
-      body: input.input,
+      body: omitRenderingFlags(input.input),
       config: input.config,
       contextKey,
     });

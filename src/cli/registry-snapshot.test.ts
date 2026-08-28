@@ -12,7 +12,7 @@ import {
   getCommandAccessMetadata,
   getReturnsMetadata,
 } from "./decorators.js";
-import { buildRegistry } from "./registry-snapshot.js";
+import { buildRegistry, omitRenderingFlags } from "./registry-snapshot.js";
 import {
   inferRaviCommandSkillGate,
   inferRaviToolSkillGate,
@@ -153,6 +153,26 @@ describe("buildRegistry", () => {
     // Non-rendering options (tag, items) survive.
     expect(optionNames).toContain("tag");
     expect(optionNames).toContain("items");
+  });
+
+  it("omits rendering flags from a remote body while keeping other fields", () => {
+    expect(
+      omitRenderingFlags({
+        file: "/tmp/img.png",
+        caption: "hello",
+        execute: true,
+        json: true,
+        asJson: true,
+        pretty: true,
+        noColor: true,
+        quiet: true,
+        verbose: true,
+      }),
+    ).toEqual({
+      file: "/tmp/img.png",
+      caption: "hello",
+      execute: true,
+    });
   });
 
   it("captures @Returns schema on the command entry", () => {

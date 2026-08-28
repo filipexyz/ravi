@@ -40,10 +40,15 @@ export type CommandClass = new () => object;
  * caller speaks is structured JSON; the rendering choice is the consumer's
  * problem.
  */
-const RENDERING_FLAG_NAMES = new Set(["json", "asJson", "pretty", "noColor", "quiet", "verbose"]);
+export const RENDERING_FLAG_NAMES = new Set(["json", "asJson", "pretty", "noColor", "quiet", "verbose"]);
 
 function isRenderingFlag(opt: { name: string }): boolean {
   return RENDERING_FLAG_NAMES.has(opt.name);
+}
+
+/** Drop CLI rendering flags from a remote gateway body. Keep them locally for stdout. */
+export function omitRenderingFlags(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !RENDERING_FLAG_NAMES.has(key)));
 }
 
 export interface ArgRegistryEntry {
