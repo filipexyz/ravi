@@ -17,6 +17,8 @@ applies_to:
   - src/cli/registry-snapshot.ts
   - src/sdk
   - packages/ravi-os-sdk
+  - packages/ravi-os-swift-sdk
+  - packages/ravi-os-dart-sdk
 owners:
   - dev
 status: draft
@@ -42,8 +44,8 @@ hand-maintained SDK surface.
 - `RegistrySnapshot` from `src/cli/registry-snapshot.ts` MUST be the canonical
   source for request shape, return shape, command path, scope, binary marker,
   and CLI-only exclusion.
-- OpenAPI, TypeScript SDK, Swift SDK, and future language SDKs MUST be
-  deterministic projections of the same `RegistrySnapshot`.
+- OpenAPI, TypeScript SDK, Swift SDK, Dart SDK, and future language SDKs MUST
+  be deterministic projections of the same `RegistrySnapshot`.
 - Generated clients MUST NOT parse OpenAPI as their primary input unless a
   later spec explicitly changes the source-of-truth model.
 - `@CliOnly()` commands MUST be excluded from gateway route tables, OpenAPI,

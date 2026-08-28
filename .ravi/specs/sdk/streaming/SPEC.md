@@ -130,6 +130,8 @@ Implementado em:
   mantém comandos `@CliOnly()` fora de rotas/meta remotas.
 - `packages/ravi-os-sdk/src/streaming.ts` — client fetch streaming com parser
   SSE tipado por channel.
+- `packages/ravi-os-dart-sdk/lib/src/ravi_streaming.generated.dart` — Dart
+  stream client with the same official SSE parser (not `EventSource`).
 
 O SDK usa `fetch` streaming em vez de `EventSource` nativo porque o contrato
 MUST exigir header `Authorization: Bearer rctx_*`, e `EventSource` de browser
