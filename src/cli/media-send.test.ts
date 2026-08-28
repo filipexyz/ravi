@@ -9,7 +9,9 @@ mock.module("../config-store.js", () => ({
   },
 }));
 
-const { sendMediaWithOmniCli } = await import("./media-send.js");
+import { runWithContext } from "./context.js";
+
+const { sendMediaWithOmniCli, resolveMediaSendTarget } = await import("./media-send.js");
 
 const ORIGINAL_PATH = process.env.PATH ?? "";
 const tempDirs: string[] = [];
@@ -19,6 +21,30 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("resolveMediaSendTarget", () => {
+  it("resolves account and chat from tool context source without --account/--to", () => {
+    const target = runWithContext(
+      {
+        source: {
+          channel: "whatsapp-baileys",
+          accountId: "acct-media",
+          chatId: "group:120363425628305127",
+          threadId: "thread-1",
+        },
+      },
+      () => resolveMediaSendTarget(),
+    );
+
+    expect(target).toEqual({
+      channel: "whatsapp-baileys",
+      accountId: "acct-media",
+      instanceId: "acct-media",
+      chatId: "120363425628305127@g.us",
+      threadId: "thread-1",
+    });
+  });
 });
 
 describe("sendMediaWithOmniCli", () => {

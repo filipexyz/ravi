@@ -104,7 +104,11 @@ class GatewayDemoCommands {
   @CommandAccess({ kind: "read", resource: "demo", action: "context", risk: "low" })
   context() {
     console.log("human CLI output should not leak through the SDK gateway");
-    return { suppressCliOutput: getContext()?.suppressCliOutput === true };
+    const ctx = getContext();
+    return {
+      suppressCliOutput: ctx?.suppressCliOutput === true,
+      ...(ctx?.source ? { source: ctx.source } : {}),
+    };
   }
 
   @Command({ name: "broken", description: "Returns wrong shape" })
@@ -961,6 +965,28 @@ describe("dispatch — CLI output", () => {
       suppressCliOutput: boolean;
     };
     expect(body.suppressCliOutput).toBe(true);
+  });
+
+  it("exposes context record source on the gateway tool context", async () => {
+    const contextWithSource = {
+      ...demoContext,
+      source: {
+        channel: "whatsapp-baileys",
+        accountId: "acct-1",
+        chatId: "group:120363425628305127",
+        threadId: "thread-1",
+      },
+    };
+    const result = await dispatch(findCmd("demo.context"), {}, {}, { contextRecord: contextWithSource });
+    const body = (await result.response.json()) as {
+      source?: { channel: string; accountId: string; chatId: string; threadId?: string };
+    };
+    expect(body.source).toEqual({
+      channel: "whatsapp-baileys",
+      accountId: "acct-1",
+      chatId: "group:120363425628305127",
+      threadId: "thread-1",
+    });
   });
 
   it("does not render a ContractError into gateway process logs", async () => {

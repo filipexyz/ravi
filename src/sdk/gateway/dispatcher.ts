@@ -487,6 +487,14 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
   if (record) {
     ctx.contextId = record.contextId;
     ctx.context = record;
+    if (record.source) {
+      ctx.source = {
+        channel: record.source.channel,
+        accountId: record.source.accountId,
+        chatId: record.source.chatId,
+        ...(record.source.threadId ? { threadId: record.source.threadId } : {}),
+      };
+    }
   }
   return ctx;
 }
