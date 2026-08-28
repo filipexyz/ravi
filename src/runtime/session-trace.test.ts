@@ -927,9 +927,15 @@ describe("runtime session trace instrumentation", () => {
     const streaming = makeStreamingSession({
       agentMode: "active",
       currentSource: source,
+      currentEffort: "xhigh",
       pendingMessages: [activeMessage],
       currentTurnPendingIds: [activeMessage.pendingId!],
       turnActive: true,
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
     });
     const dispatcher = new RuntimeSessionDispatcher({
       instanceId: "trace-test",
