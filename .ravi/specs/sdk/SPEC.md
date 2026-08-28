@@ -63,6 +63,10 @@ hand-maintained SDK surface.
 - Generated HTTP transports MUST send `Authorization: Bearer <rctx>`.
 - Generated HTTP transports SHOULD send SDK/version drift headers equivalent
   to `x-ravi-sdk-version` and `x-ravi-registry-hash`.
+- Gateway CORS MUST stay closed by default, MUST allow `chrome-extension://`
+  origins, MUST echo `Origin` only from `RAVI_CORS_ORIGINS` (or the opt-in
+  `RAVI_CORS_LOCALHOST=1` loopback set), and MUST NOT emit
+  `Access-Control-Allow-Origin: *`. See `sdk/gateway/cors`.
 - Request validation MUST happen at the gateway dispatcher with the same Zod
   schemas projected into SDK types.
 - Return validation MUST happen at the gateway dispatcher when `@Returns(zod)`

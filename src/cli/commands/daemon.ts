@@ -1004,6 +1004,12 @@ ANTHROPIC_API_KEY=
 # RAVI_HTTP_HOST=127.0.0.1
 # RAVI_HTTP_PORT=4211
 # ELEVENLABS_WEBHOOK_SECRET=
+
+# SDK gateway CORS (closed by default; chrome-extension:// is always allowed)
+# Never uses Access-Control-Allow-Origin: *. Echoes Origin only if allowed.
+# RAVI_CORS_ORIGINS=http://127.0.0.1:8088
+# RAVI_CORS_LOCALHOST=1
+
 `;
       writeFileSync(ENV_FILE, defaultEnv);
       if (!asJson) {

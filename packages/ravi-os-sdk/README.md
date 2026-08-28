@@ -78,6 +78,19 @@ To keep the HTTP server available for webhooks while disabling SDK routes:
 RAVI_SDK_GATEWAY_DISABLE=1
 ```
 
+Browser clients (Flutter web, Chrome) are cross-origin when the page port
+differs from the gateway. CORS is closed by default. `chrome-extension://`
+origins stay allowed. To allow a web page origin, set an exact allowlist:
+
+```bash
+RAVI_CORS_ORIGINS=http://127.0.0.1:8088
+```
+
+For local-only development, `RAVI_CORS_LOCALHOST=1` allows
+`http://localhost:<port>` and `http://127.0.0.1:<port>` only. It is off by
+default. The gateway never sends `Access-Control-Allow-Origin: *` because
+SDK requests include `Authorization: Bearer rctx_*`.
+
 ## Create A Context Key
 
 Most SDK routes require a runtime context key (`rctx_*`) in the bearer auth

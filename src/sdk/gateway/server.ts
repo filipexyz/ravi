@@ -17,6 +17,7 @@ import { buildRouteTable, buildMetaPayload, type RouteTable, API_PREFIX } from "
 import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./auth.js";
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
+import { corsHeaders, withCorsHeaders } from "./cors.js";
 import { handleStreamingRequest } from "./streaming/handler.js";
 import type { StreamingGatewayConfig } from "./streaming/types.js";
 
@@ -97,35 +98,13 @@ export async function handleGatewayRequest(request: Request, ctx: GatewayHandler
   }
   const origin = request.headers.get("origin");
   const requestedHeaders = request.headers.get("access-control-request-headers");
+  // Shared CORS wrapper: OPTIONS preflight and every /api/v1 response, including SSE.
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin, requestedHeaders) });
   }
   const startedAt = Date.now();
   const response = await processGatewayRequest(request, url, ctx);
   return logged(request, url, response.status, startedAt, withCorsHeaders(response, origin, requestedHeaders));
-}
-
-function isAllowedOrigin(origin: string | null): boolean {
-  return origin !== null && origin.startsWith("chrome-extension://");
-}
-
-function corsHeaders(origin: string | null, requestedHeaders: string | null): Record<string, string> {
-  if (!isAllowedOrigin(origin)) return {};
-  return {
-    "Access-Control-Allow-Origin": origin!,
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": requestedHeaders ?? "Authorization, Content-Type",
-    "Access-Control-Max-Age": "600",
-    Vary: "Origin",
-  };
-}
-
-function withCorsHeaders(response: Response, origin: string | null, requestedHeaders: string | null): Response {
-  const extra = corsHeaders(origin, requestedHeaders);
-  if (Object.keys(extra).length === 0) return response;
-  const merged = new Headers(response.headers);
-  for (const [key, value] of Object.entries(extra)) merged.set(key, value);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: merged });
 }
 
 /**
