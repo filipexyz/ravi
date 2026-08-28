@@ -11142,6 +11142,40 @@ export type SdkClientGenerateReturn = {
   status: "written";
 };
 
+/** Input shape for `sdk.dart.check`. */
+export type SdkDartCheckInput = {
+  out?: string;
+  version?: string;
+};
+
+/** Return shape for `sdk.dart.check`. */
+export type SdkDartCheckReturn = {
+  dir: string;
+  drift: Array<{
+    file: string;
+    path: string;
+    reason: string;
+  }>;
+  files: string[];
+};
+
+/** Input shape for `sdk.dart.generate`. */
+export type SdkDartGenerateInput = {
+  out?: string;
+  version?: string;
+};
+
+/** Return shape for `sdk.dart.generate`. */
+export type SdkDartGenerateReturn = {
+  dir: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+    path: string;
+  }>;
+  status: "written";
+};
+
 /** Input shape for `sdk.openapi.check`. */
 export type SdkOpenapiCheckInput = {
   against?: string;

@@ -18001,6 +18001,90 @@ public struct SdkClientGenerateReturn: Codable, Sendable {
   }
 }
 
+public struct SdkDartCheckOptions: Codable, Sendable {
+  public var out: String?
+  public var version: String?
+
+  public init(out: String? = nil, version: String? = nil) {
+    self.out = out
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case out = "out"
+    case version = "version"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.version {
+      body["version"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SdkDartCheckReturn: Codable, Sendable {
+  public var dir: String
+  public var drift: [RaviJSON]
+  public var files: [String]
+
+  public init(dir: String, drift: [RaviJSON], files: [String]) {
+    self.dir = dir
+    self.drift = drift
+    self.files = files
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dir = "dir"
+    case drift = "drift"
+    case files = "files"
+  }
+}
+
+public struct SdkDartGenerateOptions: Codable, Sendable {
+  public var out: String?
+  public var version: String?
+
+  public init(out: String? = nil, version: String? = nil) {
+    self.out = out
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case out = "out"
+    case version = "version"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.version {
+      body["version"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SdkDartGenerateReturn: Codable, Sendable {
+  public var dir: String
+  public var files: [RaviJSON]
+  public var status: String
+
+  public init(dir: String, files: [RaviJSON], status: String) {
+    self.dir = dir
+    self.files = files
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dir = "dir"
+    case files = "files"
+    case status = "status"
+  }
+}
+
 public struct SdkOpenapiCheckOptions: Codable, Sendable {
   public var against: String?
 

@@ -16714,10 +16714,11 @@ typedef SessionsPruneReturn = Map<String, RaviJson>;
 SessionsPruneReturn sessionsPruneReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsReadOptions {
-  const SessionsReadOptions({this.count, this.messageId, this.workspace});
+  const SessionsReadOptions({this.count, this.messageId, this.visibility, this.workspace});
 
   final String? count;
   final String? messageId;
+  final bool? visibility;
   final bool? workspace;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -16726,6 +16727,9 @@ class SessionsReadOptions {
     }
     if (messageId != null) {
       into["messageId"] = RaviJson.from(messageId);
+    }
+    if (visibility != null) {
+      into["visibility"] = RaviJson.from(visibility);
     }
     if (workspace != null) {
       into["workspace"] = RaviJson.from(workspace);
@@ -17112,13 +17116,15 @@ class SessionsRuntimeSteerReturn {
 SessionsRuntimeSteerReturn sessionsRuntimeSteerReturnFromJson(Object? json) => SessionsRuntimeSteerReturn.fromJsonValue(json);
 
 class SessionsSendOptions {
-  const SessionsSendOptions({this.agent, this.barrier, this.channel, this.immediate, this.interactive, this.steer, this.thread, this.threadOwner, this.threadScope, this.threadSummary, this.threadTitle, this.to, this.wait});
+  const SessionsSendOptions({this.agent, this.barrier, this.channel, this.effort, this.immediate, this.interactive, this.raw, this.steer, this.thread, this.threadOwner, this.threadScope, this.threadSummary, this.threadTitle, this.to, this.wait});
 
   final String? agent;
   final String? barrier;
   final String? channel;
+  final String? effort;
   final bool? immediate;
   final bool? interactive;
+  final bool? raw;
   final bool? steer;
   final String? thread;
   final String? threadOwner;
@@ -17138,11 +17144,17 @@ class SessionsSendOptions {
     if (channel != null) {
       into["channel"] = RaviJson.from(channel);
     }
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
     if (immediate != null) {
       into["immediate"] = RaviJson.from(immediate);
     }
     if (interactive != null) {
       into["interactive"] = RaviJson.from(interactive);
+    }
+    if (raw != null) {
+      into["raw"] = RaviJson.from(raw);
     }
     if (steer != null) {
       into["steer"] = RaviJson.from(steer);

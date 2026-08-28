@@ -4049,6 +4049,10 @@ public struct SdkNamespace: Sendable {
     SdkClientNamespace(transport: transport)
   }
 
+  public var dart: SdkDartNamespace {
+    SdkDartNamespace(transport: transport)
+  }
+
   public var openapi: SdkOpenapiNamespace {
     SdkOpenapiNamespace(transport: transport)
   }
@@ -4075,6 +4079,26 @@ public struct SdkClientNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sdk","client"], command: "generate", body: requestBody, as: SdkClientGenerateReturn.self)
+  }
+}
+
+public struct SdkDartNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func check(_ options: SdkDartCheckOptions = .init()) async throws -> SdkDartCheckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sdk","dart"], command: "check", body: requestBody, as: SdkDartCheckReturn.self)
+  }
+
+  public func generate(_ options: SdkDartGenerateOptions = .init()) async throws -> SdkDartGenerateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sdk","dart"], command: "generate", body: requestBody, as: SdkDartGenerateReturn.self)
   }
 }
 
