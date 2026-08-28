@@ -10,3 +10,15 @@ redirecting work that is already running.
 
 CLI-only `sessions send` is a first-class destination: the waiting CLI reads
 this turn's transcript. Attach stays fail-closed for chat delivery.
+
+The `[session surface]` line tells the model where a normal reply returns.
+That instruction is model-visible on every new logical turn, including
+operator CLI-only and HTTP `sessions.send`.
+
+The operator user row is different: `sessions read`, chat display, and
+transcript must show only what the user typed. Gluing "waiting CLI" or
+"no inbound chat" into that row leaks host routing into the displayed
+history. Two payloads, one turn: runtime prompt carries the header;
+persisted `user.text` stays raw. WhatsApp/Slack inbound can keep the
+header on the stored prompt because the channel already shows the
+original message.

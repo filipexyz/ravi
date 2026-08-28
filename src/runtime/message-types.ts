@@ -217,6 +217,13 @@ export interface PromptMessage {
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
   /** Internal marker preventing duplicate session-surface instructions after durable replay. */
   _sessionSurfaceHint?: boolean;
+  /** Surface header line. Host metadata for the model; not the persisted user row. */
+  _sessionSurfaceHintText?: string;
+  /**
+   * Model-facing prompt when it differs from `prompt` (operator/HTTP send).
+   * `prompt` remains the displayed/persisted user text.
+   */
+  _runtimePrompt?: string;
   /**
    * Operator CLI-only turn. Chat attach stays fail-closed; the waiting CLI is
    * the reply destination via this turn's assistant transcript.

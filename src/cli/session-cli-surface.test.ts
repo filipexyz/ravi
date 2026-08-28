@@ -9,6 +9,7 @@ import {
   sanitizeCliAssistantText,
   snapshotTranscriptCursor,
   waitForThisTurnAssistantText,
+  type SessionSendPromptInput,
 } from "./session-cli-surface.js";
 
 describe("session CLI surface", () => {
@@ -21,6 +22,19 @@ describe("session CLI surface", () => {
     expect(buildSessionSendPrompt({ prompt: "hello", callerSessionKey: "agent:main:origin" })).toBe(
       "[System] Inform: [from: agent:main:origin] hello",
     );
+  });
+
+  it("does not invent a from field on sessions.send", () => {
+    type HasFrom = "from" extends keyof SessionSendPromptInput ? true : false;
+    const hasFrom: HasFrom = false;
+    expect(hasFrom).toBe(false);
+    expect(
+      Object.keys({
+        prompt: "hello",
+        raw: true,
+        callerSessionKey: "agent:main:origin",
+      } satisfies SessionSendPromptInput).sort(),
+    ).toEqual(["callerSessionKey", "prompt", "raw"]);
   });
 
   it("uses --raw as an escape hatch even for in-context sends", () => {

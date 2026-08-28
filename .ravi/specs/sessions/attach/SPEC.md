@@ -86,21 +86,42 @@ serialized.
 
 ## Prompt Contract
 
-The dispatcher adds exactly one short English instruction to every new logical
-prompt:
+Every new logical turn has two payloads:
+
+- **runtime prompt** — what the provider/model sees
+- **persisted user row** — what `sessions read`, chat display, and transcript
+  show
+
+The dispatcher adds exactly one short English instruction to the
+**runtime** prompt:
 
 ```text
 [session surface] This turn came from a Slack chat. A normal reply returns there.
 ```
 
 For a thread, it says `Slack thread`. For a CLI-only operator turn, it says
-that a normal reply returns to the waiting CLI. For other source-less turns,
-it says that the session default will be used when one is available.
+that a normal reply returns to the waiting CLI. For other source-less turns
+(including HTTP operator send with no inbound source), it says that the
+session default will be used when one is available.
 
 The instruction MUST NOT include session names, chat ids, subscription lists,
 roles, database fields, or routing commands. It is added centrally so every
 channel uses the same contract, and it MUST remain idempotent across durable
 replay.
+
+Inbound WhatsApp/Slack may keep the instruction on the persisted user prompt
+when the channel already shows the original message separately.
+
+Operator CLI-only and HTTP/user `sessions.send` MUST persist the raw user
+text. Honor `--raw`. Do not glue `[session surface]`, `waiting CLI`, or
+`no inbound chat` into that `user.text`. Put the header on launch-prompt
+metadata (`_sessionSurfaceHintText` / `_runtimePrompt`) and inject it into
+the model prompt. Leftover `lastChannel` on a session-relay send is not an
+inbound chat turn.
+
+`[from:]` is only `callerSessionKey` inside `[System] Inform:`.
+`SessionsSendInput` has no `from` field. App identity is `context issue`.
+`sessions.set-display` is a session label, not a sender.
 
 ## CLI
 
@@ -148,7 +169,10 @@ Regression coverage MUST include:
 - two Slack threads remaining separate;
 - source-less output using the default attachment;
 - an unattached inbound source failing closed;
-- replay adding the surface instruction only once.
+- replay adding the surface instruction only once;
+- operator CLI-only and HTTP `sessions.send` persisting raw user text
+  while the runtime prompt still carries the surface header;
+- inbound WhatsApp/Slack still receiving the surface instruction.
 
 ## Failure Modes
 
@@ -159,3 +183,5 @@ Regression coverage MUST include:
 - Sending an inbound turn to the default output.
 - Implementing the surface instruction in one channel adapter instead of the
   central dispatcher.
+- Gluing the surface header into an operator `user.text` row, or omitting
+  it from the model-facing runtime prompt.

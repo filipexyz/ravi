@@ -9,7 +9,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
-import { combineSessionSurfacePromptContents } from "./session-surface-hint.js";
+import { combineSessionSurfacePromptContents, resolveRuntimePromptText } from "./session-surface-hint.js";
 import type { RuntimePromptMessage } from "./types.js";
 import { isSameRuntimeTurnSurface, runtimeTurnSurfaceKey } from "./turn-surface.js";
 
@@ -29,7 +29,7 @@ export function getRuntimePromptDeliveryBarrier(prompt: RuntimePromptDeliveryMes
 export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMessage): RuntimeUserMessage {
   return {
     type: "user",
-    message: { role: "user", content: prompt.prompt },
+    message: { role: "user", content: resolveRuntimePromptText(prompt) },
     session_id: "",
     parent_tool_use_id: null,
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
@@ -182,8 +182,8 @@ function channelSteeringCompatibilityKey(message: RuntimeUserMessage): string | 
     (message.commands?.length ?? 0) > 0 ||
     (prompt.commands?.length ?? 0) > 0 ||
     context.isEditedMessage === true ||
-    Boolean(context.editedMessageId) ||
-    Boolean(context.editEventId) ||
+    context.editedMessageId ||
+    context.editEventId ||
     (barrier !== "after_tool" && barrier !== "immediate_interrupt") ||
     message.taskBarrierTaskId ||
     prompt._observation ||

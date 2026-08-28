@@ -42,6 +42,7 @@ import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-aler
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -907,6 +908,106 @@ describe("runtime session trace instrumentation", () => {
       { response: "Slack response", targetChatId: slackChat.id },
       { response: "later WhatsApp response", targetChatId: whatsappChat.id },
     ]);
+  });
+
+  it("persists operator/HTTP sessions.send as raw user text and keeps inbound surface hints", async () => {
+    const slackSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: "C123",
+      canonicalChatId: "chat_slack",
+      sourceMessageId: "123.456",
+    };
+    const activeMessage = createQueuedRuntimeUserMessage({
+      prompt: "active inbound turn",
+      source,
+      deliveryBarrier: "after_tool",
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: source,
+      currentEffort: "xhigh",
+      pendingMessages: [activeMessage],
+      currentTurnPendingIds: [activeMessage.pendingId!],
+      turnActive: true,
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "responde só: pong",
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      source: slackSource,
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+    });
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "hello from gateway",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+    });
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "hello from slack",
+      source: slackSource,
+      context: {
+        channelId: "slack",
+        channelName: "Slack",
+        accountId: slackSource.accountId,
+        instanceId: slackSource.instanceId,
+        chatId: slackSource.chatId,
+        canonicalChatId: slackSource.canonicalChatId,
+        messageId: slackSource.sourceMessageId!,
+        senderId: "U123",
+        isGroup: false,
+        timestamp: Date.now(),
+      },
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+    });
+
+    const history = getRecentHistory(SESSION_NAME, 10);
+    const userRows = history.filter((message) => message.role === "user").map((message) => message.content);
+    expect(userRows).toEqual([
+      "responde só: pong",
+      "hello from gateway",
+      "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
+    ]);
+    expect(userRows[0]).not.toContain("[session surface]");
+    expect(userRows[1]).not.toContain("waiting CLI");
+    expect(userRows[1]).not.toContain("no inbound chat");
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
+      "active inbound turn",
+      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong",
+      "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.\nhello from gateway",
+      "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
+    ]);
+    expect(streaming.pendingMessages[1]?.launchPrompt?.prompt).toBe("responde só: pong");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._runtimePrompt).toContain("waiting CLI");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._sessionSurfaceHintText).toContain("waiting CLI");
+    expect(streaming.pendingMessages[2]?.launchPrompt?.prompt).toBe("hello from gateway");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("no inbound chat");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("no inbound chat");
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {

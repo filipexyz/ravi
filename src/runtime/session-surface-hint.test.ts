@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import {
   buildSessionSurfaceHint,
+  CLI_SURFACE_HINT,
   combineSessionSurfacePromptContents,
+  persistSessionSurfaceHintOnUserRow,
+  resolvePersistedUserText,
+  resolveRuntimePromptText,
+  SOURCELESS_SURFACE_HINT,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
 
@@ -33,25 +39,55 @@ describe("session surface hint", () => {
     ).toContain("WhatsApp chat");
   });
 
-  it("describes the source-less default without embedding mutable routing state", () => {
-    expect(buildSessionSurfaceHint(undefined)).toBe(
-      "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.",
-    );
+  it("keeps source-less and CLI hint builders for the model-facing header", () => {
+    expect(buildSessionSurfaceHint(undefined)).toBe(SOURCELESS_SURFACE_HINT);
+    expect(buildSessionSurfaceHint(undefined, { cliDestination: true })).toBe(CLI_SURFACE_HINT);
   });
 
-  it("describes CLI-only turns as returning to the waiting CLI", () => {
-    expect(buildSessionSurfaceHint(undefined, { cliDestination: true })).toBe(
-      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.",
-    );
+  it("keeps operator CLI-only user rows raw and puts the CLI header on the runtime prompt", () => {
+    const cliOnly = withSessionSurfaceHint({
+      prompt: "responde só: pong",
+      _cliDestination: true,
+    });
+    expect(resolvePersistedUserText(cliOnly)).toBe("responde só: pong");
+    expect(cliOnly.prompt).not.toContain("[session surface]");
+    expect(cliOnly._sessionSurfaceHintText).toBe(CLI_SURFACE_HINT);
+    expect(resolveRuntimePromptText(cliOnly)).toBe(`${CLI_SURFACE_HINT}\nresponde só: pong`);
+    expect(persistSessionSurfaceHintOnUserRow({ prompt: "responde só: pong", _cliDestination: true })).toBe(false);
+  });
+
+  it("keeps HTTP session-relay user rows raw and still sends a sourceless header to the model", () => {
+    const httpOperator = withSessionSurfaceHint({
+      prompt: "hello from gateway",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    });
+    expect(resolvePersistedUserText(httpOperator)).toBe("hello from gateway");
+    expect(httpOperator.prompt).not.toContain("waiting CLI");
+    expect(httpOperator.prompt).not.toContain("no inbound chat");
+    expect(httpOperator._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
+    expect(resolveRuntimePromptText(httpOperator)).toBe(`${SOURCELESS_SURFACE_HINT}\nhello from gateway`);
     expect(
-      withSessionSurfaceHint({
-        prompt: "responde só: pong",
-        _cliDestination: true,
-      }).prompt,
-    ).toBe("[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong");
+      persistSessionSurfaceHintOnUserRow({
+        prompt: "hello from gateway",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      }),
+    ).toBe(false);
   });
 
-  it("replaces legacy headers once and stays idempotent", () => {
+  it("does not treat leftover lastChannel source on sessions.send as inbound chat", () => {
+    const decorated = withSessionSurfaceHint({
+      prompt: "operator text",
+      source: { channel: "slack", accountId: "main", chatId: "C123" },
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    });
+    expect(resolvePersistedUserText(decorated)).toBe("operator text");
+    expect(decorated.prompt).not.toContain("[session surface]");
+    expect(decorated._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
+    expect(resolveRuntimePromptText(decorated)).toBe(`${SOURCELESS_SURFACE_HINT}\noperator text`);
+    expect(resolveRuntimePromptText(decorated)).not.toContain("Slack chat");
+  });
+
+  it("prefixes inbound WhatsApp and Slack turns and stays idempotent", () => {
     const decorated = withSessionSurfaceHint({
       prompt:
         "[session surfaces] session=main source_chat=chat-1\n" +
@@ -63,7 +99,15 @@ describe("session surface hint", () => {
     expect(decorated.prompt).toBe(
       "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\nhello",
     );
+    expect(resolveRuntimePromptText(decorated)).toBe(decorated.prompt);
+    expect(decorated._runtimePrompt).toBeUndefined();
     expect(withSessionSurfaceHint(decorated)).toBe(decorated);
+    expect(
+      persistSessionSurfaceHintOnUserRow({
+        prompt: "hello",
+        source: { channel: "slack", accountId: "workspace", chatId: "C123" },
+      }),
+    ).toBe(true);
   });
 
   it("keeps one instruction when same-surface messages share a physical turn", () => {
