@@ -4,7 +4,9 @@ import {
   buildSessionSurfaceHint,
   CLI_SURFACE_HINT,
   combineSessionSurfacePromptContents,
-  shouldPrefixSessionSurfaceHint,
+  persistSessionSurfaceHintOnUserRow,
+  resolvePersistedUserText,
+  resolveRuntimePromptText,
   SOURCELESS_SURFACE_HINT,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
@@ -37,31 +39,39 @@ describe("session surface hint", () => {
     ).toContain("WhatsApp chat");
   });
 
-  it("keeps source-less and CLI hint builders for host metadata, not operator user rows", () => {
+  it("keeps source-less and CLI hint builders for the model-facing header", () => {
     expect(buildSessionSurfaceHint(undefined)).toBe(SOURCELESS_SURFACE_HINT);
     expect(buildSessionSurfaceHint(undefined, { cliDestination: true })).toBe(CLI_SURFACE_HINT);
   });
 
-  it("does not prefix operator CLI-only or HTTP session-relay text onto the user row", () => {
+  it("keeps operator CLI-only user rows raw and puts the CLI header on the runtime prompt", () => {
     const cliOnly = withSessionSurfaceHint({
       prompt: "responde só: pong",
       _cliDestination: true,
     });
-    expect(cliOnly.prompt).toBe("responde só: pong");
+    expect(resolvePersistedUserText(cliOnly)).toBe("responde só: pong");
     expect(cliOnly.prompt).not.toContain("[session surface]");
-    expect(cliOnly._sessionSurfaceHint).toBe(true);
-    expect(shouldPrefixSessionSurfaceHint({ prompt: "responde só: pong", _cliDestination: true })).toBe(false);
+    expect(cliOnly._sessionSurfaceHintText).toBe(CLI_SURFACE_HINT);
+    expect(resolveRuntimePromptText(cliOnly)).toBe(`${CLI_SURFACE_HINT}\nresponde só: pong`);
+    expect(persistSessionSurfaceHintOnUserRow({ prompt: "responde só: pong", _cliDestination: true })).toBe(false);
+  });
 
+  it("keeps HTTP session-relay user rows raw and still sends a sourceless header to the model", () => {
     const httpOperator = withSessionSurfaceHint({
       prompt: "hello from gateway",
       _turnOrigin: buildSessionRelayTurnOrigin("send"),
     });
-    expect(httpOperator.prompt).toBe("hello from gateway");
+    expect(resolvePersistedUserText(httpOperator)).toBe("hello from gateway");
     expect(httpOperator.prompt).not.toContain("waiting CLI");
     expect(httpOperator.prompt).not.toContain("no inbound chat");
-    expect(shouldPrefixSessionSurfaceHint({ prompt: "hello from gateway", _turnOrigin: buildSessionRelayTurnOrigin("send") })).toBe(
-      false,
-    );
+    expect(httpOperator._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
+    expect(resolveRuntimePromptText(httpOperator)).toBe(`${SOURCELESS_SURFACE_HINT}\nhello from gateway`);
+    expect(
+      persistSessionSurfaceHintOnUserRow({
+        prompt: "hello from gateway",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      }),
+    ).toBe(false);
   });
 
   it("does not treat leftover lastChannel source on sessions.send as inbound chat", () => {
@@ -70,8 +80,11 @@ describe("session surface hint", () => {
       source: { channel: "slack", accountId: "main", chatId: "C123" },
       _turnOrigin: buildSessionRelayTurnOrigin("send"),
     });
-    expect(decorated.prompt).toBe("operator text");
+    expect(resolvePersistedUserText(decorated)).toBe("operator text");
     expect(decorated.prompt).not.toContain("[session surface]");
+    expect(decorated._sessionSurfaceHintText).toBe(SOURCELESS_SURFACE_HINT);
+    expect(resolveRuntimePromptText(decorated)).toBe(`${SOURCELESS_SURFACE_HINT}\noperator text`);
+    expect(resolveRuntimePromptText(decorated)).not.toContain("Slack chat");
   });
 
   it("prefixes inbound WhatsApp and Slack turns and stays idempotent", () => {
@@ -86,9 +99,11 @@ describe("session surface hint", () => {
     expect(decorated.prompt).toBe(
       "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\nhello",
     );
+    expect(resolveRuntimePromptText(decorated)).toBe(decorated.prompt);
+    expect(decorated._runtimePrompt).toBeUndefined();
     expect(withSessionSurfaceHint(decorated)).toBe(decorated);
     expect(
-      shouldPrefixSessionSurfaceHint({
+      persistSessionSurfaceHintOnUserRow({
         prompt: "hello",
         source: { channel: "slack", accountId: "workspace", chatId: "C123" },
       }),

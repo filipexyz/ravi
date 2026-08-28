@@ -28,29 +28,38 @@ export function buildSessionSurfaceHint(
 }
 
 /**
- * Prefix `[session surface]` onto persisted user text only for real inbound
- * chat turns. Operator CLI-only and HTTP `sessions.send` stay raw: those
- * rows are the operator's text, not a channel envelope.
+ * Persist the surface header on the user row only for real inbound chat.
+ * Operator CLI-only and HTTP `sessions.send` keep raw `user.text`.
  */
-export function shouldPrefixSessionSurfaceHint(prompt: RuntimeLaunchPrompt): boolean {
-  if (prompt._sessionSurfaceHint) return false;
+export function persistSessionSurfaceHintOnUserRow(prompt: RuntimeLaunchPrompt): boolean {
   if (prompt._cliDestination) return false;
   if (isSessionRelayOperatorTurn(prompt)) return false;
   return hasInboundChatSource(prompt.source);
 }
 
+export function resolveRuntimePromptText(prompt: Pick<RuntimeLaunchPrompt, "prompt" | "_runtimePrompt">): string {
+  return prompt._runtimePrompt ?? prompt.prompt;
+}
+
+export function resolvePersistedUserText(prompt: Pick<RuntimeLaunchPrompt, "prompt">): string {
+  return prompt.prompt;
+}
+
 export function withSessionSurfaceHint(prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
   if (prompt._sessionSurfaceHint) return prompt;
-  if (!shouldPrefixSessionSurfaceHint(prompt)) {
-    return { ...prompt, _sessionSurfaceHint: true };
-  }
 
-  const content = stripSessionSurfacePrefixes(prompt.prompt);
+  const persistOnUserRow = persistSessionSurfaceHintOnUserRow(prompt);
+  const hintSource = persistOnUserRow ? prompt.source : undefined;
+  const hint = buildSessionSurfaceHint(hintSource, { cliDestination: prompt._cliDestination });
+  const body = persistOnUserRow ? stripSessionSurfacePrefixes(prompt.prompt) : prompt.prompt;
+  const runtimePrompt = `${hint}\n${body}`;
 
   return {
     ...prompt,
-    prompt: `${buildSessionSurfaceHint(prompt.source)}\n${content}`,
+    prompt: persistOnUserRow ? runtimePrompt : prompt.prompt,
+    _runtimePrompt: persistOnUserRow ? undefined : runtimePrompt,
     _sessionSurfaceHint: true,
+    _sessionSurfaceHintText: hint,
   };
 }
 
@@ -65,9 +74,9 @@ function isSessionRelayOperatorTurn(prompt: RuntimeLaunchPrompt): boolean {
   return resolveRuntimeTurnOrigin(prompt._turnOrigin)?.producer === "session-relay";
 }
 
-function hasInboundChatSource(source: RuntimeLaunchPrompt["source"]): source is NonNullable<
-  RuntimeLaunchPrompt["source"]
-> {
+function hasInboundChatSource(
+  source: RuntimeLaunchPrompt["source"],
+): source is NonNullable<RuntimeLaunchPrompt["source"]> {
   return Boolean(source?.channel?.trim() && source?.chatId?.trim());
 }
 

@@ -71,7 +71,7 @@ import {
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { isSameRuntimeTurnSurface } from "./turn-surface.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
-import { withSessionSurfaceHint } from "./session-surface-hint.js";
+import { resolvePersistedUserText, resolveRuntimePromptText, withSessionSurfaceHint } from "./session-surface-hint.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -955,7 +955,7 @@ export class RuntimeSessionDispatcher {
           saveMessage(
             sessionName,
             "user",
-            prompt.prompt,
+            resolvePersistedUserText(prompt),
             sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
             {
               agentId: sessionEntry?.agentId ?? existing.agentId,
@@ -1156,14 +1156,20 @@ export class RuntimeSessionDispatcher {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
       if (!prompt._resumeStashedMessages) {
-        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-          agentId: sessionEntry?.agentId ?? agent.id,
-          channel: prompt.source?.channel ?? prompt.context?.channelId,
-          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-          commands: prompt.commands,
-        });
+        saveMessage(
+          sessionName,
+          "user",
+          resolvePersistedUserText(prompt),
+          sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+          {
+            agentId: sessionEntry?.agentId ?? agent.id,
+            channel: prompt.source?.channel ?? prompt.context?.channelId,
+            accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+            chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+            sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+            commands: prompt.commands,
+          },
+        );
       }
       const queued = daemonRestartMessages
         ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
@@ -1220,14 +1226,20 @@ export class RuntimeSessionDispatcher {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
       if (!prompt._resumeStashedMessages) {
-        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-          agentId: sessionEntry?.agentId ?? agent.id,
-          channel: prompt.source?.channel ?? prompt.context?.channelId,
-          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-          commands: prompt.commands,
-        });
+        saveMessage(
+          sessionName,
+          "user",
+          resolvePersistedUserText(prompt),
+          sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+          {
+            agentId: sessionEntry?.agentId ?? agent.id,
+            channel: prompt.source?.channel ?? prompt.context?.channelId,
+            accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+            chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+            sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+            commands: prompt.commands,
+          },
+        );
       }
       const queued = daemonRestartMessages
         ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
@@ -1940,7 +1952,7 @@ export class RuntimeSessionDispatcher {
     const result = await existing.queryHandle
       .control?.({
         operation: "turn.steer",
-        text: prompt.prompt,
+        text: resolveRuntimePromptText(prompt),
       })
       .catch((error) => ({
         ok: false,

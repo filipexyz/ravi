@@ -9,13 +9,15 @@
 - An unattached inbound source MUST fail closed instead of using the default.
 - CLI-only `sessions send -w` MUST return this turn's assistant transcript
   when no `.response` is emitted. Previous-turn rows MUST NOT leak.
-- Operator CLI-only and HTTP/user `sessions.send` MUST persist and dispatch
-  the raw user text. The persisted `user.text` MUST NOT contain
-  `[session surface]`, `waiting CLI`, or `no inbound chat`.
+- Operator CLI-only and HTTP/user `sessions.send` MUST persist the raw user
+  text. The persisted `user.text` MUST NOT contain `[session surface]`,
+  `waiting CLI`, or `no inbound chat`.
+- The provider/runtime prompt for those operator turns MUST still include
+  the `[session surface]` header (CLI-wait or no-inbound-chat) as
+  launch-prompt metadata, not as the displayed user row.
 - Inbound WhatsApp/Slack attach turns MUST still receive the
-  `[session surface]` instruction on the user prompt.
-- HTTP operator send (`transport: "gateway"`, no `callerSessionKey`) MUST
-  NOT be treated as a waiting CLI or a source-less attach turn.
+  `[session surface]` instruction on the runtime prompt and MAY keep it on
+  the persisted user prompt.
 - `sessions.send` input MUST NOT grow a `from` field. `[from:]` remains
   only `callerSessionKey` inside `[System] Inform:`.
 - Detaching the output chat MUST clear output for that session.

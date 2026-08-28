@@ -16,16 +16,20 @@
 8. For operator CLI-only or HTTP `sessions.send`, read the persisted user
    row. It MUST be the raw prompt. A `[session surface]` prefix, "waiting
    CLI", or "no inbound chat" on that row is a leak.
-9. For a real WhatsApp/Slack inbound turn, the user row SHOULD start with
-   `[session surface] This turn came from a …`.
-10. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
-11. Do not add a `from` field to `sessions.send`. App identity stays on
+9. For the same operator turn, inspect launch-prompt metadata or the
+   queued runtime `user` content. The model-facing prompt MUST still start
+   with `[session surface]`.
+10. For a real WhatsApp/Slack inbound turn, the runtime prompt MUST start
+    with `[session surface] This turn came from a …`. The persisted user
+    row MAY keep that prefix.
+11. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
+12. Do not add a `from` field to `sessions.send`. App identity stays on
     `context issue`; `[from:]` is only `callerSessionKey` inside Inform.
 
 ## Validation
 
 ```bash
 bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts
-bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-surface-hint.test.ts
+bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts
 bun run build
 ```

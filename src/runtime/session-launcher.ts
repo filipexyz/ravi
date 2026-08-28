@@ -28,6 +28,7 @@ import {
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -175,14 +176,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
   updateRuntimeSessionMetadata(dbSessionKey, prompt);
   if (!resumeStashedMessages) {
-    saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined, {
-      agentId: agent.id,
-      channel: resolvedSource?.channel ?? prompt.context?.channelId,
-      accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
-      chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
-      sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
-      commands: prompt.commands,
-    });
+    saveMessage(
+      sessionName,
+      "user",
+      resolvePersistedUserText(prompt),
+      canResumeStoredSession ? storedProviderSessionId : undefined,
+      {
+        agentId: agent.id,
+        channel: resolvedSource?.channel ?? prompt.context?.channelId,
+        accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
+        chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
+      },
+    );
   }
 
   const runtimeResolution = resolveRuntimeForPrompt({

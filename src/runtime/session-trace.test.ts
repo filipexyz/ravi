@@ -998,10 +998,16 @@ describe("runtime session trace instrumentation", () => {
     expect(userRows[1]).not.toContain("no inbound chat");
     expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
       "active inbound turn",
-      "responde só: pong",
-      "hello from gateway",
+      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong",
+      "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.\nhello from gateway",
       "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
     ]);
+    expect(streaming.pendingMessages[1]?.launchPrompt?.prompt).toBe("responde só: pong");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._runtimePrompt).toContain("waiting CLI");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._sessionSurfaceHintText).toContain("waiting CLI");
+    expect(streaming.pendingMessages[2]?.launchPrompt?.prompt).toBe("hello from gateway");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("no inbound chat");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("no inbound chat");
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
