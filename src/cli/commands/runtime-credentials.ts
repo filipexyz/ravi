@@ -281,7 +281,7 @@ export class RuntimeCredentialsCommands {
   @CommandAccess({ kind: "mutate", resource: "runtime.credentials", action: "add", risk: "medium" })
   @Returns(runtimeCredentialEnvelopeReturnSchema)
   add(
-    @Option({ flags: "--provider <id>", description: "Runtime provider id, e.g. claude, codex, pi" }) provider?: string,
+    @Option({ flags: "--provider <id>", description: "Runtime provider id, e.g. claude, codex, pi, grok" }) provider?: string,
     @Option({ flags: "--label <label>", description: "Human label that does not contain secrets" }) label?: string,
     @Option({ flags: "--upstream <id>", description: "Upstream provider id, e.g. anthropic, openai" })
     upstream?: string,

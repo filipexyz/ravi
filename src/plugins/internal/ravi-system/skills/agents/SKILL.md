@@ -193,7 +193,7 @@ ravi agents set <id> <key> <value>
 Keys:
 - `name` — Nome do agent
 - `cwd` — Diretório de trabalho
-- `provider` — Runtime provider (`claude`, `codex`, `pi`, ou outro provider registrado)
+- `provider` — Runtime provider (`claude`, `codex`, `pi`, `grok`, ou outro provider registrado)
 - `model` — Modelo/selector interpretado pelo provider atual
 - `dmScope` — Escopo de sessão DM:
   - `main` — Todas as DMs numa sessão só

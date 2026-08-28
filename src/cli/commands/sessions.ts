@@ -3312,7 +3312,7 @@ export class SessionCommands {
   setProvider(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("provider", {
-      description: "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+      description: "Runtime provider id (codex, claude, pi, grok) or 'clear' to remove override",
     })
     provider: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })

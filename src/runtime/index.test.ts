@@ -15,7 +15,7 @@ describe("runtime compatibility preflight", () => {
     expect(DEFAULT_RUNTIME_PROVIDER_ID).toBe("codex");
     expect(createRuntimeProvider().id).toBe("codex");
     expect(listRegisteredRuntimeProviderIds()).toContain("claude");
-    expect(listRegisteredRuntimeProviderIds()).toEqual(expect.arrayContaining(["codex", "claude", "pi"]));
+    expect(listRegisteredRuntimeProviderIds()).toEqual(expect.arrayContaining(["codex", "claude", "grok", "pi"]));
   });
 
   it("allows Claude providers to satisfy restricted tool access", () => {
@@ -86,6 +86,14 @@ describe("runtime compatibility preflight", () => {
 
   it("blocks restricted tool access for Pi until Ravi-hosted tool hooks exist", () => {
     const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("pi"), {
+      toolAccessMode: "restricted",
+    });
+
+    expect(issues.map((issue) => issue.code)).toEqual(["restricted_tool_access_unsupported"]);
+  });
+
+  it("blocks restricted tool access for Grok until Ravi-hosted tool hooks exist", () => {
+    const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("grok"), {
       toolAccessMode: "restricted",
     });
 

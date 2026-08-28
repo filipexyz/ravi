@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createGrokRuntimeProvider } from "./grok-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
 import type { RuntimeCapabilities, RuntimeHostServices, RuntimePrepareSessionResult } from "./types.js";
 
@@ -83,6 +84,7 @@ describe("runtime provider contract", () => {
   const builtInProviders = [
     { providerId: "claude", createProvider: createClaudeRuntimeProvider },
     { providerId: "codex", createProvider: createCodexRuntimeProvider },
+    { providerId: "grok", createProvider: createGrokRuntimeProvider },
     { providerId: "pi", createProvider: createPiRuntimeProvider },
   ] as const;
 
@@ -207,6 +209,50 @@ describe("runtime provider contract", () => {
       supportsMcpServers: false,
       supportsRemoteSpawn: false,
       toolAccessRequirement: "tool_surface",
+    });
+
+    expect(createGrokRuntimeProvider().getCapabilities()).toMatchObject({
+      runtimeControl: {
+        supported: true,
+        operations: ["turn.interrupt"],
+      },
+      dynamicTools: {
+        mode: "none",
+      },
+      execution: {
+        mode: "subprocess-rpc",
+      },
+      sessionState: {
+        mode: "provider-session-id",
+        requiresCwdMatch: true,
+      },
+      usage: {
+        semantics: "terminal-event",
+      },
+      tools: {
+        permissionMode: "provider-native",
+        accessRequirement: "tool_and_executable",
+        supportsParallelCalls: false,
+      },
+      systemPrompt: {
+        mode: "append",
+      },
+      terminalEvents: {
+        guarantee: "adapter",
+      },
+      skillVisibility: {
+        availability: "none",
+        loadedState: "none",
+      },
+      supportsSessionResume: true,
+      supportsSessionFork: false,
+      supportsPartialText: true,
+      supportsToolHooks: false,
+      supportsHostSessionHooks: false,
+      supportsPlugins: false,
+      supportsMcpServers: false,
+      supportsRemoteSpawn: false,
+      toolAccessRequirement: "tool_and_executable",
     });
 
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
