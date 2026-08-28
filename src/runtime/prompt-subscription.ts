@@ -1,4 +1,4 @@
-import { StringCodec } from "nats";
+import { StringCodec, type JsMsg } from "nats";
 import { getNats, nats } from "../nats.js";
 import {
   SESSION_STREAM,
@@ -13,6 +13,7 @@ import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
 const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
+const PROMPT_ACK_PROGRESS_INTERVAL_MS = 30_000;
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
@@ -20,6 +21,7 @@ export interface RuntimePromptSubscriptionOptions {
   getStreamingSessionCount(): number;
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
+  promptAckProgressIntervalMs?: number;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -29,6 +31,7 @@ export class RuntimePromptSubscription {
   promptsReceived = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private healthProbeInFlight = false;
+  private readonly sessionDispatchTails = new Map<string, Promise<void>>();
 
   constructor(private readonly options: RuntimePromptSubscriptionOptions) {}
 
@@ -144,49 +147,10 @@ export class RuntimePromptSubscription {
               break;
             }
 
-            try {
-              // Keep the JetStream work item durable until the dispatcher has
-              // accepted the prompt. Provider/bootstrap failures can happen
-              // before a turn exists, so acknowledging earlier loses the only
-              // retryable copy.
-              await this.options.handlePrompt(sessionName, prompt);
-            } catch (error) {
-              log.error("Failed to handle prompt before acknowledgement", {
-                sessionName,
-                subject: msg.subject,
-                retryDelayMs: PROMPT_DISPATCH_RETRY_DELAY_MS,
-                error,
-              });
-              msg.nak(PROMPT_DISPATCH_RETRY_DELAY_MS);
-              continue;
-            }
-
-            msg.ack();
-            this.promptsReceived++;
-
-            nats
-              .emit(`ravi.session.${sessionName}.runtime`, {
-                type: "prompt.received",
-                sessionName,
-                prompt: prompt.prompt,
-                source: prompt.source,
-                context: prompt.context,
-                deliveryBarrier: prompt.deliveryBarrier,
-                deliveryBarrierSource: prompt.deliveryBarrierSource,
-                taskBarrierTaskId: prompt.taskBarrierTaskId,
-                commands: prompt.commands,
-                observation: prompt._observation,
-                turnProvenance: classifyTurnProvenance({ prompt }),
-                thread: prompt._thread,
-                _agentId: prompt._agentId,
-                timestamp: new Date().toISOString(),
-              })
-              .catch((error) => {
-                log.warn("Failed to emit prompt audit event", {
-                  sessionName,
-                  error,
-                });
-              });
+            // Dispatcher admission can wait indefinitely for a runtime slot.
+            // Keep ordering within one session, but never let that wait block
+            // unrelated interactive sessions behind it in the shared consumer.
+            this.schedulePromptDispatch(sessionName, prompt, msg);
           }
 
           if (!this.options.isRunning() || intakeFenced) {
@@ -237,6 +201,119 @@ export class RuntimePromptSubscription {
       .catch((error) => {
         log.warn("Failed to emit runtime session pool gauge", { error });
       });
+  }
+
+  private schedulePromptDispatch(sessionName: string, prompt: RuntimeLaunchPrompt, msg: JsMsg): void {
+    const previous = this.sessionDispatchTails.get(sessionName) ?? Promise.resolve();
+    const progressTimer = setInterval(() => {
+      try {
+        msg.working();
+      } catch (error) {
+        log.warn("Failed to renew pending prompt acknowledgement", {
+          sessionName,
+          subject: msg.subject,
+          error,
+        });
+      }
+    }, this.options.promptAckProgressIntervalMs ?? PROMPT_ACK_PROGRESS_INTERVAL_MS);
+    progressTimer.unref?.();
+
+    let dispatch!: Promise<void>;
+    dispatch = previous
+      .then(() => this.dispatchPrompt(sessionName, prompt, msg))
+      .catch((error) => {
+        log.error("Unexpected prompt dispatch lane failure", {
+          sessionName,
+          subject: msg.subject,
+          error,
+        });
+        try {
+          msg.nak(PROMPT_DISPATCH_RETRY_DELAY_MS);
+        } catch (nakError) {
+          log.warn("Failed to NAK prompt after dispatch lane failure", {
+            sessionName,
+            subject: msg.subject,
+            error: nakError,
+          });
+        }
+      })
+      .finally(() => {
+        clearInterval(progressTimer);
+        if (this.sessionDispatchTails.get(sessionName) === dispatch) {
+          this.sessionDispatchTails.delete(sessionName);
+        }
+      });
+    this.sessionDispatchTails.set(sessionName, dispatch);
+    void dispatch;
+  }
+
+  private async dispatchPrompt(sessionName: string, prompt: RuntimeLaunchPrompt, msg: JsMsg): Promise<void> {
+    try {
+      // Keep the JetStream work item durable until the dispatcher has accepted
+      // it. Provider/bootstrap failures can happen before a turn exists, so
+      // acknowledging earlier loses the only retryable copy.
+      await this.options.handlePrompt(sessionName, prompt);
+    } catch (error) {
+      log.error("Failed to handle prompt before acknowledgement", {
+        sessionName,
+        subject: msg.subject,
+        retryDelayMs: PROMPT_DISPATCH_RETRY_DELAY_MS,
+        error,
+      });
+      try {
+        msg.nak(PROMPT_DISPATCH_RETRY_DELAY_MS);
+      } catch (nakError) {
+        log.warn("Failed to NAK rejected prompt", {
+          sessionName,
+          subject: msg.subject,
+          error: nakError,
+        });
+      }
+      return;
+    }
+
+    try {
+      msg.ack();
+    } catch (error) {
+      log.warn("Failed to ACK accepted prompt", {
+        sessionName,
+        subject: msg.subject,
+        error,
+      });
+      return;
+    }
+    this.promptsReceived++;
+
+    try {
+      nats
+        .emit(`ravi.session.${sessionName}.runtime`, {
+          type: "prompt.received",
+          sessionName,
+          prompt: prompt.prompt,
+          source: prompt.source,
+          context: prompt.context,
+          deliveryBarrier: prompt.deliveryBarrier,
+          deliveryBarrierSource: prompt.deliveryBarrierSource,
+          taskBarrierTaskId: prompt.taskBarrierTaskId,
+          commands: prompt.commands,
+          observation: prompt._observation,
+          turnProvenance: classifyTurnProvenance({ prompt }),
+          thread: prompt._thread,
+          _agentId: prompt._agentId,
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit prompt audit event", {
+            sessionName,
+            error,
+          });
+        });
+    } catch (error) {
+      log.warn("Failed to emit prompt audit event", {
+        sessionName,
+        error,
+      });
+    }
   }
 
   private ensurePromptInfrastructureForHealthCheck(): void {
