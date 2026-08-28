@@ -111,6 +111,8 @@ describe("skills manager", () => {
     expect(findSkillByName(catalogSkills, "ravi-system-apps")?.name).toBe("apps");
     expect(findSkillByName(catalogSkills, "ravi-system-tasks")?.name).toBe("tasks");
     expect(findSkillByName(catalogSkills, "ravi-dev-ravi-architecture")?.name).toBe("ravi-architecture");
+    expect(findSkillByName(catalogSkills, "pages")?.name).toBe("pages");
+    expect(findSkillByName(catalogSkills, "ravi-system-pages")?.name).toBe("pages");
   });
 });
 

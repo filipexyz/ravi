@@ -947,6 +947,228 @@ describe("pages agent-first contract", () => {
     expect(error.details.suggestedAction).toContain("ravi pages published");
   });
 
+  it("ship without --execute is a dry-run: exit 3 and no Console call at all", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return [];
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () =>
+        command.ship(
+          ["proj"],
+          undefined,
+          "Weekly report",
+          "<h1>secret-body</h1>",
+          undefined,
+          undefined,
+          "private",
+          "/",
+          "index.html",
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      slug: "weekly-report",
+      titlePresent: true,
+      contentKind: "body",
+      route: "/",
+      visibility: "private",
+      entrypoint: "index.html",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("secret-body");
+    expect(credentialReads).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("ship with --execute wraps --body as HTML5, reuses an existing slug, and returns the JSON shape", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-command-test-");
+    const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string, body: unknown) => {
+        listAndCreate.push({ method, path, body });
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+          return [
+            {
+              id: "site_1",
+              slug: "weekly-report",
+              defaultHostname: "weekly-report.ravi.page",
+              defaultVisibility: "private",
+            },
+          ];
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async (input: Record<string, unknown>) => {
+        expect(input).toMatchObject({
+          projectRef: "proj",
+          siteRef: "weekly-report",
+          packageManifest: {
+            entrypoint: "index.html",
+            files: [{ path: "index.html" }],
+          },
+        });
+        return {
+          uploadSession: { id: "upl_ship" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: mock(async (input: Record<string, unknown>) => {
+        expect(input).toMatchObject({
+          uploadSessionId: "upl_ship",
+          artifact: { name: "Weekly report" },
+          publish: {
+            activate: true,
+            siteRef: "weekly-report",
+            visibility: "private",
+            route: { path: "/", visibility: "private" },
+          },
+          source: { tool: "ravi pages ship" },
+        });
+        return {
+          artifact: { id: "cloud_art_ship" },
+          artifactVersion: { id: "cloud_ver_ship", versionNumber: 1 },
+          site: {
+            id: "site_1",
+            slug: "weekly-report",
+            defaultHostname: "weekly-report.ravi.page",
+            defaultVisibility: "private",
+          },
+          publish: { id: "pub_ship" },
+          release: { id: "rel_ship", url: "https://weekly-report.ravi.page/" },
+          routes: [{ id: "route_ship", path: "/" }],
+          url: "https://weekly-report.ravi.page/",
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.ship(
+        ["proj"],
+        undefined,
+        "Weekly report",
+        "<h1>OK</h1>",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+    ]);
+    expect(payload).toEqual({
+      artifactId: "cloud_art_ship",
+      route: "/",
+      site: {
+        id: "site_1",
+        slug: "weekly-report",
+        defaultHostname: "weekly-report.ravi.page",
+        defaultVisibility: "private",
+      },
+      slug: "weekly-report",
+      success: true,
+      url: "https://weekly-report.ravi.page/",
+      visibility: "private",
+    });
+  });
+
+  it("ship with --execute creates the host when the slug is new", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-create-command-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string, body: unknown) => {
+        listAndCreate.push({ method, path, body });
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") return [];
+        if (method === "POST" && path === "/api/cli/projects/proj/pages") {
+          return {
+            id: "site_new",
+            slug: "docs",
+            defaultHostname: "docs.ravi.page",
+            defaultVisibility: "private",
+          };
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async () => ({
+        uploadSession: { id: "upl_new" },
+        uploadPolicy: { directUpload: false },
+      })),
+      finalizeArtifactPublish: mock(async () => ({
+        artifact: { id: "cloud_art_new" },
+        site: { id: "site_new", slug: "docs", defaultHostname: "docs.ravi.page" },
+        url: "https://docs.ravi.page/",
+      })),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.ship(
+        ["proj", "docs"],
+        undefined,
+        "Docs",
+        undefined,
+        undefined,
+        dir,
+        "private",
+        "/",
+        "index.html",
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      {
+        method: "POST",
+        path: "/api/cli/projects/proj/pages",
+        body: { slug: "docs", defaultVisibility: "private" },
+      },
+    ]);
+    expect(payload).toMatchObject({
+      artifactId: "cloud_art_new",
+      route: "/",
+      slug: "docs",
+      url: "https://docs.ravi.page/",
+      visibility: "private",
+    });
+  });
+
   it("list --fields narrows each site to the requested fields", async () => {
     const client = makeClient(async () => [
       { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public", status: "active" },

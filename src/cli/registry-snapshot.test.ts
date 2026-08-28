@@ -256,6 +256,16 @@ describe("buildRegistry", () => {
       skill: "ravi-system-tasks",
       source: "inferred",
     });
+    expect(inferRaviCommandSkillGate("ravi pages ship --title Demo --body '<p>x</p>' --json")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
+    expect(inferRaviCommandSkillGate("ravi pages password set demo --execute")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
     expect(inferRaviCommandSkillGate('echo "ravi tasks list"', { executables: ["echo"] })).toBeUndefined();
   });
 
@@ -279,6 +289,16 @@ describe("buildRegistry", () => {
     expect(inferRaviToolSkillGate("apps_list")).toMatchObject({
       skill: "ravi-system-apps",
       source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("pages_ship")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
+    expect(inferRaviToolSkillGate("pages_password_set")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
     });
     expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();
   });
