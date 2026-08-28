@@ -412,6 +412,8 @@ mock.module("../../tags/service.js", () => ({
   }),
 }));
 
+import { getOptionsMetadata } from "../decorators.js";
+
 const { SessionCommands } = await import("./sessions.js");
 const {
   buildCurrentSessionActionsCommand,
@@ -795,6 +797,11 @@ describe("SessionCommands delivery barriers", () => {
       producer: "session-relay",
       action: "send",
     });
+    expect(
+      getOptionsMetadata(SessionCommands.prototype, "send")
+        .map((option) => option.flags)
+        .join("\n"),
+    ).not.toMatch(/(?:^|\s)--from(?:\s|$)/m);
   });
 
   it("strips historical actor identity before republishing stored channel context", async () => {
