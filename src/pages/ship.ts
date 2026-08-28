@@ -45,10 +45,7 @@ export function resolveShipContentKind(input: Pick<ShipSourceInput, "body" | "di
     input.dir !== undefined ? "dir" : null,
   ].filter((value): value is ShipContentKind => value !== null);
   if (present.length === 0) {
-    throw new CloudAuthError(
-      "PAYLOAD_INVALID",
-      "Missing page content. Pass exactly one of --body, --html, or --dir.",
-    );
+    throw new CloudAuthError("PAYLOAD_INVALID", "Missing page content. Pass exactly one of --body, --html, or --dir.");
   }
   if (present.length > 1) {
     throw new CloudAuthError(
@@ -107,7 +104,9 @@ export async function materializeShipSource(input: ShipSourceInput): Promise<Shi
   }
 }
 
-export async function validateShipSourceInput(input: Pick<ShipSourceInput, "body" | "dir" | "html">): Promise<ShipContentKind> {
+export async function validateShipSourceInput(
+  input: Pick<ShipSourceInput, "body" | "dir" | "html">,
+): Promise<ShipContentKind> {
   const kind = resolveShipContentKind(input);
   if (kind === "body") {
     if (!input.body?.trim()) {

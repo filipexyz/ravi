@@ -965,8 +965,8 @@ describe("pages agent-first contract", () => {
     const error = await expectContractError(
       () =>
         command.ship(
-          ["proj"],
-          undefined,
+          [],
+          "proj",
           "Weekly report",
           "<h1>secret-body</h1>",
           undefined,
@@ -994,6 +994,30 @@ describe("pages agent-first contract", () => {
     expect(JSON.stringify(error.details.plan)).not.toContain("secret-body");
     expect(credentialReads).toBe(0);
     expect(calls).toHaveLength(0);
+
+    const noPositionals = await expectContractError(
+      () =>
+        command.ship(
+          [],
+          undefined,
+          "Weekly report",
+          "<h1>OK</h1>",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(noPositionals.details.plan).toMatchObject({
+      project: "(Console scope default)",
+      slug: "weekly-report",
+      contentKind: "body",
+    });
   });
 
   it("ship with --execute wraps --body as HTML5, reuses an existing slug, and returns the JSON shape", async () => {
@@ -1064,8 +1088,8 @@ describe("pages agent-first contract", () => {
 
     const { output } = await captureConsole(() =>
       command.ship(
-        ["proj"],
-        undefined,
+        [],
+        "proj",
         "Weekly report",
         "<h1>OK</h1>",
         undefined,
@@ -1080,9 +1104,7 @@ describe("pages agent-first contract", () => {
     );
     const payload = JSON.parse(output);
 
-    expect(listAndCreate).toEqual([
-      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
-    ]);
+    expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
     expect(payload).toEqual({
       artifactId: "cloud_art_ship",
       route: "/",

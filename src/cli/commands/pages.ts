@@ -227,9 +227,10 @@ export class PagesCommands {
   async ship(
     @Arg("args", {
       variadic: true,
+      required: false,
       description: "[project] [slug]; project defaults to Console scope and slug defaults from --title",
     })
-    args: string[],
+    args: string[] = [],
     @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
     projectOption?: string,
     @Option({ flags: "--title <title>", description: "Page title; also used to generate the slug when omitted" })
@@ -818,11 +819,8 @@ function mergedProjectRef(
   return option ?? positional ?? undefined;
 }
 
-function parseShipArgs(
-  args: string[],
-  projectOption: string | undefined,
-): { project?: string; slug?: string } {
-  const clean = cleanArgs(args);
+function parseShipArgs(args: string[], projectOption: string | undefined): { project?: string; slug?: string } {
+  const clean = cleanArgs(args ?? []);
   if (projectOption) {
     if (clean.length === 0) return { project: projectOption };
     if (clean.length === 1) return { project: projectOption, slug: clean[0] };

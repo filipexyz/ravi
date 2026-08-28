@@ -24,7 +24,7 @@ describe("pages ship helpers", () => {
   it("wraps --body in a simple HTML5 document", () => {
     const html = wrapHtml5Document("Weekly <report>", "<h1>OK</h1>");
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
-    expect(html).toContain("<html lang=\"en\">");
+    expect(html).toContain('<html lang="en">');
     expect(html).toContain("<title>Weekly &lt;report&gt;</title>");
     expect(html).toContain("<h1>OK</h1>");
     expect(html).toContain("</html>");
