@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "3b65296b2ad245f3"
+    "version": "291f4dbeee37152e"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -66248,7 +66248,7 @@
                     "type": "string"
                   },
                   "provider": {
-                    "description": "Runtime provider id, e.g. claude, codex, pi",
+                    "description": "Runtime provider id, e.g. claude, codex, pi, grok",
                     "type": "string"
                   },
                   "readOnly": {
@@ -74685,7 +74685,7 @@
                     "type": "string"
                   },
                   "provider": {
-                    "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+                    "description": "Runtime provider id (codex, claude, pi, grok) or 'clear' to remove override",
                     "type": "string"
                   }
                 },

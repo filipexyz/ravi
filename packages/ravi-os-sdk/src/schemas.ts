@@ -53687,7 +53687,7 @@ export const RuntimeCredentialsAddInputSchema = {
       "type": "string"
     },
     "provider": {
-      "description": "Runtime provider id, e.g. claude, codex, pi",
+      "description": "Runtime provider id, e.g. claude, codex, pi, grok",
       "type": "string"
     },
     "readOnly": {
@@ -59678,7 +59678,7 @@ export const SessionsSetProviderInputSchema = {
       "type": "string"
     },
     "provider": {
-      "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+      "description": "Runtime provider id (codex, claude, pi, grok) or 'clear' to remove override",
       "type": "string"
     }
   },
