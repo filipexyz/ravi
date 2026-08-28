@@ -965,7 +965,7 @@ describe("RaviBot runtime guards", () => {
       );
   });
 
-  it("clears legacy provider session state before switching an agent to Codex", async () => {
+  it("starts Codex without resuming a leftover Claude id when last-used is unset", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:legacy-switch";
     sessions.set(sessionKey, {
@@ -980,13 +980,13 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(clearProviderSession).toHaveBeenCalledWith(sessionKey);
+    expect(clearProviderSession).not.toHaveBeenCalled();
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.resume).toBeUndefined();
     expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
   });
 
-  it("marks task bootstrap as accepted and persists runtime provider state before the first turn completes", async () => {
+  it("marks task bootstrap as accepted without stamping last-used provider before the first turn completes", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:task-bootstrap";
     const dispatched = createDispatchedTaskForSession(sessionKey, { profileId: "task-doc-none" });
@@ -1022,13 +1022,17 @@ describe("RaviBot runtime guards", () => {
       const session = sessions.get(sessionKey);
       const task = actualTaskDbModule.dbGetTask(dispatched.task.id);
       const assignment = actualTaskDbModule.dbGetActiveAssignment(dispatched.task.id);
-      expect(session?.runtimeProvider).toBe("codex");
+      expect(session?.runtimeProvider).toBeUndefined();
       expect(session?.providerSessionId).toBeUndefined();
       expect(task?.status).toBe("in_progress");
       expect(assignment?.status).toBe("accepted");
       expect(assignment?.checkpointDueAt).toBeGreaterThan(assignment?.assignedAt ?? 0);
       expect(runtimeStartCalls[0]?.env?.RAVI_BIN).toBe("/tmp/ravi-repo/bin/ravi");
       expect(runtimeStartCalls[0]?.env?.PATH?.startsWith("/tmp/ravi-repo/bin")).toBe(true);
+
+      releaseTurn?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
     } finally {
       releaseTurn?.();
       if (originalRaviBin === undefined) {
@@ -1600,55 +1604,60 @@ describe("RaviBot runtime guards", () => {
     expect(interrupt).not.toHaveBeenCalled();
   });
 
-  it("restarts an active streaming session when the agent provider changes", async () => {
+  it("keeps an active streaming session on last-used provider when the agent default changes", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:provider-switch-live-session";
-    const interruptedProviders: RuntimeProviderId[] = [];
+    const interrupt = mock(async () => {});
+    let secondPromptRequestReached: (() => void) | undefined;
+    const waitingForSecondPrompt = new Promise<void>((resolve) => {
+      secondPromptRequestReached = resolve;
+    });
     const seenPrompts: Array<{ provider: RuntimeProviderId; prompt: string }> = [];
-    const lifetimeResolvers = new Map<RuntimeProviderId, () => void>();
 
-    runtimeStartImpl = (providerId, request) => {
-      const lifetime = new Promise<void>((resolve) => {
-        lifetimeResolvers.set(providerId, resolve);
-      });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        seenPrompts.push({
+          provider: providerId,
+          prompt: first.value?.message.content ?? "",
+        });
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
 
-      return {
-        provider: providerId,
-        events: (async function* () {
-          const first = await request.prompt.next();
-          seenPrompts.push({
-            provider: providerId,
-            prompt: first.value?.message.content ?? "",
-          });
-          yield {
-            type: "turn.complete",
-            providerSessionId: `${providerId}-session`,
-            usage: { inputTokens: 1, outputTokens: 1 },
-          };
-          await lifetime;
-        })(),
-        interrupt: async () => {
-          interruptedProviders.push(providerId);
-          lifetimeResolvers.get(providerId)?.();
-        },
-      };
-    };
+        secondPromptRequestReached?.();
+        const second = await request.prompt.next();
+        seenPrompts.push({
+          provider: providerId,
+          prompt: second.value?.message.content ?? "",
+        });
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt,
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first via codex"));
+    await waitingForSecondPrompt;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     activeProvider = "claude";
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second via claude"));
     await new Promise((resolve) => setTimeout(resolve, 40));
 
-    expect(runtimeStartCalls).toHaveLength(2);
+    expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.model).toBe("test-model");
-    expect(runtimeStartCalls[1]?.model).toBe("test-model");
-    expect(interruptedProviders).toContain("codex");
+    expect(interrupt).not.toHaveBeenCalled();
     expect(seenPrompts).toEqual([
       { provider: "codex", prompt: withWhatsAppSurfaceHint("first via codex") },
-      { provider: "claude", prompt: withWhatsAppSurfaceHint("second via claude") },
+      { provider: "codex", prompt: withWhatsAppSurfaceHint("second via claude") },
     ]);
 
     await bot.stop();

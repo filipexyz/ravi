@@ -91,7 +91,9 @@ export function resolveRuntimeSession(options: {
     observationProviderId:
       options.prompt._observation && options.prompt._runtimeProviderId ? options.prompt._runtimeProviderId : undefined,
     sessionProviderOverride: sessionRuntimeProviderOverride,
-    lastUsedProvider: session.runtimeProvider ?? storedRuntimeProvider,
+    // Only the recorded last-used column. A leftover Claude sdkSessionId must
+    // not be treated as last-used or every pre-column session stays on Claude.
+    lastUsedProvider: session.runtimeProvider,
     restartSnapshotProvider: options.prompt._daemonRestartResume?.runtimeProvider,
     agent,
     defaults: {

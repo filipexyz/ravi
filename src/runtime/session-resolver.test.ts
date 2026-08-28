@@ -128,6 +128,35 @@ describe("runtime session resolver", () => {
     expect(getSession(SESSION_KEY)?.providerSessionId).toBe("provider-existing");
   });
 
+  it("does not treat a leftover Claude id as last-used when runtimeProvider is unset", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", {
+      name: SESSION_NAME,
+      sdkSessionId: "legacy-claude-session",
+    });
+    dbSetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING, "codex");
+    configStore.refresh();
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "hello after agent default moved to Codex" },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("codex");
+    expect(resolved?.storedProviderSessionId).toBe("legacy-claude-session");
+    expect(resolved?.canResumeStoredSession).toBe(false);
+    expect(resolved?.resumeDecision).toMatchObject({
+      hadStoredProviderSessionId: true,
+      storedRuntimeProvider: "claude",
+      requestedRuntimeProvider: "codex",
+      providerMatches: false,
+      canResume: false,
+      reason: "provider_mismatch",
+      staleCleared: false,
+    });
+    expect(getSession(SESSION_KEY)?.sdkSessionId).toBe("legacy-claude-session");
+  });
+
   it("uses the restart-snapshot provider when last-used is missing", () => {
     getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
     dbSetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING, "claude");
