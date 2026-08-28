@@ -17,6 +17,7 @@ applies_to:
   - src/runtime/session-dispatcher.ts
   - src/runtime/session-output-target.ts
   - src/runtime/session-surface-hint.ts
+  - src/runtime/runtime-request-builder.ts
   - src/cli/commands/sessions.ts
 owners:
   - ravi-dev
@@ -64,8 +65,18 @@ destination. After `turn.complete`, `sessions send -w` MUST return this
 turn's assistant transcript row (persist may lag). Missing chat delivery
 is not empty success when that transcript exists.
 
+Operator / HTTP / app `sessions.send` with the same shape (session-relay,
+no `--channel`/`--to`, no real inbound chat) is a **session destination
+for emit too**. Leftover `lastChannel` / `lastTo` MUST NOT be copied into
+`prompt.source` / `currentSource`. The default output attachment MUST NOT
+be the emit target. Chat emit MUST fail closed (`Response target
+unresolved — dropping emit`). Do not invent a chat `.response` sink.
+Persist stays independent: `saveMessage` on `turn.complete` plus
+`sessions.read` / `getRecentHistory` by `session_id`.
+
 The default output is only a fallback for proactive and other source-less
-turns. It never overrides an inbound source.
+turns (cron, heartbeat, follow-up). It never overrides an inbound source
+and MUST NOT claim a session-relay operator send.
 
 ## Turn Isolation
 
@@ -100,9 +111,10 @@ The dispatcher adds exactly one short English instruction to the
 ```
 
 For a thread, it says `Slack thread`. For a CLI-only operator turn, it says
-that a normal reply returns to the waiting CLI. For other source-less turns
-(including HTTP operator send with no inbound source), it says that the
-session default will be used when one is available.
+that a normal reply returns to the waiting CLI. For HTTP / app session-relay
+send with no inbound chat, it says that a normal reply stays on this
+session. For other source-less turns (cron, heartbeat, follow-up), it says
+that the session default will be used when one is available.
 
 The instruction MUST NOT include session names, chat ids, subscription lists,
 roles, database fields, or routing commands. It is added centrally so every
@@ -168,6 +180,9 @@ Regression coverage MUST include:
 - Slack active, WhatsApp queued, then one reply to each source in order;
 - two Slack threads remaining separate;
 - source-less output using the default attachment;
+- session-relay / HTTP operator send not emitting to leftover lastChannel
+  or the default output, while persist/read still has the assistant row;
+- inbound WhatsApp/Slack still emitting to the source chat;
 - an unattached inbound source failing closed;
 - replay adding the surface instruction only once;
 - operator CLI-only and HTTP `sessions.send` persisting raw user text

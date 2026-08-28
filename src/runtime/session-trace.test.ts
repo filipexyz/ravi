@@ -9,6 +9,7 @@ import {
   getOrCreateSession,
   getSession,
   updateSessionName,
+  updateSessionSource,
   updateRuntimeProviderState,
   type AgentConfig,
   type SessionEntry,
@@ -39,7 +40,11 @@ import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
-import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
+import {
+  buildRuntimeStartRequest,
+  resolveRuntimeCredentialUpstreamProvider,
+  resolveRuntimePromptSource,
+} from "./runtime-request-builder.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
@@ -1004,15 +1009,213 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
       "active inbound turn",
       "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong",
-      "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.\nhello from gateway",
+      "[session surface] This turn has no inbound chat. A normal reply stays on this session.\nhello from gateway",
       "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
     ]);
     expect(streaming.pendingMessages[1]?.launchPrompt?.prompt).toBe("responde só: pong");
     expect(streaming.pendingMessages[1]?.launchPrompt?._runtimePrompt).toContain("waiting CLI");
     expect(streaming.pendingMessages[1]?.launchPrompt?._sessionSurfaceHintText).toContain("waiting CLI");
     expect(streaming.pendingMessages[2]?.launchPrompt?.prompt).toBe("hello from gateway");
-    expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("no inbound chat");
-    expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("no inbound chat");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("stays on this session");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("stays on this session");
+  });
+
+  it("does not emit session-relay HTTP send to leftover lastChannel or default output", async () => {
+    const leftoverChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "leftover-emit@s.whatsapp.net",
+      chatType: "dm",
+      title: "leftover lastChannel",
+    });
+    const inboundChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C-inbound-emit",
+      chatType: "group",
+      title: "inbound slack",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: leftoverChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: inboundChat.id, setOutputTarget: false });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: leftoverChat.platformChatId,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const leftoverSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: leftoverChat.platformChatId,
+      canonicalChatId: leftoverChat.id,
+    };
+    const inboundSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: inboundChat.platformChatId,
+      canonicalChatId: inboundChat.id,
+    };
+    const relayPrompt = {
+      prompt: "hello from gateway",
+      source: leftoverSource,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(relayPrompt, session)).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: leftoverSource,
+      }).source,
+    ).toBe("source-chat");
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: undefined,
+      }).target?.canonicalChatId,
+    ).toBe(leftoverChat.id);
+
+    const relayStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: leftoverSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(relayPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const runtimeResolution = {
+      options: { model: MODEL },
+      sources: { model: "agent_default" as const, effort: null, thinking: null },
+      hasTaskRuntimeContext: false,
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-session-relay-emit",
+      sessionName: SESSION_NAME,
+      prompt: relayPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution,
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(relayPrompt, session),
+      streamingSession: relayStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(relayStreaming.currentSource).toBeUndefined();
+    expect(relayStreaming.currentReplyTarget).toBeNull();
+
+    const relayEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
+    const relayEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        relayEmits.push(data as (typeof relayEmits)[number]);
+      }
+    });
+    try {
+      await runTraceLoop(
+        relayStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "pong from session" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-relay",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      relayEmitSpy.mockRestore();
+      relayStreaming.done = true;
+      relayStreaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(relayEmits).toEqual([]);
+    const assistantRows = getRecentHistory(SESSION_NAME, 10).filter((message) => message.role === "assistant");
+    expect(assistantRows.map((message) => message.content)).toEqual(["pong from session"]);
+
+    const inboundPrompt = {
+      prompt: "hello from slack",
+      source: inboundSource,
+    };
+    const inboundStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: inboundSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(inboundPrompt)],
+    });
+    const inboundRequest = await buildRuntimeStartRequest({
+      runId: "run-inbound-emit",
+      sessionName: SESSION_NAME,
+      prompt: inboundPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution,
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(inboundPrompt, session),
+      streamingSession: inboundStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await inboundRequest.runtimeRequest.prompt.next()).done).toBe(false);
+    expect(inboundStreaming.currentSource?.canonicalChatId).toBe(inboundChat.id);
+    expect(inboundStreaming.currentReplyTarget?.canonicalChatId).toBe(inboundChat.id);
+
+    const inboundEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
+    const inboundEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        inboundEmits.push(data as (typeof inboundEmits)[number]);
+      }
+    });
+    try {
+      await runTraceLoop(
+        inboundStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "inbound slack reply" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-inbound",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      inboundEmitSpy.mockRestore();
+      inboundStreaming.done = true;
+      inboundStreaming.onTurnComplete?.();
+      await inboundRequest.runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(inboundEmits).toHaveLength(1);
+    expect(inboundEmits[0]).toMatchObject({
+      response: "inbound slack reply",
+      target: { canonicalChatId: inboundChat.id },
+    });
+    expect(
+      getRecentHistory(SESSION_NAME, 10)
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.content),
+    ).toEqual(["pong from session", "inbound slack reply"]);
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {

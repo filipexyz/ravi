@@ -3,6 +3,7 @@ import {
   buildChannelTurnOrigin,
   buildRuntimeCallerPrincipal,
   buildSessionRelayTurnOrigin,
+  isSessionRelayTurn,
   resolveRuntimeTurnOrigin,
 } from "./turn-origin.js";
 
@@ -37,6 +38,8 @@ describe("runtime turn origin", () => {
         id: "operator:local",
       },
     });
+    expect(isSessionRelayTurn({ _turnOrigin: buildSessionRelayTurnOrigin("send") })).toBe(true);
+    expect(isSessionRelayTurn({})).toBe(false);
   });
 
   it("derives the same authenticated caller principal for any internal producer", () => {

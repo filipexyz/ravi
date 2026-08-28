@@ -19,6 +19,7 @@ applies_to:
   - src/router/resolver.ts
   - src/omni/consumer.ts
   - src/runtime/host-event-loop.ts
+  - src/runtime/runtime-request-builder.ts
   - src/cli/commands/sessions.ts
   - src/sessions/recap.ts
   - src/prompt-builder.ts
@@ -81,6 +82,7 @@ Sessions do NOT own:
 - A physical provider turn MUST keep one immutable reply surface. Different chats and threads MUST be serialized into separate turns.
 - An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
 - An unattached inbound source or a source-less turn without a default output MUST NOT emit externally.
+- Operator / HTTP / app `sessions.send` (session-relay, no `--channel`/`--to`, no real inbound chat) is a session destination for emit. Leftover `lastChannel`/`lastTo` MUST NOT become `prompt.source` / `currentSource`. The default output attachment MUST NOT be the emit target. Chat emit stays fail-closed. Persist + `sessions.read` remain the sink.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Operator CLI-only `sessions send` (no `--channel`/`--to`) sends the raw user text. `[System] Inform:` is reserved for agent-to-agent / in-context sends. `--raw` is the escape hatch.
 - CLI-only `sessions send -w` waits for this turn's assistant transcript after `turn.complete`. Chat-attached `-w` still means delivered. Attach remains fail-closed for chat emit.

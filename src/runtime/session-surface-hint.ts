@@ -1,8 +1,11 @@
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
 
 export const CLI_SURFACE_HINT =
   "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.";
+
+export const SESSION_RELAY_SURFACE_HINT =
+  "[session surface] This turn has no inbound chat. A normal reply stays on this session.";
 
 export const SOURCELESS_SURFACE_HINT =
   "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.";
@@ -12,7 +15,7 @@ const CURRENT_SESSION_SURFACE_LINE = /^\[session surface\][^\n]*/i;
 
 export function buildSessionSurfaceHint(
   source: RuntimeLaunchPrompt["source"],
-  options: { cliDestination?: boolean } = {},
+  options: { cliDestination?: boolean; sessionRelay?: boolean } = {},
 ): string {
   if (hasInboundChatSource(source)) {
     const channel = formatChannelName(source.channel);
@@ -24,6 +27,10 @@ export function buildSessionSurfaceHint(
     return CLI_SURFACE_HINT;
   }
 
+  if (options.sessionRelay) {
+    return SESSION_RELAY_SURFACE_HINT;
+  }
+
   return SOURCELESS_SURFACE_HINT;
 }
 
@@ -33,7 +40,7 @@ export function buildSessionSurfaceHint(
  */
 export function persistSessionSurfaceHintOnUserRow(prompt: RuntimeLaunchPrompt): boolean {
   if (prompt._cliDestination) return false;
-  if (isSessionRelayOperatorTurn(prompt)) return false;
+  if (isSessionRelayTurn(prompt)) return false;
   return hasInboundChatSource(prompt.source);
 }
 
@@ -50,7 +57,10 @@ export function withSessionSurfaceHint(prompt: RuntimeLaunchPrompt): RuntimeLaun
 
   const persistOnUserRow = persistSessionSurfaceHintOnUserRow(prompt);
   const hintSource = persistOnUserRow ? prompt.source : undefined;
-  const hint = buildSessionSurfaceHint(hintSource, { cliDestination: prompt._cliDestination });
+  const hint = buildSessionSurfaceHint(hintSource, {
+    cliDestination: prompt._cliDestination,
+    sessionRelay: isSessionRelayTurn(prompt),
+  });
   const body = persistOnUserRow ? stripSessionSurfacePrefixes(prompt.prompt) : prompt.prompt;
   const runtimePrompt = `${hint}\n${body}`;
 
@@ -68,10 +78,6 @@ export function combineSessionSurfacePromptContents(contents: string[]): string 
   const hint = contents.map((content) => content.match(CURRENT_SESSION_SURFACE_LINE)?.[0]).find(Boolean);
   const body = contents.map(stripSessionSurfacePrefixes).join("\n\n");
   return hint ? `${hint}\n${body}` : body;
-}
-
-function isSessionRelayOperatorTurn(prompt: RuntimeLaunchPrompt): boolean {
-  return resolveRuntimeTurnOrigin(prompt._turnOrigin)?.producer === "session-relay";
 }
 
 function hasInboundChatSource(

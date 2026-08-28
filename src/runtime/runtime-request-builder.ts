@@ -12,6 +12,7 @@ import {
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
@@ -243,6 +244,17 @@ export function resolveRuntimePromptSource(
   prompt: RuntimeLaunchPrompt,
   session: SessionEntry,
 ): RuntimeMessageTarget | undefined {
+  if (isSessionRelayTurn(prompt)) {
+    // Session-relay operator/HTTP/app send is a session destination.
+    // Leftover lastChannel/lastTo and the origin chat binding are not inbound.
+    const explicit = prompt.source;
+    if (!explicit || isLeftoverLastChannelSource(explicit, session)) {
+      return undefined;
+    }
+    const resolved = enrichSourceFromSessionChatBinding(explicit, session);
+    return resolved.channel === "tui" ? undefined : resolved;
+  }
+
   let resolvedSource = prompt.source;
   if (resolvedSource) {
     resolvedSource = enrichSourceFromSessionChatBinding(resolvedSource, session);
@@ -259,6 +271,17 @@ export function resolveRuntimePromptSource(
   }
 
   return resolvedSource?.channel === "tui" ? undefined : resolvedSource;
+}
+
+function isLeftoverLastChannelSource(
+  source: Pick<RuntimeMessageTarget, "channel" | "chatId">,
+  session: SessionEntry,
+): boolean {
+  const channel = source.channel?.trim();
+  const chatId = source.chatId?.trim();
+  const lastChannel = session.lastChannel?.trim();
+  const lastTo = session.lastTo?.trim();
+  return Boolean(channel && chatId && lastChannel && lastTo && channel === lastChannel && chatId === lastTo);
 }
 
 function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
@@ -796,11 +819,12 @@ async function buildRuntimeStartRequestInternal(
     beforeTurnStart: (input) => {
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       const turnPrompt = queuedTurnPrompt ?? prompt;
-      const turnSource = queuedTurnPrompt ? queuedTurnPrompt.source : resolvedSource;
+      const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
       streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
       const replyResolution = resolveSessionOutputTarget({
         sessionKey: dbSessionKey,
         fallback: streamingSession.currentSource,
+        allowDefaultOutput: !isSessionRelayTurn(turnPrompt),
       });
       streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;

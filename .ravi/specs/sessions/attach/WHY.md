@@ -9,7 +9,10 @@ This keeps the normal experience automatic and prevents a later message from
 redirecting work that is already running.
 
 CLI-only `sessions send` is a first-class destination: the waiting CLI reads
-this turn's transcript. Attach stays fail-closed for chat delivery.
+this turn's transcript. HTTP / app session-relay send is the same kind of
+session destination for emit: leftover `lastChannel` and the default output
+attachment must not become WhatsApp/Slack. Attach stays fail-closed for
+chat delivery. Persist + `sessions.read` remain the sink.
 
 The `[session surface]` line tells the model where a normal reply returns.
 That instruction is model-visible on every new logical turn, including

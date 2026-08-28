@@ -15,6 +15,16 @@ notion of a session.
 `session_name` must never rewrite `session_key`, otherwise routing and provider
 continuity break for an already-running session.
 
+## Why Session-Relay Send Is Not Chat Emit
+
+Operator / HTTP / app `sessions.send` injects a prompt into a session. It is
+not inbound WhatsApp/Slack. Copying leftover `lastChannel`/`lastTo` into
+`prompt.source` made emit treat that send as a chat reply — including onto
+`main` when the leftover chat was attached. The default output attachment
+has the same leak once the leftover source is stripped. Persist already
+stores the assistant row; emit must fail closed instead of inventing a
+chat sink.
+
 ## Why Attach Is Separate From Bindings
 
 The original `session_chat_bindings` row records the primary/origin chat.

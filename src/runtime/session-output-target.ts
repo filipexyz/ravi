@@ -21,6 +21,13 @@ const log = logger.child("session-output-target");
 export interface ResolveSessionOutputTargetInput {
   sessionKey: string;
   fallback: MessageTarget | undefined;
+  /**
+   * Source-less turns may use the session default output attachment.
+   * Session-relay operator/HTTP/app send is a session destination: persist
+   * and `sessions.read` are the sink. Pass false so leftover lastChannel
+   * stripping cannot fall through to WhatsApp/Slack.
+   */
+  allowDefaultOutput?: boolean;
 }
 
 export type ResolveSource = "source-chat" | "attached-output" | "unresolved";
@@ -51,6 +58,10 @@ export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInpu
         chatId: sourceSubscription.chatId,
       });
     }
+    return { target: null, source: "unresolved" };
+  }
+
+  if (input.allowDefaultOutput === false) {
     return { target: null, source: "unresolved" };
   }
 

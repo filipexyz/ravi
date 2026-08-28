@@ -70,6 +70,10 @@ export function buildChannelTurnOrigin(
  * shape, not producer identity: authenticity comes from restricting the
  * internal session-prompt bus to trusted Ravi producers.
  */
+export function isSessionRelayTurn(prompt: { _turnOrigin?: unknown } | null | undefined): boolean {
+  return resolveRuntimeTurnOrigin(prompt?._turnOrigin)?.producer === "session-relay";
+}
+
 export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetadata | null {
   if (!isRecord(value)) return null;
   if (value.protocol !== RUNTIME_TURN_ORIGIN_PROTOCOL || value.schemaVersion !== RUNTIME_TURN_ORIGIN_SCHEMA_VERSION) {
