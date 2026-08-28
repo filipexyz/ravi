@@ -565,7 +565,11 @@ async function* normalizeCodexEvents(
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
   let forkFromSessionId = input.forkSession ? previousSessionId : undefined;
   const outerAbortSignal = input.abortController.signal;
-  const systemPromptAppend = await buildCodexSystemPromptAppend(input.cwd, input.systemPromptAppend, syncedSkillNames);
+  const systemPromptAppend = await buildCodexSystemPromptAppend(
+    input.cwd,
+    input.systemPromptAppend,
+    input.omitAdvertisedSkillCatalog ? [] : syncedSkillNames,
+  );
   const effort = toCodexRuntimeEffort(input.effort);
 
   try {

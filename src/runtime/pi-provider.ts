@@ -246,7 +246,9 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       });
       const request: RuntimeStartRequest = {
         ...input,
-        systemPromptAppend: buildPiSkillCatalogSystemPrompt(input.systemPromptAppend, skillVisibility),
+        systemPromptAppend: input.omitAdvertisedSkillCatalog
+          ? input.systemPromptAppend
+          : buildPiSkillCatalogSystemPrompt(input.systemPromptAppend, skillVisibility),
       };
       const state: PiSessionRuntimeState = {
         activeTurn: false,

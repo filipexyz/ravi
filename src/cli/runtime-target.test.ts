@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { matchesLiveDaemonRuntime } from "./runtime-target.js";
+import { getSessionsSendRuntimeMismatchWarning, matchesLiveDaemonRuntime } from "./runtime-target.js";
 
 describe("matchesLiveDaemonRuntime", () => {
   it("accepts an in-process gateway invocation hosted by the live daemon", () => {
@@ -42,6 +42,44 @@ describe("matchesLiveDaemonRuntime", () => {
         daemonProcessPid: null,
         cliBundlePath: null,
         daemonBundlePath: "/repo/dist/bundle/index.js",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("getSessionsSendRuntimeMismatchWarning", () => {
+  it("warns without blocking PATH CLI publish to the live daemon", () => {
+    const warning = getSessionsSendRuntimeMismatchWarning({
+      cliExecPath: "/usr/local/bin/ravi",
+      cliBundlePath: "/global/dist/bundle/index.js",
+      dbPath: "/tmp/ravi.db",
+      daemon: {
+        online: true,
+        execPath: "/repo/dist/bundle/index.js",
+        cwd: "/repo",
+        matchesCli: false,
+      },
+      instance: null,
+    });
+
+    expect(warning).toContain("CLI/runtime mismatch detected.");
+    expect(warning).toContain("sessions send still publishes to the live daemon via NATS.");
+    expect(warning).toContain("this-turn transcript");
+  });
+
+  it("stays quiet when the CLI bundle matches the live daemon", () => {
+    expect(
+      getSessionsSendRuntimeMismatchWarning({
+        cliExecPath: "/repo/bin/ravi",
+        cliBundlePath: "/repo/dist/bundle/index.js",
+        dbPath: "/tmp/ravi.db",
+        daemon: {
+          online: true,
+          execPath: "/repo/dist/bundle/index.js",
+          cwd: "/repo",
+          matchesCli: true,
+        },
+        instance: null,
       }),
     ).toBeNull();
   });

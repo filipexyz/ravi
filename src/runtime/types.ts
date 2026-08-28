@@ -447,6 +447,11 @@ export interface RuntimeStartRequest {
    * "load every discovered skill" behavior (Invariant F — grandfather).
    */
   allowedSkills?: string[];
+  /**
+   * CLI-only bootstrap: skip the advertised skill-name catalog. The Ravi system
+   * prompt remains large; this does not claim a 23k-token reduction.
+   */
+  omitAdvertisedSkillCatalog?: boolean;
 }
 
 export type RuntimeEvent =

@@ -1,13 +1,23 @@
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 
+export const CLI_SURFACE_HINT =
+  "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.";
+
 const SESSION_SURFACE_PREFIX = /^\[session surfaces?\][^\n]*(?:\n|$)/i;
 const CURRENT_SESSION_SURFACE_LINE = /^\[session surface\][^\n]*/i;
 
-export function buildSessionSurfaceHint(source: RuntimeLaunchPrompt["source"]): string {
+export function buildSessionSurfaceHint(
+  source: RuntimeLaunchPrompt["source"],
+  options: { cliDestination?: boolean } = {},
+): string {
   if (source) {
     const channel = formatChannelName(source.channel);
     const place = source.threadId ? `${channel} thread` : `${channel} chat`;
     return `[session surface] This turn came from a ${place}. A normal reply returns there.`;
+  }
+
+  if (options.cliDestination) {
+    return CLI_SURFACE_HINT;
   }
 
   return "[session surface] This turn has no inbound chat. A normal reply uses the session default, if available.";
@@ -20,7 +30,7 @@ export function withSessionSurfaceHint(prompt: RuntimeLaunchPrompt): RuntimeLaun
 
   return {
     ...prompt,
-    prompt: `${buildSessionSurfaceHint(prompt.source)}\n${content}`,
+    prompt: `${buildSessionSurfaceHint(prompt.source, { cliDestination: prompt._cliDestination })}\n${content}`,
     _sessionSurfaceHint: true,
   };
 }

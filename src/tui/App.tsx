@@ -20,8 +20,9 @@ import { resolveRuntimeDisplayLabel } from "./hooks/runtime-display.js";
 import { applyAgentRuntimeSelection } from "./runtime-config.js";
 import { publish } from "../nats.js";
 import { resetSession } from "../router/sessions.js";
+import { resolveTuiSessionArg } from "./session-arg.js";
 
-const sessionName = process.argv[2] || "main";
+const sessionName = resolveTuiSessionArg();
 type ActiveView = "chat" | "cockpit";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

@@ -1717,6 +1717,41 @@ process.on("SIGTERM", () => {
     expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
   });
 
+  it("omits the advertised skill-name catalog on CLI-only Codex starts", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_cli_catalog" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-system-agents-manager"],
+    });
+
+    provider.prepareSession?.({
+      agentId: "main",
+      cwd: "/tmp/ravi-codex",
+      plugins: [{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }],
+    });
+
+    const session = provider.startSession(
+      makeStartRequest(["hello"], { omitAdvertisedSkillCatalog: true, effort: "high" }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.systemPromptAppend).not.toContain("Ravi synchronized these Codex skills for this session:");
+    expect(calls[0]?.systemPromptAppend).not.toContain("- ravi-system-events");
+    expect(calls[0]?.systemPromptAppend).not.toContain("- ravi-system-agents-manager");
+    expect(calls[0]?.effort).toBe("high");
+  });
+
   it("marks Codex skills loaded from app-server instruction sources", async () => {
     const codexHome = mkdtempSync(join(tmpdir(), "ravi-codex-skills-"));
     const originalCodexHome = process.env.CODEX_HOME;

@@ -55,7 +55,14 @@ surface when the turn starts.
 2. A turn with no inbound source replies to the default output attachment.
 3. An inbound source that is not attached MUST fail closed. It MUST NOT fall
    back to the default output.
-4. A source-less turn with no default output MUST fail closed.
+4. A source-less turn with no default output MUST fail closed for *chat*
+   delivery. It MUST NOT invent a chat `.response` sink.
+
+CLI-only `sessions send` (no `--channel`/`--to`, no inbound chat, named
+session) is **not** a source-less attach turn. The waiting CLI is the
+destination. After `turn.complete`, `sessions send -w` MUST return this
+turn's assistant transcript row (persist may lag). Missing chat delivery
+is not empty success when that transcript exists.
 
 The default output is only a fallback for proactive and other source-less
 turns. It never overrides an inbound source.
@@ -86,8 +93,9 @@ prompt:
 [session surface] This turn came from a Slack chat. A normal reply returns there.
 ```
 
-For a thread, it says `Slack thread`. For a source-less turn, it says that the
-session default will be used when one is available.
+For a thread, it says `Slack thread`. For a CLI-only operator turn, it says
+that a normal reply returns to the waiting CLI. For other source-less turns,
+it says that the session default will be used when one is available.
 
 The instruction MUST NOT include session names, chat ids, subscription lists,
 roles, database fields, or routing commands. It is added centrally so every
@@ -100,7 +108,12 @@ replay.
 ravi sessions attach <session> --chat <chat-id> [--reason "..."]
 ravi sessions detach <session> --chat <chat-id>
 ravi sessions subscriptions <session>
+ravi sessions send <session> "<prompt>" -w --json
 ```
+
+Operator CLI-only `sessions send` (no channel) sends the raw user text.
+`[System] Inform:` remains for agent-to-agent / in-context sends. `--raw`
+is the escape hatch. Chat-attached `-w` still means delivered.
 
 - `attach` adds/reactivates the subscription and selects it as the default
   output.

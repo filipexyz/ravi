@@ -104,6 +104,15 @@ import {
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import { RUNTIME_EFFORT_LEVELS, formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
+import { getSessionsSendRuntimeMismatchWarning, inspectCliRuntimeTarget } from "../runtime-target.js";
+import {
+  buildSessionSendPrompt,
+  isCliWaitDestination,
+  omitSkillVisibilityFromSessionJson,
+  resolveCliSessionBootstrapEffort,
+  snapshotTranscriptCursor,
+  waitForThisTurnAssistantText,
+} from "../session-cli-surface.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { publicRuntimeFailureDetail } from "../../runtime/public-failure.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -4163,7 +4172,7 @@ export class SessionCommands {
     interactive?: boolean,
     @Option({
       flags: "-w, --wait",
-      description: "Wait for response (chat mode)",
+      description: "Wait for this turn's reply (CLI transcript or delivered chat)",
     })
     wait?: boolean,
     @Option({
@@ -4220,10 +4229,20 @@ export class SessionCommands {
     immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--raw",
+      description: "Send the prompt without [System] Inform wrapping",
+    })
+    raw?: boolean,
+    @Option({
+      flags: "--effort <level>",
+      description: `Runtime effort: ${formatRuntimeEffortLevels()}`,
+    })
+    effort?: string,
   ) {
     const structuredResult = shouldReturnStructuredResult(asJson);
     let createdSession = false;
-    const session = this.resolveTarget(nameOrKey, agentId, {
+    let session = this.resolveTarget(nameOrKey, agentId, {
       silent: structuredResult,
       onCreated: () => {
         createdSession = true;
@@ -4269,10 +4288,40 @@ export class SessionCommands {
       return this.interactiveMode(sessionName, session, channel, to);
     }
 
-    const origin = getContext()?.sessionKey ?? "unknown";
+    const callerSessionKey = getContext()?.sessionKey;
+    const origin = callerSessionKey ?? "unknown";
     const { source, context } = this.resolveSource(session, channel, to);
+    const cliDestination =
+      !callerSessionKey &&
+      isCliWaitDestination({
+        channelOverride: channel,
+        toOverride: to,
+        source,
+        hasOutputAttachment: listSessionSubscriptions(session.sessionKey).some(
+          (subscription) => subscription.outputAttachedAt !== undefined,
+        ),
+      });
+    const explicitEffort = effort === undefined ? undefined : parseRuntimeEffort(effort);
+    const bootstrapEffort = resolveCliSessionBootstrapEffort({
+      createdSession,
+      cliDestination,
+      explicitEffort,
+    });
+    if (bootstrapEffort) {
+      updateSessionEffortOverride(session.sessionKey, bootstrapEffort);
+      session =
+        resolveSession(session.sessionKey) ??
+        ({
+          ...session,
+          effortOverride: bootstrapEffort,
+        } as SessionEntry);
+    }
     const deliveryJson = buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context);
-    let fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
+    let fullPrompt = buildSessionSendPrompt({
+      prompt,
+      raw,
+      callerSessionKey,
+    });
     let preparedThread: PreparedThreadHandoff | undefined;
     let promptPayload: Record<string, unknown> | undefined;
 
@@ -4307,6 +4356,10 @@ export class SessionCommands {
     }
 
     if (wait) {
+      const runtimeMismatch = getSessionsSendRuntimeMismatchWarning(inspectCliRuntimeTarget());
+      if (runtimeMismatch && !structuredResult) {
+        console.warn(runtimeMismatch);
+      }
       if (structuredResult) {
         let responseText = "";
         let chars = 0;
@@ -4322,6 +4375,7 @@ export class SessionCommands {
             {
               silent: true,
               promptPayload,
+              cliDestination,
               onResponse: (chunk) => {
                 responseText += chunk;
               },
@@ -4349,7 +4403,9 @@ export class SessionCommands {
           response: {
             length: chars,
             text: responseText,
+            source: cliDestination ? "transcript" : "delivered",
           },
+          ...(runtimeMismatch ? { runtimeMismatch } : {}),
         };
         return returnStructuredResult(payload, asJson);
       }
@@ -4369,6 +4425,7 @@ export class SessionCommands {
           delivery.source,
           {
             promptPayload,
+            cliDestination,
           },
         );
         if (preparedThread) {
@@ -4395,6 +4452,7 @@ export class SessionCommands {
           deliveryBarrier,
           delivery.source,
           promptPayload,
+          cliDestination,
         );
         if (preparedThread) {
           preparedThread = {
@@ -4765,6 +4823,11 @@ export class SessionCommands {
       description: "Return metadata for a single message (transcription, mediaType) using session history as fallback",
     })
     messageId?: string,
+    @Option({
+      flags: "--visibility",
+      description: "Include the skill catalog from runtimeSessionParams.skillVisibility",
+    })
+    includeVisibility?: boolean,
   ) {
     const structuredResult = shouldReturnStructuredResult(asJson);
     const target = nameOrKey?.trim() || resolveCurrentSessionRef();
@@ -4790,8 +4853,9 @@ export class SessionCommands {
     const sessionLabel = session.name ?? target;
     const loaded = loadSessionReadTranscript(session, maxMessages);
     if (structuredResult) {
+      const sessionJson = buildSessionJson(session);
       const payload = {
-        session: buildSessionJson(session),
+        session: includeVisibility ? sessionJson : omitSkillVisibilityFromSessionJson(sessionJson),
         transcript: loaded.transcript,
         messages: loaded.messages,
         totalMessages: loaded.totalMessages,
@@ -5441,6 +5505,7 @@ export class SessionCommands {
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
     deliveryBarrierSource: DeliveryBarrierSource = "default",
     promptPayload?: Record<string, unknown>,
+    cliDestination = false,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
@@ -5455,6 +5520,7 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(promptPayload ?? {}),
+      ...(cliDestination ? { _cliDestination: true } : {}),
       _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
     } as Record<string, unknown>);
   }
@@ -5474,11 +5540,13 @@ export class SessionCommands {
       silent?: boolean;
       onResponse?: (chunk: string) => void;
       promptPayload?: Record<string, unknown>;
+      cliDestination?: boolean;
     } = {},
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
     let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
+    const transcriptCursor = snapshotTranscriptCursor(getRecentHistory(sessionName, 1));
 
     const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
     const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
@@ -5560,6 +5628,9 @@ export class SessionCommands {
             break;
           }
           if (data.response) {
+            if (options.cliDestination) {
+              continue;
+            }
             if (!options.silent) {
               process.stdout.write(data.response);
             }
@@ -5582,6 +5653,7 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(options.promptPayload ?? {}),
+      ...(options.cliDestination ? { _cliDestination: true } : {}),
       _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
     } as Record<string, unknown>);
 
@@ -5595,6 +5667,21 @@ export class SessionCommands {
     }
     if (completionState.kind === "timeout") {
       throw new Error(formatWaitTimeoutError(sessionName));
+    }
+
+    if (options.cliDestination) {
+      const transcriptText = await waitForThisTurnAssistantText({
+        afterId: transcriptCursor,
+        readMessages: () => getRecentHistory(sessionName, 50),
+      });
+      if (transcriptText !== null) {
+        if (!options.silent && transcriptText) {
+          process.stdout.write(transcriptText);
+        }
+        options.onResponse?.(transcriptText);
+        return transcriptText.length;
+      }
+      return 0;
     }
 
     return responseLength;

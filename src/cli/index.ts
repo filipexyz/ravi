@@ -19,7 +19,9 @@ import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
 import {
+  CONTRACT_EXIT_USAGE,
   ContractError,
+  contractFail,
   contractFailureOutcome,
   installRootUsageContract,
   installUsageContract,
@@ -34,6 +36,7 @@ import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./comma
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
+import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
@@ -266,18 +269,28 @@ program
 program
   .command("tui")
   .description("Open the terminal UI for a session")
-  .argument("[session]", "Session name or key", "main")
-  .action(async (session: string) => {
+  .argument("[session]", "Session name or key")
+  .action(async (session?: string) => {
+    const sessionName = session?.trim();
+    if (!sessionName) {
+      contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Pass a session name: ravi tui <session>",
+          usage: "ravi tui <session>",
+        },
+      });
+    }
     await runWithCliAudit(
       {
         group: "_root",
         name: "tui",
         tool: "root_tui",
-        input: { session },
+        input: { session: sessionName },
         closeLazyConnection: true,
       },
       async () => {
-        await spawnDirectTui(session, projectRoot);
+        await spawnDirectTui(requireTuiSessionName(sessionName), projectRoot);
       },
     );
   });

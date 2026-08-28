@@ -857,6 +857,7 @@ async function buildRuntimeStartRequestInternal(
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
       ...(modelBroker ? { modelBroker } : {}),
     },

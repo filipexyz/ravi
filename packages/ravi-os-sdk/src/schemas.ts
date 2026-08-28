@@ -57828,6 +57828,10 @@ export const SessionsReadInputSchema = {
       "description": "Optional session name/key override (defaults to current session)",
       "type": "string"
     },
+    "visibility": {
+      "description": "Include the skill catalog from runtimeSessionParams.skillVisibility",
+      "type": "boolean"
+    },
     "workspace": {
       "description": "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
       "type": "boolean"
@@ -58739,6 +58743,10 @@ export const SessionsSendInputSchema = {
       "description": "Override delivery channel",
       "type": "string"
     },
+    "effort": {
+      "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
+      "type": "string"
+    },
     "immediate": {
       "description": "Deliver immediately instead of queueing as a follow-up",
       "type": "boolean"
@@ -58754,6 +58762,10 @@ export const SessionsSendInputSchema = {
     "prompt": {
       "description": "Prompt to send (omit for interactive mode)",
       "type": "string"
+    },
+    "raw": {
+      "description": "Send the prompt without [System] Inform wrapping",
+      "type": "boolean"
     },
     "steer": {
       "description": "Steer the active turn after safe tool barriers",
@@ -58784,7 +58796,7 @@ export const SessionsSendInputSchema = {
       "type": "string"
     },
     "wait": {
-      "description": "Wait for response (chat mode)",
+      "description": "Wait for this turn's reply (CLI transcript or delivered chat)",
       "type": "boolean"
     }
   },
