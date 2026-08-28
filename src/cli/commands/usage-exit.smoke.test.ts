@@ -42,6 +42,13 @@ function runCli(
 }
 
 describe("usage exit taxonomy smoke", () => {
+  it("exits 2 when bare ravi tui is missing a session name", () => {
+    const result = runCli(["tui"], { RAVI_AGENT_ID: undefined });
+    expect(result.status).toBe(2);
+    expect(result.stderr + result.stdout).toMatch(/tui|session|required|missing|Usage/i);
+    expect(result.stderr + result.stdout).not.toMatch(/\bmain\b.*default/i);
+  });
+
   it("exits 2 with one USAGE_ERROR envelope for an unknown root command", () => {
     const result = runCli(["task", "list", "--json"], { RAVI_AGENT_ID: undefined });
     expect(result.status).toBe(2);

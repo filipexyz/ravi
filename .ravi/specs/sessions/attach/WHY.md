@@ -7,3 +7,6 @@ thread that produced that turn.
 The default attachment exists only for proactive turns with no inbound chat.
 This keeps the normal experience automatic and prevents a later message from
 redirecting work that is already running.
+
+CLI-only `sessions send` is a first-class destination: the waiting CLI reads
+this turn's transcript. Attach stays fail-closed for chat delivery.

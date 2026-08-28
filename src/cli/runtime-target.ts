@@ -152,3 +152,17 @@ export function getCliRuntimeMismatchMessage(summary: CliRuntimeTargetSummary): 
     "Use the repo CLI/runtime instead of the outdated PATH/global bundle.",
   ].join("\n");
 }
+
+export function getSessionsSendRuntimeMismatchWarning(summary: CliRuntimeTargetSummary): string | null {
+  if (!summary.daemon.online || summary.daemon.matchesCli !== false) {
+    return null;
+  }
+
+  return [
+    "CLI/runtime mismatch detected.",
+    `CLI bundle: ${summary.cliBundlePath ?? "-"}`,
+    `Daemon bundle: ${summary.daemon.execPath ?? "-"}`,
+    "sessions send still publishes to the live daemon via NATS.",
+    "sessions send -w uses this CLI's wait logic (this-turn transcript for CLI-only).",
+  ].join("\n");
+}

@@ -37,6 +37,8 @@ let routerConfig: {
   agents: {},
 };
 let chatHistory: Array<Record<string, unknown>> = [];
+let chatHistoryAfterSnapshot: Array<Record<string, unknown>> | null = null;
+let chatHistoryReads = 0;
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
 const chatRecords = new Map<string, Record<string, unknown>>();
@@ -320,7 +322,11 @@ mock.module("../../stickers/catalog.js", () => ({
 }));
 
 mock.module("../../db.js", () => ({
-  getRecentHistory: (_sessionId: string, limit: number) => chatHistory.slice(-limit),
+  getRecentHistory: (_sessionId: string, limit: number) => {
+    chatHistoryReads += 1;
+    const rows = chatHistoryReads > 1 && chatHistoryAfterSnapshot ? chatHistoryAfterSnapshot : chatHistory;
+    return rows.slice(-limit);
+  },
   countHistory: () => chatHistory.length,
   getRecentHistoryByChatIds: (chatIds: string[], limit: number, agentId?: string | null) =>
     chatHistoryByChat
@@ -465,6 +471,8 @@ beforeEach(() => {
   canAccess = true;
   sessionGoal = null;
   chatHistory = [];
+  chatHistoryAfterSnapshot = null;
+  chatHistoryReads = 0;
   chatHistoryByChat = [];
   messageMetadataRows = [];
   chatRecords.clear();
@@ -582,6 +590,126 @@ describe("SessionCommands wait mode", () => {
     }
   });
 
+  it("returns transcript text from CLI-only send -w --json without a .response sink", async () => {
+    toolContext = { suppressCliOutput: true };
+    runtimeEvents = [{ type: "turn.complete" }];
+    resolvedSession = {
+      sessionKey: "agent:grok-cli-probe:main",
+      name: "grok-cli-probe",
+      agentId: "grok-cli-probe",
+      agentCwd: "/tmp/grok-cli-probe",
+    };
+    chatHistory = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+    ];
+    chatHistoryAfterSnapshot = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+      { id: 3, role: "user", content: "responde só: pong" },
+      { id: 4, role: "assistant", content: "pong" },
+    ];
+
+    const commands = new SessionCommands();
+    const payload = (await commands.send("grok-cli-probe", "responde só: pong", false, true)) as Record<
+      string,
+      unknown
+    >;
+
+    expect(payload).toMatchObject({
+      action: "send",
+      mode: "wait",
+      response: { text: "pong", source: "transcript" },
+    });
+    expect(publishedPrompts[0]?.payload.prompt).toBe("responde só: pong");
+    expect(publishedPrompts[0]?.payload._cliDestination).toBe(true);
+  });
+
+  it("returns this turn's transcript for CLI-only -w when no .response is emitted", async () => {
+    runtimeEvents = [{ type: "turn.complete" }];
+    chatHistory = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+    ];
+    chatHistoryAfterSnapshot = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+      { id: 3, role: "user", content: "responde só: pong" },
+      { id: 4, role: "assistant", content: "pong" },
+    ];
+
+    const commands = new SessionCommands();
+    let responseText = "";
+    const chars = await (commands as any).streamToSession(
+      "grok-cli-probe",
+      "responde só: pong",
+      {
+        sessionKey: "agent:grok-cli-probe:main",
+        name: "grok-cli-probe",
+        agentId: "grok-cli-probe",
+        agentCwd: "/tmp/grok-cli-probe",
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        silent: true,
+        cliDestination: true,
+        onResponse: (chunk: string) => {
+          responseText += chunk;
+        },
+      },
+    );
+
+    expect(chars).toBe(4);
+    expect(responseText).toBe("pong");
+    expect(publishedPrompts[0]?.payload._cliDestination).toBe(true);
+    expect(publishedPrompts[0]?.payload.prompt).toBe("responde só: pong");
+  });
+
+  it("does not leak a previous-turn assistant row when CLI-only persist lags", async () => {
+    runtimeEvents = [{ type: "turn.complete" }];
+    chatHistory = [
+      { id: 10, role: "user", content: "first" },
+      { id: 11, role: "assistant", content: "old-pong" },
+    ];
+    chatHistoryAfterSnapshot = [
+      { id: 10, role: "user", content: "first" },
+      { id: 11, role: "assistant", content: "old-pong" },
+      { id: 12, role: "user", content: "responde só: pong" },
+      { id: 13, role: "assistant", content: "@@SILENT@@ pong" },
+    ];
+
+    const commands = new SessionCommands();
+    let responseText = "";
+    await (commands as any).streamToSession(
+      "grok-cli-probe",
+      "responde só: pong",
+      {
+        sessionKey: "agent:grok-cli-probe:main",
+        name: "grok-cli-probe",
+        agentId: "grok-cli-probe",
+        agentCwd: "/tmp/grok-cli-probe",
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        silent: true,
+        cliDestination: true,
+        onResponse: (chunk: string) => {
+          responseText += chunk;
+        },
+      },
+    );
+
+    expect(responseText).toBe("pong");
+    expect(responseText).not.toBe("old-pong");
+    expect(responseText).not.toContain("@@SILENT@@");
+  });
+
   it("throws on timeout instead of treating the wait as success", async () => {
     const commands = new SessionCommands();
     const originalSetTimeout = globalThis.setTimeout;
@@ -630,6 +758,10 @@ describe("SessionCommands delivery barriers", () => {
     });
 
     expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.prompt).toBe("hello");
+    expect(publishedPrompts[0]?.payload.prompt).not.toContain("[System] Inform:");
+    expect(publishedPrompts[0]?.payload.prompt).not.toContain("[from: unknown]");
+    expect(publishedPrompts[0]?.payload._cliDestination).toBe(true);
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
     expect(publishedPrompts[0]?.payload._turnOrigin).toMatchObject({
@@ -831,6 +963,65 @@ describe("SessionCommands delivery barriers", () => {
 
     expect(publishedPrompts.at(-1)?.payload.deliveryBarrier).toBe("after_tool");
     expect(publishedPrompts.at(-1)?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("keeps Inform wrapping for in-context agent sends unless --raw", async () => {
+    toolContext = { suppressCliOutput: true, sessionKey: "agent:origin-agent:main" };
+    const commands = new SessionCommands();
+
+    await commands.send("dev", "hello");
+    expect(publishedPrompts[0]?.payload.prompt).toBe("[System] Inform: [from: agent:origin-agent:main] hello");
+
+    publishedPrompts.length = 0;
+    await commands.send(
+      "dev",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(publishedPrompts[0]?.payload.prompt).toBe("hello");
+  });
+
+  it("applies --effort on sessions send without changing the global default", async () => {
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send(
+        "dev",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "low",
+      );
+    });
+
+    expect(effortUpdates).toEqual([{ sessionKey: "agent:dev:main", effort: "low" }]);
   });
 
   it("answers as follow-up by default", async () => {
@@ -2015,6 +2206,69 @@ describe("SessionCommands read", () => {
       chatId: "63295117615153@lid",
       sourceMessageId: "wamid-1",
     });
+  });
+
+  it("omits the advertised skill catalog from default read --json", () => {
+    resolvedSession = {
+      ...resolvedSession!,
+      runtimeSessionParams: {
+        sessionId: "sess-1",
+        skillVisibility: {
+          skills: [{ id: "ravi-system-events", state: "advertised" }],
+          loadedSkills: [],
+        },
+      },
+    };
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "pong",
+        created_at: "2026-04-20 04:29:35",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.session.name ?? payload.session.label).toBeTruthy();
+    expect(payload.messages).toEqual([expect.objectContaining({ text: "pong" })]);
+    expect(JSON.stringify(payload)).not.toContain("skillVisibility");
+    expect(JSON.stringify(payload)).not.toContain("ravi-system-events");
+  });
+
+  it("includes the skill catalog on read --json --visibility", () => {
+    resolvedSession = {
+      ...resolvedSession!,
+      runtimeSessionParams: {
+        sessionId: "sess-1",
+        skillVisibility: {
+          skills: [{ id: "ravi-system-events", state: "advertised" }],
+          loadedSkills: [],
+        },
+      },
+    };
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "pong",
+        created_at: "2026-04-20 04:29:35",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true, undefined, undefined, true);
+      }),
+    );
+
+    expect(payload.session.runtimeSessionParams.skillVisibility.skills[0].id).toBe("ravi-system-events");
   });
 
   it("returns normalized history when invoked through the SDK gateway context", () => {

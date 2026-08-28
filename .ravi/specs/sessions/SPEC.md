@@ -82,6 +82,11 @@ Sessions do NOT own:
 - An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
 - An unattached inbound source or a source-less turn without a default output MUST NOT emit externally.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
+- Operator CLI-only `sessions send` (no `--channel`/`--to`) sends the raw user text. `[System] Inform:` is reserved for agent-to-agent / in-context sends. `--raw` is the escape hatch.
+- CLI-only `sessions send -w` waits for this turn's assistant transcript after `turn.complete`. Chat-attached `-w` still means delivered. Attach remains fail-closed for chat emit.
+- Default `sessions read --json` is session + messages. The advertised skill catalog stays on `sessions visibility` or `sessions read --visibility`.
+- Bare `ravi tui` MUST require a session name (usage error). It MUST NOT default to `main`.
+- CLI-only session bootstrap MUST NOT inherit hardcoded `DEFAULT_RUNTIME_EFFORT = xhigh`. `sessions send --effort` sets an explicit override. The Ravi system prompt remains large.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
 - `ravi sessions set-effort <session> <level>` MUST persist an effort override using `none|minimal|low|medium|high|xhigh|max|ultra`; `clear` MUST remove only the session override.
 - Session effort is separate from thinking. `ravi sessions set-thinking` MUST NOT accept effort values such as `max` or `ultra`, and `ravi sessions set-effort` MUST NOT mutate `thinking_level`.

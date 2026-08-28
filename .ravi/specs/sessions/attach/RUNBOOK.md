@@ -11,6 +11,8 @@
 5. For a source-less turn, inspect the default attachment.
 6. If an inbound source is unattached, fail closed instead of using the
    default.
+7. For CLI-only `sessions send -w`, read this turn's assistant transcript
+   after `turn.complete`. Do not treat a dropped chat emit as empty success.
 7. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
 
 ## Validation

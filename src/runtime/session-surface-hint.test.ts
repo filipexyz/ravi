@@ -39,6 +39,18 @@ describe("session surface hint", () => {
     );
   });
 
+  it("describes CLI-only turns as returning to the waiting CLI", () => {
+    expect(buildSessionSurfaceHint(undefined, { cliDestination: true })).toBe(
+      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.",
+    );
+    expect(
+      withSessionSurfaceHint({
+        prompt: "responde só: pong",
+        _cliDestination: true,
+      }).prompt,
+    ).toBe("[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong");
+  });
+
   it("replaces legacy headers once and stays idempotent", () => {
     const decorated = withSessionSurfaceHint({
       prompt:

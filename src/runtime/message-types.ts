@@ -217,6 +217,11 @@ export interface PromptMessage {
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
   /** Internal marker preventing duplicate session-surface instructions after durable replay. */
   _sessionSurfaceHint?: boolean;
+  /**
+   * Operator CLI-only turn. Chat attach stays fail-closed; the waiting CLI is
+   * the reply destination via this turn's assistant transcript.
+   */
+  _cliDestination?: boolean;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */

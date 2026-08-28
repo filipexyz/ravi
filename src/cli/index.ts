@@ -34,6 +34,7 @@ import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./comma
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
+import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
@@ -266,7 +267,7 @@ program
 program
   .command("tui")
   .description("Open the terminal UI for a session")
-  .argument("[session]", "Session name or key", "main")
+  .argument("<session>", "Session name or key")
   .action(async (session: string) => {
     await runWithCliAudit(
       {
@@ -277,7 +278,7 @@ program
         closeLazyConnection: true,
       },
       async () => {
-        await spawnDirectTui(session, projectRoot);
+        await spawnDirectTui(requireTuiSessionName(session), projectRoot);
       },
     );
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  CLI_SESSION_BOOTSTRAP_EFFORT,
   DEFAULT_RUNTIME_EFFORT,
   RUNTIME_EFFORT_LEVELS,
   formatRuntimeEffortLevels,
@@ -15,6 +16,8 @@ describe("runtime effort", () => {
     expect(RUNTIME_EFFORT_LEVELS).toEqual(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
     expect(formatRuntimeEffortLevels()).toBe("none|minimal|low|medium|high|xhigh|max|ultra");
     expect(DEFAULT_RUNTIME_EFFORT).toBe("xhigh");
+    expect(CLI_SESSION_BOOTSTRAP_EFFORT).toBe("high");
+    expect(CLI_SESSION_BOOTSTRAP_EFFORT).not.toBe(DEFAULT_RUNTIME_EFFORT);
   });
 
   it("normalizes max and ultra", () => {
