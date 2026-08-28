@@ -72,6 +72,10 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Provider-native fork MUST NOT be exposed as canonical Ravi fork until it can be mapped to Ravi fork points, persistence, traces, and parent/child session state.
 - `supportsSessionFork` MUST mean "this provider can materialize a Ravi fork plan for at least one declared fork point type", not merely "the provider has a native command named fork".
 - A provider that supports resume MUST validate cwd/provider compatibility before using stored provider state.
+- After daemon restart, resume MUST select the last-used `session.runtimeProvider` or the restart-snapshot provider when no launch, observation, or session `set-provider` override is present. Agent and global defaults MUST NOT steal that resume onto a different provider.
+- Ravi MUST clear stored provider session ids only for an explicit provider change (launch override, observation override, or session `set-provider`). A mismatch caused only by agent/global default MUST preserve compatible stored state.
+- Ravi MUST NOT persist last-used `runtimeProvider=<new>` until a successful authenticated turn.
+- Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.
 - Reset MUST clear provider state only. It MUST NOT delete the durable prompt atom ledger or chat history needed for replay.

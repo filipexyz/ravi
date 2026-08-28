@@ -99,16 +99,73 @@ describe("runtime session resolver", () => {
     });
   });
 
+  it("resumes last-used provider when agent or global default differs", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    updateProviderSession(SESSION_KEY, "codex", "provider-existing", {
+      runtimeSessionDisplayId: "provider-existing",
+    });
+    dbSetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING, "claude");
+    configStore.refresh();
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "continue after daemon restart" },
+      defaultRuntimeProviderId: "claude",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("codex");
+    expect(resolved?.storedProviderSessionId).toBe("provider-existing");
+    expect(resolved?.canResumeStoredSession).toBe(true);
+    expect(resolved?.resumeDecision).toMatchObject({
+      hadStoredProviderSessionId: true,
+      requestedRuntimeProvider: "codex",
+      storedRuntimeProvider: "codex",
+      providerMatches: true,
+      canResume: true,
+      reason: "resuming",
+      staleCleared: false,
+    });
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("provider-existing");
+  });
+
+  it("uses the restart-snapshot provider when last-used is missing", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    dbSetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING, "claude");
+    configStore.refresh();
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+        _daemonRestartResume: {
+          restartEpoch: "epoch-1",
+          sessionKey: SESSION_KEY,
+          runtimeProvider: "codex",
+        },
+      },
+      defaultRuntimeProviderId: "claude",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("codex");
+    expect(resolved?.resumeDecision).toMatchObject({
+      requestedRuntimeProvider: "codex",
+      reason: "missing_provider_session",
+      staleCleared: false,
+    });
+  });
+
   it("clears stale provider state only for an explicit runtime provider mismatch", () => {
     getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
     updateProviderSession(SESSION_KEY, "codex", "provider-existing");
+    updateSessionRuntimeProviderOverride(SESSION_KEY, "claude");
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
       prompt: { prompt: "fresh start" },
-      defaultRuntimeProviderId: "claude",
+      defaultRuntimeProviderId: "codex",
     });
 
+    expect(resolved?.runtimeProviderId).toBe("claude");
     expect(resolved?.storedProviderSessionId).toBeUndefined();
     expect(resolved?.canResumeStoredSession).toBe(false);
     expect(resolved?.resumeDecision).toMatchObject({

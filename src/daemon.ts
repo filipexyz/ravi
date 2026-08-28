@@ -632,6 +632,7 @@ async function publishRestartResumeEvent(
     reason: restartInfo.reason,
     sessionKey,
     mode: crashRecoveryResumeMode,
+    ...(options.snapshot?.runtimeProvider ? { runtimeProvider: options.snapshot.runtimeProvider } : {}),
   });
   if (!payload) {
     return false;

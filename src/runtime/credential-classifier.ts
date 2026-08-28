@@ -6,6 +6,7 @@ import type {
   RuntimeCredentialLimitDimension,
   RuntimeCredentialLimitPressure,
 } from "./credential-types.js";
+import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export interface RuntimeCredentialClassifierInput {
@@ -120,7 +121,12 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }
 
-  if (input.status === 401 || code === "authentication_error" || type === "authentication_error") {
+  if (
+    input.status === 401 ||
+    code === "authentication_error" ||
+    type === "authentication_error" ||
+    isRuntimeProviderLoginStub(text)
+  ) {
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }
   if (

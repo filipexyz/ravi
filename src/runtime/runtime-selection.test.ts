@@ -10,6 +10,7 @@ import {
 import {
   UnusableAgentModelPresetError,
   assertUsableAgentModelPreset,
+  isExplicitRuntimeProviderSource,
   resolveEffectiveSessionRuntime,
   resolveRequestedRuntimeProvider,
 } from "./runtime-selection.js";
@@ -65,6 +66,53 @@ describe("resolveRequestedRuntimeProvider", () => {
     ).toMatchObject({ value: "codex", source: "runtime_default" });
   });
 
+  it("prefers last-used and restart-snapshot providers over agent or global defaults", () => {
+    const defaults = resolveRuntimeDefaults({
+      getSetting: (key) => (key === RUNTIME_DEFAULT_PROVIDER_SETTING ? "claude" : null),
+      env: {},
+    });
+
+    expect(
+      resolveRequestedRuntimeProvider({
+        lastUsedProvider: "codex",
+        agent: { provider: "claude", modelPresetId: "fast-sonnet" },
+        defaults,
+        lookupPreset: () => fakePreset(),
+      }),
+    ).toMatchObject({ value: "codex", source: "last_used" });
+
+    expect(
+      resolveRequestedRuntimeProvider({
+        restartSnapshotProvider: "codex",
+        agent: { provider: "claude" },
+        defaults,
+      }),
+    ).toMatchObject({ value: "codex", source: "restart_snapshot" });
+
+    expect(
+      resolveRequestedRuntimeProvider({
+        lastUsedProvider: "codex",
+        restartSnapshotProvider: "claude",
+        agent: { provider: "claude" },
+        defaults,
+      }),
+    ).toMatchObject({ value: "codex", source: "last_used" });
+
+    expect(
+      resolveRequestedRuntimeProvider({
+        sessionProviderOverride: "claude",
+        lastUsedProvider: "codex",
+        agent: { provider: "codex" },
+        defaults,
+      }),
+    ).toMatchObject({ value: "claude", source: "session_override" });
+
+    expect(isExplicitRuntimeProviderSource("last_used")).toBe(false);
+    expect(isExplicitRuntimeProviderSource("restart_snapshot")).toBe(false);
+    expect(isExplicitRuntimeProviderSource("session_override")).toBe(true);
+    expect(isExplicitRuntimeProviderSource("launch_override")).toBe(true);
+  });
+
   it("uses a usable agent preset provider before stored/env defaults", () => {
     const defaults = resolveRuntimeDefaults({
       getSetting: (key) => (key === RUNTIME_DEFAULT_PROVIDER_SETTING ? "pi" : null),
@@ -82,6 +130,20 @@ describe("resolveRequestedRuntimeProvider", () => {
 });
 
 describe("resolveEffectiveSessionRuntime", () => {
+  it("reports last-used provider as the next-turn source when no override is set", () => {
+    const resolved = resolveEffectiveSessionRuntime({
+      session: { agentId: "main", runtimeProvider: "codex" },
+      agent: { provider: "claude", model: "agent-gpt" },
+      defaults: resolveRuntimeDefaults({
+        getSetting: (key) => (key === RUNTIME_DEFAULT_PROVIDER_SETTING ? "claude" : null),
+        env: {},
+      }),
+    });
+
+    expect(resolved.provider).toEqual({ value: "codex", source: "last_used" });
+    expect(resolved.model.value).toBe("agent-gpt");
+  });
+
   it("keeps provider and model independent and does not invent a model", () => {
     const defaults = resolveRuntimeDefaults({
       getSetting: (key) => (key === RUNTIME_DEFAULT_MODEL_SETTING ? "stored-opus" : null),

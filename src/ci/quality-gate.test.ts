@@ -439,6 +439,17 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("accepts last-used provider and restart-resume focused tests for runtime changes", () => {
+    expect(runCoverageGate(["src/runtime/session-resolver.ts", "src/runtime/session-resolver.test.ts"]).ok).toBe(true);
+    expect(runCoverageGate(["src/runtime/runtime-selection.ts", "src/runtime/runtime-selection.test.ts"]).ok).toBe(
+      true,
+    );
+    expect(
+      runCoverageGate(["src/runtime/daemon-restart-resume.ts", "src/runtime/daemon-restart-resume.test.ts"]).ok,
+    ).toBe(true);
+    expect(runCoverageGate(["src/runtime/host-event-loop.ts", "src/runtime/session-trace.test.ts"]).ok).toBe(true);
+  });
+
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 

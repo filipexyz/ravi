@@ -20,8 +20,9 @@ ravi settings get runtime.defaultModel
 ```
 
 Read `effectiveProvider` / `providerSource`, `effectiveModel` / `modelSource`,
-and `runtimeOptions.effort`. Sources are `session_override`, `agent_preset`,
-`agent_default`, `global_default`, `env_fallback`, or `runtime_default`.
+and `runtimeOptions.effort`. Provider sources are `launch_override`,
+`observation_override`, `session_override`, `last_used`, `restart_snapshot`,
+`agent_preset`, `agent_default`, `global_default`, or `runtime_default`.
 
 ## Clear A Stored Default
 

@@ -1,4 +1,5 @@
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeProviderId } from "./types.js";
 
 export const CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY = "crashRecoveryRestartResumeMode";
 
@@ -46,12 +47,14 @@ export function buildDaemonRestartResumePrompt(input: {
   reason: string;
   sessionKey: string;
   mode: CrashRecoveryRestartResumeMode;
+  runtimeProvider?: RuntimeProviderId;
 }): (RuntimeLaunchPrompt & Record<string, unknown>) | null {
   if (input.mode === "skip") {
     return null;
   }
 
   const pendingOnly = input.mode === "pending_only";
+  const runtimeProvider = input.runtimeProvider?.trim() || undefined;
   return {
     prompt: pendingOnly
       ? `[System] Daemon reiniciou (${input.reason}). Processe somente as mensagens pendentes duráveis anexadas; não continue o turn interrompido.`
@@ -62,6 +65,7 @@ export function buildDaemonRestartResumePrompt(input: {
       restartEpoch: input.restartEpoch,
       sessionKey: input.sessionKey,
       ...(pendingOnly ? { pendingOnly: true } : {}),
+      ...(runtimeProvider ? { runtimeProvider: runtimeProvider as RuntimeProviderId } : {}),
     },
   };
 }
