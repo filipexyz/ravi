@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
@@ -307,5 +307,93 @@ describe("gateway server — SSE streaming namespace", () => {
     });
     expect(res.status).toBe(403);
     expect(streamAudits.some((event) => event.type === "sdk.gateway.stream.denied")).toBe(true);
+  });
+});
+
+describe("gateway server — CORS", () => {
+  const previousOrigins = process.env.RAVI_CORS_ORIGINS;
+  const previousLocalhost = process.env.RAVI_CORS_LOCALHOST;
+  const listedOrigin = "http://127.0.0.1:8088";
+  const chromeOrigin = "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef";
+
+  afterEach(() => {
+    if (previousOrigins === undefined) delete process.env.RAVI_CORS_ORIGINS;
+    else process.env.RAVI_CORS_ORIGINS = previousOrigins;
+    if (previousLocalhost === undefined) delete process.env.RAVI_CORS_LOCALHOST;
+    else process.env.RAVI_CORS_LOCALHOST = previousLocalhost;
+  });
+
+  it("answers OPTIONS preflight for chrome-extension with the four SDK headers", async () => {
+    const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: chromeOrigin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers":
+          "authorization,content-type,x-ravi-sdk-version,x-ravi-registry-hash",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(chromeOrigin);
+    expect(res.headers.get("Access-Control-Allow-Origin")).not.toBe("*");
+    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("GET");
+    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST");
+    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("OPTIONS");
+    const allowed = (res.headers.get("Access-Control-Allow-Headers") ?? "").toLowerCase();
+    expect(allowed).toContain("authorization");
+    expect(allowed).toContain("content-type");
+    expect(allowed).toContain("x-ravi-sdk-version");
+    expect(allowed).toContain("x-ravi-registry-hash");
+  });
+
+  it("echoes a listed origin on OPTIONS and SSE GET, and omits ACAO for unknown origins", async () => {
+    process.env.RAVI_CORS_ORIGINS = listedOrigin;
+    delete process.env.RAVI_CORS_LOCALHOST;
+
+    const preflight = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: listedOrigin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe(listedOrigin);
+
+    const unknown = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.com", "Access-Control-Request-Method": "POST" },
+    });
+    expect(unknown.status).toBe(204);
+    expect(unknown.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const stream = await fetch(`${handle.url}/api/v1/_stream/events`, {
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        accept: "text/event-stream",
+        Origin: listedOrigin,
+      },
+    });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("Access-Control-Allow-Origin")).toBe(listedOrigin);
+    expect(stream.headers.get("Access-Control-Allow-Origin")).not.toBe("*");
+    await stream.text();
+  });
+
+  it("does not allow 127.0.0.1:8088 unless the localhost flag or allowlist is set", async () => {
+    delete process.env.RAVI_CORS_ORIGINS;
+    delete process.env.RAVI_CORS_LOCALHOST;
+    const closed = await fetch(`${handle.url}/api/v1/_meta/version`, {
+      headers: { Origin: listedOrigin },
+    });
+    expect(closed.status).toBe(200);
+    expect(closed.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    process.env.RAVI_CORS_LOCALHOST = "1";
+    const opened = await fetch(`${handle.url}/api/v1/_meta/version`, {
+      headers: { Origin: listedOrigin },
+    });
+    expect(opened.headers.get("Access-Control-Allow-Origin")).toBe(listedOrigin);
   });
 });
