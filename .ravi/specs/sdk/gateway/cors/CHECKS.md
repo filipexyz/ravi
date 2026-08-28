@@ -2,21 +2,13 @@
 
 ## Checks
 
-Run the CORS unit suite and the gateway HTTP wrapper tests:
-
-```bash
-bun test src/sdk/gateway/cors.test.ts src/sdk/gateway/server.test.ts
-```
-
-## Regression Scenarios
-
-- `chrome-extension://` origins are still allowed with no env set.
-- An origin listed in `RAVI_CORS_ORIGINS` is echoed on `Access-Control-Allow-Origin`.
-- An unknown origin receives no `Access-Control-Allow-Origin`.
-- `Access-Control-Allow-Origin` is never `*`, including when the allowlist contains `*`.
-- `RAVI_CORS_LOCALHOST=1` allows `http://127.0.0.1:8088` and `http://localhost:8088`.
-- `RAVI_CORS_LOCALHOST=1` does not allow `https://evil.com` or lookalike hosts.
-- The localhost flag is off by default, so `http://127.0.0.1:8088` is closed in production.
-- OPTIONS preflight `Access-Control-Allow-Headers` includes `Authorization`,
-  `Content-Type`, `x-ravi-sdk-version`, and `x-ravi-registry-hash`.
-- SSE `GET /api/v1/_stream/*` uses the same CORS wrapper as command POSTs.
+- `bun test src/sdk/gateway/cors.test.ts src/sdk/gateway/server.test.ts` MUST pass.
+- `isAllowedOrigin` MUST allow `chrome-extension://` origins when env is empty; this check fails if those origins are rejected.
+- `corsHeaders` MUST echo a listed `RAVI_CORS_ORIGINS` value on `Access-Control-Allow-Origin`; this check fails if a listed origin is omitted.
+- `corsHeaders` MUST return no `Access-Control-Allow-Origin` for an unknown origin; this check fails if an unlisted origin is reflected.
+- `corsHeaders` MUST never set `Access-Control-Allow-Origin` to `*`; this check fails if `*` is emitted for any origin or allowlist entry.
+- `RAVI_CORS_LOCALHOST=1` MUST allow `http://127.0.0.1:8088` and `http://localhost:8088`; this check fails if those origins have no ACAO.
+- `RAVI_CORS_LOCALHOST=1` MUST reject `https://evil.com` and lookalike hosts; this check fails if those origins receive ACAO.
+- With no CORS env set, `http://127.0.0.1:8088` MUST stay closed; this check fails if production-default requests receive ACAO.
+- OPTIONS preflight MUST include `Authorization`, `Content-Type`, `x-ravi-sdk-version`, and `x-ravi-registry-hash` in `Access-Control-Allow-Headers`; this check fails if any of the four is missing.
+- SSE `GET /api/v1/_stream/*` MUST receive the same CORS headers via `withCorsHeaders`; this check fails if streams use a separate CORS path.

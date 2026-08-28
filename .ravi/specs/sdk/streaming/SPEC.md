@@ -72,9 +72,6 @@ Justificativa:
 - Streams MUST terminar com `event: end` quando o stream tem janela natural
   (ex: `--timeout` em `sessions/debug`); streams infinitos terminam apenas
   quando cliente desconecta.
-- SSE responses MUST receive the same CORS headers as other `/api/v1/*`
-  responses via the shared gateway wrapper (`withCorsHeaders`). Do not add a
-  stream-specific CORS path. See `sdk/gateway/cors`.
 
 ## Channels
 
