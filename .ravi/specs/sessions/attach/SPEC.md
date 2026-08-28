@@ -86,21 +86,35 @@ serialized.
 
 ## Prompt Contract
 
-The dispatcher adds exactly one short English instruction to every new logical
-prompt:
+Inbound chat turns (WhatsApp, Slack, or another attached source that produced
+this turn) receive exactly one short English instruction on the persisted
+user prompt:
 
 ```text
 [session surface] This turn came from a Slack chat. A normal reply returns there.
 ```
 
-For a thread, it says `Slack thread`. For a CLI-only operator turn, it says
-that a normal reply returns to the waiting CLI. For other source-less turns,
-it says that the session default will be used when one is available.
+For a thread, it says `Slack thread`. The instruction MUST NOT include session
+names, chat ids, subscription lists, roles, database fields, or routing
+commands. It is added centrally so every channel uses the same contract, and
+it MUST remain idempotent across durable replay.
 
-The instruction MUST NOT include session names, chat ids, subscription lists,
-roles, database fields, or routing commands. It is added centrally so every
-channel uses the same contract, and it MUST remain idempotent across durable
-replay.
+Operator CLI-only and HTTP/user `sessions.send` MUST persist and dispatch the
+raw user text. Honor `--raw`. The dispatcher MUST NOT prefix
+`[session surface]` onto that `user.text` / `prompt.prompt`. Leftover
+`lastChannel` on a session-relay send is not an inbound chat turn.
+
+HTTP operator send (`transport: "gateway"`, no `callerSessionKey`) is neither
+a waiting CLI nor a source-less attach turn. Do not write "waiting CLI" or
+"no inbound chat" into that user row.
+
+If the model still needs a surface instruction for an operator turn, put it
+in host-only metadata or a separate system row. Do not rewrite the operator
+user row.
+
+`[from:]` is only `callerSessionKey` inside `[System] Inform:`.
+`SessionsSendInput` has no `from` field. App identity is `context issue`.
+`sessions.set-display` is a session label, not a sender.
 
 ## CLI
 
@@ -148,7 +162,9 @@ Regression coverage MUST include:
 - two Slack threads remaining separate;
 - source-less output using the default attachment;
 - an unattached inbound source failing closed;
-- replay adding the surface instruction only once.
+- replay adding the surface instruction only once;
+- operator CLI-only and HTTP `sessions.send` persisting raw user text;
+- inbound WhatsApp/Slack still receiving the surface instruction.
 
 ## Failure Modes
 

@@ -10,3 +10,10 @@ redirecting work that is already running.
 
 CLI-only `sessions send` is a first-class destination: the waiting CLI reads
 this turn's transcript. Attach stays fail-closed for chat delivery.
+
+The `[session surface]` line is an inbound-chat envelope, not an operator
+rewrite. WhatsApp/Slack turns need it so the model knows where a normal
+reply returns. Operator CLI and HTTP `sessions.send` already *are* the
+user row; prefixing "waiting CLI" or "no inbound chat" onto that text
+leaks host routing into the transcript. HTTP gateway send with no caller
+session is neither a waiting CLI nor a source-less chat turn.

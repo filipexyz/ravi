@@ -9,10 +9,19 @@
 - An unattached inbound source MUST fail closed instead of using the default.
 - CLI-only `sessions send -w` MUST return this turn's assistant transcript
   when no `.response` is emitted. Previous-turn rows MUST NOT leak.
+- Operator CLI-only and HTTP/user `sessions.send` MUST persist and dispatch
+  the raw user text. The persisted `user.text` MUST NOT contain
+  `[session surface]`, `waiting CLI`, or `no inbound chat`.
+- Inbound WhatsApp/Slack attach turns MUST still receive the
+  `[session surface]` instruction on the user prompt.
+- HTTP operator send (`transport: "gateway"`, no `callerSessionKey`) MUST
+  NOT be treated as a waiting CLI or a source-less attach turn.
+- `sessions.send` input MUST NOT grow a `from` field. `[from:]` remains
+  only `callerSessionKey` inside `[System] Inform:`.
 - Detaching the output chat MUST clear output for that session.
 - Attach/detach during a running turn MUST NOT redirect that turn's captured
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
-- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts`
+- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts`
   SHOULD pass after changing attach behavior.

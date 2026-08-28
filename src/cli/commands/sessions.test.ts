@@ -762,6 +762,8 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts[0]?.payload.prompt).not.toContain("[System] Inform:");
     expect(publishedPrompts[0]?.payload.prompt).not.toContain("[from: unknown]");
     expect(publishedPrompts[0]?.payload._cliDestination).toBe(true);
+    expect(publishedPrompts[0]?.payload.prompt).not.toContain("[session surface]");
+    expect(publishedPrompts[0]?.payload).not.toHaveProperty("from");
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
     expect(publishedPrompts[0]?.payload._turnOrigin).toMatchObject({
@@ -773,6 +775,25 @@ describe("SessionCommands delivery barriers", () => {
         type: "automation",
         id: "operator:local",
       },
+    });
+  });
+
+  it("publishes HTTP operator send as raw user text without a from field", async () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send("dev", "hello from gateway");
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.prompt).toBe("hello from gateway");
+    expect(publishedPrompts[0]?.payload.prompt).not.toContain("[session surface]");
+    expect(publishedPrompts[0]?.payload.prompt).not.toContain("[System] Inform:");
+    expect(publishedPrompts[0]?.payload).not.toHaveProperty("from");
+    expect(publishedPrompts[0]?.payload._turnOrigin).toMatchObject({
+      producer: "session-relay",
+      action: "send",
     });
   });
 

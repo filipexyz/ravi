@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { SessionsSendInputSchema } from "../../packages/ravi-os-sdk/src/schemas.js";
 import { CLI_SESSION_BOOTSTRAP_EFFORT, DEFAULT_RUNTIME_EFFORT } from "../runtime/effort.js";
 import {
   buildSessionSendPrompt,
@@ -21,6 +22,29 @@ describe("session CLI surface", () => {
     expect(buildSessionSendPrompt({ prompt: "hello", callerSessionKey: "agent:main:origin" })).toBe(
       "[System] Inform: [from: agent:main:origin] hello",
     );
+  });
+
+  it("does not invent a from field on sessions.send", () => {
+    expect(SessionsSendInputSchema.properties).not.toHaveProperty("from");
+    expect(Object.keys(SessionsSendInputSchema.properties).sort()).toEqual([
+      "agent",
+      "barrier",
+      "channel",
+      "effort",
+      "immediate",
+      "interactive",
+      "nameOrKey",
+      "prompt",
+      "raw",
+      "steer",
+      "thread",
+      "threadOwner",
+      "threadScope",
+      "threadSummary",
+      "threadTitle",
+      "to",
+      "wait",
+    ]);
   });
 
   it("uses --raw as an escape hatch even for in-context sends", () => {

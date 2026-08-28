@@ -13,7 +13,14 @@
    default.
 7. For CLI-only `sessions send -w`, read this turn's assistant transcript
    after `turn.complete`. Do not treat a dropped chat emit as empty success.
-7. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
+8. For operator CLI-only or HTTP `sessions.send`, read the persisted user
+   row. It MUST be the raw prompt. A `[session surface]` prefix, "waiting
+   CLI", or "no inbound chat" on that row is a leak.
+9. For a real WhatsApp/Slack inbound turn, the user row SHOULD start with
+   `[session surface] This turn came from a …`.
+10. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
+11. Do not add a `from` field to `sessions.send`. App identity stays on
+    `context issue`; `[from:]` is only `callerSessionKey` inside Inform.
 
 ## Validation
 
