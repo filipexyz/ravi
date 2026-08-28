@@ -31,7 +31,13 @@ import {
   getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
-import { dbGetContext, dbListContexts, dbPruneContexts, type ContextRecord } from "../../router/router-db.js";
+import {
+  dbGetAgent,
+  dbGetContext,
+  dbListContexts,
+  dbPruneContexts,
+  type ContextRecord,
+} from "../../router/router-db.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
@@ -389,14 +395,31 @@ export class ContextCommands {
     ttl?: string,
     @Option({ flags: "--inherit", description: "Inherit all capabilities from the current context" }) inherit = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--as-agent <id>",
+      description: "Admin-only: delegate the child context to an explicit agent identity",
+    })
+    asAgent?: string,
+    @Option({
+      flags: "--as-session-key <key>",
+      description: "Admin-only: bind the delegated identity to an explicit session key",
+    })
+    asSessionKey?: string,
+    @Option({
+      flags: "--as-session-name <name>",
+      description: "Admin-only: bind the delegated identity to an explicit session name",
+    })
+    asSessionName?: string,
   ) {
     const parent = this.requireResolvedContext();
+    const identity = parseDelegatedIdentity(asAgent, asSessionKey, asSessionName);
     const child = issueRuntimeContext({
       parent,
       cliName,
       capabilities: parseCapabilityList(allow),
       ttlMs: parseDurationMs(ttl),
       inheritCapabilities: inherit,
+      identity,
     });
 
     const payload: ContextIssuePayload = {
@@ -1276,6 +1299,34 @@ function parseDurationMs(input: string | undefined): number | undefined {
   if (unit === "d") return value * 86_400_000;
 
   fail(`Invalid duration: "${input}". Expected 30m, 2h or 1d`);
+}
+
+function parseDelegatedIdentity(
+  agentInput: string | undefined,
+  sessionKeyInput: string | undefined,
+  sessionNameInput: string | undefined,
+): { agentId: string; sessionKey?: string; sessionName?: string } | undefined {
+  const agentId = agentInput?.trim();
+  const sessionKey = sessionKeyInput?.trim();
+  const sessionName = sessionNameInput?.trim();
+  if (!agentId && !sessionKey && !sessionName) return undefined;
+  if (!agentId) fail("--as-agent is required when delegating a context identity");
+  if (Boolean(sessionKey) !== Boolean(sessionName)) {
+    fail("--as-session-key and --as-session-name must be provided together");
+  }
+  if (!dbGetAgent(agentId)) fail(`Agent not found: ${agentId}`);
+  if (sessionKey && !sessionKey.startsWith(`agent:${agentId}:`)) {
+    fail(`Delegated session key must belong to agent ${agentId}`);
+  }
+  const existingSession = sessionKey ? resolveSession(sessionKey) : sessionName ? resolveSession(sessionName) : null;
+  if (existingSession && existingSession.agentId !== agentId) {
+    fail(`Delegated session does not belong to agent ${agentId}`);
+  }
+  return {
+    agentId,
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(sessionName ? { sessionName } : {}),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
