@@ -2121,7 +2121,7 @@ describe("SessionCommands info", () => {
     expect(output).toContain(
       "Key:          agent:main:whatsapp:main:group:123456  [source=session-db freshness=persisted]",
     );
-    expect(output).toContain("Provider:     codex (agent_default)  [source=session-db freshness=persisted]");
+    expect(output).toContain("Provider:     codex (last_used)  [source=session-db freshness=persisted]");
     expect(output).toContain("Model:        gpt-5.4-mini (session_override)  [source=session-db freshness=persisted]");
     expect(output).toContain("Override:     gpt-5.4-mini  [source=session-db freshness=persisted]");
     expect(output).toContain("Runtime:      codex  [source=runtime-snapshot freshness=persisted]");
