@@ -1,17 +1,12 @@
-// GENERATED FILE — DO NOT EDIT.
-// Run `ravi sdk client generate` to regenerate.
-// Drift is detected by `ravi sdk client check` (CI).
+// GENERATED FILE - DO NOT EDIT.
+// Run `ravi sdk dart generate` to regenerate.
+// Drift is detected by `ravi sdk dart check`.
 
-/**
- * JSON Schema constants for every registry command. Emitted as `as const`
- * so callers can pair them with `ajv` / `zod-from-json-schema` / etc when
- * client-side validation is desired.
- */
+class RaviSchemas {
+  const RaviSchemas._();
 
-export type SdkJsonSchema = Record<string, unknown>;
-
-/** JSON Schema for the input body of `adapters.list`. */
-export const AdaptersListInputSchema = {
+  static const adaptersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -32,10 +27,11 @@ export const AdaptersListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `adapters.list`. */
-export const AdaptersListReturnSchema = {
+  static const adaptersListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "adapters": {
@@ -430,10 +426,11 @@ export const AdaptersListReturnSchema = {
     "adapters"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `adapters.show`. */
-export const AdaptersShowInputSchema = {
+  static const adaptersShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "adapterId": {
@@ -445,10 +442,11 @@ export const AdaptersShowInputSchema = {
     "adapterId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `adapters.show`. */
-export const AdaptersShowReturnSchema = {
+  static const adaptersShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "adapterId": {
@@ -609,10 +607,11 @@ export const AdaptersShowReturnSchema = {
     "updatedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.create`. */
-export const AgentsCreateInputSchema = {
+  static const agentsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allowRuntimeMismatch": {
@@ -645,10 +644,11 @@ export const AgentsCreateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.create`. */
-export const AgentsCreateReturnSchema = {
+  static const agentsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -682,10 +682,11 @@ export const AgentsCreateReturnSchema = {
     "permissions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.debounce`. */
-export const AgentsDebounceInputSchema = {
+  static const agentsDebounceInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -701,10 +702,11 @@ export const AgentsDebounceInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.debounce`. */
-export const AgentsDebounceReturnSchema = {
+  static const agentsDebounceReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -736,10 +738,11 @@ export const AgentsDebounceReturnSchema = {
     "enabled"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.debug`. */
-export const AgentsDebugInputSchema = {
+  static const agentsDebugInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -759,10 +762,11 @@ export const AgentsDebugInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.debug`. */
-export const AgentsDebugReturnSchema = {
+  static const agentsDebugReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -813,10 +817,11 @@ export const AgentsDebugReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.delete`. */
-export const AgentsDeleteInputSchema = {
+  static const agentsDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -832,10 +837,11 @@ export const AgentsDeleteInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.delete`. */
-export const AgentsDeleteReturnSchema = {
+  static const agentsDeleteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -860,10 +866,11 @@ export const AgentsDeleteReturnSchema = {
     "agentId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.list`. */
-export const AgentsListInputSchema = {
+  static const agentsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -884,10 +891,11 @@ export const AgentsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.list`. */
-export const AgentsListReturnSchema = {
+  static const agentsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -1643,10 +1651,11 @@ export const AgentsListReturnSchema = {
     "agents"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.model-broker`. */
-export const AgentsModelBrokerInputSchema = {
+  static const agentsModelBrokerInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "broker": {
@@ -1678,10 +1687,11 @@ export const AgentsModelBrokerInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.model-broker`. */
-export const AgentsModelBrokerReturnSchema = {
+  static const agentsModelBrokerReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -2095,10 +2105,11 @@ export const AgentsModelBrokerReturnSchema = {
     "modelBroker"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.permissions`. */
-export const AgentsPermissionsInputSchema = {
+  static const agentsPermissionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "capabilities": {
@@ -2126,10 +2137,11 @@ export const AgentsPermissionsInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.permissions`. */
-export const AgentsPermissionsReturnSchema = {
+  static const agentsPermissionsReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -2666,10 +2678,11 @@ export const AgentsPermissionsReturnSchema = {
     "agentId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.reset`. */
-export const AgentsResetInputSchema = {
+  static const agentsResetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -2689,10 +2702,11 @@ export const AgentsResetInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.reset`. */
-export const AgentsResetReturnSchema = {
+  static const agentsResetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -2741,10 +2755,11 @@ export const AgentsResetReturnSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.session`. */
-export const AgentsSessionInputSchema = {
+  static const agentsSessionInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -2756,10 +2771,11 @@ export const AgentsSessionInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.session`. */
-export const AgentsSessionReturnSchema = {
+  static const agentsSessionReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "agent": {
@@ -2785,10 +2801,11 @@ export const AgentsSessionReturnSchema = {
     "sessions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.set`. */
-export const AgentsSetInputSchema = {
+  static const agentsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -2810,10 +2827,11 @@ export const AgentsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.set`. */
-export const AgentsSetReturnSchema = {
+  static const agentsSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -2884,10 +2902,11 @@ export const AgentsSetReturnSchema = {
     "sessionOverrides"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.show`. */
-export const AgentsShowInputSchema = {
+  static const agentsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -2899,10 +2918,11 @@ export const AgentsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.show`. */
-export const AgentsShowReturnSchema = {
+  static const agentsShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -3314,10 +3334,11 @@ export const AgentsShowReturnSchema = {
     "permissionsCommand"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.spec-mode`. */
-export const AgentsSpecModeInputSchema = {
+  static const agentsSpecModeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "enabled": {
@@ -3333,10 +3354,11 @@ export const AgentsSpecModeInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.spec-mode`. */
-export const AgentsSpecModeReturnSchema = {
+  static const agentsSpecModeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -3357,10 +3379,11 @@ export const AgentsSpecModeReturnSchema = {
     "specMode"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `agents.sync-instructions`. */
-export const AgentsSyncInstructionsInputSchema = {
+  static const agentsSyncInstructionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -3373,10 +3396,11 @@ export const AgentsSyncInstructionsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `agents.sync-instructions`. */
-export const AgentsSyncInstructionsReturnSchema = {
+  static const agentsSyncInstructionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "alreadyCanonical": {
@@ -3416,10 +3440,11 @@ export const AgentsSyncInstructionsReturnSchema = {
     "results"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.check`. */
-export const AppsCheckInputSchema = {
+  static const appsCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -3428,10 +3453,11 @@ export const AppsCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.check`. */
-export const AppsCheckReturnSchema = {
+  static const appsCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "checked": {
@@ -3493,10 +3519,11 @@ export const AppsCheckReturnSchema = {
     "results"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.delete`. */
-export const AppsDeleteInputSchema = {
+  static const appsDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -3512,10 +3539,11 @@ export const AppsDeleteInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.delete`. */
-export const AppsDeleteReturnSchema = {
+  static const appsDeleteReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -3578,10 +3606,11 @@ export const AppsDeleteReturnSchema = {
     "nextCommands"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.guide`. */
-export const AppsGuideInputSchema = {
+  static const appsGuideInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -3590,10 +3619,11 @@ export const AppsGuideInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.guide`. */
-export const AppsGuideReturnSchema = {
+  static const appsGuideReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -4002,10 +4032,11 @@ export const AppsGuideReturnSchema = {
     "nextCommands"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.import-cli`. */
-export const AppsImportCliInputSchema = {
+  static const appsImportCliInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -4053,10 +4084,11 @@ export const AppsImportCliInputSchema = {
     "command"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.import-cli`. */
-export const AppsImportCliReturnSchema = {
+  static const appsImportCliReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -4427,10 +4459,11 @@ export const AppsImportCliReturnSchema = {
     "reviewRequired"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.list`. */
-export const AppsListInputSchema = {
+  static const appsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -4447,10 +4480,11 @@ export const AppsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.list`. */
-export const AppsListReturnSchema = {
+  static const appsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apps": {
@@ -5094,10 +5128,11 @@ export const AppsListReturnSchema = {
     "apps"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.prompts`. */
-export const AppsPromptsInputSchema = {
+  static const appsPromptsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -5106,10 +5141,11 @@ export const AppsPromptsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.prompts`. */
-export const AppsPromptsReturnSchema = {
+  static const appsPromptsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -5518,10 +5554,11 @@ export const AppsPromptsReturnSchema = {
     "nextCommands"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.run`. */
-export const AppsRunInputSchema = {
+  static const appsRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -5548,10 +5585,11 @@ export const AppsRunInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.run`. */
-export const AppsRunReturnSchema = {
+  static const appsRunReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "appId": {
@@ -5853,10 +5891,11 @@ export const AppsRunReturnSchema = {
     "durationMs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.scaffold`. */
-export const AppsScaffoldInputSchema = {
+  static const appsScaffoldInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -5900,10 +5939,11 @@ export const AppsScaffoldInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.scaffold`. */
-export const AppsScaffoldReturnSchema = {
+  static const appsScaffoldReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -6096,10 +6136,11 @@ export const AppsScaffoldReturnSchema = {
     "nextCommands"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `apps.show`. */
-export const AppsShowInputSchema = {
+  static const appsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -6111,10 +6152,11 @@ export const AppsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `apps.show`. */
-export const AppsShowReturnSchema = {
+  static const appsShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -6418,10 +6460,11 @@ export const AppsShowReturnSchema = {
     "app"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.archive`. */
-export const ArtifactsArchiveInputSchema = {
+  static const artifactsArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -6433,10 +6476,11 @@ export const ArtifactsArchiveInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.archive`. */
-export const ArtifactsArchiveReturnSchema = {
+  static const artifactsArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -6448,10 +6492,11 @@ export const ArtifactsArchiveReturnSchema = {
     "success"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.attach`. */
-export const ArtifactsAttachInputSchema = {
+  static const artifactsAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -6481,10 +6526,11 @@ export const ArtifactsAttachInputSchema = {
     "targetType"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.attach`. */
-export const ArtifactsAttachReturnSchema = {
+  static const artifactsAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -6496,10 +6542,11 @@ export const ArtifactsAttachReturnSchema = {
     "success"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.blob`. */
-export const ArtifactsBlobInputSchema = {
+  static const artifactsBlobInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -6511,10 +6558,11 @@ export const ArtifactsBlobInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.create`. */
-export const ArtifactsCreateInputSchema = {
+  static const artifactsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "assetBase": {
@@ -6627,10 +6675,11 @@ export const ArtifactsCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.create`. */
-export const ArtifactsCreateReturnSchema = {
+  static const artifactsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifact": {
@@ -6658,10 +6707,11 @@ export const ArtifactsCreateReturnSchema = {
     "artifact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.event`. */
-export const ArtifactsEventInputSchema = {
+  static const artifactsEventInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "eventType": {
@@ -6694,10 +6744,11 @@ export const ArtifactsEventInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.event`. */
-export const ArtifactsEventReturnSchema = {
+  static const artifactsEventReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifact": {
@@ -6720,10 +6771,11 @@ export const ArtifactsEventReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.events`. */
-export const ArtifactsEventsInputSchema = {
+  static const artifactsEventsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -6735,10 +6787,11 @@ export const ArtifactsEventsInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.events`. */
-export const ArtifactsEventsReturnSchema = {
+  static const artifactsEventsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifactId": {
@@ -6762,10 +6815,11 @@ export const ArtifactsEventsReturnSchema = {
     "events"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.list`. */
-export const ArtifactsListInputSchema = {
+  static const artifactsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -6818,10 +6872,11 @@ export const ArtifactsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.list`. */
-export const ArtifactsListReturnSchema = {
+  static const artifactsListReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -6994,10 +7049,11 @@ export const ArtifactsListReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.publish`. */
-export const ArtifactsPublishInputSchema = {
+  static const artifactsPublishInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifactVersion": {
@@ -7082,10 +7138,11 @@ export const ArtifactsPublishInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.publish`. */
-export const ArtifactsPublishReturnSchema = {
+  static const artifactsPublishReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -7303,10 +7360,11 @@ export const ArtifactsPublishReturnSchema = {
     "localSync"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.release.activate`. */
-export const ArtifactsReleaseActivateInputSchema = {
+  static const artifactsReleaseActivateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -7338,10 +7396,11 @@ export const ArtifactsReleaseActivateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.release.activate`. */
-export const ArtifactsReleaseActivateReturnSchema = {
+  static const artifactsReleaseActivateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "localSync": {
@@ -7373,10 +7432,11 @@ export const ArtifactsReleaseActivateReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.restore`. */
-export const ArtifactsRestoreInputSchema = {
+  static const artifactsRestoreInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7396,10 +7456,11 @@ export const ArtifactsRestoreInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.restore`. */
-export const ArtifactsRestoreReturnSchema = {
+  static const artifactsRestoreReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifact": {
@@ -7429,10 +7490,11 @@ export const ArtifactsRestoreReturnSchema = {
     "restoreVersion"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.show`. */
-export const ArtifactsShowInputSchema = {
+  static const artifactsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7444,10 +7506,11 @@ export const ArtifactsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.show`. */
-export const ArtifactsShowReturnSchema = {
+  static const artifactsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifact": {
@@ -7487,10 +7550,11 @@ export const ArtifactsShowReturnSchema = {
     "versions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.snapshot`. */
-export const ArtifactsSnapshotInputSchema = {
+  static const artifactsSnapshotInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7526,10 +7590,11 @@ export const ArtifactsSnapshotInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.snapshot`. */
-export const ArtifactsSnapshotReturnSchema = {
+  static const artifactsSnapshotReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -7547,10 +7612,11 @@ export const ArtifactsSnapshotReturnSchema = {
     "version"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.update`. */
-export const ArtifactsUpdateInputSchema = {
+  static const artifactsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -7658,10 +7724,11 @@ export const ArtifactsUpdateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.update`. */
-export const ArtifactsUpdateReturnSchema = {
+  static const artifactsUpdateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -7673,10 +7740,11 @@ export const ArtifactsUpdateReturnSchema = {
     "success"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.version`. */
-export const ArtifactsVersionInputSchema = {
+  static const artifactsVersionInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7692,10 +7760,11 @@ export const ArtifactsVersionInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.version`. */
-export const ArtifactsVersionReturnSchema = {
+  static const artifactsVersionReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifactId": {
@@ -7712,10 +7781,11 @@ export const ArtifactsVersionReturnSchema = {
     "version"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `artifacts.versions`. */
-export const ArtifactsVersionsInputSchema = {
+  static const artifactsVersionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7727,10 +7797,11 @@ export const ArtifactsVersionsInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `artifacts.versions`. */
-export const ArtifactsVersionsReturnSchema = {
+  static const artifactsVersionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifactId": {
@@ -7754,10 +7825,11 @@ export const ArtifactsVersionsReturnSchema = {
     "versions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `audio.blob`. */
-export const AudioBlobInputSchema = {
+  static const audioBlobInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -7769,10 +7841,11 @@ export const AudioBlobInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `audio.generate`. */
-export const AudioGenerateInputSchema = {
+  static const audioGenerateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "caption": {
@@ -7821,10 +7894,11 @@ export const AudioGenerateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `audio.generate`. */
-export const AudioGenerateReturnSchema = {
+  static const audioGenerateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "audio": {
@@ -7916,10 +7990,11 @@ export const AudioGenerateReturnSchema = {
     "options"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `audio.pending`. */
-export const AudioPendingInputSchema = {
+  static const audioPendingInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -7968,10 +8043,11 @@ export const AudioPendingInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `audio.pending`. */
-export const AudioPendingReturnSchema = {
+  static const audioPendingReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -8291,10 +8367,11 @@ export const AudioPendingReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `audio.tts`. */
-export const AudioTtsInputSchema = {
+  static const audioTtsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -8375,10 +8452,11 @@ export const AudioTtsInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `audio.tts`. */
-export const AudioTtsReturnSchema = {
+  static const audioTtsReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -8634,10 +8712,11 @@ export const AudioTtsReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `audio.voices`. */
-export const AudioVoicesInputSchema = {
+  static const audioVoicesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "category": {
@@ -8662,10 +8741,11 @@ export const AudioVoicesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `audio.voices`. */
-export const AudioVoicesReturnSchema = {
+  static const audioVoicesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "generatedAt": {
@@ -8767,10 +8847,11 @@ export const AudioVoicesReturnSchema = {
     "voices"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `bridges.create`. */
-export const BridgesCreateInputSchema = {
+  static const bridgesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allow": {
@@ -8799,10 +8880,11 @@ export const BridgesCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `bridges.create`. */
-export const BridgesCreateReturnSchema = {
+  static const bridgesCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -8891,10 +8973,11 @@ export const BridgesCreateReturnSchema = {
     "bridgeUrl"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `bridges.list`. */
-export const BridgesListInputSchema = {
+  static const bridgesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -8919,10 +9002,11 @@ export const BridgesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `bridges.list`. */
-export const BridgesListReturnSchema = {
+  static const bridgesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9057,10 +9141,11 @@ export const BridgesListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `bridges.revoke`. */
-export const BridgesRevokeInputSchema = {
+  static const bridgesRevokeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -9084,10 +9169,11 @@ export const BridgesRevokeInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `bridges.revoke`. */
-export const BridgesRevokeReturnSchema = {
+  static const bridgesRevokeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "bridgeId": {
@@ -9111,10 +9197,11 @@ export const BridgesRevokeReturnSchema = {
     "bridgeId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.availability`. */
-export const CalendarsAvailabilityInputSchema = {
+  static const calendarsAvailabilityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -9139,10 +9226,11 @@ export const CalendarsAvailabilityInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.availability`. */
-export const CalendarsAvailabilityReturnSchema = {
+  static const calendarsAvailabilityReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -9212,10 +9300,11 @@ export const CalendarsAvailabilityReturnSchema = {
     "busy"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.create`. */
-export const CalendarsCreateInputSchema = {
+  static const calendarsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -9260,10 +9349,11 @@ export const CalendarsCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.create`. */
-export const CalendarsCreateReturnSchema = {
+  static const calendarsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9437,10 +9527,11 @@ export const CalendarsCreateReturnSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.disable`. */
-export const CalendarsDisableInputSchema = {
+  static const calendarsDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -9452,10 +9543,11 @@ export const CalendarsDisableInputSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.disable`. */
-export const CalendarsDisableReturnSchema = {
+  static const calendarsDisableReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9629,10 +9721,11 @@ export const CalendarsDisableReturnSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.cancel`. */
-export const CalendarsEventsCancelInputSchema = {
+  static const calendarsEventsCancelInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -9652,10 +9745,11 @@ export const CalendarsEventsCancelInputSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.cancel`. */
-export const CalendarsEventsCancelReturnSchema = {
+  static const calendarsEventsCancelReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -10347,10 +10441,11 @@ export const CalendarsEventsCancelReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.create`. */
-export const CalendarsEventsCreateInputSchema = {
+  static const calendarsEventsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "attendee": {
@@ -10391,10 +10486,11 @@ export const CalendarsEventsCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.create`. */
-export const CalendarsEventsCreateReturnSchema = {
+  static const calendarsEventsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -11086,10 +11182,11 @@ export const CalendarsEventsCreateReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.list`. */
-export const CalendarsEventsListInputSchema = {
+  static const calendarsEventsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -11130,10 +11227,11 @@ export const CalendarsEventsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.list`. */
-export const CalendarsEventsListReturnSchema = {
+  static const calendarsEventsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -11731,10 +11829,11 @@ export const CalendarsEventsListReturnSchema = {
     "events"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.read`. */
-export const CalendarsEventsReadInputSchema = {
+  static const calendarsEventsReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -11746,10 +11845,11 @@ export const CalendarsEventsReadInputSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.read`. */
-export const CalendarsEventsReadReturnSchema = {
+  static const calendarsEventsReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -12327,10 +12427,11 @@ export const CalendarsEventsReadReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.respond`. */
-export const CalendarsEventsRespondInputSchema = {
+  static const calendarsEventsRespondInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "attendeeAgent": {
@@ -12362,10 +12463,11 @@ export const CalendarsEventsRespondInputSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.respond`. */
-export const CalendarsEventsRespondReturnSchema = {
+  static const calendarsEventsRespondReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -13050,10 +13152,11 @@ export const CalendarsEventsRespondReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.events.update`. */
-export const CalendarsEventsUpdateInputSchema = {
+  static const calendarsEventsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -13101,10 +13204,11 @@ export const CalendarsEventsUpdateInputSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.events.update`. */
-export const CalendarsEventsUpdateReturnSchema = {
+  static const calendarsEventsUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -13796,10 +13900,11 @@ export const CalendarsEventsUpdateReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.list`. */
-export const CalendarsListInputSchema = {
+  static const calendarsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -13824,10 +13929,11 @@ export const CalendarsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.list`. */
-export const CalendarsListReturnSchema = {
+  static const calendarsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -14004,10 +14110,11 @@ export const CalendarsListReturnSchema = {
     "calendars"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.share`. */
-export const CalendarsShareInputSchema = {
+  static const calendarsShareInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -14035,10 +14142,11 @@ export const CalendarsShareInputSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.share`. */
-export const CalendarsShareReturnSchema = {
+  static const calendarsShareReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -14267,10 +14375,11 @@ export const CalendarsShareReturnSchema = {
     "member"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `calendars.show`. */
-export const CalendarsShowInputSchema = {
+  static const calendarsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -14286,10 +14395,11 @@ export const CalendarsShowInputSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `calendars.show`. */
-export const CalendarsShowReturnSchema = {
+  static const calendarsShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -14520,10 +14630,11 @@ export const CalendarsShowReturnSchema = {
     "calendar"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.backend.ingress`. */
-export const ChannelsBackendIngressInputSchema = {
+  static const channelsBackendIngressInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -14678,10 +14789,11 @@ export const ChannelsBackendIngressInputSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.backend.ingress`. */
-export const ChannelsBackendIngressReturnSchema = {
+  static const channelsBackendIngressReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "acceptedAt": {
@@ -14805,10 +14917,11 @@ export const ChannelsBackendIngressReturnSchema = {
     "acceptedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.backend.runtime.interrupt`. */
-export const ChannelsBackendRuntimeInterruptInputSchema = {
+  static const channelsBackendRuntimeInterruptInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -14896,10 +15009,11 @@ export const ChannelsBackendRuntimeInterruptInputSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.backend.runtime.interrupt`. */
-export const ChannelsBackendRuntimeInterruptReturnSchema = {
+  static const channelsBackendRuntimeInterruptReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "acceptedAt": {
@@ -14985,10 +15099,11 @@ export const ChannelsBackendRuntimeInterruptReturnSchema = {
     "acceptedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.backend.runtime.readback`. */
-export const ChannelsBackendRuntimeReadbackInputSchema = {
+  static const channelsBackendRuntimeReadbackInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -15065,10 +15180,11 @@ export const ChannelsBackendRuntimeReadbackInputSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.backend.runtime.readback`. */
-export const ChannelsBackendRuntimeReadbackReturnSchema = {
+  static const channelsBackendRuntimeReadbackReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "assistantMessageId": {
@@ -15394,10 +15510,11 @@ export const ChannelsBackendRuntimeReadbackReturnSchema = {
     "observedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.create`. */
-export const ChannelsCreateInputSchema = {
+  static const channelsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "credentialConnection": {
@@ -15417,10 +15534,11 @@ export const ChannelsCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.create`. */
-export const ChannelsCreateReturnSchema = {
+  static const channelsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -15515,10 +15633,11 @@ export const ChannelsCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.list`. */
-export const ChannelsListInputSchema = {
+  static const channelsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -15539,10 +15658,11 @@ export const ChannelsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.list`. */
-export const ChannelsListReturnSchema = {
+  static const channelsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -15730,17 +15850,19 @@ export const ChannelsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.probe`. */
-export const ChannelsProbeInputSchema = {
+  static const channelsProbeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.probe`. */
-export const ChannelsProbeReturnSchema = {
+  static const channelsProbeReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -15826,10 +15948,11 @@ export const ChannelsProbeReturnSchema = {
     "adapters"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.restart`. */
-export const ChannelsRestartInputSchema = {
+  static const channelsRestartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "build": {
@@ -15838,10 +15961,11 @@ export const ChannelsRestartInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.restart`. */
-export const ChannelsRestartReturnSchema = {
+  static const channelsRestartReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -16297,10 +16421,11 @@ export const ChannelsRestartReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.set`. */
-export const ChannelsSetInputSchema = {
+  static const channelsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -16322,10 +16447,11 @@ export const ChannelsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.set`. */
-export const ChannelsSetReturnSchema = {
+  static const channelsSetReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -16420,10 +16546,11 @@ export const ChannelsSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.show`. */
-export const ChannelsShowInputSchema = {
+  static const channelsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -16435,10 +16562,11 @@ export const ChannelsShowInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.show`. */
-export const ChannelsShowReturnSchema = {
+  static const channelsShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -16516,10 +16644,11 @@ export const ChannelsShowReturnSchema = {
     "updatedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.start`. */
-export const ChannelsStartInputSchema = {
+  static const channelsStartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "build": {
@@ -16528,10 +16657,11 @@ export const ChannelsStartInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.start`. */
-export const ChannelsStartReturnSchema = {
+  static const channelsStartReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -16987,17 +17117,19 @@ export const ChannelsStartReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.status`. */
-export const ChannelsStatusInputSchema = {
+  static const channelsStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.status`. */
-export const ChannelsStatusReturnSchema = {
+  static const channelsStatusReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channels": {
@@ -17389,17 +17521,19 @@ export const ChannelsStatusReturnSchema = {
     "processes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `channels.stop`. */
-export const ChannelsStopInputSchema = {
+  static const channelsStopInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `channels.stop`. */
-export const ChannelsStopReturnSchema = {
+  static const channelsStopReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -17855,10 +17989,11 @@ export const ChannelsStopReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.backfill-provider-timestamps`. */
-export const ChatsBackfillProviderTimestampsInputSchema = {
+  static const chatsBackfillProviderTimestampsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -17875,17 +18010,19 @@ export const ChatsBackfillProviderTimestampsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.backfill-provider-timestamps`. */
-export const ChatsBackfillProviderTimestampsReturnSchema = {
+  static const chatsBackfillProviderTimestampsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.ensure`. */
-export const ChatsEnsureInputSchema = {
+  static const chatsEnsureInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actorId": {
@@ -17916,10 +18053,11 @@ export const ChatsEnsureInputSchema = {
     "clientRequestId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.ensure`. */
-export const ChatsEnsureReturnSchema = {
+  static const chatsEnsureReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -18062,10 +18200,11 @@ export const ChatsEnsureReturnSchema = {
     "chat"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.list`. */
-export const ChatsListInputSchema = {
+  static const chatsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -18110,10 +18249,11 @@ export const ChatsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.list`. */
-export const ChatsListReturnSchema = {
+  static const chatsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -18637,10 +18777,11 @@ export const ChatsListReturnSchema = {
     "chats"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.add`. */
-export const ChatsListsAddInputSchema = {
+  static const chatsListsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -18681,17 +18822,19 @@ export const ChatsListsAddInputSchema = {
     "list"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.add`. */
-export const ChatsListsAddReturnSchema = {
+  static const chatsListsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.create`. */
-export const ChatsListsCreateInputSchema = {
+  static const chatsListsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "description": {
@@ -18719,17 +18862,19 @@ export const ChatsListsCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.create`. */
-export const ChatsListsCreateReturnSchema = {
+  static const chatsListsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.delta`. */
-export const ChatsListsDeltaInputSchema = {
+  static const chatsListsDeltaInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -18774,17 +18919,19 @@ export const ChatsListsDeltaInputSchema = {
     "list"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.delta`. */
-export const ChatsListsDeltaReturnSchema = {
+  static const chatsListsDeltaReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.list`. */
-export const ChatsListsListInputSchema = {
+  static const chatsListsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -18809,17 +18956,19 @@ export const ChatsListsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.list`. */
-export const ChatsListsListReturnSchema = {
+  static const chatsListsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.mark-read`. */
-export const ChatsListsMarkReadInputSchema = {
+  static const chatsListsMarkReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -18864,17 +19013,19 @@ export const ChatsListsMarkReadInputSchema = {
     "list"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.mark-read`. */
-export const ChatsListsMarkReadReturnSchema = {
+  static const chatsListsMarkReadReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.members`. */
-export const ChatsListsMembersInputSchema = {
+  static const chatsListsMembersInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -18910,17 +19061,19 @@ export const ChatsListsMembersInputSchema = {
     "list"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.members`. */
-export const ChatsListsMembersReturnSchema = {
+  static const chatsListsMembersReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.preview`. */
-export const ChatsListsPreviewInputSchema = {
+  static const chatsListsPreviewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "listId": {
@@ -18937,10 +19090,11 @@ export const ChatsListsPreviewInputSchema = {
     "listId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.preview`. */
-export const ChatsListsPreviewReturnSchema = {
+  static const chatsListsPreviewReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "list": {
@@ -19209,10 +19363,11 @@ export const ChatsListsPreviewReturnSchema = {
     "preview"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.recompute`. */
-export const ChatsListsRecomputeInputSchema = {
+  static const chatsListsRecomputeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "listId": {
@@ -19229,10 +19384,11 @@ export const ChatsListsRecomputeInputSchema = {
     "listId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.recompute`. */
-export const ChatsListsRecomputeReturnSchema = {
+  static const chatsListsRecomputeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "list": {
@@ -19362,10 +19518,11 @@ export const ChatsListsRecomputeReturnSchema = {
     "recompute"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.remove`. */
-export const ChatsListsRemoveInputSchema = {
+  static const chatsListsRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -19394,17 +19551,19 @@ export const ChatsListsRemoveInputSchema = {
     "list"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.remove`. */
-export const ChatsListsRemoveReturnSchema = {
+  static const chatsListsRemoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.lists.show`. */
-export const ChatsListsShowInputSchema = {
+  static const chatsListsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "listId": {
@@ -19421,10 +19580,11 @@ export const ChatsListsShowInputSchema = {
     "listId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.lists.show`. */
-export const ChatsListsShowReturnSchema = {
+  static const chatsListsShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "current": {
@@ -19596,10 +19756,11 @@ export const ChatsListsShowReturnSchema = {
     "current"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.messages.create`. */
-export const ChatsMessagesCreateInputSchema = {
+  static const chatsMessagesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actorId": {
@@ -19635,10 +19796,11 @@ export const ChatsMessagesCreateInputSchema = {
     "content"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.messages.create`. */
-export const ChatsMessagesCreateReturnSchema = {
+  static const chatsMessagesCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -19806,10 +19968,11 @@ export const ChatsMessagesCreateReturnSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `chats.read`. */
-export const ChatsReadInputSchema = {
+  static const chatsReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -19849,10 +20012,11 @@ export const ChatsReadInputSchema = {
     "chat"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `chats.read`. */
-export const ChatsReadReturnSchema = {
+  static const chatsReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -20138,10 +20302,11 @@ export const ChatsReadReturnSchema = {
     "messages"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.projects.create`. */
-export const CloudProjectsCreateInputSchema = {
+  static const cloudProjectsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -20177,10 +20342,11 @@ export const CloudProjectsCreateInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.projects.create`. */
-export const CloudProjectsCreateReturnSchema = {
+  static const cloudProjectsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -20254,10 +20420,11 @@ export const CloudProjectsCreateReturnSchema = {
     "redirectTo"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.projects.list`. */
-export const CloudProjectsListInputSchema = {
+  static const cloudProjectsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -20278,10 +20445,11 @@ export const CloudProjectsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.projects.list`. */
-export const CloudProjectsListReturnSchema = {
+  static const cloudProjectsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -20412,10 +20580,11 @@ export const CloudProjectsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.scope.clear`. */
-export const CloudScopeClearInputSchema = {
+  static const cloudScopeClearInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -20440,10 +20609,11 @@ export const CloudScopeClearInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.scope.clear`. */
-export const CloudScopeClearReturnSchema = {
+  static const cloudScopeClearReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -20487,10 +20657,11 @@ export const CloudScopeClearReturnSchema = {
     "cleared"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.scope.explain`. */
-export const CloudScopeExplainInputSchema = {
+  static const cloudScopeExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -20503,10 +20674,11 @@ export const CloudScopeExplainInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.scope.explain`. */
-export const CloudScopeExplainReturnSchema = {
+  static const cloudScopeExplainReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "candidates": {
@@ -20853,10 +21025,11 @@ export const CloudScopeExplainReturnSchema = {
     "candidates"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.scope.set`. */
-export const CloudScopeSetInputSchema = {
+  static const cloudScopeSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -20885,10 +21058,11 @@ export const CloudScopeSetInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.scope.set`. */
-export const CloudScopeSetReturnSchema = {
+  static const cloudScopeSetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -21049,10 +21223,11 @@ export const CloudScopeSetReturnSchema = {
     "scope"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cloud.scope.show`. */
-export const CloudScopeShowInputSchema = {
+  static const cloudScopeShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -21061,10 +21236,11 @@ export const CloudScopeShowInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cloud.scope.show`. */
-export const CloudScopeShowReturnSchema = {
+  static const cloudScopeShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "scope": {
@@ -21197,10 +21373,11 @@ export const CloudScopeShowReturnSchema = {
     "scope"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `commands.list`. */
-export const CommandsListInputSchema = {
+  static const commandsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -21225,10 +21402,11 @@ export const CommandsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `commands.list`. */
-export const CommandsListReturnSchema = {
+  static const commandsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "agent": {
@@ -21517,10 +21695,11 @@ export const CommandsListReturnSchema = {
     "issues"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `commands.run`. */
-export const CommandsRunInputSchema = {
+  static const commandsRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -21543,10 +21722,11 @@ export const CommandsRunInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `commands.run`. */
-export const CommandsRunReturnSchema = {
+  static const commandsRunReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "agent": {
@@ -21720,10 +21900,11 @@ export const CommandsRunReturnSchema = {
     "prompt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `commands.show`. */
-export const CommandsShowInputSchema = {
+  static const commandsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -21739,10 +21920,11 @@ export const CommandsShowInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `commands.show`. */
-export const CommandsShowReturnSchema = {
+  static const commandsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "agent": {
@@ -21901,10 +22083,11 @@ export const CommandsShowReturnSchema = {
     "command"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `commands.validate`. */
-export const CommandsValidateInputSchema = {
+  static const commandsValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -21913,10 +22096,11 @@ export const CommandsValidateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `commands.validate`. */
-export const CommandsValidateReturnSchema = {
+  static const commandsValidateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "agent": {
@@ -22055,10 +22239,11 @@ export const CommandsValidateReturnSchema = {
     "warnings"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `connectors.list`. */
-export const ConnectorsListInputSchema = {
+  static const connectorsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -22083,10 +22268,11 @@ export const ConnectorsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `connectors.list`. */
-export const ConnectorsListReturnSchema = {
+  static const connectorsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connections": {
@@ -22165,10 +22351,11 @@ export const ConnectorsListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `connectors.revoke`. */
-export const ConnectorsRevokeInputSchema = {
+  static const connectorsRevokeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -22188,10 +22375,11 @@ export const ConnectorsRevokeInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `connectors.revoke`. */
-export const ConnectorsRevokeReturnSchema = {
+  static const connectorsRevokeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -22207,10 +22395,11 @@ export const ConnectorsRevokeReturnSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `connectors.show`. */
-export const ConnectorsShowInputSchema = {
+  static const connectorsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -22222,10 +22411,11 @@ export const ConnectorsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `connectors.show`. */
-export const ConnectorsShowReturnSchema = {
+  static const connectorsShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -22309,10 +22499,11 @@ export const ConnectorsShowReturnSchema = {
     "connection"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.activity`. */
-export const ContactsActivityInputSchema = {
+  static const contactsActivityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22336,17 +22527,19 @@ export const ContactsActivityInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.activity`. */
-export const ContactsActivityReturnSchema = {
+  static const contactsActivityReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.add`. */
-export const ContactsAddInputSchema = {
+  static const contactsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -22370,17 +22563,19 @@ export const ContactsAddInputSchema = {
     "identity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.add`. */
-export const ContactsAddReturnSchema = {
+  static const contactsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.allow`. */
-export const ContactsAllowInputSchema = {
+  static const contactsAllowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22392,17 +22587,19 @@ export const ContactsAllowInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.allow`. */
-export const ContactsAllowReturnSchema = {
+  static const contactsAllowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.approve`. */
-export const ContactsApproveInputSchema = {
+  static const contactsApproveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -22422,17 +22619,19 @@ export const ContactsApproveInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.approve`. */
-export const ContactsApproveReturnSchema = {
+  static const contactsApproveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.backfill`. */
-export const ContactsBackfillInputSchema = {
+  static const contactsBackfillInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -22469,17 +22668,19 @@ export const ContactsBackfillInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.backfill`. */
-export const ContactsBackfillReturnSchema = {
+  static const contactsBackfillReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.block`. */
-export const ContactsBlockInputSchema = {
+  static const contactsBlockInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22491,17 +22692,19 @@ export const ContactsBlockInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.block`. */
-export const ContactsBlockReturnSchema = {
+  static const contactsBlockReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.check`. */
-export const ContactsCheckInputSchema = {
+  static const contactsCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22513,31 +22716,35 @@ export const ContactsCheckInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.check`. */
-export const ContactsCheckReturnSchema = {
+  static const contactsCheckReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.duplicates`. */
-export const ContactsDuplicatesInputSchema = {
+  static const contactsDuplicatesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.duplicates`. */
-export const ContactsDuplicatesReturnSchema = {
+  static const contactsDuplicatesReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.find`. */
-export const ContactsFindInputSchema = {
+  static const contactsFindInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -22557,17 +22764,19 @@ export const ContactsFindInputSchema = {
     "query"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.find`. */
-export const ContactsFindReturnSchema = {
+  static const contactsFindReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.get`. */
-export const ContactsGetInputSchema = {
+  static const contactsGetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22579,17 +22788,19 @@ export const ContactsGetInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.get`. */
-export const ContactsGetReturnSchema = {
+  static const contactsGetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.info`. */
-export const ContactsInfoInputSchema = {
+  static const contactsInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22601,17 +22812,19 @@ export const ContactsInfoInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.info`. */
-export const ContactsInfoReturnSchema = {
+  static const contactsInfoReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.link`. */
-export const ContactsLinkInputSchema = {
+  static const contactsLinkInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -22639,17 +22852,19 @@ export const ContactsLinkInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.link`. */
-export const ContactsLinkReturnSchema = {
+  static const contactsLinkReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.list`. */
-export const ContactsListInputSchema = {
+  static const contactsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -22670,17 +22885,19 @@ export const ContactsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.list`. */
-export const ContactsListReturnSchema = {
+  static const contactsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.merge`. */
-export const ContactsMergeInputSchema = {
+  static const contactsMergeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -22701,17 +22918,19 @@ export const ContactsMergeInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.merge`. */
-export const ContactsMergeReturnSchema = {
+  static const contactsMergeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.messages`. */
-export const ContactsMessagesInputSchema = {
+  static const contactsMessagesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22731,17 +22950,19 @@ export const ContactsMessagesInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.messages`. */
-export const ContactsMessagesReturnSchema = {
+  static const contactsMessagesReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.metadata.list`. */
-export const ContactsMetadataListInputSchema = {
+  static const contactsMetadataListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22765,17 +22986,19 @@ export const ContactsMetadataListInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.metadata.list`. */
-export const ContactsMetadataListReturnSchema = {
+  static const contactsMetadataListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.metadata.remove`. */
-export const ContactsMetadataRemoveInputSchema = {
+  static const contactsMetadataRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22800,17 +23023,19 @@ export const ContactsMetadataRemoveInputSchema = {
     "key"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.metadata.remove`. */
-export const ContactsMetadataRemoveReturnSchema = {
+  static const contactsMetadataRemoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.metadata.set`. */
-export const ContactsMetadataSetInputSchema = {
+  static const contactsMetadataSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22840,17 +23065,19 @@ export const ContactsMetadataSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.metadata.set`. */
-export const ContactsMetadataSetReturnSchema = {
+  static const contactsMetadataSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.note`. */
-export const ContactsNoteInputSchema = {
+  static const contactsNoteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22875,17 +23102,19 @@ export const ContactsNoteInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.note`. */
-export const ContactsNoteReturnSchema = {
+  static const contactsNoteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.pending`. */
-export const ContactsPendingInputSchema = {
+  static const contactsPendingInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -22894,17 +23123,19 @@ export const ContactsPendingInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.pending`. */
-export const ContactsPendingReturnSchema = {
+  static const contactsPendingReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.profile`. */
-export const ContactsProfileInputSchema = {
+  static const contactsProfileInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22924,17 +23155,19 @@ export const ContactsProfileInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.profile`. */
-export const ContactsProfileReturnSchema = {
+  static const contactsProfileReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.remove`. */
-export const ContactsRemoveInputSchema = {
+  static const contactsRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22950,17 +23183,19 @@ export const ContactsRemoveInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.remove`. */
-export const ContactsRemoveReturnSchema = {
+  static const contactsRemoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.sessions`. */
-export const ContactsSessionsInputSchema = {
+  static const contactsSessionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -22980,17 +23215,19 @@ export const ContactsSessionsInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.sessions`. */
-export const ContactsSessionsReturnSchema = {
+  static const contactsSessionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.set`. */
-export const ContactsSetInputSchema = {
+  static const contactsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -23012,17 +23249,19 @@ export const ContactsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.set`. */
-export const ContactsSetReturnSchema = {
+  static const contactsSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.tag`. */
-export const ContactsTagInputSchema = {
+  static const contactsTagInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -23039,17 +23278,19 @@ export const ContactsTagInputSchema = {
     "tag"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.tag`. */
-export const ContactsTagReturnSchema = {
+  static const contactsTagReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.timeline`. */
-export const ContactsTimelineInputSchema = {
+  static const contactsTimelineInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -23077,17 +23318,19 @@ export const ContactsTimelineInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.timeline`. */
-export const ContactsTimelineReturnSchema = {
+  static const contactsTimelineReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.unlink`. */
-export const ContactsUnlinkInputSchema = {
+  static const contactsUnlinkInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -23111,17 +23354,19 @@ export const ContactsUnlinkInputSchema = {
     "platformIdentity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.unlink`. */
-export const ContactsUnlinkReturnSchema = {
+  static const contactsUnlinkReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `contacts.untag`. */
-export const ContactsUntagInputSchema = {
+  static const contactsUntagInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -23138,17 +23383,19 @@ export const ContactsUntagInputSchema = {
     "tag"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `contacts.untag`. */
-export const ContactsUntagReturnSchema = {
+  static const contactsUntagReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.authorize`. */
-export const ContextAuthorizeInputSchema = {
+  static const contextAuthorizeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "objectId": {
@@ -23170,10 +23417,11 @@ export const ContextAuthorizeInputSchema = {
     "permission"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.authorize`. */
-export const ContextAuthorizeReturnSchema = {
+  static const contextAuthorizeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -23234,17 +23482,19 @@ export const ContextAuthorizeReturnSchema = {
     "reason"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.capabilities`. */
-export const ContextCapabilitiesInputSchema = {
+  static const contextCapabilitiesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.capabilities`. */
-export const ContextCapabilitiesReturnSchema = {
+  static const contextCapabilitiesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -23319,10 +23569,11 @@ export const ContextCapabilitiesReturnSchema = {
     "capabilities"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.check`. */
-export const ContextCheckInputSchema = {
+  static const contextCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "objectId": {
@@ -23344,10 +23595,11 @@ export const ContextCheckInputSchema = {
     "permission"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.check`. */
-export const ContextCheckReturnSchema = {
+  static const contextCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -23389,10 +23641,11 @@ export const ContextCheckReturnSchema = {
     "capabilitiesCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.cleanup-agent-runtime`. */
-export const ContextCleanupAgentRuntimeInputSchema = {
+  static const contextCleanupAgentRuntimeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -23417,10 +23670,11 @@ export const ContextCleanupAgentRuntimeInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.cleanup-agent-runtime`. */
-export const ContextCleanupAgentRuntimeReturnSchema = {
+  static const contextCleanupAgentRuntimeReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -24123,17 +24377,19 @@ export const ContextCleanupAgentRuntimeReturnSchema = {
     "revoked"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.codex-bash-hook`. */
-export const ContextCodexBashHookInputSchema = {
+  static const contextCodexBashHookInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.codex-bash-hook`. */
-export const ContextCodexBashHookReturnSchema = {
+  static const contextCodexBashHookReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "hookSpecificOutput": {
@@ -24162,10 +24418,11 @@ export const ContextCodexBashHookReturnSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.credentials.add`. */
-export const ContextCredentialsAddInputSchema = {
+  static const contextCredentialsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextKey": {
@@ -24185,10 +24442,11 @@ export const ContextCredentialsAddInputSchema = {
     "contextKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.credentials.add`. */
-export const ContextCredentialsAddReturnSchema = {
+  static const contextCredentialsAddReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "added": {
@@ -24214,10 +24472,11 @@ export const ContextCredentialsAddReturnSchema = {
     "added"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.credentials.list`. */
-export const ContextCredentialsListInputSchema = {
+  static const contextCredentialsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -24234,10 +24493,11 @@ export const ContextCredentialsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.credentials.list`. */
-export const ContextCredentialsListReturnSchema = {
+  static const contextCredentialsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "default": {
@@ -24462,10 +24722,11 @@ export const ContextCredentialsListReturnSchema = {
     "entries"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.credentials.remove`. */
-export const ContextCredentialsRemoveInputSchema = {
+  static const contextCredentialsRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextKey": {
@@ -24481,10 +24742,11 @@ export const ContextCredentialsRemoveInputSchema = {
     "contextKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.credentials.remove`. */
-export const ContextCredentialsRemoveReturnSchema = {
+  static const contextCredentialsRemoveReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "default": {
@@ -24510,10 +24772,11 @@ export const ContextCredentialsRemoveReturnSchema = {
     "removed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.credentials.set-default`. */
-export const ContextCredentialsSetDefaultInputSchema = {
+  static const contextCredentialsSetDefaultInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextKey": {
@@ -24525,10 +24788,11 @@ export const ContextCredentialsSetDefaultInputSchema = {
     "contextKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.credentials.set-default`. */
-export const ContextCredentialsSetDefaultReturnSchema = {
+  static const contextCredentialsSetDefaultReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "default": {
@@ -24550,10 +24814,11 @@ export const ContextCredentialsSetDefaultReturnSchema = {
     "default"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.info`. */
-export const ContextInfoInputSchema = {
+  static const contextInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextId": {
@@ -24565,10 +24830,11 @@ export const ContextInfoInputSchema = {
     "contextId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.info`. */
-export const ContextInfoReturnSchema = {
+  static const contextInfoReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -24886,10 +25152,11 @@ export const ContextInfoReturnSchema = {
     "lineage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.issue`. */
-export const ContextIssueInputSchema = {
+  static const contextIssueInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allow": {
@@ -24913,10 +25180,11 @@ export const ContextIssueInputSchema = {
     "cliName"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.issue`. */
-export const ContextIssueReturnSchema = {
+  static const contextIssueReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -25117,10 +25385,11 @@ export const ContextIssueReturnSchema = {
     "env"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.lineage`. */
-export const ContextLineageInputSchema = {
+  static const contextLineageInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextId": {
@@ -25132,10 +25401,11 @@ export const ContextLineageInputSchema = {
     "contextId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.lineage`. */
-export const ContextLineageReturnSchema = {
+  static const contextLineageReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -25734,10 +26004,11 @@ export const ContextLineageReturnSchema = {
     "descendants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.list`. */
-export const ContextListInputSchema = {
+  static const contextListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -25770,10 +26041,11 @@ export const ContextListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.list`. */
-export const ContextListReturnSchema = {
+  static const contextListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contexts": {
@@ -26111,10 +26383,11 @@ export const ContextListReturnSchema = {
     "contexts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.prune`. */
-export const ContextPruneInputSchema = {
+  static const contextPruneInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -26131,10 +26404,11 @@ export const ContextPruneInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.prune`. */
-export const ContextPruneReturnSchema = {
+  static const contextPruneReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "changedCount": {
@@ -26165,10 +26439,11 @@ export const ContextPruneReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.revoke`. */
-export const ContextRevokeInputSchema = {
+  static const contextRevokeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contextId": {
@@ -26189,10 +26464,11 @@ export const ContextRevokeInputSchema = {
     "contextId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.revoke`. */
-export const ContextRevokeReturnSchema = {
+  static const contextRevokeReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -26659,17 +26935,19 @@ export const ContextRevokeReturnSchema = {
     "revokedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.visibility`. */
-export const ContextVisibilityInputSchema = {
+  static const contextVisibilityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.visibility`. */
-export const ContextVisibilityReturnSchema = {
+  static const contextVisibilityReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -26860,17 +27138,19 @@ export const ContextVisibilityReturnSchema = {
     "lastUpdatedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `context.whoami`. */
-export const ContextWhoamiInputSchema = {
+  static const contextWhoamiInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `context.whoami`. */
-export const ContextWhoamiReturnSchema = {
+  static const contextWhoamiReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -27188,10 +27468,11 @@ export const ContextWhoamiReturnSchema = {
     "lineage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.agent`. */
-export const CostsAgentInputSchema = {
+  static const costsAgentInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -27207,10 +27488,11 @@ export const CostsAgentInputSchema = {
     "agentId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.agent`. */
-export const CostsAgentReturnSchema = {
+  static const costsAgentReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -27290,10 +27572,11 @@ export const CostsAgentReturnSchema = {
     "agentId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.agents`. */
-export const CostsAgentsInputSchema = {
+  static const costsAgentsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -27310,10 +27593,11 @@ export const CostsAgentsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.agents`. */
-export const CostsAgentsReturnSchema = {
+  static const costsAgentsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agents": {
@@ -27411,10 +27695,11 @@ export const CostsAgentsReturnSchema = {
     "agents"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.pricing`. */
-export const CostsPricingInputSchema = {
+  static const costsPricingInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -27443,10 +27728,11 @@ export const CostsPricingInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.pricing`. */
-export const CostsPricingReturnSchema = {
+  static const costsPricingReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "recompute": {
@@ -27651,10 +27937,11 @@ export const CostsPricingReturnSchema = {
     "rows"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.session`. */
-export const CostsSessionInputSchema = {
+  static const costsSessionInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -27666,10 +27953,11 @@ export const CostsSessionInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.session`. */
-export const CostsSessionReturnSchema = {
+  static const costsSessionReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -27739,10 +28027,11 @@ export const CostsSessionReturnSchema = {
     "summary"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.summary`. */
-export const CostsSummaryInputSchema = {
+  static const costsSummaryInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "hours": {
@@ -27751,10 +28040,11 @@ export const CostsSummaryInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.summary`. */
-export const CostsSummaryReturnSchema = {
+  static const costsSummaryReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "summary": {
@@ -27830,10 +28120,11 @@ export const CostsSummaryReturnSchema = {
     "summary"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `costs.top-sessions`. */
-export const CostsTopSessionsInputSchema = {
+  static const costsTopSessionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -27850,10 +28141,11 @@ export const CostsTopSessionsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `costs.top-sessions`. */
-export const CostsTopSessionsReturnSchema = {
+  static const costsTopSessionsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -27959,10 +28251,11 @@ export const CostsTopSessionsReturnSchema = {
     "sessions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `credentials.connections.disable`. */
-export const CredentialsConnectionsDisableInputSchema = {
+  static const credentialsConnectionsDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -27975,10 +28268,11 @@ export const CredentialsConnectionsDisableInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `credentials.connections.disable`. */
-export const CredentialsConnectionsDisableReturnSchema = {
+  static const credentialsConnectionsDisableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -28059,10 +28353,11 @@ export const CredentialsConnectionsDisableReturnSchema = {
     "connection"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `credentials.connections.enable`. */
-export const CredentialsConnectionsEnableInputSchema = {
+  static const credentialsConnectionsEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -28075,10 +28370,11 @@ export const CredentialsConnectionsEnableInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `credentials.connections.enable`. */
-export const CredentialsConnectionsEnableReturnSchema = {
+  static const credentialsConnectionsEnableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -28159,10 +28455,11 @@ export const CredentialsConnectionsEnableReturnSchema = {
     "connection"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `credentials.connections.list`. */
-export const CredentialsConnectionsListInputSchema = {
+  static const credentialsConnectionsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "all": {
@@ -28193,10 +28490,11 @@ export const CredentialsConnectionsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `credentials.connections.list`. */
-export const CredentialsConnectionsListReturnSchema = {
+  static const credentialsConnectionsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "items": {
@@ -28325,10 +28623,11 @@ export const CredentialsConnectionsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `credentials.connections.show`. */
-export const CredentialsConnectionsShowInputSchema = {
+  static const credentialsConnectionsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -28341,10 +28640,11 @@ export const CredentialsConnectionsShowInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `credentials.connections.show`. */
-export const CredentialsConnectionsShowReturnSchema = {
+  static const credentialsConnectionsShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -28418,10 +28718,11 @@ export const CredentialsConnectionsShowReturnSchema = {
     "connection"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `credentials.policies.explain`. */
-export const CredentialsPoliciesExplainInputSchema = {
+  static const credentialsPoliciesExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -28438,10 +28739,11 @@ export const CredentialsPoliciesExplainInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `credentials.policies.explain`. */
-export const CredentialsPoliciesExplainReturnSchema = {
+  static const credentialsPoliciesExplainReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -28484,10 +28786,11 @@ export const CredentialsPoliciesExplainReturnSchema = {
     "approval"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.account`. */
-export const CrmAccountInputSchema = {
+  static const crmAccountInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -28499,10 +28802,11 @@ export const CrmAccountInputSchema = {
     "account"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.account`. */
-export const CrmAccountReturnSchema = {
+  static const crmAccountReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "crm": {
@@ -28519,10 +28823,11 @@ export const CrmAccountReturnSchema = {
     "crm"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.account.create`. */
-export const CrmAccountCreateInputSchema = {
+  static const crmAccountCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -28550,10 +28855,11 @@ export const CrmAccountCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.account.create`. */
-export const CrmAccountCreateReturnSchema = {
+  static const crmAccountCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -28568,10 +28874,11 @@ export const CrmAccountCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.account.link-contact`. */
-export const CrmAccountLinkContactInputSchema = {
+  static const crmAccountLinkContactInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -28596,10 +28903,11 @@ export const CrmAccountLinkContactInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.account.link-contact`. */
-export const CrmAccountLinkContactReturnSchema = {
+  static const crmAccountLinkContactReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -28614,10 +28922,11 @@ export const CrmAccountLinkContactReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.account.show`. */
-export const CrmAccountShowInputSchema = {
+  static const crmAccountShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -28629,10 +28938,11 @@ export const CrmAccountShowInputSchema = {
     "account"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.account.show`. */
-export const CrmAccountShowReturnSchema = {
+  static const crmAccountShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "crm": {
@@ -28649,10 +28959,11 @@ export const CrmAccountShowReturnSchema = {
     "crm"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.board`. */
-export const CrmBoardInputSchema = {
+  static const crmBoardInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -28669,10 +28980,11 @@ export const CrmBoardInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.board`. */
-export const CrmBoardReturnSchema = {
+  static const crmBoardReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "opportunities": {
@@ -28700,10 +29012,11 @@ export const CrmBoardReturnSchema = {
     "opportunities"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.contact`. */
-export const CrmContactInputSchema = {
+  static const crmContactInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -28715,10 +29028,11 @@ export const CrmContactInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.contact`. */
-export const CrmContactReturnSchema = {
+  static const crmContactReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "crm": {
@@ -28735,10 +29049,11 @@ export const CrmContactReturnSchema = {
     "crm"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.contact.set`. */
-export const CrmContactSetInputSchema = {
+  static const crmContactSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -28764,10 +29079,11 @@ export const CrmContactSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.contact.set`. */
-export const CrmContactSetReturnSchema = {
+  static const crmContactSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -28782,10 +29098,11 @@ export const CrmContactSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.contact.show`. */
-export const CrmContactShowInputSchema = {
+  static const crmContactShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -28797,10 +29114,11 @@ export const CrmContactShowInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.contact.show`. */
-export const CrmContactShowReturnSchema = {
+  static const crmContactShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "crm": {
@@ -28817,10 +29135,11 @@ export const CrmContactShowReturnSchema = {
     "crm"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.contacts`. */
-export const CrmContactsInputSchema = {
+  static const crmContactsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -28845,10 +29164,11 @@ export const CrmContactsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.contacts`. */
-export const CrmContactsReturnSchema = {
+  static const crmContactsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -28919,10 +29239,11 @@ export const CrmContactsReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.fact.confirm`. */
-export const CrmFactConfirmInputSchema = {
+  static const crmFactConfirmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fact": {
@@ -28934,10 +29255,11 @@ export const CrmFactConfirmInputSchema = {
     "fact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.fact.confirm`. */
-export const CrmFactConfirmReturnSchema = {
+  static const crmFactConfirmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -28952,10 +29274,11 @@ export const CrmFactConfirmReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.fact.list`. */
-export const CrmFactListInputSchema = {
+  static const crmFactListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -28996,10 +29319,11 @@ export const CrmFactListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.fact.list`. */
-export const CrmFactListReturnSchema = {
+  static const crmFactListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -29070,10 +29394,11 @@ export const CrmFactListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.fact.propose`. */
-export const CrmFactProposeInputSchema = {
+  static const crmFactProposeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -29124,10 +29449,11 @@ export const CrmFactProposeInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.fact.propose`. */
-export const CrmFactProposeReturnSchema = {
+  static const crmFactProposeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29142,10 +29468,11 @@ export const CrmFactProposeReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.fact.reject`. */
-export const CrmFactRejectInputSchema = {
+  static const crmFactRejectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fact": {
@@ -29157,10 +29484,11 @@ export const CrmFactRejectInputSchema = {
     "fact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.fact.reject`. */
-export const CrmFactRejectReturnSchema = {
+  static const crmFactRejectReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29175,10 +29503,11 @@ export const CrmFactRejectReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.next`. */
-export const CrmNextInputSchema = {
+  static const crmNextInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -29227,10 +29556,11 @@ export const CrmNextInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.next`. */
-export const CrmNextReturnSchema = {
+  static const crmNextReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -29301,10 +29631,11 @@ export const CrmNextReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity`. */
-export const CrmOpportunityInputSchema = {
+  static const crmOpportunityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "opportunity": {
@@ -29316,10 +29647,11 @@ export const CrmOpportunityInputSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity`. */
-export const CrmOpportunityReturnSchema = {
+  static const crmOpportunityReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "opportunity": {
@@ -29336,10 +29668,11 @@ export const CrmOpportunityReturnSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity.contacts`. */
-export const CrmOpportunityContactsInputSchema = {
+  static const crmOpportunityContactsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "opportunity": {
@@ -29351,10 +29684,11 @@ export const CrmOpportunityContactsInputSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity.contacts`. */
-export const CrmOpportunityContactsReturnSchema = {
+  static const crmOpportunityContactsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "contacts": {
@@ -29374,10 +29708,11 @@ export const CrmOpportunityContactsReturnSchema = {
     "contacts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity.create`. */
-export const CrmOpportunityCreateInputSchema = {
+  static const crmOpportunityCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -29421,10 +29756,11 @@ export const CrmOpportunityCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity.create`. */
-export const CrmOpportunityCreateReturnSchema = {
+  static const crmOpportunityCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29439,10 +29775,11 @@ export const CrmOpportunityCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity.link-contact`. */
-export const CrmOpportunityLinkContactInputSchema = {
+  static const crmOpportunityLinkContactInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -29471,10 +29808,11 @@ export const CrmOpportunityLinkContactInputSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity.link-contact`. */
-export const CrmOpportunityLinkContactReturnSchema = {
+  static const crmOpportunityLinkContactReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29489,10 +29827,11 @@ export const CrmOpportunityLinkContactReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity.move`. */
-export const CrmOpportunityMoveInputSchema = {
+  static const crmOpportunityMoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "lostReason": {
@@ -29513,10 +29852,11 @@ export const CrmOpportunityMoveInputSchema = {
     "stage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity.move`. */
-export const CrmOpportunityMoveReturnSchema = {
+  static const crmOpportunityMoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29531,10 +29871,11 @@ export const CrmOpportunityMoveReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.opportunity.show`. */
-export const CrmOpportunityShowInputSchema = {
+  static const crmOpportunityShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "opportunity": {
@@ -29546,10 +29887,11 @@ export const CrmOpportunityShowInputSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.opportunity.show`. */
-export const CrmOpportunityShowReturnSchema = {
+  static const crmOpportunityShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "opportunity": {
@@ -29566,10 +29908,11 @@ export const CrmOpportunityShowReturnSchema = {
     "opportunity"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.create`. */
-export const CrmPipelineCreateInputSchema = {
+  static const crmPipelineCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "analystAvoid": {
@@ -29676,10 +30019,11 @@ export const CrmPipelineCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.create`. */
-export const CrmPipelineCreateReturnSchema = {
+  static const crmPipelineCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -29694,10 +30038,11 @@ export const CrmPipelineCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.list`. */
-export const CrmPipelineListInputSchema = {
+  static const crmPipelineListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "entityType": {
@@ -29722,10 +30067,11 @@ export const CrmPipelineListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.list`. */
-export const CrmPipelineListReturnSchema = {
+  static const crmPipelineListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -29796,10 +30142,11 @@ export const CrmPipelineListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.policy.hitl-check`. */
-export const CrmPipelinePolicyHitlCheckInputSchema = {
+  static const crmPipelinePolicyHitlCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "context": {
@@ -29815,10 +30162,11 @@ export const CrmPipelinePolicyHitlCheckInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.policy.hitl-check`. */
-export const CrmPipelinePolicyHitlCheckReturnSchema = {
+  static const crmPipelinePolicyHitlCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "decision": {
@@ -29919,10 +30267,11 @@ export const CrmPipelinePolicyHitlCheckReturnSchema = {
     "decision"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.policy.send-window-check`. */
-export const CrmPipelinePolicySendWindowCheckInputSchema = {
+  static const crmPipelinePolicySendWindowCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "at": {
@@ -29938,10 +30287,11 @@ export const CrmPipelinePolicySendWindowCheckInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.policy.send-window-check`. */
-export const CrmPipelinePolicySendWindowCheckReturnSchema = {
+  static const crmPipelinePolicySendWindowCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "decision": {
@@ -30046,10 +30396,11 @@ export const CrmPipelinePolicySendWindowCheckReturnSchema = {
     "decision"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.review`. */
-export const CrmPipelineReviewInputSchema = {
+  static const crmPipelineReviewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pipeline": {
@@ -30061,10 +30412,11 @@ export const CrmPipelineReviewInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.review`. */
-export const CrmPipelineReviewReturnSchema = {
+  static const crmPipelineReviewReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -30131,10 +30483,11 @@ export const CrmPipelineReviewReturnSchema = {
     "fields"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.set`. */
-export const CrmPipelineSetInputSchema = {
+  static const crmPipelineSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "analystAvoid": {
@@ -30235,10 +30588,11 @@ export const CrmPipelineSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.set`. */
-export const CrmPipelineSetReturnSchema = {
+  static const crmPipelineSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30253,10 +30607,11 @@ export const CrmPipelineSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.show`. */
-export const CrmPipelineShowInputSchema = {
+  static const crmPipelineShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "explain": {
@@ -30272,17 +30627,19 @@ export const CrmPipelineShowInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.show`. */
-export const CrmPipelineShowReturnSchema = {
+  static const crmPipelineShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.add`. */
-export const CrmPipelineStageAddInputSchema = {
+  static const crmPipelineStageAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "category": {
@@ -30327,10 +30684,11 @@ export const CrmPipelineStageAddInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.add`. */
-export const CrmPipelineStageAddReturnSchema = {
+  static const crmPipelineStageAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30345,10 +30703,11 @@ export const CrmPipelineStageAddReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.archive`. */
-export const CrmPipelineStageArchiveInputSchema = {
+  static const crmPipelineStageArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pipeline": {
@@ -30365,10 +30724,11 @@ export const CrmPipelineStageArchiveInputSchema = {
     "stage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.archive`. */
-export const CrmPipelineStageArchiveReturnSchema = {
+  static const crmPipelineStageArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30383,10 +30743,11 @@ export const CrmPipelineStageArchiveReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.list`. */
-export const CrmPipelineStageListInputSchema = {
+  static const crmPipelineStageListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "includeArchived": {
@@ -30410,10 +30771,11 @@ export const CrmPipelineStageListInputSchema = {
     "pipeline"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.list`. */
-export const CrmPipelineStageListReturnSchema = {
+  static const crmPipelineStageListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -30484,10 +30846,11 @@ export const CrmPipelineStageListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.set`. */
-export const CrmPipelineStageSetInputSchema = {
+  static const crmPipelineStageSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "field": {
@@ -30514,10 +30877,11 @@ export const CrmPipelineStageSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.set`. */
-export const CrmPipelineStageSetReturnSchema = {
+  static const crmPipelineStageSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30532,10 +30896,11 @@ export const CrmPipelineStageSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.show`. */
-export const CrmPipelineStageShowInputSchema = {
+  static const crmPipelineStageShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pipeline": {
@@ -30552,17 +30917,19 @@ export const CrmPipelineStageShowInputSchema = {
     "stage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.show`. */
-export const CrmPipelineStageShowReturnSchema = {
+  static const crmPipelineStageShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.topic.add`. */
-export const CrmPipelineStageTopicAddInputSchema = {
+  static const crmPipelineStageTopicAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "description": {
@@ -30608,10 +30975,11 @@ export const CrmPipelineStageTopicAddInputSchema = {
     "stage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.topic.add`. */
-export const CrmPipelineStageTopicAddReturnSchema = {
+  static const crmPipelineStageTopicAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30626,10 +30994,11 @@ export const CrmPipelineStageTopicAddReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.topic.archive`. */
-export const CrmPipelineStageTopicArchiveInputSchema = {
+  static const crmPipelineStageTopicArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pipeline": {
@@ -30651,10 +31020,11 @@ export const CrmPipelineStageTopicArchiveInputSchema = {
     "topic"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.topic.archive`. */
-export const CrmPipelineStageTopicArchiveReturnSchema = {
+  static const crmPipelineStageTopicArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30669,10 +31039,11 @@ export const CrmPipelineStageTopicArchiveReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.topic.set`. */
-export const CrmPipelineStageTopicSetInputSchema = {
+  static const crmPipelineStageTopicSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "field": {
@@ -30704,10 +31075,11 @@ export const CrmPipelineStageTopicSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.topic.set`. */
-export const CrmPipelineStageTopicSetReturnSchema = {
+  static const crmPipelineStageTopicSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -30722,10 +31094,11 @@ export const CrmPipelineStageTopicSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.stage.topics`. */
-export const CrmPipelineStageTopicsInputSchema = {
+  static const crmPipelineStageTopicsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "includeArchived": {
@@ -30754,10 +31127,11 @@ export const CrmPipelineStageTopicsInputSchema = {
     "stage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.stage.topics`. */
-export const CrmPipelineStageTopicsReturnSchema = {
+  static const crmPipelineStageTopicsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -30828,10 +31202,11 @@ export const CrmPipelineStageTopicsReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.pipeline.validate`. */
-export const CrmPipelineValidateInputSchema = {
+  static const crmPipelineValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pipeline": {
@@ -30844,10 +31219,11 @@ export const CrmPipelineValidateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.pipeline.validate`. */
-export const CrmPipelineValidateReturnSchema = {
+  static const crmPipelineValidateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -30970,10 +31346,11 @@ export const CrmPipelineValidateReturnSchema = {
     "warnings"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.cancel`. */
-export const CrmTaskCancelInputSchema = {
+  static const crmTaskCancelInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -30989,10 +31366,11 @@ export const CrmTaskCancelInputSchema = {
     "task"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.cancel`. */
-export const CrmTaskCancelReturnSchema = {
+  static const crmTaskCancelReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31007,10 +31385,11 @@ export const CrmTaskCancelReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.create`. */
-export const CrmTaskCreateInputSchema = {
+  static const crmTaskCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -31074,10 +31453,11 @@ export const CrmTaskCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.create`. */
-export const CrmTaskCreateReturnSchema = {
+  static const crmTaskCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31092,10 +31472,11 @@ export const CrmTaskCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.done`. */
-export const CrmTaskDoneInputSchema = {
+  static const crmTaskDoneInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "task": {
@@ -31107,10 +31488,11 @@ export const CrmTaskDoneInputSchema = {
     "task"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.done`. */
-export const CrmTaskDoneReturnSchema = {
+  static const crmTaskDoneReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31125,10 +31507,11 @@ export const CrmTaskDoneReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.list`. */
-export const CrmTaskListInputSchema = {
+  static const crmTaskListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -31177,10 +31560,11 @@ export const CrmTaskListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.list`. */
-export const CrmTaskListReturnSchema = {
+  static const crmTaskListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -31251,10 +31635,11 @@ export const CrmTaskListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.show`. */
-export const CrmTaskShowInputSchema = {
+  static const crmTaskShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "task": {
@@ -31266,10 +31651,11 @@ export const CrmTaskShowInputSchema = {
     "task"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.show`. */
-export const CrmTaskShowReturnSchema = {
+  static const crmTaskShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "target": {
@@ -31286,10 +31672,11 @@ export const CrmTaskShowReturnSchema = {
     "task"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `crm.task.snooze`. */
-export const CrmTaskSnoozeInputSchema = {
+  static const crmTaskSnoozeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -31309,10 +31696,11 @@ export const CrmTaskSnoozeInputSchema = {
     "task"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `crm.task.snooze`. */
-export const CrmTaskSnoozeReturnSchema = {
+  static const crmTaskSnoozeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31327,10 +31715,11 @@ export const CrmTaskSnoozeReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.add`. */
-export const CronAddInputSchema = {
+  static const cronAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -31406,10 +31795,11 @@ export const CronAddInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.add`. */
-export const CronAddReturnSchema = {
+  static const cronAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31450,10 +31840,11 @@ export const CronAddReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.disable`. */
-export const CronDisableInputSchema = {
+  static const cronDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -31465,10 +31856,11 @@ export const CronDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.disable`. */
-export const CronDisableReturnSchema = {
+  static const cronDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31509,10 +31901,11 @@ export const CronDisableReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.enable`. */
-export const CronEnableInputSchema = {
+  static const cronEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -31524,10 +31917,11 @@ export const CronEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.enable`. */
-export const CronEnableReturnSchema = {
+  static const cronEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31568,10 +31962,11 @@ export const CronEnableReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.list`. */
-export const CronListInputSchema = {
+  static const cronListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -31600,10 +31995,11 @@ export const CronListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.list`. */
-export const CronListReturnSchema = {
+  static const cronListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -31683,10 +32079,11 @@ export const CronListReturnSchema = {
     "jobs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.rm`. */
-export const CronRmInputSchema = {
+  static const cronRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -31702,10 +32099,11 @@ export const CronRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.rm`. */
-export const CronRmReturnSchema = {
+  static const cronRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31746,10 +32144,11 @@ export const CronRmReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.run`. */
-export const CronRunInputSchema = {
+  static const cronRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -31765,10 +32164,11 @@ export const CronRunInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.run`. */
-export const CronRunReturnSchema = {
+  static const cronRunReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31809,10 +32209,11 @@ export const CronRunReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.set`. */
-export const CronSetInputSchema = {
+  static const cronSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -31834,10 +32235,11 @@ export const CronSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.set`. */
-export const CronSetReturnSchema = {
+  static const cronSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -31878,10 +32280,11 @@ export const CronSetReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `cron.show`. */
-export const CronShowInputSchema = {
+  static const cronShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -31893,10 +32296,11 @@ export const CronShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `cron.show`. */
-export const CronShowReturnSchema = {
+  static const cronShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "job": {
@@ -31909,17 +32313,19 @@ export const CronShowReturnSchema = {
     "job"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.env`. */
-export const DaemonEnvInputSchema = {
+  static const daemonEnvInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.env`. */
-export const DaemonEnvReturnSchema = {
+  static const daemonEnvReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -31947,10 +32353,11 @@ export const DaemonEnvReturnSchema = {
     "openedEditor"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.init-admin-key`. */
-export const DaemonInitAdminKeyInputSchema = {
+  static const daemonInitAdminKeyInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fromEnv": {
@@ -31972,10 +32379,11 @@ export const DaemonInitAdminKeyInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.init-admin-key`. */
-export const DaemonInitAdminKeyReturnSchema = {
+  static const daemonInitAdminKeyReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -31991,17 +32399,19 @@ export const DaemonInitAdminKeyReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.install`. */
-export const DaemonInstallInputSchema = {
+  static const daemonInstallInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.install`. */
-export const DaemonInstallReturnSchema = {
+  static const daemonInstallReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32016,10 +32426,11 @@ export const DaemonInstallReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.logs`. */
-export const DaemonLogsInputSchema = {
+  static const daemonLogsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "clear": {
@@ -32045,10 +32456,11 @@ export const DaemonLogsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.logs`. */
-export const DaemonLogsReturnSchema = {
+  static const daemonLogsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32059,10 +32471,11 @@ export const DaemonLogsReturnSchema = {
     "action"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.restart`. */
-export const DaemonRestartInputSchema = {
+  static const daemonRestartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "build": {
@@ -32075,10 +32488,11 @@ export const DaemonRestartInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.restart`. */
-export const DaemonRestartReturnSchema = {
+  static const daemonRestartReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32093,17 +32507,19 @@ export const DaemonRestartReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.start`. */
-export const DaemonStartInputSchema = {
+  static const daemonStartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.start`. */
-export const DaemonStartReturnSchema = {
+  static const daemonStartReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32118,17 +32534,19 @@ export const DaemonStartReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.status`. */
-export const DaemonStatusInputSchema = {
+  static const daemonStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.status`. */
-export const DaemonStatusReturnSchema = {
+  static const daemonStatusReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "infrastructure": {
@@ -32385,17 +32803,19 @@ export const DaemonStatusReturnSchema = {
     "processes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.stop`. */
-export const DaemonStopInputSchema = {
+  static const daemonStopInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.stop`. */
-export const DaemonStopReturnSchema = {
+  static const daemonStopReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32410,17 +32830,19 @@ export const DaemonStopReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `daemon.uninstall`. */
-export const DaemonUninstallInputSchema = {
+  static const daemonUninstallInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `daemon.uninstall`. */
-export const DaemonUninstallReturnSchema = {
+  static const daemonUninstallReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -32435,17 +32857,19 @@ export const DaemonUninstallReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.auth.check`. */
-export const DevinAuthCheckInputSchema = {
+  static const devinAuthCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.auth.check`. */
-export const DevinAuthCheckReturnSchema = {
+  static const devinAuthCheckReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "baseUrl": {
@@ -32482,10 +32906,11 @@ export const DevinAuthCheckReturnSchema = {
     "self"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.archive`. */
-export const DevinSessionsArchiveInputSchema = {
+  static const devinSessionsArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -32501,10 +32926,11 @@ export const DevinSessionsArchiveInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.archive`. */
-export const DevinSessionsArchiveReturnSchema = {
+  static const devinSessionsArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "session": {
@@ -32729,10 +33155,11 @@ export const DevinSessionsArchiveReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.attachments`. */
-export const DevinSessionsAttachmentsInputSchema = {
+  static const devinSessionsAttachmentsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cached": {
@@ -32748,10 +33175,11 @@ export const DevinSessionsAttachmentsInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.attachments`. */
-export const DevinSessionsAttachmentsReturnSchema = {
+  static const devinSessionsAttachmentsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "attachments": {
@@ -32804,10 +33232,11 @@ export const DevinSessionsAttachmentsReturnSchema = {
     "attachments"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.create`. */
-export const DevinSessionsCreateInputSchema = {
+  static const devinSessionsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "advancedMode": {
@@ -32947,10 +33376,11 @@ export const DevinSessionsCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.create`. */
-export const DevinSessionsCreateReturnSchema = {
+  static const devinSessionsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "devinMode": {
@@ -33220,10 +33650,11 @@ export const DevinSessionsCreateReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.insights`. */
-export const DevinSessionsInsightsInputSchema = {
+  static const devinSessionsInsightsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -33243,10 +33674,11 @@ export const DevinSessionsInsightsInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.insights`. */
-export const DevinSessionsInsightsReturnSchema = {
+  static const devinSessionsInsightsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "insights": {
@@ -33514,10 +33946,11 @@ export const DevinSessionsInsightsReturnSchema = {
     "insights"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.list`. */
-export const DevinSessionsListInputSchema = {
+  static const devinSessionsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -33546,10 +33979,11 @@ export const DevinSessionsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.list`. */
-export const DevinSessionsListReturnSchema = {
+  static const devinSessionsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "hasNextPage": {
@@ -33843,10 +34277,11 @@ export const DevinSessionsListReturnSchema = {
     "sessions"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.messages`. */
-export const DevinSessionsMessagesInputSchema = {
+  static const devinSessionsMessagesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cached": {
@@ -33862,10 +34297,11 @@ export const DevinSessionsMessagesInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.messages`. */
-export const DevinSessionsMessagesReturnSchema = {
+  static const devinSessionsMessagesReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "devinId": {
@@ -33908,10 +34344,11 @@ export const DevinSessionsMessagesReturnSchema = {
     "messages"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.send`. */
-export const DevinSessionsSendInputSchema = {
+  static const devinSessionsSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "asUser": {
@@ -33936,10 +34373,11 @@ export const DevinSessionsSendInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.send`. */
-export const DevinSessionsSendReturnSchema = {
+  static const devinSessionsSendReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "session": {
@@ -34164,10 +34602,11 @@ export const DevinSessionsSendReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.show`. */
-export const DevinSessionsShowInputSchema = {
+  static const devinSessionsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "session": {
@@ -34183,10 +34622,11 @@ export const DevinSessionsShowInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.show`. */
-export const DevinSessionsShowReturnSchema = {
+  static const devinSessionsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "session": {
@@ -34406,10 +34846,11 @@ export const DevinSessionsShowReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.sync`. */
-export const DevinSessionsSyncInputSchema = {
+  static const devinSessionsSyncInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifacts": {
@@ -34429,10 +34870,11 @@ export const DevinSessionsSyncInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.sync`. */
-export const DevinSessionsSyncReturnSchema = {
+  static const devinSessionsSyncReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifacts": {
@@ -34680,10 +35122,11 @@ export const DevinSessionsSyncReturnSchema = {
     "artifacts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `devin.sessions.terminate`. */
-export const DevinSessionsTerminateInputSchema = {
+  static const devinSessionsTerminateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "archive": {
@@ -34699,10 +35142,11 @@ export const DevinSessionsTerminateInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `devin.sessions.terminate`. */
-export const DevinSessionsTerminateReturnSchema = {
+  static const devinSessionsTerminateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "archive": {
@@ -34931,10 +35375,11 @@ export const DevinSessionsTerminateReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `eval.run`. */
-export const EvalRunInputSchema = {
+  static const evalRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "output": {
@@ -34950,10 +35395,11 @@ export const EvalRunInputSchema = {
     "specPath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `eval.run`. */
-export const EvalRunReturnSchema = {
+  static const evalRunReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "execution": {
@@ -34986,10 +35432,11 @@ export const EvalRunReturnSchema = {
     "grade"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `feedback.send`. */
-export const FeedbackSendInputSchema = {
+  static const feedbackSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -35044,10 +35491,11 @@ export const FeedbackSendInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `feedback.send`. */
-export const FeedbackSendReturnSchema = {
+  static const feedbackSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -35114,10 +35562,11 @@ export const FeedbackSendReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `gmail.list`. */
-export const GmailListInputSchema = {
+  static const gmailListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connector": {
@@ -35142,10 +35591,11 @@ export const GmailListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `gmail.list`. */
-export const GmailListReturnSchema = {
+  static const gmailListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -35200,10 +35650,11 @@ export const GmailListReturnSchema = {
     "refreshed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `gmail.read`. */
-export const GmailReadInputSchema = {
+  static const gmailReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connector": {
@@ -35223,10 +35674,11 @@ export const GmailReadInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `gmail.read`. */
-export const GmailReadReturnSchema = {
+  static const gmailReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -35281,10 +35733,11 @@ export const GmailReadReturnSchema = {
     "refreshed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.disable`. */
-export const HeartbeatDisableInputSchema = {
+  static const heartbeatDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -35296,10 +35749,11 @@ export const HeartbeatDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.disable`. */
-export const HeartbeatDisableReturnSchema = {
+  static const heartbeatDisableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -35469,10 +35923,11 @@ export const HeartbeatDisableReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.enable`. */
-export const HeartbeatEnableInputSchema = {
+  static const heartbeatEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -35488,10 +35943,11 @@ export const HeartbeatEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.enable`. */
-export const HeartbeatEnableReturnSchema = {
+  static const heartbeatEnableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -35661,10 +36117,11 @@ export const HeartbeatEnableReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.set`. */
-export const HeartbeatSetInputSchema = {
+  static const heartbeatSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -35686,10 +36143,11 @@ export const HeartbeatSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.set`. */
-export const HeartbeatSetReturnSchema = {
+  static const heartbeatSetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -35859,10 +36317,11 @@ export const HeartbeatSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.show`. */
-export const HeartbeatShowInputSchema = {
+  static const heartbeatShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -35874,10 +36333,11 @@ export const HeartbeatShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.show`. */
-export const HeartbeatShowReturnSchema = {
+  static const heartbeatShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -36022,10 +36482,11 @@ export const HeartbeatShowReturnSchema = {
     "heartbeatFileExists"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.status`. */
-export const HeartbeatStatusInputSchema = {
+  static const heartbeatStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -36034,10 +36495,11 @@ export const HeartbeatStatusInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.status`. */
-export const HeartbeatStatusReturnSchema = {
+  static const heartbeatStatusReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agents": {
@@ -36198,10 +36660,11 @@ export const HeartbeatStatusReturnSchema = {
     "agents"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `heartbeat.trigger`. */
-export const HeartbeatTriggerInputSchema = {
+  static const heartbeatTriggerInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -36217,10 +36680,11 @@ export const HeartbeatTriggerInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `heartbeat.trigger`. */
-export const HeartbeatTriggerReturnSchema = {
+  static const heartbeatTriggerReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -36258,10 +36722,11 @@ export const HeartbeatTriggerReturnSchema = {
     "heartbeatFile"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.create`. */
-export const HooksCreateInputSchema = {
+  static const hooksCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -36341,10 +36806,11 @@ export const HooksCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.create`. */
-export const HooksCreateReturnSchema = {
+  static const hooksCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -36378,10 +36844,11 @@ export const HooksCreateReturnSchema = {
     "hook"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.disable`. */
-export const HooksDisableInputSchema = {
+  static const hooksDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -36393,10 +36860,11 @@ export const HooksDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.disable`. */
-export const HooksDisableReturnSchema = {
+  static const hooksDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -36430,10 +36898,11 @@ export const HooksDisableReturnSchema = {
     "hook"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.enable`. */
-export const HooksEnableInputSchema = {
+  static const hooksEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -36445,10 +36914,11 @@ export const HooksEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.enable`. */
-export const HooksEnableReturnSchema = {
+  static const hooksEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -36482,10 +36952,11 @@ export const HooksEnableReturnSchema = {
     "hook"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.list`. */
-export const HooksListInputSchema = {
+  static const hooksListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -36506,10 +36977,11 @@ export const HooksListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.list`. */
-export const HooksListReturnSchema = {
+  static const hooksListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "hooks": {
@@ -36589,10 +37061,11 @@ export const HooksListReturnSchema = {
     "hooks"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.rm`. */
-export const HooksRmInputSchema = {
+  static const hooksRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -36608,10 +37081,11 @@ export const HooksRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.rm`. */
-export const HooksRmReturnSchema = {
+  static const hooksRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -36645,10 +37119,11 @@ export const HooksRmReturnSchema = {
     "hook"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.show`. */
-export const HooksShowInputSchema = {
+  static const hooksShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -36660,10 +37135,11 @@ export const HooksShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.show`. */
-export const HooksShowReturnSchema = {
+  static const hooksShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "hook": {
@@ -36676,10 +37152,11 @@ export const HooksShowReturnSchema = {
     "hook"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `hooks.test`. */
-export const HooksTestInputSchema = {
+  static const hooksTestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -36695,17 +37172,19 @@ export const HooksTestInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `hooks.test`. */
-export const HooksTestReturnSchema = {
+  static const hooksTestReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `image.atlas.split`. */
-export const ImageAtlasSplitInputSchema = {
+  static const imageAtlasSplitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -36789,10 +37268,11 @@ export const ImageAtlasSplitInputSchema = {
     "input"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `image.atlas.split`. */
-export const ImageAtlasSplitReturnSchema = {
+  static const imageAtlasSplitReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifactId": {
@@ -36849,10 +37329,11 @@ export const ImageAtlasSplitReturnSchema = {
     "sent"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `image.generate`. */
-export const ImageGenerateInputSchema = {
+  static const imageGenerateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifactId": {
@@ -36936,10 +37417,11 @@ export const ImageGenerateInputSchema = {
     "prompt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `image.generate`. */
-export const ImageGenerateReturnSchema = {
+  static const imageGenerateReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -37094,10 +37576,11 @@ export const ImageGenerateReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.archive`. */
-export const InboxArchiveInputSchema = {
+  static const inboxArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "item": {
@@ -37109,10 +37592,11 @@ export const InboxArchiveInputSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.archive`. */
-export const InboxArchiveReturnSchema = {
+  static const inboxArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "item": {
@@ -37125,17 +37609,19 @@ export const InboxArchiveReturnSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.disable`. */
-export const InboxDisableInputSchema = {
+  static const inboxDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.disable`. */
-export const InboxDisableReturnSchema = {
+  static const inboxDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changed": {
@@ -37150,10 +37636,11 @@ export const InboxDisableReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.done`. */
-export const InboxDoneInputSchema = {
+  static const inboxDoneInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "item": {
@@ -37165,10 +37652,11 @@ export const InboxDoneInputSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.done`. */
-export const InboxDoneReturnSchema = {
+  static const inboxDoneReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "item": {
@@ -37181,17 +37669,19 @@ export const InboxDoneReturnSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.enable`. */
-export const InboxEnableInputSchema = {
+  static const inboxEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.enable`. */
-export const InboxEnableReturnSchema = {
+  static const inboxEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changed": {
@@ -37206,10 +37696,11 @@ export const InboxEnableReturnSchema = {
     "changed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.items`. */
-export const InboxItemsInputSchema = {
+  static const inboxItemsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -37222,10 +37713,11 @@ export const InboxItemsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.items`. */
-export const InboxItemsReturnSchema = {
+  static const inboxItemsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -37245,10 +37737,11 @@ export const InboxItemsReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.list`. */
-export const InboxListInputSchema = {
+  static const inboxListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -37277,10 +37770,11 @@ export const InboxListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.list`. */
-export const InboxListReturnSchema = {
+  static const inboxListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -37300,10 +37794,11 @@ export const InboxListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.poll`. */
-export const InboxPollInputSchema = {
+  static const inboxPollInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "once": {
@@ -37312,10 +37807,11 @@ export const InboxPollInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.poll`. */
-export const InboxPollReturnSchema = {
+  static const inboxPollReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "ok": {
@@ -37333,10 +37829,11 @@ export const InboxPollReturnSchema = {
     "snapshot"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.read`. */
-export const InboxReadInputSchema = {
+  static const inboxReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "item": {
@@ -37348,10 +37845,11 @@ export const InboxReadInputSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.read`. */
-export const InboxReadReturnSchema = {
+  static const inboxReadReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "events": {
@@ -37373,10 +37871,11 @@ export const InboxReadReturnSchema = {
     "events"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.replay`. */
-export const InboxReplayInputSchema = {
+  static const inboxReplayInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -37392,10 +37891,11 @@ export const InboxReplayInputSchema = {
     "ref"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.replay`. */
-export const InboxReplayReturnSchema = {
+  static const inboxReplayReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "itemId": {
@@ -37423,10 +37923,11 @@ export const InboxReplayReturnSchema = {
     "replayedAt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.snooze`. */
-export const InboxSnoozeInputSchema = {
+  static const inboxSnoozeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "item": {
@@ -37442,10 +37943,11 @@ export const InboxSnoozeInputSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.snooze`. */
-export const InboxSnoozeReturnSchema = {
+  static const inboxSnoozeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "item": {
@@ -37458,17 +37960,19 @@ export const InboxSnoozeReturnSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.sources`. */
-export const InboxSourcesInputSchema = {
+  static const inboxSourcesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.sources`. */
-export const InboxSourcesReturnSchema = {
+  static const inboxSourcesReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "sources": {
@@ -37484,24 +37988,27 @@ export const InboxSourcesReturnSchema = {
     "sources"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `inbox.status`. */
-export const InboxStatusInputSchema = {
+  static const inboxStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `inbox.status`. */
-export const InboxStatusReturnSchema = {
+  static const inboxStatusReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `insights.create`. */
-export const InsightsCreateInputSchema = {
+  static const insightsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -37572,10 +38079,11 @@ export const InsightsCreateInputSchema = {
     "summary"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `insights.create`. */
-export const InsightsCreateReturnSchema = {
+  static const insightsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "comment": {
@@ -37605,10 +38113,11 @@ export const InsightsCreateReturnSchema = {
     "tags"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `insights.list`. */
-export const InsightsListInputSchema = {
+  static const insightsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -37666,10 +38175,11 @@ export const InsightsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `insights.list`. */
-export const InsightsListReturnSchema = {
+  static const insightsListReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -37801,10 +38311,11 @@ export const InsightsListReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `insights.search`. */
-export const InsightsSearchInputSchema = {
+  static const insightsSearchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -37825,10 +38336,11 @@ export const InsightsSearchInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `insights.search`. */
-export const InsightsSearchReturnSchema = {
+  static const insightsSearchReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "count": {
@@ -37854,10 +38366,11 @@ export const InsightsSearchReturnSchema = {
     "insights"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `insights.show`. */
-export const InsightsShowInputSchema = {
+  static const insightsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -37869,10 +38382,11 @@ export const InsightsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `insights.show`. */
-export const InsightsShowReturnSchema = {
+  static const insightsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "insight": {
@@ -37892,10 +38406,11 @@ export const InsightsShowReturnSchema = {
     "tags"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.create`. */
-export const InstancesCreateInputSchema = {
+  static const instancesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -37927,17 +38442,19 @@ export const InstancesCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.create`. */
-export const InstancesCreateReturnSchema = {
+  static const instancesCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.delete`. */
-export const InstancesDeleteInputSchema = {
+  static const instancesDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -37949,31 +38466,35 @@ export const InstancesDeleteInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.delete`. */
-export const InstancesDeleteReturnSchema = {
+  static const instancesDeleteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.deleted`. */
-export const InstancesDeletedInputSchema = {
+  static const instancesDeletedInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.deleted`. */
-export const InstancesDeletedReturnSchema = {
+  static const instancesDeletedReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.disable`. */
-export const InstancesDisableInputSchema = {
+  static const instancesDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "target": {
@@ -37985,17 +38506,19 @@ export const InstancesDisableInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.disable`. */
-export const InstancesDisableReturnSchema = {
+  static const instancesDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.disconnect`. */
-export const InstancesDisconnectInputSchema = {
+  static const instancesDisconnectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38007,17 +38530,19 @@ export const InstancesDisconnectInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.disconnect`. */
-export const InstancesDisconnectReturnSchema = {
+  static const instancesDisconnectReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.enable`. */
-export const InstancesEnableInputSchema = {
+  static const instancesEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "target": {
@@ -38029,17 +38554,19 @@ export const InstancesEnableInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.enable`. */
-export const InstancesEnableReturnSchema = {
+  static const instancesEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.get`. */
-export const InstancesGetInputSchema = {
+  static const instancesGetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -38056,17 +38583,19 @@ export const InstancesGetInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.get`. */
-export const InstancesGetReturnSchema = {
+  static const instancesGetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.list`. */
-export const InstancesListInputSchema = {
+  static const instancesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -38087,17 +38616,19 @@ export const InstancesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.list`. */
-export const InstancesListReturnSchema = {
+  static const instancesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.pending.approve`. */
-export const InstancesPendingApproveInputSchema = {
+  static const instancesPendingApproveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -38118,17 +38649,19 @@ export const InstancesPendingApproveInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.pending.approve`. */
-export const InstancesPendingApproveReturnSchema = {
+  static const instancesPendingApproveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.pending.list`. */
-export const InstancesPendingListInputSchema = {
+  static const instancesPendingListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -38148,17 +38681,19 @@ export const InstancesPendingListInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.pending.list`. */
-export const InstancesPendingListReturnSchema = {
+  static const instancesPendingListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.pending.reject`. */
-export const InstancesPendingRejectInputSchema = {
+  static const instancesPendingRejectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "contact": {
@@ -38179,17 +38714,19 @@ export const InstancesPendingRejectInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.pending.reject`. */
-export const InstancesPendingRejectReturnSchema = {
+  static const instancesPendingRejectReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.restore`. */
-export const InstancesRestoreInputSchema = {
+  static const instancesRestoreInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38201,17 +38738,19 @@ export const InstancesRestoreInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.restore`. */
-export const InstancesRestoreReturnSchema = {
+  static const instancesRestoreReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.add`. */
-export const InstancesRoutesAddInputSchema = {
+  static const instancesRoutesAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -38257,17 +38796,19 @@ export const InstancesRoutesAddInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.add`. */
-export const InstancesRoutesAddReturnSchema = {
+  static const instancesRoutesAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.deleted`. */
-export const InstancesRoutesDeletedInputSchema = {
+  static const instancesRoutesDeletedInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38276,17 +38817,19 @@ export const InstancesRoutesDeletedInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.deleted`. */
-export const InstancesRoutesDeletedReturnSchema = {
+  static const instancesRoutesDeletedReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.list`. */
-export const InstancesRoutesListInputSchema = {
+  static const instancesRoutesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -38310,17 +38853,19 @@ export const InstancesRoutesListInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.list`. */
-export const InstancesRoutesListReturnSchema = {
+  static const instancesRoutesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.remove`. */
-export const InstancesRoutesRemoveInputSchema = {
+  static const instancesRoutesRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allowRuntimeMismatch": {
@@ -38341,17 +38886,19 @@ export const InstancesRoutesRemoveInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.remove`. */
-export const InstancesRoutesRemoveReturnSchema = {
+  static const instancesRoutesRemoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.restore`. */
-export const InstancesRoutesRestoreInputSchema = {
+  static const instancesRoutesRestoreInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allowRuntimeMismatch": {
@@ -38372,17 +38919,19 @@ export const InstancesRoutesRestoreInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.restore`. */
-export const InstancesRoutesRestoreReturnSchema = {
+  static const instancesRoutesRestoreReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.set`. */
-export const InstancesRoutesSetInputSchema = {
+  static const instancesRoutesSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allowRuntimeMismatch": {
@@ -38413,17 +38962,19 @@ export const InstancesRoutesSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.set`. */
-export const InstancesRoutesSetReturnSchema = {
+  static const instancesRoutesSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.routes.show`. */
-export const InstancesRoutesShowInputSchema = {
+  static const instancesRoutesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38440,17 +38991,19 @@ export const InstancesRoutesShowInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.routes.show`. */
-export const InstancesRoutesShowReturnSchema = {
+  static const instancesRoutesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.set`. */
-export const InstancesSetInputSchema = {
+  static const instancesSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -38472,17 +39025,19 @@ export const InstancesSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.set`. */
-export const InstancesSetReturnSchema = {
+  static const instancesSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.show`. */
-export const InstancesShowInputSchema = {
+  static const instancesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38494,17 +39049,19 @@ export const InstancesShowInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.show`. */
-export const InstancesShowReturnSchema = {
+  static const instancesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.status`. */
-export const InstancesStatusInputSchema = {
+  static const instancesStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -38516,17 +39073,19 @@ export const InstancesStatusInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.status`. */
-export const InstancesStatusReturnSchema = {
+  static const instancesStatusReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `instances.target`. */
-export const InstancesTargetInputSchema = {
+  static const instancesTargetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -38546,17 +39105,19 @@ export const InstancesTargetInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `instances.target`. */
-export const InstancesTargetReturnSchema = {
+  static const instancesTargetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.accounts.create`. */
-export const MailAccountsCreateInputSchema = {
+  static const mailAccountsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "credentialsRef": {
@@ -38577,10 +39138,11 @@ export const MailAccountsCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.accounts.create`. */
-export const MailAccountsCreateReturnSchema = {
+  static const mailAccountsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -38705,10 +39267,11 @@ export const MailAccountsCreateReturnSchema = {
     "account"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.accounts.list`. */
-export const MailAccountsListInputSchema = {
+  static const mailAccountsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -38733,10 +39296,11 @@ export const MailAccountsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.accounts.list`. */
-export const MailAccountsListReturnSchema = {
+  static const mailAccountsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -38864,10 +39428,11 @@ export const MailAccountsListReturnSchema = {
     "accounts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.accounts.sync`. */
-export const MailAccountsSyncInputSchema = {
+  static const mailAccountsSyncInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -38883,10 +39448,11 @@ export const MailAccountsSyncInputSchema = {
     "account"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.accounts.sync`. */
-export const MailAccountsSyncReturnSchema = {
+  static const mailAccountsSyncReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39145,10 +39711,11 @@ export const MailAccountsSyncReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.domains.create`. */
-export const MailDomainsCreateInputSchema = {
+  static const mailDomainsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -39164,10 +39731,11 @@ export const MailDomainsCreateInputSchema = {
     "domain"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.domains.create`. */
-export const MailDomainsCreateReturnSchema = {
+  static const mailDomainsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39212,10 +39780,11 @@ export const MailDomainsCreateReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.domains.list`. */
-export const MailDomainsListInputSchema = {
+  static const mailDomainsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -39232,10 +39801,11 @@ export const MailDomainsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.domains.list`. */
-export const MailDomainsListReturnSchema = {
+  static const mailDomainsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39280,10 +39850,11 @@ export const MailDomainsListReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.mailboxes.create`. */
-export const MailMailboxesCreateInputSchema = {
+  static const mailMailboxesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -39315,10 +39886,11 @@ export const MailMailboxesCreateInputSchema = {
     "address"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.mailboxes.create`. */
-export const MailMailboxesCreateReturnSchema = {
+  static const mailMailboxesCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39462,10 +40034,11 @@ export const MailMailboxesCreateReturnSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.mailboxes.disable`. */
-export const MailMailboxesDisableInputSchema = {
+  static const mailMailboxesDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "mailbox": {
@@ -39477,10 +40050,11 @@ export const MailMailboxesDisableInputSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.mailboxes.disable`. */
-export const MailMailboxesDisableReturnSchema = {
+  static const mailMailboxesDisableReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39624,10 +40198,11 @@ export const MailMailboxesDisableReturnSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.mailboxes.list`. */
-export const MailMailboxesListInputSchema = {
+  static const mailMailboxesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -39652,10 +40227,11 @@ export const MailMailboxesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.mailboxes.list`. */
-export const MailMailboxesListReturnSchema = {
+  static const mailMailboxesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39802,10 +40378,11 @@ export const MailMailboxesListReturnSchema = {
     "mailboxes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.mailboxes.show`. */
-export const MailMailboxesShowInputSchema = {
+  static const mailMailboxesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "mailbox": {
@@ -39817,10 +40394,11 @@ export const MailMailboxesShowInputSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.mailboxes.show`. */
-export const MailMailboxesShowReturnSchema = {
+  static const mailMailboxesShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -39964,10 +40542,11 @@ export const MailMailboxesShowReturnSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.messages.import`. */
-export const MailMessagesImportInputSchema = {
+  static const mailMessagesImportInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -40008,10 +40587,11 @@ export const MailMessagesImportInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.messages.import`. */
-export const MailMessagesImportReturnSchema = {
+  static const mailMessagesImportReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -40676,10 +41256,11 @@ export const MailMessagesImportReturnSchema = {
     "inboxCreated"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.messages.list`. */
-export const MailMessagesListInputSchema = {
+  static const mailMessagesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addresses": {
@@ -40712,10 +41293,11 @@ export const MailMessagesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.messages.list`. */
-export const MailMessagesListReturnSchema = {
+  static const mailMessagesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -41362,10 +41944,11 @@ export const MailMessagesListReturnSchema = {
     "messages"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.messages.read`. */
-export const MailMessagesReadInputSchema = {
+  static const mailMessagesReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addresses": {
@@ -41381,10 +41964,11 @@ export const MailMessagesReadInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.messages.read`. */
-export const MailMessagesReadReturnSchema = {
+  static const mailMessagesReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -42028,10 +42612,11 @@ export const MailMessagesReadReturnSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.messages.search`. */
-export const MailMessagesSearchInputSchema = {
+  static const mailMessagesSearchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -42051,10 +42636,11 @@ export const MailMessagesSearchInputSchema = {
     "query"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.messages.search`. */
-export const MailMessagesSearchReturnSchema = {
+  static const mailMessagesSearchReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -42701,10 +43287,11 @@ export const MailMessagesSearchReturnSchema = {
     "messages"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.outbox.inspect`. */
-export const MailOutboxInspectInputSchema = {
+  static const mailOutboxInspectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "outbox": {
@@ -42716,10 +43303,11 @@ export const MailOutboxInspectInputSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.outbox.inspect`. */
-export const MailOutboxInspectReturnSchema = {
+  static const mailOutboxInspectReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -42881,10 +43469,11 @@ export const MailOutboxInspectReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.outbox.list`. */
-export const MailOutboxListInputSchema = {
+  static const mailOutboxListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -42909,10 +43498,11 @@ export const MailOutboxListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.outbox.list`. */
-export const MailOutboxListReturnSchema = {
+  static const mailOutboxListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43077,10 +43667,11 @@ export const MailOutboxListReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.outbox.retry`. */
-export const MailOutboxRetryInputSchema = {
+  static const mailOutboxRetryInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "outbox": {
@@ -43092,10 +43683,11 @@ export const MailOutboxRetryInputSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.outbox.retry`. */
-export const MailOutboxRetryReturnSchema = {
+  static const mailOutboxRetryReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43257,17 +43849,19 @@ export const MailOutboxRetryReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.outbox.status`. */
-export const MailOutboxStatusInputSchema = {
+  static const mailOutboxStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.outbox.status`. */
-export const MailOutboxStatusReturnSchema = {
+  static const mailOutboxStatusReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "counts": {
@@ -43288,10 +43882,11 @@ export const MailOutboxStatusReturnSchema = {
     "total"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.list`. */
-export const MailProvidersListInputSchema = {
+  static const mailProvidersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -43308,10 +43903,11 @@ export const MailProvidersListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.list`. */
-export const MailProvidersListReturnSchema = {
+  static const mailProvidersListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "providers": {
@@ -43346,10 +43942,11 @@ export const MailProvidersListReturnSchema = {
     "providers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.create`. */
-export const MailProvidersRaviMailMailboxesCreateInputSchema = {
+  static const mailProvidersRaviMailMailboxesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addressOrLocalPart": {
@@ -43369,10 +43966,11 @@ export const MailProvidersRaviMailMailboxesCreateInputSchema = {
     "addressOrLocalPart"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.create`. */
-export const MailProvidersRaviMailMailboxesCreateReturnSchema = {
+  static const mailProvidersRaviMailMailboxesCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43417,10 +44015,11 @@ export const MailProvidersRaviMailMailboxesCreateReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.disable`. */
-export const MailProvidersRaviMailMailboxesDisableInputSchema = {
+  static const mailProvidersRaviMailMailboxesDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -43436,10 +44035,11 @@ export const MailProvidersRaviMailMailboxesDisableInputSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.disable`. */
-export const MailProvidersRaviMailMailboxesDisableReturnSchema = {
+  static const mailProvidersRaviMailMailboxesDisableReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43484,10 +44084,11 @@ export const MailProvidersRaviMailMailboxesDisableReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.list`. */
-export const MailProvidersRaviMailMailboxesListInputSchema = {
+  static const mailProvidersRaviMailMailboxesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -43508,10 +44109,11 @@ export const MailProvidersRaviMailMailboxesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.list`. */
-export const MailProvidersRaviMailMailboxesListReturnSchema = {
+  static const mailProvidersRaviMailMailboxesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43556,10 +44158,11 @@ export const MailProvidersRaviMailMailboxesListReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.mailboxes.show`. */
-export const MailProvidersRaviMailMailboxesShowInputSchema = {
+  static const mailProvidersRaviMailMailboxesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -43575,10 +44178,11 @@ export const MailProvidersRaviMailMailboxesShowInputSchema = {
     "mailbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.mailboxes.show`. */
-export const MailProvidersRaviMailMailboxesShowReturnSchema = {
+  static const mailProvidersRaviMailMailboxesShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43623,10 +44227,11 @@ export const MailProvidersRaviMailMailboxesShowReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.list`. */
-export const MailProvidersRaviMailMessagesListInputSchema = {
+  static const mailProvidersRaviMailMessagesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addresses": {
@@ -43651,10 +44256,11 @@ export const MailProvidersRaviMailMessagesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.list`. */
-export const MailProvidersRaviMailMessagesListReturnSchema = {
+  static const mailProvidersRaviMailMessagesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43699,10 +44305,11 @@ export const MailProvidersRaviMailMessagesListReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.read`. */
-export const MailProvidersRaviMailMessagesReadInputSchema = {
+  static const mailProvidersRaviMailMessagesReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -43722,10 +44329,11 @@ export const MailProvidersRaviMailMessagesReadInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.read`. */
-export const MailProvidersRaviMailMessagesReadReturnSchema = {
+  static const mailProvidersRaviMailMessagesReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43770,10 +44378,11 @@ export const MailProvidersRaviMailMessagesReadReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.messages.show`. */
-export const MailProvidersRaviMailMessagesShowInputSchema = {
+  static const mailProvidersRaviMailMessagesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addresses": {
@@ -43793,10 +44402,11 @@ export const MailProvidersRaviMailMessagesShowInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.messages.show`. */
-export const MailProvidersRaviMailMessagesShowReturnSchema = {
+  static const mailProvidersRaviMailMessagesShowReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43841,10 +44451,11 @@ export const MailProvidersRaviMailMessagesShowReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.providers.ravi-mail.send`. */
-export const MailProvidersRaviMailSendInputSchema = {
+  static const mailProvidersRaviMailSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -43877,10 +44488,11 @@ export const MailProvidersRaviMailSendInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.providers.ravi-mail.send`. */
-export const MailProvidersRaviMailSendReturnSchema = {
+  static const mailProvidersRaviMailSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -43925,10 +44537,11 @@ export const MailProvidersRaviMailSendReturnSchema = {
     "type": "string"
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.reply`. */
-export const MailReplyInputSchema = {
+  static const mailReplyInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "bcc": {
@@ -43972,10 +44585,11 @@ export const MailReplyInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.reply`. */
-export const MailReplyReturnSchema = {
+  static const mailReplyReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -44742,10 +45356,11 @@ export const MailReplyReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.send`. */
-export const MailSendInputSchema = {
+  static const mailSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -44774,10 +45389,11 @@ export const MailSendInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.send`. */
-export const MailSendReturnSchema = {
+  static const mailSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -45544,10 +46160,11 @@ export const MailSendReturnSchema = {
     "outbox"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `mail.threads.read`. */
-export const MailThreadsReadInputSchema = {
+  static const mailThreadsReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "addresses": {
@@ -45563,10 +46180,11 @@ export const MailThreadsReadInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `mail.threads.read`. */
-export const MailThreadsReadReturnSchema = {
+  static const mailThreadsReadReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -46294,10 +46912,11 @@ export const MailThreadsReadReturnSchema = {
     "messages"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `media.send`. */
-export const MediaSendInputSchema = {
+  static const mediaSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -46337,10 +46956,11 @@ export const MediaSendInputSchema = {
     "filePath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `media.send`. */
-export const MediaSendReturnSchema = {
+  static const mediaSendReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "delivery": {
@@ -46417,10 +47037,11 @@ export const MediaSendReturnSchema = {
     "delivery"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.finalize`. */
-export const MeetingsFinalizeInputSchema = {
+  static const meetingsFinalizeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "noPostTranscribe": {
@@ -46438,10 +47059,11 @@ export const MeetingsFinalizeInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.finalize`. */
-export const MeetingsFinalizeReturnSchema = {
+  static const meetingsFinalizeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifactId": {
@@ -46533,10 +47155,11 @@ export const MeetingsFinalizeReturnSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.profiles.init`. */
-export const MeetingsProfilesInitInputSchema = {
+  static const meetingsProfilesInitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -46553,10 +47176,11 @@ export const MeetingsProfilesInitInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.profiles.init`. */
-export const MeetingsProfilesInitReturnSchema = {
+  static const meetingsProfilesInitReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileDir": {
@@ -46575,10 +47199,11 @@ export const MeetingsProfilesInitReturnSchema = {
     "profilePath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.profiles.list`. */
-export const MeetingsProfilesListInputSchema = {
+  static const meetingsProfilesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -46595,10 +47220,11 @@ export const MeetingsProfilesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.profiles.list`. */
-export const MeetingsProfilesListReturnSchema = {
+  static const meetingsProfilesListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "items": {
@@ -46978,10 +47604,11 @@ export const MeetingsProfilesListReturnSchema = {
     "profiles"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.profiles.show`. */
-export const MeetingsProfilesShowInputSchema = {
+  static const meetingsProfilesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -46993,10 +47620,11 @@ export const MeetingsProfilesShowInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.profiles.show`. */
-export const MeetingsProfilesShowReturnSchema = {
+  static const meetingsProfilesShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "chrome": {
@@ -47150,10 +47778,11 @@ export const MeetingsProfilesShowReturnSchema = {
     "defaults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.profiles.validate`. */
-export const MeetingsProfilesValidateInputSchema = {
+  static const meetingsProfilesValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -47162,10 +47791,11 @@ export const MeetingsProfilesValidateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.profiles.validate`. */
-export const MeetingsProfilesValidateReturnSchema = {
+  static const meetingsProfilesValidateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "results": {
@@ -47207,17 +47837,19 @@ export const MeetingsProfilesValidateReturnSchema = {
     "results"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `meetings.voice-runtimes`. */
-export const MeetingsVoiceRuntimesInputSchema = {
+  static const meetingsVoiceRuntimesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `meetings.voice-runtimes`. */
-export const MeetingsVoiceRuntimesReturnSchema = {
+  static const meetingsVoiceRuntimesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "candidates": {
@@ -47284,25 +47916,28 @@ export const MeetingsVoiceRuntimesReturnSchema = {
     "candidates"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `metrics.dates`. */
-export const MetricsDatesInputSchema = {
+  static const metricsDatesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `metrics.dates`. */
-export const MetricsDatesReturnSchema = {
+  static const metricsDatesReturnSchema = r'''
+{
   "items": {
     "type": "string"
   },
   "type": "array"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `metrics.rollup`. */
-export const MetricsRollupInputSchema = {
+  static const metricsRollupInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "since": {
@@ -47315,10 +47950,11 @@ export const MetricsRollupInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `metrics.rollup`. */
-export const MetricsRollupReturnSchema = {
+  static const metricsRollupReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dates": {
@@ -47336,10 +47972,11 @@ export const MetricsRollupReturnSchema = {
     "rowsWritten"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `metrics.show`. */
-export const MetricsShowInputSchema = {
+  static const metricsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -47368,10 +48005,11 @@ export const MetricsShowInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `metrics.show`. */
-export const MetricsShowReturnSchema = {
+  static const metricsShowReturnSchema = r'''
+{
   "items": {
     "additionalProperties": false,
     "properties": {
@@ -47445,10 +48083,11 @@ export const MetricsShowReturnSchema = {
     "type": "object"
   },
   "type": "array"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.list`. */
-export const ObserversListInputSchema = {
+  static const observersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -47473,10 +48112,11 @@ export const ObserversListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.list`. */
-export const ObserversListReturnSchema = {
+  static const observersListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "bindings": {
@@ -47556,10 +48196,11 @@ export const ObserversListReturnSchema = {
     "bindings"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.profiles.init`. */
-export const ObserversProfilesInitInputSchema = {
+  static const observersProfilesInitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "overwrite": {
@@ -47579,10 +48220,11 @@ export const ObserversProfilesInitInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.profiles.init`. */
-export const ObserversProfilesInitReturnSchema = {
+  static const observersProfilesInitReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "profileDir": {
@@ -47601,10 +48243,11 @@ export const ObserversProfilesInitReturnSchema = {
     "profilePath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.profiles.list`. */
-export const ObserversProfilesListInputSchema = {
+  static const observersProfilesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -47621,10 +48264,11 @@ export const ObserversProfilesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.profiles.list`. */
-export const ObserversProfilesListReturnSchema = {
+  static const observersProfilesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -47704,10 +48348,11 @@ export const ObserversProfilesListReturnSchema = {
     "profiles"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.profiles.preview`. */
-export const ObserversProfilesPreviewInputSchema = {
+  static const observersProfilesPreviewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -47723,10 +48368,11 @@ export const ObserversProfilesPreviewInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.profiles.preview`. */
-export const ObserversProfilesPreviewReturnSchema = {
+  static const observersProfilesPreviewReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "eventMarkdown": {
@@ -47751,10 +48397,11 @@ export const ObserversProfilesPreviewReturnSchema = {
     "prompt"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.profiles.show`. */
-export const ObserversProfilesShowInputSchema = {
+  static const observersProfilesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -47766,10 +48413,11 @@ export const ObserversProfilesShowInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.profiles.show`. */
-export const ObserversProfilesShowReturnSchema = {
+  static const observersProfilesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "body": {
@@ -47786,10 +48434,11 @@ export const ObserversProfilesShowReturnSchema = {
     "body"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.profiles.validate`. */
-export const ObserversProfilesValidateInputSchema = {
+  static const observersProfilesValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -47798,10 +48447,11 @@ export const ObserversProfilesValidateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.profiles.validate`. */
-export const ObserversProfilesValidateReturnSchema = {
+  static const observersProfilesValidateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "errors": {
@@ -47830,10 +48480,11 @@ export const ObserversProfilesValidateReturnSchema = {
     "errors"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.refresh`. */
-export const ObserversRefreshInputSchema = {
+  static const observersRefreshInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reconcile": {
@@ -47849,10 +48500,11 @@ export const ObserversRefreshInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.refresh`. */
-export const ObserversRefreshReturnSchema = {
+  static const observersRefreshReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "bindings": {
@@ -47931,10 +48583,11 @@ export const ObserversRefreshReturnSchema = {
     "skipped"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.disable`. */
-export const ObserversRulesDisableInputSchema = {
+  static const observersRulesDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -47946,10 +48599,11 @@ export const ObserversRulesDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.disable`. */
-export const ObserversRulesDisableReturnSchema = {
+  static const observersRulesDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rule": {
@@ -47967,10 +48621,11 @@ export const ObserversRulesDisableReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.enable`. */
-export const ObserversRulesEnableInputSchema = {
+  static const observersRulesEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -47982,10 +48637,11 @@ export const ObserversRulesEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.enable`. */
-export const ObserversRulesEnableReturnSchema = {
+  static const observersRulesEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rule": {
@@ -48003,10 +48659,11 @@ export const ObserversRulesEnableReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.explain`. */
-export const ObserversRulesExplainInputSchema = {
+  static const observersRulesExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "session": {
@@ -48018,10 +48675,11 @@ export const ObserversRulesExplainInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.explain`. */
-export const ObserversRulesExplainReturnSchema = {
+  static const observersRulesExplainReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "bindings": {
@@ -48052,10 +48710,11 @@ export const ObserversRulesExplainReturnSchema = {
     "bindings"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.list`. */
-export const ObserversRulesListInputSchema = {
+  static const observersRulesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -48072,10 +48731,11 @@ export const ObserversRulesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.list`. */
-export const ObserversRulesListReturnSchema = {
+  static const observersRulesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -48155,10 +48815,11 @@ export const ObserversRulesListReturnSchema = {
     "rules"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.rm`. */
-export const ObserversRulesRmInputSchema = {
+  static const observersRulesRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -48174,10 +48835,11 @@ export const ObserversRulesRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.rm`. */
-export const ObserversRulesRmReturnSchema = {
+  static const observersRulesRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "deleted": {},
@@ -48191,10 +48853,11 @@ export const ObserversRulesRmReturnSchema = {
     "deleted"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.set`. */
-export const ObserversRulesSetInputSchema = {
+  static const observersRulesSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "delivery": {
@@ -48295,10 +48958,11 @@ export const ObserversRulesSetInputSchema = {
     "observerAgentId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.set`. */
-export const ObserversRulesSetReturnSchema = {
+  static const observersRulesSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rule": {
@@ -48316,10 +48980,11 @@ export const ObserversRulesSetReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.show`. */
-export const ObserversRulesShowInputSchema = {
+  static const observersRulesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -48331,10 +48996,11 @@ export const ObserversRulesShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.show`. */
-export const ObserversRulesShowReturnSchema = {
+  static const observersRulesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rule": {
@@ -48347,17 +49013,19 @@ export const ObserversRulesShowReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.rules.validate`. */
-export const ObserversRulesValidateInputSchema = {
+  static const observersRulesValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.rules.validate`. */
-export const ObserversRulesValidateReturnSchema = {
+  static const observersRulesValidateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "errors": {
@@ -48377,10 +49045,11 @@ export const ObserversRulesValidateReturnSchema = {
     "errors"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `observers.show`. */
-export const ObserversShowInputSchema = {
+  static const observersShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "bindingId": {
@@ -48392,10 +49061,11 @@ export const ObserversShowInputSchema = {
     "bindingId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `observers.show`. */
-export const ObserversShowReturnSchema = {
+  static const observersShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "binding": {
@@ -48408,10 +49078,11 @@ export const ObserversShowReturnSchema = {
     "binding"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.create`. */
-export const PagesCreateInputSchema = {
+  static const pagesCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -48446,10 +49117,11 @@ export const PagesCreateInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.create`. */
-export const PagesCreateReturnSchema = {
+  static const pagesCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -48538,10 +49210,11 @@ export const PagesCreateReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.domains`. */
-export const PagesDomainsInputSchema = {
+  static const pagesDomainsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -48572,10 +49245,11 @@ export const PagesDomainsInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.domains`. */
-export const PagesDomainsReturnSchema = {
+  static const pagesDomainsReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -48670,10 +49344,11 @@ export const PagesDomainsReturnSchema = {
     "total"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.list`. */
-export const PagesListInputSchema = {
+  static const pagesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -48698,10 +49373,11 @@ export const PagesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.list`. */
-export const PagesListReturnSchema = {
+  static const pagesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -48836,10 +49512,11 @@ export const PagesListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.password.remove`. */
-export const PagesPasswordRemoveInputSchema = {
+  static const pagesPasswordRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -48874,10 +49551,11 @@ export const PagesPasswordRemoveInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.password.remove`. */
-export const PagesPasswordRemoveReturnSchema = {
+  static const pagesPasswordRemoveReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49011,10 +49689,11 @@ export const PagesPasswordRemoveReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.password.status`. */
-export const PagesPasswordStatusInputSchema = {
+  static const pagesPasswordStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -49041,10 +49720,11 @@ export const PagesPasswordStatusInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.password.status`. */
-export const PagesPasswordStatusReturnSchema = {
+  static const pagesPasswordStatusReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49178,10 +49858,11 @@ export const PagesPasswordStatusReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.publish`. */
-export const PagesPublishInputSchema = {
+  static const pagesPublishInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -49269,10 +49950,11 @@ export const PagesPublishInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.publish`. */
-export const PagesPublishReturnSchema = {
+  static const pagesPublishReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49490,10 +50172,11 @@ export const PagesPublishReturnSchema = {
     "localSync"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.published`. */
-export const PagesPublishedInputSchema = {
+  static const pagesPublishedInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "console": {
@@ -49518,10 +50201,11 @@ export const PagesPublishedInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.published`. */
-export const PagesPublishedReturnSchema = {
+  static const pagesPublishedReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49656,10 +50340,11 @@ export const PagesPublishedReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.update`. */
-export const PagesUpdateInputSchema = {
+  static const pagesUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -49690,10 +50375,11 @@ export const PagesUpdateInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.update`. */
-export const PagesUpdateReturnSchema = {
+  static const pagesUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49779,10 +50465,11 @@ export const PagesUpdateReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `pages.visibility`. */
-export const PagesVisibilityInputSchema = {
+  static const pagesVisibilityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -49809,10 +50496,11 @@ export const PagesVisibilityInputSchema = {
     "args"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `pages.visibility`. */
-export const PagesVisibilityReturnSchema = {
+  static const pagesVisibilityReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -49898,10 +50586,11 @@ export const PagesVisibilityReturnSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `permissions.allow`. */
-export const PermissionsAllowInputSchema = {
+  static const permissionsAllowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -49937,10 +50626,11 @@ export const PermissionsAllowInputSchema = {
     "profile"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `permissions.allow`. */
-export const PermissionsAllowReturnSchema = {
+  static const permissionsAllowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentCeilings": {
@@ -50059,10 +50749,11 @@ export const PermissionsAllowReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `permissions.check`. */
-export const PermissionsCheckInputSchema = {
+  static const permissionsCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "localOperator": {
@@ -50083,10 +50774,11 @@ export const PermissionsCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `permissions.check`. */
-export const PermissionsCheckReturnSchema = {
+  static const permissionsCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "allowed": {
@@ -50312,10 +51004,11 @@ export const PermissionsCheckReturnSchema = {
     "decision"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `permissions.materialize`. */
-export const PermissionsMaterializeInputSchema = {
+  static const permissionsMaterializeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "subjectId": {
@@ -50328,10 +51021,11 @@ export const PermissionsMaterializeInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `permissions.materialize`. */
-export const PermissionsMaterializeReturnSchema = {
+  static const permissionsMaterializeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "capabilities": {
@@ -50399,10 +51093,11 @@ export const PermissionsMaterializeReturnSchema = {
     "guidance"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `permissions.resolve`. */
-export const PermissionsResolveInputSchema = {
+  static const permissionsResolveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -50426,10 +51121,11 @@ export const PermissionsResolveInputSchema = {
     "denialId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `permissions.resolve`. */
-export const PermissionsResolveReturnSchema = {
+  static const permissionsResolveReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentCeilings": {
@@ -50715,17 +51411,19 @@ export const PermissionsResolveReturnSchema = {
     "denial"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `permissions.status`. */
-export const PermissionsStatusInputSchema = {
+  static const permissionsStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `permissions.status`. */
-export const PermissionsStatusReturnSchema = {
+  static const permissionsStatusReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "authorizationProviders": {
@@ -50826,10 +51524,11 @@ export const PermissionsStatusReturnSchema = {
     "capabilityMaterializers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.create`. */
-export const ProjectsCreateInputSchema = {
+  static const projectsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "hypothesis": {
@@ -50873,17 +51572,19 @@ export const ProjectsCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.create`. */
-export const ProjectsCreateReturnSchema = {
+  static const projectsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.fixtures.seed`. */
-export const ProjectsFixturesSeedInputSchema = {
+  static const projectsFixturesSeedInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -50896,10 +51597,11 @@ export const ProjectsFixturesSeedInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.fixtures.seed`. */
-export const ProjectsFixturesSeedReturnSchema = {
+  static const projectsFixturesSeedReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "fixtures": {
@@ -50919,10 +51621,11 @@ export const ProjectsFixturesSeedReturnSchema = {
     "fixtures"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.init`. */
-export const ProjectsInitInputSchema = {
+  static const projectsInitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "hypothesis": {
@@ -50987,10 +51690,11 @@ export const ProjectsInitInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.init`. */
-export const ProjectsInitReturnSchema = {
+  static const projectsInitReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -51012,10 +51716,11 @@ export const ProjectsInitReturnSchema = {
     "workflows"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.link`. */
-export const ProjectsLinkInputSchema = {
+  static const projectsLinkInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "assetType": {
@@ -51053,17 +51758,19 @@ export const ProjectsLinkInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.link`. */
-export const ProjectsLinkReturnSchema = {
+  static const projectsLinkReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.list`. */
-export const ProjectsListInputSchema = {
+  static const projectsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -51088,10 +51795,11 @@ export const ProjectsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.list`. */
-export const ProjectsListReturnSchema = {
+  static const projectsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "filters": {
@@ -51177,10 +51885,11 @@ export const ProjectsListReturnSchema = {
     "projects"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.next`. */
-export const ProjectsNextInputSchema = {
+  static const projectsNextInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -51197,10 +51906,11 @@ export const ProjectsNextInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.next`. */
-export const ProjectsNextReturnSchema = {
+  static const projectsNextReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "filters": {
@@ -51226,10 +51936,11 @@ export const ProjectsNextReturnSchema = {
     "projects"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.resources.add`. */
-export const ProjectsResourcesAddInputSchema = {
+  static const projectsResourcesAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "label": {
@@ -51262,17 +51973,19 @@ export const ProjectsResourcesAddInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.resources.add`. */
-export const ProjectsResourcesAddReturnSchema = {
+  static const projectsResourcesAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.resources.import`. */
-export const ProjectsResourcesImportInputSchema = {
+  static const projectsResourcesImportInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "group": {
@@ -51320,10 +52033,11 @@ export const ProjectsResourcesImportInputSchema = {
     "project"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.resources.import`. */
-export const ProjectsResourcesImportReturnSchema = {
+  static const projectsResourcesImportReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "resources": {
@@ -51343,10 +52057,11 @@ export const ProjectsResourcesImportReturnSchema = {
     "resources"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.resources.list`. */
-export const ProjectsResourcesListInputSchema = {
+  static const projectsResourcesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -51374,10 +52089,11 @@ export const ProjectsResourcesListInputSchema = {
     "project"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.resources.list`. */
-export const ProjectsResourcesListReturnSchema = {
+  static const projectsResourcesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -51457,10 +52173,11 @@ export const ProjectsResourcesListReturnSchema = {
     "resources"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.resources.show`. */
-export const ProjectsResourcesShowInputSchema = {
+  static const projectsResourcesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "project": {
@@ -51477,17 +52194,19 @@ export const ProjectsResourcesShowInputSchema = {
     "resource"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.resources.show`. */
-export const ProjectsResourcesShowReturnSchema = {
+  static const projectsResourcesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.show`. */
-export const ProjectsShowInputSchema = {
+  static const projectsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "project": {
@@ -51499,17 +52218,19 @@ export const ProjectsShowInputSchema = {
     "project"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.show`. */
-export const ProjectsShowReturnSchema = {
+  static const projectsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.status`. */
-export const ProjectsStatusInputSchema = {
+  static const projectsStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "project": {
@@ -51521,17 +52242,19 @@ export const ProjectsStatusInputSchema = {
     "project"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.status`. */
-export const ProjectsStatusReturnSchema = {
+  static const projectsStatusReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.tasks.attach`. */
-export const ProjectsTasksAttachInputSchema = {
+  static const projectsTasksAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -51569,10 +52292,11 @@ export const ProjectsTasksAttachInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.tasks.attach`. */
-export const ProjectsTasksAttachReturnSchema = {
+  static const projectsTasksAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -51597,10 +52321,11 @@ export const ProjectsTasksAttachReturnSchema = {
     "defaults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.tasks.create`. */
-export const ProjectsTasksCreateInputSchema = {
+  static const projectsTasksCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -51650,10 +52375,11 @@ export const ProjectsTasksCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.tasks.create`. */
-export const ProjectsTasksCreateReturnSchema = {
+  static const projectsTasksCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -51678,10 +52404,11 @@ export const ProjectsTasksCreateReturnSchema = {
     "defaults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.tasks.dispatch`. */
-export const ProjectsTasksDispatchInputSchema = {
+  static const projectsTasksDispatchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -51710,10 +52437,11 @@ export const ProjectsTasksDispatchInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.tasks.dispatch`. */
-export const ProjectsTasksDispatchReturnSchema = {
+  static const projectsTasksDispatchReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -51738,10 +52466,11 @@ export const ProjectsTasksDispatchReturnSchema = {
     "defaults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.update`. */
-export const ProjectsUpdateInputSchema = {
+  static const projectsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "hypothesis": {
@@ -51789,17 +52518,19 @@ export const ProjectsUpdateInputSchema = {
     "project"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.update`. */
-export const ProjectsUpdateReturnSchema = {
+  static const projectsUpdateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.workflows.attach`. */
-export const ProjectsWorkflowsAttachInputSchema = {
+  static const projectsWorkflowsAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "project": {
@@ -51820,10 +52551,11 @@ export const ProjectsWorkflowsAttachInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.workflows.attach`. */
-export const ProjectsWorkflowsAttachReturnSchema = {
+  static const projectsWorkflowsAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -51842,10 +52574,11 @@ export const ProjectsWorkflowsAttachReturnSchema = {
     "workflow"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `projects.workflows.start`. */
-export const ProjectsWorkflowsStartInputSchema = {
+  static const projectsWorkflowsStartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -51874,10 +52607,11 @@ export const ProjectsWorkflowsStartInputSchema = {
     "specId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `projects.workflows.start`. */
-export const ProjectsWorkflowsStartReturnSchema = {
+  static const projectsWorkflowsStartReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -51896,10 +52630,11 @@ export const ProjectsWorkflowsStartReturnSchema = {
     "workflow"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.cancel`. */
-export const ProxCallsCancelInputSchema = {
+  static const proxCallsCancelInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "call_request_id": {
@@ -51914,10 +52649,11 @@ export const ProxCallsCancelInputSchema = {
     "call_request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.cancel`. */
-export const ProxCallsCancelReturnSchema = {
+  static const proxCallsCancelReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "message": {
@@ -51936,10 +52672,11 @@ export const ProxCallsCancelReturnSchema = {
     "request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.events`. */
-export const ProxCallsEventsInputSchema = {
+  static const proxCallsEventsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "call_request_id": {
@@ -51950,10 +52687,11 @@ export const ProxCallsEventsInputSchema = {
     "call_request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.events`. */
-export const ProxCallsEventsReturnSchema = {
+  static const proxCallsEventsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "events": {
@@ -51977,10 +52715,11 @@ export const ProxCallsEventsReturnSchema = {
     "events"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.profiles.configure`. */
-export const ProxCallsProfilesConfigureInputSchema = {
+  static const proxCallsProfilesConfigureInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -52038,10 +52777,11 @@ export const ProxCallsProfilesConfigureInputSchema = {
     "profile_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.profiles.configure`. */
-export const ProxCallsProfilesConfigureReturnSchema = {
+  static const proxCallsProfilesConfigureReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "profile": {
@@ -52063,10 +52803,11 @@ export const ProxCallsProfilesConfigureReturnSchema = {
     "provider_sync"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.profiles.list`. */
-export const ProxCallsProfilesListInputSchema = {
+  static const proxCallsProfilesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -52087,10 +52828,11 @@ export const ProxCallsProfilesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.profiles.list`. */
-export const ProxCallsProfilesListReturnSchema = {
+  static const proxCallsProfilesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -52161,10 +52903,11 @@ export const ProxCallsProfilesListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.profiles.show`. */
-export const ProxCallsProfilesShowInputSchema = {
+  static const proxCallsProfilesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profile_id": {
@@ -52175,17 +52918,19 @@ export const ProxCallsProfilesShowInputSchema = {
     "profile_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.profiles.show`. */
-export const ProxCallsProfilesShowReturnSchema = {
+  static const proxCallsProfilesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.request`. */
-export const ProxCallsRequestInputSchema = {
+  static const proxCallsRequestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -52229,10 +52974,11 @@ export const ProxCallsRequestInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.request`. */
-export const ProxCallsRequestReturnSchema = {
+  static const proxCallsRequestReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "block_reason": {
@@ -52271,10 +53017,11 @@ export const ProxCallsRequestReturnSchema = {
     "hint"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.rules`. */
-export const ProxCallsRulesInputSchema = {
+  static const proxCallsRulesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "scope": {
@@ -52283,10 +53030,11 @@ export const ProxCallsRulesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.rules`. */
-export const ProxCallsRulesReturnSchema = {
+  static const proxCallsRulesReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -52310,10 +53058,11 @@ export const ProxCallsRulesReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.show`. */
-export const ProxCallsShowInputSchema = {
+  static const proxCallsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "call_request_id": {
@@ -52324,10 +53073,11 @@ export const ProxCallsShowInputSchema = {
     "call_request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.show`. */
-export const ProxCallsShowReturnSchema = {
+  static const proxCallsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "request": {
@@ -52362,10 +53112,11 @@ export const ProxCallsShowReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.bind`. */
-export const ProxCallsToolsBindInputSchema = {
+  static const proxCallsToolsBindInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profile_id": {
@@ -52392,17 +53143,19 @@ export const ProxCallsToolsBindInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.bind`. */
-export const ProxCallsToolsBindReturnSchema = {
+  static const proxCallsToolsBindReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.configure`. */
-export const ProxCallsToolsConfigureInputSchema = {
+  static const proxCallsToolsConfigureInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "enabled": {
@@ -52421,17 +53174,19 @@ export const ProxCallsToolsConfigureInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.configure`. */
-export const ProxCallsToolsConfigureReturnSchema = {
+  static const proxCallsToolsConfigureReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.create`. */
-export const ProxCallsToolsCreateInputSchema = {
+  static const proxCallsToolsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "description": {
@@ -52466,17 +53221,19 @@ export const ProxCallsToolsCreateInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.create`. */
-export const ProxCallsToolsCreateReturnSchema = {
+  static const proxCallsToolsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.list`. */
-export const ProxCallsToolsListInputSchema = {
+  static const proxCallsToolsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -52501,10 +53258,11 @@ export const ProxCallsToolsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.list`. */
-export const ProxCallsToolsListReturnSchema = {
+  static const proxCallsToolsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -52575,10 +53333,11 @@ export const ProxCallsToolsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.run`. */
-export const ProxCallsToolsRunInputSchema = {
+  static const proxCallsToolsRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -52601,10 +53360,11 @@ export const ProxCallsToolsRunInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.run`. */
-export const ProxCallsToolsRunReturnSchema = {
+  static const proxCallsToolsRunReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "ok": {
@@ -52615,10 +53375,11 @@ export const ProxCallsToolsRunReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.runs`. */
-export const ProxCallsToolsRunsInputSchema = {
+  static const proxCallsToolsRunsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "call_request_id": {
@@ -52629,10 +53390,11 @@ export const ProxCallsToolsRunsInputSchema = {
     "call_request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.runs`. */
-export const ProxCallsToolsRunsReturnSchema = {
+  static const proxCallsToolsRunsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "request_id": {
@@ -52656,10 +53418,11 @@ export const ProxCallsToolsRunsReturnSchema = {
     "tool_runs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.show`. */
-export const ProxCallsToolsShowInputSchema = {
+  static const proxCallsToolsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "tool_id": {
@@ -52670,17 +53433,19 @@ export const ProxCallsToolsShowInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.show`. */
-export const ProxCallsToolsShowReturnSchema = {
+  static const proxCallsToolsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.tools.unbind`. */
-export const ProxCallsToolsUnbindInputSchema = {
+  static const proxCallsToolsUnbindInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profile_id": {
@@ -52695,10 +53460,11 @@ export const ProxCallsToolsUnbindInputSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.tools.unbind`. */
-export const ProxCallsToolsUnbindReturnSchema = {
+  static const proxCallsToolsUnbindReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -52714,10 +53480,11 @@ export const ProxCallsToolsUnbindReturnSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.transcript`. */
-export const ProxCallsTranscriptInputSchema = {
+  static const proxCallsTranscriptInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "call_request_id": {
@@ -52732,10 +53499,11 @@ export const ProxCallsTranscriptInputSchema = {
     "call_request_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.transcript`. */
-export const ProxCallsTranscriptReturnSchema = {
+  static const proxCallsTranscriptReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "outcome": {
@@ -52764,10 +53532,11 @@ export const ProxCallsTranscriptReturnSchema = {
     "transcript"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.bind-tool`. */
-export const ProxCallsVoiceAgentsBindToolInputSchema = {
+  static const proxCallsVoiceAgentsBindToolInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "providerToolName": {
@@ -52786,17 +53555,19 @@ export const ProxCallsVoiceAgentsBindToolInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.bind-tool`. */
-export const ProxCallsVoiceAgentsBindToolReturnSchema = {
+  static const proxCallsVoiceAgentsBindToolReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.configure`. */
-export const ProxCallsVoiceAgentsConfigureInputSchema = {
+  static const proxCallsVoiceAgentsConfigureInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "firstMessage": {
@@ -52823,17 +53594,19 @@ export const ProxCallsVoiceAgentsConfigureInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.configure`. */
-export const ProxCallsVoiceAgentsConfigureReturnSchema = {
+  static const proxCallsVoiceAgentsConfigureReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.create`. */
-export const ProxCallsVoiceAgentsCreateInputSchema = {
+  static const proxCallsVoiceAgentsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -52860,17 +53633,19 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.create`. */
-export const ProxCallsVoiceAgentsCreateReturnSchema = {
+  static const proxCallsVoiceAgentsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.list`. */
-export const ProxCallsVoiceAgentsListInputSchema = {
+  static const proxCallsVoiceAgentsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -52891,10 +53666,11 @@ export const ProxCallsVoiceAgentsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.list`. */
-export const ProxCallsVoiceAgentsListReturnSchema = {
+  static const proxCallsVoiceAgentsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -52965,10 +53741,11 @@ export const ProxCallsVoiceAgentsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.show`. */
-export const ProxCallsVoiceAgentsShowInputSchema = {
+  static const proxCallsVoiceAgentsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "voice_agent_id": {
@@ -52979,17 +53756,19 @@ export const ProxCallsVoiceAgentsShowInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.show`. */
-export const ProxCallsVoiceAgentsShowReturnSchema = {
+  static const proxCallsVoiceAgentsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.sync`. */
-export const ProxCallsVoiceAgentsSyncInputSchema = {
+  static const proxCallsVoiceAgentsSyncInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -53008,10 +53787,11 @@ export const ProxCallsVoiceAgentsSyncInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.sync`. */
-export const ProxCallsVoiceAgentsSyncReturnSchema = {
+  static const proxCallsVoiceAgentsSyncReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "dry_run": {
@@ -53050,10 +53830,11 @@ export const ProxCallsVoiceAgentsSyncReturnSchema = {
     "provider_sync"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `prox.calls.voice-agents.unbind-tool`. */
-export const ProxCallsVoiceAgentsUnbindToolInputSchema = {
+  static const proxCallsVoiceAgentsUnbindToolInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "tool_id": {
@@ -53068,10 +53849,11 @@ export const ProxCallsVoiceAgentsUnbindToolInputSchema = {
     "voice_agent_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `prox.calls.voice-agents.unbind-tool`. */
-export const ProxCallsVoiceAgentsUnbindToolReturnSchema = {
+  static const proxCallsVoiceAgentsUnbindToolReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "success": {
@@ -53087,10 +53869,11 @@ export const ProxCallsVoiceAgentsUnbindToolReturnSchema = {
     "tool_id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `react.send`. */
-export const ReactSendInputSchema = {
+  static const reactSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "emoji": {
@@ -53107,10 +53890,11 @@ export const ReactSendInputSchema = {
     "messageId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `react.send`. */
-export const ReactSendReturnSchema = {
+  static const reactSendReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -53223,10 +54007,11 @@ export const ReactSendReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `routes.explain`. */
-export const RoutesExplainInputSchema = {
+  static const routesExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -53247,10 +54032,11 @@ export const RoutesExplainInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `routes.explain`. */
-export const RoutesExplainReturnSchema = {
+  static const routesExplainReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "channel": {
@@ -53315,10 +54101,11 @@ export const RoutesExplainReturnSchema = {
     "liveEffect"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `routes.list`. */
-export const RoutesListInputSchema = {
+  static const routesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -53343,10 +54130,11 @@ export const RoutesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `routes.list`. */
-export const RoutesListReturnSchema = {
+  static const routesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "filter": {
@@ -53443,10 +54231,11 @@ export const RoutesListReturnSchema = {
     "routes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `routes.show`. */
-export const RoutesShowInputSchema = {
+  static const routesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -53463,10 +54252,11 @@ export const RoutesShowInputSchema = {
     "pattern"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `routes.show`. */
-export const RoutesShowReturnSchema = {
+  static const routesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "instance": {
@@ -53487,10 +54277,11 @@ export const RoutesShowReturnSchema = {
     "route"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `rules.import`. */
-export const RulesImportInputSchema = {
+  static const rulesImportInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cwd": {
@@ -53516,10 +54307,11 @@ export const RulesImportInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `rules.import`. */
-export const RulesImportReturnSchema = {
+  static const rulesImportReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "candidates": {
@@ -53570,10 +54362,11 @@ export const RulesImportReturnSchema = {
     "counts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `rules.sources`. */
-export const RulesSourcesInputSchema = {
+  static const rulesSourcesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cwd": {
@@ -53595,10 +54388,11 @@ export const RulesSourcesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `rules.sources`. */
-export const RulesSourcesReturnSchema = {
+  static const rulesSourcesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "counts": {
@@ -53652,10 +54446,11 @@ export const RulesSourcesReturnSchema = {
     "counts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.add`. */
-export const RuntimeCredentialsAddInputSchema = {
+  static const runtimeCredentialsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agents": {
@@ -53716,10 +54511,11 @@ export const RuntimeCredentialsAddInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.add`. */
-export const RuntimeCredentialsAddReturnSchema = {
+  static const runtimeCredentialsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -53732,10 +54528,11 @@ export const RuntimeCredentialsAddReturnSchema = {
     "credential"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.classify`. */
-export const RuntimeCredentialsClassifyInputSchema = {
+  static const runtimeCredentialsClassifyInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "credential": {
@@ -53776,10 +54573,11 @@ export const RuntimeCredentialsClassifyInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.classify`. */
-export const RuntimeCredentialsClassifyReturnSchema = {
+  static const runtimeCredentialsClassifyReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "pressure": {
@@ -53798,10 +54596,11 @@ export const RuntimeCredentialsClassifyReturnSchema = {
     "pressure"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.disable`. */
-export const RuntimeCredentialsDisableInputSchema = {
+  static const runtimeCredentialsDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -53813,10 +54612,11 @@ export const RuntimeCredentialsDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.disable`. */
-export const RuntimeCredentialsDisableReturnSchema = {
+  static const runtimeCredentialsDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -53829,10 +54629,11 @@ export const RuntimeCredentialsDisableReturnSchema = {
     "credential"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.enable`. */
-export const RuntimeCredentialsEnableInputSchema = {
+  static const runtimeCredentialsEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -53844,10 +54645,11 @@ export const RuntimeCredentialsEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.enable`. */
-export const RuntimeCredentialsEnableReturnSchema = {
+  static const runtimeCredentialsEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -53860,10 +54662,11 @@ export const RuntimeCredentialsEnableReturnSchema = {
     "credential"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.import`. */
-export const RuntimeCredentialsImportInputSchema = {
+  static const runtimeCredentialsImportInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fromClaudeCode": {
@@ -53888,10 +54691,11 @@ export const RuntimeCredentialsImportInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.import`. */
-export const RuntimeCredentialsImportReturnSchema = {
+  static const runtimeCredentialsImportReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -53904,10 +54708,11 @@ export const RuntimeCredentialsImportReturnSchema = {
     "credential"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.list`. */
-export const RuntimeCredentialsListInputSchema = {
+  static const runtimeCredentialsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "all": {
@@ -53940,10 +54745,11 @@ export const RuntimeCredentialsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.list`. */
-export const RuntimeCredentialsListReturnSchema = {
+  static const runtimeCredentialsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credentials": {
@@ -54023,10 +54829,11 @@ export const RuntimeCredentialsListReturnSchema = {
     "providerHealth"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.refresh`. */
-export const RuntimeCredentialsRefreshInputSchema = {
+  static const runtimeCredentialsRefreshInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -54059,10 +54866,11 @@ export const RuntimeCredentialsRefreshInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.refresh`. */
-export const RuntimeCredentialsRefreshReturnSchema = {
+  static const runtimeCredentialsRefreshReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "refreshed": {
@@ -54078,10 +54886,11 @@ export const RuntimeCredentialsRefreshReturnSchema = {
     "refreshed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.reset-health`. */
-export const RuntimeCredentialsResetHealthInputSchema = {
+  static const runtimeCredentialsResetHealthInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -54093,10 +54902,11 @@ export const RuntimeCredentialsResetHealthInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.reset-health`. */
-export const RuntimeCredentialsResetHealthReturnSchema = {
+  static const runtimeCredentialsResetHealthReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -54122,10 +54932,11 @@ export const RuntimeCredentialsResetHealthReturnSchema = {
     "health"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.select`. */
-export const RuntimeCredentialsSelectInputSchema = {
+  static const runtimeCredentialsSelectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -54150,10 +54961,11 @@ export const RuntimeCredentialsSelectInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.select`. */
-export const RuntimeCredentialsSelectReturnSchema = {
+  static const runtimeCredentialsSelectReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "candidates": {
@@ -54191,10 +55003,11 @@ export const RuntimeCredentialsSelectReturnSchema = {
     "rejected"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.credentials.status`. */
-export const RuntimeCredentialsStatusInputSchema = {
+  static const runtimeCredentialsStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -54203,10 +55016,11 @@ export const RuntimeCredentialsStatusInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.credentials.status`. */
-export const RuntimeCredentialsStatusReturnSchema = {
+  static const runtimeCredentialsStatusReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "credential": {
@@ -54232,10 +55046,11 @@ export const RuntimeCredentialsStatusReturnSchema = {
     "health"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.create`. */
-export const RuntimePresetsCreateInputSchema = {
+  static const runtimePresetsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "description": {
@@ -54263,10 +55078,11 @@ export const RuntimePresetsCreateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.create`. */
-export const RuntimePresetsCreateReturnSchema = {
+  static const runtimePresetsCreateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -54340,10 +55156,11 @@ export const RuntimePresetsCreateReturnSchema = {
     "preset"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.delete`. */
-export const RuntimePresetsDeleteInputSchema = {
+  static const runtimePresetsDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -54359,10 +55176,11 @@ export const RuntimePresetsDeleteInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.delete`. */
-export const RuntimePresetsDeleteReturnSchema = {
+  static const runtimePresetsDeleteReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -54436,10 +55254,11 @@ export const RuntimePresetsDeleteReturnSchema = {
     "preset"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.disable`. */
-export const RuntimePresetsDisableInputSchema = {
+  static const runtimePresetsDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -54455,10 +55274,11 @@ export const RuntimePresetsDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.disable`. */
-export const RuntimePresetsDisableReturnSchema = {
+  static const runtimePresetsDisableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -54532,10 +55352,11 @@ export const RuntimePresetsDisableReturnSchema = {
     "preset"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.enable`. */
-export const RuntimePresetsEnableInputSchema = {
+  static const runtimePresetsEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -54551,10 +55372,11 @@ export const RuntimePresetsEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.enable`. */
-export const RuntimePresetsEnableReturnSchema = {
+  static const runtimePresetsEnableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -54628,10 +55450,11 @@ export const RuntimePresetsEnableReturnSchema = {
     "preset"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.impact`. */
-export const RuntimePresetsImpactInputSchema = {
+  static const runtimePresetsImpactInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -54651,10 +55474,11 @@ export const RuntimePresetsImpactInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.impact`. */
-export const RuntimePresetsImpactReturnSchema = {
+  static const runtimePresetsImpactReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agents": {
@@ -54807,10 +55631,11 @@ export const RuntimePresetsImpactReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.list`. */
-export const RuntimePresetsListInputSchema = {
+  static const runtimePresetsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "disabled": {
@@ -54839,10 +55664,11 @@ export const RuntimePresetsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.list`. */
-export const RuntimePresetsListReturnSchema = {
+  static const runtimePresetsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "pagination": {
@@ -54955,10 +55781,11 @@ export const RuntimePresetsListReturnSchema = {
     "presets"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.set`. */
-export const RuntimePresetsSetInputSchema = {
+  static const runtimePresetsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dryRun": {
@@ -54984,10 +55811,11 @@ export const RuntimePresetsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.set`. */
-export const RuntimePresetsSetReturnSchema = {
+  static const runtimePresetsSetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -55061,10 +55889,11 @@ export const RuntimePresetsSetReturnSchema = {
     "preset"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `runtime.presets.show`. */
-export const RuntimePresetsShowInputSchema = {
+  static const runtimePresetsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -55076,10 +55905,11 @@ export const RuntimePresetsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `runtime.presets.show`. */
-export const RuntimePresetsShowReturnSchema = {
+  static const runtimePresetsShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "preset": {
@@ -55138,10 +55968,11 @@ export const RuntimePresetsShowReturnSchema = {
     "referencingAgentsTotal"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.client.check`. */
-export const SdkClientCheckInputSchema = {
+  static const sdkClientCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55155,10 +55986,11 @@ export const SdkClientCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.client.check`. */
-export const SdkClientCheckReturnSchema = {
+  static const sdkClientCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55200,10 +56032,11 @@ export const SdkClientCheckReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.client.generate`. */
-export const SdkClientGenerateInputSchema = {
+  static const sdkClientGenerateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55217,10 +56050,11 @@ export const SdkClientGenerateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.client.generate`. */
-export const SdkClientGenerateReturnSchema = {
+  static const sdkClientGenerateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55260,10 +56094,11 @@ export const SdkClientGenerateReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.dart.check`. */
-export const SdkDartCheckInputSchema = {
+  static const sdkDartCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55277,10 +56112,11 @@ export const SdkDartCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.dart.check`. */
-export const SdkDartCheckReturnSchema = {
+  static const sdkDartCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55322,10 +56158,11 @@ export const SdkDartCheckReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.dart.generate`. */
-export const SdkDartGenerateInputSchema = {
+  static const sdkDartGenerateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55339,10 +56176,11 @@ export const SdkDartGenerateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.dart.generate`. */
-export const SdkDartGenerateReturnSchema = {
+  static const sdkDartGenerateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55382,10 +56220,11 @@ export const SdkDartGenerateReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.openapi.check`. */
-export const SdkOpenapiCheckInputSchema = {
+  static const sdkOpenapiCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "against": {
@@ -55394,10 +56233,11 @@ export const SdkOpenapiCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.openapi.check`. */
-export const SdkOpenapiCheckReturnSchema = {
+  static const sdkOpenapiCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "drift": {
@@ -55420,10 +56260,11 @@ export const SdkOpenapiCheckReturnSchema = {
     "storedBytes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.openapi.emit`. */
-export const SdkOpenapiEmitInputSchema = {
+  static const sdkOpenapiEmitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55436,10 +56277,11 @@ export const SdkOpenapiEmitInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.openapi.emit`. */
-export const SdkOpenapiEmitReturnSchema = {
+  static const sdkOpenapiEmitReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": false,
@@ -55480,10 +56322,11 @@ export const SdkOpenapiEmitReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.swift.check`. */
-export const SdkSwiftCheckInputSchema = {
+  static const sdkSwiftCheckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55497,10 +56340,11 @@ export const SdkSwiftCheckInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.swift.check`. */
-export const SdkSwiftCheckReturnSchema = {
+  static const sdkSwiftCheckReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55542,10 +56386,11 @@ export const SdkSwiftCheckReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sdk.swift.generate`. */
-export const SdkSwiftGenerateInputSchema = {
+  static const sdkSwiftGenerateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "out": {
@@ -55559,10 +56404,11 @@ export const SdkSwiftGenerateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sdk.swift.generate`. */
-export const SdkSwiftGenerateReturnSchema = {
+  static const sdkSwiftGenerateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dir": {
@@ -55602,10 +56448,11 @@ export const SdkSwiftGenerateReturnSchema = {
     "files"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.chat`. */
-export const SelfChatInputSchema = {
+  static const selfChatInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "depth": {
@@ -55614,10 +56461,11 @@ export const SelfChatInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.chat`. */
-export const SelfChatReturnSchema = {
+  static const selfChatReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -55638,10 +56486,11 @@ export const SelfChatReturnSchema = {
     "status"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.context`. */
-export const SelfContextInputSchema = {
+  static const selfContextInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "depth": {
@@ -55658,10 +56507,11 @@ export const SelfContextInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.context`. */
-export const SelfContextReturnSchema = {
+  static const selfContextReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "actor": {
@@ -55863,17 +56713,19 @@ export const SelfContextReturnSchema = {
     "nextReads"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.explain`. */
-export const SelfExplainInputSchema = {
+  static const selfExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.explain`. */
-export const SelfExplainReturnSchema = {
+  static const selfExplainReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "explain": {
@@ -55900,17 +56752,19 @@ export const SelfExplainReturnSchema = {
     "nextReads"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.knowledge`. */
-export const SelfKnowledgeInputSchema = {
+  static const selfKnowledgeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.knowledge`. */
-export const SelfKnowledgeReturnSchema = {
+  static const selfKnowledgeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -55931,17 +56785,19 @@ export const SelfKnowledgeReturnSchema = {
     "status"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.permissions`. */
-export const SelfPermissionsInputSchema = {
+  static const selfPermissionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.permissions`. */
-export const SelfPermissionsReturnSchema = {
+  static const selfPermissionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -55962,10 +56818,11 @@ export const SelfPermissionsReturnSchema = {
     "status"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.recent`. */
-export const SelfRecentInputSchema = {
+  static const selfRecentInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -55974,10 +56831,11 @@ export const SelfRecentInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.recent`. */
-export const SelfRecentReturnSchema = {
+  static const selfRecentReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -55998,17 +56856,19 @@ export const SelfRecentReturnSchema = {
     "status"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.route`. */
-export const SelfRouteInputSchema = {
+  static const selfRouteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.route`. */
-export const SelfRouteReturnSchema = {
+  static const selfRouteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -56029,17 +56889,19 @@ export const SelfRouteReturnSchema = {
     "status"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `self.whoami`. */
-export const SelfWhoamiInputSchema = {
+  static const selfWhoamiInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `self.whoami`. */
-export const SelfWhoamiReturnSchema = {
+  static const selfWhoamiReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "actor": {
@@ -56155,10 +57017,11 @@ export const SelfWhoamiReturnSchema = {
     "nextReads"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.actions`. */
-export const SessionsActionsInputSchema = {
+  static const sessionsActionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -56171,17 +57034,19 @@ export const SessionsActionsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.actions`. */
-export const SessionsActionsReturnSchema = {
+  static const sessionsActionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.answer`. */
-export const SessionsAnswerInputSchema = {
+  static const sessionsAnswerInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "barrier": {
@@ -56222,17 +57087,19 @@ export const SessionsAnswerInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.answer`. */
-export const SessionsAnswerReturnSchema = {
+  static const sessionsAnswerReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.ask`. */
-export const SessionsAskInputSchema = {
+  static const sessionsAskInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "barrier": {
@@ -56273,17 +57140,19 @@ export const SessionsAskInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.ask`. */
-export const SessionsAskReturnSchema = {
+  static const sessionsAskReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.attach`. */
-export const SessionsAttachInputSchema = {
+  static const sessionsAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "chat": {
@@ -56303,17 +57172,19 @@ export const SessionsAttachInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.attach`. */
-export const SessionsAttachReturnSchema = {
+  static const sessionsAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.close-thread`. */
-export const SessionsCloseThreadInputSchema = {
+  static const sessionsCloseThreadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "return": {
@@ -56326,10 +57197,11 @@ export const SessionsCloseThreadInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.close-thread`. */
-export const SessionsCloseThreadReturnSchema = {
+  static const sessionsCloseThreadReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actionId": {
@@ -56451,10 +57323,11 @@ export const SessionsCloseThreadReturnSchema = {
     "slack"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.create-thread`. */
-export const SessionsCreateThreadInputSchema = {
+  static const sessionsCreateThreadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "message": {
@@ -56474,10 +57347,11 @@ export const SessionsCreateThreadInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.create-thread`. */
-export const SessionsCreateThreadReturnSchema = {
+  static const sessionsCreateThreadReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actionId": {
@@ -56621,10 +57495,11 @@ export const SessionsCreateThreadReturnSchema = {
     "child"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.delete`. */
-export const SessionsDeleteInputSchema = {
+  static const sessionsDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -56640,17 +57515,19 @@ export const SessionsDeleteInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.delete`. */
-export const SessionsDeleteReturnSchema = {
+  static const sessionsDeleteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.delete-message`. */
-export const SessionsDeleteMessageInputSchema = {
+  static const sessionsDeleteMessageInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -56670,17 +57547,19 @@ export const SessionsDeleteMessageInputSchema = {
     "sessionOrMessage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.delete-message`. */
-export const SessionsDeleteMessageReturnSchema = {
+  static const sessionsDeleteMessageReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.detach`. */
-export const SessionsDetachInputSchema = {
+  static const sessionsDetachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "chat": {
@@ -56696,17 +57575,19 @@ export const SessionsDetachInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.detach`. */
-export const SessionsDetachReturnSchema = {
+  static const sessionsDetachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.edit-message`. */
-export const SessionsEditMessageInputSchema = {
+  static const sessionsEditMessageInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -56734,17 +57615,19 @@ export const SessionsEditMessageInputSchema = {
     "sessionOrMessage"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.edit-message`. */
-export const SessionsEditMessageReturnSchema = {
+  static const sessionsEditMessageReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.execute`. */
-export const SessionsExecuteInputSchema = {
+  static const sessionsExecuteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "barrier": {
@@ -56781,17 +57664,19 @@ export const SessionsExecuteInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.execute`. */
-export const SessionsExecuteReturnSchema = {
+  static const sessionsExecuteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.extend`. */
-export const SessionsExtendInputSchema = {
+  static const sessionsExtendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "duration": {
@@ -56807,17 +57692,19 @@ export const SessionsExtendInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.extend`. */
-export const SessionsExtendReturnSchema = {
+  static const sessionsExtendReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.add`. */
-export const SessionsFollowupsAddInputSchema = {
+  static const sessionsFollowupsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "at": {
@@ -56884,17 +57771,19 @@ export const SessionsFollowupsAddInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.add`. */
-export const SessionsFollowupsAddReturnSchema = {
+  static const sessionsFollowupsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.inspect`. */
-export const SessionsFollowupsInspectInputSchema = {
+  static const sessionsFollowupsInspectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -56910,17 +57799,19 @@ export const SessionsFollowupsInspectInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.inspect`. */
-export const SessionsFollowupsInspectReturnSchema = {
+  static const sessionsFollowupsInspectReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.list`. */
-export const SessionsFollowupsListInputSchema = {
+  static const sessionsFollowupsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "includeDisabled": {
@@ -56941,10 +57832,11 @@ export const SessionsFollowupsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.list`. */
-export const SessionsFollowupsListReturnSchema = {
+  static const sessionsFollowupsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -57015,10 +57907,11 @@ export const SessionsFollowupsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.pause`. */
-export const SessionsFollowupsPauseInputSchema = {
+  static const sessionsFollowupsPauseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -57030,17 +57923,19 @@ export const SessionsFollowupsPauseInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.pause`. */
-export const SessionsFollowupsPauseReturnSchema = {
+  static const sessionsFollowupsPauseReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.resume`. */
-export const SessionsFollowupsResumeInputSchema = {
+  static const sessionsFollowupsResumeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -57052,17 +57947,19 @@ export const SessionsFollowupsResumeInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.resume`. */
-export const SessionsFollowupsResumeReturnSchema = {
+  static const sessionsFollowupsResumeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.retry`. */
-export const SessionsFollowupsRetryInputSchema = {
+  static const sessionsFollowupsRetryInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cadence": {
@@ -57075,17 +57972,19 @@ export const SessionsFollowupsRetryInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.retry`. */
-export const SessionsFollowupsRetryReturnSchema = {
+  static const sessionsFollowupsRetryReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.run`. */
-export const SessionsFollowupsRunInputSchema = {
+  static const sessionsFollowupsRunInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -57097,17 +57996,19 @@ export const SessionsFollowupsRunInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.run`. */
-export const SessionsFollowupsRunReturnSchema = {
+  static const sessionsFollowupsRunReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.runs`. */
-export const SessionsFollowupsRunsInputSchema = {
+  static const sessionsFollowupsRunsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cadence": {
@@ -57128,10 +58029,11 @@ export const SessionsFollowupsRunsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.runs`. */
-export const SessionsFollowupsRunsReturnSchema = {
+  static const sessionsFollowupsRunsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -57202,10 +58104,11 @@ export const SessionsFollowupsRunsReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.snooze`. */
-export const SessionsFollowupsSnoozeInputSchema = {
+  static const sessionsFollowupsSnoozeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -57221,17 +58124,19 @@ export const SessionsFollowupsSnoozeInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.snooze`. */
-export const SessionsFollowupsSnoozeReturnSchema = {
+  static const sessionsFollowupsSnoozeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.followups.update`. */
-export const SessionsFollowupsUpdateInputSchema = {
+  static const sessionsFollowupsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "barrier": {
@@ -57270,10 +58175,11 @@ export const SessionsFollowupsUpdateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.followups.update`. */
-export const SessionsFollowupsUpdateReturnSchema = {
+  static const sessionsFollowupsUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -57510,10 +58416,11 @@ export const SessionsFollowupsUpdateReturnSchema = {
     "followup"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.goal`. */
-export const SessionsGoalInputSchema = {
+  static const sessionsGoalInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -57558,10 +58465,11 @@ export const SessionsGoalInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.goal`. */
-export const SessionsGoalReturnSchema = {
+  static const sessionsGoalReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -57696,10 +58604,11 @@ export const SessionsGoalReturnSchema = {
     "goal"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.info`. */
-export const SessionsInfoInputSchema = {
+  static const sessionsInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -57711,17 +58620,19 @@ export const SessionsInfoInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.info`. */
-export const SessionsInfoReturnSchema = {
+  static const sessionsInfoReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.inform`. */
-export const SessionsInformInputSchema = {
+  static const sessionsInformInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "barrier": {
@@ -57758,17 +58669,19 @@ export const SessionsInformInputSchema = {
     "target"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.inform`. */
-export const SessionsInformReturnSchema = {
+  static const sessionsInformReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.keep`. */
-export const SessionsKeepInputSchema = {
+  static const sessionsKeepInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -57780,17 +58693,19 @@ export const SessionsKeepInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.keep`. */
-export const SessionsKeepReturnSchema = {
+  static const sessionsKeepReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.list`. */
-export const SessionsListInputSchema = {
+  static const sessionsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -57823,10 +58738,11 @@ export const SessionsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.list`. */
-export const SessionsListReturnSchema = {
+  static const sessionsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -57897,10 +58813,11 @@ export const SessionsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.prune`. */
-export const SessionsPruneInputSchema = {
+  static const sessionsPruneInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -57925,17 +58842,19 @@ export const SessionsPruneInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.prune`. */
-export const SessionsPruneReturnSchema = {
+  static const sessionsPruneReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.read`. */
-export const SessionsReadInputSchema = {
+  static const sessionsReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "count": {
@@ -57960,10 +58879,11 @@ export const SessionsReadInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.read`. */
-export const SessionsReadReturnSchema = {
+  static const sessionsReadReturnSchema = r'''
+{
   "anyOf": [
     {
       "additionalProperties": {},
@@ -58100,10 +59020,11 @@ export const SessionsReadReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.recap`. */
-export const SessionsRecapInputSchema = {
+  static const sessionsRecapInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "count": {
@@ -58116,10 +59037,11 @@ export const SessionsRecapInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.recap`. */
-export const SessionsRecapReturnSchema = {
+  static const sessionsRecapReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "computed": {
@@ -58440,10 +59362,11 @@ export const SessionsRecapReturnSchema = {
     "sources"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.rename`. */
-export const SessionsRenameInputSchema = {
+  static const sessionsRenameInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -58460,17 +59383,19 @@ export const SessionsRenameInputSchema = {
     "newName"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.rename`. */
-export const SessionsRenameReturnSchema = {
+  static const sessionsRenameReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.reset`. */
-export const SessionsResetInputSchema = {
+  static const sessionsResetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -58486,17 +59411,19 @@ export const SessionsResetInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.reset`. */
-export const SessionsResetReturnSchema = {
+  static const sessionsResetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.follow-up`. */
-export const SessionsRuntimeFollowUpInputSchema = {
+  static const sessionsRuntimeFollowUpInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -58529,10 +59456,11 @@ export const SessionsRuntimeFollowUpInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.follow-up`. */
-export const SessionsRuntimeFollowUpReturnSchema = {
+  static const sessionsRuntimeFollowUpReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58550,10 +59478,11 @@ export const SessionsRuntimeFollowUpReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.fork`. */
-export const SessionsRuntimeForkInputSchema = {
+  static const sessionsRuntimeForkInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cwd": {
@@ -58581,10 +59510,11 @@ export const SessionsRuntimeForkInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.fork`. */
-export const SessionsRuntimeForkReturnSchema = {
+  static const sessionsRuntimeForkReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58602,10 +59532,11 @@ export const SessionsRuntimeForkReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.interrupt`. */
-export const SessionsRuntimeInterruptInputSchema = {
+  static const sessionsRuntimeInterruptInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "session": {
@@ -58625,10 +59556,11 @@ export const SessionsRuntimeInterruptInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.interrupt`. */
-export const SessionsRuntimeInterruptReturnSchema = {
+  static const sessionsRuntimeInterruptReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58646,10 +59578,11 @@ export const SessionsRuntimeInterruptReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.list`. */
-export const SessionsRuntimeListInputSchema = {
+  static const sessionsRuntimeListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "archived": {
@@ -58681,10 +59614,11 @@ export const SessionsRuntimeListInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.list`. */
-export const SessionsRuntimeListReturnSchema = {
+  static const sessionsRuntimeListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58702,10 +59636,11 @@ export const SessionsRuntimeListReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.read`. */
-export const SessionsRuntimeReadInputSchema = {
+  static const sessionsRuntimeReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "session": {
@@ -58725,10 +59660,11 @@ export const SessionsRuntimeReadInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.read`. */
-export const SessionsRuntimeReadReturnSchema = {
+  static const sessionsRuntimeReadReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58746,10 +59682,11 @@ export const SessionsRuntimeReadReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.rollback`. */
-export const SessionsRuntimeRollbackInputSchema = {
+  static const sessionsRuntimeRollbackInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -58773,10 +59710,11 @@ export const SessionsRuntimeRollbackInputSchema = {
     "session"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.rollback`. */
-export const SessionsRuntimeRollbackReturnSchema = {
+  static const sessionsRuntimeRollbackReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58794,10 +59732,11 @@ export const SessionsRuntimeRollbackReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.runtime.steer`. */
-export const SessionsRuntimeSteerInputSchema = {
+  static const sessionsRuntimeSteerInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "expectedTurn": {
@@ -58826,10 +59765,11 @@ export const SessionsRuntimeSteerInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.runtime.steer`. */
-export const SessionsRuntimeSteerReturnSchema = {
+  static const sessionsRuntimeSteerReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "data": {},
@@ -58847,10 +59787,11 @@ export const SessionsRuntimeSteerReturnSchema = {
     "ok"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.send`. */
-export const SessionsSendInputSchema = {
+  static const sessionsSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -58926,10 +59867,11 @@ export const SessionsSendInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.send`. */
-export const SessionsSendReturnSchema = {
+  static const sessionsSendReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -59024,10 +59966,11 @@ export const SessionsSendReturnSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-display`. */
-export const SessionsSetDisplayInputSchema = {
+  static const sessionsSetDisplayInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "displayName": {
@@ -59044,17 +59987,19 @@ export const SessionsSetDisplayInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-display`. */
-export const SessionsSetDisplayReturnSchema = {
+  static const sessionsSetDisplayReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-effort`. */
-export const SessionsSetEffortInputSchema = {
+  static const sessionsSetEffortInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "level": {
@@ -59071,10 +60016,11 @@ export const SessionsSetEffortInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-effort`. */
-export const SessionsSetEffortReturnSchema = {
+  static const sessionsSetEffortReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -59640,10 +60586,11 @@ export const SessionsSetEffortReturnSchema = {
     "appliesOn"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-model`. */
-export const SessionsSetModelInputSchema = {
+  static const sessionsSetModelInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "model": {
@@ -59660,17 +60607,19 @@ export const SessionsSetModelInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-model`. */
-export const SessionsSetModelReturnSchema = {
+  static const sessionsSetModelReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-provider`. */
-export const SessionsSetProviderInputSchema = {
+  static const sessionsSetProviderInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -59687,10 +60636,11 @@ export const SessionsSetProviderInputSchema = {
     "provider"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-provider`. */
-export const SessionsSetProviderReturnSchema = {
+  static const sessionsSetProviderReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -60230,10 +61180,11 @@ export const SessionsSetProviderReturnSchema = {
     "appliesOn"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-thinking`. */
-export const SessionsSetThinkingInputSchema = {
+  static const sessionsSetThinkingInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "level": {
@@ -60250,17 +61201,19 @@ export const SessionsSetThinkingInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-thinking`. */
-export const SessionsSetThinkingReturnSchema = {
+  static const sessionsSetThinkingReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.set-ttl`. */
-export const SessionsSetTtlInputSchema = {
+  static const sessionsSetTtlInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "duration": {
@@ -60277,17 +61230,19 @@ export const SessionsSetTtlInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.set-ttl`. */
-export const SessionsSetTtlReturnSchema = {
+  static const sessionsSetTtlReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.subscriptions`. */
-export const SessionsSubscriptionsInputSchema = {
+  static const sessionsSubscriptionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -60299,17 +61254,19 @@ export const SessionsSubscriptionsInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.subscriptions`. */
-export const SessionsSubscriptionsReturnSchema = {
+  static const sessionsSubscriptionsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.trace`. */
-export const SessionsTraceInputSchema = {
+  static const sessionsTraceInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "correlation": {
@@ -60373,17 +61330,19 @@ export const SessionsTraceInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.trace`. */
-export const SessionsTraceReturnSchema = {
+  static const sessionsTraceReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sessions.visibility`. */
-export const SessionsVisibilityInputSchema = {
+  static const sessionsVisibilityInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nameOrKey": {
@@ -60395,17 +61354,19 @@ export const SessionsVisibilityInputSchema = {
     "nameOrKey"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sessions.visibility`. */
-export const SessionsVisibilityReturnSchema = {
+  static const sessionsVisibilityReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `settings.delete`. */
-export const SettingsDeleteInputSchema = {
+  static const settingsDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -60421,10 +61382,11 @@ export const SettingsDeleteInputSchema = {
     "key"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `settings.delete`. */
-export const SettingsDeleteReturnSchema = {
+  static const settingsDeleteReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "changedCount": {
@@ -60521,10 +61483,11 @@ export const SettingsDeleteReturnSchema = {
     "setting"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `settings.get`. */
-export const SettingsGetInputSchema = {
+  static const settingsGetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -60536,10 +61499,11 @@ export const SettingsGetInputSchema = {
     "key"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `settings.get`. */
-export const SettingsGetReturnSchema = {
+  static const settingsGetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "setting": {
@@ -60615,10 +61579,11 @@ export const SettingsGetReturnSchema = {
     "setting"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `settings.list`. */
-export const SettingsListInputSchema = {
+  static const settingsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -60639,10 +61604,11 @@ export const SettingsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `settings.list`. */
-export const SettingsListReturnSchema = {
+  static const settingsListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "customSettings": {
@@ -61014,10 +61980,11 @@ export const SettingsListReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `settings.set`. */
-export const SettingsSetInputSchema = {
+  static const settingsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -61034,10 +62001,11 @@ export const SettingsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `settings.set`. */
-export const SettingsSetReturnSchema = {
+  static const settingsSetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "changedCount": {
@@ -61134,10 +62102,11 @@ export const SettingsSetReturnSchema = {
     "setting"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.disable`. */
-export const SkillGatesDisableInputSchema = {
+  static const skillGatesDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -61149,10 +62118,11 @@ export const SkillGatesDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.disable`. */
-export const SkillGatesDisableReturnSchema = {
+  static const skillGatesDisableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "rule": {
@@ -61308,10 +62278,11 @@ export const SkillGatesDisableReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.enable`. */
-export const SkillGatesEnableInputSchema = {
+  static const skillGatesEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -61323,10 +62294,11 @@ export const SkillGatesEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.enable`. */
-export const SkillGatesEnableReturnSchema = {
+  static const skillGatesEnableReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "rule": {
@@ -61482,10 +62454,11 @@ export const SkillGatesEnableReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.list`. */
-export const SkillGatesListInputSchema = {
+  static const skillGatesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -61506,10 +62479,11 @@ export const SkillGatesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.list`. */
-export const SkillGatesListReturnSchema = {
+  static const skillGatesListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "configuredTotal": {
@@ -61871,10 +62845,11 @@ export const SkillGatesListReturnSchema = {
     "rules"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.reset`. */
-export const SkillGatesResetInputSchema = {
+  static const skillGatesResetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -61890,10 +62865,11 @@ export const SkillGatesResetInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.reset`. */
-export const SkillGatesResetReturnSchema = {
+  static const skillGatesResetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "deleted": {
@@ -61909,10 +62885,11 @@ export const SkillGatesResetReturnSchema = {
     "deleted"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.rm`. */
-export const SkillGatesRmInputSchema = {
+  static const skillGatesRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -61928,10 +62905,11 @@ export const SkillGatesRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.rm`. */
-export const SkillGatesRmReturnSchema = {
+  static const skillGatesRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -62093,10 +63071,11 @@ export const SkillGatesRmReturnSchema = {
     "action"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.set`. */
-export const SkillGatesSetInputSchema = {
+  static const skillGatesSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -62145,10 +63124,11 @@ export const SkillGatesSetInputSchema = {
     "skill"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.set`. */
-export const SkillGatesSetReturnSchema = {
+  static const skillGatesSetReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "rule": {
@@ -62304,10 +63284,11 @@ export const SkillGatesSetReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skill-gates.show`. */
-export const SkillGatesShowInputSchema = {
+  static const skillGatesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -62319,10 +63300,11 @@ export const SkillGatesShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skill-gates.show`. */
-export const SkillGatesShowReturnSchema = {
+  static const skillGatesShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "rule": {
@@ -62473,10 +63455,11 @@ export const SkillGatesShowReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.grant`. */
-export const SkillsGrantInputSchema = {
+  static const skillsGrantInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -62497,10 +63480,11 @@ export const SkillsGrantInputSchema = {
     "skill"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.grant`. */
-export const SkillsGrantReturnSchema = {
+  static const skillsGrantReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -62542,10 +63526,11 @@ export const SkillsGrantReturnSchema = {
     "skillName"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.grant-batch`. */
-export const SkillsGrantBatchInputSchema = {
+  static const skillsGrantBatchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -62574,10 +63559,11 @@ export const SkillsGrantBatchInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.grant-batch`. */
-export const SkillsGrantBatchReturnSchema = {
+  static const skillsGrantBatchReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentsTargeted": {
@@ -62650,10 +63636,11 @@ export const SkillsGrantBatchReturnSchema = {
     "sampleSkills"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.inspect`. */
-export const SkillsInspectInputSchema = {
+  static const skillsInspectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -62665,10 +63652,11 @@ export const SkillsInspectInputSchema = {
     "agent"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.inspect`. */
-export const SkillsInspectReturnSchema = {
+  static const skillsInspectReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -62720,10 +63708,11 @@ export const SkillsInspectReturnSchema = {
     "provenance"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.install`. */
-export const SkillsInstallInputSchema = {
+  static const skillsInstallInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "all": {
@@ -62760,10 +63749,11 @@ export const SkillsInstallInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.install`. */
-export const SkillsInstallReturnSchema = {
+  static const skillsInstallReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "codexSynced": {
@@ -62836,10 +63826,11 @@ export const SkillsInstallReturnSchema = {
     "codexSynced"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.list`. */
-export const SkillsListInputSchema = {
+  static const skillsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "codex": {
@@ -62872,10 +63863,11 @@ export const SkillsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.list`. */
-export const SkillsListReturnSchema = {
+  static const skillsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -63000,10 +63992,11 @@ export const SkillsListReturnSchema = {
     "skills"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.revoke`. */
-export const SkillsRevokeInputSchema = {
+  static const skillsRevokeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -63020,10 +64013,11 @@ export const SkillsRevokeInputSchema = {
     "skill"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.revoke`. */
-export const SkillsRevokeReturnSchema = {
+  static const skillsRevokeReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentId": {
@@ -63065,10 +64059,11 @@ export const SkillsRevokeReturnSchema = {
     "skillName"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.revoke-batch`. */
-export const SkillsRevokeBatchInputSchema = {
+  static const skillsRevokeBatchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -63093,10 +64088,11 @@ export const SkillsRevokeBatchInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.revoke-batch`. */
-export const SkillsRevokeBatchReturnSchema = {
+  static const skillsRevokeBatchReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agentsTargeted": {
@@ -63169,10 +64165,11 @@ export const SkillsRevokeBatchReturnSchema = {
     "sampleSkills"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.show`. */
-export const SkillsShowInputSchema = {
+  static const skillsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "installed": {
@@ -63192,10 +64189,11 @@ export const SkillsShowInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.show`. */
-export const SkillsShowReturnSchema = {
+  static const skillsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "skill": {
@@ -63253,17 +64251,19 @@ export const SkillsShowReturnSchema = {
     "skill"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.sync`. */
-export const SkillsSyncInputSchema = {
+  static const skillsSyncInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.sync`. */
-export const SkillsSyncReturnSchema = {
+  static const skillsSyncReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "codexSynced": {
@@ -63286,10 +64286,11 @@ export const SkillsSyncReturnSchema = {
     "total"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `skills.who`. */
-export const SkillsWhoInputSchema = {
+  static const skillsWhoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -63306,10 +64307,11 @@ export const SkillsWhoInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `skills.who`. */
-export const SkillsWhoReturnSchema = {
+  static const skillsWhoReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "grants": {
@@ -63350,10 +64352,11 @@ export const SkillsWhoReturnSchema = {
     "grants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.blocks-send`. */
-export const SlackBlocksSendInputSchema = {
+  static const slackBlocksSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -63390,10 +64393,11 @@ export const SlackBlocksSendInputSchema = {
     "file"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.blocks-send`. */
-export const SlackBlocksSendReturnSchema = {
+  static const slackBlocksSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -63484,10 +64488,11 @@ export const SlackBlocksSendReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.blocks-showcase`. */
-export const SlackBlocksShowcaseInputSchema = {
+  static const slackBlocksShowcaseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -63507,10 +64512,11 @@ export const SlackBlocksShowcaseInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.blocks-showcase`. */
-export const SlackBlocksShowcaseReturnSchema = {
+  static const slackBlocksShowcaseReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -63601,10 +64607,11 @@ export const SlackBlocksShowcaseReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.blocks-update`. */
-export const SlackBlocksUpdateInputSchema = {
+  static const slackBlocksUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -63634,10 +64641,11 @@ export const SlackBlocksUpdateInputSchema = {
     "ts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.blocks-update`. */
-export const SlackBlocksUpdateReturnSchema = {
+  static const slackBlocksUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -63728,10 +64736,11 @@ export const SlackBlocksUpdateReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.blocks-validate`. */
-export const SlackBlocksValidateInputSchema = {
+  static const slackBlocksValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -63751,10 +64760,11 @@ export const SlackBlocksValidateInputSchema = {
     "file"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.blocks-validate`. */
-export const SlackBlocksValidateReturnSchema = {
+  static const slackBlocksValidateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -63827,10 +64837,11 @@ export const SlackBlocksValidateReturnSchema = {
     "source"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-access-delete`. */
-export const SlackCanvasAccessDeleteInputSchema = {
+  static const slackCanvasAccessDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "canvas": {
@@ -63858,10 +64869,11 @@ export const SlackCanvasAccessDeleteInputSchema = {
     "canvas"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-access-delete`. */
-export const SlackCanvasAccessDeleteReturnSchema = {
+  static const slackCanvasAccessDeleteReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -63952,10 +64964,11 @@ export const SlackCanvasAccessDeleteReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-access-set`. */
-export const SlackCanvasAccessSetInputSchema = {
+  static const slackCanvasAccessSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "access": {
@@ -63988,10 +65001,11 @@ export const SlackCanvasAccessSetInputSchema = {
     "canvas"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-access-set`. */
-export const SlackCanvasAccessSetReturnSchema = {
+  static const slackCanvasAccessSetReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64082,10 +65096,11 @@ export const SlackCanvasAccessSetReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-artifact-publish`. */
-export const SlackCanvasArtifactPublishInputSchema = {
+  static const slackCanvasArtifactPublishInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifactOrFile": {
@@ -64121,10 +65136,11 @@ export const SlackCanvasArtifactPublishInputSchema = {
     "artifactOrFile"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-artifact-publish`. */
-export const SlackCanvasArtifactPublishReturnSchema = {
+  static const slackCanvasArtifactPublishReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64215,10 +65231,11 @@ export const SlackCanvasArtifactPublishReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-artifact-status`. */
-export const SlackCanvasArtifactStatusInputSchema = {
+  static const slackCanvasArtifactStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifact": {
@@ -64230,10 +65247,11 @@ export const SlackCanvasArtifactStatusInputSchema = {
     "artifact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-artifact-status`. */
-export const SlackCanvasArtifactStatusReturnSchema = {
+  static const slackCanvasArtifactStatusReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64297,10 +65315,11 @@ export const SlackCanvasArtifactStatusReturnSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-channel-create`. */
-export const SlackCanvasChannelCreateInputSchema = {
+  static const slackCanvasChannelCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifact": {
@@ -64340,10 +65359,11 @@ export const SlackCanvasChannelCreateInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-channel-create`. */
-export const SlackCanvasChannelCreateReturnSchema = {
+  static const slackCanvasChannelCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64434,10 +65454,11 @@ export const SlackCanvasChannelCreateReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-channel-showcase`. */
-export const SlackCanvasChannelShowcaseInputSchema = {
+  static const slackCanvasChannelShowcaseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -64457,10 +65478,11 @@ export const SlackCanvasChannelShowcaseInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-channel-showcase`. */
-export const SlackCanvasChannelShowcaseReturnSchema = {
+  static const slackCanvasChannelShowcaseReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64551,10 +65573,11 @@ export const SlackCanvasChannelShowcaseReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-create`. */
-export const SlackCanvasCreateInputSchema = {
+  static const slackCanvasCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifact": {
@@ -64591,10 +65614,11 @@ export const SlackCanvasCreateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-create`. */
-export const SlackCanvasCreateReturnSchema = {
+  static const slackCanvasCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64685,10 +65709,11 @@ export const SlackCanvasCreateReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-delete`. */
-export const SlackCanvasDeleteInputSchema = {
+  static const slackCanvasDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "canvas": {
@@ -64708,10 +65733,11 @@ export const SlackCanvasDeleteInputSchema = {
     "canvas"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-delete`. */
-export const SlackCanvasDeleteReturnSchema = {
+  static const slackCanvasDeleteReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64802,10 +65828,11 @@ export const SlackCanvasDeleteReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-edit`. */
-export const SlackCanvasEditInputSchema = {
+  static const slackCanvasEditInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "artifact": {
@@ -64854,10 +65881,11 @@ export const SlackCanvasEditInputSchema = {
     "operation"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-edit`. */
-export const SlackCanvasEditReturnSchema = {
+  static const slackCanvasEditReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -64948,10 +65976,11 @@ export const SlackCanvasEditReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-sections-lookup`. */
-export const SlackCanvasSectionsLookupInputSchema = {
+  static const slackCanvasSectionsLookupInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "canvas": {
@@ -64980,10 +66009,11 @@ export const SlackCanvasSectionsLookupInputSchema = {
     "canvas"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-sections-lookup`. */
-export const SlackCanvasSectionsLookupReturnSchema = {
+  static const slackCanvasSectionsLookupReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65099,10 +66129,11 @@ export const SlackCanvasSectionsLookupReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.canvas-showcase`. */
-export const SlackCanvasShowcaseInputSchema = {
+  static const slackCanvasShowcaseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "canvas": {
@@ -65130,10 +66161,11 @@ export const SlackCanvasShowcaseInputSchema = {
     "canvas"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.canvas-showcase`. */
-export const SlackCanvasShowcaseReturnSchema = {
+  static const slackCanvasShowcaseReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65224,10 +66256,11 @@ export const SlackCanvasShowcaseReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-create`. */
-export const SlackChannelsCreateInputSchema = {
+  static const slackChannelsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65251,10 +66284,11 @@ export const SlackChannelsCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-create`. */
-export const SlackChannelsCreateReturnSchema = {
+  static const slackChannelsCreateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65345,10 +66379,11 @@ export const SlackChannelsCreateReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-history`. */
-export const SlackChannelsHistoryInputSchema = {
+  static const slackChannelsHistoryInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65385,10 +66420,11 @@ export const SlackChannelsHistoryInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-history`. */
-export const SlackChannelsHistoryReturnSchema = {
+  static const slackChannelsHistoryReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65504,10 +66540,11 @@ export const SlackChannelsHistoryReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-info`. */
-export const SlackChannelsInfoInputSchema = {
+  static const slackChannelsInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65519,10 +66556,11 @@ export const SlackChannelsInfoInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-info`. */
-export const SlackChannelsInfoReturnSchema = {
+  static const slackChannelsInfoReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65595,10 +66633,11 @@ export const SlackChannelsInfoReturnSchema = {
     "source"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-invite`. */
-export const SlackChannelsInviteInputSchema = {
+  static const slackChannelsInviteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65623,10 +66662,11 @@ export const SlackChannelsInviteInputSchema = {
     "users"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-invite`. */
-export const SlackChannelsInviteReturnSchema = {
+  static const slackChannelsInviteReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65717,10 +66757,11 @@ export const SlackChannelsInviteReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-list`. */
-export const SlackChannelsListInputSchema = {
+  static const slackChannelsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65751,10 +66792,11 @@ export const SlackChannelsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-list`. */
-export const SlackChannelsListReturnSchema = {
+  static const slackChannelsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65870,10 +66912,11 @@ export const SlackChannelsListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.channels-rename`. */
-export const SlackChannelsRenameInputSchema = {
+  static const slackChannelsRenameInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -65894,10 +66937,11 @@ export const SlackChannelsRenameInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.channels-rename`. */
-export const SlackChannelsRenameReturnSchema = {
+  static const slackChannelsRenameReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -65988,10 +67032,11 @@ export const SlackChannelsRenameReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.files-list`. */
-export const SlackFilesListInputSchema = {
+  static const slackFilesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66021,10 +67066,11 @@ export const SlackFilesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.files-list`. */
-export const SlackFilesListReturnSchema = {
+  static const slackFilesListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66140,10 +67186,11 @@ export const SlackFilesListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.interactions-respond`. */
-export const SlackInteractionsRespondInputSchema = {
+  static const slackInteractionsRespondInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66168,10 +67215,11 @@ export const SlackInteractionsRespondInputSchema = {
     "responseUrlId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.interactions-respond`. */
-export const SlackInteractionsRespondReturnSchema = {
+  static const slackInteractionsRespondReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66262,10 +67310,11 @@ export const SlackInteractionsRespondReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.members-list`. */
-export const SlackMembersListInputSchema = {
+  static const slackMembersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66286,10 +67335,11 @@ export const SlackMembersListInputSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.members-list`. */
-export const SlackMembersListReturnSchema = {
+  static const slackMembersListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66405,10 +67455,11 @@ export const SlackMembersListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.messages-inspect`. */
-export const SlackMessagesInspectInputSchema = {
+  static const slackMessagesInspectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66425,10 +67476,11 @@ export const SlackMessagesInspectInputSchema = {
     "ts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.messages-inspect`. */
-export const SlackMessagesInspectReturnSchema = {
+  static const slackMessagesInspectReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66501,10 +67553,11 @@ export const SlackMessagesInspectReturnSchema = {
     "source"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.messages-replay`. */
-export const SlackMessagesReplayInputSchema = {
+  static const slackMessagesReplayInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66529,10 +67582,11 @@ export const SlackMessagesReplayInputSchema = {
     "ts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.messages-replay`. */
-export const SlackMessagesReplayReturnSchema = {
+  static const slackMessagesReplayReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66623,10 +67677,11 @@ export const SlackMessagesReplayReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.messages-send`. */
-export const SlackMessagesSendInputSchema = {
+  static const slackMessagesSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66655,10 +67710,11 @@ export const SlackMessagesSendInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.messages-send`. */
-export const SlackMessagesSendReturnSchema = {
+  static const slackMessagesSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66749,10 +67805,11 @@ export const SlackMessagesSendReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.modals-open`. */
-export const SlackModalsOpenInputSchema = {
+  static const slackModalsOpenInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66777,10 +67834,11 @@ export const SlackModalsOpenInputSchema = {
     "triggerId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.modals-open`. */
-export const SlackModalsOpenReturnSchema = {
+  static const slackModalsOpenReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66871,10 +67929,11 @@ export const SlackModalsOpenReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.modals-push`. */
-export const SlackModalsPushInputSchema = {
+  static const slackModalsPushInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -66899,10 +67958,11 @@ export const SlackModalsPushInputSchema = {
     "triggerId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.modals-push`. */
-export const SlackModalsPushReturnSchema = {
+  static const slackModalsPushReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -66993,10 +68053,11 @@ export const SlackModalsPushReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.modals-update`. */
-export const SlackModalsUpdateInputSchema = {
+  static const slackModalsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67029,10 +68090,11 @@ export const SlackModalsUpdateInputSchema = {
     "view"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.modals-update`. */
-export const SlackModalsUpdateReturnSchema = {
+  static const slackModalsUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67123,10 +68185,11 @@ export const SlackModalsUpdateReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.permissions-list`. */
-export const SlackPermissionsListInputSchema = {
+  static const slackPermissionsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67135,10 +68198,11 @@ export const SlackPermissionsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.permissions-list`. */
-export const SlackPermissionsListReturnSchema = {
+  static const slackPermissionsListReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67211,10 +68275,11 @@ export const SlackPermissionsListReturnSchema = {
     "source"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.topology`. */
-export const SlackTopologyInputSchema = {
+  static const slackTopologyInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67241,10 +68306,11 @@ export const SlackTopologyInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.topology`. */
-export const SlackTopologyReturnSchema = {
+  static const slackTopologyReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67334,10 +68400,11 @@ export const SlackTopologyReturnSchema = {
     "capabilities"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.work-objects-present-details`. */
-export const SlackWorkObjectsPresentDetailsInputSchema = {
+  static const slackWorkObjectsPresentDetailsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67366,10 +68433,11 @@ export const SlackWorkObjectsPresentDetailsInputSchema = {
     "triggerId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.work-objects-present-details`. */
-export const SlackWorkObjectsPresentDetailsReturnSchema = {
+  static const slackWorkObjectsPresentDetailsReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67460,10 +68528,11 @@ export const SlackWorkObjectsPresentDetailsReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.work-objects-send`. */
-export const SlackWorkObjectsSendInputSchema = {
+  static const slackWorkObjectsSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67496,10 +68565,11 @@ export const SlackWorkObjectsSendInputSchema = {
     "file"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.work-objects-send`. */
-export const SlackWorkObjectsSendReturnSchema = {
+  static const slackWorkObjectsSendReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67590,10 +68660,11 @@ export const SlackWorkObjectsSendReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.work-objects-unfurl`. */
-export const SlackWorkObjectsUnfurlInputSchema = {
+  static const slackWorkObjectsUnfurlInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -67628,10 +68699,11 @@ export const SlackWorkObjectsUnfurlInputSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.work-objects-unfurl`. */
-export const SlackWorkObjectsUnfurlReturnSchema = {
+  static const slackWorkObjectsUnfurlReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67722,10 +68794,11 @@ export const SlackWorkObjectsUnfurlReturnSchema = {
     "request"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `slack.work-objects-validate`. */
-export const SlackWorkObjectsValidateInputSchema = {
+  static const slackWorkObjectsValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "file": {
@@ -67742,10 +68815,11 @@ export const SlackWorkObjectsValidateInputSchema = {
     "file"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `slack.work-objects-validate`. */
-export const SlackWorkObjectsValidateReturnSchema = {
+  static const slackWorkObjectsValidateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -67808,10 +68882,11 @@ export const SlackWorkObjectsValidateReturnSchema = {
     "provider"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `specs.get`. */
-export const SpecsGetInputSchema = {
+  static const specsGetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -67828,10 +68903,11 @@ export const SpecsGetInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `specs.get`. */
-export const SpecsGetReturnSchema = {
+  static const specsGetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "context": {
@@ -67844,10 +68920,11 @@ export const SpecsGetReturnSchema = {
     "context"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `specs.list`. */
-export const SpecsListInputSchema = {
+  static const specsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "domain": {
@@ -67872,10 +68949,11 @@ export const SpecsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `specs.list`. */
-export const SpecsListReturnSchema = {
+  static const specsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -67955,10 +69033,11 @@ export const SpecsListReturnSchema = {
     "specs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `specs.new`. */
-export const SpecsNewInputSchema = {
+  static const specsNewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "full": {
@@ -67982,10 +69061,11 @@ export const SpecsNewInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `specs.new`. */
-export const SpecsNewReturnSchema = {
+  static const specsNewReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "createdFiles": {
@@ -68019,17 +69099,19 @@ export const SpecsNewReturnSchema = {
     "missingAncestors"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `specs.sync`. */
-export const SpecsSyncInputSchema = {
+  static const specsSyncInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `specs.sync`. */
-export const SpecsSyncReturnSchema = {
+  static const specsSyncReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rootPath": {
@@ -68049,10 +69131,11 @@ export const SpecsSyncReturnSchema = {
     "rootPath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `stickers.add`. */
-export const StickersAddInputSchema = {
+  static const stickersAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agents": {
@@ -68097,10 +69180,11 @@ export const StickersAddInputSchema = {
     "mediaPath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `stickers.add`. */
-export const StickersAddReturnSchema = {
+  static const stickersAddReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -68193,10 +69277,11 @@ export const StickersAddReturnSchema = {
     "sticker"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `stickers.list`. */
-export const StickersListInputSchema = {
+  static const stickersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -68213,10 +69298,11 @@ export const StickersListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `stickers.list`. */
-export const StickersListReturnSchema = {
+  static const stickersListReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "items": {
@@ -68437,10 +69523,11 @@ export const StickersListReturnSchema = {
     "stickers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `stickers.remove`. */
-export const StickersRemoveInputSchema = {
+  static const stickersRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -68456,10 +69543,11 @@ export const StickersRemoveInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `stickers.remove`. */
-export const StickersRemoveReturnSchema = {
+  static const stickersRemoveReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -68479,10 +69567,11 @@ export const StickersRemoveReturnSchema = {
     "stickerId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `stickers.send`. */
-export const StickersSendInputSchema = {
+  static const stickersSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -68514,10 +69603,11 @@ export const StickersSendInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `stickers.send`. */
-export const StickersSendReturnSchema = {
+  static const stickersSendReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -68578,10 +69668,11 @@ export const StickersSendReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `stickers.show`. */
-export const StickersShowInputSchema = {
+  static const stickersShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -68593,10 +69684,11 @@ export const StickersShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `stickers.show`. */
-export const StickersShowReturnSchema = {
+  static const stickersShowReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "sticker": {
@@ -68681,10 +69773,11 @@ export const StickersShowReturnSchema = {
     "sticker"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sync.inspect`. */
-export const SyncInspectInputSchema = {
+  static const syncInspectInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -68696,10 +69789,11 @@ export const SyncInspectInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sync.inspect`. */
-export const SyncInspectReturnSchema = {
+  static const syncInspectReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -69050,10 +70144,11 @@ export const SyncInspectReturnSchema = {
       "type": "object"
     }
   ]
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sync.pull`. */
-export const SyncPullInputSchema = {
+  static const syncPullInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "domain": {
@@ -69086,10 +70181,11 @@ export const SyncPullInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sync.pull`. */
-export const SyncPullReturnSchema = {
+  static const syncPullReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "applied": {
@@ -69144,10 +70240,11 @@ export const SyncPullReturnSchema = {
     "cursor"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sync.push`. */
-export const SyncPushInputSchema = {
+  static const syncPushInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "domain": {
@@ -69188,10 +70285,11 @@ export const SyncPushInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sync.push`. */
-export const SyncPushReturnSchema = {
+  static const syncPushReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "acked": {
@@ -69268,10 +70366,11 @@ export const SyncPushReturnSchema = {
     "failed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sync.retry`. */
-export const SyncRetryInputSchema = {
+  static const syncRetryInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dead": {
@@ -69284,10 +70383,11 @@ export const SyncRetryInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sync.retry`. */
-export const SyncRetryReturnSchema = {
+  static const syncRetryReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "retried": {
@@ -69303,17 +70403,19 @@ export const SyncRetryReturnSchema = {
     "retried"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `sync.status`. */
-export const SyncStatusInputSchema = {
+  static const syncStatusInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `sync.status`. */
-export const SyncStatusReturnSchema = {
+  static const syncStatusReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -69558,10 +70660,11 @@ export const SyncStatusReturnSchema = {
     "lastError"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.evaluate`. */
-export const TagRulesEvaluateInputSchema = {
+  static const tagRulesEvaluateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -69585,10 +70688,11 @@ export const TagRulesEvaluateInputSchema = {
     "ruleId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.evaluate`. */
-export const TagRulesEvaluateReturnSchema = {
+  static const tagRulesEvaluateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "apply": {
@@ -69627,10 +70731,11 @@ export const TagRulesEvaluateReturnSchema = {
     "traces"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.explain`. */
-export const TagRulesExplainInputSchema = {
+  static const tagRulesExplainInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "target": {
@@ -69639,10 +70744,11 @@ export const TagRulesExplainInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.explain`. */
-export const TagRulesExplainReturnSchema = {
+  static const tagRulesExplainReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "loaded": {
@@ -69676,10 +70782,11 @@ export const TagRulesExplainReturnSchema = {
     "outcomes"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.list`. */
-export const TagRulesListInputSchema = {
+  static const tagRulesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -69696,10 +70803,11 @@ export const TagRulesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.list`. */
-export const TagRulesListReturnSchema = {
+  static const tagRulesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "errors": {
@@ -69748,10 +70856,11 @@ export const TagRulesListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.show`. */
-export const TagRulesShowInputSchema = {
+  static const tagRulesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -69763,10 +70872,11 @@ export const TagRulesShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.show`. */
-export const TagRulesShowReturnSchema = {
+  static const tagRulesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "rule": {
@@ -69782,10 +70892,11 @@ export const TagRulesShowReturnSchema = {
     "rule"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.tick`. */
-export const TagRulesTickInputSchema = {
+  static const tagRulesTickInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "apply": {
@@ -69798,10 +70909,11 @@ export const TagRulesTickInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.tick`. */
-export const TagRulesTickReturnSchema = {
+  static const tagRulesTickReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "appliedActions": {
@@ -69842,17 +70954,19 @@ export const TagRulesTickReturnSchema = {
     "contacts"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tag-rules.validate`. */
-export const TagRulesValidateInputSchema = {
+  static const tagRulesValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tag-rules.validate`. */
-export const TagRulesValidateReturnSchema = {
+  static const tagRulesValidateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "errors": {
@@ -69880,10 +70994,11 @@ export const TagRulesValidateReturnSchema = {
     "errors"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.attach`. */
-export const TagsAttachInputSchema = {
+  static const tagsAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -70011,10 +71126,11 @@ export const TagsAttachInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.attach`. */
-export const TagsAttachReturnSchema = {
+  static const tagsAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "behaviorConsumers": {
@@ -70053,10 +71169,11 @@ export const TagsAttachReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.create`. */
-export const TagsCreateInputSchema = {
+  static const tagsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "description": {
@@ -70089,10 +71206,11 @@ export const TagsCreateInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.create`. */
-export const TagsCreateReturnSchema = {
+  static const tagsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "behaviorConsumers": {
@@ -70131,10 +71249,11 @@ export const TagsCreateReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.detach`. */
-export const TagsDetachInputSchema = {
+  static const tagsDetachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -70258,10 +71377,11 @@ export const TagsDetachInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.detach`. */
-export const TagsDetachReturnSchema = {
+  static const tagsDetachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -70283,10 +71403,11 @@ export const TagsDetachReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.list`. */
-export const TagsListInputSchema = {
+  static const tagsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "cursor": {
@@ -70323,10 +71444,11 @@ export const TagsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.list`. */
-export const TagsListReturnSchema = {
+  static const tagsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "filters": {
@@ -70412,10 +71534,11 @@ export const TagsListReturnSchema = {
     "tags"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.search`. */
-export const TagsSearchInputSchema = {
+  static const tagsSearchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -70560,10 +71683,11 @@ export const TagsSearchInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.search`. */
-export const TagsSearchReturnSchema = {
+  static const tagsSearchReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "behaviorConsumers": {
@@ -70658,10 +71782,11 @@ export const TagsSearchReturnSchema = {
     "behaviorConsumers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.set`. */
-export const TagsSetInputSchema = {
+  static const tagsSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "key": {
@@ -70683,10 +71808,11 @@ export const TagsSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.set`. */
-export const TagsSetReturnSchema = {
+  static const tagsSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "behaviorConsumers": {
@@ -70725,10 +71851,11 @@ export const TagsSetReturnSchema = {
     "changedCount"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tags.show`. */
-export const TagsShowInputSchema = {
+  static const tagsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "slug": {
@@ -70740,10 +71867,11 @@ export const TagsShowInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tags.show`. */
-export const TagsShowReturnSchema = {
+  static const tagsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "behaviorConsumers": {
@@ -70774,10 +71902,11 @@ export const TagsShowReturnSchema = {
     "behaviorConsumers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.archive`. */
-export const TasksArchiveInputSchema = {
+  static const tasksArchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -70793,10 +71922,11 @@ export const TasksArchiveInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.archive`. */
-export const TasksArchiveReturnSchema = {
+  static const tasksArchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -70815,10 +71945,11 @@ export const TasksArchiveReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.add`. */
-export const TasksAutomationsAddInputSchema = {
+  static const tasksAutomationsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -70905,10 +72036,11 @@ export const TasksAutomationsAddInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.add`. */
-export const TasksAutomationsAddReturnSchema = {
+  static const tasksAutomationsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automation": {
@@ -70946,10 +72078,11 @@ export const TasksAutomationsAddReturnSchema = {
     "automation"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.disable`. */
-export const TasksAutomationsDisableInputSchema = {
+  static const tasksAutomationsDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -70961,10 +72094,11 @@ export const TasksAutomationsDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.disable`. */
-export const TasksAutomationsDisableReturnSchema = {
+  static const tasksAutomationsDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automation": {
@@ -71002,10 +72136,11 @@ export const TasksAutomationsDisableReturnSchema = {
     "automation"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.enable`. */
-export const TasksAutomationsEnableInputSchema = {
+  static const tasksAutomationsEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -71017,10 +72152,11 @@ export const TasksAutomationsEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.enable`. */
-export const TasksAutomationsEnableReturnSchema = {
+  static const tasksAutomationsEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automation": {
@@ -71058,10 +72194,11 @@ export const TasksAutomationsEnableReturnSchema = {
     "automation"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.list`. */
-export const TasksAutomationsListInputSchema = {
+  static const tasksAutomationsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -71078,10 +72215,11 @@ export const TasksAutomationsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.list`. */
-export const TasksAutomationsListReturnSchema = {
+  static const tasksAutomationsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automations": {
@@ -71167,10 +72305,11 @@ export const TasksAutomationsListReturnSchema = {
     "automations"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.rm`. */
-export const TasksAutomationsRmInputSchema = {
+  static const tasksAutomationsRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -71186,10 +72325,11 @@ export const TasksAutomationsRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.rm`. */
-export const TasksAutomationsRmReturnSchema = {
+  static const tasksAutomationsRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automation": {
@@ -71227,10 +72367,11 @@ export const TasksAutomationsRmReturnSchema = {
     "automation"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.automations.show`. */
-export const TasksAutomationsShowInputSchema = {
+  static const tasksAutomationsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -71242,10 +72383,11 @@ export const TasksAutomationsShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.automations.show`. */
-export const TasksAutomationsShowReturnSchema = {
+  static const tasksAutomationsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "automation": {
@@ -71267,10 +72409,11 @@ export const TasksAutomationsShowReturnSchema = {
     "runs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.block`. */
-export const TasksBlockInputSchema = {
+  static const tasksBlockInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -71286,10 +72429,11 @@ export const TasksBlockInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.block`. */
-export const TasksBlockReturnSchema = {
+  static const tasksBlockReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71308,10 +72452,11 @@ export const TasksBlockReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.comment`. */
-export const TasksCommentInputSchema = {
+  static const tasksCommentInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -71328,10 +72473,11 @@ export const TasksCommentInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.comment`. */
-export const TasksCommentReturnSchema = {
+  static const tasksCommentReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "comment": {
@@ -71356,10 +72502,11 @@ export const TasksCommentReturnSchema = {
     "comment"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.create`. */
-export const TasksCreateInputSchema = {
+  static const tasksCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -71457,10 +72604,11 @@ export const TasksCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.create`. */
-export const TasksCreateReturnSchema = {
+  static const tasksCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "dependencies": {
@@ -71542,10 +72690,11 @@ export const TasksCreateReturnSchema = {
     "launchPlan"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.deps.add`. */
-export const TasksDepsAddInputSchema = {
+  static const tasksDepsAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dependencyTaskId": {
@@ -71562,10 +72711,11 @@ export const TasksDepsAddInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.deps.add`. */
-export const TasksDepsAddReturnSchema = {
+  static const tasksDepsAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71584,10 +72734,11 @@ export const TasksDepsAddReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.deps.ls`. */
-export const TasksDepsLsInputSchema = {
+  static const tasksDepsLsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -71607,10 +72758,11 @@ export const TasksDepsLsInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.deps.ls`. */
-export const TasksDepsLsReturnSchema = {
+  static const tasksDepsLsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "dependencies": {
@@ -71722,10 +72874,11 @@ export const TasksDepsLsReturnSchema = {
     "dependents"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.deps.rm`. */
-export const TasksDepsRmInputSchema = {
+  static const tasksDepsRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "dependencyTaskId": {
@@ -71746,10 +72899,11 @@ export const TasksDepsRmInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.deps.rm`. */
-export const TasksDepsRmReturnSchema = {
+  static const tasksDepsRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71768,10 +72922,11 @@ export const TasksDepsRmReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.dispatch`. */
-export const TasksDispatchInputSchema = {
+  static const tasksDispatchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actorSession": {
@@ -71823,10 +72978,11 @@ export const TasksDispatchInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.dispatch`. */
-export const TasksDispatchReturnSchema = {
+  static const tasksDispatchReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71854,10 +73010,11 @@ export const TasksDispatchReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.done`. */
-export const TasksDoneInputSchema = {
+  static const tasksDoneInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "summary": {
@@ -71873,10 +73030,11 @@ export const TasksDoneInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.done`. */
-export const TasksDoneReturnSchema = {
+  static const tasksDoneReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71895,10 +73053,11 @@ export const TasksDoneReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.fail`. */
-export const TasksFailInputSchema = {
+  static const tasksFailInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -71914,10 +73073,11 @@ export const TasksFailInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.fail`. */
-export const TasksFailReturnSchema = {
+  static const tasksFailReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -71936,10 +73096,11 @@ export const TasksFailReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.list`. */
-export const TasksListInputSchema = {
+  static const tasksListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -72028,10 +73189,11 @@ export const TasksListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.list`. */
-export const TasksListReturnSchema = {
+  static const tasksListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "archiveMode": {
@@ -72087,10 +73249,11 @@ export const TasksListReturnSchema = {
     "tasks"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.profiles.init`. */
-export const TasksProfilesInitInputSchema = {
+  static const tasksProfilesInitInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "preset": {
@@ -72111,10 +73274,11 @@ export const TasksProfilesInitInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.profiles.init`. */
-export const TasksProfilesInitReturnSchema = {
+  static const tasksProfilesInitReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "manifestPath": {
@@ -72133,10 +73297,11 @@ export const TasksProfilesInitReturnSchema = {
     "manifestPath"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.profiles.list`. */
-export const TasksProfilesListInputSchema = {
+  static const tasksProfilesListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -72149,10 +73314,11 @@ export const TasksProfilesListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.profiles.list`. */
-export const TasksProfilesListReturnSchema = {
+  static const tasksProfilesListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -72232,10 +73398,11 @@ export const TasksProfilesListReturnSchema = {
     "profiles"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.profiles.preview`. */
-export const TasksProfilesPreviewInputSchema = {
+  static const tasksProfilesPreviewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -72282,10 +73449,11 @@ export const TasksProfilesPreviewInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.profiles.preview`. */
-export const TasksProfilesPreviewReturnSchema = {
+  static const tasksProfilesPreviewReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "profile": {
@@ -72304,10 +73472,11 @@ export const TasksProfilesPreviewReturnSchema = {
     "rendered"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.profiles.show`. */
-export const TasksProfilesShowInputSchema = {
+  static const tasksProfilesShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -72319,17 +73488,19 @@ export const TasksProfilesShowInputSchema = {
     "profileId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.profiles.show`. */
-export const TasksProfilesShowReturnSchema = {
+  static const tasksProfilesShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.profiles.validate`. */
-export const TasksProfilesValidateInputSchema = {
+  static const tasksProfilesValidateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "profileId": {
@@ -72338,10 +73509,11 @@ export const TasksProfilesValidateInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.profiles.validate`. */
-export const TasksProfilesValidateReturnSchema = {
+  static const tasksProfilesValidateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "results": {
@@ -72361,10 +73533,11 @@ export const TasksProfilesValidateReturnSchema = {
     "results"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.report`. */
-export const TasksReportInputSchema = {
+  static const tasksReportInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "message": {
@@ -72384,10 +73557,11 @@ export const TasksReportInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.report`. */
-export const TasksReportReturnSchema = {
+  static const tasksReportReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -72406,10 +73580,11 @@ export const TasksReportReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.show`. */
-export const TasksShowInputSchema = {
+  static const tasksShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "last": {
@@ -72425,10 +73600,11 @@ export const TasksShowInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.show`. */
-export const TasksShowReturnSchema = {
+  static const tasksShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "comments": {
@@ -72507,10 +73683,11 @@ export const TasksShowReturnSchema = {
     "launchPlan"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tasks.unarchive`. */
-export const TasksUnarchiveInputSchema = {
+  static const tasksUnarchiveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "taskId": {
@@ -72522,10 +73699,11 @@ export const TasksUnarchiveInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tasks.unarchive`. */
-export const TasksUnarchiveReturnSchema = {
+  static const tasksUnarchiveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "event": {
@@ -72544,10 +73722,11 @@ export const TasksUnarchiveReturnSchema = {
     "event"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.brief`. */
-export const ThreadsBriefInputSchema = {
+  static const threadsBriefInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "scope": {
@@ -72563,10 +73742,11 @@ export const ThreadsBriefInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.brief`. */
-export const ThreadsBriefReturnSchema = {
+  static const threadsBriefReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72589,10 +73769,11 @@ export const ThreadsBriefReturnSchema = {
     "brief"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.close`. */
-export const ThreadsCloseInputSchema = {
+  static const threadsCloseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "reason": {
@@ -72612,10 +73793,11 @@ export const ThreadsCloseInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.close`. */
-export const ThreadsCloseReturnSchema = {
+  static const threadsCloseReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72632,10 +73814,11 @@ export const ThreadsCloseReturnSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.comment`. */
-export const ThreadsCommentInputSchema = {
+  static const threadsCommentInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -72660,10 +73843,11 @@ export const ThreadsCommentInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.comment`. */
-export const ThreadsCommentReturnSchema = {
+  static const threadsCommentReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72686,10 +73870,11 @@ export const ThreadsCommentReturnSchema = {
     "entry"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.create`. */
-export const ThreadsCreateInputSchema = {
+  static const threadsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "defaultAgent": {
@@ -72725,10 +73910,11 @@ export const ThreadsCreateInputSchema = {
     "slug"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.create`. */
-export const ThreadsCreateReturnSchema = {
+  static const threadsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72745,10 +73931,11 @@ export const ThreadsCreateReturnSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.entries`. */
-export const ThreadsEntriesInputSchema = {
+  static const threadsEntriesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -72772,10 +73959,11 @@ export const ThreadsEntriesInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.entries`. */
-export const ThreadsEntriesReturnSchema = {
+  static const threadsEntriesReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72801,10 +73989,11 @@ export const ThreadsEntriesReturnSchema = {
     "entries"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.link`. */
-export const ThreadsLinkInputSchema = {
+  static const threadsLinkInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "label": {
@@ -72837,10 +74026,11 @@ export const ThreadsLinkInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.link`. */
-export const ThreadsLinkReturnSchema = {
+  static const threadsLinkReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72863,10 +74053,11 @@ export const ThreadsLinkReturnSchema = {
     "link"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.list`. */
-export const ThreadsListInputSchema = {
+  static const threadsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -72899,10 +74090,11 @@ export const ThreadsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.list`. */
-export const ThreadsListReturnSchema = {
+  static const threadsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -72974,10 +74166,11 @@ export const ThreadsListReturnSchema = {
     "pagination"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.note`. */
-export const ThreadsNoteInputSchema = {
+  static const threadsNoteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "body": {
@@ -73002,10 +74195,11 @@ export const ThreadsNoteInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.note`. */
-export const ThreadsNoteReturnSchema = {
+  static const threadsNoteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -73028,10 +74222,11 @@ export const ThreadsNoteReturnSchema = {
     "entry"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `threads.show`. */
-export const ThreadsShowInputSchema = {
+  static const threadsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "entries": {
@@ -73051,10 +74246,11 @@ export const ThreadsShowInputSchema = {
     "thread"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `threads.show`. */
-export const ThreadsShowReturnSchema = {
+  static const threadsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "action": {
@@ -73089,10 +74285,11 @@ export const ThreadsShowReturnSchema = {
     "links"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.invoke`. */
-export const ToolsInvokeInputSchema = {
+  static const toolsInvokeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -73108,10 +74305,11 @@ export const ToolsInvokeInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.invoke`. */
-export const ToolsInvokeReturnSchema = {
+  static const toolsInvokeReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -73316,10 +74514,11 @@ export const ToolsInvokeReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.list`. */
-export const ToolsListInputSchema = {
+  static const toolsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -73332,10 +74531,11 @@ export const ToolsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.list`. */
-export const ToolsListReturnSchema = {
+  static const toolsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "groups": {
@@ -73440,17 +74640,19 @@ export const ToolsListReturnSchema = {
     "tools"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.manifest`. */
-export const ToolsManifestInputSchema = {
+  static const toolsManifestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.manifest`. */
-export const ToolsManifestReturnSchema = {
+  static const toolsManifestReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "tools": {
@@ -73470,17 +74672,19 @@ export const ToolsManifestReturnSchema = {
     "tools"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.schema`. */
-export const ToolsSchemaInputSchema = {
+  static const toolsSchemaInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.schema`. */
-export const ToolsSchemaReturnSchema = {
+  static const toolsSchemaReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "schema": {
@@ -73493,10 +74697,11 @@ export const ToolsSchemaReturnSchema = {
     "schema"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.search`. */
-export const ToolsSearchInputSchema = {
+  static const toolsSearchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "limit": {
@@ -73512,10 +74717,11 @@ export const ToolsSearchInputSchema = {
     "query"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.search`. */
-export const ToolsSearchReturnSchema = {
+  static const toolsSearchReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "items": {
@@ -73581,10 +74787,11 @@ export const ToolsSearchReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.show`. */
-export const ToolsShowInputSchema = {
+  static const toolsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -73596,10 +74803,11 @@ export const ToolsShowInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.show`. */
-export const ToolsShowReturnSchema = {
+  static const toolsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "tool": {
@@ -73612,10 +74820,11 @@ export const ToolsShowReturnSchema = {
     "tool"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `tools.test`. */
-export const ToolsTestInputSchema = {
+  static const toolsTestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "args": {
@@ -73631,10 +74840,11 @@ export const ToolsTestInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `tools.test`. */
-export const ToolsTestReturnSchema = {
+  static const toolsTestReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -73858,10 +75068,11 @@ export const ToolsTestReturnSchema = {
     "invokeCommand"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `transcribe.file`. */
-export const TranscribeFileInputSchema = {
+  static const transcribeFileInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "lang": {
@@ -73878,10 +75089,11 @@ export const TranscribeFileInputSchema = {
     "path"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `transcribe.file`. */
-export const TranscribeFileReturnSchema = {
+  static const transcribeFileReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "options": {
@@ -73966,10 +75178,11 @@ export const TranscribeFileReturnSchema = {
     "options"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.add`. */
-export const TriggersAddInputSchema = {
+  static const triggersAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -74033,10 +75246,11 @@ export const TriggersAddInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.add`. */
-export const TriggersAddReturnSchema = {
+  static const triggersAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74077,10 +75291,11 @@ export const TriggersAddReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.disable`. */
-export const TriggersDisableInputSchema = {
+  static const triggersDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74092,10 +75307,11 @@ export const TriggersDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.disable`. */
-export const TriggersDisableReturnSchema = {
+  static const triggersDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74136,10 +75352,11 @@ export const TriggersDisableReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.enable`. */
-export const TriggersEnableInputSchema = {
+  static const triggersEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74151,10 +75368,11 @@ export const TriggersEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.enable`. */
-export const TriggersEnableReturnSchema = {
+  static const triggersEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74195,10 +75413,11 @@ export const TriggersEnableReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.list`. */
-export const TriggersListInputSchema = {
+  static const triggersListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -74219,10 +75438,11 @@ export const TriggersListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.list`. */
-export const TriggersListReturnSchema = {
+  static const triggersListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -74302,10 +75522,11 @@ export const TriggersListReturnSchema = {
     "triggers"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.rm`. */
-export const TriggersRmInputSchema = {
+  static const triggersRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -74321,10 +75542,11 @@ export const TriggersRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.rm`. */
-export const TriggersRmReturnSchema = {
+  static const triggersRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74365,10 +75587,11 @@ export const TriggersRmReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.set`. */
-export const TriggersSetInputSchema = {
+  static const triggersSetInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74390,10 +75613,11 @@ export const TriggersSetInputSchema = {
     "value"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.set`. */
-export const TriggersSetReturnSchema = {
+  static const triggersSetReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74434,10 +75658,11 @@ export const TriggersSetReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.show`. */
-export const TriggersShowInputSchema = {
+  static const triggersShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74449,10 +75674,11 @@ export const TriggersShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.show`. */
-export const TriggersShowReturnSchema = {
+  static const triggersShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "trigger": {
@@ -74465,10 +75691,11 @@ export const TriggersShowReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.test`. */
-export const TriggersTestInputSchema = {
+  static const triggersTestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -74484,10 +75711,11 @@ export const TriggersTestInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.test`. */
-export const TriggersTestReturnSchema = {
+  static const triggersTestReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "changedCount": {
@@ -74528,17 +75756,19 @@ export const TriggersTestReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `triggers.topics`. */
-export const TriggersTopicsInputSchema = {
+  static const triggersTopicsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `triggers.topics`. */
-export const TriggersTopicsReturnSchema = {
+  static const triggersTopicsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "topics": {
@@ -74554,10 +75784,11 @@ export const TriggersTopicsReturnSchema = {
     "topics"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `video.analyze`. */
-export const VideoAnalyzeInputSchema = {
+  static const videoAnalyzeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "forceAnalyze": {
@@ -74585,10 +75816,11 @@ export const VideoAnalyzeInputSchema = {
     "url"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `video.analyze`. */
-export const VideoAnalyzeReturnSchema = {
+  static const videoAnalyzeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "artifact": {
@@ -74678,10 +75910,11 @@ export const VideoAnalyzeReturnSchema = {
     "options"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.connectors`. */
-export const WatchConnectorsInputSchema = {
+  static const watchConnectorsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "provider": {
@@ -74690,10 +75923,11 @@ export const WatchConnectorsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.connectors`. */
-export const WatchConnectorsReturnSchema = {
+  static const watchConnectorsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "connectors": {
@@ -74722,10 +75956,11 @@ export const WatchConnectorsReturnSchema = {
     "items"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.create`. */
-export const WatchCreateInputSchema = {
+  static const watchCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -74766,10 +76001,11 @@ export const WatchCreateInputSchema = {
     "resource"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.create`. */
-export const WatchCreateReturnSchema = {
+  static const watchCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "capabilities": {
@@ -74798,10 +76034,11 @@ export const WatchCreateReturnSchema = {
     "next"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.disable`. */
-export const WatchDisableInputSchema = {
+  static const watchDisableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74813,10 +76050,11 @@ export const WatchDisableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.disable`. */
-export const WatchDisableReturnSchema = {
+  static const watchDisableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "status": {
@@ -74833,10 +76071,11 @@ export const WatchDisableReturnSchema = {
     "watch"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.enable`. */
-export const WatchEnableInputSchema = {
+  static const watchEnableInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74848,10 +76087,11 @@ export const WatchEnableInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.enable`. */
-export const WatchEnableReturnSchema = {
+  static const watchEnableReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "status": {
@@ -74868,10 +76108,11 @@ export const WatchEnableReturnSchema = {
     "watch"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.events`. */
-export const WatchEventsInputSchema = {
+  static const watchEventsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -74883,10 +76124,11 @@ export const WatchEventsInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.events`. */
-export const WatchEventsReturnSchema = {
+  static const watchEventsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "eventTypes": {
@@ -74911,10 +76153,11 @@ export const WatchEventsReturnSchema = {
     "subjects"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.list`. */
-export const WatchListInputSchema = {
+  static const watchListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -74939,10 +76182,11 @@ export const WatchListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.list`. */
-export const WatchListReturnSchema = {
+  static const watchListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -75022,10 +76266,11 @@ export const WatchListReturnSchema = {
     "watches"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.rm`. */
-export const WatchRmInputSchema = {
+  static const watchRmInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -75041,10 +76286,11 @@ export const WatchRmInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.rm`. */
-export const WatchRmReturnSchema = {
+  static const watchRmReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "deleted": {
@@ -75059,10 +76305,11 @@ export const WatchRmReturnSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.show`. */
-export const WatchShowInputSchema = {
+  static const watchShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -75074,10 +76321,11 @@ export const WatchShowInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.show`. */
-export const WatchShowReturnSchema = {
+  static const watchShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "watch": {
@@ -75090,10 +76338,11 @@ export const WatchShowReturnSchema = {
     "watch"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `watch.trigger`. */
-export const WatchTriggerInputSchema = {
+  static const watchTriggerInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75133,10 +76382,11 @@ export const WatchTriggerInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `watch.trigger`. */
-export const WatchTriggerReturnSchema = {
+  static const watchTriggerReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "status": {
@@ -75159,10 +76409,11 @@ export const WatchTriggerReturnSchema = {
     "trigger"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.dm.ack`. */
-export const WhatsappDmAckInputSchema = {
+  static const whatsappDmAckInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75187,17 +76438,19 @@ export const WhatsappDmAckInputSchema = {
     "messageId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.dm.ack`. */
-export const WhatsappDmAckReturnSchema = {
+  static const whatsappDmAckReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.dm.read`. */
-export const WhatsappDmReadInputSchema = {
+  static const whatsappDmReadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75226,17 +76479,19 @@ export const WhatsappDmReadInputSchema = {
     "contact"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.dm.read`. */
-export const WhatsappDmReadReturnSchema = {
+  static const whatsappDmReadReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.dm.send`. */
-export const WhatsappDmSendInputSchema = {
+  static const whatsappDmSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75261,17 +76516,19 @@ export const WhatsappDmSendInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.dm.send`. */
-export const WhatsappDmSendReturnSchema = {
+  static const whatsappDmSendReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.add`. */
-export const WhatsappGroupAddInputSchema = {
+  static const whatsappGroupAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75296,17 +76553,19 @@ export const WhatsappGroupAddInputSchema = {
     "participants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.add`. */
-export const WhatsappGroupAddReturnSchema = {
+  static const whatsappGroupAddReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.create`. */
-export const WhatsappGroupCreateInputSchema = {
+  static const whatsappGroupCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75368,17 +76627,19 @@ export const WhatsappGroupCreateInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.create`. */
-export const WhatsappGroupCreateReturnSchema = {
+  static const whatsappGroupCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.demote`. */
-export const WhatsappGroupDemoteInputSchema = {
+  static const whatsappGroupDemoteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75399,17 +76660,19 @@ export const WhatsappGroupDemoteInputSchema = {
     "participants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.demote`. */
-export const WhatsappGroupDemoteReturnSchema = {
+  static const whatsappGroupDemoteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.description`. */
-export const WhatsappGroupDescriptionInputSchema = {
+  static const whatsappGroupDescriptionInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75434,17 +76697,19 @@ export const WhatsappGroupDescriptionInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.description`. */
-export const WhatsappGroupDescriptionReturnSchema = {
+  static const whatsappGroupDescriptionReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.info`. */
-export const WhatsappGroupInfoInputSchema = {
+  static const whatsappGroupInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75460,17 +76725,19 @@ export const WhatsappGroupInfoInputSchema = {
     "groupId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.info`. */
-export const WhatsappGroupInfoReturnSchema = {
+  static const whatsappGroupInfoReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.invite`. */
-export const WhatsappGroupInviteInputSchema = {
+  static const whatsappGroupInviteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75486,17 +76753,19 @@ export const WhatsappGroupInviteInputSchema = {
     "groupId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.invite`. */
-export const WhatsappGroupInviteReturnSchema = {
+  static const whatsappGroupInviteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.join`. */
-export const WhatsappGroupJoinInputSchema = {
+  static const whatsappGroupJoinInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75516,17 +76785,19 @@ export const WhatsappGroupJoinInputSchema = {
     "code"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.join`. */
-export const WhatsappGroupJoinReturnSchema = {
+  static const whatsappGroupJoinReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.leave`. */
-export const WhatsappGroupLeaveInputSchema = {
+  static const whatsappGroupLeaveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75546,17 +76817,19 @@ export const WhatsappGroupLeaveInputSchema = {
     "groupId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.leave`. */
-export const WhatsappGroupLeaveReturnSchema = {
+  static const whatsappGroupLeaveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.list`. */
-export const WhatsappGroupListInputSchema = {
+  static const whatsappGroupListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75577,17 +76850,19 @@ export const WhatsappGroupListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.list`. */
-export const WhatsappGroupListReturnSchema = {
+  static const whatsappGroupListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.promote`. */
-export const WhatsappGroupPromoteInputSchema = {
+  static const whatsappGroupPromoteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75612,17 +76887,19 @@ export const WhatsappGroupPromoteInputSchema = {
     "participants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.promote`. */
-export const WhatsappGroupPromoteReturnSchema = {
+  static const whatsappGroupPromoteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.remove`. */
-export const WhatsappGroupRemoveInputSchema = {
+  static const whatsappGroupRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75647,17 +76924,19 @@ export const WhatsappGroupRemoveInputSchema = {
     "participants"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.remove`. */
-export const WhatsappGroupRemoveReturnSchema = {
+  static const whatsappGroupRemoveReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.rename`. */
-export const WhatsappGroupRenameInputSchema = {
+  static const whatsappGroupRenameInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75682,17 +76961,19 @@ export const WhatsappGroupRenameInputSchema = {
     "name"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.rename`. */
-export const WhatsappGroupRenameReturnSchema = {
+  static const whatsappGroupRenameReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.revoke-invite`. */
-export const WhatsappGroupRevokeInviteInputSchema = {
+  static const whatsappGroupRevokeInviteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75712,17 +76993,19 @@ export const WhatsappGroupRevokeInviteInputSchema = {
     "groupId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.revoke-invite`. */
-export const WhatsappGroupRevokeInviteReturnSchema = {
+  static const whatsappGroupRevokeInviteReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.send`. */
-export const WhatsappGroupSendInputSchema = {
+  static const whatsappGroupSendInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75754,17 +77037,19 @@ export const WhatsappGroupSendInputSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.send`. */
-export const WhatsappGroupSendReturnSchema = {
+  static const whatsappGroupSendReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `whatsapp.group.settings`. */
-export const WhatsappGroupSettingsInputSchema = {
+  static const whatsappGroupSettingsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -75789,17 +77074,19 @@ export const WhatsappGroupSettingsInputSchema = {
     "setting"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `whatsapp.group.settings`. */
-export const WhatsappGroupSettingsReturnSchema = {
+  static const whatsappGroupSettingsReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `work-objects.action`. */
-export const WorkObjectsActionInputSchema = {
+  static const workObjectsActionInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "actionId": {
@@ -75829,10 +77116,11 @@ export const WorkObjectsActionInputSchema = {
     "type"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `work-objects.action`. */
-export const WorkObjectsActionReturnSchema = {
+  static const workObjectsActionReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -76155,10 +77443,11 @@ export const WorkObjectsActionReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `work-objects.resolve`. */
-export const WorkObjectsResolveInputSchema = {
+  static const workObjectsResolveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -76179,10 +77468,11 @@ export const WorkObjectsResolveInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `work-objects.resolve`. */
-export const WorkObjectsResolveReturnSchema = {
+  static const workObjectsResolveReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -76493,10 +77783,11 @@ export const WorkObjectsResolveReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `work-objects.suggest`. */
-export const WorkObjectsSuggestInputSchema = {
+  static const workObjectsSuggestInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fieldId": {
@@ -76522,10 +77813,11 @@ export const WorkObjectsSuggestInputSchema = {
     "type"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `work-objects.suggest`. */
-export const WorkObjectsSuggestReturnSchema = {
+  static const workObjectsSuggestReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "providerId": {
@@ -76556,10 +77848,11 @@ export const WorkObjectsSuggestReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `work-objects.update`. */
-export const WorkObjectsUpdateInputSchema = {
+  static const workObjectsUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -76584,10 +77877,11 @@ export const WorkObjectsUpdateInputSchema = {
     "type"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `work-objects.update`. */
-export const WorkObjectsUpdateReturnSchema = {
+  static const workObjectsUpdateReturnSchema = r'''
+{
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -76919,10 +78213,11 @@ export const WorkObjectsUpdateReturnSchema = {
     "result"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.archive-node`. */
-export const WorkflowsRunsArchiveNodeInputSchema = {
+  static const workflowsRunsArchiveNodeInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -76943,10 +78238,11 @@ export const WorkflowsRunsArchiveNodeInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.archive-node`. */
-export const WorkflowsRunsArchiveNodeReturnSchema = {
+  static const workflowsRunsArchiveNodeReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -76959,10 +78255,11 @@ export const WorkflowsRunsArchiveNodeReturnSchema = {
     "details"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.cancel`. */
-export const WorkflowsRunsCancelInputSchema = {
+  static const workflowsRunsCancelInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nodeKey": {
@@ -76979,10 +78276,11 @@ export const WorkflowsRunsCancelInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.cancel`. */
-export const WorkflowsRunsCancelReturnSchema = {
+  static const workflowsRunsCancelReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -76995,10 +78293,11 @@ export const WorkflowsRunsCancelReturnSchema = {
     "details"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.list`. */
-export const WorkflowsRunsListInputSchema = {
+  static const workflowsRunsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -77015,10 +78314,11 @@ export const WorkflowsRunsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.list`. */
-export const WorkflowsRunsListReturnSchema = {
+  static const workflowsRunsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -77098,10 +78398,11 @@ export const WorkflowsRunsListReturnSchema = {
     "runs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.release`. */
-export const WorkflowsRunsReleaseInputSchema = {
+  static const workflowsRunsReleaseInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nodeKey": {
@@ -77118,10 +78419,11 @@ export const WorkflowsRunsReleaseInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.release`. */
-export const WorkflowsRunsReleaseReturnSchema = {
+  static const workflowsRunsReleaseReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -77134,10 +78436,11 @@ export const WorkflowsRunsReleaseReturnSchema = {
     "details"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.show`. */
-export const WorkflowsRunsShowInputSchema = {
+  static const workflowsRunsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "runId": {
@@ -77149,17 +78452,19 @@ export const WorkflowsRunsShowInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.show`. */
-export const WorkflowsRunsShowReturnSchema = {
+  static const workflowsRunsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.skip`. */
-export const WorkflowsRunsSkipInputSchema = {
+  static const workflowsRunsSkipInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nodeKey": {
@@ -77176,10 +78481,11 @@ export const WorkflowsRunsSkipInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.skip`. */
-export const WorkflowsRunsSkipReturnSchema = {
+  static const workflowsRunsSkipReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -77192,10 +78498,11 @@ export const WorkflowsRunsSkipReturnSchema = {
     "details"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.start`. */
-export const WorkflowsRunsStartInputSchema = {
+  static const workflowsRunsStartInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "execute": {
@@ -77215,17 +78522,19 @@ export const WorkflowsRunsStartInputSchema = {
     "specId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.start`. */
-export const WorkflowsRunsStartReturnSchema = {
+  static const workflowsRunsStartReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.task-attach`. */
-export const WorkflowsRunsTaskAttachInputSchema = {
+  static const workflowsRunsTaskAttachInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nodeKey": {
@@ -77247,10 +78556,11 @@ export const WorkflowsRunsTaskAttachInputSchema = {
     "taskId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.task-attach`. */
-export const WorkflowsRunsTaskAttachReturnSchema = {
+  static const workflowsRunsTaskAttachReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "details": {
@@ -77263,10 +78573,11 @@ export const WorkflowsRunsTaskAttachReturnSchema = {
     "details"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.runs.task-create`. */
-export const WorkflowsRunsTaskCreateInputSchema = {
+  static const workflowsRunsTaskCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "agent": {
@@ -77308,10 +78619,11 @@ export const WorkflowsRunsTaskCreateInputSchema = {
     "runId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.runs.task-create`. */
-export const WorkflowsRunsTaskCreateReturnSchema = {
+  static const workflowsRunsTaskCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "task": {
@@ -77337,10 +78649,11 @@ export const WorkflowsRunsTaskCreateReturnSchema = {
     "workflow"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.specs.create`. */
-export const WorkflowsSpecsCreateInputSchema = {
+  static const workflowsSpecsCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "definition": {
@@ -77360,17 +78673,19 @@ export const WorkflowsSpecsCreateInputSchema = {
     "specId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.specs.create`. */
-export const WorkflowsSpecsCreateReturnSchema = {
+  static const workflowsSpecsCreateReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.specs.list`. */
-export const WorkflowsSpecsListInputSchema = {
+  static const workflowsSpecsListInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "fields": {
@@ -77387,10 +78702,11 @@ export const WorkflowsSpecsListInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.specs.list`. */
-export const WorkflowsSpecsListReturnSchema = {
+  static const workflowsSpecsListReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {
     "items": {
@@ -77470,10 +78786,11 @@ export const WorkflowsSpecsListReturnSchema = {
     "specs"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `workflows.specs.show`. */
-export const WorkflowsSpecsShowInputSchema = {
+  static const workflowsSpecsShowInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "specId": {
@@ -77485,17 +78802,19 @@ export const WorkflowsSpecsShowInputSchema = {
     "specId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `workflows.specs.show`. */
-export const WorkflowsSpecsShowReturnSchema = {
+  static const workflowsSpecsShowReturnSchema = r'''
+{
   "additionalProperties": {},
   "properties": {},
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-countries`. */
-export const YtAnalyticsCountriesInputSchema = {
+  static const ytAnalyticsCountriesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77514,10 +78833,11 @@ export const YtAnalyticsCountriesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-countries`. */
-export const YtAnalyticsCountriesReturnSchema = {
+  static const ytAnalyticsCountriesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "countries": {
@@ -77561,10 +78881,11 @@ export const YtAnalyticsCountriesReturnSchema = {
     "countries"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-demographics`. */
-export const YtAnalyticsDemographicsInputSchema = {
+  static const ytAnalyticsDemographicsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77578,10 +78899,11 @@ export const YtAnalyticsDemographicsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-demographics`. */
-export const YtAnalyticsDemographicsReturnSchema = {
+  static const ytAnalyticsDemographicsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "demographics": {
@@ -77621,10 +78943,11 @@ export const YtAnalyticsDemographicsReturnSchema = {
     "demographics"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-devices`. */
-export const YtAnalyticsDevicesInputSchema = {
+  static const ytAnalyticsDevicesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77638,10 +78961,11 @@ export const YtAnalyticsDevicesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-devices`. */
-export const YtAnalyticsDevicesReturnSchema = {
+  static const ytAnalyticsDevicesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "devices": {
@@ -77681,10 +79005,11 @@ export const YtAnalyticsDevicesReturnSchema = {
     "devices"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-overview`. */
-export const YtAnalyticsOverviewInputSchema = {
+  static const ytAnalyticsOverviewInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77698,10 +79023,11 @@ export const YtAnalyticsOverviewInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-overview`. */
-export const YtAnalyticsOverviewReturnSchema = {
+  static const ytAnalyticsOverviewReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "overview": {
@@ -77766,10 +79092,11 @@ export const YtAnalyticsOverviewReturnSchema = {
     "overview"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-series`. */
-export const YtAnalyticsSeriesInputSchema = {
+  static const ytAnalyticsSeriesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77796,10 +79123,11 @@ export const YtAnalyticsSeriesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-series`. */
-export const YtAnalyticsSeriesReturnSchema = {
+  static const ytAnalyticsSeriesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "data": {
@@ -77845,10 +79173,11 @@ export const YtAnalyticsSeriesReturnSchema = {
     "data"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-top`. */
-export const YtAnalyticsTopInputSchema = {
+  static const ytAnalyticsTopInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77867,10 +79196,11 @@ export const YtAnalyticsTopInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-top`. */
-export const YtAnalyticsTopReturnSchema = {
+  static const ytAnalyticsTopReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "period": {
@@ -77926,10 +79256,11 @@ export const YtAnalyticsTopReturnSchema = {
     "videos"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.analytics-traffic`. */
-export const YtAnalyticsTrafficInputSchema = {
+  static const ytAnalyticsTrafficInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -77943,10 +79274,11 @@ export const YtAnalyticsTrafficInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.analytics-traffic`. */
-export const YtAnalyticsTrafficReturnSchema = {
+  static const ytAnalyticsTrafficReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "period": {
@@ -77986,10 +79318,11 @@ export const YtAnalyticsTrafficReturnSchema = {
     "sources"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.caption-download`. */
-export const YtCaptionDownloadInputSchema = {
+  static const ytCaptionDownloadInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "captionId": {
@@ -78019,10 +79352,11 @@ export const YtCaptionDownloadInputSchema = {
     "captionId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.caption-download`. */
-export const YtCaptionDownloadReturnSchema = {
+  static const ytCaptionDownloadReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "captionId": {
@@ -78046,10 +79380,11 @@ export const YtCaptionDownloadReturnSchema = {
     "content"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.captions`. */
-export const YtCaptionsInputSchema = {
+  static const ytCaptionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78066,10 +79401,11 @@ export const YtCaptionsInputSchema = {
     "videoId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.captions`. */
-export const YtCaptionsReturnSchema = {
+  static const ytCaptionsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "captions": {
@@ -78133,10 +79469,11 @@ export const YtCaptionsReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.comments`. */
-export const YtCommentsInputSchema = {
+  static const ytCommentsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78166,10 +79503,11 @@ export const YtCommentsInputSchema = {
     "videoId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.comments`. */
-export const YtCommentsReturnSchema = {
+  static const ytCommentsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "comments": {
@@ -78236,10 +79574,11 @@ export const YtCommentsReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.health`. */
-export const YtHealthInputSchema = {
+  static const ytHealthInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78248,10 +79587,11 @@ export const YtHealthInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.health`. */
-export const YtHealthReturnSchema = {
+  static const ytHealthReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -78298,10 +79638,11 @@ export const YtHealthReturnSchema = {
     "message"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.info`. */
-export const YtInfoInputSchema = {
+  static const ytInfoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78310,10 +79651,11 @@ export const YtInfoInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.info`. */
-export const YtInfoReturnSchema = {
+  static const ytInfoReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "channel": {
@@ -78370,10 +79712,11 @@ export const YtInfoReturnSchema = {
     "channel"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlist`. */
-export const YtPlaylistInputSchema = {
+  static const ytPlaylistInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78403,10 +79746,11 @@ export const YtPlaylistInputSchema = {
     "playlistId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlist`. */
-export const YtPlaylistReturnSchema = {
+  static const ytPlaylistReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nextPageToken": {
@@ -78488,10 +79832,11 @@ export const YtPlaylistReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlist-add`. */
-export const YtPlaylistAddInputSchema = {
+  static const ytPlaylistAddInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78518,10 +79863,11 @@ export const YtPlaylistAddInputSchema = {
     "videoId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlist-add`. */
-export const YtPlaylistAddReturnSchema = {
+  static const ytPlaylistAddReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "item": {
@@ -78558,10 +79904,11 @@ export const YtPlaylistAddReturnSchema = {
     "item"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlist-create`. */
-export const YtPlaylistCreateInputSchema = {
+  static const ytPlaylistCreateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78595,10 +79942,11 @@ export const YtPlaylistCreateInputSchema = {
     "title"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlist-create`. */
-export const YtPlaylistCreateReturnSchema = {
+  static const ytPlaylistCreateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "playlist": {
@@ -78651,10 +79999,11 @@ export const YtPlaylistCreateReturnSchema = {
     "playlist"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlist-delete`. */
-export const YtPlaylistDeleteInputSchema = {
+  static const ytPlaylistDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78675,10 +80024,11 @@ export const YtPlaylistDeleteInputSchema = {
     "playlistId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlist-delete`. */
-export const YtPlaylistDeleteReturnSchema = {
+  static const ytPlaylistDeleteReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "deleted": {
@@ -78694,10 +80044,11 @@ export const YtPlaylistDeleteReturnSchema = {
     "deleted"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlist-remove`. */
-export const YtPlaylistRemoveInputSchema = {
+  static const ytPlaylistRemoveInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78718,10 +80069,11 @@ export const YtPlaylistRemoveInputSchema = {
     "playlistItemId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlist-remove`. */
-export const YtPlaylistRemoveReturnSchema = {
+  static const ytPlaylistRemoveReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "removed": {
@@ -78737,10 +80089,11 @@ export const YtPlaylistRemoveReturnSchema = {
     "removed"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.playlists`. */
-export const YtPlaylistsInputSchema = {
+  static const ytPlaylistsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78762,10 +80115,11 @@ export const YtPlaylistsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.playlists`. */
-export const YtPlaylistsReturnSchema = {
+  static const ytPlaylistsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nextPageToken": {
@@ -78828,10 +80182,11 @@ export const YtPlaylistsReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.reply`. */
-export const YtReplyInputSchema = {
+  static const ytReplyInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "commentId": {
@@ -78858,10 +80213,11 @@ export const YtReplyInputSchema = {
     "text"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.reply`. */
-export const YtReplyReturnSchema = {
+  static const ytReplyReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "replyId": {
@@ -78877,10 +80233,11 @@ export const YtReplyReturnSchema = {
     "replyId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.search`. */
-export const YtSearchInputSchema = {
+  static const ytSearchInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -78910,10 +80267,11 @@ export const YtSearchInputSchema = {
     "query"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.search`. */
-export const YtSearchReturnSchema = {
+  static const ytSearchReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nextPageToken": {
@@ -78995,10 +80353,11 @@ export const YtSearchReturnSchema = {
     "query"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.stats`. */
-export const YtStatsInputSchema = {
+  static const ytStatsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79015,10 +80374,11 @@ export const YtStatsInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.stats`. */
-export const YtStatsReturnSchema = {
+  static const ytStatsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "stats": {
@@ -79071,10 +80431,11 @@ export const YtStatsReturnSchema = {
     "stats"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.subscriptions`. */
-export const YtSubscriptionsInputSchema = {
+  static const ytSubscriptionsInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79096,10 +80457,11 @@ export const YtSubscriptionsInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.subscriptions`. */
-export const YtSubscriptionsReturnSchema = {
+  static const ytSubscriptionsReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nextPageToken": {
@@ -79162,10 +80524,11 @@ export const YtSubscriptionsReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.unanswered`. */
-export const YtUnansweredInputSchema = {
+  static const ytUnansweredInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79195,10 +80558,11 @@ export const YtUnansweredInputSchema = {
     "videoId"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.unanswered`. */
-export const YtUnansweredReturnSchema = {
+  static const ytUnansweredReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "comments": {
@@ -79265,10 +80629,11 @@ export const YtUnansweredReturnSchema = {
     "totalUnanswered"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.video`. */
-export const YtVideoInputSchema = {
+  static const ytVideoInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79285,10 +80650,11 @@ export const YtVideoInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.video`. */
-export const YtVideoReturnSchema = {
+  static const ytVideoReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "success": {
@@ -79356,10 +80722,11 @@ export const YtVideoReturnSchema = {
     "video"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.video-categories`. */
-export const YtVideoCategoriesInputSchema = {
+  static const ytVideoCategoriesInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79373,10 +80740,11 @@ export const YtVideoCategoriesInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.video-categories`. */
-export const YtVideoCategoriesReturnSchema = {
+  static const ytVideoCategoriesReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "categories": {
@@ -79420,10 +80788,11 @@ export const YtVideoCategoriesReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.video-delete`. */
-export const YtVideoDeleteInputSchema = {
+  static const ytVideoDeleteInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79444,10 +80813,11 @@ export const YtVideoDeleteInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.video-delete`. */
-export const YtVideoDeleteReturnSchema = {
+  static const ytVideoDeleteReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "deleted": {
@@ -79463,10 +80833,11 @@ export const YtVideoDeleteReturnSchema = {
     "deleted"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.video-update`. */
-export const YtVideoUpdateInputSchema = {
+  static const ytVideoUpdateInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "category": {
@@ -79512,10 +80883,11 @@ export const YtVideoUpdateInputSchema = {
     "id"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.video-update`. */
-export const YtVideoUpdateReturnSchema = {
+  static const ytVideoUpdateReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "success": {
@@ -79583,10 +80955,11 @@ export const YtVideoUpdateReturnSchema = {
     "video"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the input body of `yt.videos`. */
-export const YtVideosInputSchema = {
+  static const ytVideosInputSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "connection": {
@@ -79608,10 +80981,11 @@ export const YtVideosInputSchema = {
     }
   },
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
 
-/** JSON Schema for the return shape of `yt.videos`. */
-export const YtVideosReturnSchema = {
+  static const ytVideosReturnSchema = r'''
+{
   "additionalProperties": false,
   "properties": {
     "nextPageToken": {
@@ -79689,4 +81063,6 @@ export const YtVideosReturnSchema = {
     "totalResults"
   ],
   "type": "object"
-} as const satisfies SdkJsonSchema;
+}
+''';
+}

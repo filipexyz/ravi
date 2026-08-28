@@ -8,7 +8,7 @@ import { emitJson } from "../../sdk/openapi/index.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
-import { SdkClientCommands, SdkOpenApiCommands, SdkSwiftCommands } from "./sdk.js";
+import { SdkClientCommands, SdkDartCommands, SdkOpenApiCommands, SdkSwiftCommands } from "./sdk.js";
 
 function makeTmpDir(label: string): string {
   return mkdtempSync(join(tmpdir(), `ravi-sdk-${label}-`));
@@ -265,6 +265,74 @@ describe("SdkSwiftCommands", () => {
       }
       expect(failure).toBeInstanceOf(ContractError);
       expect(failure).toMatchObject({ code: "SDK_SWIFT_DRIFT", exitCode: 1, op: "sdk swift check" });
+      expect([...checkCapture.lines, ...checkCapture.errors].join("\n")).not.toContain("Error:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("SdkDartCommands", () => {
+  it("generates Dart SDK files and check reports no drift", () => {
+    const dir = makeTmpDir("dart-generate");
+    try {
+      const capture = captureConsole();
+      let generated: { status: string; files: { file: string; path: string }[] } | undefined;
+      try {
+        generated = new SdkDartCommands().generate(dir, "9.9.9", true) as {
+          status: string;
+          files: { file: string; path: string }[];
+        };
+      } finally {
+        capture.restore();
+      }
+
+      expect(generated?.status).toBe("written");
+      expect(generated?.files.map((entry) => entry.file).sort()).toEqual([
+        "ravi_client.generated.dart",
+        "ravi_schemas.generated.dart",
+        "ravi_streaming.generated.dart",
+        "ravi_types.generated.dart",
+        "ravi_version.generated.dart",
+      ]);
+      expect(readFileSync(join(dir, "ravi_client.generated.dart"), "utf8")).toContain("class RaviClient");
+      expect(readFileSync(join(dir, "ravi_types.generated.dart"), "utf8")).toContain("typedef");
+
+      const checkCapture = captureConsole();
+      let checked: { drift: unknown[] } | undefined;
+      try {
+        checked = new SdkDartCommands().check(dir, "9.9.9", true) as { drift: unknown[] };
+      } finally {
+        checkCapture.restore();
+      }
+      expect(checked?.drift).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([false, true])("keeps Dart SDK drift as exit 1 with --json=%s", (asJson) => {
+    const dir = makeTmpDir("dart-drift");
+    try {
+      const capture = captureConsole();
+      try {
+        new SdkDartCommands().generate(dir, "9.9.9", true);
+      } finally {
+        capture.restore();
+      }
+      writeFileSync(join(dir, "ravi_client.generated.dart"), "// drift\n", "utf8");
+
+      const checkCapture = captureConsole();
+      let failure: unknown;
+      try {
+        runWithContext({ suppressCliOutput: false }, () => new SdkDartCommands().check(dir, "9.9.9", asJson));
+      } catch (error) {
+        failure = error;
+      } finally {
+        checkCapture.restore();
+      }
+      expect(failure).toBeInstanceOf(ContractError);
+      expect(failure).toMatchObject({ code: "SDK_DART_DRIFT", exitCode: 1, op: "sdk dart check" });
       expect([...checkCapture.lines, ...checkCapture.errors].join("\n")).not.toContain("Error:");
     } finally {
       rmSync(dir, { recursive: true, force: true });

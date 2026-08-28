@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ed4eadad24f79552"
+    "version": "3b65296b2ad245f3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68553,6 +68553,184 @@
         },
         "security": [],
         "summary": "Generate the four @ravi-os/sdk source files from the live registry",
+        "tags": [
+          "sdk"
+        ]
+      }
+    },
+    "/api/v1/sdk/dart/check": {
+      "post": {
+        "operationId": "sdk.dart.check",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "out": {
+                    "default": "packages/ravi-os-dart-sdk/lib/src",
+                    "description": "Directory containing the generated Dart files",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "SDK semver baked into ravi_version.generated.dart",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "dir": {
+                      "type": "string"
+                    },
+                    "drift": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "reason",
+                          "path"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "files": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "dir",
+                    "drift",
+                    "files"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Compare on-disk Ravi Dart SDK sources to a fresh emit; exit 1 on drift",
+        "tags": [
+          "sdk"
+        ]
+      }
+    },
+    "/api/v1/sdk/dart/generate": {
+      "post": {
+        "operationId": "sdk.dart.generate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "out": {
+                    "default": "packages/ravi-os-dart-sdk/lib/src",
+                    "description": "Target directory for the generated Dart files",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "SDK semver baked into ravi_version.generated.dart",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "dir": {
+                      "type": "string"
+                    },
+                    "files": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "file": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "path",
+                          "bytes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "const": "written",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "dir",
+                    "files"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Generate the Ravi Dart SDK source files from the live registry",
         "tags": [
           "sdk"
         ]

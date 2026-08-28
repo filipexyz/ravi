@@ -12,8 +12,12 @@ tags:
   - deterministic
 applies_to:
   - src/sdk/client-codegen
+  - src/sdk/swift-codegen
+  - src/sdk/dart-codegen
   - src/cli/commands/sdk.ts
   - packages/ravi-os-sdk
+  - packages/ravi-os-swift-sdk
+  - packages/ravi-os-dart-sdk
 owners:
   - dev
 status: draft
@@ -34,7 +38,8 @@ that can call the SDK gateway without hand-maintained command bindings.
 The existing TypeScript SDK is the first backend. Swift is a second backend
 with the same contract and a platform-native API shape. Rust is a planned
 third backend and a proof point that the registry can project to additional
-languages without hand-maintained command bindings.
+languages without hand-maintained command bindings. Dart is a fourth backend
+with the same contract and a Dart-native API shape.
 
 ## Generator Inputs
 

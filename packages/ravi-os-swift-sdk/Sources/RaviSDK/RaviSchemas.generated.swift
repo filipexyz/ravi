@@ -56097,6 +56097,132 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SdkDartCheckInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "out": {
+        "default": "packages/ravi-os-dart-sdk/lib/src",
+        "description": "Directory containing the generated Dart files",
+        "type": "string"
+      },
+      "version": {
+        "description": "SDK semver baked into ravi_version.generated.dart",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SdkDartCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "drift": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "reason",
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "files": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "dir",
+      "drift",
+      "files"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SdkDartGenerateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "out": {
+        "default": "packages/ravi-os-dart-sdk/lib/src",
+        "description": "Target directory for the generated Dart files",
+        "type": "string"
+      },
+      "version": {
+        "description": "SDK semver baked into ravi_version.generated.dart",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SdkDartGenerateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "number"
+            },
+            "file": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "path",
+            "bytes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "status": {
+        "const": "written",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "dir",
+      "files"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SdkOpenapiCheckInputSchema = #"""
   {
     "additionalProperties": false,
