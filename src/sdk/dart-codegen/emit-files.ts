@@ -1,5 +1,5 @@
 /**
- * Emit generated files for the Dart ravi_os_sdk package.
+ * Emit generated files for the Dart ravi_sdk package.
  */
 
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";

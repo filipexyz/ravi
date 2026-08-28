@@ -1,4 +1,4 @@
-import 'package:ravi_os_sdk/ravi_os_sdk.dart';
+import 'package:ravi_sdk/ravi_sdk.dart';
 import 'package:test/test.dart';
 
 void main() {

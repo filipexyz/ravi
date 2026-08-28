@@ -1,4 +1,4 @@
-name: ravi_os_sdk
+name: ravi_sdk
 description: Generated HTTP client for the Ravi SDK gateway.
 version: 0.1.0
 repository: https://github.com/filipexyz/ravi

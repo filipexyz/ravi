@@ -15,7 +15,7 @@ normative: false
 mkdir -p packages/ravi-os-dart-sdk/lib/src packages/ravi-os-dart-sdk/example
 ```
 
-Add a hand-written `pubspec.yaml` with package name `ravi_os_sdk` and no
+Add a hand-written `pubspec.yaml` with package name `ravi_sdk` and no
 Flutter SDK dependency.
 
 ## Implement The Generator

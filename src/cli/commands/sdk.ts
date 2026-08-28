@@ -520,7 +520,7 @@ export class SdkSwiftCommands {
 
 @Group({
   name: "sdk.dart",
-  description: "Dart client codegen for ravi_os_sdk",
+  description: "Dart client codegen for ravi_sdk",
   scope: "open",
 })
 export class SdkDartCommands {

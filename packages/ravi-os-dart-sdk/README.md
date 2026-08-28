@@ -1,4 +1,4 @@
-# ravi_os_sdk
+# ravi_sdk
 
 Generated Dart HTTP client for the Ravi SDK gateway.
 
@@ -14,7 +14,7 @@ same path, flat JSON body, and return typing.
 
 ```yaml
 dependencies:
-  ravi_os_sdk: ^0.1.0
+  ravi_sdk: ^0.1.0
 ```
 
 The package is pure Dart. It depends on `package:http` and works on the Dart VM
@@ -25,7 +25,7 @@ and the web. It does **not** depend on the Flutter SDK.
 Every call needs a gateway `baseUrl` and a runtime context key (`rctx_*`).
 
 ```dart
-import 'package:ravi_os_sdk/ravi_os_sdk.dart';
+import 'package:ravi_sdk/ravi_sdk.dart';
 
 final client = RaviClient(
   HttpTransport(

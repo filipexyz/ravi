@@ -11,7 +11,7 @@ normative: false
 
 Ravi already has generated TypeScript and Swift SDKs. Dart consumers need the
 same command surface without embedding JavaScript, shelling out to the CLI, or
-hand-writing endpoint wrappers. The intended published package is `ravi_os_sdk`
+hand-writing endpoint wrappers. The intended published package is `ravi_sdk`
 on pub.dev; this tree is the monorepo source for that package.
 
 The important architectural decision is to keep `RegistrySnapshot` as the
@@ -78,7 +78,7 @@ create a second unofficial surface.
 Flutter widgets, Riverpod, go_router, and SharedPreferences encode product
 opinions about state, navigation, and persistence. The SDK should first be a
 stable low-level client that runs in any Dart runtime. App-specific layers can
-depend on `ravi_os_sdk` once the transport and generated command surface are
+depend on `ravi_sdk` once the transport and generated command surface are
 stable.
 
 ## Why Not To Paper Over `{}`

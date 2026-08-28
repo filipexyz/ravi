@@ -53,9 +53,9 @@ packages/ravi-os-dart-sdk/
   CHANGELOG.md
   analysis_options.yaml
   example/
-    ravi_os_sdk_example.dart
+    ravi_sdk_example.dart
   lib/
-    ravi_os_sdk.dart
+    ravi_sdk.dart
     src/
       ravi_client.generated.dart
       ravi_types.generated.dart
@@ -68,7 +68,7 @@ packages/ravi-os-dart-sdk/
       ravi_json.dart
 ```
 
-The pub name MUST be `ravi_os_sdk`.
+The pub name MUST be `ravi_sdk`.
 The package MUST be pure Dart. It MUST NOT depend on the Flutter SDK.
 
 Generated files MUST use `.generated.dart` suffixes.
