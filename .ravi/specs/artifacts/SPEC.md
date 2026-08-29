@@ -187,31 +187,33 @@ ravi artifacts watch art_...
 
 ## Pages Publishing
 
+The agent happy path for hosting HTML is `ravi pages ship` (skill `pages`).
+Agents MUST NOT choreograph `pages create` + `pages publish` and MUST NOT treat
+`artifacts publish` as the Pages happy path.
+
 Ravi Pages content publishing uses the artifact package/release pipeline
-internally, but the user-facing command MUST be Pages-specific.
+internally. `ravi pages create/update/visibility/domains` manage the remote
+site record only. `ravi pages publish` remains the advanced upload primitive
+(directory/file or an existing local `art_*`). `ravi artifacts publish`
+remains the generic primitive under the hood.
 
-`ravi pages create/update/visibility/domains` manage the remote site record only.
-Creating records and binding domains are external mutations and require
-`--execute`; visibility increases are conditionally braked.
-They do not upload HTML, assets, or release content. A complete Pages upload uses
-`ravi pages publish`, which packages a local directory/file or a local Ravi
-artifact version, opens a Console upload session, uploads bytes, finalizes the
-cloud artifact version, and activates a site release.
+Canonical one-shot:
 
-Canonical directory publish:
+```bash
+ravi pages ship --title "Demo" --dir ./site --execute --json
+```
+
+Advanced directory publish (existing host):
 
 ```bash
 ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
-Canonical local artifact publish:
+Advanced local artifact publish:
 
 ```bash
 ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
-
-Pages publishing MUST use `ravi pages publish` for the user-facing command.
-`ravi artifacts publish` remains the generic primitive under the hood.
 
 Synchronous generation remains available only when explicitly requested:
 

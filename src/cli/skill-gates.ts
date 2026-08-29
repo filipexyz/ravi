@@ -59,6 +59,7 @@ export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
   { id: "image", pattern: /^image(?:[._]|$)/, skill: "ravi-system-image" },
   { id: "routes", pattern: /^(?:routes|instances[._]routes)(?:[._]|$)/, skill: "ravi-system-routes-manager" },
   { id: "instances", pattern: /^instances(?:[._]|$)/, skill: "ravi-system-instances-manager" },
+  { id: "pages", pattern: /^pages(?:[._]|$)/, skill: "ravi-system-pages" },
   { id: "permissions", pattern: /^permissions(?:[._]|$)/, skill: "ravi-system-permissions-manager" },
   { id: "projects", pattern: /^projects(?:[._]|$)/, skill: "ravi-system-projects" },
   { id: "prox-calls", pattern: /^prox[._]calls(?:[._]|$)/, skill: "ravi-system-prox-calls" },

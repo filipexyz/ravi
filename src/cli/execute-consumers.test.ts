@@ -132,19 +132,29 @@ const executeInstructions = [
     instruction: "ravi heartbeat trigger <id> --execute",
   },
   {
+    name: "Pages ship root instructions",
+    path: "AGENTS.md",
+    instruction: 'ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute',
+  },
+  {
+    name: "Pages ship skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: 'ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json --execute',
+  },
+  {
     name: "Pages create root instructions",
     path: "AGENTS.md",
     instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
   },
   {
-    name: "Pages create artifact skill",
-    path: "src/plugins/internal/ravi-system/skills/artifacts/SKILL.md",
-    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+    name: "Pages ship artifact runbook",
+    path: ".ravi/specs/artifacts/RUNBOOK.md",
+    instruction: 'ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json --execute',
   },
   {
-    name: "Pages create artifact runbook",
-    path: ".ravi/specs/artifacts/RUNBOOK.md",
-    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+    name: "Pages ship artifact spec",
+    path: ".ravi/specs/artifacts/SPEC.md",
+    instruction: 'ravi pages ship --title "Demo" --dir ./site --execute --json',
   },
   {
     name: "Pages publish artifact spec",

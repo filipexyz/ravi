@@ -30,6 +30,12 @@ import {
   type PublishedPageListResult,
   type PublishedPagePayload,
 } from "../../pages/client.js";
+import {
+  materializeShipSource,
+  requireShipTitle,
+  slugifyPageTitle,
+  validateShipSourceInput,
+} from "../../pages/ship.js";
 import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
@@ -46,6 +52,25 @@ export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishD
 export interface PagesPasswordCommandDeps extends PagesCommandDeps {
   readPassword?: (options: ConfirmedSecretInputOptions) => Promise<string>;
 }
+
+const PAGES_SHIP_HELP = `
+Examples:
+  ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute
+  ravi pages ship demo --title "Landing" --html ./landing.html --visibility public --execute
+  ravi pages ship proj docs --title "Docs" --dir ./site --route / --execute --json
+
+Happy path:
+  One command. Do not choreograph pages create + pages publish.
+  --title is required. Pass exactly one of --body, --html, or --dir.
+  Omit <slug> to generate it from --title. Existing slugs are reused.
+
+Write brake:
+  Without --execute the command is a dry-run (exit 3) and never talks to Console.
+  Public visibility still requires --execute.
+
+JSON:
+  { url, site, slug, route, visibility, artifactId }
+`;
 
 @Group({
   name: "pages",
@@ -190,6 +215,123 @@ export class PagesCommands {
       const payload = { ...result, scope: resolved.scope };
       printPayload(payload, asJson, () => printCreatedSite(result));
       return payload;
+    });
+  }
+
+  @Command({
+    name: "ship",
+    description: "One-shot: ensure a Pages host and publish HTML or a site directory",
+    helpAfter: PAGES_SHIP_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "ship", risk: "high", requiresConfirmation: true })
+  async ship(
+    @Arg("args", {
+      variadic: true,
+      required: false,
+      description: "[project] [slug]; project defaults to Console scope and slug defaults from --title",
+    })
+    args: string[] = [],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--title <title>", description: "Page title; also used to generate the slug when omitted" })
+    titleOption?: string,
+    @Option({ flags: "--body <html>", description: "HTML body fragment wrapped in a simple HTML5 document" })
+    body?: string,
+    @Option({ flags: "--html <file>", description: "Path to an HTML file to publish" }) html?: string,
+    @Option({ flags: "--dir <path>", description: "Directory with an entrypoint (default index.html)" }) dir?: string,
+    @Option({
+      flags: "--visibility <visibility>",
+      description: "Pages visibility: private|protected_link|public (default: private)",
+    })
+    visibility?: string,
+    @Option({ flags: "--route <path>", description: "Pages route path to mount content at (default: /)" })
+    route?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint path (default: index.html)" })
+    entrypoint?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages ship", asJson, async () => {
+      const parsed = parseShipArgs(args, projectOption);
+      const title = requireShipTitle(titleOption);
+      const resolvedRoute = stringValue(route) ?? "/";
+      const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
+      const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
+      const slug = parsed.slug ?? slugifyPageTitle(title);
+      const contentKind = await validateShipSourceInput({ body, dir, html });
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): ship creates/reuses a Console host and
+        // publishes bytes onto a hosted route. Dry-run before any Console call,
+        // including project scope resolution. The plan never carries body text
+        // or filesystem paths.
+        contractDryRun(
+          "pages ship",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            slug,
+            titlePresent: true,
+            contentKind,
+            route: resolvedRoute,
+            visibility: normalizedVisibility,
+            entrypoint: resolvedEntrypoint,
+          },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const site = await ensurePageSite(
+        {
+          console: consoleUrl,
+          defaultVisibility: normalizedVisibility,
+          project: resolved.projectRef,
+          slug,
+        },
+        this.deps,
+      );
+      const source = await materializeShipSource({
+        body,
+        dir,
+        entrypoint: resolvedEntrypoint,
+        html,
+        title,
+      });
+      try {
+        const result = await publishArtifactToConsole(
+          source.path,
+          {
+            activate: true,
+            console: consoleUrl,
+            entrypoint: resolvedEntrypoint,
+            json: asJson,
+            name: title,
+            project: resolved.projectRef,
+            publishToPages: true,
+            route: resolvedRoute,
+            site: slug,
+            tool: "ravi pages ship",
+            visibility: normalizedVisibility,
+          },
+          this.deps,
+        );
+        const payload = {
+          artifactId: extractPublishedArtifactId(result),
+          route: resolvedRoute,
+          site: objectValue(result.site) ?? site,
+          slug,
+          success: true as const,
+          url: result.url,
+          visibility: normalizedVisibility,
+        };
+        printPayload(payload, asJson, () => printShipResult(payload));
+        return payload;
+      } finally {
+        await source.cleanup?.();
+      }
     });
   }
 
@@ -677,6 +819,25 @@ function mergedProjectRef(
   return option ?? positional ?? undefined;
 }
 
+function parseShipArgs(args: string[], projectOption: string | undefined): { project?: string; slug?: string } {
+  const clean = cleanArgs(args ?? []);
+  if (projectOption) {
+    if (clean.length === 0) return { project: projectOption };
+    if (clean.length === 1) return { project: projectOption, slug: clean[0] };
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Usage: ravi pages ship [slug] --title <title> --project <project-ref> plus --body, --html, or --dir.",
+    );
+  }
+  if (clean.length === 0) return {};
+  if (clean.length === 1) return { slug: clean[0] };
+  if (clean.length === 2) return { project: clean[0], slug: clean[1] };
+  throw new CloudAuthError(
+    "PAYLOAD_INVALID",
+    "Usage: ravi pages ship [project] [slug] --title <title> plus --body, --html, or --dir.",
+  );
+}
+
 function parseCreateArgs(args: string[], projectOption: string | undefined): { project?: string; slug: string } {
   const clean = cleanArgs(args);
   if (projectOption) {
@@ -857,10 +1018,21 @@ const pagePasswordReturnSchema = z.object({
   url: z.string(),
 });
 
+const pageShipReturnSchema = z.object({
+  artifactId: z.string().nullable(),
+  route: z.string(),
+  site: pageSiteSchema,
+  slug: z.string(),
+  success: z.literal(true),
+  url: z.string().nullable(),
+  visibility: z.string(),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
   create: pageSiteCreateReturnSchema,
+  ship: pageShipReturnSchema,
   publish: artifactPublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
@@ -969,6 +1141,50 @@ function printPublishedPageList(
     console.log("\nNext page:");
     console.log(`  ${pagination.nextCommand}`);
   }
+}
+
+async function ensurePageSite(
+  input: { console?: string; defaultVisibility: string; project: string; slug: string },
+  deps: PagesCommandDeps,
+): Promise<PageSitePayload> {
+  const listed = await listPageSites({ console: input.console, project: input.project }, deps);
+  const existing = listed.sites.find((site) => {
+    const slug = stringValue(site.slug);
+    const id = stringValue(site.id);
+    return slug === input.slug || id === input.slug;
+  });
+  if (existing) return existing;
+  const created = await createPageSite(
+    {
+      console: input.console,
+      defaultVisibility: normalizePageVisibility(input.defaultVisibility),
+      project: input.project,
+      slug: input.slug,
+    },
+    deps,
+  );
+  return created.site;
+}
+
+function extractPublishedArtifactId(result: ArtifactPublishResult): string | null {
+  return stringValue(objectValue(result.artifact)?.id);
+}
+
+function printShipResult(result: {
+  artifactId: string | null;
+  route: string;
+  site: PageSitePayload;
+  slug: string;
+  url: string | null;
+  visibility: string;
+}): void {
+  console.log("✓ Pages shipped");
+  printSiteFields(result.site);
+  console.log(`  Slug       ${result.slug}`);
+  console.log(`  Route      ${result.route}`);
+  console.log(`  Visibility ${result.visibility}`);
+  if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
+  console.log(`  URL        ${result.url ?? "not returned by Console"}`);
 }
 
 function printCreatedSite(result: PageSiteCreateResult): void {

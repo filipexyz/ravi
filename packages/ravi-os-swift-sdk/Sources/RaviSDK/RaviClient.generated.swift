@@ -3334,6 +3334,15 @@ public struct PagesNamespace: Sendable {
     return try await transport.call(groupSegments: ["pages"], command: "published", body: requestBody, as: PagesPublishedReturn.self)
   }
 
+  public func ship(_ args: [String]? = nil, _ options: PagesShipOptions = .init()) async throws -> PagesShipReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let args {
+      requestBody["args"] = try RaviJSON.fromEncodable(args)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "ship", body: requestBody, as: PagesShipReturn.self)
+  }
+
   public func update(_ args: [String], _ options: PagesUpdateOptions = .init()) async throws -> PagesUpdateReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["args"] = try RaviJSON.fromEncodable(args)

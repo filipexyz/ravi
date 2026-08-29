@@ -4629,6 +4629,20 @@ class PagesNamespace {
     );
   }
 
+  Future<PagesShipReturn> ship([List<String>? args, PagesShipOptions options = const PagesShipOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (args != null) {
+      requestBody["args"] = RaviJson.from(args);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages"],
+      command: "ship",
+      body: requestBody,
+      decode: pagesShipReturnFromJson,
+    );
+  }
+
   Future<PagesUpdateReturn> update(List<String> args, [PagesUpdateOptions options = const PagesUpdateOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["args"] = RaviJson.from(args);

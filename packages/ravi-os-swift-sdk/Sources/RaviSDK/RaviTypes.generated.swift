@@ -14706,6 +14706,108 @@ public struct PagesPublishedReturn: Codable, Sendable {
   }
 }
 
+public struct PagesShipOptions: Codable, Sendable {
+  public var body: String?
+  public var console: String?
+  public var dir: String?
+  public var entrypoint: String?
+  public var execute: Bool?
+  public var html: String?
+  public var project: String?
+  public var route: String?
+  public var title: String?
+  public var visibility: String?
+
+  public init(body: String? = nil, console: String? = nil, dir: String? = nil, entrypoint: String? = nil, execute: Bool? = nil, html: String? = nil, project: String? = nil, route: String? = nil, title: String? = nil, visibility: String? = nil) {
+    self.body = body
+    self.console = console
+    self.dir = dir
+    self.entrypoint = entrypoint
+    self.execute = execute
+    self.html = html
+    self.project = project
+    self.route = route
+    self.title = title
+    self.visibility = visibility
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case body = "body"
+    case console = "console"
+    case dir = "dir"
+    case entrypoint = "entrypoint"
+    case execute = "execute"
+    case html = "html"
+    case project = "project"
+    case route = "route"
+    case title = "title"
+    case visibility = "visibility"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.body {
+      body["body"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dir {
+      body["dir"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.entrypoint {
+      body["entrypoint"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.html {
+      body["html"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.route {
+      body["route"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.title {
+      body["title"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visibility {
+      body["visibility"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesShipReturn: Codable, Sendable {
+  public var artifactId: RaviJSON
+  public var route: String
+  public var site: [String: RaviJSON]
+  public var slug: String
+  public var success: Bool
+  public var url: RaviJSON
+  public var visibility: String
+
+  public init(artifactId: RaviJSON, route: String, site: [String: RaviJSON], slug: String, success: Bool, url: RaviJSON, visibility: String) {
+    self.artifactId = artifactId
+    self.route = route
+    self.site = site
+    self.slug = slug
+    self.success = success
+    self.url = url
+    self.visibility = visibility
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case artifactId = "artifactId"
+    case route = "route"
+    case site = "site"
+    case slug = "slug"
+    case success = "success"
+    case url = "url"
+    case visibility = "visibility"
+  }
+}
+
 public struct PagesUpdateOptions: Codable, Sendable {
   public var console: String?
   public var execute: Bool?

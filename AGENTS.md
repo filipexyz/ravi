@@ -45,10 +45,21 @@ ravi daemon logs
 
 ## Ravi Pages Publishing
 
-`ravi pages` manages Console Pages site records only: slug, visibility defaults,
-domains, and site settings. It does not upload HTML or assets.
+Load the Pages skill first:
 
-Use the Pages publish command for content:
+```bash
+ravi skills show pages
+```
+
+Happy path is one command — `ravi pages ship`. Do not choreograph `create` + `publish`.
+
+```bash
+ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute
+```
+
+`create` is host-only. `publish` is the advanced upload primitive (including an
+existing local `art_*`). They stay available for host work; the agent happy
+path is not `artifacts publish`.
 
 ```bash
 ravi pages create <project-ref> <site-slug> --visibility public --execute
@@ -61,10 +72,9 @@ If a local Ravi artifact already exists, publish the artifact id:
 ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
 
-`ravi pages publish` is the user-facing Pages command. It delegates to the
-artifact upload/publish pipeline internally. Host creation, domain binding,
-publishing and password changes are dry-run by default (exit 3): re-run with
-`--execute` to perform the external mutation.
+Host creation, domain binding, shipping, publishing and password changes are
+dry-run by default (exit 3): re-run with `--execute` to perform the external
+mutation. Public visibility still needs `--execute`.
 
 Protect an active route with a password without republishing its bytes:
 
