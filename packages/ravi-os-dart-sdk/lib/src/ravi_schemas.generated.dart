@@ -25163,6 +25163,18 @@ class RaviSchemas {
       "description": "Comma-separated permission:objectType:objectId entries to lease to the child context",
       "type": "string"
     },
+    "asAgent": {
+      "description": "Admin-only: delegate the child context to an explicit agent identity",
+      "type": "string"
+    },
+    "asSessionKey": {
+      "description": "Admin-only: bind the delegated identity to an explicit session key",
+      "type": "string"
+    },
+    "asSessionName": {
+      "description": "Admin-only: bind the delegated identity to an explicit session name",
+      "type": "string"
+    },
     "cliName": {
       "description": "Logical CLI name for audit and lineage",
       "type": "string"

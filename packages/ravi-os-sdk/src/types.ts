@@ -4740,6 +4740,9 @@ export type ContextInfoReturn = {
 /** Input shape for `context.issue`. */
 export type ContextIssueInput = {
   allow?: string;
+  asAgent?: string;
+  asSessionKey?: string;
+  asSessionName?: string;
   cliName: string;
   inherit?: boolean;
   ttl?: string;

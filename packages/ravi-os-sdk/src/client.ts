@@ -1754,6 +1754,9 @@ export class RaviClient {
     /** Issue a least-privilege child context for an external CLI */
     issue: async (cliName: string, options?: {
       allow?: string;
+      asAgent?: string;
+      asSessionKey?: string;
+      asSessionName?: string;
       inherit?: boolean;
       ttl?: string;
     }): Promise<ContextIssueReturn> => {
