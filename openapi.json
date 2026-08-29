@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "291f4dbeee37152e"
+    "version": "22c5ed4d95d64f27"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -29251,6 +29251,18 @@
                 "properties": {
                   "allow": {
                     "description": "Comma-separated permission:objectType:objectId entries to lease to the child context",
+                    "type": "string"
+                  },
+                  "asAgent": {
+                    "description": "Admin-only: delegate the child context to an explicit agent identity",
+                    "type": "string"
+                  },
+                  "asSessionKey": {
+                    "description": "Admin-only: bind the delegated identity to an explicit session key",
+                    "type": "string"
+                  },
+                  "asSessionName": {
+                    "description": "Admin-only: bind the delegated identity to an explicit session name",
                     "type": "string"
                   },
                   "cliName": {
