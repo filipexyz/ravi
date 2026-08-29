@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "22c5ed4d95d64f27"
+    "version": "7f762cac1007e469"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -60613,6 +60613,185 @@
         },
         "security": [],
         "summary": "List published Ravi Pages URLs in a Console project",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/api/v1/pages/ship": {
+      "post": {
+        "operationId": "pages.ship",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "description": "[project] [slug]; project defaults to Console scope and slug defaults from --title",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "body": {
+                    "description": "HTML body fragment wrapped in a simple HTML5 document",
+                    "type": "string"
+                  },
+                  "console": {
+                    "description": "Console base URL",
+                    "type": "string"
+                  },
+                  "dir": {
+                    "description": "Directory with an entrypoint (default index.html)",
+                    "type": "string"
+                  },
+                  "entrypoint": {
+                    "description": "Package entrypoint path (default: index.html)",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
+                  "html": {
+                    "description": "Path to an HTML file to publish",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Console project id or slug; overrides saved Console scope",
+                    "type": "string"
+                  },
+                  "route": {
+                    "description": "Pages route path to mount content at (default: /)",
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Page title; also used to generate the slug when omitted",
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "description": "Pages visibility: private|protected_link|public (default: private)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "artifactId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "route": {
+                      "type": "string"
+                    },
+                    "site": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "artifactId",
+                    "route",
+                    "site",
+                    "slug",
+                    "success",
+                    "url",
+                    "visibility"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "One-shot: ensure a Pages host and publish HTML or a site directory",
         "tags": [
           "pages"
         ]

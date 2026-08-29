@@ -50355,6 +50355,159 @@ class RaviSchemas {
 }
 ''';
 
+  static const pagesShipInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "[project] [slug]; project defaults to Console scope and slug defaults from --title",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "body": {
+      "description": "HTML body fragment wrapped in a simple HTML5 document",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "dir": {
+      "description": "Directory with an entrypoint (default index.html)",
+      "type": "string"
+    },
+    "entrypoint": {
+      "description": "Package entrypoint path (default: index.html)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "html": {
+      "description": "Path to an HTML file to publish",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    },
+    "route": {
+      "description": "Pages route path to mount content at (default: /)",
+      "type": "string"
+    },
+    "title": {
+      "description": "Page title; also used to generate the slug when omitted",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Pages visibility: private|protected_link|public (default: private)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const pagesShipReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifactId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "route": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "visibility": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifactId",
+    "route",
+    "site",
+    "slug",
+    "success",
+    "url",
+    "visibility"
+  ],
+  "type": "object"
+}
+''';
+
   static const pagesUpdateInputSchema = r'''
 {
   "additionalProperties": false,

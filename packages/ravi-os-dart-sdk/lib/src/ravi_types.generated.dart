@@ -12669,6 +12669,84 @@ class PagesPublishedReturn {
 
 PagesPublishedReturn pagesPublishedReturnFromJson(Object? json) => PagesPublishedReturn.fromJsonValue(json);
 
+class PagesShipOptions {
+  const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.project, this.route, this.title, this.visibility});
+
+  final String? body;
+  final String? console;
+  final String? dir;
+  final String? entrypoint;
+  final bool? execute;
+  final String? html;
+  final String? project;
+  final String? route;
+  final String? title;
+  final String? visibility;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (body != null) {
+      into["body"] = RaviJson.from(body);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (dir != null) {
+      into["dir"] = RaviJson.from(dir);
+    }
+    if (entrypoint != null) {
+      into["entrypoint"] = RaviJson.from(entrypoint);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (html != null) {
+      into["html"] = RaviJson.from(html);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (route != null) {
+      into["route"] = RaviJson.from(route);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+    if (visibility != null) {
+      into["visibility"] = RaviJson.from(visibility);
+    }
+  }
+}
+
+class PagesShipReturn {
+  const PagesShipReturn({required this.artifactId, required this.route, required this.site, required this.slug, required this.success, required this.url, required this.visibility});
+
+  final RaviJson artifactId;
+  final String route;
+  final Map<String, RaviJson> site;
+  final String slug;
+  final bool success;
+  final RaviJson url;
+  final String visibility;
+
+  factory PagesShipReturn.fromJson(Map<String, Object?> json) {
+    return PagesShipReturn(
+      artifactId: RaviJson.from(json["artifactId"]),
+      route: raviJsonAsString(json["route"]),
+      site: raviJsonAsRaviJsonMap(json["site"]),
+      slug: raviJsonAsString(json["slug"]),
+      success: raviJsonAsBool(json["success"]),
+      url: RaviJson.from(json["url"]),
+      visibility: raviJsonAsString(json["visibility"]),
+    );
+  }
+
+  static PagesShipReturn fromJsonValue(Object? json) {
+    return PagesShipReturn.fromJson(raviJsonObject(json, "PagesShipReturn"));
+  }
+}
+
+PagesShipReturn pagesShipReturnFromJson(Object? json) => PagesShipReturn.fromJsonValue(json);
+
 class PagesUpdateOptions {
   const PagesUpdateOptions({this.console, this.execute, this.project, this.visibility});
 

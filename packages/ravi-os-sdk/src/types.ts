@@ -9677,6 +9677,32 @@ export type PagesPublishedReturn = {
   total: number;
 };
 
+/** Input shape for `pages.ship`. */
+export type PagesShipInput = {
+  args?: string[];
+  body?: string;
+  console?: string;
+  dir?: string;
+  entrypoint?: string;
+  execute?: boolean;
+  html?: string;
+  project?: string;
+  route?: string;
+  title?: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.ship`. */
+export type PagesShipReturn = {
+  artifactId: string | null;
+  route: string;
+  site: Record<string, unknown>;
+  slug: string;
+  success: true;
+  url: string | null;
+  visibility: string;
+};
+
 /** Input shape for `pages.update`. */
 export type PagesUpdateInput = {
   args: string[];
