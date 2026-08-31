@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
   authorizeGrokAcpPermission,
+  buildGrokAcpInitializeParams,
   buildGrokAcpProcessArgs,
   buildGrokAcpSpawnEnv,
   createGrokRuntimeProvider,
   extractGrokPermissionTool,
   mapGrokToolNameToRavi,
+  resolveGrokAcpClientVersion,
   resolveGrokToolAccessRules,
   selectGrokAuthMethod,
   selectGrokPermissionOutcome,
@@ -359,6 +361,39 @@ describe("Grok Build runtime provider", () => {
       expect.arrayContaining(["--allow", "Read", "--deny", "Bash", "--tools", "Read"]),
     );
     expect(buildGrokAcpProcessArgs(transport.starts[0])).not.toContain("--always-approve");
+  });
+
+  it("includes a non-empty clientInfo.version on ACP initialize", async () => {
+    const rejectedByGrok105 = {
+      protocolVersion: 1,
+      clientInfo: { name: "ravi", title: "Ravi Runtime" },
+      clientCapabilities: {
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+      },
+    };
+    const params = buildGrokAcpInitializeParams();
+    const version = resolveGrokAcpClientVersion();
+
+    expect(version.length).toBeGreaterThan(0);
+    expect(params).not.toEqual(rejectedByGrok105);
+    expect(params).not.toHaveProperty("version");
+    expect(params.protocolVersion).toBe(1);
+    expect(params.clientInfo).toEqual({
+      name: "ravi",
+      title: "Ravi Runtime",
+      version,
+    });
+    expect(params.clientInfo).not.toEqual({ name: "ravi", title: "Ravi Runtime" });
+    expect(typeof params.clientInfo.version).toBe("string");
+    expect(params.clientInfo.version.length).toBeGreaterThan(0);
+
+    const transport = new FakeGrokAcpTransport();
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("init")).events,
+    );
+
+    expect(transport.requests.find((request) => request.method === "initialize")?.params).toEqual(params);
   });
 
   it("closes the Grok ACP transport idempotently", async () => {
