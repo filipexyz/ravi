@@ -92,12 +92,19 @@ describe("runtime compatibility preflight", () => {
     expect(issues.map((issue) => issue.code)).toEqual(["restricted_tool_access_unsupported"]);
   });
 
-  it("blocks restricted tool access for Grok until Ravi-hosted tool hooks exist", () => {
-    const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("grok"), {
-      toolAccessMode: "restricted",
-    });
+  it("allows Grok providers to satisfy restricted tool access through Ravi-hosted hooks", () => {
+    const provider = createRuntimeProvider("grok");
 
-    expect(issues.map((issue) => issue.code)).toEqual(["restricted_tool_access_unsupported"]);
+    expect(() =>
+      assertRuntimeCompatibility(provider, {
+        toolAccessMode: "restricted",
+      }),
+    ).not.toThrow();
+    expect(
+      getRuntimeCompatibilityIssues(provider, {
+        toolAccessMode: "restricted",
+      }),
+    ).toEqual([]);
   });
 
   it("supports registering additional runtime providers without changing the factory switch", () => {

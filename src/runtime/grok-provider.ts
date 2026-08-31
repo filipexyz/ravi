@@ -3,16 +3,23 @@ import { StringDecoder } from "node:string_decoder";
 import type { RuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
+  RuntimeApprovalHandler,
+  RuntimeApprovalQuestion,
+  RuntimeApprovalRequest,
   RuntimeControlOperation,
   RuntimeControlRequest,
   RuntimeControlResult,
   RuntimeControlState,
   RuntimeEvent,
   RuntimeEventMetadata,
+  RuntimeHostServices,
+  RuntimePrepareSessionRequest,
+  RuntimePrepareSessionResult,
   RuntimePromptMessage,
   RuntimeSessionHandle,
   RuntimeSessionState,
   RuntimeStartRequest,
+  RuntimeToolPermissionHandler,
   RuntimeToolUse,
   RuntimeUsage,
   SessionRuntimeProvider,
@@ -26,12 +33,41 @@ const GROK_ACP_PROTOCOL_VERSION = 1;
 
 export type GrokEffort = "none" | "minimal" | "low" | "medium" | "high";
 
+export const GROK_HOSTED_TOOLS = ["Bash", "Edit", "Read", "Grep", "WebFetch", "WebSearch", "MCPTool"] as const;
+
+export type GrokHostedTool = (typeof GROK_HOSTED_TOOLS)[number];
+
+const GROK_TOOL_ALIASES: Record<GrokHostedTool, readonly string[]> = {
+  Bash: ["Shell", "Terminal"],
+  Edit: ["Write"],
+  Read: ["ReadFile", "ListDir"],
+  Grep: ["Glob"],
+  WebFetch: ["WebFetch"],
+  WebSearch: ["WebSearch"],
+  MCPTool: ["MCPTool"],
+};
+
 export interface GrokAcpStartInput {
   cwd: string;
   env: NodeJS.ProcessEnv;
   model?: string;
   effort?: RuntimeEffort;
   systemPromptAppend?: string;
+  allowTools?: string[];
+  denyTools?: string[];
+}
+
+export interface GrokToolAccessRules {
+  allow: string[];
+  deny: string[];
+}
+
+export type GrokPermissionOutcome = { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
+
+export interface GrokPermissionAuthorizationHandlers {
+  canUseTool?: RuntimeToolPermissionHandler;
+  approveRuntimeRequest?: RuntimeApprovalHandler;
+  interrupted?: boolean;
 }
 
 export interface GrokJsonRpcRequest {
@@ -85,6 +121,10 @@ interface CreateGrokAcpSubprocessTransportOptions {
   commandArgs?: string[];
   responseTimeoutMs?: number;
   promptTimeoutMs?: number;
+  authorizePermission?: (
+    params: Record<string, unknown>,
+    context: { interrupted: boolean },
+  ) => Promise<GrokPermissionOutcome>;
 }
 
 export interface CreateGrokRuntimeProviderOptions extends CreateGrokAcpSubprocessTransportOptions {
@@ -128,7 +168,7 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
           semantics: "terminal-event",
         },
         tools: {
-          permissionMode: "provider-native",
+          permissionMode: "ravi-host",
           accessRequirement: "tool_and_executable",
           supportsParallelCalls: false,
         },
@@ -149,7 +189,7 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
-        supportsToolHooks: false,
+        supportsToolHooks: true,
         supportsHostSessionHooks: false,
         supportsPlugins: false,
         supportsMcpServers: false,
@@ -157,7 +197,15 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
         toolAccessRequirement: "tool_and_executable",
       };
     },
+    prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
+      return input.hostServices ? { startRequest: createGrokRuntimeStartRequest(input.hostServices) } : {};
+    },
     startSession(input) {
+      const state: GrokSessionRuntimeState = {
+        activeTurn: false,
+        interrupted: false,
+        loadSessionSupported: false,
+      };
       const transport =
         options.transport ??
         createGrokAcpSubprocessTransport({
@@ -165,13 +213,14 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
           commandArgs: options.commandArgs,
           responseTimeoutMs: options.responseTimeoutMs,
           promptTimeoutMs: options.promptTimeoutMs,
+          authorizePermission: (params, context) =>
+            authorizeGrokAcpPermission(params, {
+              canUseTool: input.canUseTool,
+              approveRuntimeRequest: input.approveRuntimeRequest,
+              interrupted: context.interrupted || state.interrupted,
+            }),
         });
-      const state: GrokSessionRuntimeState = {
-        activeTurn: false,
-        interrupted: false,
-        loadSessionSupported: false,
-        transport,
-      };
+      state.transport = transport;
 
       return {
         provider: "grok",
@@ -244,12 +293,7 @@ export function createGrokAcpSubprocessTransport(
     }
     const method = firstString(message.method);
     const params = isRecord(message.params) ? message.params : {};
-    let result: Record<string, unknown>;
-    if (method === "session/request_permission") {
-      result = interrupted
-        ? { outcome: { outcome: "cancelled" } }
-        : { outcome: selectGrokPermissionOutcome(params.options) };
-    } else {
+    if (method !== "session/request_permission") {
       void writeMessage({
         jsonrpc: "2.0",
         id,
@@ -257,11 +301,16 @@ export function createGrokAcpSubprocessTransport(
       }).catch(() => {});
       return;
     }
-    void writeMessage({
-      jsonrpc: "2.0",
-      id,
-      result,
-    }).catch(() => {});
+    void (async () => {
+      const outcome = options.authorizePermission
+        ? await options.authorizePermission(params, { interrupted })
+        : await authorizeGrokAcpPermission(params, { interrupted });
+      await writeMessage({
+        jsonrpc: "2.0",
+        id,
+        result: { outcome },
+      });
+    })().catch(() => {});
   };
 
   const handleLine = (line: string) => {
@@ -433,9 +482,20 @@ export function createGrokAcpSubprocessTransport(
 }
 
 export function buildGrokAcpProcessArgs(
-  input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend">,
+  input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend" | "allowTools" | "denyTools">,
 ): string[] {
-  const args = ["--no-auto-update", "--no-alt-screen", "--always-approve"];
+  const args = ["--no-auto-update", "--no-alt-screen", "--permission-mode", "default"];
+  for (const tool of input.allowTools ?? []) {
+    args.push("--allow", tool);
+  }
+  for (const tool of input.denyTools ?? []) {
+    args.push("--deny", tool);
+  }
+  if ((input.allowTools?.length ?? 0) > 0) {
+    args.push("--tools", input.allowTools!.join(","));
+  } else if ((input.denyTools?.length ?? 0) > 0) {
+    args.push("--disallowed-tools", input.denyTools!.join(","));
+  }
   const model = input.model?.trim();
   if (model && model !== "default") {
     args.push("-m", model);
@@ -487,26 +547,108 @@ export function selectGrokAuthMethod(authMethods: unknown[], env: NodeJS.Process
 
 export function selectGrokPermissionOutcome(
   options: unknown,
-): { outcome: "selected"; optionId: string } | { outcome: "cancelled" } {
+  preference: "allow" | "reject" = "reject",
+): GrokPermissionOutcome {
   const list = Array.isArray(options) ? options : [];
-  const allow = list.find((option) => {
+  const match = list.find((option) => {
     if (!isRecord(option)) {
       return false;
     }
     const kind = firstString(option.kind)?.toLowerCase() ?? "";
     const optionId = firstString(option.optionId, option.id)?.toLowerCase() ?? "";
-    return kind.includes("allow") || optionId.includes("allow");
+    return preference === "allow"
+      ? kind.includes("allow") || optionId.includes("allow")
+      : kind.includes("reject") || kind.includes("deny") || optionId.includes("reject") || optionId.includes("deny");
   });
-  const fallback = list.find((option) => isRecord(option) && firstString(option.optionId, option.id));
-  const optionId = isRecord(allow)
-    ? firstString(allow.optionId, allow.id)
-    : isRecord(fallback)
-      ? firstString(fallback.optionId, fallback.id)
-      : undefined;
+  const optionId = isRecord(match) ? firstString(match.optionId, match.id) : undefined;
   if (!optionId) {
     return { outcome: "cancelled" };
   }
   return { outcome: "selected", optionId };
+}
+
+export async function resolveGrokToolAccessRules(
+  canUseTool?: RuntimeToolPermissionHandler,
+): Promise<GrokToolAccessRules> {
+  const allow: string[] = [];
+  const deny: string[] = [];
+  for (const tool of GROK_HOSTED_TOOLS) {
+    if (await isGrokHostedToolAllowed(tool, canUseTool)) {
+      allow.push(tool);
+    } else {
+      deny.push(tool);
+    }
+  }
+  return { allow, deny };
+}
+
+export function mapGrokToolNameToRavi(name?: string): string {
+  const normalized =
+    name
+      ?.trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "") ?? "";
+  if (!normalized) {
+    return "tool";
+  }
+  if (
+    normalized.includes("bash") ||
+    normalized.includes("shell") ||
+    normalized === "execute" ||
+    normalized === "terminal"
+  ) {
+    return "Bash";
+  }
+  if (normalized.includes("webfetch") || normalized.includes("webget")) {
+    return "WebFetch";
+  }
+  if (normalized.includes("websearch") || normalized.includes("webquery")) {
+    return "WebSearch";
+  }
+  if (normalized.includes("mcp")) {
+    return "MCPTool";
+  }
+  if (normalized.includes("grep") || normalized.includes("glob") || normalized.includes("searchcontent")) {
+    return "Grep";
+  }
+  if (
+    normalized.includes("edit") ||
+    normalized.includes("write") ||
+    normalized.includes("searchreplace") ||
+    normalized.includes("strreplace")
+  ) {
+    return "Edit";
+  }
+  if (normalized.includes("read") || normalized.includes("listdir") || normalized.includes("list_dir")) {
+    return "Read";
+  }
+  return name?.trim() || "tool";
+}
+
+export function extractGrokPermissionTool(params: Record<string, unknown>): {
+  toolName: string;
+  input: Record<string, unknown>;
+} {
+  const toolCall = isRecord(params.toolCall) ? params.toolCall : isRecord(params.tool_call) ? params.tool_call : params;
+  const rawName = firstString(toolCall.toolName, toolCall.tool_name, toolCall.name, toolCall.kind, toolCall.title);
+  const rawInput = toolCall.rawInput ?? toolCall.raw_input ?? toolCall.input ?? toolCall.arguments ?? params.rawInput;
+  return {
+    toolName: mapGrokToolNameToRavi(rawName),
+    input: isRecord(rawInput) ? rawInput : {},
+  };
+}
+
+export async function authorizeGrokAcpPermission(
+  params: Record<string, unknown>,
+  handlers: GrokPermissionAuthorizationHandlers = {},
+): Promise<GrokPermissionOutcome> {
+  if (handlers.interrupted) {
+    return { outcome: "cancelled" };
+  }
+
+  const { toolName, input } = extractGrokPermissionTool(params);
+  const approved = await decideGrokToolAuthorization(toolName, input, params, handlers);
+  return selectGrokPermissionOutcome(params.options, approved ? "allow" : "reject");
 }
 
 async function* runGrokTurns(
@@ -515,12 +657,15 @@ async function* runGrokTurns(
   state: GrokSessionRuntimeState,
 ): AsyncGenerator<RuntimeEvent> {
   const abortSignal = input.abortController.signal;
+  const toolAccess = await resolveGrokToolAccessRules(input.canUseTool);
   const startInput: GrokAcpStartInput = {
     cwd: input.cwd,
     env: input.env ?? process.env,
     model: input.model,
     effort: input.effort,
     systemPromptAppend: input.systemPromptAppend,
+    allowTools: toolAccess.allow,
+    denyTools: toolAccess.deny,
   };
   const eventIterator = transport.events[Symbol.asyncIterator]();
 
@@ -812,7 +957,7 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
 
 function buildGrokToolUse(update: Record<string, unknown>): RuntimeToolUse | null {
   const id = firstString(update.toolCallId, update.toolCallID);
-  const name = firstString(update.title, update.kind, update.toolName) ?? "tool";
+  const name = mapGrokToolNameToRavi(firstString(update.toolName, update.kind, update.title));
   if (!id) {
     return null;
   }
@@ -821,6 +966,136 @@ function buildGrokToolUse(update: Record<string, unknown>): RuntimeToolUse | nul
     name,
     input: update.rawInput ?? update.input ?? update.arguments,
   };
+}
+
+function createGrokRuntimeStartRequest(
+  hostServices: RuntimeHostServices,
+): NonNullable<RuntimePrepareSessionResult["startRequest"]> {
+  return {
+    approveRuntimeRequest: async (request) => authorizeGrokHostApproval(hostServices, request),
+  };
+}
+
+async function authorizeGrokHostApproval(
+  hostServices: RuntimeHostServices,
+  request: RuntimeApprovalRequest,
+): Promise<Awaited<ReturnType<RuntimeApprovalHandler>>> {
+  switch (request.kind) {
+    case "command_execution": {
+      const command = typeof request.input?.command === "string" ? request.input.command : "";
+      if (!command.trim()) {
+        return { approved: false, reason: "Grok command approval request did not include a command." };
+      }
+      return hostServices.authorizeCommandExecution({
+        command,
+        input: request.input,
+        eventData: buildGrokApprovalEventData(request),
+      });
+    }
+    case "file_change":
+    case "permission":
+      return hostServices.authorizeToolUse({
+        toolName: request.toolName ?? (request.kind === "file_change" ? "Edit" : "tool"),
+        input: request.input,
+        eventData: buildGrokApprovalEventData(request),
+      });
+    case "user_input":
+      return hostServices.requestUserInput({
+        questions: Array.isArray(request.input?.questions)
+          ? (request.input.questions as RuntimeApprovalQuestion[])
+          : [],
+        eventData: buildGrokApprovalEventData(request),
+      });
+  }
+}
+
+function buildGrokApprovalEventData(request: RuntimeApprovalRequest): Record<string, unknown> {
+  return {
+    runtimeApproval: {
+      provider: "grok",
+      kind: request.kind,
+      method: request.method,
+      toolName: request.toolName,
+      input: request.input,
+    },
+  };
+}
+
+async function isGrokHostedToolAllowed(
+  tool: GrokHostedTool,
+  canUseTool?: RuntimeToolPermissionHandler,
+): Promise<boolean> {
+  if (!canUseTool) {
+    return false;
+  }
+  const names = [tool, ...(GROK_TOOL_ALIASES[tool] ?? [])];
+  for (const name of names) {
+    const result = await canUseTool(name, {});
+    if (result.behavior === "allow") {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function decideGrokToolAuthorization(
+  toolName: string,
+  input: Record<string, unknown>,
+  rawRequest: Record<string, unknown>,
+  handlers: GrokPermissionAuthorizationHandlers,
+): Promise<boolean> {
+  const command = firstString(input.command, input.cmd);
+  if (command && handlers.approveRuntimeRequest) {
+    const result = await handlers.approveRuntimeRequest({
+      kind: "command_execution",
+      method: "session/request_permission",
+      toolName: "Bash",
+      input: { ...input, command },
+      rawRequest,
+    });
+    return result.approved;
+  }
+
+  if (handlers.canUseTool) {
+    const names = uniqueStrings([toolName, ...aliasesForGrokTool(toolName)]);
+    for (const name of names) {
+      const result = await handlers.canUseTool(name, input);
+      if (result.behavior === "allow") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (handlers.approveRuntimeRequest) {
+    const kind = toolName === "Edit" || toolName === "Write" ? "file_change" : "permission";
+    const result = await handlers.approveRuntimeRequest({
+      kind,
+      method: "session/request_permission",
+      toolName,
+      input,
+      rawRequest,
+    });
+    return result.approved;
+  }
+
+  return false;
+}
+
+function aliasesForGrokTool(toolName: string): string[] {
+  const canonical = mapGrokToolNameToRavi(toolName);
+  if (isGrokHostedTool(canonical)) {
+    return [...GROK_TOOL_ALIASES[canonical]];
+  }
+  return [];
+}
+
+function isGrokHostedTool(value: string): value is GrokHostedTool {
+  return (GROK_HOSTED_TOOLS as readonly string[]).includes(value);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
 }
 
 function mapGrokUsage(update: Record<string, unknown>, fallback: RuntimeUsage): RuntimeUsage {

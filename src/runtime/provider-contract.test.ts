@@ -230,7 +230,7 @@ describe("runtime provider contract", () => {
         semantics: "terminal-event",
       },
       tools: {
-        permissionMode: "provider-native",
+        permissionMode: "ravi-host",
         accessRequirement: "tool_and_executable",
         supportsParallelCalls: false,
       },
@@ -247,7 +247,7 @@ describe("runtime provider contract", () => {
       supportsSessionResume: true,
       supportsSessionFork: false,
       supportsPartialText: true,
-      supportsToolHooks: false,
+      supportsToolHooks: true,
       supportsHostSessionHooks: false,
       supportsPlugins: false,
       supportsMcpServers: false,

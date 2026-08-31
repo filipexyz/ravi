@@ -4,14 +4,16 @@
 
 - Provider id is `grok`.
 - Capability matrix includes every required structured field.
-- Restricted agents are rejected in the ACP MVP.
+- Restricted agents are accepted because `tools.permissionMode` is `ravi-host`.
+- A session without a given tool grant cannot use that tool (spawn deny + ACP reject).
+- A session with a narrow grant can use only those tools (spawn allow + ACP allow).
 - `startSession` starts a fake ACP client and returns a valid runtime handle.
 - `interrupt()` sends `session/cancel` and emits `turn.interrupted`.
 - Resume uses `session/load` with the stored ACP `sessionId` and matching cwd.
-- Spawn args include `agent stdio`, `--no-auto-update`, `--no-alt-screen`, and `--always-approve`.
+- Spawn args include `agent stdio`, `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, and Ravi-derived `--allow` / `--deny`. They MUST NOT include `--always-approve`.
 - Command override reads `RAVI_GROK_COMMAND`.
 - `xhigh|max|ultra` map to native `--effort high`.
-- `prepareSession` is omitted unless env/tools/approvals become required.
+- `prepareSession` wires `approveRuntimeRequest` from Ravi host services.
 
 ## Event Mapping Tests
 

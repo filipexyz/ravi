@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  authorizeGrokAcpPermission,
   buildGrokAcpProcessArgs,
   buildGrokAcpSpawnEnv,
   createGrokRuntimeProvider,
+  extractGrokPermissionTool,
+  mapGrokToolNameToRavi,
+  resolveGrokToolAccessRules,
   selectGrokAuthMethod,
   selectGrokPermissionOutcome,
   toGrokEffort,
@@ -10,7 +14,7 @@ import {
   type GrokAcpStartInput,
   type GrokAcpTransport,
 } from "./grok-provider.js";
-import type { RuntimeEvent, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
@@ -79,7 +83,7 @@ describe("Grok Build runtime provider", () => {
         semantics: "terminal-event",
       },
       tools: {
-        permissionMode: "provider-native",
+        permissionMode: "ravi-host",
         accessRequirement: "tool_and_executable",
         supportsParallelCalls: false,
       },
@@ -100,7 +104,7 @@ describe("Grok Build runtime provider", () => {
       supportsSessionResume: true,
       supportsSessionFork: false,
       supportsPartialText: true,
-      supportsToolHooks: false,
+      supportsToolHooks: true,
       supportsHostSessionHooks: false,
       supportsPlugins: false,
       supportsMcpServers: false,
@@ -121,17 +125,28 @@ describe("Grok Build runtime provider", () => {
     }
   });
 
-  it("spawns grok agent stdio with conservative headless flags", () => {
+  it("spawns grok agent stdio under Ravi-hosted permission rules, not always-approve", () => {
     expect(
       buildGrokAcpProcessArgs({
         model: "grok-4",
         effort: "ultra",
         systemPromptAppend: "Ravi instructions",
+        allowTools: ["Read"],
+        denyTools: ["Bash", "Edit"],
       }),
     ).toEqual([
       "--no-auto-update",
       "--no-alt-screen",
-      "--always-approve",
+      "--permission-mode",
+      "default",
+      "--allow",
+      "Read",
+      "--deny",
+      "Bash",
+      "--deny",
+      "Edit",
+      "--tools",
+      "Read",
       "-m",
       "grok-4",
       "--effort",
@@ -141,6 +156,12 @@ describe("Grok Build runtime provider", () => {
       "agent",
       "stdio",
     ]);
+    expect(
+      buildGrokAcpProcessArgs({
+        denyTools: ["Bash", "Read"],
+      }),
+    ).toEqual(expect.arrayContaining(["--permission-mode", "default", "--disallowed-tools", "Bash,Read"]));
+    expect(buildGrokAcpProcessArgs({ allowTools: ["Read"] }).join(" ")).not.toContain("--always-approve");
   });
 
   it("maps strongest Ravi effort values onto Grok high", () => {
@@ -161,13 +182,183 @@ describe("Grok Build runtime provider", () => {
     expect(selectGrokAuthMethod([{ id: "cached_token" }, { id: "xai.api_key" }], {})).toBe("cached_token");
   });
 
-  it("auto-selects an allow permission option", () => {
+  it("selects allow or reject permission options from Ravi's decision, never by default", () => {
+    const options = [
+      { optionId: "reject-once", kind: "reject_once" },
+      { optionId: "allow-once", kind: "allow_once" },
+    ];
+    expect(selectGrokPermissionOutcome(options, "allow")).toEqual({ outcome: "selected", optionId: "allow-once" });
+    expect(selectGrokPermissionOutcome(options, "reject")).toEqual({ outcome: "selected", optionId: "reject-once" });
+    expect(selectGrokPermissionOutcome(options)).toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
+  it("maps Grok ACP tool names onto Ravi/Claude tool identities", () => {
+    expect(mapGrokToolNameToRavi("Read file")).toBe("Read");
+    expect(mapGrokToolNameToRavi("read")).toBe("Read");
+    expect(mapGrokToolNameToRavi("bash")).toBe("Bash");
+    expect(mapGrokToolNameToRavi("Write")).toBe("Edit");
     expect(
-      selectGrokPermissionOutcome([
-        { optionId: "reject-once", kind: "reject_once" },
-        { optionId: "allow-once", kind: "allow_once" },
-      ]),
-    ).toEqual({ outcome: "selected", optionId: "allow-once" });
+      extractGrokPermissionTool({
+        toolCall: { title: "Read file", kind: "read", rawInput: { path: "README.md" } },
+      }),
+    ).toEqual({
+      toolName: "Read",
+      input: { path: "README.md" },
+    });
+  });
+
+  it("fail-closes spawn rules when no Ravi tool hook is present", async () => {
+    await expect(resolveGrokToolAccessRules()).resolves.toEqual({
+      allow: [],
+      deny: ["Bash", "Edit", "Read", "Grep", "WebFetch", "WebSearch", "MCPTool"],
+    });
+  });
+
+  it("materializes spawn allow/deny from Ravi canUseTool grants", async () => {
+    const canUseTool = async (toolName: string) => ({
+      behavior: toolName === "Read" || toolName === "Grep" ? ("allow" as const) : ("deny" as const),
+      reason: `${toolName} permission denied.`,
+    });
+    await expect(resolveGrokToolAccessRules(canUseTool)).resolves.toEqual({
+      allow: ["Read", "Grep"],
+      deny: ["Bash", "Edit", "WebFetch", "WebSearch", "MCPTool"],
+    });
+  });
+
+  it("fail-closes ACP permission requests when Ravi hooks are missing", async () => {
+    await expect(
+      authorizeGrokAcpPermission({
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { kind: "read", rawInput: { path: "README.md" } },
+      }),
+    ).resolves.toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
+  it("denies an ACP permission request when Ravi did not grant the tool", async () => {
+    const outcome = await authorizeGrokAcpPermission(
+      {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { kind: "bash", rawInput: { command: "rm -rf /" } },
+      },
+      {
+        canUseTool: async (toolName) => ({
+          behavior: toolName === "Read" ? "allow" : "deny",
+          reason: `${toolName} permission denied.`,
+        }),
+      },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
+  it("allows an ACP permission request only for tools Ravi granted", async () => {
+    const outcome = await authorizeGrokAcpPermission(
+      {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { kind: "read", rawInput: { path: "README.md" } },
+      },
+      {
+        canUseTool: async (toolName) => ({
+          behavior: toolName === "Read" ? "allow" : "deny",
+          reason: `${toolName} permission denied.`,
+        }),
+      },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
+  });
+
+  it("routes Grok shell permission requests through command execution approval", async () => {
+    const commands: string[] = [];
+    const outcome = await authorizeGrokAcpPermission(
+      {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { kind: "bash", rawInput: { command: "git status" } },
+      },
+      {
+        canUseTool: async () => ({ behavior: "allow" }),
+        approveRuntimeRequest: async (request) => {
+          if (request.kind === "command_execution" && typeof request.input?.command === "string") {
+            commands.push(request.input.command);
+            return { approved: request.input.command.startsWith("git ") };
+          }
+          return { approved: false, reason: "unexpected" };
+        },
+      },
+    );
+    expect(commands).toEqual(["git status"]);
+    expect(outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
+  });
+
+  it("wires prepareSession approvals through Ravi host services", async () => {
+    const authorized: string[] = [];
+    const hostServices: RuntimeHostServices = {
+      authorizeCapability: async () => ({ allowed: true, inherited: false }),
+      authorizeCommandExecution: async (request) => {
+        authorized.push(`command:${request.command}`);
+        return { approved: request.command === "git status" };
+      },
+      authorizeToolUse: async (request) => {
+        authorized.push(`tool:${request.toolName}`);
+        return { approved: request.toolName === "Read" };
+      },
+      requestUserInput: async () => ({ approved: true, answers: {} }),
+      listDynamicTools: () => [],
+      executeDynamicTool: async () => ({ success: true, contentItems: [] }),
+    };
+    const prepared = await createGrokRuntimeProvider().prepareSession?.({
+      agentId: "grok-probe",
+      cwd: "/tmp",
+      hostServices,
+    });
+    const approve = prepared?.startRequest?.approveRuntimeRequest;
+    expect(approve).toBeTypeOf("function");
+    await expect(
+      approve!({
+        kind: "permission",
+        toolName: "Read",
+        input: { path: "README.md" },
+      }),
+    ).resolves.toEqual({ approved: true });
+    await expect(
+      approve!({
+        kind: "command_execution",
+        toolName: "Bash",
+        input: { command: "rm -rf /" },
+      }),
+    ).resolves.toEqual({ approved: false });
+    expect(authorized).toEqual(["tool:Read", "command:rm -rf /"]);
+  });
+
+  it("starts a restricted Grok session with only granted tools enabled", async () => {
+    const transport = new FakeGrokAcpTransport();
+    const canUseTool = async (toolName: string) => ({
+      behavior: toolName === "Read" ? ("allow" as const) : ("deny" as const),
+      reason: `${toolName} permission denied.`,
+    });
+
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("leia", { canUseTool })).events,
+    );
+
+    expect(transport.starts[0]).toMatchObject({
+      allowTools: ["Read"],
+      denyTools: ["Bash", "Edit", "Grep", "WebFetch", "WebSearch", "MCPTool"],
+    });
+    expect(buildGrokAcpProcessArgs(transport.starts[0])).toEqual(
+      expect.arrayContaining(["--allow", "Read", "--deny", "Bash", "--tools", "Read"]),
+    );
+    expect(buildGrokAcpProcessArgs(transport.starts[0])).not.toContain("--always-approve");
   });
 
   it("closes the Grok ACP transport idempotently", async () => {
@@ -309,7 +500,7 @@ describe("Grok Build runtime provider", () => {
       type: "tool.started",
       toolUse: {
         id: "call_1",
-        name: "Read file",
+        name: "Read",
         input: { path: "README.md" },
       },
     });

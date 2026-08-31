@@ -56,13 +56,13 @@ The MVP MUST use ACP. Headless streaming-json is a worse fit for Ravi's live ses
 - Execution mode: subprocess ACP JSON-RPC.
 - Process boundary: one `grok agent stdio` process per Ravi runtime session handle.
 - Command override: `RAVI_GROK_COMMAND`, same pattern as `RAVI_PI_COMMAND`.
-- Spawn flags: `--no-auto-update`, `--no-alt-screen`, `--always-approve`, optional `-m`, `--effort`, and `--append-system-prompt`.
+- Spawn flags: `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, Ravi-derived `--allow` / `--deny` / `--tools` / `--disallowed-tools`, optional `-m`, `--effort`, and `--append-system-prompt`. `--always-approve` and `--permission-mode bypassPermissions` MUST NOT be the permission model.
 - Prompt submission: ACP `session/prompt` with `[{ type: "text", text }]`.
 - Session state: ACP `sessionId` plus cwd and model stored in `RuntimeSessionState.params`.
 - Display id: ACP `sessionId`.
 - System prompt mode: append Ravi instructions through `--append-system-prompt`; do not replace Grok's base prompt.
 - Tool mode: Grok uses its own built-in tools. Client ACP `fs` / `terminal` capabilities stay disabled.
-- Permission mode: provider-native. Restricted Ravi tool policy is unsupported and MUST be rejected by capability checks.
+- Permission mode: ravi-host. Restricted Ravi tool policy is required. Grok MUST start under least-privilege and MUST NOT use a tool Ravi did not grant.
 - MCP/plugins/remote spawn: not advertised in the MVP even though `session/new` accepts `mcpServers`.
 
 ## Capability Target
@@ -74,7 +74,7 @@ Initial advertised capabilities MUST be:
 - `execution`: `subprocess-rpc`.
 - `sessionState`: `provider-session-id` with cwd validation.
 - `usage`: `terminal-event`.
-- `tools.permissionMode`: `provider-native`.
+- `tools.permissionMode`: `ravi-host`.
 - `tools.accessRequirement`: `tool_and_executable`.
 - `tools.supportsParallelCalls`: false.
 - `systemPrompt`: `append`.
@@ -85,7 +85,7 @@ Initial advertised capabilities MUST be:
 - `supportsSessionResume`: true when `session/load` is advertised and a stored `sessionId` exists.
 - `supportsSessionFork`: false. Grok CLI `--fork-session` MUST NOT flip this bit until canonical fork materialization exists.
 - `supportsPartialText`: true.
-- `supportsToolHooks`: false.
+- `supportsToolHooks`: true.
 - `supportsHostSessionHooks`: false.
 - `supportsPlugins`: false.
 - `supportsMcpServers`: false.
@@ -100,8 +100,9 @@ Initial advertised capabilities MUST be:
 - `session/load` resumes a stored `sessionId` when the agent advertises `loadSession`.
 - `session/prompt` starts a normal Ravi-delivered user prompt.
 - `session/cancel` maps to `interrupt()` and `turn.interrupt`.
-- Incoming `session/request_permission` auto-selects an allow option because the MVP is provider-native and the process is spawned with `--always-approve`.
+- Incoming `session/request_permission` MUST be authorized by Ravi host services (`canUseTool` / `authorizeToolUse` / `authorizeCommandExecution`). Allow only when Ravi grants the mapped tool (and the executable/command when the request is a shell call). Otherwise select a reject option or cancel.
 - Incoming ACP client methods other than `session/request_permission` MUST be rejected with JSON-RPC method-not-found.
+- Spawn-time `--allow` / `--deny` / `--tools` / `--disallowed-tools` MUST be materialized from the same Ravi grants. Missing hooks fail closed (deny every hosted Grok tool). This is the hard limit even if Grok auto-executes a tool without asking over ACP.
 
 ## Event Mapping
 
@@ -138,7 +139,8 @@ That strongest-compatible mapping MUST stay covered by an explicit provider test
 - The provider MUST turn subprocess exit before terminal result into recoverable `turn.failed`.
 - The provider MUST NOT invent Grok Bot host gateways, A2A, or chat-completions-only HTTP transports.
 - The provider MUST NOT mutate Ravi tasks, emit channel messages, or add host branches in `bot.ts`, `session-launcher.ts`, or `runtime-request-builder.ts`.
-- The provider MUST not expose restricted Ravi agents until Grok permission requests are bridged to Ravi host services.
+- The provider MUST expose restricted Ravi agents and MUST route every Grok tool decision through Ravi host services or spawn-time allow/deny derived from those services.
+- The provider MUST NOT treat `--always-approve`, `--permission-mode bypassPermissions`, or ACP auto-allow as authorization.
 - The provider MUST not save ACP session ids as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Grok session.
 - Native Grok `--fork-session` MUST NOT flip canonical `supportsSessionFork`.
