@@ -56,7 +56,7 @@ The MVP MUST use ACP. Headless streaming-json is a worse fit for Ravi's live ses
 - Execution mode: subprocess ACP JSON-RPC.
 - Process boundary: one `grok agent stdio` process per Ravi runtime session handle.
 - Command override: `RAVI_GROK_COMMAND`, same pattern as `RAVI_PI_COMMAND`.
-- Spawn flags: `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, Ravi-derived `--allow` / `--deny` / `--tools` / `--disallowed-tools`, optional `-m`, `--effort`, and `--append-system-prompt`. `--always-approve` and `--permission-mode bypassPermissions` MUST NOT be the permission model.
+- Spawn flags: `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, Ravi-derived `--deny` class rules, `--tools` / `--disallowed-tools` using Grok internal IDs, `--no-subagents` unless the host granted Agent/Task, optional scoped `--allow Class(pattern)` only for real scoped grants, optional `-m`, `--effort`, and `--append-system-prompt`. `--always-approve`, bare `--allow Bash` / `--allow Read`, and `--permission-mode bypassPermissions` MUST NOT be the permission model.
 - Prompt submission: ACP `session/prompt` with `[{ type: "text", text }]`.
 - Session state: ACP `sessionId` plus cwd and model stored in `RuntimeSessionState.params`.
 - Display id: ACP `sessionId`.
@@ -100,9 +100,9 @@ Initial advertised capabilities MUST be:
 - `session/load` resumes a stored `sessionId` when the agent advertises `loadSession`.
 - `session/prompt` starts a normal Ravi-delivered user prompt.
 - `session/cancel` maps to `interrupt()` and `turn.interrupt`.
-- Incoming `session/request_permission` MUST be authorized by Ravi host services (`canUseTool` / `authorizeToolUse` / `authorizeCommandExecution`). Allow only when Ravi grants the mapped tool (and the executable/command when the request is a shell call). Otherwise select a reject option or cancel.
+- Incoming `session/request_permission` MUST be authorized by Ravi host services. Map Grok internal IDs such as `run_terminal_cmd` onto Ravi names (`Bash`). Allow only `allow_once`; reject only `reject_once`. Never select `allow_always`. Unknown tools fail closed. A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. If authorization throws, respond JSON-RPC reject/cancelled — never swallow.
 - Incoming ACP client methods other than `session/request_permission` MUST be rejected with JSON-RPC method-not-found.
-- Spawn-time `--allow` / `--deny` / `--tools` / `--disallowed-tools` MUST be materialized from the same Ravi grants. Missing hooks fail closed (deny every hosted Grok tool). This is the hard limit even if Grok auto-executes a tool without asking over ACP.
+- Spawn-time `--tools` / `--disallowed-tools` MUST use Grok internal IDs (`read_file`, `run_terminal_cmd`, `todo_write`, `task`, …), not class names. `--allow` / `--deny` keep Grok class/rule names. A tool grant enables the tool via `--tools` and MUST NOT emit a class-wide `--allow Bash` or `--allow Read`. Empty grants MUST still strip auto-exec tools (`todo_write`, Agent/subagents, skill invocation, command/subagent control) via a full `--disallowed-tools` catalog plus `--no-subagents`. Missing hooks fail closed.
 
 ## Event Mapping
 

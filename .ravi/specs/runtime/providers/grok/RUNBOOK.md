@@ -10,7 +10,7 @@
 
 ## Start A Session
 
-1. Spawn `grok --no-auto-update --no-alt-screen --permission-mode default` plus Ravi-derived `--allow` / `--deny` / `--tools`, then `agent stdio`. Do not pass `--always-approve`.
+1. Spawn `grok --no-auto-update --no-alt-screen --permission-mode default` plus `--tools` internal IDs, `--deny` ungranted classes, `--disallowed-tools` for the rest, and `--no-subagents` unless Agent is granted, then `agent stdio`. Do not pass `--always-approve` or class-wide `--allow Bash` / `--allow Read`.
 2. Attach a strict JSONL reader to stdout.
 3. Capture stderr for logs only.
 4. Send `initialize`, then `authenticate` when auth methods are advertised.

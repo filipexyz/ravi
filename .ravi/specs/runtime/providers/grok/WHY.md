@@ -35,8 +35,8 @@ Grok has its own tools and ACP permission requests. Ravi remains the authority t
 
 `--always-approve` and ACP auto-allow are not a permission model. Grok may also execute some tools without sending `session/request_permission`, so Ravi enforces limits in two places:
 
-- Spawn-time `--allow` / `--deny` / `--tools` materialized from Ravi `canUseTool` grants. `deny` wins even if Grok later tries to auto-run.
-- Live ACP `session/request_permission` mapped onto Ravi host services (`authorizeToolUse`, `authorizeCommandExecution` for shell).
+- Spawn-time `--tools` internal IDs plus `--deny` class rules materialized from Ravi `canUseTool` grants. A grant enables the tool; it does not auto-approve the class. `deny` / `--disallowed-tools` / `--no-subagents` win even if Grok later tries to auto-run `todo_write`, Agent, or skills.
+- Live ACP `session/request_permission` mapped onto Ravi host services (`canUseTool` and, for shell, `authorizeCommandExecution`). Both are required for `tool_and_executable`.
 
 Client ACP `fs` / `terminal` methods stay disabled. Ravi is still a runtime adapter, not an IDE host.
 
