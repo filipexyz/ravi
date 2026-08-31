@@ -37,7 +37,7 @@ const GROK_ACP_CLIENT_NAME = "ravi";
 const GROK_ACP_CLIENT_TITLE = "Ravi Runtime";
 const GROK_ACP_CLIENT_VERSION_FALLBACK = "ravi";
 
-export interface GrokAcpInitializeParams {
+export interface GrokAcpInitializeParams extends Record<string, unknown> {
   protocolVersion: number;
   clientInfo: {
     name: string;
