@@ -5,12 +5,12 @@
 1. Verify the `grok` executable is available, or set `RAVI_GROK_COMMAND`.
 2. Verify the target cwd exists and is the intended Ravi agent cwd.
 3. Verify Grok authentication: `grok login` or `XAI_API_KEY`.
-4. Verify the Ravi agent does not require restricted tool access in the ACP MVP.
+4. Verify the Ravi agent has the intended least-privilege grants. Restricted tool access is supported; full-access is not required.
 5. Verify `RuntimeCapabilities` compatibility passes before starting the provider.
 
 ## Start A Session
 
-1. Spawn `grok --no-auto-update --no-alt-screen --always-approve agent stdio`.
+1. Spawn `grok --no-auto-update --no-alt-screen --permission-mode default` plus Ravi-derived `--allow` / `--deny` / `--tools`, then `agent stdio`. Do not pass `--always-approve`.
 2. Attach a strict JSONL reader to stdout.
 3. Capture stderr for logs only.
 4. Send `initialize`, then `authenticate` when auth methods are advertised.
@@ -28,7 +28,7 @@
 ## Interrupt
 
 1. Send ACP `session/cancel` for the current `sessionId`.
-2. Auto-cancel any in-flight `session/request_permission` requests.
+2. Cancel any in-flight `session/request_permission` requests. Live requests that are not cancelled MUST be authorized by Ravi host services before selecting allow or reject.
 3. Expect `stopReason=cancelled` or a transport error, then emit `turn.interrupted` once.
 
 ## Resume

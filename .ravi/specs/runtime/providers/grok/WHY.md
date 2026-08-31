@@ -29,17 +29,16 @@ ACP (`grok agent stdio`) is the IDE/tool integration surface. It gives Ravi a na
 
 Grok Bot is a cloud teammate product. The xAI chat-completions/responses API is a model endpoint, not a coding-agent runtime. Both would violate the provider contract: they are not local execution engines that Ravi can adapt through `RuntimeStartRequest` -> native transport -> `RuntimeEvent`.
 
-## Why Tools Stay Provider-Native
+## Why Tools Are Ravi-Hosted
 
-Grok has its own tools and ACP permission requests. Ravi has its own permission model and currently tracks one active tool in the host event loop.
+Grok has its own tools and ACP permission requests. Ravi remains the authority that allows or denies those tools. Restricted / least-privilege sessions must start, and Grok must not use a tool Ravi did not grant.
 
-Bridging tools before the adapter is proven would create a confusing hybrid:
+`--always-approve` and ACP auto-allow are not a permission model. Grok may also execute some tools without sending `session/request_permission`, so Ravi enforces limits in two places:
 
-- Some tools would obey Ravi policy.
-- Some tools would obey Grok internals.
-- Client ACP `fs` / `terminal` methods would make Ravi an IDE host instead of a runtime adapter.
+- Spawn-time `--allow` / `--deny` / `--tools` materialized from Ravi `canUseTool` grants. `deny` wins even if Grok later tries to auto-run.
+- Live ACP `session/request_permission` mapped onto Ravi host services (`authorizeToolUse`, `authorizeCommandExecution` for shell).
 
-The MVP declares full Grok tool ownership, auto-approves through `--always-approve`, and blocks restricted Ravi agents.
+Client ACP `fs` / `terminal` methods stay disabled. Ravi is still a runtime adapter, not an IDE host.
 
 ## Why Resume Is Session-Id, Not File-Backed
 

@@ -52,6 +52,7 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
 describe("runtime delivery queue", () => {
   it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {
     expect(resolveRuntimeToolEffectFence("claude", "ravi-host")).toBe("host_write_ahead");
+    expect(resolveRuntimeToolEffectFence("grok", "ravi-host")).toBe("host_write_ahead");
     expect(resolveRuntimeToolEffectFence("codex", "ravi-host")).toBe("provider_event_only");
     expect(resolveRuntimeToolEffectFence("pi", "provider-native")).toBe("provider_event_only");
   });
