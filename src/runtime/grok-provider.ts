@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { fileURLToPath } from "node:url";
 import type { RuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
@@ -30,6 +33,25 @@ const DEFAULT_GROK_RPC_TIMEOUT_MS = 30_000;
 const GROK_INTERRUPT_GRACE_MS = 1_000;
 const GROK_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = ["turn.interrupt"];
 const GROK_ACP_PROTOCOL_VERSION = 1;
+const GROK_ACP_CLIENT_NAME = "ravi";
+const GROK_ACP_CLIENT_TITLE = "Ravi Runtime";
+const GROK_ACP_CLIENT_VERSION_FALLBACK = "ravi";
+
+export interface GrokAcpInitializeParams {
+  protocolVersion: number;
+  clientInfo: {
+    name: string;
+    title: string;
+    version: string;
+  };
+  clientCapabilities: {
+    fs: {
+      readTextFile: boolean;
+      writeTextFile: boolean;
+    };
+    terminal: boolean;
+  };
+}
 
 export type GrokEffort = "none" | "minimal" | "low" | "medium" | "high";
 
@@ -481,6 +503,38 @@ export function createGrokAcpSubprocessTransport(
   };
 }
 
+export function resolveGrokAcpClientVersion(): string {
+  return (
+    firstString(process.env.npm_package_version, process.env.RAVI_VERSION, readNearbyRaviPackageVersion()) ??
+    GROK_ACP_CLIENT_VERSION_FALLBACK
+  );
+}
+
+export function buildGrokAcpInitializeParams(): GrokAcpInitializeParams {
+  return {
+    protocolVersion: GROK_ACP_PROTOCOL_VERSION,
+    clientInfo: {
+      name: GROK_ACP_CLIENT_NAME,
+      title: GROK_ACP_CLIENT_TITLE,
+      version: resolveGrokAcpClientVersion(),
+    },
+    clientCapabilities: {
+      fs: { readTextFile: false, writeTextFile: false },
+      terminal: false,
+    },
+  };
+}
+
+function readNearbyRaviPackageVersion(): string | undefined {
+  try {
+    const packagePath = join(dirname(fileURLToPath(import.meta.url)), "../../package.json");
+    const pkg = JSON.parse(readFileSync(packagePath, "utf8")) as { version?: unknown };
+    return typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildGrokAcpProcessArgs(
   input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend" | "allowTools" | "denyTools">,
 ): string[] {
@@ -837,17 +891,7 @@ async function initializeGrokSession(
   input: RuntimeStartRequest,
   state: GrokSessionRuntimeState,
 ): Promise<void> {
-  const init = await transport.request("initialize", {
-    protocolVersion: GROK_ACP_PROTOCOL_VERSION,
-    clientInfo: {
-      name: "ravi",
-      title: "Ravi Runtime",
-    },
-    clientCapabilities: {
-      fs: { readTextFile: false, writeTextFile: false },
-      terminal: false,
-    },
-  });
+  const init = await transport.request("initialize", buildGrokAcpInitializeParams());
   const initRecord = isRecord(init) ? init : {};
   const agentCapabilities = isRecord(initRecord.agentCapabilities) ? initRecord.agentCapabilities : {};
   state.loadSessionSupported = agentCapabilities.loadSession === true;
