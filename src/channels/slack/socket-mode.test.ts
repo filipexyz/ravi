@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { configStore } from "../../config-store.js";
 import {
   createContact,
@@ -59,6 +61,7 @@ import {
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
+import { dbCreateTrigger } from "../../triggers/triggers-db.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 class FakeSlackWebSocket extends EventEmitter {
@@ -1182,6 +1185,275 @@ describe("Slack Socket Mode routing", () => {
       },
     ]);
     expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.com");
+  });
+
+  it("opens the agent factory modal in Socket Mode instead of publishing the shell trigger event", async () => {
+    const workflowRoot = join(stateDir!, "workflow-root");
+    const workflowDir = join(workflowRoot, ".ravi", "workflows", "agent-factory");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      join(workflowDir, "modal-view.json"),
+      JSON.stringify({
+        type: "modal",
+        callback_id: "agent_factory_create_modal",
+        title: { type: "plain_text", text: "Novo agent" },
+        submit: { type: "plain_text", text: "Criar" },
+        blocks: [],
+      }),
+      "utf8",
+    );
+
+    dbCreateTrigger({
+      name: "agent factory open modal",
+      topic: "ravi.inbound.interaction",
+      message: "",
+      executionType: "shell",
+      shellCommand: `cd ${workflowRoot} && RAVI_SLACK_CONNECTION=hana-slack bun .ravi/workflows/agent-factory/handler.ts`,
+      filter:
+        'data.provider == "slack" && data.interactionType == "block_actions" && data.channelId == "CFACTORY" && data.blockId == "agent_factory_actions" && data.actionId == "agent_factory_open_modal"',
+      session: "isolated",
+      cooldownMs: 1000,
+    });
+
+    const order: string[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const viewsOpen = mock(async (_input: { triggerId: string; view: Record<string, unknown> }) => {
+      order.push("views.open");
+      return { ok: true, view: { id: "VFACTORY", hash: "h1" } };
+    });
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "hana-slack",
+      routeAccountId: "hana-slack",
+      instanceId: "hana-slack",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-workflows",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishInteraction: async (topic, payload) => {
+        order.push("publish");
+        interactions.push({ topic, payload });
+      },
+      webClient: { viewsOpen } as never,
+    });
+
+    const result = await service.handleEnvelope(
+      {
+        envelope_id: "env-agent-factory-open-1",
+        payload: {
+          type: "block_actions",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "CFACTORY" },
+          trigger_id: "trigger-agent-factory-1",
+          container: {
+            type: "message",
+            channel_id: "CFACTORY",
+            message_ts: "1713000000.000100",
+          },
+          message: {
+            ts: "1713000000.000100",
+          },
+          actions: [
+            {
+              type: "button",
+              block_id: "agent_factory_actions",
+              action_id: "agent_factory_open_modal",
+              action_ts: "1713000001.000200",
+            },
+          ],
+        },
+      },
+      async () => {
+        order.push("ack");
+      },
+    );
+
+    expect(result).toBe("processed");
+    expect(order).toEqual(["ack", "views.open"]);
+    expect(interactions).toHaveLength(0);
+    expect(viewsOpen).toHaveBeenCalledTimes(1);
+
+    const opened = viewsOpen.mock.calls[0]?.[0];
+    const privateMetadata = opened?.view.private_metadata;
+    expect(opened?.triggerId).toBe("trigger-agent-factory-1");
+    expect(opened?.view).toMatchObject({
+      type: "modal",
+      callback_id: "agent_factory_create_modal",
+    });
+    expect(privateMetadata).toEqual(expect.any(String));
+    expect(JSON.parse(privateMetadata as string)).toMatchObject({
+      source: "slack.socket_mode.native_agent_factory",
+      accountId: "hana-slack",
+      instanceId: "hana-slack",
+      envelopeId: "env-agent-factory-open-1",
+      userId: "U123",
+      sourceChannelId: "CFACTORY",
+      sourceMessageTs: "1713000000.000100",
+    });
+  });
+
+  it("keeps agent factory modal open failures out of the delayed shell trigger path", async () => {
+    const workflowRoot = join(stateDir!, "workflow-root-failed-modal");
+    const workflowDir = join(workflowRoot, ".ravi", "workflows", "agent-factory");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      join(workflowDir, "modal-view.json"),
+      JSON.stringify({
+        type: "modal",
+        callback_id: "agent_factory_create_modal",
+        title: { type: "plain_text", text: "Novo agent" },
+        submit: { type: "plain_text", text: "Criar" },
+        blocks: [],
+      }),
+      "utf8",
+    );
+
+    dbCreateTrigger({
+      name: "agent factory open modal failure",
+      topic: "ravi.inbound.interaction",
+      message: "",
+      executionType: "shell",
+      shellCommand: `cd ${workflowRoot} && RAVI_SLACK_CONNECTION=hana-slack bun .ravi/workflows/agent-factory/handler.ts`,
+      filter:
+        'data.provider == "slack" && data.interactionType == "block_actions" && data.channelId == "CFAIL" && data.blockId == "agent_factory_actions" && data.actionId == "agent_factory_open_modal"',
+      session: "isolated",
+      cooldownMs: 1000,
+    });
+
+    const order: string[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const viewsOpen = mock(async () => {
+      order.push("views.open");
+      throw new Error("expired_trigger_id");
+    });
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "hana-slack",
+      routeAccountId: "hana-slack",
+      instanceId: "hana-slack",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-workflows",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishInteraction: async (topic, payload) => {
+        order.push("publish");
+        interactions.push({ topic, payload });
+      },
+      webClient: { viewsOpen } as never,
+    });
+
+    const result = await service.handleEnvelope(
+      {
+        envelope_id: "env-agent-factory-open-failed-1",
+        payload: {
+          type: "block_actions",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "CFAIL" },
+          trigger_id: "trigger-agent-factory-expired-1",
+          container: {
+            type: "message",
+            channel_id: "CFAIL",
+            message_ts: "1713000000.000100",
+          },
+          message: {
+            ts: "1713000000.000100",
+          },
+          actions: [
+            {
+              type: "button",
+              block_id: "agent_factory_actions",
+              action_id: "agent_factory_open_modal",
+              action_ts: "1713000001.000200",
+            },
+          ],
+        },
+      },
+      async () => {
+        order.push("ack");
+      },
+    );
+
+    expect(result).toBe("processed");
+    expect(order).toEqual(["ack", "views.open"]);
+    expect(interactions).toHaveLength(0);
+  });
+
+  it("projects Slack modal private_metadata onto view submission interaction events", async () => {
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "hana-slack",
+      routeAccountId: "hana-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishInteraction: async (topic, payload) => {
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-view-submit-1",
+        payload: {
+          type: "view_submission",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          view: {
+            id: "V123",
+            callback_id: "agent_factory_create_modal",
+            private_metadata: JSON.stringify({
+              sourceChannelId: "CFACTORY",
+              sourceMessageTs: "1713000000.000100",
+            }),
+            state: { values: {} },
+          },
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    expect(interactions).toEqual([
+      {
+        topic: "ravi.inbound.interaction",
+        payload: expect.objectContaining({
+          provider: "slack",
+          source: "slack.socket_mode",
+          accountId: "hana-slack",
+          instanceId: "slack-instance-1",
+          envelopeId: "env-view-submit-1",
+          interactionType: "view_submission",
+          teamId: "T1",
+          userId: "U123",
+          viewId: "V123",
+          viewCallbackId: "agent_factory_create_modal",
+          viewPrivateMetadata: expect.any(String),
+          stateValues: {},
+        }),
+      },
+    ]);
   });
 
   it("publishes Slack Work Object link and detail events as inbound interactions", async () => {
