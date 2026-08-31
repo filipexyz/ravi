@@ -1,11 +1,16 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   authorizeGrokAcpPermission,
   buildGrokAcpInitializeParams,
   buildGrokAcpProcessArgs,
   buildGrokAcpSpawnEnv,
+  createGrokAcpSubprocessTransport,
   createGrokRuntimeProvider,
   extractGrokPermissionTool,
+  GROK_FAIL_CLOSED_TOOL_IDS,
   mapGrokToolNameToRavi,
   resolveGrokAcpClientVersion,
   resolveGrokToolAccessRules,
@@ -128,42 +133,83 @@ describe("Grok Build runtime provider", () => {
   });
 
   it("spawns grok agent stdio under Ravi-hosted permission rules, not always-approve", () => {
-    expect(
-      buildGrokAcpProcessArgs({
-        model: "grok-4",
-        effort: "ultra",
-        systemPromptAppend: "Ravi instructions",
-        allowTools: ["Read"],
-        denyTools: ["Bash", "Edit"],
-      }),
-    ).toEqual([
-      "--no-auto-update",
-      "--no-alt-screen",
-      "--permission-mode",
-      "default",
-      "--allow",
-      "Read",
-      "--deny",
-      "Bash",
-      "--deny",
-      "Edit",
-      "--tools",
-      "Read",
-      "-m",
-      "grok-4",
-      "--effort",
-      "high",
-      "--append-system-prompt",
-      "Ravi instructions",
-      "agent",
-      "stdio",
-    ]);
-    expect(
-      buildGrokAcpProcessArgs({
-        denyTools: ["Bash", "Read"],
-      }),
-    ).toEqual(expect.arrayContaining(["--permission-mode", "default", "--disallowed-tools", "Bash,Read"]));
-    expect(buildGrokAcpProcessArgs({ allowTools: ["Read"] }).join(" ")).not.toContain("--always-approve");
+    const args = buildGrokAcpProcessArgs({
+      model: "grok-4",
+      effort: "ultra",
+      systemPromptAppend: "Ravi instructions",
+      allowTools: ["Read"],
+      denyTools: ["Bash", "Edit", "Grep", "WebFetch", "WebSearch", "MCPTool", "TodoWrite", "Agent", "Skill"],
+    });
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--no-auto-update",
+        "--no-alt-screen",
+        "--permission-mode",
+        "default",
+        "--deny",
+        "Bash",
+        "--deny",
+        "Edit",
+        "--tools",
+        "read_file,list_dir",
+        "--no-subagents",
+        "-m",
+        "grok-4",
+        "--effort",
+        "high",
+        "--append-system-prompt",
+        "Ravi instructions",
+        "agent",
+        "stdio",
+      ]),
+    );
+    expect(args.join("\0")).not.toContain("--allow\0Read");
+    expect(args.join("\0")).not.toContain("--allow\0Bash");
+    expect(args).not.toContain("--always-approve");
+    expect(args).not.toContain("bypassPermissions");
+    expect(args.includes("Read") && args[args.indexOf("Read") - 1] === "--tools").toBe(false);
+  });
+
+  it("uses Grok internal tool IDs on --tools and never class-wide --allow for a Bash grant", () => {
+    const args = buildGrokAcpProcessArgs({
+      allowTools: ["Bash"],
+      denyTools: ["Read", "Edit", "Grep", "WebFetch", "WebSearch", "MCPTool", "TodoWrite", "Agent", "Skill"],
+    });
+    expect(args).toEqual(expect.arrayContaining(["--tools", "run_terminal_cmd", "--deny", "Read", "--no-subagents"]));
+    expect(args.join("\0")).not.toContain("--allow\0Bash");
+    expect(args).not.toContain("--always-approve");
+    const toolsValue = args[args.indexOf("--tools") + 1];
+    expect(toolsValue).toBe("run_terminal_cmd");
+    expect(toolsValue).not.toContain("Bash");
+    expect(toolsValue).not.toContain("Read");
+    expect(toolsValue).not.toContain("Edit");
+  });
+
+  it("fail-closes empty grants by stripping Agent/todo_write and passing --no-subagents", () => {
+    const args = buildGrokAcpProcessArgs({
+      allowTools: [],
+      denyTools: [],
+    });
+    const disallowed = args[args.indexOf("--disallowed-tools") + 1];
+    expect(args).toEqual(expect.arrayContaining(["--permission-mode", "default", "--no-subagents"]));
+    expect(args).not.toContain("--tools");
+    expect(disallowed).toContain("todo_write");
+    expect(disallowed).toContain("Agent");
+    expect(disallowed).toContain("task");
+    expect(disallowed).toContain("run_terminal_cmd");
+    expect(GROK_FAIL_CLOSED_TOOL_IDS).toEqual(expect.arrayContaining(["todo_write", "Agent", "task"]));
+    expect(args).not.toContain("--always-approve");
+  });
+
+  it("emits scoped --allow rules only when they are real grants, never a bare class", () => {
+    const args = buildGrokAcpProcessArgs({
+      allowTools: ["Read"],
+      denyTools: ["Bash"],
+      allowRules: ["Read(src/**)", "Read", "Bash(git *)"],
+    });
+    expect(args).toEqual(expect.arrayContaining(["--allow", "Read(src/**)", "--allow", "Bash(git *)"]));
+    expect(args.join("\0")).not.toContain("--allow\0Read\0");
+    expect(args.join("\0")).not.toContain("--allow\0Bash\0");
   });
 
   it("maps strongest Ravi effort values onto Grok high", () => {
@@ -194,11 +240,49 @@ describe("Grok Build runtime provider", () => {
     expect(selectGrokPermissionOutcome(options)).toEqual({ outcome: "selected", optionId: "reject-once" });
   });
 
+  it("selects only allow_once / reject_once and never allow_always or disallow", () => {
+    expect(
+      selectGrokPermissionOutcome(
+        [
+          { optionId: "disallow", kind: "disallow" },
+          { optionId: "allow-always", kind: "allow_always" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        "allow",
+      ),
+    ).toEqual({ outcome: "selected", optionId: "allow-once" });
+    expect(
+      selectGrokPermissionOutcome(
+        [
+          { optionId: "allow-always", kind: "allow_always" },
+          { optionId: "disallow", kind: "disallow" },
+        ],
+        "allow",
+      ),
+    ).toEqual({ outcome: "cancelled" });
+    expect(
+      selectGrokPermissionOutcome(
+        [
+          { optionId: "allow-always", kind: "allow_always" },
+          { optionId: "reject-once", kind: "reject_once" },
+        ],
+        "reject",
+      ),
+    ).toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
   it("maps Grok ACP tool names onto Ravi/Claude tool identities", () => {
     expect(mapGrokToolNameToRavi("Read file")).toBe("Read");
     expect(mapGrokToolNameToRavi("read")).toBe("Read");
+    expect(mapGrokToolNameToRavi("read_file")).toBe("Read");
+    expect(mapGrokToolNameToRavi("list_dir")).toBe("Read");
     expect(mapGrokToolNameToRavi("bash")).toBe("Bash");
+    expect(mapGrokToolNameToRavi("run_terminal_cmd")).toBe("Bash");
+    expect(mapGrokToolNameToRavi("search_replace")).toBe("Edit");
     expect(mapGrokToolNameToRavi("Write")).toBe("Edit");
+    expect(mapGrokToolNameToRavi("todo_write")).toBe("TodoWrite");
+    expect(mapGrokToolNameToRavi("task")).toBe("Agent");
+    expect(mapGrokToolNameToRavi("get_command_or_subagent_output")).toBe("Agent");
     expect(
       extractGrokPermissionTool({
         toolCall: { title: "Read file", kind: "read", rawInput: { path: "README.md" } },
@@ -207,13 +291,34 @@ describe("Grok Build runtime provider", () => {
       toolName: "Read",
       input: { path: "README.md" },
     });
+    expect(
+      extractGrokPermissionTool({
+        toolCall: { toolName: "run_terminal_cmd", rawInput: { command: "git status" } },
+      }),
+    ).toEqual({
+      toolName: "Bash",
+      input: { command: "git status" },
+    });
   });
 
   it("fail-closes spawn rules when no Ravi tool hook is present", async () => {
-    await expect(resolveGrokToolAccessRules()).resolves.toEqual({
-      allow: [],
-      deny: ["Bash", "Edit", "Read", "Grep", "WebFetch", "WebSearch", "MCPTool"],
-    });
+    const rules = await resolveGrokToolAccessRules();
+    expect(rules.allow).toEqual([]);
+    expect(rules.deny).toEqual([
+      "Bash",
+      "Edit",
+      "Read",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "MCPTool",
+      "TodoWrite",
+      "Agent",
+      "Skill",
+    ]);
+    expect(rules.allowToolIds).toEqual([]);
+    expect(rules.allowSubagents).toBe(false);
+    expect(rules.denyToolIds).toEqual(expect.arrayContaining(["todo_write", "Agent", "task", "run_terminal_cmd"]));
   });
 
   it("materializes spawn allow/deny from Ravi canUseTool grants", async () => {
@@ -221,10 +326,28 @@ describe("Grok Build runtime provider", () => {
       behavior: toolName === "Read" || toolName === "Grep" ? ("allow" as const) : ("deny" as const),
       reason: `${toolName} permission denied.`,
     });
-    await expect(resolveGrokToolAccessRules(canUseTool)).resolves.toEqual({
-      allow: ["Read", "Grep"],
-      deny: ["Bash", "Edit", "WebFetch", "WebSearch", "MCPTool"],
-    });
+    const rules = await resolveGrokToolAccessRules(canUseTool);
+    expect(rules.allow).toEqual(["Read", "Grep"]);
+    expect(rules.deny).toEqual(["Bash", "Edit", "WebFetch", "WebSearch", "MCPTool", "TodoWrite", "Agent", "Skill"]);
+    expect(rules.allowToolIds).toEqual(["read_file", "list_dir", "grep"]);
+    expect(rules.allowSubagents).toBe(false);
+  });
+
+  it("fail-closes unknown Grok tools that are not in the hosted catalog", async () => {
+    await expect(
+      authorizeGrokAcpPermission(
+        {
+          options: [
+            { optionId: "reject-once", kind: "reject_once" },
+            { optionId: "allow-once", kind: "allow_once" },
+          ],
+          toolCall: { toolName: "mystery_auto_exec", rawInput: {} },
+        },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+        },
+      ),
+    ).resolves.toEqual({ outcome: "selected", optionId: "reject-once" });
   });
 
   it("fail-closes ACP permission requests when Ravi hooks are missing", async () => {
@@ -277,7 +400,8 @@ describe("Grok Build runtime provider", () => {
     expect(outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
   });
 
-  it("routes Grok shell permission requests through command execution approval", async () => {
+  it("routes Grok shell permission requests through canUseTool(Bash) and command execution", async () => {
+    const tools: string[] = [];
     const commands: string[] = [];
     const outcome = await authorizeGrokAcpPermission(
       {
@@ -285,10 +409,13 @@ describe("Grok Build runtime provider", () => {
           { optionId: "reject-once", kind: "reject_once" },
           { optionId: "allow-once", kind: "allow_once" },
         ],
-        toolCall: { kind: "bash", rawInput: { command: "git status" } },
+        toolCall: { toolName: "run_terminal_cmd", rawInput: { command: "git status" } },
       },
       {
-        canUseTool: async () => ({ behavior: "allow" }),
+        canUseTool: async (toolName) => {
+          tools.push(toolName);
+          return { behavior: toolName === "Bash" ? "allow" : "deny" };
+        },
         approveRuntimeRequest: async (request) => {
           if (request.kind === "command_execution" && typeof request.input?.command === "string") {
             commands.push(request.input.command);
@@ -298,8 +425,42 @@ describe("Grok Build runtime provider", () => {
         },
       },
     );
+    expect(tools).toContain("Bash");
     expect(commands).toEqual(["git status"]);
     expect(outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
+  });
+
+  it("denies a shell call when canUseTool(Bash) is missing even if the command would be approved", async () => {
+    const outcome = await authorizeGrokAcpPermission(
+      {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { toolName: "run_terminal_cmd", rawInput: { command: "git status" } },
+      },
+      {
+        canUseTool: async () => ({ behavior: "deny", reason: "Bash denied." }),
+        approveRuntimeRequest: async () => ({ approved: true }),
+      },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
+  it("denies a shell call when a command is present but no executable authorizer exists", async () => {
+    const outcome = await authorizeGrokAcpPermission(
+      {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+        ],
+        toolCall: { toolName: "run_terminal_cmd", rawInput: { command: "git status" } },
+      },
+      {
+        canUseTool: async () => ({ behavior: "allow" }),
+      },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
   });
 
   it("wires prepareSession approvals through Ravi host services", async () => {
@@ -355,12 +516,18 @@ describe("Grok Build runtime provider", () => {
 
     expect(transport.starts[0]).toMatchObject({
       allowTools: ["Read"],
-      denyTools: ["Bash", "Edit", "Grep", "WebFetch", "WebSearch", "MCPTool"],
+      denyTools: ["Bash", "Edit", "Grep", "WebFetch", "WebSearch", "MCPTool", "TodoWrite", "Agent", "Skill"],
+      allowSubagents: false,
     });
-    expect(buildGrokAcpProcessArgs(transport.starts[0])).toEqual(
-      expect.arrayContaining(["--allow", "Read", "--deny", "Bash", "--tools", "Read"]),
+    const spawned = buildGrokAcpProcessArgs(transport.starts[0]);
+    expect(spawned).toEqual(
+      expect.arrayContaining(["--deny", "Bash", "--tools", "read_file,list_dir", "--no-subagents"]),
     );
-    expect(buildGrokAcpProcessArgs(transport.starts[0])).not.toContain("--always-approve");
+    expect(spawned.join("\0")).not.toContain("--allow\0Read");
+    expect(spawned.join("\0")).not.toContain("--allow\0Bash");
+    expect(spawned).not.toContain("--always-approve");
+    expect(spawned[spawned.indexOf("--tools") + 1]).not.toContain("Read");
+    expect(spawned[spawned.indexOf("--disallowed-tools") + 1]).toEqual(expect.stringContaining("todo_write"));
   });
 
   it("includes a non-empty clientInfo.version on ACP initialize", async () => {
@@ -484,7 +651,14 @@ describe("Grok Build runtime provider", () => {
       cwd: "/tmp",
       model: "grok-4",
       effort: "high",
+      allowTools: [],
+      allowSubagents: false,
     });
+    const emptyGrantArgs = buildGrokAcpProcessArgs(transport.starts[0]);
+    expect(emptyGrantArgs).toEqual(expect.arrayContaining(["--no-subagents", "--disallowed-tools"]));
+    expect(emptyGrantArgs[emptyGrantArgs.indexOf("--disallowed-tools") + 1]).toEqual(
+      expect.stringContaining("todo_write"),
+    );
     expect(transport.requests.map((request) => request.method)).toEqual([
       "initialize",
       "authenticate",
@@ -692,7 +866,111 @@ describe("Grok Build runtime provider", () => {
     expect(events.filter((event) => event.type === "text.delta")).toHaveLength(0);
     expect(events.at(-1)?.type).toBe("turn.complete");
   });
+
+  it("answers incoming ACP session/request_permission over a fake transport", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-grok-acp-"));
+    const responsePath = join(dir, "permission.json");
+    const command = writeFakeGrokAcpCommand(dir, responsePath);
+    const authorized: string[] = [];
+    const transport = createGrokAcpSubprocessTransport({
+      command: process.execPath,
+      commandArgs: [command],
+      authorizePermission: async (params) => {
+        authorized.push(extractGrokPermissionTool(params).toolName);
+        return authorizeGrokAcpPermission(params, {
+          canUseTool: async (toolName) => ({
+            behavior: toolName === "Read" ? "allow" : "deny",
+          }),
+        });
+      },
+    });
+
+    await transport.start({
+      cwd: dir,
+      env: { PATH: process.env.PATH ?? "/usr/bin" },
+      allowTools: ["Read"],
+      denyTools: ["Bash"],
+    });
+    const init = await transport.request("initialize", { protocolVersion: 1, clientInfo: { name: "ravi" } });
+    expect(init).toMatchObject({ protocolVersion: 1 });
+    await waitFor(() => existsSync(responsePath));
+    const recorded = JSON.parse(readFileSync(responsePath, "utf8")) as {
+      result?: { outcome?: { outcome?: string; optionId?: string } };
+    };
+    expect(authorized).toEqual(["Read"]);
+    expect(recorded.result?.outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
+    await transport.close();
+  });
+
+  it("responds cancelled when incoming ACP authorization throws instead of swallowing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-grok-acp-throw-"));
+    const responsePath = join(dir, "permission.json");
+    const command = writeFakeGrokAcpCommand(dir, responsePath);
+    const transport = createGrokAcpSubprocessTransport({
+      command: process.execPath,
+      commandArgs: [command],
+      authorizePermission: async () => {
+        throw new Error("host authorization exploded");
+      },
+    });
+
+    await transport.start({
+      cwd: dir,
+      env: { PATH: process.env.PATH ?? "/usr/bin" },
+    });
+    await transport.request("initialize", { protocolVersion: 1, clientInfo: { name: "ravi" } });
+    await waitFor(() => existsSync(responsePath));
+    const recorded = JSON.parse(readFileSync(responsePath, "utf8")) as {
+      result?: { outcome?: { outcome?: string; optionId?: string } };
+    };
+    expect(recorded.result?.outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
+    await transport.close();
+  });
 });
+
+function writeFakeGrokAcpCommand(dir: string, responsePath: string): string {
+  const script = join(dir, "fake-grok.mjs");
+  writeFileSync(
+    script,
+    `import { createInterface } from "node:readline";
+import { writeFileSync } from "node:fs";
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  let message;
+  try { message = JSON.parse(line); } catch { return; }
+  if (message.method === "initialize") {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { protocolVersion: 1, authMethods: [], agentCapabilities: {} },
+    }) + "\\n");
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 9001,
+      method: "session/request_permission",
+      params: {
+        options: [
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "allow-once", kind: "allow_once" },
+          { optionId: "allow-always", kind: "allow_always" },
+        ],
+        toolCall: { toolName: "read_file", rawInput: { path: "README.md" } },
+      },
+    }) + "\\n");
+    return;
+  }
+  if (message.id === 9001) {
+    writeFileSync(${JSON.stringify(responsePath)}, JSON.stringify(message));
+    return;
+  }
+  if (typeof message.id === "number") {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: {} }) + "\\n");
+  }
+});
+`,
+  );
+  return script;
+}
 
 function createStartRequest(text: string, overrides: Partial<RuntimeStartRequest> = {}): RuntimeStartRequest {
   return {

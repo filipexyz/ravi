@@ -55,19 +55,128 @@ export interface GrokAcpInitializeParams extends Record<string, unknown> {
 
 export type GrokEffort = "none" | "minimal" | "low" | "medium" | "high";
 
-export const GROK_HOSTED_TOOLS = ["Bash", "Edit", "Read", "Grep", "WebFetch", "WebSearch", "MCPTool"] as const;
+/**
+ * Grok permission-rule class names for `--allow` / `--deny`.
+ * These are not `--tools` / `--disallowed-tools` IDs.
+ */
+export const GROK_HOSTED_TOOLS = [
+  "Bash",
+  "Edit",
+  "Read",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+  "MCPTool",
+  "TodoWrite",
+  "Agent",
+  "Skill",
+] as const;
 
 export type GrokHostedTool = (typeof GROK_HOSTED_TOOLS)[number];
 
-const GROK_TOOL_ALIASES: Record<GrokHostedTool, readonly string[]> = {
-  Bash: ["Shell", "Terminal"],
-  Edit: ["Write"],
-  Read: ["ReadFile", "ListDir"],
-  Grep: ["Glob"],
-  WebFetch: ["WebFetch"],
-  WebSearch: ["WebSearch"],
-  MCPTool: ["MCPTool"],
+/**
+ * Official Grok 1.0.5 `--tools` / `--disallowed-tools` internal IDs.
+ * Sources: xAI Grok CLI `--tools` table (`run_terminal_cmd`, `read_file`,
+ * `list_dir`, `search_replace`, `grep`, `todo_write`, `task`, …), built-in
+ * tools table (`search_tool`, `use_tool`, `kill_task`, `get_task_output`),
+ * and background-task docs (`get_command_or_subagent_output`,
+ * `wait_commands_or_subagents`, `kill_command_or_subagent`). `Agent` is the
+ * documented `--disallowed-tools` subagent entry. `Skill` is the Ravi/Claude
+ * skill-invocation name; unrecognized IDs are skipped by Grok.
+ */
+const GROK_TOOL_CATALOG: Record<
+  GrokHostedTool,
+  {
+    aliases: readonly string[];
+    internalIds: readonly string[];
+    permissionPrefix: boolean;
+    autoExec: boolean;
+    subagents?: boolean;
+  }
+> = {
+  Bash: {
+    aliases: ["Shell", "Terminal"],
+    internalIds: ["run_terminal_cmd"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  Edit: {
+    aliases: ["Write"],
+    internalIds: ["search_replace"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  Read: {
+    aliases: ["ReadFile", "ListDir"],
+    internalIds: ["read_file", "list_dir"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  Grep: {
+    aliases: ["Glob"],
+    internalIds: ["grep"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  WebFetch: {
+    aliases: ["WebFetch"],
+    internalIds: ["web_fetch"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  WebSearch: {
+    aliases: ["WebSearch"],
+    internalIds: ["web_search"],
+    permissionPrefix: false,
+    autoExec: false,
+  },
+  MCPTool: {
+    aliases: ["MCPTool"],
+    internalIds: ["search_tool", "use_tool"],
+    permissionPrefix: true,
+    autoExec: false,
+  },
+  TodoWrite: {
+    aliases: ["TodoWrite"],
+    internalIds: ["todo_write"],
+    permissionPrefix: false,
+    autoExec: true,
+  },
+  Agent: {
+    aliases: ["Task", "TaskOutput", "TaskStop", "Agent"],
+    internalIds: [
+      "task",
+      "get_command_or_subagent_output",
+      "get_task_output",
+      "wait_tasks",
+      "wait_commands_or_subagents",
+      "kill_task",
+      "kill_command_or_subagent",
+    ],
+    permissionPrefix: false,
+    autoExec: true,
+    subagents: true,
+  },
+  Skill: {
+    aliases: ["Skill"],
+    internalIds: ["Skill"],
+    permissionPrefix: false,
+    autoExec: true,
+  },
 };
+
+const GROK_TOOL_ALIASES: Record<GrokHostedTool, readonly string[]> = Object.fromEntries(
+  GROK_HOSTED_TOOLS.map((tool) => [tool, GROK_TOOL_CATALOG[tool].aliases]),
+) as Record<GrokHostedTool, readonly string[]>;
+
+/** Extra documented IDs to strip on empty/deny so Grok cannot auto-exec them. */
+export const GROK_FAIL_CLOSED_TOOL_IDS = [
+  ...new Set([
+    ...GROK_HOSTED_TOOLS.flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]),
+    "Agent",
+    "grep_search",
+  ]),
+];
 
 export interface GrokAcpStartInput {
   cwd: string;
@@ -77,11 +186,18 @@ export interface GrokAcpStartInput {
   systemPromptAppend?: string;
   allowTools?: string[];
   denyTools?: string[];
+  /** Scoped permission rules only, e.g. `Read(src/**)` or `Bash(git *)`. Never a bare class. */
+  allowRules?: string[];
+  allowSubagents?: boolean;
 }
 
 export interface GrokToolAccessRules {
   allow: string[];
   deny: string[];
+  allowToolIds: string[];
+  denyToolIds: string[];
+  allowRules: string[];
+  allowSubagents: boolean;
 }
 
 export type GrokPermissionOutcome = { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
@@ -324,14 +440,24 @@ export function createGrokAcpSubprocessTransport(
       return;
     }
     void (async () => {
-      const outcome = options.authorizePermission
-        ? await options.authorizePermission(params, { interrupted })
-        : await authorizeGrokAcpPermission(params, { interrupted });
-      await writeMessage({
-        jsonrpc: "2.0",
-        id,
-        result: { outcome },
-      });
+      try {
+        const outcome = options.authorizePermission
+          ? await options.authorizePermission(params, { interrupted })
+          : await authorizeGrokAcpPermission(params, { interrupted });
+        await writeMessage({
+          jsonrpc: "2.0",
+          id,
+          result: { outcome },
+        });
+      } catch {
+        const fallback = selectGrokPermissionOutcome(params.options, "reject");
+        const outcome: GrokPermissionOutcome = fallback.outcome === "selected" ? fallback : { outcome: "cancelled" };
+        await writeMessage({
+          jsonrpc: "2.0",
+          id,
+          result: { outcome },
+        });
+      }
     })().catch(() => {});
   };
 
@@ -536,19 +662,48 @@ function readNearbyRaviPackageVersion(): string | undefined {
 }
 
 export function buildGrokAcpProcessArgs(
-  input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend" | "allowTools" | "denyTools">,
+  input: Pick<
+    GrokAcpStartInput,
+    "model" | "effort" | "systemPromptAppend" | "allowTools" | "denyTools" | "allowRules" | "allowSubagents"
+  >,
 ): string[] {
+  const granted = new Set((input.allowTools ?? []).filter(isGrokHostedTool));
+  const denied = uniqueStrings(
+    (input.denyTools?.length ? input.denyTools : GROK_HOSTED_TOOLS.filter((tool) => !granted.has(tool))).filter(
+      isGrokHostedTool,
+    ),
+  ).filter(isGrokHostedTool);
+  const allowToolIds = uniqueStrings(input.allowTools ? toolIdsForHostedClasses([...granted]) : []);
+  const denyToolIds = uniqueStrings([
+    ...denied.flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]),
+    ...GROK_FAIL_CLOSED_TOOL_IDS.filter((id) => !allowToolIds.includes(id)),
+  ]);
+  const allowSubagents = input.allowSubagents === true || granted.has("Agent");
+
   const args = ["--no-auto-update", "--no-alt-screen", "--permission-mode", "default"];
-  for (const tool of input.allowTools ?? []) {
-    args.push("--allow", tool);
+  for (const rule of input.allowRules ?? []) {
+    if (isGrokScopedPermissionRule(rule)) {
+      args.push("--allow", rule);
+    }
   }
-  for (const tool of input.denyTools ?? []) {
-    args.push("--deny", tool);
+  for (const tool of denied) {
+    if (GROK_TOOL_CATALOG[tool].permissionPrefix) {
+      args.push("--deny", tool);
+    }
+    if (tool === "Edit") {
+      args.push("--deny", "Write");
+    }
   }
-  if ((input.allowTools?.length ?? 0) > 0) {
-    args.push("--tools", input.allowTools!.join(","));
-  } else if ((input.denyTools?.length ?? 0) > 0) {
-    args.push("--disallowed-tools", input.denyTools!.join(","));
+  if (allowToolIds.length > 0) {
+    args.push("--tools", allowToolIds.join(","));
+    args.push("--disallowed-tools", denyToolIds.join(","));
+  } else {
+    // Empty `--tools` is ignored by Grok 1.0.5. A full documented denylist plus
+    // `--no-subagents` is the fail-closed equivalent that strips auto-exec tools.
+    args.push("--disallowed-tools", GROK_FAIL_CLOSED_TOOL_IDS.join(","));
+  }
+  if (!allowSubagents) {
+    args.push("--no-subagents");
   }
   const model = input.model?.trim();
   if (model && model !== "default") {
@@ -564,6 +719,14 @@ export function buildGrokAcpProcessArgs(
   }
   args.push("agent", "stdio");
   return args;
+}
+
+export function isGrokScopedPermissionRule(rule: string): boolean {
+  return /^(Bash|Edit|Write|Read|Grep|WebFetch|MCPTool)\(.+\)$/.test(rule.trim());
+}
+
+function toolIdsForHostedClasses(classes: GrokHostedTool[]): string[] {
+  return classes.flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]);
 }
 
 export function buildGrokAcpSpawnEnv(input: Pick<GrokAcpStartInput, "env">): NodeJS.ProcessEnv {
@@ -604,21 +767,24 @@ export function selectGrokPermissionOutcome(
   preference: "allow" | "reject" = "reject",
 ): GrokPermissionOutcome {
   const list = Array.isArray(options) ? options : [];
+  const wanted = preference === "allow" ? "allow_once" : "reject_once";
   const match = list.find((option) => {
     if (!isRecord(option)) {
       return false;
     }
-    const kind = firstString(option.kind)?.toLowerCase() ?? "";
-    const optionId = firstString(option.optionId, option.id)?.toLowerCase() ?? "";
-    return preference === "allow"
-      ? kind.includes("allow") || optionId.includes("allow")
-      : kind.includes("reject") || kind.includes("deny") || optionId.includes("reject") || optionId.includes("deny");
+    return grokPermissionOptionTokens(option).includes(wanted);
   });
   const optionId = isRecord(match) ? firstString(match.optionId, match.id) : undefined;
   if (!optionId) {
     return { outcome: "cancelled" };
   }
   return { outcome: "selected", optionId };
+}
+
+function grokPermissionOptionTokens(option: Record<string, unknown>): string[] {
+  return [firstString(option.kind), firstString(option.optionId, option.id)]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase().replace(/[\s-]+/g, "_"));
 }
 
 export async function resolveGrokToolAccessRules(
@@ -633,7 +799,19 @@ export async function resolveGrokToolAccessRules(
       deny.push(tool);
     }
   }
-  return { allow, deny };
+  const allowToolIds = uniqueStrings(toolIdsForHostedClasses(allow.filter(isGrokHostedTool)));
+  const denyToolIds = uniqueStrings([
+    ...deny.filter(isGrokHostedTool).flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]),
+    ...GROK_FAIL_CLOSED_TOOL_IDS.filter((id) => !allowToolIds.includes(id)),
+  ]);
+  return {
+    allow,
+    deny,
+    allowToolIds,
+    denyToolIds,
+    allowRules: [],
+    allowSubagents: allow.includes("Agent"),
+  };
 }
 
 export function mapGrokToolNameToRavi(name?: string): string {
@@ -649,9 +827,37 @@ export function mapGrokToolNameToRavi(name?: string): string {
     normalized.includes("bash") ||
     normalized.includes("shell") ||
     normalized === "execute" ||
-    normalized === "terminal"
+    normalized === "terminal" ||
+    normalized.includes("runterminalcmd") ||
+    normalized.includes("runterminalcommand")
   ) {
     return "Bash";
+  }
+  if (normalized === "todowrite" || normalized.includes("todowrite")) {
+    return "TodoWrite";
+  }
+  if (normalized === "skill" || normalized === "skillinvoke") {
+    return "Skill";
+  }
+  if (
+    normalized.includes("getcommandorsubagent") ||
+    normalized.includes("gettaskoutput") ||
+    normalized.includes("waittasks") ||
+    normalized.includes("waitcommandsorsubagents") ||
+    normalized.includes("killtask") ||
+    normalized.includes("killcommandorsubagent") ||
+    normalized === "wait" ||
+    normalized === "kill"
+  ) {
+    return "Agent";
+  }
+  if (
+    normalized === "task" ||
+    normalized === "agent" ||
+    normalized.includes("subagent") ||
+    normalized.includes("spawnsubagent")
+  ) {
+    return "Agent";
   }
   if (normalized.includes("webfetch") || normalized.includes("webget")) {
     return "WebFetch";
@@ -659,7 +865,7 @@ export function mapGrokToolNameToRavi(name?: string): string {
   if (normalized.includes("websearch") || normalized.includes("webquery")) {
     return "WebSearch";
   }
-  if (normalized.includes("mcp")) {
+  if (normalized.includes("mcp") || normalized === "searchtool" || normalized === "usetool") {
     return "MCPTool";
   }
   if (normalized.includes("grep") || normalized.includes("glob") || normalized.includes("searchcontent")) {
@@ -720,6 +926,8 @@ async function* runGrokTurns(
     systemPromptAppend: input.systemPromptAppend,
     allowTools: toolAccess.allow,
     denyTools: toolAccess.deny,
+    allowRules: toolAccess.allowRules,
+    allowSubagents: toolAccess.allowSubagents,
   };
   const eventIterator = transport.events[Symbol.asyncIterator]();
 
@@ -1072,7 +1280,7 @@ async function isGrokHostedToolAllowed(
   if (!canUseTool) {
     return false;
   }
-  const names = [tool, ...(GROK_TOOL_ALIASES[tool] ?? [])];
+  const names = tool === "Agent" ? ["Agent", "Task"] : [tool, ...(GROK_TOOL_ALIASES[tool] ?? [])];
   for (const name of names) {
     const result = await canUseTool(name, {});
     if (result.behavior === "allow") {
@@ -1088,8 +1296,20 @@ async function decideGrokToolAuthorization(
   rawRequest: Record<string, unknown>,
   handlers: GrokPermissionAuthorizationHandlers,
 ): Promise<boolean> {
+  const mapped = mapGrokToolNameToRavi(toolName);
+  if (!isKnownGrokAuthorizationTool(mapped) && !isKnownGrokAuthorizationTool(toolName)) {
+    return false;
+  }
+
+  const toolAllowed = await isGrokToolAllowedByHost(mapped === "tool" ? toolName : mapped, input, handlers);
   const command = firstString(input.command, input.cmd);
-  if (command && handlers.approveRuntimeRequest) {
+  if (command) {
+    if (!toolAllowed) {
+      return false;
+    }
+    if (!handlers.approveRuntimeRequest) {
+      return false;
+    }
     const result = await handlers.approveRuntimeRequest({
       kind: "command_execution",
       method: "session/request_permission",
@@ -1101,22 +1321,15 @@ async function decideGrokToolAuthorization(
   }
 
   if (handlers.canUseTool) {
-    const names = uniqueStrings([toolName, ...aliasesForGrokTool(toolName)]);
-    for (const name of names) {
-      const result = await handlers.canUseTool(name, input);
-      if (result.behavior === "allow") {
-        return true;
-      }
-    }
-    return false;
+    return toolAllowed;
   }
 
   if (handlers.approveRuntimeRequest) {
-    const kind = toolName === "Edit" || toolName === "Write" ? "file_change" : "permission";
+    const kind = mapped === "Edit" || mapped === "Write" ? "file_change" : "permission";
     const result = await handlers.approveRuntimeRequest({
       kind,
       method: "session/request_permission",
-      toolName,
+      toolName: mapped === "tool" ? toolName : mapped,
       input,
       rawRequest,
     });
@@ -1124,6 +1337,41 @@ async function decideGrokToolAuthorization(
   }
 
   return false;
+}
+
+async function isGrokToolAllowedByHost(
+  toolName: string,
+  input: Record<string, unknown>,
+  handlers: GrokPermissionAuthorizationHandlers,
+): Promise<boolean> {
+  if (!handlers.canUseTool) {
+    return false;
+  }
+  const names = uniqueStrings([toolName, ...aliasesForGrokTool(toolName)]);
+  for (const name of names) {
+    const result = await handlers.canUseTool(name, input);
+    if (result.behavior === "allow") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isKnownGrokAuthorizationTool(name: string): boolean {
+  if (isGrokHostedTool(name)) {
+    return true;
+  }
+  const mapped = mapGrokToolNameToRavi(name);
+  if (isGrokHostedTool(mapped)) {
+    return true;
+  }
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return GROK_HOSTED_TOOLS.some((tool) =>
+    GROK_TOOL_ALIASES[tool].some((alias) => alias.toLowerCase().replace(/[\s_-]+/g, "") === normalized),
+  );
 }
 
 function aliasesForGrokTool(toolName: string): string[] {

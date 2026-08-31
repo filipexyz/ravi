@@ -10,7 +10,9 @@
 - `startSession` starts a fake ACP client and returns a valid runtime handle.
 - `interrupt()` sends `session/cancel` and emits `turn.interrupted`.
 - Resume uses `session/load` with the stored ACP `sessionId` and matching cwd.
-- Spawn args include `agent stdio`, `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, and Ravi-derived `--allow` / `--deny`. They MUST NOT include `--always-approve`.
+- Spawn args include `agent stdio`, `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, `--no-subagents` unless Agent/Task is granted, `--tools` with internal IDs, and `--deny` for ungranted classes. They MUST NOT include `--always-approve` or class-wide `--allow Bash` / `--allow Read` for a mere tool grant.
+- Empty grants still emit `--no-subagents` and `--disallowed-tools` covering `todo_write` and `Agent`.
+- Unknown ACP tools fail closed. Incoming `session/request_permission` is answered over the fake transport. Authorize throws become reject/cancelled.
 - Command override reads `RAVI_GROK_COMMAND`.
 - `xhigh|max|ultra` map to native `--effort high`.
 - `prepareSession` wires `approveRuntimeRequest` from Ravi host services.
