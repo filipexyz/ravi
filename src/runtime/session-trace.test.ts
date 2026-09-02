@@ -2501,6 +2501,104 @@ describe("runtime session trace instrumentation", () => {
     ).toEqual(["Final answer only."]);
   });
 
+  it("persists each visible assistant.message as its own chat.db row in one physical turn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-two-visible-parts");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Part one." },
+        { type: "assistant.message", text: "Part two." },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 2 },
+        },
+      ]),
+    );
+
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual(["Part one.", "Part two."]);
+    expect(assistant).toHaveLength(2);
+    expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
+    expect(assistant.some(({ content }) => content.includes("Part one.\n\nPart two."))).toBe(false);
+  });
+
+  it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-silent-no-row");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Routine finished HEARTBEAT_OK" },
+        { type: "assistant.message", text: "No response requested." },
+        { type: "assistant.message", text: "@@SILENT@@" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+        },
+      ]),
+    );
+
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
+  it("does not persist prompt-too-long assistant text as a durable row", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-prompt-too-long-no-row");
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "assistant.message", text: "prompt is too long" }]));
+
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
+  it("keeps sequential user/assistant turns as distinct chat.db rows", async () => {
+    saveMessage(SESSION_NAME, "user", "hello", null, { agentId: AGENT_ID });
+    const first = makeStreamingSession();
+    seedAdapterTrace(first, "turn-seq-1");
+    await runTraceLoop(
+      first,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "welcome" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-1",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    saveMessage(SESSION_NAME, "user", "ping", null, { agentId: AGENT_ID });
+    const second = makeStreamingSession();
+    seedAdapterTrace(second, "turn-seq-2");
+    await runTraceLoop(
+      second,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "pong" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-2",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const rows = getRecentHistory(SESSION_NAME);
+    expect(rows.map(({ role, content }) => [role, content])).toEqual([
+      ["user", "hello"],
+      ["assistant", "welcome"],
+      ["user", "ping"],
+      ["assistant", "pong"],
+    ]);
+    const assistants = rows.filter(({ role }) => role === "assistant");
+    expect(assistants).toHaveLength(2);
+    expect(assistants[1]!.content).not.toContain(assistants[0]!.content);
+    expect(assistants[0]!.content).not.toContain(assistants[1]!.content);
+  });
+
   it("classifies a provider login stub as turn.failed and keeps it off the transcript", async () => {
     updateRuntimeProviderState(SESSION_KEY, "codex", {
       providerSessionId: "codex-thread",

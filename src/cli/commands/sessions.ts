@@ -1182,6 +1182,25 @@ function buildSessionMutationJson(
   };
 }
 
+function toIsoTimestamp(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
+  }
+  // SQLite datetime('now') is UTC without a timezone suffix.
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const withZone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
+  const date = new Date(withZone);
+  return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
+}
+
 function normalizeChatDbMessage(message: Message): NormalizedTranscriptMessage {
   const source =
     message.agent_id || message.channel || message.account_id || message.chat_id || message.source_message_id
@@ -1193,10 +1212,13 @@ function normalizeChatDbMessage(message: Message): NormalizedTranscriptMessage {
           sourceMessageId: message.source_message_id ?? null,
         }
       : undefined;
+  const createdAt = toIsoTimestamp(message.created_at);
   return {
     role: message.role,
     text: message.content,
-    time: message.created_at ? new Date(message.created_at).toLocaleTimeString() : "",
+    time: createdAt,
+    id: message.id,
+    ...(createdAt ? { createdAt } : {}),
     ...(source ? { source } : {}),
   };
 }
@@ -1433,10 +1455,12 @@ function readMessageMetadataFallback(session: SessionEntry, limit: number): Norm
           ? `[${meta.mediaType} message${meta.mediaPath ? `: ${meta.mediaPath}` : ""}]`
           : "";
       if (!text) return null;
+      const createdAt = toIsoTimestamp(meta.createdAt);
       return {
         role: "user" as const,
         text,
-        time: meta.createdAt ? new Date(meta.createdAt).toLocaleTimeString() : "",
+        time: createdAt,
+        ...(createdAt ? { createdAt } : {}),
       };
     })
     .filter((message): message is NormalizedTranscriptMessage => message !== null);
@@ -6635,6 +6659,8 @@ export interface NormalizedTranscriptMessage {
   role: "user" | "assistant";
   text: string;
   time: string;
+  id?: number;
+  createdAt?: string;
   source?: {
     agentId: string | null;
     channel: string | null;
@@ -6680,7 +6706,8 @@ function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessa
         messages.push({
           role: "user",
           text: content.trim(),
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       } else if (entry.type === "assistant" && entry.message?.content) {
         const parts = entry.message.content as Array<{
@@ -6696,7 +6723,8 @@ function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessa
         messages.push({
           role: "assistant",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       }
     } catch {
@@ -6733,13 +6761,15 @@ function extractCodexTranscriptMessages(raw: string): NormalizedTranscriptMessag
         messages.push({
           role: "user",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       } else if (payloadType === "agent_message") {
         messages.push({
           role: "assistant",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       }
     } catch {

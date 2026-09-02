@@ -712,6 +712,49 @@ describe("SessionCommands wait mode", () => {
     expect(responseText).not.toContain("@@SILENT@@");
   });
 
+  it("joins this turn's assistant rows for CLI-only send -w", async () => {
+    runtimeEvents = [{ type: "turn.complete" }];
+    chatHistory = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+    ];
+    chatHistoryAfterSnapshot = [
+      { id: 1, role: "user", content: "old prompt" },
+      { id: 2, role: "assistant", content: "previous" },
+      { id: 3, role: "user", content: "say two things" },
+      { id: 4, role: "assistant", content: "Part one." },
+      { id: 5, role: "assistant", content: "Part two." },
+    ];
+
+    const commands = new SessionCommands();
+    let responseText = "";
+    const chars = await (commands as any).streamToSession(
+      "grok-cli-probe",
+      "say two things",
+      {
+        sessionKey: "agent:grok-cli-probe:main",
+        name: "grok-cli-probe",
+        agentId: "grok-cli-probe",
+        agentCwd: "/tmp/grok-cli-probe",
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        silent: true,
+        cliDestination: true,
+        onResponse: (chunk: string) => {
+          responseText += chunk;
+        },
+      },
+    );
+
+    expect(responseText).toBe("Part one.\n\nPart two.");
+    expect(chars).toBe("Part one.\n\nPart two.".length);
+    expect(responseText).not.toContain("previous");
+  });
+
   it("throws on timeout instead of treating the wait as success", async () => {
     const commands = new SessionCommands();
     const originalSetTimeout = globalThis.setTimeout;
@@ -2228,6 +2271,12 @@ describe("SessionCommands read", () => {
       "opção 1, 2 e 3",
       "qual o melhor?",
     ]);
+    expect(payload.messages[0].id).toBe(1);
+    expect(payload.messages[1].id).toBe(2);
+    expect(payload.messages[0].createdAt).toBe("2026-04-20T04:29:35.000Z");
+    expect(payload.messages[1].createdAt).toBe("2026-04-20T04:30:48.000Z");
+    expect(payload.messages[0].time).toBe("2026-04-20T04:29:35.000Z");
+    expect(payload.messages[1].time).toBe("2026-04-20T04:30:48.000Z");
     expect(payload.messages[0].source).toEqual({
       agentId: "main",
       channel: "whatsapp-baileys",
@@ -2235,6 +2284,55 @@ describe("SessionCommands read", () => {
       chatId: "63295117615153@lid",
       sourceMessageId: "wamid-1",
     });
+  });
+
+  it("keeps sequential assistant rows distinct on read --json instead of one joined blob", () => {
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "user",
+        content: "hello",
+        created_at: "2026-04-20 04:29:35",
+      },
+      {
+        id: 2,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "welcome",
+        created_at: "2026-04-20 04:29:36",
+      },
+      {
+        id: 3,
+        session_id: "main-dm-615153",
+        role: "user",
+        content: "ping",
+        created_at: "2026-04-20 04:30:48",
+      },
+      {
+        id: 4,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "pong",
+        created_at: "2026-04-20 04:30:49",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.messages).toHaveLength(4);
+    expect(payload.messages.map((message: { role: string; text: string; id: number }) => [message.id, message.role, message.text])).toEqual([
+      [1, "user", "hello"],
+      [2, "assistant", "welcome"],
+      [3, "user", "ping"],
+      [4, "assistant", "pong"],
+    ]);
+    expect(payload.messages[3].text).not.toContain(payload.messages[1].text);
+    expect(payload.messages.every((message: { createdAt: string }) => message.createdAt.endsWith("Z"))).toBe(true);
   });
 
   it("omits the advertised skill catalog from default read --json", () => {

@@ -61,10 +61,12 @@ export function snapshotTranscriptCursor(messages: Array<{ id: number }>): numbe
 }
 
 export function readThisTurnAssistantText(messages: TranscriptMessageLike[], afterId: number): { text: string } | null {
-  const newer = messages.filter((message) => message.id > afterId);
-  const lastAssistant = [...newer].reverse().find((message) => message.role === "assistant");
-  if (!lastAssistant) return null;
-  return { text: sanitizeCliAssistantText(lastAssistant.content) };
+  const assistantParts = messages
+    .filter((message) => message.id > afterId && message.role === "assistant")
+    .map((message) => sanitizeCliAssistantText(message.content))
+    .filter((text) => text.length > 0);
+  if (assistantParts.length === 0) return null;
+  return { text: assistantParts.join("\n\n") };
 }
 
 export async function waitForThisTurnAssistantText(input: WaitForThisTurnAssistantInput): Promise<string | null> {
