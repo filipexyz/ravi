@@ -2525,7 +2525,7 @@ describe("runtime session trace instrumentation", () => {
     expect(assistant.some(({ content }) => content.includes("Part one.\n\nPart two."))).toBe(false);
   });
 
-  it("does not persist silent heartbeat, no-response, or prompt-too-long assistant text", async () => {
+  it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-silent-no-row");
 
