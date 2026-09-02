@@ -1,4 +1,5 @@
 import type { Message } from "../db.js";
+import { splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export const RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON = "runtime_context_window_exhausted";
@@ -172,7 +173,8 @@ function renderHistoryMessage(message: Message): string | undefined {
   if (!content) return undefined;
   const label = message.role === "assistant" ? "Assistant" : "User";
   const timestamp = message.created_at ? ` (${message.created_at})` : "";
-  return `${label}${timestamp}:\n${truncateContent(content, MESSAGE_CHAR_LIMIT)}`;
+  const parts = message.role === "assistant" ? splitEmptyJoinedAssistantUtterances(content) : [content];
+  return parts.map((part) => `${label}${timestamp}:\n${truncateContent(part, MESSAGE_CHAR_LIMIT)}`).join("\n\n");
 }
 
 function findLatestUserRequest(messages: Message[]): string | undefined {

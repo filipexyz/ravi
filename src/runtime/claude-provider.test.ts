@@ -343,6 +343,48 @@ describe("createClaudeRuntimeProvider", () => {
     });
   });
 
+  it("does not empty-join distinct assistant text blocks into one message", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "primeiro?" },
+            { type: "text", text: "Olá" },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-mash",
+        usage: {
+          input_tokens: 4,
+          output_tokens: 2,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "oi" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["primeiro?", "Olá"]);
+  });
+
   it("passes an explicit native executable path when configured", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-3" }];
 

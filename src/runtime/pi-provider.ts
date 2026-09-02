@@ -20,6 +20,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
 import {
@@ -747,8 +748,7 @@ function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEv
       events.push({ type: "item.completed", item, rawEvent, metadata });
       if (message?.role === "assistant") {
         context.lastAssistantMessage = message;
-        const text = extractPiAssistantText(message);
-        if (text) {
+        for (const text of extractPiAssistantTexts(message)) {
           events.push({ type: "assistant.message", text, rawEvent, metadata });
         }
       }
@@ -1420,21 +1420,21 @@ function mapPiUsage(usage: PiUsage | undefined): RuntimeUsage {
   };
 }
 
-function extractPiAssistantText(message: PiAgentMessage): string {
+function extractPiAssistantTexts(message: PiAgentMessage): string[] {
   const content = message.content;
   if (typeof content === "string") {
-    return content;
+    return content.trim() ? [content.trim()] : [];
   }
   if (!Array.isArray(content)) {
-    return "";
+    return [];
   }
-  let text = "";
+  const blocks: string[] = [];
   for (const block of content) {
     if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
-      text += block.text;
+      blocks.push(block.text);
     }
   }
-  return text;
+  return coalesceAssistantTextBlocks(blocks);
 }
 
 function findLastAssistantMessage(messages: unknown[]): PiAgentMessage | undefined {

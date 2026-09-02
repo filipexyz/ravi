@@ -27,6 +27,7 @@ import { buildPluginSkillVisibilitySnapshot, emptySkillVisibilitySnapshot } from
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
+import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
@@ -601,11 +602,11 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
 
     if (message.type === "assistant") {
       const blocks = Array.isArray(message.message?.content) ? message.message.content : [];
-      let text = "";
+      const textBlocks: string[] = [];
 
       for (const block of blocks) {
         if (block?.type === "text" && typeof block.text === "string") {
-          text += block.text;
+          textBlocks.push(block.text);
         }
         if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
           yield {
@@ -616,7 +617,7 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
         }
       }
 
-      if (text) {
+      for (const text of coalesceAssistantTextBlocks(textBlocks)) {
         yield {
           type: "assistant.message",
           text,

@@ -43,6 +43,18 @@ describe("runtime context window recovery", () => {
     expect(prompt.truncated).toBe(false);
   });
 
+  it("does not feed empty-join mashed assistant history as one blob", () => {
+    const prompt = buildRuntimeContextRecoveryPrompt({
+      sessionName: "main",
+      history: [message(1, "user", "continua"), message(2, "assistant", "primeiro?Olá")],
+    });
+
+    expect(prompt.prompt).toContain("primeiro?");
+    expect(prompt.prompt).toContain("Olá");
+    expect(prompt.prompt).not.toContain("primeiro?Olá");
+    expect(prompt.prompt.match(/Assistant /g)?.length).toBeGreaterThan(1);
+  });
+
   it("bounds recovered history by prompt size", () => {
     const history = Array.from({ length: 20 }, (_, index) =>
       message(index + 1, index % 2 === 0 ? "user" : "assistant", `msg-${index} ${"x".repeat(500)}`),

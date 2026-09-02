@@ -24,6 +24,7 @@ import {
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
+import { resolveVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   buildRuntimeContextRecoveryPrompt,
@@ -1732,6 +1733,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSessionParams;
   };
 
+  const recentAssistantContents = (): string[] =>
+    getRecentHistory(sessionName, 48)
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content);
+
   const persistVisibleAssistantMessage = (text: string) => {
     const trimmedVisible = text.trim();
     if (!trimmedVisible) return;
@@ -2376,13 +2382,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               trimmed === "no response needed." ||
               trimmed === "no response needed";
             const commentaryResponse = isCommentaryResponse(event.metadata);
-            const recordAssistantState = (observe: boolean) => {
+            const recordAssistantState = (observe: boolean, text = messageText) => {
               if (observe) {
                 ensureCurrentTurnUserObservation();
                 pushObservationEvent("message.assistant", {
-                  preview: truncateObservationPreview(messageText),
+                  preview: truncateObservationPreview(text),
                   payload: {
-                    chars: messageText.length,
+                    chars: text.length,
                     metadata: event.metadata ?? null,
                   },
                 });
@@ -2395,16 +2401,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 eventGroup: "response",
                 status: "received",
                 payloadJson: {
-                  chars: messageText.length,
+                  chars: text.length,
                   metadata: event.metadata,
                 },
-                preview: messageText,
+                preview: text,
               });
               // Only user-visible (observed) non-commentary text accumulates.
               // Silent / heartbeat / no-response / prompt-too-long stay off the
               // persist buffer so they cannot become durable assistant rows.
               if (observe && !commentaryResponse) {
-                responseText = appendAssistantResponse(responseText, messageText);
+                responseText = appendAssistantResponse(responseText, text);
               }
             };
             if (promptTooLong) {
@@ -2457,34 +2463,59 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               // This content will be persisted/projected/emitted. Fence replay
               // before any of those effects; silent and discarded responses do
               // not advance the materialized-output marker.
+              const visibleUtterances = commentaryResponse
+                ? [messageText]
+                : resolveVisibleAssistantUtterances(messageText, recentAssistantContents());
+              if (!commentaryResponse && visibleUtterances.length === 0) {
+                suppressProviderRawForCurrentTurn = true;
+                recordAssistantState(false);
+                log.info("Skipping replayed or empty-join mashed assistant history", {
+                  sessionName,
+                  textLen: messageText.length,
+                });
+                continue;
+              }
               markCurrentTurnAttemptSafety({ materializedOutput: true });
               fencePendingProviderRawEvent(correlatedProviderRawEvent);
-              recordAssistantState(true);
-              await emitRuntimeEvent({
-                type: "assistant.message",
-                provider: runtimeSession.provider,
-                text: messageText,
-                ...(event.metadata ? { metadata: event.metadata } : {}),
-              });
-              if (!commentaryResponse) {
-                channelResponseText = appendAssistantResponse(channelResponseText, messageText);
-                persistVisibleAssistantMessage(messageText);
-              } else if (streaming.agentMode !== "sentinel") {
-                await projectRuntimeEventToChannel({
-                  ...event,
-                  text: messageText,
+              for (const utterance of visibleUtterances) {
+                recordAssistantState(true, utterance);
+                await emitRuntimeEvent({
+                  type: "assistant.message",
+                  provider: runtimeSession.provider,
+                  text: utterance,
+                  ...(event.metadata ? { metadata: event.metadata } : {}),
+                });
+                if (!commentaryResponse) {
+                  channelResponseText = appendAssistantResponse(channelResponseText, utterance);
+                  persistVisibleAssistantMessage(utterance);
+                } else if (streaming.agentMode !== "sentinel") {
+                  await projectRuntimeEventToChannel({
+                    ...event,
+                    text: utterance,
+                  });
+                }
+                updateRuntimeLiveState(sessionName, {
+                  activity: "streaming",
+                  summary: truncateLiveSummary(utterance) || "response",
+                  agentId: agent.id,
+                  runId,
+                  provider: runtimeSession.provider,
+                  model,
+                  source: streaming.currentSource,
+                });
+                await emitResponse(utterance, event.metadata);
+              }
+              if (
+                !commentaryResponse &&
+                (visibleUtterances.length > 1 || visibleUtterances[0] !== messageText.trim())
+              ) {
+                log.info("Split empty-join assistant mash into turn-immutable rows", {
+                  sessionName,
+                  incomingLen: messageText.length,
+                  utteranceCount: visibleUtterances.length,
+                  utteranceLens: visibleUtterances.map((utterance) => utterance.length),
                 });
               }
-              updateRuntimeLiveState(sessionName, {
-                activity: "streaming",
-                summary: truncateLiveSummary(messageText) || "response",
-                agentId: agent.id,
-                runId,
-                provider: runtimeSession.provider,
-                model,
-                source: streaming.currentSource,
-              });
-              await emitResponse(messageText, event.metadata);
             }
           }
         }
