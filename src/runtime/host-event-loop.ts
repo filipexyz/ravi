@@ -2055,7 +2055,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.lastActivity = Date.now();
 
       // Any event from the provider counts as activity — reset the inactivity watchdog.
-      // The watchdog is only armed after tool.result_delivered, so this is a no-op otherwise.
+      // The watchdog is armed after tool.result_delivered (Codex) or after
+      // tool.completed for providers that finish the tool in-process (Grok/Claude/Pi).
       if (providerInactivityTimer !== undefined && event.type !== "tool.result_delivered") {
         armProviderInactivityWatch();
       }
@@ -2734,6 +2735,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Dynamic Codex callbacks finish on the later result-delivered marker.
         if (!awaitsToolResultDelivery) {
           await finishActiveToolBarrier();
+          // Grok/Claude/Pi do not emit tool.result_delivered. After a mid-turn
+          // utterance plus an in-process tool, session/prompt can stall with no
+          // further events. Arm the after-tool inactivity watch so the turn
+          // still reaches a SPEC terminal instead of sitting on only the mid row.
+          armProviderInactivityWatch();
         }
         continue;
       }

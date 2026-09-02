@@ -1558,7 +1558,13 @@ async function* consumeUntilSettled<T, R>(iterator: AsyncIterator<T>, settled: P
       break;
     }
     if (winner.result.done) {
-      await settledBox;
+      // Stream closed. Give a same-tick session/prompt settlement a chance to
+      // win, then fail closed so the host can emit turn.failed instead of
+      // waiting forever for a prompt that will never settle.
+      await Promise.race([settledBox, Promise.resolve()]);
+      if (!settledValue) {
+        throw new Error("Grok ACP event stream ended before session/prompt settled");
+      }
       return;
     }
     yield winner.result.value;

@@ -887,6 +887,121 @@ describe("Grok Build runtime provider", () => {
     ).toBe(false);
   });
 
+  it("emits mid utterance, tool events, then a second utterance before turn.complete", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "Vou listar os agentes deste Ravi." },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_agents_list",
+            title: "agents.list",
+            kind: "mcp",
+            rawInput: {},
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_agents_list",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "main\njarvis" } }],
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "- main\n- jarvis" },
+          }),
+        );
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("lista os agentes")).events,
+    );
+    const assistantTexts = events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+      )
+      .map((event) => event.text);
+
+    expect(assistantTexts).toEqual(["Vou listar os agentes deste Ravi.", "- main\n- jarvis"]);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.complete",
+    ]);
+    const firstAssistant = events.findIndex((event) => event.type === "assistant.message");
+    const toolStarted = events.findIndex((event) => event.type === "tool.started");
+    const toolCompleted = events.findIndex((event) => event.type === "tool.completed");
+    const lastAssistant = events.reduce(
+      (last, event, index) => (event.type === "assistant.message" ? index : last),
+      -1,
+    );
+    const turnComplete = events.findIndex((event) => event.type === "turn.complete");
+    expect(firstAssistant).toBeGreaterThan(-1);
+    expect(firstAssistant).toBeLessThan(toolStarted);
+    expect(toolStarted).toBeLessThan(toolCompleted);
+    expect(toolCompleted).toBeLessThan(lastAssistant);
+    expect(lastAssistant).toBeLessThan(turnComplete);
+  });
+
+  it("fails the turn when the ACP stream ends after a mid utterance and tool without settling session/prompt", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "Vou listar os agentes deste Ravi." },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_agents_list",
+            title: "agents.list",
+            kind: "mcp",
+            rawInput: {},
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_agents_list",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.endEvents();
+        return new Promise(() => {});
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("lista os agentes")).events,
+    );
+
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+        )
+        .map((event) => event.text),
+    ).toEqual(["Vou listar os agentes deste Ravi."]);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Grok ACP event stream ended before session/prompt settled",
+      recoverable: true,
+    });
+  });
+
   it("keeps token fragments of one Grok marker as a single assistant.message", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {
