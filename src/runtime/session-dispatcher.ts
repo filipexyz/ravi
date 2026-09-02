@@ -799,7 +799,7 @@ export class RuntimeSessionDispatcher {
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id)) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
-        sessionEntry,
+        sessionEntry: sessionEntry ?? undefined,
         agentId: sessionEntry?.agentId ?? agent.id,
         daemonRestartMessages,
       });
