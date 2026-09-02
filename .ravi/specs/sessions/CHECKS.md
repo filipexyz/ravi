@@ -31,4 +31,7 @@
 - Operator / HTTP / app `sessions.send` without `--channel`/`--to` MUST NOT
   emit to leftover `lastChannel` or the default output attachment. Persist
   MUST still store the assistant row for `sessions.read`.
+- Persist MUST refuse empty-join mash (`primeiro?Olá`) and keep one clean row
+  per visible assistant utterance. Multi-message turns (`Part one.` +
+  `Part two.`) MUST still persist as separate rows.
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.

@@ -2599,6 +2599,68 @@ describe("runtime session trace instrumentation", () => {
     expect(assistants[0]!.content).not.toContain(assistants[1]!.content);
   });
 
+  it("refuses empty-join mash of assistant history and keeps the new utterance clean", async () => {
+    saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "Olá. A conexão foi restabelecida.", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "Olá", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "ok.", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "pong", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
+
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-empty-join-mash");
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "assistant.message",
+          text: "Olá. A conexão foi restabelecida.Olá. A conexão foi restabelecida.primeiro?Oláok.pongOi. No que você quer trabalhar?",
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-mash",
+          usage: { inputTokens: 1, outputTokens: 8 },
+        },
+      ]),
+    );
+
+    const rows = getRecentHistory(SESSION_NAME, 20);
+    const assistants = rows.filter(({ role }) => role === "assistant");
+    expect(assistants.map(({ content }) => content)).toEqual([
+      "Olá. A conexão foi restabelecida.",
+      "primeiro?",
+      "Olá",
+      "ok.",
+      "pong",
+      "Oi. No que você quer trabalhar?",
+    ]);
+    expect(assistants.some(({ content }) => content.includes("primeiro?Olá"))).toBe(false);
+    expect(assistants.some(({ content }) => content.includes("ok.pong"))).toBe(false);
+    expect(assistants.at(-1)?.content).toBe("Oi. No que você quer trabalhar?");
+  });
+
+  it("splits a first-turn empty-join mash into separate rows", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-empty-join-first");
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "primeiro?Olá" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-first-mash",
+          usage: { inputTokens: 1, outputTokens: 2 },
+        },
+      ]),
+    );
+
+    const assistants = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?", "Olá"]);
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0]!.id).not.toBe(assistants[1]!.id);
+  });
+
   it("classifies a provider login stub as turn.failed and keeps it off the transcript", async () => {
     updateRuntimeProviderState(SESSION_KEY, "codex", {
       providerSessionId: "codex-thread",

@@ -724,6 +724,43 @@ describe("Grok Build runtime provider", () => {
     ]);
   });
 
+  it("does not empty-join distinct ACP agent messages into one assistant.message", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "primeiro?" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "Olá" },
+          }),
+        );
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("oi")).events,
+    );
+
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+        )
+        .map((event) => event.text),
+    ).toEqual(["primeiro?", "Olá"]);
+    expect(
+      events.some(
+        (event) => event.type === "assistant.message" && "text" in event && event.text.includes("primeiro?Olá"),
+      ),
+    ).toBe(false);
+  });
+
   it("resumes an ACP session with session/load when stored state exists", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {

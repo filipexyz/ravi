@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import type { RuntimeEffort } from "./effort.js";
+import { splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
   RuntimeApprovalHandler,
@@ -1030,14 +1031,16 @@ async function* runGrokTurns(
         }
 
         if (context.assistantText) {
-          const message: RuntimeEvent = {
-            type: "assistant.message",
-            text: context.assistantText,
-            rawEvent: isRecord(result) ? result : { stopReason },
-            metadata,
-          };
-          if (terminalTracker.accept(message)) {
-            yield message;
+          for (const text of splitEmptyJoinedAssistantUtterances(context.assistantText)) {
+            const message: RuntimeEvent = {
+              type: "assistant.message",
+              text,
+              rawEvent: isRecord(result) ? result : { stopReason },
+              metadata,
+            };
+            if (terminalTracker.accept(message)) {
+              yield message;
+            }
           }
         }
 
