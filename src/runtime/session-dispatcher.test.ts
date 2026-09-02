@@ -8,6 +8,7 @@ import {
   fenceRuntimeNativeSteerInput,
   runtimeModelBrokerConfigurationRequiresRestart,
   runtimeModelBrokerRouteRequiresRestart,
+  shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -1685,6 +1686,96 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+
+  it("queues an overlapping sessions.send on the live turn instead of restarting", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-overlap-send-");
+    try {
+      getOrCreateSession("agent:main:test:overlap-send", "main", stateDir, { name: "overlap-send" });
+      const interrupt = mock(async () => {});
+      const activeMessage = createQueuedRuntimeUserMessage({
+        prompt: "first send",
+        deliveryBarrier: "after_response",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      });
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentModel: "trace-model",
+        currentEffort: "low",
+        pendingMessages: [activeMessage],
+        currentTurnPendingIds: [activeMessage.pendingId!],
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("overlap-send", activeSession);
+
+      expect(
+        shouldQueuePromptOnLiveSession(
+          "overlap-send",
+          activeSession,
+          {
+            prompt: "second send",
+            _turnOrigin: buildSessionRelayTurnOrigin("send"),
+            deliveryBarrier: "after_response",
+          },
+          "main",
+        ),
+      ).toBe(true);
+
+      await dispatcher.handlePromptImmediate("overlap-send", {
+        prompt: "second send",
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      });
+
+      expect(activeSession.pendingMessages).toHaveLength(2);
+      expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_response");
+      expect(activeSession.pendingMessages[1]?.launchPrompt?.prompt).toBe("second send");
+      expect(activeSession.queryHandle.provider).toBe("codex");
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not queue onto a live session that belongs to another agent", () => {
+    const activeSession = createActiveSession({
+      agentId: "main",
+      turnActive: true,
+    });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "other-agent",
+        activeSession,
+        { prompt: "second send", deliveryBarrier: "after_response" },
+        "other",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not queue an after_tool send that should interrupt the live turn", () => {
+    const activeSession = createActiveSession({
+      agentId: "main",
+      turnActive: true,
+      toolRunning: false,
+    });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "interrupt-send",
+        activeSession,
+        { prompt: "steer now", deliveryBarrier: "after_tool" },
+        "main",
+      ),
+    ).toBe(false);
   });
 
   it("queues another surface without replacing or interrupting the active turn", async () => {

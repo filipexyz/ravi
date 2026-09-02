@@ -795,8 +795,19 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const sessionRuntimeProviderOverride =
+      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
+    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id)) {
+      await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+        sessionEntry,
+        agentId: sessionEntry?.agentId ?? agent.id,
+        daemonRestartMessages,
+      });
+      return;
+    }
+    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
     const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
-    const modelBrokerPlan = await planRuntimeModelBrokerRoute({
+    modelBrokerPlan = await planRuntimeModelBrokerRoute({
       agent,
       sessionKey: sessionEntry?.sessionKey ?? sessionName,
       turnId: modelBrokerTurnId,
@@ -805,8 +816,6 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    const sessionRuntimeProviderOverride =
-      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     const requestedProvider: RuntimeProviderId = modelBrokerPlan
       ? modelBrokerPlan.lease.runtimeProvider
       : resolveRequestedRuntimeProvider({
@@ -1936,6 +1945,183 @@ export class RuntimeSessionDispatcher {
     await terminalizeCoalescedChannelMessages(sessionName, successor.coalescedMessages);
   }
 
+  private async enqueuePromptOnLiveSession(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    prompt: RuntimeLaunchPrompt,
+    options: {
+      sessionEntry?: SessionEntry;
+      agentId: string;
+      daemonRestartMessages?: RuntimeUserMessage[];
+    },
+  ): Promise<void> {
+    const { sessionEntry, agentId, daemonRestartMessages } = options;
+    log.info("Streaming: pushing message to existing session", { sessionName, reason: "live_session_queue" });
+    if (sessionEntry) {
+      updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
+    }
+    const messageSource = prompt.source ?? existing.currentSource;
+    if (!prompt._resumeStashedMessages) {
+      saveMessage(
+        sessionName,
+        "user",
+        resolvePersistedUserText(prompt),
+        sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+        {
+          agentId,
+          channel: messageSource?.channel ?? prompt.context?.channelId,
+          accountId: messageSource?.accountId ?? prompt.context?.accountId,
+          chatId: messageSource?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        },
+      );
+    }
+
+    const barrier = getRuntimePromptDeliveryBarrier(prompt);
+    const queuedMessages = daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)];
+    appendUniqueRuntimeMessages(existing.pendingMessages, queuedMessages);
+    updateRuntimeLiveState(sessionName, {
+      activity: "thinking",
+      summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      source: prompt.source ?? existing.currentSource,
+    });
+
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.push_existing",
+      eventGroup: "dispatch",
+      status: "queued",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        reason: "live_session_queue",
+      },
+    });
+
+    if (existing.pushMessage) {
+      const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
+      if (deliverableNow) {
+        log.info("Streaming: waking generator", {
+          sessionName,
+          queueSize: existing.pendingMessages.length,
+          barrier: describeDeliveryBarrier(barrier),
+        });
+        const resolver = existing.pushMessage;
+        existing.pushMessage = null;
+        resolver(null);
+      } else {
+        log.info("Streaming: queued without wake", {
+          sessionName,
+          queueSize: existing.pendingMessages.length,
+          barrier: describeDeliveryBarrier(barrier),
+          reason: "waiting_for_barrier",
+        });
+        recordRuntimeTraceEvent({
+          sessionKey: sessionEntry?.sessionKey ?? sessionName,
+          sessionName,
+          agentId: existing.agentId,
+          runId: existing.traceRunId,
+          turnId: existing.currentTraceTurnId,
+          provider: existing.queryHandle.provider,
+          model: existing.currentModel,
+          eventType: "dispatch.queued_busy",
+          eventGroup: "dispatch",
+          status: "queued",
+          source: prompt.source ?? existing.currentSource,
+          messageId: prompt.context?.messageId,
+          payloadJson: {
+            queueSize: existing.pendingMessages.length,
+            barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
+            reason: "waiting_for_barrier",
+          },
+        });
+        this.options
+          .safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.queued",
+            provider: existing.queryHandle.provider,
+            reason: "waiting_for_barrier",
+            barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
+            queueSize: existing.pendingMessages.length,
+            sessionState: describeSessionState(existing),
+            timestamp: new Date().toISOString(),
+          })
+          .catch((error) => {
+            log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+          });
+      }
+      return;
+    }
+
+    const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
+    if (decision.interrupt) {
+      return;
+    }
+    log.info("Streaming: queueing (busy)", {
+      sessionName,
+      queueSize: existing.pendingMessages.length,
+      barrier: describeDeliveryBarrier(barrier),
+      reason: decision.reason,
+      tool: existing.currentToolName,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.queued_busy",
+      eventGroup: "dispatch",
+      status: "queued",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        reason: decision.reason,
+        tool: existing.currentToolName ?? null,
+      },
+    });
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "dispatch.queued",
+        provider: existing.queryHandle.provider,
+        reason: decision.reason,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        queueSize: existing.pendingMessages.length,
+        tool: existing.currentToolName ?? null,
+        sessionState: describeSessionState(existing),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+      });
+    if (decision.reason === "idle_gap") {
+      wakeRuntimeSessionIfDeliverable(sessionName, this.streamingSessions);
+      this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
+    }
+  }
+
   private async tryNativeRuntimeSteer(
     sessionName: string,
     existing: RuntimeHostStreamingSession,
@@ -2025,6 +2211,32 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+export function shouldQueuePromptOnLiveSession(
+  sessionName: string,
+  existing: RuntimeHostStreamingSession,
+  prompt: RuntimeLaunchPrompt,
+  agentId: string,
+): boolean {
+  if (existing.done || existing.agentId !== agentId) {
+    return false;
+  }
+  if (prompt._resumeStashedMessages || prompt._daemonRestartResume || prompt._observation) {
+    return false;
+  }
+  if (
+    prompt._runtimeProviderId &&
+    !prompt._observation &&
+    existing.queryHandle.provider !== prompt._runtimeProviderId
+  ) {
+    return false;
+  }
+  const barrier = getRuntimePromptDeliveryBarrier(prompt);
+  if (canUseNativeRuntimeSteer(existing, barrier, prompt)) {
+    return false;
+  }
+  return !shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId).interrupt;
 }
 
 export function runtimeModelBrokerConfigurationRequiresRestart(
