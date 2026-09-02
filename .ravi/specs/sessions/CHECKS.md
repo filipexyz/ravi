@@ -33,5 +33,8 @@
   MUST still store the assistant row for `sessions.read`.
 - Persist MUST refuse empty-join mash (`primeiro?Olá`) and keep one clean row
   per visible assistant utterance. Multi-message turns (`Part one.` +
-  `Part two.`) MUST still persist as separate rows.
+  `Part two.`, or `A1_LIVESTR_X` + `A2_LIVESTR_X` + `A3_LIVESTR_X`) MUST
+  persist as separate rows as soon as each `assistant.message` arrives, before
+  `turn.complete`. The `assistant.message` runtime SSE MUST fire after the
+  INSERT so `sessions.read` can see the new row.
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.

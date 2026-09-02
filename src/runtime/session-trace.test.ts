@@ -2525,6 +2525,59 @@ describe("runtime session trace instrumentation", () => {
     expect(assistant.some(({ content }) => content.includes("Part one.\n\nPart two."))).toBe(false);
   });
 
+  it("persists A1/A2/A3 utterances as three rows before runtime SSE and before turn.complete", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-a1-a2-a3-live");
+    const rowsWhenRuntimeSse: string[][] = [];
+    const rowsAfterEachUtterance: string[][] = [];
+
+    await runTraceLoop(
+      streaming,
+      {
+        provider: PROVIDER,
+        events: (async function* () {
+          for (const text of ["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]) {
+            yield { type: "assistant.message", text } satisfies RuntimeEvent;
+            rowsAfterEachUtterance.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-a1a2a3",
+            usage: { inputTokens: 1, outputTokens: 3 },
+          } satisfies RuntimeEvent;
+        })(),
+        interrupt: async () => {},
+      },
+      {
+        safeEmit: async (_topic, data) => {
+          if (data.type === "assistant.message") {
+            rowsWhenRuntimeSse.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+        },
+      },
+    );
+
+    expect(rowsAfterEachUtterance).toEqual([
+      ["A1_LIVESTR_X"],
+      ["A1_LIVESTR_X", "A2_LIVESTR_X"],
+      ["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"],
+    ]);
+    expect(rowsWhenRuntimeSse).toEqual(rowsAfterEachUtterance);
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]);
+    expect(assistant).toHaveLength(3);
+    expect(new Set(assistant.map(({ id }) => id)).size).toBe(3);
+    expect(assistant.some(({ content }) => content.includes("A1_LIVESTR_XA2_LIVESTR_X"))).toBe(false);
+  });
+
   it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-silent-no-row");

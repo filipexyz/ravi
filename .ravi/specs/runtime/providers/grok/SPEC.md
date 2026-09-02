@@ -108,7 +108,7 @@ Initial advertised capabilities MUST be:
 
 - Handshake `sessionId` -> `thread.started`.
 - Accepted Ravi prompt -> adapter-synthesized `turn.started`.
-- ACP `agent_message_chunk` -> `text.delta`; accumulated text -> `assistant.message` on terminal success.
+- ACP `agent_message_chunk` -> `text.delta`. Distinct completed utterances -> `assistant.message` as soon as the utterance finishes (non-coalescing next chunk, `tool_call`, or terminal success). MUST NOT empty-join every chunk of a turn into one `assistant.message` (`A1_LIVESTR_XA2_LIVESTR_X`). Token fragments of one utterance still coalesce. A single ACP chunk that already contains several markers stays one message.
 - ACP `agent_thought_chunk` -> `status: thinking`. Thought text MUST NOT become assistant output.
 - ACP `tool_call` -> `tool.started`.
 - ACP `tool_call_update` with `completed` or `failed` -> `tool.completed`.

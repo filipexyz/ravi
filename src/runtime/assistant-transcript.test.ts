@@ -32,6 +32,15 @@ describe("assistant transcript empty-join mash", () => {
     expect(coalesceAssistantTextBlocks(["Hello ", "world"])).toEqual(["Hello world"]);
     expect(coalesceAssistantTextBlocks(["primeiro?", "Olá"])).toEqual(["primeiro?", "Olá"]);
     expect(coalesceAssistantTextBlocks(["primeiro?Olá"])).toEqual(["primeiro?Olá"]);
+    expect(coalesceAssistantTextBlocks(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"])).toEqual([
+      "A1_LIVESTR_X",
+      "A2_LIVESTR_X",
+      "A3_LIVESTR_X",
+    ]);
+    expect(coalesceAssistantTextBlocks(["A1", "_LIVE", "STR", "_X"])).toEqual(["A1_LIVESTR_X"]);
+    expect(splitEmptyJoinedAssistantUtterances("A1_LIVESTR_XA2_LIVESTR_XA3_LIVESTR_X")).toEqual([
+      "A1_LIVESTR_XA2_LIVESTR_XA3_LIVESTR_X",
+    ]);
   });
 
   it("peels already-persisted assistant history from a mashed blob", () => {

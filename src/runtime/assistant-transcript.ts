@@ -5,6 +5,8 @@
  * still emit one `assistant.message` whose `text` is prior utterances
  * empty-joined (`primeiro?Olá`) plus the new reply. Persist must refuse that
  * blob, peel already-stored history, and keep only the new utterance(s).
+ * Consecutive labeled chunks (`A1_LIVESTR_X` + `A2_LIVESTR_X`) must not
+ * coalesce. A single incoming blob without punctuation stays one utterance.
  */
 
 const UPPER_START = /^[\p{Lu}]/u;
@@ -118,11 +120,21 @@ function isConversationalEmptyJoin(left: string, right: string): boolean {
   return leftBody.length >= 4 && right.length >= 2;
 }
 
+function looksLikeStandaloneUtteranceToken(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 6 || /\s/.test(trimmed)) return false;
+  if (!/^[\p{Lu}][\p{L}\p{N}_]*[\p{L}\p{N}]$/u.test(trimmed)) return false;
+  return /[\p{N}_]/u.test(trimmed);
+}
+
 function shouldCoalesceAssistantBlocks(previous: string, next: string): boolean {
   if (next.startsWith(" ") || next.startsWith("\n")) return true;
   if (/^[,;:]/.test(next.trimStart())) return true;
   const joined = previous + next;
   if (looksLikeEmptyJoinMash(joined)) return false;
+  if (looksLikeStandaloneUtteranceToken(previous) && looksLikeStandaloneUtteranceToken(next)) {
+    return false;
+  }
   if (/^[a-zà-ÿ]/u.test(next.trimStart())) return true;
   return !/[.!?…]\s*$/.test(previous.trimEnd());
 }
