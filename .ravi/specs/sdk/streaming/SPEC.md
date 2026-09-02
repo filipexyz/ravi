@@ -11,6 +11,7 @@ tags:
   - long-lived
 applies_to:
   - src/sdk/gateway/**
+  - src/webhooks/http-server.ts
   - src/cli/commands/**
 owners:
   - sdk
@@ -64,6 +65,11 @@ Justificativa:
   reconnect via `Last-Event-ID`.
 - Server MUST mandar comentário keepalive (`: ping`) a cada 15s pra evitar
   proxy/idle timeout.
+- O `Bun.serve` que escuta `/api/v1/_stream/*` MUST set `idleTimeout`
+  (segundos) **acima** do keepalive. Default do Bun é 10s — isso mata SSE
+  idle (incluindo `/_stream/sessions`) antes do primeiro ping. Default
+  Ravi: `idleTimeout=30` (ping 15s + margem). Preferir subir o idleTimeout
+  a abaixar o ping; ping <10s martelaria o canal sem necessidade.
 - Filtros de cliente MUST vir via query string (`?subject=...&since=...`),
   nunca via body.
 - Backpressure: quando cliente é lento, server MUST descartar eventos antigos
@@ -124,6 +130,10 @@ Implementado em:
 
 - `src/sdk/gateway/streaming/*` — registry de channels, encoder SSE,
   keepalive, fila bounded/drop-oldest, auth, escopo e audit.
+- `src/sdk/gateway/http-serve.ts` — `Bun.serve` options compartilhadas
+  (`idleTimeout=30`) para o listener de produção e o gateway de teste.
+- `src/webhooks/http-server.ts` — listener de produção em
+  `RAVI_HTTP_PORT` (:7777) que monta o gateway.
 - `src/sdk/gateway/server.ts` — branch `GET /api/v1/_stream/*` antes do
   dispatcher single-shot.
 - `src/sdk/gateway/route-table.ts` — reserva `/api/v1/_stream/*` para SSE e

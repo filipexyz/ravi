@@ -71,6 +71,11 @@ voltam para o dispatcher single-shot.
 6. **Keepalive presente**: cliente conectado por 30s+ recebe pelo menos 1
    `: ping`.
 
+6b. **Bun idleTimeout > ping**: `DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS * 1000`
+    MUST ser maior que `DEFAULT_KEEPALIVE_MS`. Default Bun é 10s; deixar
+    unset dropa `/_stream/sessions` idle a cada ~10s. Teste:
+    `src/sdk/gateway/http-serve.test.ts` e `src/sdk/gateway/streaming/sse.test.ts`.
+
 7. **Drop-tail funciona**: cliente com socket lento não trava o publisher
    upstream — sem backpressure no NATS subject.
 
