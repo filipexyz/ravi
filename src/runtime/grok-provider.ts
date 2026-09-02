@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import type { RuntimeEffort } from "./effort.js";
-import { splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
+import { coalesceAssistantTextBlocks, splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
   RuntimeApprovalHandler,
@@ -1030,17 +1030,13 @@ async function* runGrokTurns(
           continue;
         }
 
-        if (context.assistantText) {
-          for (const text of splitEmptyJoinedAssistantUtterances(context.assistantText)) {
-            const message: RuntimeEvent = {
-              type: "assistant.message",
-              text,
-              rawEvent: isRecord(result) ? result : { stopReason },
-              metadata,
-            };
-            if (terminalTracker.accept(message)) {
-              yield message;
-            }
+        for (const message of takeCompletedGrokAssistantMessages(
+          context,
+          isRecord(result) ? result : { stopReason },
+          metadata,
+        )) {
+          if (terminalTracker.accept(message)) {
+            yield message;
           }
         }
 
@@ -1167,7 +1163,7 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
     case "agent_message_chunk": {
       const text = extractGrokContentText(update.content);
       if (text) {
-        context.assistantText += text;
+        events.push(...appendGrokAssistantChunk(context, text, rawEvent, metadata));
         events.push({ type: "text.delta", text, metadata });
       }
       break;
@@ -1176,6 +1172,7 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
       events.push({ type: "status", status: "thinking", rawEvent, metadata });
       break;
     case "tool_call": {
+      events.push(...takeCompletedGrokAssistantMessages(context, rawEvent, metadata));
       const toolUse = buildGrokToolUse(update);
       if (toolUse) {
         events.push({ type: "tool.started", toolUse, rawEvent, metadata });
@@ -1208,6 +1205,46 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
   }
 
   return events;
+}
+
+function appendGrokAssistantChunk(
+  context: GrokEventContext,
+  chunk: string,
+  rawEvent: Record<string, unknown>,
+  metadata: RuntimeEventMetadata,
+): RuntimeEvent[] {
+  const coalesced = coalesceAssistantTextBlocks(context.assistantText ? [context.assistantText, chunk] : [chunk]);
+  if (coalesced.length === 0) {
+    context.assistantText = "";
+    return [];
+  }
+  const next = coalesced.at(-1)!;
+  const completed = coalesced.slice(0, -1);
+  context.assistantText = next;
+  return completed.flatMap((text) => toGrokAssistantMessages(text, rawEvent, metadata));
+}
+
+function takeCompletedGrokAssistantMessages(
+  context: GrokEventContext,
+  rawEvent: Record<string, unknown>,
+  metadata: RuntimeEventMetadata,
+): RuntimeEvent[] {
+  const remaining = context.assistantText;
+  context.assistantText = "";
+  return toGrokAssistantMessages(remaining, rawEvent, metadata);
+}
+
+function toGrokAssistantMessages(
+  text: string,
+  rawEvent: Record<string, unknown>,
+  metadata: RuntimeEventMetadata,
+): RuntimeEvent[] {
+  return splitEmptyJoinedAssistantUtterances(text).map((utterance) => ({
+    type: "assistant.message" as const,
+    text: utterance,
+    rawEvent,
+    metadata,
+  }));
 }
 
 function buildGrokToolUse(update: Record<string, unknown>): RuntimeToolUse | null {

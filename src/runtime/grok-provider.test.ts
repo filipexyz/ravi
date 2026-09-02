@@ -759,6 +759,158 @@ describe("Grok Build runtime provider", () => {
         (event) => event.type === "assistant.message" && "text" in event && event.text.includes("primeiro?Olá"),
       ),
     ).toBe(false);
+    expect(events.findIndex((event) => event.type === "assistant.message")).toBeLessThan(
+      events.findIndex((event) => event.type === "turn.complete"),
+    );
+  });
+
+  it("emits each A1/A2/A3 ACP utterance as its own assistant.message before turn.complete", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A1_LIVESTR_X" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A2_LIVESTR_X" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A3_LIVESTR_X" },
+          }),
+        );
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("three")).events,
+    );
+    const assistantTexts = events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+      )
+      .map((event) => event.text);
+
+    expect(assistantTexts).toEqual(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]);
+    expect(assistantTexts.some((text) => text.includes("A1_LIVESTR_XA2_LIVESTR_X"))).toBe(false);
+    const firstAssistant = events.findIndex((event) => event.type === "assistant.message");
+    const lastAssistant = events.findLastIndex((event) => event.type === "assistant.message");
+    const turnComplete = events.findIndex((event) => event.type === "turn.complete");
+    expect(firstAssistant).toBeGreaterThan(-1);
+    expect(lastAssistant).toBeLessThan(turnComplete);
+    expect(events[firstAssistant]).toMatchObject({ type: "assistant.message", text: "A1_LIVESTR_X" });
+    expect(events.slice(firstAssistant + 1, lastAssistant).some((event) => event.type === "text.delta")).toBe(true);
+  });
+
+  it("flushes a completed Grok utterance on tool_call instead of empty-joining the next one", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A1_LIVESTR_X" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_a1",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "one.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_a1",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A2_LIVESTR_X" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_a2",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "two.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_a2",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "A3_LIVESTR_X" },
+          }),
+        );
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("three tools")).events,
+    );
+    const types = events.map((event) => event.type);
+
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+        )
+        .map((event) => event.text),
+    ).toEqual(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]);
+    expect(types.indexOf("assistant.message")).toBeLessThan(types.indexOf("tool.started"));
+    expect(types.lastIndexOf("assistant.message")).toBeLessThan(types.lastIndexOf("turn.complete"));
+    expect(
+      events.some(
+        (event) =>
+          event.type === "assistant.message" && "text" in event && event.text.includes("A1_LIVESTR_XA2_LIVESTR_X"),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps token fragments of one Grok marker as a single assistant.message", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        for (const text of ["A1", "_LIVE", "STR", "_X"]) {
+          transport.pushEvent(
+            sessionUpdate("agent_message_chunk", {
+              content: { type: "text", text },
+            }),
+          );
+        }
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("one marker")).events,
+    );
+
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+        )
+        .map((event) => event.text),
+    ).toEqual(["A1_LIVESTR_X"]);
   });
 
   it("resumes an ACP session with session/load when stored state exists", async () => {

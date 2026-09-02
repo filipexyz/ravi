@@ -22,7 +22,8 @@
 - Handshake `sessionId` maps to `thread.started`.
 - Accepted prompt maps to `turn.started`.
 - `agent_message_chunk` maps to `text.delta`.
-- Accumulated assistant chunks map to `assistant.message`.
+- Token-like chunks of one utterance coalesce into one `assistant.message`.
+- Distinct completed utterances (`primeiro?`+`Olá`, `A1_LIVESTR_X`+`A2_LIVESTR_X`, or text then `tool_call`) MUST emit separate `assistant.message` events mid-turn, not one empty-joined blob at `turn.complete`.
 - `agent_thought_chunk` does not leak hidden reasoning as assistant output.
 - `tool_call` maps to `tool.started`.
 - `tool_call_update` completed/failed maps to `tool.completed`.

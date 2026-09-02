@@ -2479,16 +2479,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               fencePendingProviderRawEvent(correlatedProviderRawEvent);
               for (const utterance of visibleUtterances) {
                 recordAssistantState(true, utterance);
+                if (!commentaryResponse) {
+                  channelResponseText = appendAssistantResponse(channelResponseText, utterance);
+                  persistVisibleAssistantMessage(utterance);
+                }
                 await emitRuntimeEvent({
                   type: "assistant.message",
                   provider: runtimeSession.provider,
                   text: utterance,
                   ...(event.metadata ? { metadata: event.metadata } : {}),
                 });
-                if (!commentaryResponse) {
-                  channelResponseText = appendAssistantResponse(channelResponseText, utterance);
-                  persistVisibleAssistantMessage(utterance);
-                } else if (streaming.agentMode !== "sentinel") {
+                if (commentaryResponse && streaming.agentMode !== "sentinel") {
                   await projectRuntimeEventToChannel({
                     ...event,
                     text: utterance,
