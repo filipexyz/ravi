@@ -800,7 +800,10 @@ describe("Grok Build runtime provider", () => {
     expect(assistantTexts).toEqual(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]);
     expect(assistantTexts.some((text) => text.includes("A1_LIVESTR_XA2_LIVESTR_X"))).toBe(false);
     const firstAssistant = events.findIndex((event) => event.type === "assistant.message");
-    const lastAssistant = events.findLastIndex((event) => event.type === "assistant.message");
+    const lastAssistant = events.reduce(
+      (last, event, index) => (event.type === "assistant.message" ? index : last),
+      -1,
+    );
     const turnComplete = events.findIndex((event) => event.type === "turn.complete");
     expect(firstAssistant).toBeGreaterThan(-1);
     expect(lastAssistant).toBeLessThan(turnComplete);
