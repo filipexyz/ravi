@@ -88,6 +88,18 @@ describe("session CLI surface", () => {
     expect(readThisTurnAssistantText(messages.slice(0, 2), 2)).toBeNull();
   });
 
+  it("joins this turn's assistant rows after the cursor for send -w", () => {
+    const messages = [
+      { id: 1, role: "user", content: "old" },
+      { id: 2, role: "assistant", content: "previous" },
+      { id: 3, role: "user", content: "say two things" },
+      { id: 4, role: "assistant", content: "Part one." },
+      { id: 5, role: "assistant", content: "Part two." },
+    ];
+    expect(readThisTurnAssistantText(messages, 2)).toEqual({ text: "Part one.\n\nPart two." });
+    expect(readThisTurnAssistantText(messages, 2)?.text).not.toContain("previous");
+  });
+
   it("waits when persist lags after turn.complete", async () => {
     const prior = [
       { id: 1, role: "user", content: "old" },

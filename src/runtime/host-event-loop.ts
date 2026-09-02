@@ -1732,6 +1732,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSessionParams;
   };
 
+  const persistVisibleAssistantMessage = (text: string) => {
+    const trimmedVisible = text.trim();
+    if (!trimmedVisible) return;
+    saveMessage(sessionName, "assistant", trimmedVisible, session.providerSessionId ?? session.sdkSessionId ?? null, {
+      agentId: streaming.agentId,
+      channel: streaming.currentSource?.channel,
+      accountId: streaming.currentSource?.accountId,
+      chatId: streaming.currentSource?.chatId,
+      sourceMessageId: streaming.currentSource?.sourceMessageId,
+    });
+  };
+
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const mediaParts = isCommentaryResponse(metadata) ? [] : pendingGeneratedMedia.splice(0);
     const channelBackendOwnsText = streaming.currentChannelBackend !== undefined;
@@ -2388,7 +2400,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 },
                 preview: messageText,
               });
-              if (!commentaryResponse) {
+              // Only user-visible (observed) non-commentary text accumulates.
+              // Silent / heartbeat / no-response / prompt-too-long stay off the
+              // persist buffer so they cannot become durable assistant rows.
+              if (observe && !commentaryResponse) {
                 responseText = appendAssistantResponse(responseText, messageText);
               }
             };
@@ -2453,6 +2468,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               });
               if (!commentaryResponse) {
                 channelResponseText = appendAssistantResponse(channelResponseText, messageText);
+                persistVisibleAssistantMessage(messageText);
               } else if (streaming.agentMode !== "sentinel") {
                 await projectRuntimeEventToChannel({
                   ...event,
@@ -2815,18 +2831,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           await emitResponse("", event.metadata);
         }
 
-        if (!streaming.interrupted && responseText.trim()) {
-          const sdkId = event.providerSessionId;
-          saveMessage(sessionName, "assistant", responseText.trim(), sdkId, {
-            agentId: streaming.agentId,
-            channel: streaming.currentSource?.channel,
-            accountId: streaming.currentSource?.accountId,
-            chatId: streaming.currentSource?.chatId,
-            sourceMessageId: streaming.currentSource?.sourceMessageId,
-          });
-        }
-
-        // Reset for next turn
+        // Visible assistant rows are INSERTed per assistant.message. turn.complete
+        // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
         channelResponseText = "";
         clearPendingGeneratedMedia();
