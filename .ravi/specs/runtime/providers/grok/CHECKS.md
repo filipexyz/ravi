@@ -24,12 +24,14 @@
 - `agent_message_chunk` maps to `text.delta`.
 - Token-like chunks of one utterance coalesce into one `assistant.message`.
 - Distinct completed utterances (`primeiro?`+`Olá`, `A1_LIVESTR_X`+`A2_LIVESTR_X`, or text then `tool_call`) MUST emit separate `assistant.message` events mid-turn, not one empty-joined blob at `turn.complete`.
+- A mid-turn utterance then `tool_call` then a second utterance MUST emit both `assistant.message` events and then exactly one `turn.complete`.
 - `agent_thought_chunk` does not leak hidden reasoning as assistant output.
 - `tool_call` maps to `tool.started`.
 - `tool_call_update` completed/failed maps to `tool.completed`.
 - `session/prompt` `end_turn` maps to `turn.complete` exactly once.
 - `session/prompt` `cancelled` maps to `turn.interrupted`.
 - `session/prompt` rejection maps to `turn.failed`.
+- ACP event stream end after a mid utterance and tool, before `session/prompt` settles, MUST emit recoverable `turn.failed` instead of hanging.
 
 ## Negative Tests
 

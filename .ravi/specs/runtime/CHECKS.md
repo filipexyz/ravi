@@ -12,7 +12,10 @@
 - `text.delta` emits stream chunks without creating assistant messages.
 - `assistant.message` emits user-facing response unless silent/interrupted.
 - `tool.started` records running state and emits tool start.
-- `tool.completed` clears running state and emits tool end.
+- `tool.completed` clears running state and emits tool end. For providers that
+  do not emit `tool.result_delivered` (Grok/Claude/Pi), `tool.completed` also
+  arms the after-tool inactivity watch so a mid-utterance plus tool cannot
+  hang without a terminal.
 - `turn.complete` persists provider state, tokens, trace terminal state, and assistant message.
 - `turn.interrupted` clears response text and keeps pending prompt queue.
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.
@@ -57,6 +60,7 @@
 - Add a capability for dynamic tool calls.
 - Add a capability for system prompt mode: append, override, or provider-composed.
 - Add a capability for session storage mode: provider id, thread id, file path, or opaque params.
-- Add tests for "tool result but no terminal event" recovery.
-- Add tests for multiple assistant messages preserving response boundaries.
+- Covered: mid-utterance then tool then second utterance persists both rows
+  and `turn.complete`. Mid-utterance then tool then provider silence emits
+  `turn.failed` and a terminal `lastTurn`.
 - Add tests or explicit unsupported status for parallel tool calls.

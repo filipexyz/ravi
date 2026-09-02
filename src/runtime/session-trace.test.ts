@@ -172,6 +172,34 @@ function makeRuntimeSession(
   };
 }
 
+function makeRuntimeSessionThenHang(
+  events: RuntimeEvent[],
+  lifecycle?: string[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
+  let resolveClose!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClose = resolve;
+  });
+  return {
+    provider: PROVIDER,
+    events: (async function* () {
+      for (const event of events) {
+        yield event;
+      }
+      await closed;
+    })(),
+    interrupt: async () => {
+      lifecycle?.push("interrupt");
+    },
+    close: async () => {
+      lifecycle?.push("close");
+      resolveClose();
+    },
+    ...options,
+  };
+}
+
 function makeNeverEndingRuntimeSession(
   lifecycle?: string[],
   options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
@@ -2731,6 +2759,136 @@ describe("runtime session trace instrumentation", () => {
     expect(assistant).toHaveLength(3);
     expect(new Set(assistant.map(({ id }) => id)).size).toBe(3);
     expect(assistant.some(({ content }) => content.includes("A1_LIVESTR_XA2_LIVESTR_X"))).toBe(false);
+  });
+
+  it("persists a mid-turn utterance then a final list body and terminalizes lastTurn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-mid-then-continue");
+    const rowsWhenRuntimeSse: string[][] = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Vou listar os agentes deste Ravi." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call-agents-list", name: "agents.list", input: {} },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call-agents-list",
+          toolName: "agents.list",
+          content: "main\njarvis",
+        },
+        { type: "assistant.message", text: "- main\n- jarvis" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-mid-continue",
+          usage: { inputTokens: 2, outputTokens: 4 },
+        },
+      ]),
+      {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+          if (data.type === "assistant.message") {
+            rowsWhenRuntimeSse.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+        },
+      },
+    );
+
+    expect(rowsWhenRuntimeSse).toEqual([
+      ["Vou listar os agentes deste Ravi."],
+      ["Vou listar os agentes deste Ravi.", "- main\n- jarvis"],
+    ]);
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual([
+      "Vou listar os agentes deste Ravi.",
+      "- main\n- jarvis",
+    ]);
+    expect(assistant).toHaveLength(2);
+    expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
+
+    const runtimeTerminals = emitted.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${SESSION_NAME}.runtime` &&
+        (entry.data.type === "turn.complete" ||
+          entry.data.type === "turn.failed" ||
+          entry.data.type === "turn.interrupted"),
+    );
+    expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete"]);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("complete");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(getSessionTurn("turn-mid-then-continue")?.status).toBe("complete");
+  });
+
+  it("terminalizes a mid-turn utterance plus tool hang instead of leaving only the mid row", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-mid-then-tool-hang");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const providerLifecycle: string[] = [];
+    const started = Date.now();
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSessionThenHang(
+          [
+            { type: "assistant.message", text: "Vou listar os agentes deste Ravi." },
+            {
+              type: "tool.started",
+              toolUse: { id: "call-agents-list", name: "agents.list", input: {} },
+            },
+            {
+              type: "tool.completed",
+              toolUseId: "call-agents-list",
+              toolName: "agents.list",
+              content: "main\njarvis",
+            },
+          ],
+          providerLifecycle,
+        ),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(providerLifecycle).toEqual(["close"]);
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Vou listar os agentes deste Ravi."]);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("timeout");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("timeout");
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "provider_inactive",
+    });
   });
 
   it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {

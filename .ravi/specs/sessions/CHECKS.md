@@ -42,4 +42,10 @@
   persist as separate rows as soon as each `assistant.message` arrives, before
   `turn.complete`. The `assistant.message` runtime SSE MUST fire after the
   INSERT so `sessions.read` can see the new row.
+- A mid-turn assistant utterance followed by a tool and a second utterance
+  MUST persist both rows and end with `turn.complete` plus a terminal
+  `lastTurn`. A mid-turn utterance followed by a completed tool and then
+  provider silence MUST NOT leave the session with only that mid row and no
+  terminal for minutes — the host MUST emit `turn.failed` / `turn.interrupted`
+  and write a terminal `lastTurn`.
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.
