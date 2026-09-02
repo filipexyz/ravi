@@ -66,6 +66,26 @@ mas:
 Decisão: spec congela o contrato; implementação espera demanda real
 (provavelmente WA-overlay timeline live ou tasks board live).
 
+### Tradeoff: Ping <10s vs idleTimeout ≥30s
+
+Sintoma canary (pós Caddy #43 flush): Wire/session SSE caía com
+`network_error` a cada ~10s, inclusive idle antes do send.
+`turn.complete` ainda chegava depois do reconnect. Sem `ERR_HTTP2`.
+
+Causa: `Bun.serve` em `:7777` usa `idleTimeout` default de **10s**.
+O gateway manda `: ping` a cada **15s**. O idle mata a conexão antes
+do primeiro keepalive. Não é knob do `client.caddyfile`.
+
+Alternativas:
+
+- Abaixar ping para 5–8s: sobrevive ao default Bun, mas aumenta tráfego
+  em todo `/_stream/*` ocioso.
+- Subir `idleTimeout` para 30s (ping + margem): mantém o contrato de
+  ping 15s e não martela o canal.
+
+Decisão: idleTimeout 30s. Documentado em `DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS`
+e aplicado via `raviHttpServeOptions` no listener de produção.
+
 ### Não-Decisão Pendente
 
 Política de backpressure (server descarta vs cliente acomoda) fica como

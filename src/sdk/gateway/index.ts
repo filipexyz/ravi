@@ -17,7 +17,14 @@ export type { DispatchOptions, DispatchResult, AuditEvent } from "./dispatcher.j
 export { commandUrlPath, buildRouteTable, buildMetaPayload, API_PREFIX } from "./route-table.js";
 export type { RouteTable, RegistryMetaPayload } from "./route-table.js";
 export { defaultStreamChannels } from "./streaming/channels.js";
-export { createSseResponse, createSseReadableStream, encodeSseEvent } from "./streaming/sse.js";
+export { raviHttpServeOptions } from "./http-serve.js";
+export {
+  createSseResponse,
+  createSseReadableStream,
+  encodeSseEvent,
+  DEFAULT_KEEPALIVE_MS,
+  DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS,
+} from "./streaming/sse.js";
 export type {
   StreamAuditEvent,
   StreamChannel,

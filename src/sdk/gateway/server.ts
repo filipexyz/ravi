@@ -18,6 +18,7 @@ import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./a
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
 import { corsHeaders, withCorsHeaders } from "./cors.js";
+import { raviHttpServeOptions } from "./http-serve.js";
 import { handleStreamingRequest } from "./streaming/handler.js";
 import type { StreamingGatewayConfig } from "./streaming/types.js";
 
@@ -36,7 +37,12 @@ interface ServeLike {
 }
 
 declare const Bun: {
-  serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): ServeLike;
+  serve(options: {
+    hostname: string;
+    port: number;
+    idleTimeout?: number;
+    fetch(request: Request): Response | Promise<Response>;
+  }): ServeLike;
 };
 
 export interface GatewayConfig {
@@ -118,19 +124,21 @@ export function startGateway(config: GatewayConfig = {}): GatewayHandle {
   const port = config.port ?? DEFAULT_PORT;
   const ctx = createGatewayHandlerContext(config);
 
-  const server = Bun.serve({
-    hostname: host,
-    port,
-    fetch: async (request) => {
-      const gatewayResponse = await handleGatewayRequest(request, ctx);
-      if (gatewayResponse) return gatewayResponse;
-      const url = new URL(request.url);
-      if (url.pathname === "/health") {
-        return json(200, { ok: true, service: "ravi-sdk-gateway" });
-      }
-      return notFound(url.pathname);
-    },
-  }) as ServeLike;
+  const server = Bun.serve(
+    raviHttpServeOptions({
+      hostname: host,
+      port,
+      fetch: async (request) => {
+        const gatewayResponse = await handleGatewayRequest(request, ctx);
+        if (gatewayResponse) return gatewayResponse;
+        const url = new URL(request.url);
+        if (url.pathname === "/health") {
+          return json(200, { ok: true, service: "ravi-sdk-gateway" });
+        }
+        return notFound(url.pathname);
+      },
+    }),
+  ) as ServeLike;
 
   const url = `http://${host}:${server.port}`;
   log.info("SDK gateway started (test-only standalone listener)", {

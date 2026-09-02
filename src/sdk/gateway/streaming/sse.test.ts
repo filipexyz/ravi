@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { createSseReadableStream, encodeSseEvent } from "./sse.js";
+import {
+  createSseReadableStream,
+  DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS,
+  DEFAULT_KEEPALIVE_MS,
+  encodeSseEvent,
+} from "./sse.js";
 
 describe("SSE encoder", () => {
   it("emits id, event, and single-line JSON data", () => {
@@ -15,6 +20,22 @@ describe("SSE encoder", () => {
 });
 
 describe("SSE readable stream", () => {
+  it("keeps the default ping below Bun idleTimeout", () => {
+    expect(DEFAULT_KEEPALIVE_MS).toBeLessThan(DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS * 1000);
+  });
+
+  it("emits : ping on the keepalive interval", async () => {
+    async function* source() {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+
+    const stream = createSseReadableStream(source(), { keepaliveMs: 25 });
+    const text = await new Response(stream).text();
+
+    expect(text).toContain(": connected");
+    expect(text).toContain(": ping");
+  });
+
   it("assigns monotonic ids after Last-Event-ID", async () => {
     async function* source() {
       yield { event: "message", data: { first: true } };
