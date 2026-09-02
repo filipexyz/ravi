@@ -1762,6 +1762,22 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(false);
   });
 
+  it("does not queue a send that leaves the live task context", () => {
+    const activeSession = createActiveSession({
+      agentId: "main",
+      turnActive: true,
+      currentTaskBarrierTaskId: "task-live",
+    });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "task-exit",
+        activeSession,
+        { prompt: "normal turn", deliveryBarrier: "after_response" },
+        "main",
+      ),
+    ).toBe(false);
+  });
+
   it("does not queue an after_tool send that should interrupt the live turn", () => {
     const activeSession = createActiveSession({
       agentId: "main",

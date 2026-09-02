@@ -759,7 +759,7 @@ export class RuntimeSessionDispatcher {
       this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
-    const sessionEntry = getSessionByName(sessionName);
+    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
     const existing = this.streamingSessions.get(sessionName);
     let daemonRestartMessages: RuntimeUserMessage[] | undefined;
     if (prompt._daemonRestartResume) {
@@ -2230,6 +2230,9 @@ export function shouldQueuePromptOnLiveSession(
     !prompt._observation &&
     existing.queryHandle.provider !== prompt._runtimeProviderId
   ) {
+    return false;
+  }
+  if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
     return false;
   }
   const barrier = getRuntimePromptDeliveryBarrier(prompt);

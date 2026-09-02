@@ -1022,6 +1022,7 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("queues a second sessions.send during an in-flight turn and emits a terminal for both", async () => {
+    updateSessionName(SESSION_KEY, SESSION_NAME);
     const firstSend = createQueuedRuntimeUserMessage({
       prompt: "first overlapping send",
       deliveryBarrier: "after_response",
