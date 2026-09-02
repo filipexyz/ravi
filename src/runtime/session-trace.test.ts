@@ -2546,6 +2546,15 @@ describe("runtime session trace instrumentation", () => {
     expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
   });
 
+  it("does not persist prompt-too-long assistant text as a durable row", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-prompt-too-long-no-row");
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "assistant.message", text: "prompt is too long" }]));
+
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
   it("keeps sequential user/assistant turns as distinct chat.db rows", async () => {
     saveMessage(SESSION_NAME, "user", "hello", null, { agentId: AGENT_ID });
     const first = makeStreamingSession();
