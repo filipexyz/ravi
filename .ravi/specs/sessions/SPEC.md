@@ -87,6 +87,7 @@ Sessions do NOT own:
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Operator CLI-only `sessions send` (no `--channel`/`--to`) sends the raw user text. `[System] Inform:` is reserved for agent-to-agent / in-context sends. `--raw` is the escape hatch.
 - CLI-only `sessions send -w` waits for this turn's assistant transcript after `turn.complete`. Chat-attached `-w` still means delivered. Attach remains fail-closed for chat emit.
+- Every accepted `sessions.send` (operator / HTTP / app) MUST end with a terminal runtime signal: `turn.complete`, `turn.failed`, or `turn.interrupted`. Overlapping sends while a turn is in flight MUST queue behind the live handle (`after_response`, the sessions.send default) and MUST NOT start a second physical provider turn or Hub route preflight. Clients that poll recover from `sessions info --json` `turnUsage.lastTurn` (`status` + `completedAt`).
 - Default `sessions read --json` is session + messages. The advertised skill catalog stays on `sessions visibility` or `sessions read --visibility`.
 - Bare `ravi tui` MUST require a session name (usage error). It MUST NOT default to `main`.
 - CLI-only session bootstrap MUST NOT inherit hardcoded `DEFAULT_RUNTIME_EFFORT = xhigh`. `sessions send --effort` sets an explicit override. The Ravi system prompt remains large.

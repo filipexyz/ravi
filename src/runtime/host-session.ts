@@ -171,6 +171,8 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Whether this physical turn already published a runtime SSE terminal. */
+  runtimeTerminalSseEmitted?: boolean;
   /** Durable crash-recovery attempt currently owning the provider turn. */
   currentCrashRecoveryAttemptId?: string;
   /** First durable terminal fence for the current provider delivery. */

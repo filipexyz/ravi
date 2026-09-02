@@ -31,6 +31,11 @@
 - Operator / HTTP / app `sessions.send` without `--channel`/`--to` MUST NOT
   emit to leftover `lastChannel` or the default output attachment. Persist
   MUST still store the assistant row for `sessions.read`.
+- A second `sessions.send` during an in-flight turn MUST queue and both
+  accepted sends MUST get a terminal `turn.complete` / `turn.failed` /
+  `turn.interrupted` plus a terminal `lastTurn`. The second send MUST NOT
+  hang open without a terminal. `sessions send -w` MUST wait for that send's
+  own terminal, not the overlapped turn's `turn.complete`.
 - Persist MUST refuse empty-join mash (`primeiro?Olá`) and keep one clean row
   per visible assistant utterance. Multi-message turns (`Part one.` +
   `Part two.`, or `A1_LIVESTR_X` + `A2_LIVESTR_X` + `A3_LIVESTR_X`) MUST

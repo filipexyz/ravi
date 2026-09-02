@@ -1329,12 +1329,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
+    if (event.type === "turn.complete" || event.type === "turn.failed" || event.type === "turn.interrupted") {
+      streaming.runtimeTerminalSseEmitted = true;
+    }
     const augmented = {
       ...event,
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
     };
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
+  };
+  const emitHostRuntimeTerminal = async (event: Record<string, unknown>) => {
+    if (streaming.runtimeTerminalSseEmitted) {
+      return;
+    }
+    await emitRuntimeEvent(event);
   };
 
   interface PendingProviderRawEvent {
@@ -1482,6 +1491,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       idleMs,
       autoRecovered,
     });
+    void emitHostRuntimeTerminal({
+      type: "turn.failed",
+      error: `Provider produced no runtime events for ${PROVIDER_TURN_INACTIVITY_TIMEOUT_MS}ms.`,
+      recoverable: true,
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+    });
   };
 
   const recordUnterminatedTurnExit = () => {
@@ -1546,6 +1563,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         autoRecovered: Boolean(restartStashedReason),
         providerTerminalRecorded: Boolean(streaming.currentCrashRecoveryTerminal),
       },
+    });
+    void emitHostRuntimeTerminal({
+      type: eventType,
+      ...(eventType === "turn.failed"
+        ? {
+            error: timedOut
+              ? `Runtime ended without a terminal provider event after ${reason}.`
+              : `Runtime ended without a terminal provider event (${reason}).`,
+            recoverable: true,
+          }
+        : {}),
+      reason,
+      phase: "runtime.event_loop.finally",
     });
   };
 
@@ -2118,6 +2148,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             providerStatus: receivedTerminalStatus,
             winningStatus: terminal.status,
             completedAt: terminal.completedAt,
+          });
+          const winningType = runtimeTurnAttemptTerminalEventType(terminal.status);
+          await emitHostRuntimeTerminal({
+            type: winningType,
+            ...(winningType === "turn.failed"
+              ? { error: "Turn already terminalized by another path", recoverable: true }
+              : {}),
+            reason: "first_terminal_won",
+            winningStatus: terminal.status,
           });
           break;
         }

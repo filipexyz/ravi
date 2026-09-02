@@ -14,6 +14,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
+import { getSessionTurnUsageSummary } from "../router/sessions.js";
 import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
@@ -1018,6 +1019,160 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.pendingMessages[2]?.launchPrompt?.prompt).toBe("hello from gateway");
     expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("stays on this session");
     expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("stays on this session");
+  });
+
+  it("queues a second sessions.send during an in-flight turn and emits a terminal for both", async () => {
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const firstSend = createQueuedRuntimeUserMessage({
+      prompt: "first overlapping send",
+      deliveryBarrier: "after_response",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: undefined,
+      currentEffort: "low",
+      pendingMessages: [firstSend],
+      currentTurnPendingIds: firstSend.pendingId ? [firstSend.pendingId] : [],
+      turnActive: false,
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-overlap-send",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "first overlapping send",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        deliveryBarrier: "after_response",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: PROVIDER,
+      crashRecovery,
+    });
+
+    const providerTurns: string[] = [];
+    const readProviderTurn = async () => {
+      const next = await runtimeRequest.prompt.next();
+      if (next.done) throw new Error("runtime prompt stream ended before the queued overlapping send");
+      providerTurns.push(next.value.message.content);
+    };
+
+    let interruptCalls = 0;
+    let queuedDuringInFlight = false;
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {
+        interruptCalls++;
+      },
+      events: (async function* () {
+        await readProviderTurn();
+        await dispatcher.handlePromptImmediate(SESSION_NAME, {
+          prompt: "second overlapping send",
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+        });
+        queuedDuringInFlight = streaming.pendingMessages.some((message) =>
+          message.message.content.includes("second overlapping send"),
+        );
+        expect(queuedDuringInFlight).toBe(true);
+        expect(interruptCalls).toBe(0);
+        expect(
+          listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+        ).toHaveLength(1);
+
+        yield { type: "assistant.message", text: "first reply" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-first-send",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+
+        await readProviderTurn();
+        yield { type: "assistant.message", text: "second reply" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-second-send",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+      })(),
+    };
+    streaming.queryHandle = runtimeSession;
+
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        agent: makeAgent(),
+        streamingSessions: dispatcher.streamingSessions,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      streaming.done = true;
+      streaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(queuedDuringInFlight).toBe(true);
+    expect(interruptCalls).toBe(0);
+    expect(providerTurns.some((prompt) => prompt.includes("first overlapping send"))).toBe(true);
+    expect(providerTurns.some((prompt) => prompt.includes("second overlapping send"))).toBe(true);
+
+    const runtimeTerminals = emitted.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${SESSION_NAME}.runtime` &&
+        (entry.data.type === "turn.complete" ||
+          entry.data.type === "turn.failed" ||
+          entry.data.type === "turn.interrupted"),
+    );
+    expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete", "turn.complete"]);
+
+    const history = getRecentHistory(SESSION_NAME, 10);
+    expect(history.filter((message) => message.role === "user").map((message) => message.content)).toEqual(
+      expect.arrayContaining(["second overlapping send"]),
+    );
+    expect(history.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
+      "first reply",
+      "second reply",
+    ]);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("complete");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
   });
 
   it("does not emit session-relay HTTP send to leftover lastChannel or default output", async () => {
@@ -3622,6 +3777,7 @@ describe("runtime session trace instrumentation", () => {
       terminalReplayAllowed: false,
     });
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
 
     const events = listSessionEvents(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);

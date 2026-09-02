@@ -511,6 +511,7 @@ export async function* createRuntimeMessageGenerator({
     }
     session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
+    session.runtimeTerminalSseEmitted = false;
 
     try {
       beforeTurnStart?.({

@@ -113,6 +113,11 @@ import {
   snapshotTranscriptCursor,
   waitForThisTurnAssistantText,
 } from "../session-cli-surface.js";
+import {
+  createSessionSendWaitState,
+  isSessionSendWaitTerminal,
+  noteSessionSendWaitRuntimeEvent,
+} from "../session-send-wait.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { publicRuntimeFailureDetail } from "../../runtime/public-failure.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -5593,9 +5598,14 @@ export class SessionCommands {
 
       (async () => {
         try {
+          let waitState = createSessionSendWaitState();
           for await (const event of runtimeStream) {
             const data = event.data as Record<string, unknown>;
             const type = data.type;
+            waitState = noteSessionSendWaitRuntimeEvent(waitState, type);
+            if (!isSessionSendWaitTerminal(waitState, type)) {
+              continue;
+            }
             if (type === "turn.complete") {
               settle({ kind: "complete" });
               break;
