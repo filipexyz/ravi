@@ -684,7 +684,7 @@ describe("channel runtime event projection", () => {
     expect(readback.terminalEvent).toBeUndefined();
   });
 
-  it("retains suppressed non-commentary outcomes locally without projecting them", async () => {
+  it("keeps suppressed non-commentary outcomes off the channel and off durable chat.db rows", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
     const outputs: ChannelOutputEnvelope[] = [];
@@ -749,7 +749,7 @@ describe("channel runtime event projection", () => {
       getHistory(metadata.binding.sessionId)
         .filter((message) => message.role === "assistant")
         .map((message) => message.content),
-    ).toEqual(["Routine finished HEARTBEAT_OK\n\nNo response requested."]);
+    ).toEqual([]);
   });
 
   it("does not project assistant content from an interrupted channel turn", async () => {
