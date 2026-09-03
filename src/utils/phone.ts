@@ -85,6 +85,41 @@ export function normalizePhone(input: string): string {
 }
 
 /**
+ * Canonical identity for route matching and persistence.
+ *
+ * Unlike `normalizePhone`, the non-phone fallback does not strip letters.
+ * Slack `U…` / `C…` / `D…` ids (and other non-JID peers) stay unchanged.
+ * Bare digits are never promoted to `lid:` — LID only if marked `@lid` or `lid:`.
+ */
+export function canonicalizeRouteIdentity(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.includes("*")) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+
+  if (lower.startsWith("lid:")) {
+    const rest = trimmed.slice(4);
+    const withoutServer = rest.toLowerCase().endsWith("@lid") ? rest.slice(0, -4) : rest;
+    return `lid:${withoutServer.replace(/\D/g, "")}`;
+  }
+
+  const parsed = parseJid(trimmed);
+  if (parsed) {
+    if (parsed.isLid) return `lid:${parsed.user}`;
+    if (parsed.isGroup) return `group:${parsed.user}`;
+    return parsed.user;
+  }
+
+  if (lower.startsWith("group:")) return `group:${trimmed.slice(6)}`;
+  if (lower.startsWith("thread:")) return `thread:${trimmed.slice(7)}`;
+
+  if (PHONE_RE.test(trimmed)) return trimmed.replace(/\D/g, "");
+
+  return trimmed;
+}
+
+/**
  * Convert a phone number to a WhatsApp JID.
  */
 export function phoneToJid(phone: string): string | null {

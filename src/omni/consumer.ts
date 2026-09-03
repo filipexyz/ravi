@@ -67,7 +67,7 @@ import {
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { isBroadcastJid } from "../utils/phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid } from "../utils/phone.js";
 import type {
   MessageActorMetadata,
   MessageContext,
@@ -669,9 +669,24 @@ export class OmniConsumer {
     const senderPhone = stripJid(payload.from);
     const resolvedSenderPhone = this.resolveSenderPhone(rawPayload, senderPhone);
     const chatJid = payload.chatId;
-    // For routing: use the canonical phone for DMs when Omni resolved a LID,
-    // while preserving the raw sender as a fallback. Groups still route by chat JID.
-    const routePhone = isGroup ? chatJid : resolvedSenderPhone || senderPhone;
+    const inboundChannel = channelType.replace(/-baileys$/, "");
+    let routePhone: string;
+    if (isGroup) {
+      routePhone = chatJid;
+    } else if (inboundChannel === "whatsapp" && isWhatsAppLidSender(payload.from)) {
+      const explicitResolvedPhone =
+        rawPayloadString(rawPayload, "resolvedSenderPhone") ??
+        cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+      const resolvedIsPhone =
+        explicitResolvedPhone != null &&
+        !isWhatsAppLidSender(explicitResolvedPhone) &&
+        !explicitResolvedPhone.trim().toLowerCase().startsWith("lid:");
+      routePhone = canonicalizeRouteIdentity(resolvedIsPhone ? explicitResolvedPhone : payload.from);
+    } else if (inboundChannel === "whatsapp") {
+      routePhone = canonicalizeRouteIdentity(resolvedSenderPhone || payload.from);
+    } else {
+      routePhone = resolvedSenderPhone || senderPhone;
+    }
 
     // Channel detection: Slack/Discord non-DM channels use "channel" peerKind.
     // accountId is still included in the session key for full isolation.

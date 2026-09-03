@@ -87,12 +87,12 @@ export function parseSessionKey(key: string): Partial<SessionKeyParams> | null {
     return { agentId, dmScope: "main" };
   }
 
-  // agent:X:dm:PHONE (per-peer)
+  // agent:X:dm:PHONE (per-peer). Join remaining parts so lid:X stays intact.
   if (parts[2] === "dm") {
     return {
       agentId,
       peerKind: "dm",
-      peerId: parts[3],
+      peerId: parts.slice(3).join(":") || undefined,
       dmScope: "per-peer",
     };
   }

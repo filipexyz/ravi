@@ -50,6 +50,10 @@ let routeResult: Record<string, unknown> | null = null;
 let configuredAgentMode: "active" | "sentinel" = "active";
 let configuredRoutes: RouteConfig[] = [];
 let useAccountAgentFallback = true;
+const commitMatchedRouteCalls: Array<{
+  matched: { agentId: string; route?: { pattern?: string } };
+  params: { phone: string };
+}> = [];
 
 function defaultRouteResult(): Record<string, unknown> {
   return {
@@ -106,7 +110,10 @@ mock.module("../slash/index.js", () => ({
 mock.module("../router/index.js", () => ({
   ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
-  commitMatchedRoute: () => routeResult,
+  commitMatchedRoute: (matched: { agentId: string; route?: { pattern?: string } }, params: { phone: string }) => {
+    commitMatchedRouteCalls.push({ matched, params });
+    return routeResult;
+  },
 }));
 
 mock.module("../config-store.js", () => ({
@@ -129,6 +136,12 @@ mock.module("../config-store.js", () => ({
           id: "main",
           cwd: agentCwd,
           dmScope: "main",
+          mode: configuredAgentMode,
+        },
+        john: {
+          id: "john",
+          cwd: agentCwd,
+          dmScope: "per-peer",
           mode: configuredAgentMode,
         },
       },
@@ -302,6 +315,7 @@ describe("OmniConsumer channel context", () => {
     contactIntakeMode = "off";
     configuredRoutes = [];
     useAccountAgentFallback = true;
+    commitMatchedRouteCalls.length = 0;
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
     chatMessageCalls.length = 0;
@@ -638,6 +652,138 @@ describe("OmniConsumer channel context", () => {
       senderPhone: "5511947879044",
       isGroup: false,
     });
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("5511947879044");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("main");
+  });
+
+  it("routes unresolved WhatsApp LID DMs by lid: identity instead of falling through to main", async () => {
+    const lidRoute: RouteConfig = {
+      pattern: "lid:224420715061374",
+      accountId: "main",
+      agent: "john",
+      priority: 10,
+      channel: "whatsapp",
+    };
+    const fallbackRoute: RouteConfig = {
+      pattern: "*",
+      accountId: "main",
+      agent: "main",
+      priority: 0,
+    };
+    configuredRoutes = [lidRoute, fallbackRoute];
+    useAccountAgentFallback = true;
+    routeResult = {
+      sessionKey: "agent:john:dm:lid:224420715061374",
+      sessionName: "john-dm-061374",
+      dmScope: "per-peer",
+      route: lidRoute,
+      agent: {
+        id: "john",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:john:dm:lid:224420715061374", "john", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-dm-lid-unresolved",
+      type: "message.received",
+      payload: {
+        externalId: "msg-dm-lid-unresolved",
+        chatId: "224420715061374@lid",
+        from: "224420715061374@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Dudu",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("lid:224420715061374");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("john");
+    expect(commitMatchedRouteCalls[0]?.matched.route?.pattern).toBe("lid:224420715061374");
+    expect(promptCalls).toHaveLength(1);
+  });
+
+  it("does not canonicalize Slack U-ids when routing DMs", async () => {
+    const slackRoute: RouteConfig = {
+      pattern: "U012ABCDEF",
+      accountId: "main",
+      agent: "john",
+      priority: 10,
+      channel: "slack",
+    };
+    configuredRoutes = [slackRoute];
+    useAccountAgentFallback = false;
+    routeResult = {
+      sessionKey: "agent:john:slack:dm:U012ABCDEF",
+      sessionName: "john-dm-abcdef",
+      dmScope: "per-peer",
+      route: slackRoute,
+      agent: {
+        id: "john",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:john:slack:dm:U012ABCDEF", "john", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.slack.instance-1", {
+      id: "evt-slack-uid",
+      type: "message.received",
+      payload: {
+        externalId: "msg-slack-uid",
+        chatId: "D012ABCDEF",
+        from: "U012ABCDEF",
+        content: {
+          type: "text",
+          text: "hello",
+        },
+        rawPayload: {
+          isDm: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "slack",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("U012ABCDEF");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("john");
   });
 
   it("keeps an existing primary output subscription on repeated inbound from the same chat", async () => {

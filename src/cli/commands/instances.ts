@@ -87,6 +87,7 @@ import type { SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
+import { canonicalizeRouteIdentity } from "../../utils/phone.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import { formatInspectionSection, printInspectionField } from "../inspection-output.js";
 
@@ -203,15 +204,26 @@ function assertInstanceMutationRuntime(name: string, allowRuntimeMismatch?: bool
   }
 }
 
+function canonicalizeRoutePatternArg(pattern: string): string {
+  return canonicalizeRouteIdentity(pattern);
+}
+
+function isExactSimulatedRoutePattern(pattern: string): boolean {
+  const canonical = canonicalizeRoutePatternArg(pattern);
+  if (canonical.includes("*")) return false;
+  return canonical.startsWith("group:") || canonical.startsWith("lid:") || /^\d+$/.test(canonical);
+}
+
 function inspectRouteLiveWinner(
   name: string,
   pattern: string,
   channel?: string,
 ): { winningPattern: string; winningAgent: string } | null {
   const config = loadRouterConfig();
+  const canonical = canonicalizeRoutePatternArg(pattern);
 
-  if (pattern.startsWith("group:")) {
-    const groupId = pattern.slice("group:".length);
+  if (canonical.startsWith("group:")) {
+    const groupId = canonical.slice("group:".length);
     const resolved = matchRoute(config, {
       phone: groupId,
       groupId,
@@ -230,9 +242,9 @@ function inspectRouteLiveWinner(
     };
   }
 
-  if (!pattern.includes("*") && /^\d+$/.test(pattern)) {
+  if (canonical.startsWith("lid:") || (!canonical.includes("*") && /^\d+$/.test(canonical))) {
     const resolved = matchRoute(config, {
-      phone: pattern,
+      phone: canonical,
       accountId: name,
       ...(channel ? { channel } : {}),
     });
@@ -253,9 +265,8 @@ function inspectRouteLiveWinner(
 function getRouteLiveEffect(name: string, pattern: string, expectedAgent?: string, channel?: string) {
   const winner = inspectRouteLiveWinner(name, pattern, channel);
   if (!winner) {
-    const exactPattern = pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern));
     return {
-      status: exactPattern ? "unresolved" : "skipped_broad_pattern",
+      status: isExactSimulatedRoutePattern(pattern) ? "unresolved" : "skipped_broad_pattern",
       verified: false,
       winningPattern: null,
       winningAgent: null,
@@ -451,8 +462,9 @@ function buildRouteListPayload(
 
 function printRouteDetails(op: string, name: string, pattern: string): void {
   requireInstance(op, name);
-  const route = dbGetRoute(pattern, name);
-  if (!route) failRouteNotFound(op, name, pattern);
+  const routePattern = canonicalizeRoutePatternArg(pattern);
+  const route = dbGetRoute(routePattern, name);
+  if (!route) failRouteNotFound(op, name, routePattern);
 
   console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
   console.log(`  Agent:     ${route.agent}`);
@@ -463,17 +475,18 @@ function printRouteDetails(op: string, name: string, pattern: string): void {
   console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
   const routeTags = listRouteTags(route.id);
   console.log(`  Tags:      ${routeTags.length > 0 ? routeTags.map((tag) => tag.tagSlug).join(", ") : "-"}`);
-  console.log(`\n  Explain live routing: ravi routes explain ${name} "${pattern}"`);
-  console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
+  console.log(`\n  Explain live routing: ravi routes explain ${name} "${routePattern}"`);
+  console.log(`  Mutate config:        ravi instances routes set ${name} "${routePattern}" <key> <value>`);
 }
 
 function buildRouteDetailsPayload(op: string, name: string, pattern: string, asJson?: boolean) {
   requireInstance(op, name, asJson);
-  const route = dbGetRoute(pattern, name);
-  if (!route) failRouteNotFound(op, name, pattern, asJson);
+  const routePattern = canonicalizeRoutePatternArg(pattern);
+  const route = dbGetRoute(routePattern, name);
+  if (!route) failRouteNotFound(op, name, routePattern, asJson);
   return {
     instance: name,
-    pattern,
+    pattern: routePattern,
     route: {
       ...route,
       tags: listRouteTags(route.id),
@@ -499,28 +512,29 @@ function buildRouteExplanationPayload(op: string, name: string, pattern?: string
     };
   }
 
-  const configuredRoute = dbGetRoute(pattern, name);
+  const routePattern = canonicalizeRoutePatternArg(pattern);
+  const configuredRoute = dbGetRoute(routePattern, name);
   if (configuredRoute) {
     return {
       target,
       instance: name,
-      pattern,
+      pattern: routePattern,
       channel: channel ?? configuredRoute.channel ?? null,
       configuredRoute,
       liveEffect: getRouteLiveEffect(
         name,
-        pattern,
+        routePattern,
         configuredRoute.agent,
         channel ?? configuredRoute.channel ?? undefined,
       ),
     };
   }
 
-  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  const winner = inspectRouteLiveWinner(name, routePattern, channel);
   return {
     target,
     instance: name,
-    pattern,
+    pattern: routePattern,
     channel: channel ?? null,
     configuredRoute: null,
     liveEffect: winner
@@ -550,24 +564,25 @@ function printRouteExplanation(op: string, name: string, pattern?: string, chann
     return;
   }
 
-  const configuredRoute = dbGetRoute(pattern, name);
+  const routePattern = canonicalizeRoutePatternArg(pattern);
+  const configuredRoute = dbGetRoute(routePattern, name);
   if (configuredRoute) {
     console.log(`  Config route:  ${configuredRoute.pattern} → ${configuredRoute.agent}`);
-    printRouteLiveEffect(name, pattern, configuredRoute.agent, channel ?? configuredRoute.channel ?? undefined);
-    console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
-    console.log(`  Mutate config: ravi instances routes set ${name} "${pattern}" <key> <value>`);
+    printRouteLiveEffect(name, routePattern, configuredRoute.agent, channel ?? configuredRoute.channel ?? undefined);
+    console.log(`\n  Route details: ravi routes show ${name} "${routePattern}"`);
+    console.log(`  Mutate config: ravi instances routes set ${name} "${routePattern}" <key> <value>`);
     return;
   }
 
-  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  const winner = inspectRouteLiveWinner(name, routePattern, channel);
   if (!winner) {
-    if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
-      console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+    if (isExactSimulatedRoutePattern(routePattern)) {
+      console.log(`  Live effect:   unresolved for ${routePattern} on instance ${name}`);
     } else {
-      console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
+      console.log(`  Live effect:   broad pattern — exact winner check skipped for ${routePattern}`);
     }
-    console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
-    console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
+    console.log(`\n  Route details: ravi routes show ${name} "${routePattern}"`);
+    console.log(`  Mutate config: ravi instances routes add ${name} "${routePattern}" <agent>`);
     return;
   }
 
@@ -575,8 +590,8 @@ function printRouteExplanation(op: string, name: string, pattern?: string, chann
   console.log("  Live effect:   different winner");
   console.log(`  Winning route: ${winner.winningPattern}`);
   console.log(`  Winning agent: ${winner.winningAgent}`);
-  console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
-  console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
+  console.log(`\n  Route details: ravi routes show ${name} "${routePattern}"`);
+  console.log(`  Mutate config: ravi instances routes add ${name} "${routePattern}" <agent>`);
 }
 
 function sessionKeyAccountId(sessionKey: string): string | null {
@@ -592,6 +607,11 @@ function sessionBelongsToRouteAccount(session: SessionEntry, accountId: string):
   );
 }
 
+function isSharedMainSessionKey(sessionKey: string): boolean {
+  const parts = sessionKey.split(":");
+  return parts.length === 3 && parts[0] === "agent" && parts[2] === "main";
+}
+
 function deleteConflictingSessions(
   pattern: string,
   targetAgent: string,
@@ -599,32 +619,38 @@ function deleteConflictingSessions(
 ): number {
   const sessions = listSessions();
   let deleted = 0;
-  const normalizedPattern = pattern.toLowerCase();
+  const canonical = canonicalizeRoutePatternArg(pattern);
+  const normalizedPattern = canonical.toLowerCase();
   for (const session of sessions) {
     if (!sessionBelongsToRouteAccount(session, opts.accountId)) continue;
+    if (session.agentId === targetAgent) continue;
+    if (isSharedMainSessionKey(session.sessionKey)) continue;
+
     const normalizedSessionKey = session.sessionKey.toLowerCase();
+    const sessionName = (session.name ?? "").toLowerCase();
+    let shouldDelete = false;
+
     if (normalizedPattern.startsWith("group:")) {
-      const groupId = normalizedPattern.replace("group:", "");
-      if (normalizedSessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
-      }
+      const groupId = normalizedPattern.slice("group:".length);
+      shouldDelete = normalizedSessionKey.includes(`group:${groupId}`);
     } else if (normalizedPattern.startsWith("lid:")) {
-      const lid = normalizedPattern.replace("lid:", "");
-      if (normalizedSessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
-      }
-    } else if (pattern.includes("*")) {
-      const regex = new RegExp(pattern.replace(/\*/g, ".*"), "i");
+      const digits = normalizedPattern.slice("lid:".length);
+      const last6 = digits.slice(-6);
+      const hasLidToken = normalizedSessionKey.includes(`lid:${digits}`);
+      const hasLegacyDmPeer =
+        normalizedSessionKey.includes(`:dm:${digits}`) || normalizedSessionKey.endsWith(`dm:${digits}`);
+      const hasLegacyName = last6.length > 0 && sessionName.includes(`-dm-${last6}`);
+      shouldDelete = hasLidToken || hasLegacyDmPeer || hasLegacyName;
+    } else if (canonical.includes("*")) {
+      const regex = new RegExp(canonical.replace(/\*/g, ".*"), "i");
       const match = session.sessionKey.match(/dm:(\d+)/);
-      if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
-      }
+      shouldDelete = Boolean(match && regex.test(match[1]));
+    }
+
+    if (shouldDelete) {
+      deleteSession(session.sessionKey);
+      if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+      deleted++;
     }
   }
   return deleted;
@@ -1725,10 +1751,11 @@ export class InstancesRoutesCommands {
     const pri = priority !== undefined ? parseInt(priority, 10) : 0;
     if (Number.isNaN(pri)) fail(`Invalid priority: ${priority}`);
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
+    const storedPattern = canonicalizeRoutePatternArg(pattern);
 
     try {
       const route = dbCreateRoute({
-        pattern,
+        pattern: storedPattern,
         accountId: name,
         agent,
         priority: pri,
@@ -1740,9 +1767,9 @@ export class InstancesRoutesCommands {
       emitConfigChanged();
 
       // Remove from pending if applicable
-      let removedPending = removeAccountPending(name, pattern);
+      let removedPending = removeAccountPending(name, storedPattern);
       if (!removedPending) {
-        const contact = getContact(pattern);
+        const contact = getContact(storedPattern) ?? getContact(pattern);
         if (contact) {
           for (const id of contact.identities) {
             if (removeAccountPending(name, id.value)) {
@@ -1754,14 +1781,14 @@ export class InstancesRoutesCommands {
       }
 
       // Clean conflicting sessions
-      const cleaned = deleteConflictingSessions(pattern, agent, { accountId: name, silent: Boolean(asJson) });
+      const cleaned = deleteConflictingSessions(storedPattern, agent, { accountId: name, silent: Boolean(asJson) });
 
       const payload = {
         status: "added" as const,
         instance: name,
         route,
         target: inspectCliRuntimeTarget(name),
-        liveEffect: getRouteLiveEffect(name, pattern, agent, channel),
+        liveEffect: getRouteLiveEffect(name, storedPattern, agent, channel),
         removedPending,
         cleanedSessions: cleaned,
         changedCount: 1,
@@ -1772,8 +1799,8 @@ export class InstancesRoutesCommands {
         printInstanceMutationTarget(name);
         const policyLabel = policy ? ` [policy:${policy}]` : "";
         const channelLabel = channel ? ` [channel:${channel}]` : "";
-        console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
-        printRouteLiveEffect(name, pattern, agent, channel);
+        console.log(`✓ Route added: ${storedPattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
+        printRouteLiveEffect(name, storedPattern, agent, channel);
         if (removedPending) console.log(`✓ Removed from pending`);
         if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
       }
@@ -1796,15 +1823,16 @@ export class InstancesRoutesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) failInstanceNotFound("instances routes remove", name, asJson);
-    const route = dbGetRoute(pattern, name);
-    if (!route) failRouteNotFound("instances routes remove", name, pattern, asJson);
+    const routePattern = canonicalizeRoutePatternArg(pattern);
+    const route = dbGetRoute(routePattern, name);
+    if (!route) failRouteNotFound("instances routes remove", name, routePattern, asJson);
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
-    const deleted = dbDeleteRoute(pattern, name);
+    const deleted = dbDeleteRoute(routePattern, name);
     if (deleted) {
       const payload = {
         status: "removed" as const,
         instance: name,
-        pattern,
+        pattern: routePattern,
         route,
         target: inspectCliRuntimeTarget(name),
         changedCount: 1,
@@ -1814,13 +1842,13 @@ export class InstancesRoutesCommands {
       } else {
         printInstanceMutationTarget(name);
         console.log(
-          `✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`,
+          `✓ Route removed: ${routePattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${routePattern}"`,
         );
       }
       emitConfigChanged();
       return payload;
     } else {
-      failRouteNotFound("instances routes remove", name, pattern, asJson);
+      failRouteNotFound("instances routes remove", name, routePattern, asJson);
     }
   }
 
@@ -1915,7 +1943,8 @@ export class InstancesRoutesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) failInstanceNotFound("instances routes set", name, asJson);
-    if (!dbGetRoute(pattern, name)) failRouteNotFound("instances routes set", name, pattern, asJson);
+    const routePattern = canonicalizeRoutePatternArg(pattern);
+    if (!dbGetRoute(routePattern, name)) failRouteNotFound("instances routes set", name, routePattern, asJson);
     if (!ROUTE_SETTABLE_KEYS.includes(key as (typeof ROUTE_SETTABLE_KEYS)[number])) {
       fail(`Invalid key: ${key}. Valid keys: ${ROUTE_SETTABLE_KEYS.join(", ")}`);
     }
@@ -1948,23 +1977,23 @@ export class InstancesRoutesCommands {
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
-      const route = dbUpdateRoute(pattern, updates, name);
+      const route = dbUpdateRoute(routePattern, updates, name);
       emitConfigChanged();
 
       let cleaned = 0;
       if (key === "agent") {
-        cleaned = deleteConflictingSessions(pattern, value, { accountId: name, silent: Boolean(asJson) });
+        cleaned = deleteConflictingSessions(routePattern, value, { accountId: name, silent: Boolean(asJson) });
       }
 
       const payload = {
         status: "updated" as const,
         instance: name,
-        pattern,
+        pattern: routePattern,
         key,
         value: jsonValue,
         route,
         target: inspectCliRuntimeTarget(name),
-        liveEffect: key === "agent" && !clear ? getRouteLiveEffect(name, pattern, value, undefined) : null,
+        liveEffect: key === "agent" && !clear ? getRouteLiveEffect(name, routePattern, value, undefined) : null,
         cleanedSessions: cleaned,
         changedCount: 1,
       };
@@ -1972,9 +2001,9 @@ export class InstancesRoutesCommands {
         printJson(payload);
       } else {
         printInstanceMutationTarget(name);
-        console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
+        console.log(`✓ ${key} set on route ${routePattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
         if (key === "agent" && !clear) {
-          printRouteLiveEffect(name, pattern, value, undefined);
+          printRouteLiveEffect(name, routePattern, value, undefined);
         }
         if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
       }
