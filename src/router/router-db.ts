@@ -8793,10 +8793,7 @@ export function dbGetSessionDefaultChatId(sessionKey: string): string | null {
 /**
  * Latest subscription row for a (session, chat) pair, including detached.
  */
-export function dbGetSessionChatSubscription(
-  sessionKey: string,
-  chatId: string,
-): SessionChatSubscriptionRecord | null {
+export function dbGetSessionChatSubscription(sessionKey: string, chatId: string): SessionChatSubscriptionRecord | null {
   const row = getDb()
     .prepare(
       `

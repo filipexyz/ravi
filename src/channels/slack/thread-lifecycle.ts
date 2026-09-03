@@ -14,12 +14,7 @@ import {
   updateSessionSource,
   updateSessionThreadId,
 } from "../../router/index.js";
-import {
-  dbFindChat,
-  dbGetChat,
-  dbGetSessionDefaultChatId,
-  dbUpsertChat,
-} from "../../router/router-db.js";
+import { dbFindChat, dbGetChat, dbGetSessionDefaultChatId, dbUpsertChat } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type {
   ChannelTurnAction,

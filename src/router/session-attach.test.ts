@@ -216,7 +216,7 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     const chat = makeChat("solo-chat");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, role: "primary" });
     const result = detachChatFromSession(session.sessionKey, chat.id);
-    expect(result).toEqual({ detached: true, outputDetached: true });
+    expect(result).toMatchObject({ detached: true, outputDetached: true, attached: false, defaultOutput: false });
     expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(0);
   });
 
@@ -379,7 +379,9 @@ describe("sessions/attach — migration (dedupe + one-time binding drop)", () =>
     expect(olderSubs).toHaveLength(0);
     expect(newerSubs).toHaveLength(1);
     expect(newerSubs[0].outputAttachedAt).toBeUndefined();
-    expect(listSessionSubscriptions(newer.sessionKey).find((s) => s.chatId === existingOutput.id)?.outputAttachedAt).toBeNumber();
+    expect(
+      listSessionSubscriptions(newer.sessionKey).find((s) => s.chatId === existingOutput.id)?.outputAttachedAt,
+    ).toBeNumber();
   });
 
   it("does not resurrect an intentionally detached pair from a leftover binding", () => {
@@ -521,9 +523,10 @@ describe("sessions/attach — CLI final state", () => {
     expect(attachHuman).toContain(`Default output: ${chat.id}`);
     expect(attachHuman).toContain("Legacy bindings: none");
 
-    const detachJson = JSON.parse(
-      captureStdout(() => commands.detach(session.sessionKey, chat.id, true)),
-    ) as Record<string, unknown>;
+    const detachJson = JSON.parse(captureStdout(() => commands.detach(session.sessionKey, chat.id, true))) as Record<
+      string,
+      unknown
+    >;
     expect(detachJson).toMatchObject({
       session: { sessionKey: session.sessionKey },
       chatId: chat.id,

@@ -210,15 +210,15 @@ interface SelfContextPacket {
   nextReads: string[];
 }
 
+function resolveSessionChatAttachment(sessionKey: string): SessionChatSubscriptionRecord | null {
+  return dbGetSessionOutputAttachment(sessionKey) ?? dbListSessionChatSubscriptions(sessionKey)[0] ?? null;
+}
+
 @Group({
   name: "self",
   description: "Read the current Ravi agent/session/chat context",
   scope: "open",
 })
-function resolveSessionChatAttachment(sessionKey: string): SessionChatSubscriptionRecord | null {
-  return dbGetSessionOutputAttachment(sessionKey) ?? dbListSessionChatSubscriptions(sessionKey)[0] ?? null;
-}
-
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
   @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })

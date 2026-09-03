@@ -1358,7 +1358,7 @@ export class Gateway {
           })
         : null;
       dbSaveMessageMeta(messageId, chatId, {
-        canonicalChatId,
+        canonicalChatId: canonicalChatId ?? undefined,
         actorType: "agent",
         agentId,
         platformIdentityId: agentIdentity?.id,
