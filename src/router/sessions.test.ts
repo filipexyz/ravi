@@ -141,9 +141,10 @@ describe("sessions store", () => {
     expect(attached.find((entry) => entry.chatId === slackChat.id)?.outputAttachedAt).toBeUndefined();
     expect(attached.find((entry) => entry.chatId === whatsappChat.id)?.outputAttachedAt).toBeNumber();
 
-    expect(detachChatFromSession(session.sessionKey, whatsappChat.id)).toEqual({
+    expect(detachChatFromSession(session.sessionKey, whatsappChat.id)).toMatchObject({
       detached: true,
       outputDetached: true,
+      attached: false,
     });
     expect(listSessionSubscriptions(session.sessionKey)).toEqual([
       expect.objectContaining({ chatId: slackChat.id, outputAttachedAt: undefined }),

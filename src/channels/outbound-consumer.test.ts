@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getOrCreateSession } from "../router/sessions.js";
-import { dbBindSessionToChat, dbUpsertChat, dbUpsertChatMessage } from "../router/router-db.js";
+import { attachChatToSession, getOrCreateSession } from "../router/sessions.js";
+import { dbUpsertChat, dbUpsertChatMessage } from "../router/router-db.js";
 import { createSlackThreadLifecycle, getSlackThreadLifecycle } from "./slack/thread-lifecycle-store.js";
 import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
@@ -422,10 +422,11 @@ describe("channel outbound consumer", () => {
         platformChatId: "C123",
         chatType: "channel",
       });
-      dbBindSessionToChat({
+      attachChatToSession({
         sessionKey: "ravi-channels",
         chatId: rootChat.id,
-        agentId: "main",
+        attachedByType: "system",
+        setOutputTarget: true,
       });
       createSlackThreadLifecycle({
         requestId: "slack-thread:req-1",
@@ -1022,10 +1023,11 @@ describe("channel outbound consumer", () => {
         platformChatId: "C123",
         chatType: "channel",
       });
-      dbBindSessionToChat({
+      attachChatToSession({
         sessionKey: "ravi-channels",
         chatId: acceptedChat.id,
-        agentId: "main",
+        attachedByType: "system",
+        setOutputTarget: true,
       });
       const assistant = dbUpsertChatMessage({
         chatId: acceptedChat.id,
@@ -1046,10 +1048,11 @@ describe("channel outbound consumer", () => {
         platformChatId: "C456",
         chatType: "channel",
       });
-      dbBindSessionToChat({
+      attachChatToSession({
         sessionKey: "ravi-channels",
         chatId: movedChat.id,
-        agentId: "main",
+        attachedByType: "system",
+        setOutputTarget: true,
       });
       const job = makeJob();
       job.request.origin.responsePhase = "final_answer";

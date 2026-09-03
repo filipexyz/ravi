@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat } from "../router/router-db.js";
+import { attachChatToSession } from "../router/sessions.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   addThreadEntry,
@@ -86,12 +87,12 @@ describe("threads service", () => {
       title: "Ravi Threads",
       seenAt: 1000,
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey: targetSession.sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test",
-      seenAt: 1000,
+      attachedByType: "system",
+      attachedReason: "test",
+      setOutputTarget: true,
     });
 
     const created = prepareThreadHandoff({

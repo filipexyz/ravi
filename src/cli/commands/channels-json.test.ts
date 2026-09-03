@@ -274,7 +274,6 @@ mock.module("../../router/router-db.js", () => ({
     chatParticipants.push(input);
     return input;
   },
-  dbBindSessionToChat: (input: Record<string, unknown>) => input,
   dbUpdateAgent: (id: string, updates: Partial<{ cwd: string; provider?: string; model?: string }>) => {
     const current = knownAgents.get(id) ?? { id, cwd: "/tmp" };
     const updated = { ...current, ...updates, id };

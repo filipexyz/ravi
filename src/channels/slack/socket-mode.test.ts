@@ -24,6 +24,7 @@ import {
   dbGetChat,
   dbGetChannelBackendIngressReceiptByTurnId,
   dbGetContext,
+  dbLegacySessionChatBindingsTableExists,
   dbListChatParticipants,
   dbUpsertChat,
   dbUpsertInstance,
@@ -819,6 +820,7 @@ describe("Slack Socket Mode routing", () => {
         role: "primary",
       }),
     ]);
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
   });
 
   it("persists a message envelope before ack and resumes it after transient publication failure", async () => {

@@ -24,8 +24,13 @@
 10. For a real WhatsApp/Slack inbound turn, the runtime prompt MUST start
     with `[session surface] This turn came from a …`. The persisted user
     row MAY keep that prefix.
-11. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
-12. Do not add a `from` field to `sessions.send`. App identity stays on
+11. Confirm `session_chat_bindings` is absent after init. Detach MUST remain
+    detached across `closeRouterDb()` / `getDb()` and leftover bindings MUST
+    not come back as subscriptions.
+12. `ravi sessions attach|detach --json` MUST show attached/default-output
+    state, remaining active subscriptions, and `legacy.status: none`.
+13. Do not reintroduce `speech`, `mute`, `unmute`, or `focus`.
+14. Do not add a `from` field to `sessions.send`. App identity stays on
     `context issue`; `[from:]` is only `callerSessionKey` inside Inform.
 
 ## Validation

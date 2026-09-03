@@ -152,6 +152,11 @@ is the escape hatch. Chat-attached `-w` still means delivered.
   output.
 - `detach` removes the subscription and clears it as default.
 - `subscriptions` lists active chats and the default marker.
+- `--json` attach/detach MUST report the final state: session identity/name,
+  requested chat id, whether that chat is attached, whether it is the default
+  output, remaining active subscriptions (chat id, role, default output,
+  detached flag), and explicit `legacy.status` of `none` for
+  `session_chat_bindings`. Human output MUST summarize the same state.
 
 There is no speech mode. `mute`, `unmute`, and `focus` are not part of this
 capability.
@@ -161,10 +166,22 @@ wiring.
 
 ## Persistence
 
+- `session_chat_subscriptions` is the sole source of truth for attach, detach,
+  inbound chat participation, and default output.
+- One chat belongs to at most one active session. One session MAY have many
+  active chats. At most one active output exists per session.
+- `detach` removes the active association and clears default output for that
+  chat. It MUST NOT delete the session or its history. Repeated detach is
+  idempotent.
 - Resetting provider continuity MUST preserve chat subscriptions.
 - Deleting a session MUST cascade to its subscriptions.
 - Existing databases may retain obsolete speech columns; runtime and CLI code
   MUST ignore them. New schemas do not create them.
+- Legacy `session_chat_bindings` MUST NOT be created, read, or written at
+  runtime. Compatibility migration converts leftover useful rows into
+  subscriptions once, then drops the table. Migration MUST be idempotent and
+  MUST NOT resurrect an intentionally detached pair or insert a second active
+  output for a session.
 
 ## Validation
 
@@ -172,11 +189,22 @@ wiring.
 bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts
 bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts
 bun test src/runtime/session-surface-hint.test.ts src/omni/consumer-context.test.ts
+bun test src/cli/commands/sessions.test.ts
 bun test src/channels/slack/socket-mode.test.ts src/channels/slack/thread-lifecycle.test.ts
 ```
 
 Regression coverage MUST include:
 
+- detach with another output selected in the same session;
+- detach with no competing output, with no resurrection after repeated DB
+  initialization;
+- repeated detach remaining idempotent;
+- one-time binding migration being idempotent and never violating the unique
+  output index;
+- preservation of unrelated chats and session history;
+- inbound consumer creating/using subscriptions only, never legacy bindings;
+- CLI attach/detach JSON and human output exposing final attached/default
+  state and reporting no legacy binding;
 - Slack active, WhatsApp queued, then one reply to each source in order;
 - two Slack threads remaining separate;
 - source-less output using the default attachment;

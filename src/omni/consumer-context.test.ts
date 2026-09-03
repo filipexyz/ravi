@@ -19,7 +19,6 @@ const actualDbCanonicalizeDmChatForContact = actualRouterDbModule.dbCanonicalize
 const actualDbContactDmNormalizedChatId = actualRouterDbModule.dbContactDmNormalizedChatId;
 const actualDbUpsertChatMessage = actualRouterDbModule.dbUpsertChatMessage;
 const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
-const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
 const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
 const actualGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
 const actualGetSession = actualRouterSessionsModule.getSession;
@@ -234,9 +233,6 @@ mock.module("../router/router-db.js", () => ({
     chatParticipantCalls.push(input);
     return actualDbUpsertChatParticipant(input);
   }),
-  dbBindSessionToChat: mock((input: Parameters<typeof actualDbBindSessionToChat>[0]) =>
-    actualDbBindSessionToChat(input),
-  ),
   dbUpsertSessionParticipant: mock((input: Parameters<typeof actualDbUpsertSessionParticipant>[0]) => {
     sessionParticipantCalls.push(input);
     return actualDbUpsertSessionParticipant(input);
@@ -689,6 +685,7 @@ describe("OmniConsumer channel context", () => {
       role: "primary",
     });
     expect(subscriptions[0].outputAttachedAt).toBeDefined();
+    expect(actualRouterDbModule.dbLegacySessionChatBindingsTableExists()).toBe(false);
     expect(promptCalls).toHaveLength(2);
     expect(promptCalls[1][1].prompt).not.toContain("[session surface");
   });

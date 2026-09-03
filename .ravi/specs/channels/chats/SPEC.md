@@ -115,21 +115,26 @@ Constraints:
 - `contact_id` and `agent_id` are denormalized convenience fields derived from platform identity ownership.
 - Participant rows MUST tolerate unresolved actors.
 
-### `session_chat_bindings`
+### `session_chat_subscriptions`
 
-This MAY be a dedicated table or fields on `sessions`.
+This is the sole session↔chat attach ledger (see `sessions/attach`).
 
 Fields:
 
 - `session_key`
 - `chat_id`
-- `agent_id`
-- `route_id`
-- `binding_reason`
-- `created_at`
-- `updated_at`
+- `role`
+- `output_attached_at`
+- `detached_at`
+- attach audit fields (`attached_by_*`, `attached_reason`, timestamps)
 
-The binding records which chat a runtime session belongs to. It does not define who participates in the chat.
+One canonical chat belongs to at most one active session. One session MAY have
+many active chats. At most one active output exists per session. This table
+does not define who participates in the chat.
+
+Retired: `session_chat_bindings`. Compatibility migration converts leftover
+useful rows into subscriptions once, then drops that table. Runtime MUST NOT
+recreate it.
 
 ## Prompt Chat Context
 
@@ -223,7 +228,7 @@ Migration SHOULD move or project this data into:
 
 - `chats`
 - `chat_participants`
-- `session_chat_bindings` or equivalent fields on `sessions`
+- `session_chat_subscriptions` (one-time convert from retired `session_chat_bindings`)
 - per-message/per-event chat and actor metadata
 
 `omni_group_metadata` MAY remain as a raw transport cache, but it MUST NOT be the only place Ravi stores group participants.
@@ -239,7 +244,7 @@ These legacy surfaces MUST be removed, split, or reduced to explicit compatibili
 | group identity stored as contact | `chats` | all route/policy/session flows resolve group by chat |
 | `omni_group_metadata.participants_json` as participant source of truth | `chat_participants` | group participants are queryable from Ravi chat model |
 | `account_pending.is_group` sharing pending-contact semantics | pending chat/route review backed by `chats` | pending humans and pending chats have separate flows; chat approval creates route review state without creating contacts |
-| `sessions.group_id` as implicit chat identity | `session_chat_bindings.chat_id` or explicit `sessions.chat_id` | sessions bind to canonical chat id |
+| `sessions.group_id` as implicit chat identity | `session_chat_subscriptions.chat_id` | sessions attach to canonical chat id |
 | `sessions.last_to`/`last_channel`/`last_account_id` as only outbound target memory | explicit chat binding + last target provenance | gateway/outbound can resolve via chat binding |
 | `message_metadata.chat_id` without canonical chat/actor ids | message metadata with `chat_id`, `actor_type`, `platform_identity_id`, `contact_id`, `agent_id` | reply/media reinjection can use canonical chat + actor metadata |
 | `session_events.source_chat_id` without canonical chat/actor ids | session events with canonical chat and actor metadata | traces can show semantic actor while preserving raw source ids |
@@ -256,7 +261,7 @@ Omni raw inbound
   -> resolve/upsert platform identity
   -> upsert chat_participant
   -> resolve route/session for target agent
-  -> bind session to chat
+  -> attach session_chat_subscription (never a legacy binding)
   -> persist message/event actor metadata
 ```
 

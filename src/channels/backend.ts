@@ -3,7 +3,6 @@ import { z } from "zod";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../omni/session-stream.js";
 import {
   dbAcceptChannelBackendIngress,
-  dbBindSessionToChat,
   dbClaimChannelBackendIngressPublication,
   dbGetAgent,
   dbGetChatMessage,
@@ -13,7 +12,7 @@ import {
   type ChannelBackendIngressReceiptRecord,
 } from "../router/router-db.js";
 import { getAgentCwd } from "../router/resolver.js";
-import { getOrCreateSession, getSession, updateSessionName } from "../router/sessions.js";
+import { attachChatToSession, getOrCreateSession, getSession, updateSessionName } from "../router/sessions.js";
 import type { ChannelBackendPromptMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
 
@@ -632,12 +631,13 @@ function ensureChannelBackendSession(receipt: ChannelBackendIngressReceiptRecord
   } else if (session.name !== receipt.sessionName) {
     throw new Error(`Session ${receipt.sessionKey} already uses name ${session.name}; expected ${receipt.sessionName}`);
   }
-  dbBindSessionToChat({
+  attachChatToSession({
     sessionKey: receipt.sessionKey,
     chatId: receipt.chatId,
-    agentId: receipt.agentId,
-    bindingReason: "channel_backend",
-    seenAt: receipt.acceptedAt,
+    role: "primary",
+    attachedByType: "system",
+    attachedReason: "channel_backend",
+    setOutputTarget: true,
   });
 }
 

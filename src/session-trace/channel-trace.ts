@@ -2,7 +2,7 @@ import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js
 import { configStore } from "../config-store.js";
 import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
-import { dbFindChat, dbGetMessageMeta, dbGetSessionChatBinding, type ChatType } from "../router/router-db.js";
+import { dbFindChat, dbGetMessageMeta, dbGetSessionDefaultChatId, type ChatType } from "../router/router-db.js";
 import { recordSessionEvent } from "./session-trace-db.js";
 import type { SessionEventRecord } from "./types.js";
 
@@ -314,11 +314,11 @@ function resolveCanonicalTraceSource(
 ): NormalizedSessionTraceSource {
   const messageMeta = source.messageId ? dbGetMessageMeta(source.messageId) : null;
   const chatIdFromSource = findCanonicalChatIdFromSource(source);
-  const binding = dbGetSessionChatBinding(sessionKey);
-  // Legacy fallback removal condition: remove binding/raw lookup once all prompt/response/delivery sources
-  // carry canonicalChatId plus per-message actor metadata at emit time.
+  const attachedChatId = dbGetSessionDefaultChatId(sessionKey);
+  // Fallback to the session's current output/active chat when the source
+  // did not carry a canonical chat id.
   const canonicalChatId =
-    source.canonicalChatId ?? messageMeta?.canonicalChatId ?? chatIdFromSource ?? binding?.chatId ?? null;
+    source.canonicalChatId ?? messageMeta?.canonicalChatId ?? chatIdFromSource ?? attachedChatId ?? null;
   const sourceIsAgentActor = source.actorType === "agent";
 
   return {

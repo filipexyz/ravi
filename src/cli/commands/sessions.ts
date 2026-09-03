@@ -52,6 +52,7 @@ import {
   extendSession,
   makeSessionPermanent,
   attachChatToSession,
+  describeSessionChatAssociation,
   detachChatFromSession,
   getSessionTurnUsageSummary,
   listSessionSubscriptions,
@@ -92,7 +93,6 @@ import {
   dbFindChatByRef,
   dbGetAgentChatActionCounts,
   dbGetChat,
-  dbGetSessionChatBinding,
   dbGetMessageMeta,
   dbListAgentChatMessagesPage,
   dbListContexts,
@@ -652,9 +652,28 @@ function sessionActionChatIds(session: SessionEntry): string[] {
   for (const subscription of listSessionSubscriptions(session.sessionKey)) {
     ids.add(subscription.chatId);
   }
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (binding?.chatId) ids.add(binding.chatId);
   return Array.from(ids);
+}
+
+function formatSessionChatAssociationHuman(state: {
+  attached: boolean;
+  defaultOutput: boolean;
+  subscriptions: Array<{ chatId: string; role: string; defaultOutput: boolean }>;
+  legacy: { status: string };
+}): void {
+  console.log(`Attached: ${state.attached ? "yes" : "no"}`);
+  const defaultOutput = state.subscriptions.find((subscription) => subscription.defaultOutput);
+  console.log(`Default output: ${defaultOutput?.chatId ?? "none"}`);
+  if (state.subscriptions.length === 0) {
+    console.log("Active subscriptions: none");
+  } else {
+    console.log("Active subscriptions:");
+    for (const subscription of state.subscriptions) {
+      const marker = subscription.defaultOutput ? " default-output" : "";
+      console.log(`  - ${subscription.chatId} [${subscription.role}]${marker}`);
+    }
+  }
+  console.log(`Legacy bindings: ${state.legacy.status}`);
 }
 
 async function queueSlackChatAction(
@@ -5847,12 +5866,13 @@ export class SessionCommands {
       });
       const sessionRef = session.name ?? session.sessionKey;
       const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
+      const state = describeSessionChatAssociation(session.sessionKey, chat.id, session.name);
       if (asJson) {
         printJson({
-          attached: result.created,
+          ...state,
+          created: result.created,
           outputAttached: result.outputAttached,
           subscription: result.subscription,
-          session: { name: session.name, sessionKey: session.sessionKey },
           chat: {
             id: chat.id,
             title: chat.title,
@@ -5867,7 +5887,7 @@ export class SessionCommands {
       }
       const verb = result.created ? "Attached" : "Already attached";
       console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
-      console.log(`Output target: ${chat.id}`);
+      formatSessionChatAssociationHuman(state);
       console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
@@ -5921,22 +5941,18 @@ export class SessionCommands {
       fail(`Chat not found: ${chatRef}`);
       return;
     }
-    const result = detachChatFromSession(session.sessionKey, chat.id);
+    const result = detachChatFromSession(session.sessionKey, chat.id, session.name);
     if (asJson) {
-      printJson({
-        detached: result.detached,
-        outputDetached: result.outputDetached,
-        sessionKey: session.sessionKey,
-        chatId: chat.id,
-      });
+      printJson(result);
       return;
     }
     if (result.detached) {
-      const suffix = result.outputDetached ? " and cleared it as output target" : "";
+      const suffix = result.outputDetached ? " and cleared it as default output" : "";
       console.log(`Detached chat ${chat.id} from session ${session.name ?? session.sessionKey}${suffix}`);
     } else {
       console.log(`Chat ${chat.id} is not currently attached to ${session.name ?? session.sessionKey}`);
     }
+    formatSessionChatAssociationHuman(result);
   }
 
   @Command({

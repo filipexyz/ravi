@@ -39,7 +39,7 @@ import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
 import {
   dbGetChat,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbSaveMessageMeta,
@@ -1348,8 +1348,8 @@ export class Gateway {
     try {
       const session = getSessionByName(sessionName);
       const agentId = session?.agentId;
-      const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
-      const canonicalChatId = target.canonicalChatId ?? binding?.chatId;
+      const attachedChatId = session?.sessionKey ? dbGetSessionDefaultChatId(session.sessionKey) : null;
+      const canonicalChatId = target.canonicalChatId ?? attachedChatId;
       const agentIdentity = agentId
         ? getAgentPlatformIdentity({
             agentId,
@@ -1358,7 +1358,7 @@ export class Gateway {
           })
         : null;
       dbSaveMessageMeta(messageId, chatId, {
-        canonicalChatId,
+        canonicalChatId: canonicalChatId ?? undefined,
         actorType: "agent",
         agentId,
         platformIdentityId: agentIdentity?.id,
@@ -1413,8 +1413,8 @@ export class Gateway {
 
     try {
       const session = getSessionByName(sessionName);
-      const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
-      const chatId = target.canonicalChatId ?? binding?.chatId;
+      const attachedChatId = session?.sessionKey ? dbGetSessionDefaultChatId(session.sessionKey) : null;
+      const chatId = target.canonicalChatId ?? attachedChatId;
       if (!chatId) return;
 
       const chat = dbGetChat(chatId);

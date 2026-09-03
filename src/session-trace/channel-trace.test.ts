@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat } from "../router/router-db.js";
+import { attachChatToSession } from "../router/sessions.js";
 import { listSessionEvents } from "./session-trace-db.js";
 import {
   normalizeSessionTraceSource,
@@ -181,11 +182,12 @@ describe("channel session trace", () => {
       platformChatId: "5511999999999@s.whatsapp.net",
       chatType: "dm",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_legacy_response_fallback",
+      attachedByType: "system",
+      attachedReason: "test_legacy_response_fallback",
+      setOutputTarget: true,
     });
 
     recordResponseEmittedTrace({

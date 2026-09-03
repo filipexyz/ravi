@@ -6,6 +6,8 @@
 - Renaming `session_name` MUST NOT rewrite `session_key`.
 - Session reset MUST clear provider continuity state but MUST NOT drop attach
   subscriptions.
+- Attach/detach MUST persist only on `session_chat_subscriptions`. Detach MUST
+  remain detached after repeated database initialization.
 - Deleting a session MUST cascade to delete its subscriptions.
 - Session visibility MUST be enforced: principals MUST only list, inspect, read,
   recap, trace, or mutate sessions they own or hold `access`/`modify` grants for.

@@ -26,6 +26,14 @@
 - `sessions.send` input MUST NOT grow a `from` field. `[from:]` remains
   only `callerSessionKey` inside `[System] Inform:`.
 - Detaching the output chat MUST clear output for that session.
+- Detach MUST remain detached after repeated database initialization. A
+  leftover `session_chat_bindings` row MUST NOT resurrect the subscription
+  or fail the unique output-per-session index.
+- Repeated detach MUST be idempotent and MUST preserve unrelated chats and
+  session history.
+- Inbound routing MUST attach through `session_chat_subscriptions` only.
+- `ravi sessions attach|detach --json` MUST report attached, default output,
+  remaining active subscriptions, and `legacy.status: none`.
 - Attach/detach during a running turn MUST NOT redirect that turn's captured
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.

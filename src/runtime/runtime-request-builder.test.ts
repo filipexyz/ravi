@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
-import { getOrCreateSession } from "../router/index.js";
+import { dbUpsertChat } from "../router/router-db.js";
+import { attachChatToSession, getOrCreateSession } from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveRuntimePromptSource, rotateRuntimeProviderEnvironment } from "./runtime-request-builder.js";
@@ -30,11 +30,12 @@ describe("resolveRuntimePromptSource", () => {
       chatType: "group",
       title: "Ravi - Audit",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey: session.sessionKey,
       chatId: chat.id,
-      agentId: "audit",
-      bindingReason: "test",
+      attachedByType: "system",
+      attachedReason: "test",
+      setOutputTarget: true,
     });
 
     const prompt: RuntimeLaunchPrompt = {

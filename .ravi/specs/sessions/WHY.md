@@ -25,12 +25,13 @@ has the same leak once the leftover source is stripped. Persist already
 stores the assistant row; emit must fail closed instead of inventing a
 chat sink.
 
-## Why Attach Is Separate From Bindings
+## Why Attach Uses Subscriptions Only
 
-The original `session_chat_bindings` row records the primary/origin chat.
-Multi-input work needs additional wiring, so `session_chat_subscription`
-(attach) is a distinct concept. Treating bindings as "the only chat" would block
-multi-chat input and cause replies in the wrong chat.
+`session_chat_subscriptions` records every participating chat and the one
+default output. The retired `session_chat_bindings` 1:1 row was a second
+ledger: detach cleared the subscription but left the binding, and startup
+backfill could recreate the attachment or fail the unique output index.
+Migration converts leftover useful rows once and drops the table.
 
 ## Why Effective Model Is Resolved, Not Stored
 

@@ -1141,6 +1141,55 @@ export interface AttachChatToSessionResult {
   outputAttached: boolean;
 }
 
+export interface SessionChatAssociationSubscriptionState {
+  chatId: string;
+  role: SessionChatSubscriptionRecord["role"];
+  defaultOutput: boolean;
+  detached: boolean;
+}
+
+export interface SessionChatAssociationState {
+  session: { name?: string; sessionKey: string };
+  chatId: string;
+  attached: boolean;
+  defaultOutput: boolean;
+  subscriptions: SessionChatAssociationSubscriptionState[];
+  legacy: { table: "session_chat_bindings"; status: "none" | "removed" };
+}
+
+export interface DetachChatFromSessionResult extends SessionChatAssociationState {
+  detached: boolean;
+  outputDetached: boolean;
+}
+
+export function describeSessionChatAssociation(
+  sessionKey: string,
+  chatId: string,
+  sessionName?: string | null,
+): SessionChatAssociationState {
+  const active = dbListSessionChatSubscriptions(sessionKey);
+  const requested = active.find((subscription) => subscription.chatId === chatId);
+  return {
+    session: {
+      ...(sessionName ? { name: sessionName } : {}),
+      sessionKey,
+    },
+    chatId,
+    attached: Boolean(requested),
+    defaultOutput: requested?.outputAttachedAt !== undefined,
+    subscriptions: active.map((subscription) => ({
+      chatId: subscription.chatId,
+      role: subscription.role,
+      defaultOutput: subscription.outputAttachedAt !== undefined,
+      detached: false,
+    })),
+    legacy: {
+      table: "session_chat_bindings",
+      status: "none",
+    },
+  };
+}
+
 /**
  * Attach a chat to a session. Enforces the cross-session uniqueness rule:
  * a canonical chat can only be attached to one session at a time. Re-attach
@@ -1213,14 +1262,23 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
 export function detachChatFromSession(
   sessionKey: string,
   chatId: string,
-): { detached: boolean; outputDetached: boolean } {
+  sessionName?: string | null,
+): DetachChatFromSessionResult {
   const active = dbListSessionChatSubscriptions(sessionKey);
   const target = active.find((s) => s.chatId === chatId);
-  if (!target) return { detached: false, outputDetached: false };
+  if (!target) {
+    return {
+      detached: false,
+      outputDetached: false,
+      ...describeSessionChatAssociation(sessionKey, chatId, sessionName),
+    };
+  }
 
+  const detached = dbDetachSessionChatSubscription(sessionKey, chatId);
   return {
-    detached: dbDetachSessionChatSubscription(sessionKey, chatId),
+    detached,
     outputDetached: target.outputAttachedAt !== undefined,
+    ...describeSessionChatAssociation(sessionKey, chatId, sessionName),
   };
 }
 

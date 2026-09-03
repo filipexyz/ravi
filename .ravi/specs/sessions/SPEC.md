@@ -69,8 +69,8 @@ Sessions do NOT own:
 ## Definitions
 
 - `session`: runtime container for one agent. Identified by a stable `session_key`. Has a canonical `session_name` for human reference.
-- `session_chat_binding`: pre-existing one-to-one record stating "this session belongs to chat X" (see `channels/chats`). It records the *primary* / *origin* chat.
-- `session_chat_subscription`: record stating "chat X is wired to session S". Introduced by `sessions/attach`. One session MAY have many. One active subscription MAY be marked as the output attachment.
+- `session_chat_subscription`: record stating "chat X is wired to session S". One session MAY have many. One active subscription MAY be marked as the output attachment. This is the sole attach/output ledger.
+- `session_chat_binding`: retired 1:1 compatibility table. Existing databases MAY still contain it until the one-time migrate/drop. Runtime MUST NOT read, write, or recreate it.
 - `session_participant`: runtime participation projection (see `contacts/identity-graph`). It is not a permission and not an attach record.
 - `session_key`: durable composite identifier (see `src/router/session-key.ts`). MUST remain stable for the session's lifetime.
 
@@ -78,7 +78,7 @@ Sessions do NOT own:
 
 - A session MUST always belong to exactly one agent.
 - A session MUST have a stable `session_key`. Renaming the canonical `session_name` MUST NOT rewrite `session_key`.
-- A session MAY have one or more attached chats (see `sessions/attach`). The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
+- A session MAY have one or more attached chats (see `sessions/attach`). Active attachments and the default output live only on `session_chat_subscriptions`.
 - A physical provider turn MUST keep one immutable reply surface. Different chats and threads MUST be serialized into separate turns.
 - An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
 - An unattached inbound source or a source-less turn without a default output MUST NOT emit externally.
@@ -148,7 +148,7 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 ## Known Failure Modes
 
 - Confusing `session_key` identity with `session_name` (display) — leads to broken routing when a session is renamed.
-- Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
+- Reintroducing `session_chat_bindings` as a second attach ledger — detach can appear to succeed and then resurrect on the next CLI bootstrap.
 - Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
 - Mutating the active turn source when a later chat message arrives — causes cross-channel routing leaks.
 - Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.

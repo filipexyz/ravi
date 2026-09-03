@@ -46,7 +46,6 @@ import {
   upsertAgentPlatformIdentity,
 } from "../contacts.js";
 import {
-  dbBindSessionToChat,
   dbCanonicalizeDmChatForContact,
   dbContactDmNormalizedChatId,
   dbFindChat,
@@ -1338,20 +1337,9 @@ export class OmniConsumer {
       threadId,
       peerKind,
     });
-    const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
-    dbBindSessionToChat({
-      sessionKey: resolved.sessionKey,
-      chatId: canonicalChat.id,
-      agentId: resolved.agent.id,
-      routeId,
-      bindingReason: "inbound_route",
-      seenAt: msgTs,
-    });
-
-    // sessions/attach: keep the subscriptions index in sync with the
-    // legacy 1:1 binding. First-time chats become `primary`; subsequent
-    // chats routed into an existing session become `input`. Idempotent
-    // on re-routing the same chat.
+    // sessions/attach: first-time chats become `primary`; subsequent chats
+    // routed into an existing session become `input`. Idempotent on
+    // re-routing the same chat. Inbound never writes legacy bindings.
     // See .ravi/specs/sessions/attach/SPEC.md
     try {
       const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
@@ -1378,8 +1366,8 @@ export class OmniConsumer {
       // Conflict means the chat is currently attached to another session;
       // the override block above already detected and reused that owner
       // (so we shouldn't reach this path with a conflicting chat). Log
-      // defensively and let the inbound continue — the legacy
-      // `session_chat_bindings` row is still authoritative for now.
+      // defensively and let the inbound continue — active subscriptions
+      // are the sole attach source of truth.
       log.warn("Failed to record session_chat_subscription", {
         chatId: canonicalChat.id,
         sessionKey: resolved.sessionKey,
