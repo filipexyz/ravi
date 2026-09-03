@@ -27,6 +27,7 @@ let deleteInstanceCalls: string[] = [];
 let contactStatuses = new Map<string, { status: string }>();
 let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
+let matchRouteCalls: Array<{ phone?: string; isGroup?: boolean; groupId?: string }> = [];
 let sessions: Array<Partial<SessionEntry> & Pick<SessionEntry, "sessionKey" | "agentId">> = [];
 let deletedSessionKeys: string[] = [];
 let pendingEntries: Array<{
@@ -181,7 +182,10 @@ mock.module("../../router/router-db.js", () => ({
 mock.module("../../router/index.js", () => ({
   ...actualRouterIndexModule,
   loadRouterConfig: () => ({}),
-  matchRoute: () => liveWinner,
+  matchRoute: (_config: unknown, params: { phone?: string; isGroup?: boolean; groupId?: string }) => {
+    matchRouteCalls.push({ phone: params.phone, isGroup: params.isGroup, groupId: params.groupId });
+    return liveWinner;
+  },
 }));
 
 mock.module("../../router/omni-ignore.js", () => ({
@@ -268,6 +272,7 @@ describe("RoutesCommands", () => {
     contactStatuses = new Map();
     allowContactCalls = [];
     liveWinner = null;
+    matchRouteCalls = [];
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
@@ -571,6 +576,105 @@ describe("RoutesCommands", () => {
     expect(allowContactCalls).toEqual([]);
     expect(routes).toContainEqual(expect.objectContaining({ pattern: "group:123", agent: "sales" }));
   });
+
+  it("stores X@lid as lid:X and verifies live effect instead of skipping it as broad", () => {
+    liveWinner = {
+      route: { pattern: "lid:224420715061374" },
+      agentId: "john",
+    };
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().add(
+        "main",
+        "224420715061374@lid",
+        "john",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "whatsapp",
+        undefined,
+        true,
+      );
+    });
+
+    expect(routes).toContainEqual(expect.objectContaining({ pattern: "lid:224420715061374", agent: "john" }));
+    expect((payload.route as Record<string, unknown>).pattern).toBe("lid:224420715061374");
+    expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+    expect((payload.liveEffect as Record<string, unknown>).verified).toBe(true);
+    expect(matchRouteCalls).toContainEqual(expect.objectContaining({ phone: "lid:224420715061374" }));
+  });
+
+  it("looks up stored lid:X routes when the operator passes X@lid", () => {
+    routes = [
+      {
+        id: 1,
+        accountId: "main",
+        pattern: "lid:224420715061374",
+        agent: "john",
+      },
+    ];
+    liveWinner = {
+      route: { pattern: "lid:224420715061374" },
+      agentId: "john",
+    };
+
+    const payload = captureJson(() => {
+      new RoutesCommands().show("main", "224420715061374@lid", true);
+    });
+
+    expect((payload.route as Record<string, unknown>).pattern).toBe("lid:224420715061374");
+    expect(payload.pattern).toBe("lid:224420715061374");
+  });
+
+  it("deletes leftover bare-digit LID sessions and *-dm-<last6> names without touching agent:main:main", () => {
+    liveWinner = {
+      route: { pattern: "lid:224420715061374" },
+      agentId: "john",
+    };
+    sessions = [
+      {
+        sessionKey: "agent:main:dm:224420715061374",
+        agentId: "main",
+        accountId: "main",
+        lastAccountId: "main",
+        name: "main-dm-061374",
+      },
+      {
+        sessionKey: "agent:alex:whatsapp:main:dm:999",
+        agentId: "alex",
+        accountId: "main",
+        lastAccountId: "main",
+        name: "alex-dm-061374",
+      },
+      {
+        sessionKey: "agent:main:main",
+        agentId: "main",
+        accountId: "main",
+        lastAccountId: "main",
+        name: "main",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().add(
+        "main",
+        "lid:224420715061374",
+        "john",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "whatsapp",
+        undefined,
+        true,
+      );
+    });
+
+    expect(payload.cleanedSessions).toBe(2);
+    expect(deletedSessionKeys.sort()).toEqual(["agent:alex:whatsapp:main:dm:999", "agent:main:dm:224420715061374"]);
+    expect(sessions.map((session) => session.sessionKey)).toEqual(["agent:main:main"]);
+  });
 });
 
 describe("instances/routes agent-first contract", () => {
@@ -581,6 +685,7 @@ describe("instances/routes agent-first contract", () => {
     contactStatuses = new Map();
     allowContactCalls = [];
     liveWinner = null;
+    matchRouteCalls = [];
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
