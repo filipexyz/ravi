@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { recordDeliveryTrace } from "./channel-trace.js";
+import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
+import { dbUpsertChat } from "../router/router-db.js";
+import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
 import {
@@ -164,6 +165,49 @@ describe("session trace query", () => {
       providerTimestamp: 1_713_000_000_000,
       responsePhase: "commentary",
       idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
+    });
+  });
+
+  it("resolves response trace canonical chat from session subscription default chat", () => {
+    const sessionKey = "agent:main:subscription-target";
+    const sessionName = "main-subscription-target";
+    getOrCreateSession(sessionKey, "main", "/tmp/ravi-agent");
+    updateSessionName(sessionKey, sessionName);
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    attachChatToSession({
+      sessionKey,
+      chatId: chat.id,
+      attachedByType: "system",
+      attachedReason: "test_subscription_trace_fallback",
+      setOutputTarget: true,
+    });
+
+    recordResponseEmittedTrace({
+      sessionName,
+      response: {
+        response: "hi",
+        target: {
+          channel: "whatsapp-baileys",
+          accountId: "main",
+          chatId: "5511999999999@s.whatsapp.net",
+        },
+        _emitId: "emit-subscription",
+      },
+      timestamp: 30,
+    });
+
+    const event = listSessionEvents(sessionKey)[0];
+    expect(event).toMatchObject({
+      eventType: "response.emitted",
+      sourceChatId: "5511999999999@s.whatsapp.net",
+      canonicalChatId: chat.id,
+      actorType: "agent",
+      actorAgentId: "main",
     });
   });
 });
