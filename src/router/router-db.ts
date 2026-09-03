@@ -419,16 +419,6 @@ interface ChatReadingCursorRow {
   updated_at: number;
 }
 
-interface SessionChatBindingRow {
-  session_key: string;
-  chat_id: string;
-  agent_id: string | null;
-  route_id: number | null;
-  binding_reason: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
 interface SessionParticipantRow {
   id: string;
   session_key: string;
@@ -991,16 +981,6 @@ export interface UpsertChatParticipantInput {
   source?: ChatParticipantSource | null;
   metadata?: Record<string, unknown> | null;
   seenAt?: number;
-}
-
-export interface SessionChatBindingRecord {
-  sessionKey: string;
-  chatId: string;
-  agentId?: string;
-  routeId?: number;
-  bindingReason?: string;
-  createdAt: number;
-  updatedAt: number;
 }
 
 export interface SessionParticipantRecord {
@@ -1639,21 +1619,6 @@ function getDb(): Database {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_reading_cursor_events_scope
       ON chat_reading_cursor_events(list_id, chat_id, reader_type, reader_id, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS session_chat_bindings (
-      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
-      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-      agent_id TEXT,
-      route_id INTEGER,
-      binding_reason TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (session_key, chat_id)
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_bindings_session
-      ON session_chat_bindings(session_key);
-    CREATE INDEX IF NOT EXISTS idx_session_chat_bindings_chat
-      ON session_chat_bindings(chat_id);
 
     CREATE TABLE IF NOT EXISTS session_chat_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3848,47 +3813,50 @@ function ensureIdentityChatMigrations(database: Database): void {
   //      recent active row per chat) so the UNIQUE index can install;
   //   2. drop any legacy non-unique index by the same name (created by
   //      older code on this branch);
-  //   3. install the partial UNIQUE index;
-  //   4. backfill from session_chat_bindings, picking one binding per
-  //      chat (the most recent) so legacy 1:N data does not regenerate
-  //      duplicates after cleanup.
+  //   3. install the partial UNIQUE active-chat index;
+  //   4. one-time convert leftover session_chat_bindings into
+  //      subscriptions (never a second output; never resurrect a
+  //      detached pair), then DROP the legacy table;
+  //   5. assign a default output only when a session has none;
+  //   6. install the partial UNIQUE output-per-session index.
   // The whole sequence is wrapped in a transaction so a concurrent
   // writer (e.g. the daemon's consumer doing `attachChatToSession`)
   // cannot squeeze an INSERT between dedupe and CREATE UNIQUE INDEX,
   // which would make the CREATE fail and leave the migration half-done.
   database.transaction(() => {
-    dedupeSessionChatSubscriptions(database);
-    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
-    database.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
-    );
-    backfillSessionChatSubscriptionsFromBindings(database);
-    backfillSessionOutputAttachments(database);
-    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
-    database.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
-    );
+    runSessionChatSubscriptionMigrations(database);
   })();
 }
 
 /**
- * Test-only: re-run the dedupe + backfill migration steps on the current
+ * Test-only: re-run the subscription migration (dedupe, one-time legacy
+ * binding convert/drop, output backfill, unique indexes) on the current
  * database. Production callers must rely on `ensureIdentityChatMigrations`
- * running once at startup.
+ * running at startup. Safe to call repeatedly.
  */
 export function dbRunSessionAttachMigrationForTests(): void {
-  const db = getDb();
-  dedupeSessionChatSubscriptions(db);
-  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
-  db.exec(
+  runSessionChatSubscriptionMigrations(getDb());
+}
+
+function runSessionChatSubscriptionMigrations(database: Database): void {
+  dedupeSessionChatSubscriptions(database);
+  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+  database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
   );
-  backfillSessionChatSubscriptionsFromBindings(db);
-  backfillSessionOutputAttachments(db);
-  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
-  db.exec(
+  migrateAndDropSessionChatBindings(database);
+  backfillSessionOutputAttachments(database);
+  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+  database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
   );
+}
+
+function tableExists(database: Database, name: string): boolean {
+  const row = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) as
+    | { 1: number }
+    | undefined;
+  return Boolean(row);
 }
 
 function dedupeSessionChatSubscriptions(database: Database): void {
@@ -3921,14 +3889,20 @@ function dedupeSessionChatSubscriptions(database: Database): void {
   }
 }
 
-function backfillSessionChatSubscriptionsFromBindings(database: Database): void {
-  const now = Date.now();
-  // Backfill at most ONE subscription per chat. When legacy
-  // session_chat_bindings has multiple sessions sharing the same chat
-  // (allowed by the legacy schema), pick the most recently updated row
-  // (tiebreak by session_key for determinism). This matches the spec
-  // invariant "one chat → one session" at the cost of losing the older
-  // bindings; operators can manually attach to recover if needed.
+/**
+ * One-time retirement of `session_chat_bindings`.
+ *
+ * Existing active subscriptions win. A leftover binding is converted only
+ * when that chat has no active subscription and the (session, chat) pair
+ * has no prior subscription row (active or detached). Converted rows are
+ * inserted without output so a second output cannot violate the unique
+ * session output index; `backfillSessionOutputAttachments` assigns output
+ * only when a session has none. The table is then dropped and is never
+ * created again.
+ */
+function migrateAndDropSessionChatBindings(database: Database): void {
+  if (!tableExists(database, "session_chat_bindings")) return;
+
   const result = database
     .prepare(
       `
@@ -3939,11 +3913,13 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
       )
       SELECT
         ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
-        'backfill-from-session-chat-bindings', NULL,
-        ?, ?, ?, NULL
+        'migrate-from-session-chat-bindings', NULL,
+        NULL, ranked.created_at, ranked.updated_at, NULL
       FROM (
         SELECT b.session_key,
                b.chat_id,
+               b.created_at,
+               b.updated_at,
                ROW_NUMBER() OVER (
                  PARTITION BY b.chat_id
                  ORDER BY b.updated_at DESC, b.session_key
@@ -3956,12 +3932,18 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
           WHERE s.chat_id = ranked.chat_id
             AND s.detached_at IS NULL
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM session_chat_subscriptions s
+          WHERE s.session_key = ranked.session_key
+            AND s.chat_id = ranked.chat_id
+        )
     `,
     )
-    .run(now, now, now);
+    .run();
   if (result.changes > 0) {
-    log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
+    log.info("Migrated session_chat_bindings into session_chat_subscriptions", { rows: result.changes });
   }
+  database.exec("DROP TABLE IF EXISTS session_chat_bindings");
 }
 
 function backfillSessionOutputAttachments(database: Database): void {
@@ -4332,18 +4314,6 @@ function rowToChatReadingCursor(row: ChatReadingCursorRow): ChatReadingCursorRec
   };
 }
 
-function rowToSessionChatBinding(row: SessionChatBindingRow): SessionChatBindingRecord {
-  return {
-    sessionKey: row.session_key,
-    chatId: row.chat_id,
-    agentId: row.agent_id ?? undefined,
-    routeId: row.route_id ?? undefined,
-    bindingReason: row.binding_reason ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
 function rowToSessionParticipant(row: SessionParticipantRow): SessionParticipantRecord {
   return {
     id: row.id,
@@ -4663,26 +4633,6 @@ function mergeChatParticipantsIntoTarget(
   }
 }
 
-function mergeSessionChatBindingsIntoTarget(database: Database, sourceChatId: string, targetChatId: string): void {
-  const rows = database
-    .prepare("SELECT session_key FROM session_chat_bindings WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ session_key: string }>;
-  for (const row of rows) {
-    const existing = database
-      .prepare("SELECT 1 FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
-      .get(row.session_key, targetChatId);
-    if (existing) {
-      database
-        .prepare("DELETE FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
-        .run(row.session_key, sourceChatId);
-    } else {
-      database
-        .prepare("UPDATE session_chat_bindings SET chat_id = ? WHERE session_key = ? AND chat_id = ?")
-        .run(targetChatId, row.session_key, sourceChatId);
-    }
-  }
-}
-
 function mergeSessionChatSubscriptionsIntoTarget(
   database: Database,
   sourceChatId: string,
@@ -4857,7 +4807,6 @@ function canonicalizeDmChatForContact(database: Database, input: CanonicalizeDmC
 
   mergeChatMessagesIntoTarget(database, source.id, target.id, now);
   mergeChatParticipantsIntoTarget(database, source.id, target.id, now);
-  mergeSessionChatBindingsIntoTarget(database, source.id, target.id);
   mergeSessionChatSubscriptionsIntoTarget(database, source.id, target.id, now);
   mergeReadingListMembersIntoTarget(database, source.id, target.id, now);
   mergeReadingCursorsIntoTarget(database, source.id, target.id, now);
@@ -5458,50 +5407,6 @@ function acceptChannelBackendIngress(
   };
 }
 
-function bindSessionToChat(
-  database: Database,
-  input: {
-    sessionKey: string;
-    chatId: string;
-    agentId?: string | null;
-    routeId?: number | null;
-    bindingReason?: string | null;
-    seenAt?: number;
-  },
-): SessionChatBindingRecord {
-  const now = input.seenAt ?? Date.now();
-  database
-    .prepare(
-      `
-      INSERT INTO session_chat_bindings (
-        session_key, chat_id, agent_id, route_id, binding_reason, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(session_key) DO UPDATE SET
-        chat_id = excluded.chat_id,
-        agent_id = COALESCE(excluded.agent_id, session_chat_bindings.agent_id),
-        route_id = COALESCE(excluded.route_id, session_chat_bindings.route_id),
-        binding_reason = COALESCE(excluded.binding_reason, session_chat_bindings.binding_reason),
-        updated_at = excluded.updated_at
-    `,
-    )
-    .run(
-      input.sessionKey,
-      input.chatId,
-      input.agentId ?? null,
-      input.routeId ?? null,
-      input.bindingReason ?? null,
-      now,
-      now,
-    );
-
-  const row = database.prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(input.sessionKey) as
-    | SessionChatBindingRow
-    | undefined;
-  if (!row) throw new Error(`Session chat binding not found after upsert: ${input.sessionKey}`);
-  return rowToSessionChatBinding(row);
-}
-
 interface ExistingSessionParticipantMatches {
   semantic?: string;
   owner?: string;
@@ -5624,6 +5529,37 @@ function upsertSessionParticipant(database: Database, input: UpsertSessionPartic
   return rowToSessionParticipant(row);
 }
 
+function ensureBackfillSessionChatSubscription(
+  database: Database,
+  input: { sessionKey: string; chatId: string; seenAt: number },
+): void {
+  const activeChat = database
+    .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+    .get(input.chatId);
+  if (activeChat) return;
+  const existingPair = database
+    .prepare("SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ?")
+    .get(input.sessionKey, input.chatId);
+  if (existingPair) return;
+  const hasOutput = database
+    .prepare(
+      "SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND detached_at IS NULL AND output_attached_at IS NOT NULL",
+    )
+    .get(input.sessionKey);
+  database
+    .prepare(
+      `
+      INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json,
+        output_attached_at, created_at, updated_at, detached_at
+      )
+      VALUES (?, ?, 'primary', 'system', NULL, 'legacy-session-backfill', NULL, ?, ?, ?, NULL)
+    `,
+    )
+    .run(input.sessionKey, input.chatId, hasOutput ? null : input.seenAt, input.seenAt, input.seenAt);
+}
+
 function backfillChatModel(database: Database): void {
   const now = Date.now();
   executeWrite(
@@ -5732,11 +5668,9 @@ function backfillChatModel(database: Database): void {
           },
           seenAt: row.updated_at || row.created_at || now,
         });
-        bindSessionToChat(database, {
+        ensureBackfillSessionChatSubscription(database, {
           sessionKey: row.session_key,
           chatId: chat.id,
-          agentId: row.agent_id,
-          bindingReason: "legacy_session_backfill",
           seenAt: row.updated_at || now,
         });
       }
@@ -8510,31 +8444,6 @@ export function dbListChatParticipants(chatId: string): ChatParticipantRecord[] 
   return rows.map(rowToChatParticipant);
 }
 
-export function dbBindSessionToChat(input: {
-  sessionKey: string;
-  chatId: string;
-  agentId?: string | null;
-  routeId?: number | null;
-  bindingReason?: string | null;
-  seenAt?: number;
-}): SessionChatBindingRecord {
-  return bindSessionToChat(getDb(), input);
-}
-
-export function dbGetSessionChatBinding(sessionKey: string): SessionChatBindingRecord | null {
-  const row = getDb().prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(sessionKey) as
-    | SessionChatBindingRow
-    | undefined;
-  return row ? rowToSessionChatBinding(row) : null;
-}
-
-export function dbListSessionChatBindings(chatId: string): SessionChatBindingRecord[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM session_chat_bindings WHERE chat_id = ? ORDER BY updated_at DESC")
-    .all(chatId) as SessionChatBindingRow[];
-  return rows.map(rowToSessionChatBinding);
-}
-
 export function dbUpsertSessionParticipant(input: UpsertSessionParticipantInput): SessionParticipantRecord {
   return upsertSessionParticipant(getDb(), input);
 }
@@ -8868,6 +8777,94 @@ export function dbDetachSessionChatSubscription(sessionKey: string, chatId: stri
     )
     .run(now, now, sessionKey, chatId);
   return result.changes > 0;
+}
+
+/**
+ * Default chat for a session: the active output attachment, otherwise the
+ * first remaining active subscription. Replaces the retired 1:1
+ * `session_chat_bindings` lookup.
+ */
+export function dbGetSessionDefaultChatId(sessionKey: string): string | null {
+  const output = dbGetSessionOutputAttachment(sessionKey);
+  if (output) return output.chatId;
+  return dbListSessionChatSubscriptions(sessionKey)[0]?.chatId ?? null;
+}
+
+/**
+ * Latest subscription row for a (session, chat) pair, including detached.
+ */
+export function dbGetSessionChatSubscription(
+  sessionKey: string,
+  chatId: string,
+): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM session_chat_subscriptions
+      WHERE session_key = ? AND chat_id = ?
+      ORDER BY CASE WHEN detached_at IS NULL THEN 0 ELSE 1 END, updated_at DESC, id DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionKey, chatId) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+export function dbLegacySessionChatBindingsTableExists(): boolean {
+  return tableExists(getDb(), "session_chat_bindings");
+}
+
+/**
+ * Test-only: recreate the retired `session_chat_bindings` table long enough
+ * to plant leftover rows and exercise the one-time migrate/drop path.
+ * Production schema never creates this table.
+ */
+export function dbPlantLegacySessionChatBindingForTests(input: {
+  sessionKey: string;
+  chatId: string;
+  agentId?: string | null;
+  routeId?: number | null;
+  bindingReason?: string | null;
+  seenAt?: number;
+}): void {
+  const database = getDb();
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS session_chat_bindings (
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      agent_id TEXT,
+      route_id INTEGER,
+      binding_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (session_key, chat_id)
+    );
+  `);
+  const now = input.seenAt ?? Date.now();
+  database
+    .prepare(
+      `
+      INSERT INTO session_chat_bindings (
+        session_key, chat_id, agent_id, route_id, binding_reason, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_key, chat_id) DO UPDATE SET
+        agent_id = excluded.agent_id,
+        route_id = excluded.route_id,
+        binding_reason = excluded.binding_reason,
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      input.sessionKey,
+      input.chatId,
+      input.agentId ?? null,
+      input.routeId ?? null,
+      input.bindingReason ?? null,
+      now,
+      now,
+    );
 }
 
 // ============================================================================

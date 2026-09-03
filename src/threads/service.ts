@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { MessageTarget } from "../runtime/message-types.js";
-import { dbFindChat, dbGetSessionChatBinding, getDb } from "../router/router-db.js";
+import { dbFindChat, dbGetSessionDefaultChatId, getDb } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
 import type {
   ThreadActor,
@@ -828,8 +828,8 @@ function upsertDefaultHandoffLinks(
 }
 
 function deriveThreadScopeForSession(session: Pick<SessionEntry, "sessionKey">, source?: MessageTarget): ThreadPointer {
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (binding) return { type: "chat", id: binding.chatId };
+  const attachedChatId = dbGetSessionDefaultChatId(session.sessionKey);
+  if (attachedChatId) return { type: "chat", id: attachedChatId };
   if (source?.canonicalChatId) return { type: "chat", id: source.canonicalChatId };
   if (source?.channel && source.chatId) {
     for (const instanceId of uniqueStrings([source.instanceId, source.accountId, ""])) {

@@ -3,7 +3,6 @@ import { configStore } from "./config-store.js";
 import { createContact, getContact, upsertAgentPlatformIdentity } from "./contacts.js";
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import {
-  dbBindSessionToChat,
   dbFindChatMessage,
   dbGetChatMessage,
   dbGetMessageMeta,
@@ -12,7 +11,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertInstance,
 } from "./router/router-db.js";
-import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
+import { attachChatToSession, getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
@@ -256,11 +255,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "5511999999999@s.whatsapp.net",
       chatType: "dm",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_canonical_trace",
+      attachedByType: "system",
+      attachedReason: "test_canonical_trace",
+      setOutputTarget: true,
     });
     dbSaveMessageMeta("inbound-1", "5511999999999@s.whatsapp.net", {
       canonicalChatId: chat.id,
@@ -317,11 +317,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_delete_own_outbound",
+      attachedByType: "system",
+      attachedReason: "test_delete_own_outbound",
+      setOutputTarget: true,
     });
     const own = dbUpsertChatMessage({
       chatId: chat.id,
@@ -375,11 +376,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_edit_own_outbound",
+      attachedByType: "system",
+      attachedReason: "test_edit_own_outbound",
+      setOutputTarget: true,
     });
     const own = dbUpsertChatMessage({
       chatId: chat.id,
@@ -442,11 +444,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "5511999999999@s.whatsapp.net",
       chatType: "dm",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_dm_outbound_projection",
+      attachedByType: "system",
+      attachedReason: "test_dm_outbound_projection",
+      setOutputTarget: true,
     });
     const gateway = makeGateway(mock(async () => ({ messageId: "outbound-dm-1" })));
 
@@ -481,11 +484,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_group_outbound_projection",
+      attachedByType: "system",
+      attachedReason: "test_group_outbound_projection",
+      setOutputTarget: true,
     });
     const gateway = makeGateway(mock(async () => ({ messageId: "outbound-group-1" })));
 

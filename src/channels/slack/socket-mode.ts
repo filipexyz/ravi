@@ -19,7 +19,6 @@ import {
   isChatCompatibleWithSession,
 } from "../../router/index.js";
 import {
-  dbBindSessionToChat,
   dbListChatParticipants,
   dbUpsertChat,
   dbUpsertChatMessage,
@@ -1540,14 +1539,6 @@ export class SlackSocketModeService {
     });
     const sessionName = resolved.sessionName ?? resolved.sessionKey;
 
-    dbBindSessionToChat({
-      sessionKey: resolved.sessionKey,
-      chatId: canonicalChat.id,
-      agentId: resolved.agent.id,
-      routeId: null,
-      bindingReason: "slack_socket_mode",
-      seenAt: message.eventTimeMs,
-    });
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
     let createdEventOwnedByProgrammaticLifecycle = false;
     if (routeThreadId) {
@@ -1668,14 +1659,6 @@ export class SlackSocketModeService {
           ...slackTeamProvenance(message),
           channelId: message.channelId,
         },
-        seenAt: message.eventTimeMs,
-      });
-      dbBindSessionToChat({
-        sessionKey: resolved.sessionKey,
-        chatId: rootChat.id,
-        agentId: resolved.agent.id,
-        routeId: null,
-        bindingReason: "slack_socket_mode:chat_and_thread",
         seenAt: message.eventTimeMs,
       });
       syncSlackSessionSubscription(resolved.sessionKey, rootChat.id, { forceInput: true });

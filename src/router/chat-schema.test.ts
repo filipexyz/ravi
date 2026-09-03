@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
-  dbBindSessionToChat,
   dbAddChatToReadingList,
   dbCanonicalizeDmChatForContact,
   dbCreateCanonicalActorMessage,
@@ -14,14 +13,13 @@ import {
   dbFindAgentChatMessageByRef,
   dbGetAgentChatActionCounts,
   dbContactDmNormalizedChatId,
-  dbGetSessionChatBinding,
   dbGetChatReadingDelta,
   dbListAgentChatMessagesPage,
   dbListChatIdsByContactIds,
   dbListChats,
   dbListChatParticipants,
   dbListChatReadingListMembers,
-  dbListSessionChatBindings,
+  dbListSessionChatSubscriptions,
   dbListSessionParticipants,
   dbMarkChatReadingCursor,
   dbUpsertChat,
@@ -38,7 +36,7 @@ import {
   getDb,
 } from "./router-db.js";
 import { recomputeChatReadingListMembers } from "../chats/reading-lists.js";
-import { getOrCreateSession } from "./sessions.js";
+import { attachChatToSession, getOrCreateSession, SessionAttachConflictError } from "./sessions.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -62,7 +60,7 @@ describe("identity chat schema", () => {
         SELECT name
         FROM sqlite_master
         WHERE type = 'table'
-          AND name IN ('chats', 'chat_messages', 'chat_participants', 'session_chat_bindings', 'session_participants')
+          AND name IN ('chats', 'chat_messages', 'chat_participants', 'session_chat_subscriptions', 'session_participants')
         ORDER BY name
       `,
       )
@@ -72,7 +70,7 @@ describe("identity chat schema", () => {
       "chat_messages",
       "chat_participants",
       "chats",
-      "session_chat_bindings",
+      "session_chat_subscriptions",
       "session_participants",
     ]);
   });
@@ -191,7 +189,7 @@ describe("identity chat schema", () => {
     expect(message.created).toBe(true);
   });
 
-  it("allows one chat to bind to multiple sessions while keeping chat and session participants separate", () => {
+  it("keeps chat and session participants separate while a chat has one active session", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp-baileys",
       instanceId: "instance-1",
@@ -204,18 +202,22 @@ describe("identity chat schema", () => {
     const first = getOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", "/tmp/main");
     const second = getOrCreateSession("agent:support:whatsapp:main:group:120363424772797713", "main", "/tmp/main");
 
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey: first.sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test",
+      attachedByType: "system",
+      attachedReason: "test",
+      setOutputTarget: true,
     });
-    dbBindSessionToChat({
-      sessionKey: second.sessionKey,
-      chatId: chat.id,
-      agentId: "support",
-      bindingReason: "test",
-    });
+    expect(() =>
+      attachChatToSession({
+        sessionKey: second.sessionKey,
+        chatId: chat.id,
+        attachedByType: "system",
+        attachedReason: "test",
+        setOutputTarget: true,
+      }),
+    ).toThrow(SessionAttachConflictError);
 
     dbUpsertChatParticipant({
       chatId: chat.id,
@@ -231,8 +233,8 @@ describe("identity chat schema", () => {
       role: "human",
     });
 
-    expect(dbListSessionChatBindings(chat.id)).toHaveLength(2);
-    expect(dbGetSessionChatBinding(first.sessionKey)?.chatId).toBe(chat.id);
+    expect(dbListSessionChatSubscriptions(first.sessionKey)).toHaveLength(1);
+    expect(dbListSessionChatSubscriptions(second.sessionKey)).toHaveLength(0);
     expect(dbListChatParticipants(chat.id)).toHaveLength(1);
     expect(dbListSessionParticipants(first.sessionKey)).toHaveLength(1);
     expect(dbListSessionParticipants(second.sessionKey)).toHaveLength(0);

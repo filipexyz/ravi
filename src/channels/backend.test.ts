@@ -5,7 +5,7 @@ import {
   dbCreateAgent,
   dbGetChannelBackendIngressReceipt,
   dbGetChatMessage,
-  dbGetSessionChatBinding,
+  dbGetSessionOutputAttachment,
   dbUpsertChat,
   dbUpsertChatMessage,
 } from "../router/router-db.js";
@@ -87,10 +87,10 @@ describe("channel backend ingress", () => {
     expect(dbGetChatMessage(result.binding!.messageId)?.content).toEqual({
       blocks: [{ type: "text", text: "fixture input" }],
     });
-    expect(dbGetSessionChatBinding(receipt!.sessionKey)).toMatchObject({
+    expect(dbGetSessionOutputAttachment(receipt!.sessionKey)).toMatchObject({
       chatId: result.binding?.chatId,
-      agentId: "agent-a",
-      bindingReason: "channel_backend",
+      sessionKey: receipt!.sessionKey,
+      attachedReason: "channel_backend",
     });
     expect(published).toHaveLength(1);
     expect(published[0]).toMatchObject({

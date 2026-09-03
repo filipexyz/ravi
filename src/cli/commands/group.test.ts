@@ -148,7 +148,6 @@ mock.module("../../router/router-db.js", () => ({
     upsertChatParticipantCalls.push(input);
   },
   dbCreateRoute: (input: Record<string, unknown>) => ({ id: "route-1", ...input }),
-  dbBindSessionToChat: () => {},
 }));
 
 mock.module("../../channels/session-prompt.js", () => ({

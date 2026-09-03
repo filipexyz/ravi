@@ -17,6 +17,9 @@
   never `session_key`.
 - Reset: clears provider continuity state but preserves attach subscriptions.
 - Delete: cascades to delete the session's subscriptions.
+- Attach/detach: `session_chat_subscriptions` is the only ledger. After
+  `ravi sessions detach`, a leftover `session_chat_bindings` row MUST NOT
+  exist or come back on the next process start.
 
 ## Diagnosing Effective Model
 

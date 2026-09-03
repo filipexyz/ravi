@@ -5,7 +5,7 @@ import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
 import {
   dbGetChatMessage,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbSaveMessageMeta,
@@ -629,8 +629,8 @@ const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
   resolveContext: ({ job, instanceId }) => {
     const session = getSessionByName(job.request.origin.sessionName);
     const agentId = session?.agentId;
-    const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
-    const canonicalChatId = job.request.target.canonicalChatId ?? binding?.chatId;
+    const attachedChatId = session?.sessionKey ? dbGetSessionDefaultChatId(session.sessionKey) : null;
+    const canonicalChatId = job.request.target.canonicalChatId ?? attachedChatId;
     const agentIdentity = agentId
       ? getAgentPlatformIdentity({
           agentId,

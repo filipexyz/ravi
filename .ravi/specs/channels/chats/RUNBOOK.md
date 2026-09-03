@@ -18,5 +18,6 @@
 
 - If a group appears as a contact, route the fix through the chat/contact
   migration boundary.
-- If output goes to the wrong surface, debug session chat bindings before
-  changing transport delivery.
+- If output goes to the wrong surface, inspect `session_chat_subscriptions`
+  (active chats and the default output) before changing transport delivery.
+  Do not look for `session_chat_bindings`.

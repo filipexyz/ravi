@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
-import { dbGetChat, dbGetSessionChatBinding, dbGetSetting } from "../router/router-db.js";
+import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
@@ -293,9 +293,9 @@ function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; t
 }
 
 function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMessageTarget | undefined {
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (!binding) return undefined;
-  const chat = dbGetChat(binding.chatId);
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  if (!chatId) return undefined;
+  const chat = dbGetChat(chatId);
   if (!chat) return undefined;
   const accountId = configStore.resolveAccountName(chat.instanceId) ?? session.lastAccountId ?? chat.instanceId;
   if (!accountId) return undefined;
@@ -311,9 +311,9 @@ function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMess
 
 function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, session: SessionEntry): RuntimeMessageTarget {
   if (source.canonicalChatId) return source;
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (!binding) return source;
-  const chat = dbGetChat(binding.chatId);
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  if (!chatId) return source;
+  const chat = dbGetChat(chatId);
   if (!chat || !isSourceForChat(source, chat)) return source;
   return {
     ...source,

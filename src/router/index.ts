@@ -97,7 +97,7 @@ export {
   getDefaultDmScope,
   getAnnounceCompaction,
   getAccountForAgent,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   // Schema (for validation)
   DmScopeSchema,
   // Database management

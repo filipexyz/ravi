@@ -13,7 +13,7 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
 import { configStore } from "../../config-store.js";
-import { dbGetChat, dbGetSessionChatBinding } from "../../router/router-db.js";
+import { dbGetChat, dbGetSessionDefaultChatId } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
 import {
@@ -122,8 +122,8 @@ function serializeSticker(sticker: StickerCatalogEntry): Record<string, unknown>
 }
 
 function targetFromSession(session: SessionEntry): StickerSendTarget | null {
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  const chat = binding ? dbGetChat(binding.chatId) : null;
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  const chat = chatId ? dbGetChat(chatId) : null;
   if (chat) {
     const accountId = configStore.resolveAccountName(chat.instanceId) ?? session.lastAccountId ?? chat.instanceId;
     const separator = chat.platformChatId.indexOf("#");

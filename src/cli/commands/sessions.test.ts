@@ -43,7 +43,6 @@ let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
 const chatRecords = new Map<string, Record<string, unknown>>();
 let sessionSubscriptions: Array<Record<string, unknown>> = [];
-const sessionChatBindings = new Map<string, Record<string, unknown>>();
 const sessionTurnUsageSummaries = new Map<string, Record<string, unknown>>();
 let agentChatMessagesPage: {
   total: number;
@@ -292,7 +291,6 @@ mock.module("../../router/index.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
   dbGetChat: (chatId: string) => chatRecords.get(chatId) ?? actualRouterDbModule.dbGetChat(chatId),
-  dbGetSessionChatBinding: (sessionKey: string) => sessionChatBindings.get(sessionKey) ?? null,
   dbFindAgentChatMessageByRef: (input: Record<string, unknown>) => {
     lastAgentMessageLookup = input;
     return agentMessageByRef;
@@ -479,7 +477,6 @@ beforeEach(() => {
   messageMetadataRows = [];
   chatRecords.clear();
   sessionSubscriptions = [];
-  sessionChatBindings.clear();
   agentChatMessagesPage = { total: 0, limit: 10, offset: 0, items: [] };
   lastAgentChatMessagesQuery = null;
   lastAgentMessageLookup = null;

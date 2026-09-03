@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbBindSessionToChat, dbCreateAgent, dbGetContext, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
-import { getOrCreateSession, resetSession } from "../router/sessions.js";
+import { dbCreateAgent, dbGetContext, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
+import { attachChatToSession, getOrCreateSession, resetSession } from "../router/sessions.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
@@ -118,11 +118,12 @@ describe("runtime request context authority", () => {
       chatType: "group",
       title: "Runtime test",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: agent.id,
-      bindingReason: "test",
+      attachedByType: "system",
+      attachedReason: "test",
+      setOutputTarget: true,
     });
     resetSession(sessionKey);
 

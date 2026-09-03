@@ -18,17 +18,17 @@ import { resolveSession } from "../../router/sessions.js";
 import type { RouteConfig, SessionEntry } from "../../router/types.js";
 import {
   dbGetChat,
-  dbGetRouteById,
-  dbGetSessionChatBinding,
+  dbGetSessionOutputAttachment,
   dbListChatParticipants,
   dbListMessageMetaByChatId,
   dbListRoutesBySessionName,
+  dbListSessionChatSubscriptions,
   type ChatParticipantRecord,
   type ChatRecord,
   type ContextCapability,
   type ContextRecord,
   type MessageMetadata,
-  type SessionChatBindingRecord,
+  type SessionChatSubscriptionRecord,
 } from "../../router/router-db.js";
 
 type SectionStatus = "ok" | "partial" | "missing" | "unavailable";
@@ -215,6 +215,10 @@ interface SelfContextPacket {
   description: "Read the current Ravi agent/session/chat context",
   scope: "open",
 })
+function resolveSessionChatAttachment(sessionKey: string): SessionChatSubscriptionRecord | null {
+  return dbGetSessionOutputAttachment(sessionKey) ?? dbListSessionChatSubscriptions(sessionKey)[0] ?? null;
+}
+
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
   @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })
@@ -325,11 +329,11 @@ export class SelfCommands {
   private buildPacket(options: { depth: SelfDepth; limit: number }): SelfContextPacket {
     const context = this.requireResolvedContext();
     const session = this.resolveCurrentSession(context);
-    const binding = session.data ? dbGetSessionChatBinding(session.data.sessionKey) : null;
-    const chatRecord = binding ? dbGetChat(binding.chatId) : null;
-    const route = this.buildRouteSection(session.data, binding);
-    const chat = this.buildChatSection(context, binding, chatRecord, options.depth);
-    const recent = this.buildRecentSection(context, binding, chatRecord, options.limit);
+    const attachment = session.data ? resolveSessionChatAttachment(session.data.sessionKey) : null;
+    const chatRecord = attachment ? dbGetChat(attachment.chatId) : null;
+    const route = this.buildRouteSection(session.data);
+    const chat = this.buildChatSection(context, attachment, chatRecord, options.depth);
+    const recent = this.buildRecentSection(context, attachment, chatRecord, options.limit);
     const actor = this.buildActorSection(context, recent);
     const permissions = this.buildPermissionsSection(context);
     const knowledge = this.buildKnowledgeSection();
@@ -394,36 +398,40 @@ export class SelfCommands {
 
   private buildChatSection(
     context: ContextRecord,
-    binding: SessionChatBindingRecord | null,
+    attachment: SessionChatSubscriptionRecord | null,
     chat: ChatRecord | null,
     depth: SelfDepth,
   ): SelfSection<SelfChatSummary> {
-    if (!binding && !context.source) {
-      return { status: "missing", reason: "no canonical chat binding or source context found" };
+    if (!attachment && !context.source) {
+      return { status: "missing", reason: "no canonical chat attachment or source context found" };
     }
 
     const data: SelfChatSummary = {
-      binding: binding
+      binding: attachment
         ? {
-            sessionKey: binding.sessionKey,
-            chatId: binding.chatId,
-            routeId: binding.routeId ?? null,
-            bindingReason: binding.bindingReason ?? null,
-            updatedAt: binding.updatedAt,
+            sessionKey: attachment.sessionKey,
+            chatId: attachment.chatId,
+            routeId: null,
+            bindingReason: attachment.attachedReason ?? null,
+            updatedAt: attachment.updatedAt,
           }
         : null,
       chat: chat ? serializeChat(chat) : null,
       sourceFallback: context.source ?? null,
     };
 
-    if (depth === "full" && binding) {
-      data.participants = dbListChatParticipants(binding.chatId).map(serializeChatParticipant);
+    if (depth === "full" && attachment) {
+      data.participants = dbListChatParticipants(attachment.chatId).map(serializeChatParticipant);
     }
 
-    if (binding && !chat) {
-      return { status: "partial", reason: `chat binding points to missing chat ${binding.chatId}`, data };
+    if (attachment && !chat) {
+      return { status: "partial", reason: `chat attachment points to missing chat ${attachment.chatId}`, data };
     }
-    return { status: binding ? "ok" : "partial", reason: binding ? undefined : "using source fallback only", data };
+    return {
+      status: attachment ? "ok" : "partial",
+      reason: attachment ? undefined : "using source fallback only",
+      data,
+    };
   }
 
   private buildActorSection(
@@ -448,16 +456,13 @@ export class SelfCommands {
     return { status: "missing", reason: "no actor metadata found in context, environment, or recent messages" };
   }
 
-  private buildRouteSection(
-    session: SessionEntry | undefined,
-    binding: SessionChatBindingRecord | null,
-  ): SelfSection<SelfRouteSummary> {
-    if (!session && !binding?.routeId) {
+  private buildRouteSection(session: SessionEntry | undefined): SelfSection<SelfRouteSummary> {
+    if (!session) {
       return { status: "missing", reason: "no session or route binding available" };
     }
 
-    const boundRoute = binding?.routeId ? dbGetRouteById(binding.routeId) : null;
-    const sessionRoutes = session?.name ? dbListRoutesBySessionName(session.name) : [];
+    const sessionRoutes = session.name ? dbListRoutesBySessionName(session.name) : [];
+    const boundRoute = sessionRoutes[0] ?? null;
     return {
       status: boundRoute || sessionRoutes.length > 0 ? "ok" : "missing",
       reason: boundRoute || sessionRoutes.length > 0 ? undefined : "no route is explicitly bound to this session",
@@ -470,11 +475,11 @@ export class SelfCommands {
 
   private buildRecentSection(
     context: ContextRecord,
-    binding: SessionChatBindingRecord | null,
+    attachment: SessionChatSubscriptionRecord | null,
     chat: ChatRecord | null,
     limit: number,
   ): SelfSection<SelfRecentSummary> {
-    const chatId = binding?.chatId ?? chat?.id ?? context.source?.chatId ?? null;
+    const chatId = attachment?.chatId ?? chat?.id ?? context.source?.chatId ?? null;
     if (!chatId) {
       return { status: "missing", reason: "no chat id available for recent message lookup" };
     }

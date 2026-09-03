@@ -14,6 +14,12 @@ session destination for emit: leftover `lastChannel` and the default output
 attachment must not become WhatsApp/Slack. Attach stays fail-closed for
 chat delivery. Persist + `sessions.read` remain the sink.
 
+`session_chat_subscriptions` is the only attach ledger. The retired
+`session_chat_bindings` table was a 1:1 leftover that detach did not clear, so
+startup backfill could resurrect a detached chat or fail the unique
+output-per-session index. Migration converts leftover useful rows once, then
+drops the table. Runtime MUST NOT recreate it.
+
 The `[session surface]` line tells the model where a normal reply returns.
 That instruction is model-visible on every new logical turn, including
 operator CLI-only and HTTP `sessions.send`.

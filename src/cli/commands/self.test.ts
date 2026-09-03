@@ -25,9 +25,8 @@ let inlineContext: FakeContext | undefined;
 let resolvedContext: FakeContext | undefined;
 let resolvedContextOptions: unknown;
 let session: Record<string, unknown> | null = null;
-let chatBinding: Record<string, unknown> | null = null;
+let chatAttachment: Record<string, unknown> | null = null;
 let chat: Record<string, unknown> | null = null;
-let boundRoute: Record<string, unknown> | null = null;
 let sessionRoutes: Record<string, unknown>[] = [];
 let chatParticipants: Record<string, unknown>[] = [];
 let messageMeta: Record<string, unknown>[] = [];
@@ -61,9 +60,9 @@ mock.module("../../router/sessions.js", () => ({
 
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
-  dbGetSessionChatBinding: () => chatBinding,
+  dbGetSessionOutputAttachment: () => chatAttachment,
+  dbListSessionChatSubscriptions: () => (chatAttachment ? [chatAttachment] : []),
   dbGetChat: () => chat,
-  dbGetRouteById: () => boundRoute,
   dbListRoutesBySessionName: () => sessionRoutes,
   dbListChatParticipants: () => chatParticipants,
   dbListMessageMetaByChatId: (_chatId: string, limit: number) => {
@@ -139,12 +138,13 @@ function seedLinkedContext(): void {
     updatedAt: 3000,
     createdAt: 900,
   };
-  chatBinding = {
+  chatAttachment = {
     sessionKey: "agent:main:main",
     chatId: "chat_123",
-    agentId: "main",
-    routeId: 7,
-    bindingReason: "route",
+    role: "primary",
+    attachedByType: "system",
+    attachedReason: "route",
+    outputAttachedAt: 3000,
     createdAt: 1000,
     updatedAt: 3000,
   };
@@ -161,15 +161,16 @@ function seedLinkedContext(): void {
     createdAt: 1000,
     updatedAt: 3000,
   };
-  boundRoute = {
-    id: 7,
-    pattern: "group:120363",
-    accountId: "main",
-    agent: "main",
-    priority: 10,
-    channel: "whatsapp",
-  };
-  sessionRoutes = [];
+  sessionRoutes = [
+    {
+      id: 7,
+      pattern: "group:120363",
+      accountId: "main",
+      agent: "main",
+      priority: 10,
+      channel: "whatsapp",
+    },
+  ];
   chatParticipants = [
     {
       id: "cp_1",
@@ -237,9 +238,8 @@ describe("SelfCommands", () => {
     inlineContext = undefined;
     resolvedContext = undefined;
     session = null;
-    chatBinding = null;
+    chatAttachment = null;
     chat = null;
-    boundRoute = null;
     sessionRoutes = [];
     chatParticipants = [];
     messageMeta = [];

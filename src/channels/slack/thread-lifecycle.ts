@@ -15,10 +15,9 @@ import {
   updateSessionThreadId,
 } from "../../router/index.js";
 import {
-  dbBindSessionToChat,
   dbFindChat,
   dbGetChat,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   dbUpsertChat,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -231,8 +230,8 @@ export function ensureSlackThreadLifecycleForSession(session: SessionEntry): Sla
   const existing = findSlackThreadLifecycleByChildSession(session.sessionKey);
   if (existing) return existing;
 
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  const chat = binding ? dbGetChat(binding.chatId) : null;
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  const chat = chatId ? dbGetChat(chatId) : null;
   if (!chat || chat.channel.toLowerCase() !== "slack" || chat.chatType !== "thread") {
     throw new Error(`Session is not attached to a Slack thread: ${session.name ?? session.sessionKey}`);
   }
@@ -445,13 +444,6 @@ function materializeSlackThreadChild(record: SlackThreadLifecycleRecord): {
       threadTs: record.providerThreadId,
       parentSessionKey: record.parentSessionKey,
     },
-  });
-  dbBindSessionToChat({
-    sessionKey: child.sessionKey,
-    chatId: threadChat.id,
-    agentId: child.agentId,
-    routeId: null,
-    bindingReason: "slack_thread_create_action",
   });
   attachChatToSession({
     sessionKey: child.sessionKey,

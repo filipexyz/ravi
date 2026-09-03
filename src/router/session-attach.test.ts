@@ -21,7 +21,9 @@ import {
   isChatCompatibleWithSession,
 } from "./sessions.js";
 import {
-  dbBindSessionToChat,
+  closeRouterDb,
+  dbLegacySessionChatBindingsTableExists,
+  dbPlantLegacySessionChatBindingForTests,
   dbRunSessionAttachMigrationForTests,
   dbUpsertChat,
   dbUpsertInstance,
@@ -131,13 +133,72 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     const session = makeSession("s3");
     const chat = makeChat("c3");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
-    const first = detachChatFromSession(session.sessionKey, chat.id);
+    const first = detachChatFromSession(session.sessionKey, chat.id, session.name);
     expect(first.detached).toBe(true);
     expect(first.outputDetached).toBe(true);
+    expect(first.attached).toBe(false);
+    expect(first.defaultOutput).toBe(false);
+    expect(first.legacy).toEqual({ table: "session_chat_bindings", status: "none" });
     expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(0);
-    const second = detachChatFromSession(session.sessionKey, chat.id);
+    const second = detachChatFromSession(session.sessionKey, chat.id, session.name);
     expect(second.detached).toBe(false);
     expect(second.outputDetached).toBe(false);
+    expect(second.attached).toBe(false);
+    expect(second.legacy.status).toBe("none");
+  });
+
+  it("detach with another output selected keeps that output and is idempotent", () => {
+    const session = makeSession("detach-other-output");
+    const outputChat = makeChat("keep-output");
+    const extraChat = makeChat("detach-extra");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: extraChat.id, setOutputTarget: false });
+
+    const first = detachChatFromSession(session.sessionKey, extraChat.id, session.name);
+    expect(first.detached).toBe(true);
+    expect(first.outputDetached).toBe(false);
+    expect(first.attached).toBe(false);
+    expect(first.subscriptions).toEqual([
+      expect.objectContaining({
+        chatId: outputChat.id,
+        defaultOutput: true,
+        detached: false,
+      }),
+    ]);
+
+    const second = detachChatFromSession(session.sessionKey, extraChat.id, session.name);
+    expect(second.detached).toBe(false);
+    expect(second.attached).toBe(false);
+    expect(listSessionSubscriptions(session.sessionKey).map((row) => row.chatId)).toEqual([outputChat.id]);
+    expect(listSessionSubscriptions(session.sessionKey)[0].outputAttachedAt).toBeNumber();
+  });
+
+  it("detach with no competing output does not resurrect after repeated db init", () => {
+    const session = makeSession("no-compete");
+    const chat = makeChat("only-output");
+    const other = makeChat("unrelated-history");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: other.id, setOutputTarget: false });
+    dbPlantLegacySessionChatBindingForTests({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      bindingReason: "stale-after-detach",
+      seenAt: 9_000,
+    });
+
+    detachChatFromSession(session.sessionKey, chat.id);
+    expect(listSessionSubscriptions(session.sessionKey).map((row) => row.chatId)).toEqual([other.id]);
+
+    closeRouterDb();
+    getDb();
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
+    expect(listSessionSubscriptions(session.sessionKey).map((row) => row.chatId)).toEqual([other.id]);
+    expect(findSessionByAttachedChat(chat.id)).toBeNull();
+
+    closeRouterDb();
+    getDb();
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
+    expect(listSessionSubscriptions(session.sessionKey).map((row) => row.chatId)).toEqual([other.id]);
   });
 
   it("detach-then-reattach reuses the soft-deleted row", () => {
@@ -281,7 +342,7 @@ describe("sessions/attach — instance isolation", () => {
   });
 });
 
-describe("sessions/attach — migration (dedupe + backfill)", () => {
+describe("sessions/attach — migration (dedupe + one-time binding drop)", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-session-attach-migration-");
   });
@@ -290,57 +351,84 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     stateDir = null;
   });
 
-  it("backfill picks at most one subscription per chat when legacy bindings overlap", () => {
-    // Two sessions share the same legacy chat binding — possible under
-    // the pre-attach 1:1 schema, which only had PK(session_key, chat_id)
-    // and no cross-session UNIQUE.
+  it("converts the newest leftover binding per chat and never creates a second output", () => {
     const older = makeSession("older");
     const newer = makeSession("newer");
     const shared = makeChat("shared-legacy");
+    const existingOutput = makeChat("existing-output");
+    attachChatToSession({ sessionKey: newer.sessionKey, chatId: existingOutput.id, setOutputTarget: true });
 
-    dbBindSessionToChat({
+    dbPlantLegacySessionChatBindingForTests({
       sessionKey: older.sessionKey,
       chatId: shared.id,
       bindingReason: "legacy",
       seenAt: 1_000,
     });
-    dbBindSessionToChat({
+    dbPlantLegacySessionChatBindingForTests({
       sessionKey: newer.sessionKey,
       chatId: shared.id,
       bindingReason: "legacy",
       seenAt: 2_000,
     });
 
-    // Manually wipe any subscription created by the initial migration so
-    // we can re-run the backfill against the legacy bindings.
-    getDb().prepare("DELETE FROM session_chat_subscriptions WHERE chat_id = ?").run(shared.id);
     dbRunSessionAttachMigrationForTests();
 
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
     const olderSubs = listSessionSubscriptions(older.sessionKey).filter((s) => s.chatId === shared.id);
     const newerSubs = listSessionSubscriptions(newer.sessionKey).filter((s) => s.chatId === shared.id);
-    expect(olderSubs.length + newerSubs.length).toBe(1);
-    // Most recent binding wins (newer.updated_at > older.updated_at).
-    expect(newerSubs).toHaveLength(1);
-    expect(newerSubs[0].outputAttachedAt).toBeNumber();
     expect(olderSubs).toHaveLength(0);
+    expect(newerSubs).toHaveLength(1);
+    expect(newerSubs[0].outputAttachedAt).toBeUndefined();
+    expect(listSessionSubscriptions(newer.sessionKey).find((s) => s.chatId === existingOutput.id)?.outputAttachedAt).toBeNumber();
   });
 
-  it("migration is idempotent — re-running keeps the same state and same schema", () => {
+  it("does not resurrect an intentionally detached pair from a leftover binding", () => {
+    const session = makeSession("stale-bind");
+    const keep = makeChat("keep-output");
+    const detached = makeChat("stale-detached");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: keep.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: detached.id, setOutputTarget: false });
+    detachChatFromSession(session.sessionKey, detached.id);
+    dbPlantLegacySessionChatBindingForTests({
+      sessionKey: session.sessionKey,
+      chatId: detached.id,
+      bindingReason: "stale",
+      seenAt: 9_000,
+    });
+
+    expect(() => dbRunSessionAttachMigrationForTests()).not.toThrow();
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
+    expect(findSessionByAttachedChat(detached.id)).toBeNull();
+    expect(listSessionSubscriptions(session.sessionKey).map((row) => row.chatId)).toEqual([keep.id]);
+    expect(listSessionSubscriptions(session.sessionKey)[0].outputAttachedAt).toBeNumber();
+  });
+
+  it("migration is idempotent — re-running keeps the same state and drops the legacy table", () => {
     const session = makeSession("idem-sess");
     const chat = makeChat("idem-chat");
-    dbBindSessionToChat({ sessionKey: session.sessionKey, chatId: chat.id, bindingReason: "legacy", seenAt: 1_000 });
-    getDb().prepare("DELETE FROM session_chat_subscriptions WHERE chat_id = ?").run(chat.id);
+    dbPlantLegacySessionChatBindingForTests({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      bindingReason: "legacy",
+      seenAt: 1_000,
+    });
 
     dbRunSessionAttachMigrationForTests();
     const after1 = listSessionSubscriptions(session.sessionKey);
     expect(after1).toHaveLength(1);
     expect(after1[0].outputAttachedAt).toBeNumber();
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
 
-    // Re-run; should not crash, should not duplicate, should not lose data.
     dbRunSessionAttachMigrationForTests();
     const after2 = listSessionSubscriptions(session.sessionKey);
     expect(after2).toHaveLength(1);
     expect(after2[0].id).toBe(after1[0].id);
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
+
+    closeRouterDb();
+    getDb();
+    expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(1);
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
 
     const idx = getDb()
       .prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_session_chat_subscriptions_active_chat'")
@@ -375,5 +463,83 @@ describe("sessions/attach — migration (dedupe + backfill)", () => {
     expect(bSubs).toHaveLength(1);
     expect(bSubs[0].outputAttachedAt).toBeNumber();
     expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(sessionB.sessionKey);
+  });
+});
+
+describe("sessions/attach — CLI final state", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-attach-cli-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function captureStdout(run: () => void): string {
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((value) => String(value)).join(" "));
+    };
+    try {
+      run();
+      return lines.join("\n");
+    } finally {
+      console.log = original;
+    }
+  }
+
+  it("prints JSON and human attach/detach state with no legacy binding", async () => {
+    const { SessionCommands } = await import("../cli/commands/sessions.js");
+    const commands = new SessionCommands();
+    const session = makeSession("cli-state");
+    const chat = makeChat("cli-chat");
+    const other = makeChat("cli-other");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: other.id, setOutputTarget: true });
+
+    const attachJson = JSON.parse(
+      captureStdout(() => commands.attach(session.sessionKey, chat.id, "cli-test", true)),
+    ) as Record<string, unknown>;
+    expect(attachJson).toMatchObject({
+      session: { sessionKey: session.sessionKey },
+      chatId: chat.id,
+      attached: true,
+      defaultOutput: true,
+      created: true,
+      legacy: { table: "session_chat_bindings", status: "none" },
+    });
+    expect(attachJson.subscriptions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ chatId: chat.id, defaultOutput: true, detached: false }),
+        expect.objectContaining({ chatId: other.id, defaultOutput: false, detached: false }),
+      ]),
+    );
+
+    const attachHuman = captureStdout(() => commands.attach(session.sessionKey, chat.id, undefined, false));
+    expect(attachHuman).toContain("Already attached");
+    expect(attachHuman).toContain("Attached: yes");
+    expect(attachHuman).toContain(`Default output: ${chat.id}`);
+    expect(attachHuman).toContain("Legacy bindings: none");
+
+    const detachJson = JSON.parse(
+      captureStdout(() => commands.detach(session.sessionKey, chat.id, true)),
+    ) as Record<string, unknown>;
+    expect(detachJson).toMatchObject({
+      session: { sessionKey: session.sessionKey },
+      chatId: chat.id,
+      attached: false,
+      defaultOutput: false,
+      detached: true,
+      outputDetached: true,
+      legacy: { table: "session_chat_bindings", status: "none" },
+    });
+    expect(detachJson.subscriptions).toEqual([
+      expect.objectContaining({ chatId: other.id, defaultOutput: false, detached: false }),
+    ]);
+
+    const detachHuman = captureStdout(() => commands.detach(session.sessionKey, chat.id, false));
+    expect(detachHuman).toContain("is not currently attached");
+    expect(detachHuman).toContain("Attached: no");
+    expect(detachHuman).toContain("Legacy bindings: none");
   });
 });

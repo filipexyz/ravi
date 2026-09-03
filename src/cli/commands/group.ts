@@ -13,7 +13,6 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { findContactsByTag, getContact, getContactById, normalizePhone, searchContacts } from "../../contacts.js";
 import {
-  dbBindSessionToChat,
   dbCreateRoute,
   dbFindChat,
   dbGetInstance,
@@ -1326,12 +1325,6 @@ export class GroupCommands {
           channel: "whatsapp",
           accountId: acctId,
           chatId: `group:${groupId}`,
-        });
-        dbBindSessionToChat({
-          sessionKey,
-          chatId: chat.id,
-          agentId: agent,
-          bindingReason: "whatsapp.group.create",
         });
         const attachment = attachChatToSession({
           sessionKey,
