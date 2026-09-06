@@ -2,21 +2,20 @@
 
 ## Checks
 
-- `pages ship` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with `project`, `slug`, `titlePresent`, `contentKind`, `route`, `visibility`
-  and `entrypoint`, and MUST NOT expose body text or filesystem paths. It MUST
-  NOT call Console at all — not even the project scope resolution. With
-  `--execute` it MUST ensure the host (reuse an existing slug; do not fail)
-  then publish+activate. `--body` MUST be wrapped in a simple HTML5 document.
-  Success JSON MUST include `{url, site, slug, route, visibility, artifactId}`.
-- `pages publish` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with exactly `project`, `site`, `sourceKind`, path-basename-only
-  `sourceName`, `route`, `visibility` and `entrypointPresent`; it MUST NOT
-  expose the raw source path or title/description content, and MUST NOT call
-  Console at all — not even the project scope resolution. With `--execute`
-  the upload/release MUST happen.
-- `pages create` and `pages domains` without `--execute` MUST exit 3 before
-  credential reads, project resolution or any Console/provider request.
+- `pages ship` without `--execute` MUST ensure the host (reuse an existing
+  slug; do not fail) then publish+activate. It MUST NOT exit 3 with
+  `WRITE_REQUIRES_EXECUTE` and MUST talk to Console when args are valid.
+  `--execute` MUST be accepted as an unused no-op. `--body` MUST be wrapped
+  in a simple HTML5 document. Success JSON MUST include
+  `{url, site, slug, route, visibility, artifactId}`.
+- `pages create` without `--execute` MUST write the host record. It MUST NOT
+  exit 3 with `WRITE_REQUIRES_EXECUTE`. `--execute` MUST be accepted as an
+  unused no-op.
+- `pages publish` without `--execute` MUST upload/publish. It MUST NOT exit 3
+  with `WRITE_REQUIRES_EXECUTE` and MUST talk to Console when args are valid.
+  `--execute` MUST be accepted as an unused no-op.
+- `pages domains` without `--execute` MUST exit 3 before credential reads,
+  project resolution or any Console/provider request.
 - `pages password set` without `--execute` MUST exit 3 BEFORE the hidden
   password prompt and before any Console call; its plan MUST NOT contain a
   password key or raw route path and MUST use `routePresent` metadata.
@@ -31,20 +30,24 @@
   `SITE_NOT_FOUND` envelope (exit 1) with suggestedAction `ravi pages list
   --json`; a route not-found MUST surface as `ROUTE_NOT_FOUND` (exit 1) with
   suggestedAction `ravi pages published --json`.
-- A `ContractError` thrown by the brake or a not-found mapping MUST pass
-  through `runPagesCommand`'s CloudAuthError funnel untouched.
+- A `ContractError` thrown by the remaining brakes or a not-found mapping MUST
+  pass through `runPagesCommand`'s CloudAuthError funnel untouched.
 - A 400 Console response carrying `DOMAIN_SETUP_REQUIRED` MUST preserve that
   code through cloud-auth mapping and render the sanitized TXT/CNAME instruction
   with exit 1; other provider messages MUST remain redacted.
 - `pages list --fields a,b,c --json` and `pages published --fields a,b,c
   --json` MUST return items containing only the requested fields.
-- Unbraked ops (visibility reductions and `password status`) MUST keep
-  immediate behavior and be declared as unbraked in the spec.
-- The dry-run plans of `pages publish` and `pages ship` MUST work without
-  saved Console scope, showing `(Console scope default)` placeholders instead
-  of resolved refs.
+- Unbraked ops (`ship`, `create`, `publish`, visibility reductions and
+  `password status`) MUST keep immediate behavior and be declared as unbraked
+  in the spec.
+- The dry-run plan of `pages domains` MUST work without saved Console scope,
+  showing `(Console scope default)` placeholders instead of resolved refs.
 - `ravi skills show pages` and `ravi skills show ravi-system-pages` MUST
   resolve to the same skill. The default gate `pages` MUST load
   `ravi-system-pages` for `ravi pages` and `pages.password`.
+- The `pages` skill MUST teach `ravi pages ship … --json` as the only happy
+  path to get a URL, without required `--execute`, and MUST NOT teach
+  `create` + `publish` choreography. `create`/`publish` MAY appear only under
+  an advanced/compat section.
 - `bun test src/cli/commands/pages.test.ts` SHOULD pass after any change to
   the pages contract surface.

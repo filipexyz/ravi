@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "7f762cac1007e469"
+    "version": "03cb96ac8ec5795a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -59199,7 +59199,7 @@
                     "type": "boolean"
                   },
                   "execute": {
-                    "description": "Create the external Pages host record",
+                    "description": "Unused compatibility no-op; pages create always writes the host record",
                     "type": "boolean"
                   },
                   "project": {
@@ -59326,7 +59326,7 @@
           }
         },
         "security": [],
-        "summary": "Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets",
+        "summary": "Advanced/compat: host-only Pages record; does not upload HTML. Prefer pages ship to get a URL",
         "tags": [
           "pages"
         ]
@@ -60129,7 +60129,7 @@
                     "type": "string"
                   },
                   "execute": {
-                    "description": "Actually upload/publish to Pages; default is a dry-run that only shows the plan (exit 3)",
+                    "description": "Unused compatibility no-op; pages publish always uploads and publishes",
                     "type": "boolean"
                   },
                   "idempotencyKey": {
@@ -60418,7 +60418,7 @@
           }
         },
         "security": [],
-        "summary": "Publish a directory, file, or local artifact to a project Pages host",
+        "summary": "Advanced/compat: upload to an existing host or local art_*; prefer pages ship unless the HTML is already art_*",
         "tags": [
           "pages"
         ]
@@ -60651,7 +60651,7 @@
                     "type": "string"
                   },
                   "execute": {
-                    "description": "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+                    "description": "Unused compatibility no-op; pages ship always ensures the host and publishes",
                     "type": "boolean"
                   },
                   "html": {

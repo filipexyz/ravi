@@ -51,19 +51,15 @@ contract errors rethrow first, recognizable Console not-found failures map to
    `ravi pages published --json`. Sites/routes live only in Console, so there
    is no cheap local candidate source — listing suggestedAction, never
    similarity suggestions.
-4. `pages create` and `pages domains` MUST default to dry-run and require
-   `--execute` before credential, project or provider resolution. Their plans
-   MUST contain only parsed identifiers, counts and presence metadata.
-   `pages publish` MUST also default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and an exact plan with `project`, `site`,
-   `sourceKind`, path-basename-only `sourceName`, `route`, `visibility` and
-   `entrypointPresent`. Raw source paths and title/description content MUST be
-   absent. The dry-run MUST NOT call Console at all — not even the project
-   scope resolution. `pages ship` MUST default to dry-run and require
-   `--execute` before credential, project or provider resolution. Its plan MUST
-   contain `project`, `slug`, `titlePresent`, `contentKind`, `route`,
-   `visibility` and `entrypoint`. Body text and filesystem paths MUST be
-   absent. Public visibility still requires `--execute`.
+4. `pages ship`, `pages create` and `pages publish` MUST execute immediately
+   when invoked with valid args. They MUST NOT dry-run, MUST NOT exit 3 with
+   `WRITE_REQUIRES_EXECUTE`, and MUST talk to Console (or fail on credentials /
+   usage) without `--execute`. `--execute` MAY remain as an unused
+   compatibility no-op so existing scripts keep working. Public visibility on
+   `ship`/`create`/`publish` is allowed in the same call. `pages domains` MUST
+   still default to dry-run and require `--execute` before credential, project
+   or provider resolution. Its plan MUST contain only parsed identifiers,
+   counts and presence metadata.
 5. `pages password set` and `pages password remove` MUST default to dry-run
    and require `--execute`. The `set` dry-run MUST fire BEFORE the hidden
    password prompt (a dry-run never reads secret material) and its plan MUST
@@ -97,13 +93,13 @@ contract errors rethrow first, recognizable Console not-found failures map to
 
 | op | class | brake |
 |---|---|---|
-| ship | ensures a host (create-or-reuse) then uploads bytes and activates a hosted route (external exposure, high) | dry-run + `--execute` |
-| publish | uploads bytes + (default) activates a public hosted route (external exposure, high) | dry-run + `--execute` |
+| ship | ensures a host (create-or-reuse) then uploads bytes and activates a hosted route | not braked / executes immediately (`--execute` unused no-op) |
+| publish | uploads bytes and (default) activates a hosted route | not braked / executes immediately (`--execute` unused no-op) |
 | password set | flips the route access policy on a live site (high) | dry-run + `--execute`, braked before the secret prompt |
 | password remove | widens who can reach the route, up to fully public (high) | dry-run + `--execute`, visibility validated first |
 | update / visibility → `public` | exposes already-hosted content to the open web | conditional dry-run + `--execute` |
 | update / visibility → `private`/`protected_link` | reduces exposure, reversible | not braked (declared) |
-| create | creates a host record in Ravi Console (external service mutation) | dry-run + `--execute` |
+| create | creates a host record in Ravi Console | not braked / executes immediately (`--execute` unused no-op) |
 | domains | changes provider-backed hostname bindings and routing | dry-run + `--execute` |
 
 There is no `pages remove`/route-removal command on this surface today; if one
@@ -122,14 +118,16 @@ is added it MUST arrive braked.
 
 ## Internal consumers
 
-The agent happy path is `ravi pages ship`, taught by the `pages` skill
+The agent-first happy path is `ravi pages ship`, taught by the `pages` skill
 (`ravi skills show pages` / `ravi skills show ravi-system-pages`) and by
-`AGENTS.md` ("Ravi Pages Publishing"). `create` stays host-only.
-`publish` stays the advanced upload primitive (including an existing `art_*`).
-The `contentPublishCommand` hint returned by `pages create`
-(`src/pages/client.ts`) still points at `pages publish --execute`.
-The `artifacts` skill MUST NOT teach Pages publishing; it points at skill
-`pages`.
+`AGENTS.md` ("Ravi Pages Publishing"). Agents MUST NOT choreograph
+`create` + `publish` to get a URL. `create` and `publish` remain implemented
+as advanced/compat commands (host-only create; publish onto an existing host
+or a local `art_*`) and MUST keep working. They MUST NOT be taught as the
+default path. The `contentPublishCommand` hint returned by `pages create`
+(`src/pages/client.ts`) still points at `pages publish` without a required
+`--execute`. The `artifacts` skill MUST NOT teach Pages publishing; it points
+at skill `pages`.
 
 The default skill gate `pages` (`/^pages(?:[._]|$)/` → `ravi-system-pages`)
 MUST load the skill for `ravi pages …` and `pages.password`.
@@ -147,11 +145,10 @@ MUST load the skill for `ravi pages …` and `pages.password`.
 - `bun test src/cli/commands/pages.test.ts` green (contract block included),
   no new failures vs the `dev` baseline.
 - Live checks on the local CLI: `pages ship --title T --body "<p>x</p>" --json`
-  → exit 3 before credentials; with `--execute` → ensure-site + publish and
-  JSON `{url,site,slug,route,visibility,artifactId}`; `pages create p s --json`
-  and `pages domains p s docs.example.com --json` → exit 3 before credentials;
-  `pages publish p s ./site --json` → exit 3, no Console call; with `--execute`
-  → publishes;
+  → ensure-site + publish and JSON `{url,site,slug,route,visibility,artifactId}`
+  (passing leftover `--execute` is a no-op); `pages create p s --json` →
+  writes the host immediately; `pages publish p s ./site --json` → publishes;
+  `pages domains p s docs.example.com --json` → exit 3 before credentials;
   `pages password set p s --json`
   → exit 3 without prompting; `pages visibility p s public --json` → exit 3;
   `pages visibility p s private --json` → immediate write; `pages list --json
@@ -167,7 +164,8 @@ MUST load the skill for `ravi pages …` and `pages.password`.
   in tests MUST run inside `runWithContext({}, ...)` so the contract helpers
   throw `ContractError` instead of killing the test process with
   `process.exit(3)`.
-- Braking `create` or `domains` after project resolution would let a dry-run
-  touch credential/provider state. Braking `password set` AFTER the prompt
-  would make dry-runs read secret material; the brake fires right after arg
-  parsing, before prompt and before any Console call.
+- Braking `domains` after project resolution would let a dry-run touch
+  credential/provider state. Braking `password set` AFTER the prompt would
+  make dry-runs read secret material; the brake fires right after arg
+  parsing, before prompt and before any Console call. `create`, `publish` and
+  `ship` are unbraked on purpose; leftover `--execute` is ignored.
