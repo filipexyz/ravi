@@ -54,27 +54,21 @@ ravi skills show pages
 Happy path is one command — `ravi pages ship`. Do not choreograph `create` + `publish`.
 
 ```bash
-ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute
+ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json
 ```
 
-`create` is host-only. `publish` is the advanced upload primitive (including an
-existing local `art_*`). They stay available for host work; the agent happy
-path is not `artifacts publish`.
+`create` is host-only compatibility. `publish` is the advanced upload primitive
+(including an existing local `art_*`). They stay available; the agent happy
+path is `ravi pages ship`, not `artifacts publish`.
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public --execute
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
+ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
 ```
 
-If a local Ravi artifact already exists, publish the artifact id:
-
-```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
-```
-
-Host creation, domain binding, shipping, publishing and password changes are
-dry-run by default (exit 3): re-run with `--execute` to perform the external
-mutation. Public visibility still needs `--execute`.
+`ship`, `create` and `publish` execute immediately. Leftover `--execute` on
+those ops is ignored. Domain binding, password changes, and switching a site
+to public visibility are dry-run by default (exit 3): re-run with `--execute`.
 
 Protect an active route with a password without republishing its bytes:
 

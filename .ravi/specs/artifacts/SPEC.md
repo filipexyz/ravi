@@ -200,19 +200,19 @@ remains the generic primitive under the hood.
 Canonical one-shot:
 
 ```bash
-ravi pages ship --title "Demo" --dir ./site --execute --json
+ravi pages ship --title "Demo" --dir ./site --json
 ```
 
 Advanced directory publish (existing host):
 
 ```bash
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
 ```
 
 Advanced local artifact publish:
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
 ```
 
 Synchronous generation remains available only when explicitly requested:

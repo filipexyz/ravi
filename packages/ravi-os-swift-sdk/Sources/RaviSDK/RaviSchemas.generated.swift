@@ -49113,7 +49113,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "execute": {
-        "description": "Create the external Pages host record",
+        "description": "Unused compatibility no-op; pages create always writes the host record",
         "type": "boolean"
       },
       "project": {
@@ -49913,7 +49913,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Actually upload/publish to Pages; default is a dry-run that only shows the plan (exit 3)",
+        "description": "Unused compatibility no-op; pages publish always uploads and publishes",
         "type": "boolean"
       },
       "idempotencyKey": {
@@ -50383,7 +50383,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+        "description": "Unused compatibility no-op; pages ship always ensures the host and publishes",
         "type": "boolean"
       },
       "html": {

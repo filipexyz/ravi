@@ -55,21 +55,50 @@ export interface PagesPasswordCommandDeps extends PagesCommandDeps {
 
 const PAGES_SHIP_HELP = `
 Examples:
-  ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute
-  ravi pages ship demo --title "Landing" --html ./landing.html --visibility public --execute
-  ravi pages ship proj docs --title "Docs" --dir ./site --route / --execute --json
+  ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json
+  ravi pages ship demo --title "Landing" --html ./landing.html --visibility public
+  ravi pages ship proj docs --title "Docs" --dir ./site --route / --json
 
 Happy path:
   One command. Do not choreograph pages create + pages publish.
   --title is required. Pass exactly one of --body, --html, or --dir.
   Omit <slug> to generate it from --title. Existing slugs are reused.
+  Public visibility is allowed in the same call.
 
 Write brake:
-  Without --execute the command is a dry-run (exit 3) and never talks to Console.
-  Public visibility still requires --execute.
+  None. ship always ensures the host and publishes. --execute is accepted
+  and ignored for backwards compatibility.
 
 JSON:
   { url, site, slug, route, visibility, artifactId }
+`;
+
+const PAGES_CREATE_HELP = `
+Advanced / compatibility:
+  Host-only. Does not upload HTML or assets.
+  Prefer \`ravi pages ship --title <title> --body|--html|--dir … --json\` to get a URL.
+
+Examples:
+  ravi pages create demo --json
+  ravi pages create proj docs --visibility private --json
+
+Write brake:
+  None. create always writes the host record. --execute is accepted and ignored
+  for backwards compatibility.
+`;
+
+const PAGES_PUBLISH_HELP = `
+Advanced / compatibility:
+  Upload onto an existing host, or publish a local art_* already in the ledger.
+  Prefer \`ravi pages ship\` unless the HTML is already an art_* id.
+
+Examples:
+  ravi pages publish proj demo ./site --route / --json
+  ravi pages publish proj demo art_demo_123 --route / --json
+
+Write brake:
+  None. publish always uploads. --execute is accepted and ignored for
+  backwards compatibility.
 `;
 
 @Group({
@@ -162,7 +191,8 @@ export class PagesCommands {
 
   @Command({
     name: "create",
-    description: "Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets",
+    description: "Advanced/compat: host-only Pages record; does not upload HTML. Prefer pages ship to get a URL",
+    helpAfter: PAGES_CREATE_HELP,
   })
   @CommandAccess({
     kind: "mutate",
@@ -182,25 +212,16 @@ export class PagesCommands {
     isDefault?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--execute", description: "Create the external Pages host record" }) execute?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Unused compatibility no-op; pages create always writes the host record",
+    })
+    execute?: boolean,
   ) {
-    // Creating a Pages host record mutates Ravi Console, so confirmation must
-    // happen before credential and project resolution.
+    void execute;
     return runPagesCommand("pages create", asJson, async () => {
       const parsed = parseCreateArgs(args, projectOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
-      if (execute !== true) {
-        contractDryRun(
-          "pages create",
-          {
-            project: parsed.project ?? "(Console scope default)",
-            slug: parsed.slug,
-            defaultVisibility: normalizedVisibility ?? null,
-            defaultSite: Boolean(isDefault),
-          },
-          { asJson },
-        );
-      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await createPageSite(
         {
@@ -252,10 +273,11 @@ export class PagesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Actually ensure the host and publish; default is a dry-run that only shows the plan (exit 3)",
+      description: "Unused compatibility no-op; pages ship always ensures the host and publishes",
     })
     execute?: boolean,
   ) {
+    void execute;
     return runPagesCommand("pages ship", asJson, async () => {
       const parsed = parseShipArgs(args, projectOption);
       const title = requireShipTitle(titleOption);
@@ -263,26 +285,7 @@ export class PagesCommands {
       const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
       const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
       const slug = parsed.slug ?? slugifyPageTitle(title);
-      const contentKind = await validateShipSourceInput({ body, dir, html });
-      if (execute !== true) {
-        // Write brake (Manual v2 7.8): ship creates/reuses a Console host and
-        // publishes bytes onto a hosted route. Dry-run before any Console call,
-        // including project scope resolution. The plan never carries body text
-        // or filesystem paths.
-        contractDryRun(
-          "pages ship",
-          {
-            project: parsed.project ?? "(Console scope default)",
-            slug,
-            titlePresent: true,
-            contentKind,
-            route: resolvedRoute,
-            visibility: normalizedVisibility,
-            entrypoint: resolvedEntrypoint,
-          },
-          { asJson },
-        );
-      }
+      await validateShipSourceInput({ body, dir, html });
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const site = await ensurePageSite(
         {
@@ -335,7 +338,12 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a project Pages host" })
+  @Command({
+    name: "publish",
+    description:
+      "Advanced/compat: upload to an existing host or local art_*; prefer pages ship unless the HTML is already art_*",
+    helpAfter: PAGES_PUBLISH_HELP,
+  })
   @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high", requiresConfirmation: true })
   async publish(
     @Arg("args", {
@@ -374,33 +382,15 @@ export class PagesCommands {
     siteOption?: string,
     @Option({
       flags: "--execute",
-      description: "Actually upload/publish to Pages; default is a dry-run that only shows the plan (exit 3)",
+      description: "Unused compatibility no-op; pages publish always uploads and publishes",
     })
     execute?: boolean,
   ) {
+    void execute;
     return runPagesCommand("pages publish", asJson, async () => {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
-      if (execute !== true) {
-        // Write brake (Manual v2 7.8): publish uploads local bytes and (unless
-        // --no-activate) exposes them on a hosted Pages URL — external
-        // exposure. Dry-run by default and exit 3 before any Console call,
-        // including the project scope resolution.
-        contractDryRun(
-          "pages publish",
-          {
-            project: parsed.project ?? "(Console scope default)",
-            site: parsed.site ?? "(project default Pages host)",
-            sourceKind: /^art_[a-z0-9]+_[a-z0-9]+$/.test(parsed.source) ? "artifact" : "path",
-            sourceName: parsed.source.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? parsed.source,
-            route: route ?? "/",
-            visibility: normalizedVisibility ?? null,
-            entrypointPresent: Boolean(entrypoint),
-          },
-          { asJson },
-        );
-      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await publishArtifactToConsole(
         parsed.source,

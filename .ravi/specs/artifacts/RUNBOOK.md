@@ -60,7 +60,7 @@ Hospedar HTML → skill `pages` (`ravi skills show pages`). The one-shot is
 `ravi pages ship`; do not choreograph `create` + `publish`.
 
 ```bash
-ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json --execute
+ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json
 ```
 
 If the HTML is already a local `art_*`, use advanced `ravi pages publish`

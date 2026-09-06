@@ -131,42 +131,6 @@ const executeInstructions = [
     path: "docs/cli/overview.mdx",
     instruction: "ravi heartbeat trigger <id> --execute",
   },
-  {
-    name: "Pages ship root instructions",
-    path: "AGENTS.md",
-    instruction: 'ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute',
-  },
-  {
-    name: "Pages ship skill",
-    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
-    instruction: 'ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json --execute',
-  },
-  {
-    name: "Pages create root instructions",
-    path: "AGENTS.md",
-    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
-  },
-  {
-    name: "Pages ship artifact runbook",
-    path: ".ravi/specs/artifacts/RUNBOOK.md",
-    instruction: 'ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json --execute',
-  },
-  {
-    name: "Pages ship artifact spec",
-    path: ".ravi/specs/artifacts/SPEC.md",
-    instruction: 'ravi pages ship --title "Demo" --dir ./site --execute --json',
-  },
-  {
-    name: "Pages publish artifact spec",
-    path: ".ravi/specs/artifacts/SPEC.md",
-    instruction:
-      "ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute",
-  },
-  {
-    name: "Pages create Console-scope acceptance",
-    path: ".ravi/specs/cli/console-scope/SPEC.md",
-    instruction: "ravi pages create <slug> --json --execute",
-  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -241,6 +205,50 @@ const obsoleteExecuteConsumers = [
     path: ".ravi/specs/channels/slack/canvas/RUNBOOK.md",
     obsolete: "ravi slack canvas-access-delete F123 --users U123 --execute --json",
     current: "ravi slack canvas-access-delete F123 --users U123 --json",
+  },
+  {
+    name: "Pages ship root instructions",
+    path: "AGENTS.md",
+    obsolete: 'ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute',
+    current: 'ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json',
+  },
+  {
+    name: "Pages ship skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: 'ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json --execute',
+    current: 'ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json',
+  },
+  {
+    name: "Pages create root instructions",
+    path: "AGENTS.md",
+    obsolete: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+    current: "ravi pages create <project-ref> <site-slug> --visibility public",
+  },
+  {
+    name: "Pages ship artifact runbook",
+    path: ".ravi/specs/artifacts/RUNBOOK.md",
+    obsolete: 'ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json --execute',
+    current: 'ravi pages ship --title "Demo" --body "<h1>OK</h1>" --json',
+  },
+  {
+    name: "Pages ship artifact spec",
+    path: ".ravi/specs/artifacts/SPEC.md",
+    obsolete: 'ravi pages ship --title "Demo" --dir ./site --execute --json',
+    current: 'ravi pages ship --title "Demo" --dir ./site --json',
+  },
+  {
+    name: "Pages publish artifact spec",
+    path: ".ravi/specs/artifacts/SPEC.md",
+    obsolete:
+      "ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute",
+    current:
+      "ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html",
+  },
+  {
+    name: "Pages create Console-scope acceptance",
+    path: ".ravi/specs/cli/console-scope/SPEC.md",
+    obsolete: "ravi pages create <slug> --json --execute",
+    current: "ravi pages create <slug> --json",
   },
 ] as const;
 

@@ -24,9 +24,9 @@ Taxonomia de saída:
 - `2` erro de uso (falta `--title`, `--body`/`--html`/`--dir` conflitantes, slug inválido).
 - `3` freio de escrita — não é erro. Nada foi enviado/exposto; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
 
-`pages ship` é dry-run por default. `--execute` é obrigatório para criar/reusar o host e publicar — inclusive com `--visibility public`.
+Exit 3 **não** se aplica a `pages ship`, `pages create` nem `pages publish`. Esses ops escrevem na hora. `--execute` nesses três é no-op (aceito por compatibilidade). O freio continua em `password set/remove`, `domains` e `visibility`/`update` para `public`.
 
-`--json` de sucesso:
+`--json` de sucesso do ship:
 
 ```json
 { "url": "https://demo.ravi.page/", "site": {}, "slug": "demo", "route": "/", "visibility": "private", "artifactId": "art_xxx" }
@@ -34,15 +34,15 @@ Taxonomia de saída:
 
 Checklist:
 
-- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
-- Usei só `ravi pages ship` para criar a página, sem `create` + `publish`?
+- Usei só `ravi pages ship` para obter a URL, sem `create` + `publish`?
+- Tratei exit 3 como freio só em password/domains/visibility→public, nunca em ship?
 
 ## One-shot
 
 ```bash
-ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json --execute
-ravi pages ship --title "Landing" --html ./landing.html --visibility public --execute --json
-ravi pages ship --title "Docs" --dir ./site --entrypoint index.html --execute --json
+ravi pages ship --title "Relatório semanal" --body "<h1>OK</h1>" --json
+ravi pages ship --title "Landing" --html ./landing.html --visibility public --json
+ravi pages ship --title "Docs" --dir ./site --entrypoint index.html --json
 ```
 
 Regras:
@@ -52,8 +52,7 @@ Regras:
 - Defaults: `--visibility private`, `--route /`, `--entrypoint index.html`.
 - Slug existente: reusa o host. Não falha.
 - `[project]` é opcional (scope do Console). `--project` também vale.
-
-Sem `--execute` o comando só mostra o plano (exit 3) e não fala com o Console.
+- `--visibility public` vale no mesmo comando. Não precisa de `--execute`.
 
 ## Listar
 
@@ -62,14 +61,13 @@ ravi pages list --json
 ravi pages published --json
 ```
 
-## Avançado (não é o happy path)
+## Avançado / legado
 
-`create` só cria o host. `publish` sobe bytes num host já existente. Use só se o one-shot não cabe.
-
-Se o HTML **já** está no ledger local como `art_*`:
+Não é o happy path. `create` só cria o host. `publish` sobe bytes num host já existente, ou publica um `art_*` que **já** está no ledger local. Prefira `ship` salvo o HTML já ser um `art_*`.
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --execute --json
+ravi pages create <slug> --json
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --json
 ```
 
 ## Password / visibility / domain

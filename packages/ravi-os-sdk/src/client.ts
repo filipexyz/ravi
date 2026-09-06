@@ -4186,7 +4186,7 @@ export class RaviClient {
   };
 
   readonly pages = {
-    /** Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets */
+    /** Advanced/compat: host-only Pages record; does not upload HTML. Prefer pages ship to get a URL */
     create: async (args: string[], options?: {
       console?: string;
       defaultSite?: boolean;
@@ -4254,7 +4254,7 @@ export class RaviClient {
         });
       }
     },
-    /** Publish a directory, file, or local artifact to a project Pages host */
+    /** Advanced/compat: upload to an existing host or local art_*; prefer pages ship unless the HTML is already art_* */
     publish: async (args: string[], options?: {
       artifactSlug?: string;
       artifactVersion?: string;
