@@ -6,7 +6,7 @@
  * Tokens never land in session files, logs, or returned payloads.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
@@ -348,7 +348,7 @@ function defaultSpawn(
     detached: options.detached,
     env: options.env,
     stdio: ["ignore", "pipe", "pipe"],
-  }) as ChildProcessWithoutNullStreams;
+  });
 }
 
 async function collectPrompt(
