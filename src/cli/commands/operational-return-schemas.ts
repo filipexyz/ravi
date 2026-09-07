@@ -1709,6 +1709,120 @@ export const runtimeCredentialClassifyReturnSchema = z
   })
   .passthrough();
 
+export const runtimeEnvEntryReturnSchema = z
+  .object({
+    key: z.string(),
+    present: z.boolean(),
+    secret: z.boolean(),
+    redacted: z.boolean(),
+    value: z.string().nullable(),
+    path: z.string(),
+  })
+  .strict();
+
+export const runtimeEnvMutationReturnSchema = runtimeEnvEntryReturnSchema
+  .extend({
+    action: z.enum(["set", "unset"]),
+    daemonReloadRequired: z.boolean(),
+  })
+  .strict();
+
+const runtimeProviderLoginObjectSchema = z
+  .object({
+    id: z.string(),
+    provider: z.enum(["codex", "grok"]),
+    status: z.enum(["pending", "authorized", "failed", "cancelled"]),
+    verificationUrl: z.string().nullable(),
+    userCode: z.string().nullable(),
+    home: z.string(),
+    pid: z.number().nullable(),
+    command: z.string(),
+    startedAt: z.string(),
+    updatedAt: z.string(),
+    expiresAt: z.string(),
+    replacedLoginId: z.string().optional(),
+    error: z.string().optional(),
+  })
+  .strict();
+
+const runtimeProviderCredentialBindingSchema = z
+  .object({
+    id: z.string(),
+    sourceKind: z.string(),
+    targetKind: z.string(),
+    targetName: z.string(),
+    secretRef: z.string(),
+    sourceHint: z.string().nullable(),
+    sensitive: z.boolean(),
+    remoteForward: z.boolean(),
+  })
+  .strict();
+
+const runtimeProviderCredentialSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    runtimeProvider: z.string(),
+    upstreamProvider: z.string().nullable(),
+    modelAllowlist: z.array(z.string()),
+    modelDenylist: z.array(z.string()),
+    agentAllowlist: z.array(z.string()),
+    taskProfileAllowlist: z.array(z.string()),
+    priority: z.number(),
+    weight: z.number().nullable(),
+    enabled: z.boolean(),
+    status: z.string(),
+    authMethod: z.string().nullable(),
+    sourceKind: z.string().nullable(),
+    strategyHint: z.string().nullable(),
+    sessionCompatibilityKey: z.string().nullable(),
+    authProfileRef: z.string().nullable(),
+    fingerprint: z.string(),
+    sensitiveEnvKeys: z.array(z.string()),
+    remoteForwardEnvKeys: z.array(z.string()),
+    lastErrorCode: z.string().nullable(),
+    lastErrorReason: z.string().nullable(),
+    lastErrorMessageRedacted: z.string().nullable(),
+    resetAt: z.number().nullable(),
+    notes: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    bindings: z.array(runtimeProviderCredentialBindingSchema),
+  })
+  .strict();
+
+const runtimeProviderAgentResultSchema = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    changed: z.boolean(),
+  })
+  .strict();
+
+export const runtimeProviderLoginReturnSchema = z
+  .object({
+    login: runtimeProviderLoginObjectSchema,
+  })
+  .strict();
+
+export const runtimeProviderConfigureReturnSchema = z
+  .object({
+    env: runtimeEnvMutationReturnSchema,
+    credential: runtimeProviderCredentialSchema,
+    credentialCreated: z.boolean(),
+    agents: z.array(runtimeProviderAgentResultSchema),
+  })
+  .strict();
+
+export const runtimeProviderLoginCompleteReturnSchema = z
+  .object({
+    login: runtimeProviderLoginObjectSchema,
+    credential: runtimeProviderCredentialSchema,
+    credentialCreated: z.boolean(),
+    agents: z.array(runtimeProviderAgentResultSchema),
+  })
+  .strict();
+
 export const triggerTopicsReturnSchema = z
   .object({
     topics: z.array(looseObjectSchema),

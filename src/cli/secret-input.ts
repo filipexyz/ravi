@@ -23,6 +23,43 @@ export type ConfirmedSecretInputDeps = {
   output?: Pick<Writable, "write">;
 };
 
+export type NonInteractiveSecretInputOptions = {
+  fromStdin?: boolean;
+  maxBytes?: number;
+  provided?: string;
+};
+
+export type NonInteractiveSecretInputDeps = {
+  input?: Readable;
+};
+
+/**
+ * Read a secret without a TTY prompt. Gateway callers pass `provided`;
+ * process CLI callers pass redirected `--stdin`. Never logs the value.
+ */
+export async function readNonInteractiveSecret(
+  options: NonInteractiveSecretInputOptions,
+  deps: NonInteractiveSecretInputDeps = {},
+): Promise<string> {
+  const provided = options.provided?.trim();
+  if (provided && options.fromStdin) {
+    throw new Error("Use either a provided secret or --stdin, not both.");
+  }
+  if (provided) {
+    return requireSecret(provided);
+  }
+  if (!options.fromStdin) {
+    throw new Error(
+      "Provide the secret via --stdin (CLI) or the redacted body field (gateway). TTY prompts are disabled.",
+    );
+  }
+  const input = deps.input ?? process.stdin;
+  if ((input as SecretInputStream).isTTY) {
+    throw new Error("--stdin requires redirected input. TTY prompts are disabled.");
+  }
+  return requireSecret(await readBoundedStdin(input, options.maxBytes ?? DEFAULT_MAX_BYTES));
+}
+
 export async function readConfirmedSecret(
   options: ConfirmedSecretInputOptions,
   deps: ConfirmedSecretInputDeps = {},
