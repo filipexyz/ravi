@@ -15181,6 +15181,114 @@ class RuntimeCredentialsStatusReturn {
 
 RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RuntimeCredentialsStatusReturn.fromJsonValue(json);
 
+class RuntimeEnvGetReturn {
+  const RuntimeEnvGetReturn({required this.key, required this.path, required this.present, required this.redacted, required this.secret, required this.value});
+
+  final String key;
+  final String path;
+  final bool present;
+  final bool redacted;
+  final bool secret;
+  final RaviJson value;
+
+  factory RuntimeEnvGetReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeEnvGetReturn(
+      key: raviJsonAsString(json["key"]),
+      path: raviJsonAsString(json["path"]),
+      present: raviJsonAsBool(json["present"]),
+      redacted: raviJsonAsBool(json["redacted"]),
+      secret: raviJsonAsBool(json["secret"]),
+      value: RaviJson.from(json["value"]),
+    );
+  }
+
+  static RuntimeEnvGetReturn fromJsonValue(Object? json) {
+    return RuntimeEnvGetReturn.fromJson(raviJsonObject(json, "RuntimeEnvGetReturn"));
+  }
+}
+
+RuntimeEnvGetReturn runtimeEnvGetReturnFromJson(Object? json) => RuntimeEnvGetReturn.fromJsonValue(json);
+
+class RuntimeEnvSetOptions {
+  const RuntimeEnvSetOptions({this.stdin, this.value});
+
+  final bool? stdin;
+  final String? value;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (stdin != null) {
+      into["stdin"] = RaviJson.from(stdin);
+    }
+    if (value != null) {
+      into["value"] = RaviJson.from(value);
+    }
+  }
+}
+
+class RuntimeEnvSetReturn {
+  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.path, required this.present, required this.redacted, required this.secret, required this.value});
+
+  final String action;
+  final bool daemonReloadRequired;
+  final String key;
+  final String path;
+  final bool present;
+  final bool redacted;
+  final bool secret;
+  final RaviJson value;
+
+  factory RuntimeEnvSetReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeEnvSetReturn(
+      action: raviJsonAsString(json["action"]),
+      daemonReloadRequired: raviJsonAsBool(json["daemonReloadRequired"]),
+      key: raviJsonAsString(json["key"]),
+      path: raviJsonAsString(json["path"]),
+      present: raviJsonAsBool(json["present"]),
+      redacted: raviJsonAsBool(json["redacted"]),
+      secret: raviJsonAsBool(json["secret"]),
+      value: RaviJson.from(json["value"]),
+    );
+  }
+
+  static RuntimeEnvSetReturn fromJsonValue(Object? json) {
+    return RuntimeEnvSetReturn.fromJson(raviJsonObject(json, "RuntimeEnvSetReturn"));
+  }
+}
+
+RuntimeEnvSetReturn runtimeEnvSetReturnFromJson(Object? json) => RuntimeEnvSetReturn.fromJsonValue(json);
+
+class RuntimeEnvUnsetReturn {
+  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.path, required this.present, required this.redacted, required this.secret, required this.value});
+
+  final String action;
+  final bool daemonReloadRequired;
+  final String key;
+  final String path;
+  final bool present;
+  final bool redacted;
+  final bool secret;
+  final RaviJson value;
+
+  factory RuntimeEnvUnsetReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeEnvUnsetReturn(
+      action: raviJsonAsString(json["action"]),
+      daemonReloadRequired: raviJsonAsBool(json["daemonReloadRequired"]),
+      key: raviJsonAsString(json["key"]),
+      path: raviJsonAsString(json["path"]),
+      present: raviJsonAsBool(json["present"]),
+      redacted: raviJsonAsBool(json["redacted"]),
+      secret: raviJsonAsBool(json["secret"]),
+      value: RaviJson.from(json["value"]),
+    );
+  }
+
+  static RuntimeEnvUnsetReturn fromJsonValue(Object? json) {
+    return RuntimeEnvUnsetReturn.fromJson(raviJsonObject(json, "RuntimeEnvUnsetReturn"));
+  }
+}
+
+RuntimeEnvUnsetReturn runtimeEnvUnsetReturnFromJson(Object? json) => RuntimeEnvUnsetReturn.fromJsonValue(json);
+
 class RuntimePresetsCreateOptions {
   const RuntimePresetsCreateOptions({this.description, this.disabled, this.model, this.provider});
 
@@ -15504,6 +15612,254 @@ class RuntimePresetsShowReturn {
 }
 
 RuntimePresetsShowReturn runtimePresetsShowReturnFromJson(Object? json) => RuntimePresetsShowReturn.fromJsonValue(json);
+
+class RuntimeProvidersClaudeConfigureOptions {
+  const RuntimeProvidersClaudeConfigureOptions({this.agents, this.label, this.setProvider, this.stdin, this.token});
+
+  final String? agents;
+  final String? label;
+  final bool? setProvider;
+  final bool? stdin;
+  final String? token;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agents != null) {
+      into["agents"] = RaviJson.from(agents);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (setProvider != null) {
+      into["setProvider"] = RaviJson.from(setProvider);
+    }
+    if (stdin != null) {
+      into["stdin"] = RaviJson.from(stdin);
+    }
+    if (token != null) {
+      into["token"] = RaviJson.from(token);
+    }
+  }
+}
+
+class RuntimeProvidersClaudeConfigureReturn {
+  const RuntimeProvidersClaudeConfigureReturn({required this.agents, required this.credential, required this.credentialCreated, required this.env});
+
+  final List<RaviJson> agents;
+  final RaviJson credential;
+  final bool credentialCreated;
+  final RaviJson env;
+
+  factory RuntimeProvidersClaudeConfigureReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersClaudeConfigureReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      credential: RaviJson.from(json["credential"]),
+      credentialCreated: raviJsonAsBool(json["credentialCreated"]),
+      env: RaviJson.from(json["env"]),
+    );
+  }
+
+  static RuntimeProvidersClaudeConfigureReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersClaudeConfigureReturn.fromJson(raviJsonObject(json, "RuntimeProvidersClaudeConfigureReturn"));
+  }
+}
+
+RuntimeProvidersClaudeConfigureReturn runtimeProvidersClaudeConfigureReturnFromJson(Object? json) => RuntimeProvidersClaudeConfigureReturn.fromJsonValue(json);
+
+class RuntimeProvidersCodexLoginCancelReturn {
+  const RuntimeProvidersCodexLoginCancelReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersCodexLoginCancelReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersCodexLoginCancelReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersCodexLoginCancelReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersCodexLoginCancelReturn.fromJson(raviJsonObject(json, "RuntimeProvidersCodexLoginCancelReturn"));
+  }
+}
+
+RuntimeProvidersCodexLoginCancelReturn runtimeProvidersCodexLoginCancelReturnFromJson(Object? json) => RuntimeProvidersCodexLoginCancelReturn.fromJsonValue(json);
+
+class RuntimeProvidersCodexLoginCompleteOptions {
+  const RuntimeProvidersCodexLoginCompleteOptions({this.agents, this.label, this.setProvider});
+
+  final String? agents;
+  final String? label;
+  final bool? setProvider;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agents != null) {
+      into["agents"] = RaviJson.from(agents);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (setProvider != null) {
+      into["setProvider"] = RaviJson.from(setProvider);
+    }
+  }
+}
+
+class RuntimeProvidersCodexLoginCompleteReturn {
+  const RuntimeProvidersCodexLoginCompleteReturn({required this.agents, required this.credential, required this.credentialCreated, required this.login});
+
+  final List<RaviJson> agents;
+  final RaviJson credential;
+  final bool credentialCreated;
+  final RaviJson login;
+
+  factory RuntimeProvidersCodexLoginCompleteReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersCodexLoginCompleteReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      credential: RaviJson.from(json["credential"]),
+      credentialCreated: raviJsonAsBool(json["credentialCreated"]),
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersCodexLoginCompleteReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersCodexLoginCompleteReturn.fromJson(raviJsonObject(json, "RuntimeProvidersCodexLoginCompleteReturn"));
+  }
+}
+
+RuntimeProvidersCodexLoginCompleteReturn runtimeProvidersCodexLoginCompleteReturnFromJson(Object? json) => RuntimeProvidersCodexLoginCompleteReturn.fromJsonValue(json);
+
+class RuntimeProvidersCodexLoginStartReturn {
+  const RuntimeProvidersCodexLoginStartReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersCodexLoginStartReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersCodexLoginStartReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersCodexLoginStartReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersCodexLoginStartReturn.fromJson(raviJsonObject(json, "RuntimeProvidersCodexLoginStartReturn"));
+  }
+}
+
+RuntimeProvidersCodexLoginStartReturn runtimeProvidersCodexLoginStartReturnFromJson(Object? json) => RuntimeProvidersCodexLoginStartReturn.fromJsonValue(json);
+
+class RuntimeProvidersCodexLoginStatusReturn {
+  const RuntimeProvidersCodexLoginStatusReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersCodexLoginStatusReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersCodexLoginStatusReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersCodexLoginStatusReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersCodexLoginStatusReturn.fromJson(raviJsonObject(json, "RuntimeProvidersCodexLoginStatusReturn"));
+  }
+}
+
+RuntimeProvidersCodexLoginStatusReturn runtimeProvidersCodexLoginStatusReturnFromJson(Object? json) => RuntimeProvidersCodexLoginStatusReturn.fromJsonValue(json);
+
+class RuntimeProvidersGrokLoginCancelReturn {
+  const RuntimeProvidersGrokLoginCancelReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersGrokLoginCancelReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersGrokLoginCancelReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersGrokLoginCancelReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersGrokLoginCancelReturn.fromJson(raviJsonObject(json, "RuntimeProvidersGrokLoginCancelReturn"));
+  }
+}
+
+RuntimeProvidersGrokLoginCancelReturn runtimeProvidersGrokLoginCancelReturnFromJson(Object? json) => RuntimeProvidersGrokLoginCancelReturn.fromJsonValue(json);
+
+class RuntimeProvidersGrokLoginCompleteOptions {
+  const RuntimeProvidersGrokLoginCompleteOptions({this.agents, this.label, this.setProvider});
+
+  final String? agents;
+  final String? label;
+  final bool? setProvider;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agents != null) {
+      into["agents"] = RaviJson.from(agents);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (setProvider != null) {
+      into["setProvider"] = RaviJson.from(setProvider);
+    }
+  }
+}
+
+class RuntimeProvidersGrokLoginCompleteReturn {
+  const RuntimeProvidersGrokLoginCompleteReturn({required this.agents, required this.credential, required this.credentialCreated, required this.login});
+
+  final List<RaviJson> agents;
+  final RaviJson credential;
+  final bool credentialCreated;
+  final RaviJson login;
+
+  factory RuntimeProvidersGrokLoginCompleteReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersGrokLoginCompleteReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      credential: RaviJson.from(json["credential"]),
+      credentialCreated: raviJsonAsBool(json["credentialCreated"]),
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersGrokLoginCompleteReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersGrokLoginCompleteReturn.fromJson(raviJsonObject(json, "RuntimeProvidersGrokLoginCompleteReturn"));
+  }
+}
+
+RuntimeProvidersGrokLoginCompleteReturn runtimeProvidersGrokLoginCompleteReturnFromJson(Object? json) => RuntimeProvidersGrokLoginCompleteReturn.fromJsonValue(json);
+
+class RuntimeProvidersGrokLoginStartReturn {
+  const RuntimeProvidersGrokLoginStartReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersGrokLoginStartReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersGrokLoginStartReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersGrokLoginStartReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersGrokLoginStartReturn.fromJson(raviJsonObject(json, "RuntimeProvidersGrokLoginStartReturn"));
+  }
+}
+
+RuntimeProvidersGrokLoginStartReturn runtimeProvidersGrokLoginStartReturnFromJson(Object? json) => RuntimeProvidersGrokLoginStartReturn.fromJsonValue(json);
+
+class RuntimeProvidersGrokLoginStatusReturn {
+  const RuntimeProvidersGrokLoginStatusReturn({required this.login});
+
+  final RaviJson login;
+
+  factory RuntimeProvidersGrokLoginStatusReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeProvidersGrokLoginStatusReturn(
+      login: RaviJson.from(json["login"]),
+    );
+  }
+
+  static RuntimeProvidersGrokLoginStatusReturn fromJsonValue(Object? json) {
+    return RuntimeProvidersGrokLoginStatusReturn.fromJson(raviJsonObject(json, "RuntimeProvidersGrokLoginStatusReturn"));
+  }
+}
+
+RuntimeProvidersGrokLoginStatusReturn runtimeProvidersGrokLoginStatusReturnFromJson(Object? json) => RuntimeProvidersGrokLoginStatusReturn.fromJsonValue(json);
 
 class SdkClientCheckOptions {
   const SdkClientCheckOptions({this.out, this.version});

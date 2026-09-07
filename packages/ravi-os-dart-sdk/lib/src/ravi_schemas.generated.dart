@@ -55214,6 +55214,212 @@ class RaviSchemas {
 }
 ''';
 
+  static const runtimeEnvGetInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeEnvGetReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeEnvSetInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key, e.g. CLAUDE_CODE_OAUTH_TOKEN",
+      "type": "string"
+    },
+    "stdin": {
+      "description": "Read the value from redirected stdin (CLI; no TTY)",
+      "type": "boolean"
+    },
+    "value": {
+      "description": "Value for gateway/JSON callers; redacted from audit",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeEnvSetReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "unset"
+      ],
+      "type": "string"
+    },
+    "daemonReloadRequired": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path",
+    "action",
+    "daemonReloadRequired"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeEnvUnsetInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeEnvUnsetReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "unset"
+      ],
+      "type": "string"
+    },
+    "daemonReloadRequired": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path",
+    "action",
+    "daemonReloadRequired"
+  ],
+  "type": "object"
+}
+''';
+
   static const runtimePresetsCreateInputSchema = r'''
 {
   "additionalProperties": false,
@@ -56131,6 +56337,1918 @@ class RaviSchemas {
   "required": [
     "preset",
     "referencingAgentsTotal"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersClaudeConfigureInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: claude-oauth)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider claude",
+      "type": "boolean"
+    },
+    "stdin": {
+      "description": "Read the token from redirected stdin (CLI; no TTY)",
+      "type": "boolean"
+    },
+    "token": {
+      "description": "OAuth token for gateway/JSON callers; redacted from audit",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersClaudeConfigureReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "env": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "set",
+            "unset"
+          ],
+          "type": "string"
+        },
+        "daemonReloadRequired": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "present",
+        "secret",
+        "redacted",
+        "value",
+        "path",
+        "action",
+        "daemonReloadRequired"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "env",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginCancelInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginCancelReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginCompleteInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: codex-home)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider codex",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginCompleteReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginStartInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginStartReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersCodexLoginStatusReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginCancelInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginCancelReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginCompleteInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: grok-auth-profile)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider grok",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginCompleteReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginStartInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginStartReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const runtimeProvidersGrokLoginStatusReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
   ],
   "type": "object"
 }

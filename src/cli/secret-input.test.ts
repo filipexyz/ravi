@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 
 import { CloudAuthError } from "../cloud-auth/errors.js";
-import { readConfirmedSecret } from "./secret-input.js";
+import { readConfirmedSecret, readNonInteractiveSecret } from "./secret-input.js";
 
 describe("confirmed secret input", () => {
   test("reads one redirected value without trimming meaningful whitespace", async () => {
@@ -54,6 +54,16 @@ describe("confirmed secret input", () => {
     await expect(pending).resolves.toBe("super secret");
     expect(output).toBe("Password: \nConfirm: \n");
     expect(output).not.toContain("super secret");
+  });
+
+  test("reads a provided secret without touching stdin", async () => {
+    await expect(readNonInteractiveSecret({ provided: "gateway-token" })).resolves.toBe("gateway-token");
+  });
+
+  test("rejects TTY stdin for non-interactive secrets", async () => {
+    const input = new PassThrough() as PassThrough & { isTTY: boolean };
+    input.isTTY = true;
+    await expect(readNonInteractiveSecret({ fromStdin: true }, { input })).rejects.toThrow(/TTY prompts are disabled/);
   });
 
   test("does not include submitted secret in size errors", async () => {

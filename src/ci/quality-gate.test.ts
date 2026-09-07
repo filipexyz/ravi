@@ -409,6 +409,27 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the Ravi env file focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/ravi-env-file.ts", "src/runtime/ravi-env-file.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the provider device-login focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      ["src/runtime/provider-device-login.ts", "src/runtime/provider-device-login.test.ts"],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("accepts approval service focused tests for approval service changes", () => {
     const cwd = makeWorkspace();
 

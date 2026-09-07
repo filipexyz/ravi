@@ -3905,8 +3905,16 @@ public struct RuntimeNamespace: Sendable {
     RuntimeCredentialsNamespace(transport: transport)
   }
 
+  public var env: RuntimeEnvNamespace {
+    RuntimeEnvNamespace(transport: transport)
+  }
+
   public var presets: RuntimePresetsNamespace {
     RuntimePresetsNamespace(transport: transport)
+  }
+
+  public var providers: RuntimeProvidersNamespace {
+    RuntimeProvidersNamespace(transport: transport)
   }
 }
 
@@ -3983,6 +3991,33 @@ public struct RuntimeCredentialsNamespace: Sendable {
   }
 }
 
+public struct RuntimeEnvNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func get(_ key: String) async throws -> RuntimeEnvGetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    return try await transport.call(groupSegments: ["runtime","env"], command: "get", body: requestBody, as: RuntimeEnvGetReturn.self)
+  }
+
+  public func set(_ key: String, _ options: RuntimeEnvSetOptions = .init()) async throws -> RuntimeEnvSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","env"], command: "set", body: requestBody, as: RuntimeEnvSetReturn.self)
+  }
+
+  public func unset(_ key: String) async throws -> RuntimeEnvUnsetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    return try await transport.call(groupSegments: ["runtime","env"], command: "unset", body: requestBody, as: RuntimeEnvUnsetReturn.self)
+  }
+}
+
 public struct RuntimePresetsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -4044,6 +4079,140 @@ public struct RuntimePresetsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["runtime","presets"], command: "show", body: requestBody, as: RuntimePresetsShowReturn.self)
+  }
+}
+
+public struct RuntimeProvidersNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var claude: RuntimeProvidersClaudeNamespace {
+    RuntimeProvidersClaudeNamespace(transport: transport)
+  }
+
+  public var codex: RuntimeProvidersCodexNamespace {
+    RuntimeProvidersCodexNamespace(transport: transport)
+  }
+
+  public var grok: RuntimeProvidersGrokNamespace {
+    RuntimeProvidersGrokNamespace(transport: transport)
+  }
+}
+
+public struct RuntimeProvidersClaudeNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func configure(_ options: RuntimeProvidersClaudeConfigureOptions = .init()) async throws -> RuntimeProvidersClaudeConfigureReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","providers","claude"], command: "configure", body: requestBody, as: RuntimeProvidersClaudeConfigureReturn.self)
+  }
+}
+
+public struct RuntimeProvidersCodexNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var login: RuntimeProvidersCodexLoginNamespace {
+    RuntimeProvidersCodexLoginNamespace(transport: transport)
+  }
+}
+
+public struct RuntimeProvidersCodexLoginNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func cancel(_ id: String? = nil) async throws -> RuntimeProvidersCodexLoginCancelReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["runtime","providers","codex","login"], command: "cancel", body: requestBody, as: RuntimeProvidersCodexLoginCancelReturn.self)
+  }
+
+  public func complete(_ id: String? = nil, _ options: RuntimeProvidersCodexLoginCompleteOptions = .init()) async throws -> RuntimeProvidersCodexLoginCompleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","providers","codex","login"], command: "complete", body: requestBody, as: RuntimeProvidersCodexLoginCompleteReturn.self)
+  }
+
+  public func start() async throws -> RuntimeProvidersCodexLoginStartReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["runtime","providers","codex","login"], command: "start", body: requestBody, as: RuntimeProvidersCodexLoginStartReturn.self)
+  }
+
+  public func status(_ id: String? = nil) async throws -> RuntimeProvidersCodexLoginStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["runtime","providers","codex","login"], command: "status", body: requestBody, as: RuntimeProvidersCodexLoginStatusReturn.self)
+  }
+}
+
+public struct RuntimeProvidersGrokNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var login: RuntimeProvidersGrokLoginNamespace {
+    RuntimeProvidersGrokLoginNamespace(transport: transport)
+  }
+}
+
+public struct RuntimeProvidersGrokLoginNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func cancel(_ id: String? = nil) async throws -> RuntimeProvidersGrokLoginCancelReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["runtime","providers","grok","login"], command: "cancel", body: requestBody, as: RuntimeProvidersGrokLoginCancelReturn.self)
+  }
+
+  public func complete(_ id: String? = nil, _ options: RuntimeProvidersGrokLoginCompleteOptions = .init()) async throws -> RuntimeProvidersGrokLoginCompleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","providers","grok","login"], command: "complete", body: requestBody, as: RuntimeProvidersGrokLoginCompleteReturn.self)
+  }
+
+  public func start() async throws -> RuntimeProvidersGrokLoginStartReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["runtime","providers","grok","login"], command: "start", body: requestBody, as: RuntimeProvidersGrokLoginStartReturn.self)
+  }
+
+  public func status(_ id: String? = nil) async throws -> RuntimeProvidersGrokLoginStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["runtime","providers","grok","login"], command: "status", body: requestBody, as: RuntimeProvidersGrokLoginStatusReturn.self)
   }
 }
 
