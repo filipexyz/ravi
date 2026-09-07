@@ -75,6 +75,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/claude-provider.test.ts",
     "src/runtime/codex-provider.test.ts",
     "src/runtime/grok-provider.test.ts",
+    // Closed-box provider auth: allowlisted env file + Codex/Grok device login.
+    "src/runtime/ravi-env-file.test.ts",
+    "src/runtime/provider-device-login.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
