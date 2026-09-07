@@ -5440,7 +5440,11 @@ class RuntimeNamespace {
 
   RuntimeCredentialsNamespace get credentials => RuntimeCredentialsNamespace(_transport);
 
+  RuntimeEnvNamespace get env => RuntimeEnvNamespace(_transport);
+
   RuntimePresetsNamespace get presets => RuntimePresetsNamespace(_transport);
+
+  RuntimeProvidersNamespace get providers => RuntimeProvidersNamespace(_transport);
 }
 
 class RuntimeCredentialsNamespace {
@@ -5564,6 +5568,46 @@ class RuntimeCredentialsNamespace {
   }
 }
 
+class RuntimeEnvNamespace {
+  const RuntimeEnvNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<RuntimeEnvGetReturn> get_(String key) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "env"],
+      command: "get",
+      body: requestBody,
+      decode: runtimeEnvGetReturnFromJson,
+    );
+  }
+
+  Future<RuntimeEnvSetReturn> set_(String key, [RuntimeEnvSetOptions options = const RuntimeEnvSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "env"],
+      command: "set",
+      body: requestBody,
+      decode: runtimeEnvSetReturnFromJson,
+    );
+  }
+
+  Future<RuntimeEnvUnsetReturn> unset(String key) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "env"],
+      command: "unset",
+      body: requestBody,
+      decode: runtimeEnvUnsetReturnFromJson,
+    );
+  }
+}
+
 class RuntimePresetsNamespace {
   const RuntimePresetsNamespace(this._transport);
 
@@ -5662,6 +5706,163 @@ class RuntimePresetsNamespace {
       command: "show",
       body: requestBody,
       decode: runtimePresetsShowReturnFromJson,
+    );
+  }
+}
+
+class RuntimeProvidersNamespace {
+  const RuntimeProvidersNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  RuntimeProvidersClaudeNamespace get claude => RuntimeProvidersClaudeNamespace(_transport);
+
+  RuntimeProvidersCodexNamespace get codex => RuntimeProvidersCodexNamespace(_transport);
+
+  RuntimeProvidersGrokNamespace get grok => RuntimeProvidersGrokNamespace(_transport);
+}
+
+class RuntimeProvidersClaudeNamespace {
+  const RuntimeProvidersClaudeNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<RuntimeProvidersClaudeConfigureReturn> configure([RuntimeProvidersClaudeConfigureOptions options = const RuntimeProvidersClaudeConfigureOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "claude"],
+      command: "configure",
+      body: requestBody,
+      decode: runtimeProvidersClaudeConfigureReturnFromJson,
+    );
+  }
+}
+
+class RuntimeProvidersCodexNamespace {
+  const RuntimeProvidersCodexNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  RuntimeProvidersCodexLoginNamespace get login => RuntimeProvidersCodexLoginNamespace(_transport);
+}
+
+class RuntimeProvidersCodexLoginNamespace {
+  const RuntimeProvidersCodexLoginNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<RuntimeProvidersCodexLoginCancelReturn> cancel([String? id]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "codex", "login"],
+      command: "cancel",
+      body: requestBody,
+      decode: runtimeProvidersCodexLoginCancelReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersCodexLoginCompleteReturn> complete([String? id, RuntimeProvidersCodexLoginCompleteOptions options = const RuntimeProvidersCodexLoginCompleteOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "codex", "login"],
+      command: "complete",
+      body: requestBody,
+      decode: runtimeProvidersCodexLoginCompleteReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersCodexLoginStartReturn> start() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "codex", "login"],
+      command: "start",
+      body: requestBody,
+      decode: runtimeProvidersCodexLoginStartReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersCodexLoginStatusReturn> status([String? id]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "codex", "login"],
+      command: "status",
+      body: requestBody,
+      decode: runtimeProvidersCodexLoginStatusReturnFromJson,
+    );
+  }
+}
+
+class RuntimeProvidersGrokNamespace {
+  const RuntimeProvidersGrokNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  RuntimeProvidersGrokLoginNamespace get login => RuntimeProvidersGrokLoginNamespace(_transport);
+}
+
+class RuntimeProvidersGrokLoginNamespace {
+  const RuntimeProvidersGrokLoginNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<RuntimeProvidersGrokLoginCancelReturn> cancel([String? id]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "grok", "login"],
+      command: "cancel",
+      body: requestBody,
+      decode: runtimeProvidersGrokLoginCancelReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersGrokLoginCompleteReturn> complete([String? id, RuntimeProvidersGrokLoginCompleteOptions options = const RuntimeProvidersGrokLoginCompleteOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "grok", "login"],
+      command: "complete",
+      body: requestBody,
+      decode: runtimeProvidersGrokLoginCompleteReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersGrokLoginStartReturn> start() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "grok", "login"],
+      command: "start",
+      body: requestBody,
+      decode: runtimeProvidersGrokLoginStartReturnFromJson,
+    );
+  }
+
+  Future<RuntimeProvidersGrokLoginStatusReturn> status([String? id]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    return _transport.callJson(
+      groupSegments: const ["runtime", "providers", "grok", "login"],
+      command: "status",
+      body: requestBody,
+      decode: runtimeProvidersGrokLoginStatusReturnFromJson,
     );
   }
 }

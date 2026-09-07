@@ -10924,6 +10924,57 @@ export type RuntimeCredentialsStatusReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `runtime.env.get`. */
+export type RuntimeEnvGetInput = {
+  key: string;
+};
+
+/** Return shape for `runtime.env.get`. */
+export type RuntimeEnvGetReturn = {
+  key: string;
+  path: string;
+  present: boolean;
+  redacted: boolean;
+  secret: boolean;
+  value: string | null;
+};
+
+/** Input shape for `runtime.env.set`. */
+export type RuntimeEnvSetInput = {
+  key: string;
+  stdin?: boolean;
+  value?: string;
+};
+
+/** Return shape for `runtime.env.set`. */
+export type RuntimeEnvSetReturn = {
+  action: "set" | "unset";
+  daemonReloadRequired: boolean;
+  key: string;
+  path: string;
+  present: boolean;
+  redacted: boolean;
+  secret: boolean;
+  value: string | null;
+};
+
+/** Input shape for `runtime.env.unset`. */
+export type RuntimeEnvUnsetInput = {
+  key: string;
+};
+
+/** Return shape for `runtime.env.unset`. */
+export type RuntimeEnvUnsetReturn = {
+  action: "set" | "unset";
+  daemonReloadRequired: boolean;
+  key: string;
+  path: string;
+  present: boolean;
+  redacted: boolean;
+  secret: boolean;
+  value: string | null;
+};
+
 /** Input shape for `runtime.presets.create`. */
 export type RuntimePresetsCreateInput = {
   description?: string;
@@ -11135,6 +11186,358 @@ export type RuntimePresetsShowReturn = {
     version: number;
   };
   referencingAgentsTotal: number;
+};
+
+/** Input shape for `runtime.providers.claude.configure`. */
+export type RuntimeProvidersClaudeConfigureInput = {
+  agents?: string;
+  label?: string;
+  setProvider?: boolean;
+  stdin?: boolean;
+  token?: string;
+};
+
+/** Return shape for `runtime.providers.claude.configure`. */
+export type RuntimeProvidersClaudeConfigureReturn = {
+  agents: Array<{
+    changed: boolean;
+    id: string;
+    provider: string;
+  }>;
+  credential: {
+    agentAllowlist: string[];
+    authMethod: string | null;
+    authProfileRef: string | null;
+    bindings: Array<{
+      id: string;
+      remoteForward: boolean;
+      secretRef: string;
+      sensitive: boolean;
+      sourceHint: string | null;
+      sourceKind: string;
+      targetKind: string;
+      targetName: string;
+    }>;
+    createdAt: number;
+    enabled: boolean;
+    fingerprint: string;
+    id: string;
+    label: string;
+    lastErrorCode: string | null;
+    lastErrorMessageRedacted: string | null;
+    lastErrorReason: string | null;
+    modelAllowlist: string[];
+    modelDenylist: string[];
+    notes: string | null;
+    priority: number;
+    remoteForwardEnvKeys: string[];
+    resetAt: number | null;
+    runtimeProvider: string;
+    sensitiveEnvKeys: string[];
+    sessionCompatibilityKey: string | null;
+    sourceKind: string | null;
+    status: string;
+    strategyHint: string | null;
+    taskProfileAllowlist: string[];
+    updatedAt: number;
+    upstreamProvider: string | null;
+    weight: number | null;
+  };
+  credentialCreated: boolean;
+  env: {
+    action: "set" | "unset";
+    daemonReloadRequired: boolean;
+    key: string;
+    path: string;
+    present: boolean;
+    redacted: boolean;
+    secret: boolean;
+    value: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.codex.login.cancel`. */
+export type RuntimeProvidersCodexLoginCancelInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.providers.codex.login.cancel`. */
+export type RuntimeProvidersCodexLoginCancelReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.codex.login.complete`. */
+export type RuntimeProvidersCodexLoginCompleteInput = {
+  agents?: string;
+  id?: string;
+  label?: string;
+  setProvider?: boolean;
+};
+
+/** Return shape for `runtime.providers.codex.login.complete`. */
+export type RuntimeProvidersCodexLoginCompleteReturn = {
+  agents: Array<{
+    changed: boolean;
+    id: string;
+    provider: string;
+  }>;
+  credential: {
+    agentAllowlist: string[];
+    authMethod: string | null;
+    authProfileRef: string | null;
+    bindings: Array<{
+      id: string;
+      remoteForward: boolean;
+      secretRef: string;
+      sensitive: boolean;
+      sourceHint: string | null;
+      sourceKind: string;
+      targetKind: string;
+      targetName: string;
+    }>;
+    createdAt: number;
+    enabled: boolean;
+    fingerprint: string;
+    id: string;
+    label: string;
+    lastErrorCode: string | null;
+    lastErrorMessageRedacted: string | null;
+    lastErrorReason: string | null;
+    modelAllowlist: string[];
+    modelDenylist: string[];
+    notes: string | null;
+    priority: number;
+    remoteForwardEnvKeys: string[];
+    resetAt: number | null;
+    runtimeProvider: string;
+    sensitiveEnvKeys: string[];
+    sessionCompatibilityKey: string | null;
+    sourceKind: string | null;
+    status: string;
+    strategyHint: string | null;
+    taskProfileAllowlist: string[];
+    updatedAt: number;
+    upstreamProvider: string | null;
+    weight: number | null;
+  };
+  credentialCreated: boolean;
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.codex.login.start`. */
+export type RuntimeProvidersCodexLoginStartInput = Record<string, never>;
+
+/** Return shape for `runtime.providers.codex.login.start`. */
+export type RuntimeProvidersCodexLoginStartReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.codex.login.status`. */
+export type RuntimeProvidersCodexLoginStatusInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.providers.codex.login.status`. */
+export type RuntimeProvidersCodexLoginStatusReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.grok.login.cancel`. */
+export type RuntimeProvidersGrokLoginCancelInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.providers.grok.login.cancel`. */
+export type RuntimeProvidersGrokLoginCancelReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.grok.login.complete`. */
+export type RuntimeProvidersGrokLoginCompleteInput = {
+  agents?: string;
+  id?: string;
+  label?: string;
+  setProvider?: boolean;
+};
+
+/** Return shape for `runtime.providers.grok.login.complete`. */
+export type RuntimeProvidersGrokLoginCompleteReturn = {
+  agents: Array<{
+    changed: boolean;
+    id: string;
+    provider: string;
+  }>;
+  credential: {
+    agentAllowlist: string[];
+    authMethod: string | null;
+    authProfileRef: string | null;
+    bindings: Array<{
+      id: string;
+      remoteForward: boolean;
+      secretRef: string;
+      sensitive: boolean;
+      sourceHint: string | null;
+      sourceKind: string;
+      targetKind: string;
+      targetName: string;
+    }>;
+    createdAt: number;
+    enabled: boolean;
+    fingerprint: string;
+    id: string;
+    label: string;
+    lastErrorCode: string | null;
+    lastErrorMessageRedacted: string | null;
+    lastErrorReason: string | null;
+    modelAllowlist: string[];
+    modelDenylist: string[];
+    notes: string | null;
+    priority: number;
+    remoteForwardEnvKeys: string[];
+    resetAt: number | null;
+    runtimeProvider: string;
+    sensitiveEnvKeys: string[];
+    sessionCompatibilityKey: string | null;
+    sourceKind: string | null;
+    status: string;
+    strategyHint: string | null;
+    taskProfileAllowlist: string[];
+    updatedAt: number;
+    upstreamProvider: string | null;
+    weight: number | null;
+  };
+  credentialCreated: boolean;
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.grok.login.start`. */
+export type RuntimeProvidersGrokLoginStartInput = Record<string, never>;
+
+/** Return shape for `runtime.providers.grok.login.start`. */
+export type RuntimeProvidersGrokLoginStartReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
+};
+
+/** Input shape for `runtime.providers.grok.login.status`. */
+export type RuntimeProvidersGrokLoginStatusInput = {
+  id?: string;
+};
+
+/** Return shape for `runtime.providers.grok.login.status`. */
+export type RuntimeProvidersGrokLoginStatusReturn = {
+  login: {
+    command: string;
+    error?: string;
+    expiresAt: string;
+    home: string;
+    id: string;
+    pid: number | null;
+    provider: "codex" | "grok";
+    replacedLoginId?: string;
+    startedAt: string;
+    status: "pending" | "authorized" | "failed" | "cancelled";
+    updatedAt: string;
+    userCode: string | null;
+    verificationUrl: string | null;
+  };
 };
 
 /** Input shape for `sdk.client.check`. */

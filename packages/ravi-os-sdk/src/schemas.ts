@@ -54397,6 +54397,206 @@ export const RuntimeCredentialsStatusReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.env.get`. */
+export const RuntimeEnvGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.env.get`. */
+export const RuntimeEnvGetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.env.set`. */
+export const RuntimeEnvSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key, e.g. CLAUDE_CODE_OAUTH_TOKEN",
+      "type": "string"
+    },
+    "stdin": {
+      "description": "Read the value from redirected stdin (CLI; no TTY)",
+      "type": "boolean"
+    },
+    "value": {
+      "description": "Value for gateway/JSON callers; redacted from audit",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.env.set`. */
+export const RuntimeEnvSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "unset"
+      ],
+      "type": "string"
+    },
+    "daemonReloadRequired": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path",
+    "action",
+    "daemonReloadRequired"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.env.unset`. */
+export const RuntimeEnvUnsetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Allowlisted env key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.env.unset`. */
+export const RuntimeEnvUnsetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "unset"
+      ],
+      "type": "string"
+    },
+    "daemonReloadRequired": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "secret": {
+      "type": "boolean"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "present",
+    "secret",
+    "redacted",
+    "value",
+    "path",
+    "action",
+    "daemonReloadRequired"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.presets.create`. */
 export const RuntimePresetsCreateInputSchema = {
   "additionalProperties": false,
@@ -55299,6 +55499,1900 @@ export const RuntimePresetsShowReturnSchema = {
   "required": [
     "preset",
     "referencingAgentsTotal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.claude.configure`. */
+export const RuntimeProvidersClaudeConfigureInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: claude-oauth)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider claude",
+      "type": "boolean"
+    },
+    "stdin": {
+      "description": "Read the token from redirected stdin (CLI; no TTY)",
+      "type": "boolean"
+    },
+    "token": {
+      "description": "OAuth token for gateway/JSON callers; redacted from audit",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.claude.configure`. */
+export const RuntimeProvidersClaudeConfigureReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "env": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "set",
+            "unset"
+          ],
+          "type": "string"
+        },
+        "daemonReloadRequired": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "present",
+        "secret",
+        "redacted",
+        "value",
+        "path",
+        "action",
+        "daemonReloadRequired"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "env",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.codex.login.cancel`. */
+export const RuntimeProvidersCodexLoginCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.codex.login.cancel`. */
+export const RuntimeProvidersCodexLoginCancelReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.codex.login.complete`. */
+export const RuntimeProvidersCodexLoginCompleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: codex-home)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider codex",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.codex.login.complete`. */
+export const RuntimeProvidersCodexLoginCompleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.codex.login.start`. */
+export const RuntimeProvidersCodexLoginStartInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.codex.login.start`. */
+export const RuntimeProvidersCodexLoginStartReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.codex.login.status`. */
+export const RuntimeProvidersCodexLoginStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.codex.login.status`. */
+export const RuntimeProvidersCodexLoginStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.grok.login.cancel`. */
+export const RuntimeProvidersGrokLoginCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.grok.login.cancel`. */
+export const RuntimeProvidersGrokLoginCancelReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.grok.login.complete`. */
+export const RuntimeProvidersGrokLoginCompleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated agent allowlist (default: main)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    },
+    "label": {
+      "description": "Credential label (default: grok-auth-profile)",
+      "type": "string"
+    },
+    "setProvider": {
+      "description": "Also run agents.set <id> provider grok",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.grok.login.complete`. */
+export const RuntimeProvidersGrokLoginCompleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "credentialCreated": {
+      "type": "boolean"
+    },
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login",
+    "credential",
+    "credentialCreated",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.grok.login.start`. */
+export const RuntimeProvidersGrokLoginStartInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.grok.login.start`. */
+export const RuntimeProvidersGrokLoginStartReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.providers.grok.login.status`. */
+export const RuntimeProvidersGrokLoginStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Login id from start",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.providers.grok.login.status`. */
+export const RuntimeProvidersGrokLoginStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "login": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "replacedLoginId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "authorized",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "status",
+        "verificationUrl",
+        "userCode",
+        "home",
+        "pid",
+        "command",
+        "startedAt",
+        "updatedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "login"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

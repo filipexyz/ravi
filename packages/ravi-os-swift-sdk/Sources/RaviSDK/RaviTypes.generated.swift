@@ -17671,6 +17671,123 @@ public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   }
 }
 
+public struct RuntimeEnvGetReturn: Codable, Sendable {
+  public var key: String
+  public var path: String
+  public var present: Bool
+  public var redacted: Bool
+  public var secret: Bool
+  public var value: RaviJSON
+
+  public init(key: String, path: String, present: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+    self.key = key
+    self.path = path
+    self.present = present
+    self.redacted = redacted
+    self.secret = secret
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case key = "key"
+    case path = "path"
+    case present = "present"
+    case redacted = "redacted"
+    case secret = "secret"
+    case value = "value"
+  }
+}
+
+public struct RuntimeEnvSetOptions: Codable, Sendable {
+  public var stdin: Bool?
+  public var value: String?
+
+  public init(stdin: Bool? = nil, value: String? = nil) {
+    self.stdin = stdin
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case stdin = "stdin"
+    case value = "value"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.stdin {
+      body["stdin"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.value {
+      body["value"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeEnvSetReturn: Codable, Sendable {
+  public var action: String
+  public var daemonReloadRequired: Bool
+  public var key: String
+  public var path: String
+  public var present: Bool
+  public var redacted: Bool
+  public var secret: Bool
+  public var value: RaviJSON
+
+  public init(action: String, daemonReloadRequired: Bool, key: String, path: String, present: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+    self.action = action
+    self.daemonReloadRequired = daemonReloadRequired
+    self.key = key
+    self.path = path
+    self.present = present
+    self.redacted = redacted
+    self.secret = secret
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case daemonReloadRequired = "daemonReloadRequired"
+    case key = "key"
+    case path = "path"
+    case present = "present"
+    case redacted = "redacted"
+    case secret = "secret"
+    case value = "value"
+  }
+}
+
+public struct RuntimeEnvUnsetReturn: Codable, Sendable {
+  public var action: String
+  public var daemonReloadRequired: Bool
+  public var key: String
+  public var path: String
+  public var present: Bool
+  public var redacted: Bool
+  public var secret: Bool
+  public var value: RaviJSON
+
+  public init(action: String, daemonReloadRequired: Bool, key: String, path: String, present: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+    self.action = action
+    self.daemonReloadRequired = daemonReloadRequired
+    self.key = key
+    self.path = path
+    self.present = present
+    self.redacted = redacted
+    self.secret = secret
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case daemonReloadRequired = "daemonReloadRequired"
+    case key = "key"
+    case path = "path"
+    case present = "present"
+    case redacted = "redacted"
+    case secret = "secret"
+    case value = "value"
+  }
+}
+
 public struct RuntimePresetsCreateOptions: Codable, Sendable {
   public var description: String?
   public var disabled: Bool?
@@ -18034,6 +18151,243 @@ public struct RuntimePresetsShowReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case preset = "preset"
     case referencingAgentsTotal = "referencingAgentsTotal"
+  }
+}
+
+public struct RuntimeProvidersClaudeConfigureOptions: Codable, Sendable {
+  public var agents: String?
+  public var label: String?
+  public var setProvider: Bool?
+  public var stdin: Bool?
+  public var token: String?
+
+  public init(agents: String? = nil, label: String? = nil, setProvider: Bool? = nil, stdin: Bool? = nil, token: String? = nil) {
+    self.agents = agents
+    self.label = label
+    self.setProvider = setProvider
+    self.stdin = stdin
+    self.token = token
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case label = "label"
+    case setProvider = "setProvider"
+    case stdin = "stdin"
+    case token = "token"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agents {
+      body["agents"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.setProvider {
+      body["setProvider"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.stdin {
+      body["stdin"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.token {
+      body["token"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeProvidersClaudeConfigureReturn: Codable, Sendable {
+  public var agents: [RaviJSON]
+  public var credential: RaviJSON
+  public var credentialCreated: Bool
+  public var env: RaviJSON
+
+  public init(agents: [RaviJSON], credential: RaviJSON, credentialCreated: Bool, env: RaviJSON) {
+    self.agents = agents
+    self.credential = credential
+    self.credentialCreated = credentialCreated
+    self.env = env
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case credential = "credential"
+    case credentialCreated = "credentialCreated"
+    case env = "env"
+  }
+}
+
+public struct RuntimeProvidersCodexLoginCancelReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersCodexLoginCompleteOptions: Codable, Sendable {
+  public var agents: String?
+  public var label: String?
+  public var setProvider: Bool?
+
+  public init(agents: String? = nil, label: String? = nil, setProvider: Bool? = nil) {
+    self.agents = agents
+    self.label = label
+    self.setProvider = setProvider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case label = "label"
+    case setProvider = "setProvider"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agents {
+      body["agents"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.setProvider {
+      body["setProvider"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeProvidersCodexLoginCompleteReturn: Codable, Sendable {
+  public var agents: [RaviJSON]
+  public var credential: RaviJSON
+  public var credentialCreated: Bool
+  public var login: RaviJSON
+
+  public init(agents: [RaviJSON], credential: RaviJSON, credentialCreated: Bool, login: RaviJSON) {
+    self.agents = agents
+    self.credential = credential
+    self.credentialCreated = credentialCreated
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case credential = "credential"
+    case credentialCreated = "credentialCreated"
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersCodexLoginStartReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersCodexLoginStatusReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersGrokLoginCancelReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersGrokLoginCompleteOptions: Codable, Sendable {
+  public var agents: String?
+  public var label: String?
+  public var setProvider: Bool?
+
+  public init(agents: String? = nil, label: String? = nil, setProvider: Bool? = nil) {
+    self.agents = agents
+    self.label = label
+    self.setProvider = setProvider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case label = "label"
+    case setProvider = "setProvider"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agents {
+      body["agents"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.setProvider {
+      body["setProvider"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeProvidersGrokLoginCompleteReturn: Codable, Sendable {
+  public var agents: [RaviJSON]
+  public var credential: RaviJSON
+  public var credentialCreated: Bool
+  public var login: RaviJSON
+
+  public init(agents: [RaviJSON], credential: RaviJSON, credentialCreated: Bool, login: RaviJSON) {
+    self.agents = agents
+    self.credential = credential
+    self.credentialCreated = credentialCreated
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case credential = "credential"
+    case credentialCreated = "credentialCreated"
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersGrokLoginStartReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
+  }
+}
+
+public struct RuntimeProvidersGrokLoginStatusReturn: Codable, Sendable {
+  public var login: RaviJSON
+
+  public init(login: RaviJSON) {
+    self.login = login
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case login = "login"
   }
 }
 
