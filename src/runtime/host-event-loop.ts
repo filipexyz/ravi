@@ -56,6 +56,7 @@ import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getRuntimeTurnReplaySafety,
+  isProviderEndedAfterCompletedTools,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
@@ -63,10 +64,18 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
-import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import {
+  isObserverRuntimeSessionName,
+  resolveRuntimeIdleSessionTtlMs,
+  resolveRuntimeTurnInactivityMs,
+} from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
-import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import {
+  formatUserFacingTurnFailure,
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  publicRuntimeFailureDetail,
+} from "./public-failure.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -1110,10 +1119,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     1_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
-  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
-    1_000,
-    Number(process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS) || 15 * 60 * 1000,
-  );
+  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(1_000, resolveRuntimeTurnInactivityMs());
   const PROVIDER_TURN_INACTIVITY_CHECK_MS = Math.min(
     30_000,
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
@@ -1801,19 +1807,32 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
-    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
-    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
+    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTargetPreserving>["target"] | undefined;
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTargetPreserving>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
-      if (streaming.currentReplyTarget !== undefined) {
+      if (streaming.suppressChatEmit || isObserverRuntimeSessionName(sessionName)) {
+        log.debug("Chat emit suppressed", {
+          sessionName,
+          reason: streaming.suppressChatEmit ? "turn_suppress" : "observer_session",
+        });
+        clearPendingGeneratedMedia();
+        return;
+      }
+      if (streaming.currentReplyTarget) {
         resolvedTarget = streaming.currentReplyTarget;
-        resolvedSource = resolvedTarget ? (streaming.currentSource ? "source-chat" : "attached-output") : "unresolved";
+        resolvedSource = streaming.currentSource ? "source-chat" : "attached-output";
       } else {
-        const resolution = resolveSessionOutputTarget({
+        const resolution = resolveSessionOutputTargetPreserving({
           sessionKey: session.sessionKey,
           fallback: streaming.currentSource,
+          previous: streaming.lastBoundReplyTarget,
         });
         resolvedTarget = resolution.target;
         resolvedSource = resolution.source;
+        if (resolution.target) {
+          streaming.currentReplyTarget = { ...resolution.target };
+          streaming.lastBoundReplyTarget = { ...resolution.target };
+        }
       }
       if (!resolvedTarget) {
         log.warn("Response target unresolved — dropping emit", {
@@ -2287,6 +2306,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           },
           statusSkillVisibility,
         );
+        if (status === "idle" && !streaming.turnActive && !streaming.toolRunning && !streaming.compacting) {
+          scheduleIdleSessionEviction();
+        }
 
         // External compaction announcements are user-facing runtime responses.
         // They are suppressed for automation-originated turns (cron, trigger,
@@ -2979,7 +3001,44 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           reason: streaming.internalAbortReason ?? "provider_interrupted",
           metadata: event.metadata ?? null,
         });
-        streaming.interrupted = true;
+        const leftoverResponse = responseText.trim();
+        const providerEndedAfterCompletedTools = isProviderEndedAfterCompletedTools(streaming, interruptedReplaySafety);
+        if (providerEndedAfterCompletedTools) {
+          // Provider closed the prompt after tools already finished. Do not
+          // mark the generator interrupted (that logs a silent unexpected
+          // death). Keep successors and emit leftover text or a recovery hint.
+          streaming.interrupted = false;
+          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+          log.info("Provider ended turn after completed tools; keeping session recoverable", {
+            runId,
+            sessionName,
+            remaining: streaming.pendingMessages.length,
+            startedTool: interruptedReplaySafety.startedTool,
+            materializedOutput: interruptedReplaySafety.materializedOutput,
+            durableBinding: interruptedReplaySafety.durableBinding,
+            toolRunning: streaming.toolRunning,
+          });
+          if (streaming.agentMode !== "sentinel") {
+            await emitResponse(
+              leftoverResponse || formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+            );
+          }
+        } else {
+          streaming.interrupted = true;
+          if (!interruptedReplaySafety.replayable) {
+            const queuedBefore = streaming.pendingMessages.length;
+            streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+            log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+              runId,
+              sessionName,
+              discarded: queuedBefore - streaming.pendingMessages.length,
+              remaining: streaming.pendingMessages.length,
+              startedTool: interruptedReplaySafety.startedTool,
+              materializedOutput: interruptedReplaySafety.materializedOutput,
+              durableBinding: interruptedReplaySafety.durableBinding,
+            });
+          }
+        }
         responseText = "";
         channelResponseText = "";
         clearPendingGeneratedMedia();
@@ -2990,19 +3049,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
-        if (!interruptedReplaySafety.replayable) {
-          const queuedBefore = streaming.pendingMessages.length;
-          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-          log.info("Discarding unsafe interrupted turn while preserving queued successors", {
-            runId,
-            sessionName,
-            discarded: queuedBefore - streaming.pendingMessages.length,
-            remaining: streaming.pendingMessages.length,
-            startedTool: interruptedReplaySafety.startedTool,
-            materializedOutput: interruptedReplaySafety.materializedOutput,
-            durableBinding: interruptedReplaySafety.durableBinding,
-          });
-        }
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
         signalTurnComplete();

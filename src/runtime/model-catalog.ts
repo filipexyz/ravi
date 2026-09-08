@@ -70,6 +70,17 @@ const FALLBACK_CODEX_MODEL_OPTIONS: RuntimeModelOption[] = [
   },
 ];
 
+const GROK_MODEL_OPTIONS: RuntimeModelOption[] = [
+  {
+    id: "grok-4",
+    name: "grok-4",
+    description: "Default Grok ACP model.",
+    priority: 0,
+  },
+];
+
+const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku"]);
+
 const PROVIDER_OPTIONS: RuntimeProviderOption[] = [
   {
     id: "claude",
@@ -80,6 +91,11 @@ const PROVIDER_OPTIONS: RuntimeProviderOption[] = [
     id: "codex",
     name: "Codex",
     description: "Local Codex CLI runtime with native Codex skills.",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    description: "xAI Grok ACP runtime.",
   },
 ];
 
@@ -104,6 +120,10 @@ export function listRuntimeModels(
     return models.length > 0 ? models : FALLBACK_CODEX_MODEL_OPTIONS;
   }
 
+  if (provider === "grok") {
+    return GROK_MODEL_OPTIONS;
+  }
+
   return [];
 }
 
@@ -121,6 +141,9 @@ export function resolvePreferredRuntimeModel(
 ): string {
   const normalized = normalizeRuntimeModel(provider, model);
   const models = listRuntimeModels(provider, options);
+  if (provider !== "claude" && isClaudeModelAlias(normalized)) {
+    return getDefaultModelForProvider(provider, options);
+  }
   if (normalized && models.length === 0) {
     return normalized;
   }
@@ -129,6 +152,12 @@ export function resolvePreferredRuntimeModel(
   }
 
   return getDefaultModelForProvider(provider, options);
+}
+
+export function isClaudeModelAlias(model: string | null | undefined): boolean {
+  const value = model?.trim().toLowerCase();
+  if (!value) return false;
+  return CLAUDE_MODEL_ALIASES.has(value) || value.includes("claude");
 }
 
 function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null | undefined): string | null {

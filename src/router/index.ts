@@ -171,6 +171,7 @@ export {
   makeSessionPermanent,
   getExpiringSessions,
   getExpiredSessions,
+  expireEphemeralSession,
   // sessions/attach
   attachChatToSession,
   detachChatFromSession,

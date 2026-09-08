@@ -96,6 +96,10 @@ export interface RuntimeHostStreamingSession {
   currentSource?: RuntimeMessageTarget;
   /** Immutable resolved output target for the current turn; null means the turn must not emit externally. */
   currentReplyTarget?: RuntimeMessageTarget | null;
+  /** Last successfully bound chat target in this live stream. Successor turns may reuse it. */
+  lastBoundReplyTarget?: RuntimeMessageTarget;
+  /** CLI-only or observer turns must not emit to a chat sink. */
+  suppressChatEmit?: boolean;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
@@ -411,6 +415,37 @@ export function getRuntimeTurnReplaySafety(
     inputMutated: false,
     durableBinding: "none",
   };
+}
+
+/**
+ * Host-initiated abort (operator/ownership), not a provider end-of-prompt race.
+ * ACP `handle_prompt.done ok=true` and `stopReason=cancelled` without this
+ * marker must not discard a turn that already ran tools.
+ */
+export function isExplicitLocalRuntimeAbort(reason?: string | null): boolean {
+  if (!reason) return false;
+  return (
+    reason === "explicit_abort" ||
+    reason.startsWith("explicit_abort") ||
+    reason === "crash_recovery_ownership_lost" ||
+    reason === "deferred_abort"
+  );
+}
+
+/**
+ * Provider closed the prompt after tools already finished (or after tools plus
+ * materialized output) without an explicit local abort. Keep successors and
+ * recover visibly instead of discarding the turn as an unsafe interrupt.
+ */
+export function isProviderEndedAfterCompletedTools(
+  session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning">,
+  safety: Pick<RuntimeTurnReplaySafety, "startedTool" | "materializedOutput">,
+): boolean {
+  if (isExplicitLocalRuntimeAbort(session.internalAbortReason)) return false;
+  if (safety.startedTool && safety.materializedOutput) return true;
+  if (session.internalAbortReason) return false;
+  if (!safety.startedTool) return false;
+  return safety.materializedOutput || session.toolRunning === false;
 }
 
 /**

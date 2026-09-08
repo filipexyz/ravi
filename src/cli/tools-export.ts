@@ -24,9 +24,8 @@ import {
   ContractError,
   binaryResponseToContractError,
   contractFailureOutcome,
-  expectedErrorToContractError,
+  mapExecutionErrorToContractError,
   permissionDeniedToContractError,
-  unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
@@ -322,8 +321,7 @@ function buildHandler(
           ? err
           : isCloudAuthError(err)
             ? cloudErrorToContractError(commandOperation(group, command), err)
-            : (expectedErrorToContractError(commandOperation(group, command), err) ??
-              unexpectedErrorToContractError(commandOperation(group, command)));
+            : mapExecutionErrorToContractError(commandOperation(group, command), err);
       if (contractError) {
         contractExitCode = contractError.exitCode;
         contractErrorCode = contractError.code;

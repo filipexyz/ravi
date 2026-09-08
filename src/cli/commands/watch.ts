@@ -6,6 +6,7 @@ import {
   contractFail,
   expectedErrorToContractError,
   pickFields,
+  sqliteCapacityToContractError,
   suggestSimilar,
 } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
@@ -564,6 +565,14 @@ async function runWatchCommand<T>(
           retryable: isRetryableWatchError(error.code),
           suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
         },
+      });
+    }
+    const sqliteCapacity = sqliteCapacityToContractError(op, error);
+    if (sqliteCapacity) {
+      contractFail(op, sqliteCapacity.code, sqliteCapacity.message, {
+        asJson,
+        exitCode: sqliteCapacity.exitCode,
+        details: sqliteCapacity.details,
       });
     }
     contractFail(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", {

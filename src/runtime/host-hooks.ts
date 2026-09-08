@@ -1,6 +1,11 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { requestCascadingApproval, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
+import {
+  emitApprovalResponseOnce,
+  requestCascadingApproval,
+  requestPollAnswer,
+  type ApprovalTarget,
+} from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
 import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
@@ -441,16 +446,13 @@ function createAskUserQuestionHook(options: {
       answers[q.question] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
     }
 
-    options.approvalServices
-      .emitApprovalEvent("ravi.approval.response", {
-        type: "question",
-        sessionName: options.sessionName,
-        agentId: options.agent.id,
-        approved: true,
-        answers,
-        timestamp: Date.now(),
-      })
-      .catch(() => {});
+    emitApprovalResponseOnce({
+      type: "question",
+      sessionName: options.sessionName,
+      agentId: options.agent.id,
+      approved: true,
+      answers,
+    }).catch(() => {});
 
     log.info("AskUserQuestion answers collected", { sessionName: options.sessionName, answers, isDelegated });
     if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();

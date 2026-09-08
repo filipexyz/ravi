@@ -6,10 +6,12 @@ import {
   getConsumerName,
   type EnsureSessionPromptInfrastructureOptions,
 } from "../omni/session-stream.js";
+import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
 
 const log = logger.child("runtime:prompt-subscription");
 const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
@@ -254,6 +256,47 @@ export class RuntimePromptSubscription {
       // acknowledging earlier loses the only retryable copy.
       await this.options.handlePrompt(sessionName, prompt);
     } catch (error) {
+      if (isSqliteCapacityError(error)) {
+        log.error("Failed to handle prompt because SQLite/process memory (or disk) is exhausted", {
+          sessionName,
+          subject: msg.subject,
+          error,
+        });
+        try {
+          msg.ack();
+        } catch (ackError) {
+          log.warn("Failed to ACK prompt after sqlite capacity error", {
+            sessionName,
+            subject: msg.subject,
+            error: ackError,
+          });
+        }
+        nats
+          .emit(`ravi.session.${sessionName}.runtime`, {
+            type: "turn.failed",
+            error: SQLITE_CAPACITY_USER_MESSAGE,
+            recoverable: false,
+            sessionName,
+            timestamp: new Date().toISOString(),
+          })
+          .catch((emitError) => {
+            log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
+          });
+        if (classifyTurnProvenance({ prompt }).background !== true && prompt.source) {
+          nats
+            .emit(`ravi.session.${sessionName}.response`, {
+              response: formatUserFacingTurnFailure(SQLITE_CAPACITY_USER_MESSAGE),
+              target: prompt.source,
+              _emitId: Math.random().toString(36).slice(2, 8),
+              _pid: process.pid,
+              _v: 2,
+            })
+            .catch((emitError) => {
+              log.warn("Failed to emit sqlite capacity failure", { sessionName, error: emitError });
+            });
+        }
+        return;
+      }
       log.error("Failed to handle prompt before acknowledgement", {
         sessionName,
         subject: msg.subject,

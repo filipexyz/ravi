@@ -4,6 +4,7 @@ import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext } from ".
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "./service.js";
@@ -156,12 +157,38 @@ describe("approval service", () => {
     expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
     expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
+    const approvalResponse = emitted.find((entry) => entry.topic === "ravi.approval.response");
+    expect(typeof approvalResponse?.data._emitId).toBe("string");
+    expect(String(approvalResponse?.data._emitId ?? "").length).toBeGreaterThan(0);
     expect(externalOrder).toEqual([
       "before-external-approval",
       "ravi.approval.request",
       "outbound.deliver",
       "ravi.approval.response",
     ]);
+  });
+
+  it("publishes approval.response once per messageId even when reaction traffic retries", async () => {
+    const first = await emitApprovalResponseOnce({
+      type: "permission",
+      sessionName: "demo-agent",
+      agentId: "demo-agent",
+      approved: true,
+      messageId: "msg_approval_1",
+    });
+    const second = await emitApprovalResponseOnce({
+      type: "permission",
+      sessionName: "demo-agent",
+      agentId: "demo-agent",
+      approved: true,
+      messageId: "msg_approval_1",
+    });
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(emitted.filter((entry) => entry.topic === "ravi.approval.response")).toHaveLength(1);
+    expect(emitted[0]?.data._emitId).toBeTruthy();
+    expect(emitted[0]?.data.messageId).toBe("msg_approval_1");
   });
 
   it("fails closed when no approval source is available", async () => {

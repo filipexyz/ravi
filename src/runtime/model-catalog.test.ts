@@ -105,6 +105,15 @@ describe("model catalog", () => {
     expect(getDefaultModelForProvider("custom-provider")).toBe("default");
     expect(resolvePreferredRuntimeModel("custom-provider", "custom-model")).toBe("custom-model");
   });
+
+  test("does not pass Claude aliases to Grok from env fallback", () => {
+    expect(listRuntimeModels("grok").map((model) => model.id)).toEqual(["grok-4"]);
+    expect(getDefaultModelForProvider("grok")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "opus")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "sonnet")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "claude-opus-4-6")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "grok-4")).toBe("grok-4");
+  });
 });
 
 describe("agent model preset resolution", () => {

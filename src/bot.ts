@@ -157,6 +157,7 @@ export class RaviBot {
     this.running = true;
     this.promptSubscription.subscribe();
     this.hostSubscriptions.startAll();
+    this.sessionDispatcher.startPoolReclaimer();
     this.promptSubscription.startHealthCheck();
     log.info("Ravi bot started", {
       pid: process.pid,
@@ -170,6 +171,7 @@ export class RaviBot {
     this.running = false;
 
     this.promptSubscription.stopHealthCheck();
+    this.sessionDispatcher.stopPoolReclaimer();
 
     const ownershipFailureBeforeStop = this.crashRecovery.ownershipFailure;
     this.stopping = true;

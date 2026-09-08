@@ -24,7 +24,9 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import { isObserverRuntimeSessionName } from "./session-pool.js";
 import {
   isRuntimeCredentialSessionCompatible,
   resolveRuntimeCredentialAttemptBinding,
@@ -281,7 +283,8 @@ function isLeftoverLastChannelSource(
   const chatId = source.chatId?.trim();
   const lastChannel = session.lastChannel?.trim();
   const lastTo = session.lastTo?.trim();
-  return Boolean(channel && chatId && lastChannel && lastTo && channel === lastChannel && chatId === lastTo);
+  if (!channel || !chatId || !lastChannel || !lastTo) return false;
+  return runtimeChannelsMatch(channel, lastChannel) && runtimeChatIdsOverlap(chatId, lastTo);
 }
 
 function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
@@ -323,18 +326,7 @@ function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, sessio
 }
 
 function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnType<typeof dbGetChat>>): boolean {
-  if (source.channel && source.channel !== chat.channel) return false;
-  const sourceChatId = source.chatId?.trim();
-  if (!sourceChatId) return false;
-  const platformTarget = splitCanonicalPlatformChat(chat.platformChatId);
-  const candidates = new Set(
-    [chat.id, chat.platformChatId, chat.normalizedChatId, platformTarget.chatId].filter((value): value is string =>
-      Boolean(value?.trim()),
-    ),
-  );
-  if (!candidates.has(sourceChatId)) return false;
-  if (source.threadId && platformTarget.threadId && source.threadId !== platformTarget.threadId) return false;
-  return true;
+  return sourceMatchesChat(source, chat);
 }
 
 export async function buildRuntimeStartRequest(
@@ -821,12 +813,22 @@ async function buildRuntimeStartRequestInternal(
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
       streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
-      const replyResolution = resolveSessionOutputTarget({
+      const replyResolution = resolveSessionOutputTargetPreserving({
         sessionKey: dbSessionKey,
         fallback: streamingSession.currentSource,
-        allowDefaultOutput: !isSessionRelayTurn(turnPrompt),
+        // CLI-only turns stay on the waiting CLI. Other session-relay continues
+        // rebind the existing primary/default output so replies reach the chat.
+        allowDefaultOutput: !turnPrompt._cliDestination,
+        previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
       });
+      streamingSession.suppressChatEmit =
+        Boolean(turnPrompt._cliDestination) ||
+        Boolean(turnPrompt._observation) ||
+        isObserverRuntimeSessionName(sessionName);
       streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
+      if (replyResolution.target) {
+        streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
+      }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,

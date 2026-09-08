@@ -34,11 +34,13 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeSessionStartLane } from "./session-pool.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
+import { isClaudeModelAlias, resolvePreferredRuntimeModel } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 
@@ -49,6 +51,9 @@ export interface PendingRuntimeSessionStart {
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
   cancelled?: boolean;
+  queuedAt?: number;
+  lane?: RuntimeSessionStartLane;
+  timeout?: ReturnType<typeof setTimeout>;
 }
 
 export interface StartRuntimeSessionOptions {
@@ -194,7 +199,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     agent,
     configModel,
   });
-  const model = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
+  const selectedModel = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
+  const model =
+    runtimeProviderId !== "claude" && isClaudeModelAlias(selectedModel)
+      ? resolvePreferredRuntimeModel(runtimeProviderId, selectedModel)
+      : selectedModel;
+  if (model !== selectedModel) {
+    log.info("Remapped runtime model to provider catalog", {
+      sessionName,
+      provider: runtimeProviderId,
+      requestedModel: selectedModel,
+      model,
+      modelSource: runtimeResolution.sources.model,
+    });
+  }
   try {
     const observation = ensureObserverBindingsForSession({
       sessionName,

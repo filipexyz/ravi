@@ -2,9 +2,8 @@ import { isExplicitConnect, nats } from "../nats.js";
 import {
   ContractError,
   contractFailureOutcome,
-  expectedErrorToContractError,
+  mapExecutionErrorToContractError,
   renderContractError,
-  unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
@@ -114,7 +113,7 @@ export async function runWithCliAudit<T>(
         ? error
         : isCloudAuthError(error)
           ? cloudErrorToContractError(op, error)
-          : (expectedErrorToContractError(op, error) ?? unexpectedErrorToContractError(op));
+          : mapExecutionErrorToContractError(op, error);
     if (!(error instanceof ContractError)) {
       const asJson = options.input?.json === true;
       if (isCloudAuthError(error)) renderCloudContractError(contractError, asJson);

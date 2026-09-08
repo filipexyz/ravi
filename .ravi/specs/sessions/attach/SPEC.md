@@ -65,18 +65,40 @@ destination. After `turn.complete`, `sessions send -w` MUST return this
 turn's assistant transcript row (persist may lag). Missing chat delivery
 is not empty success when that transcript exists.
 
-Operator / HTTP / app `sessions.send` with the same shape (session-relay,
-no `--channel`/`--to`, no real inbound chat) is a **session destination
-for emit too**. Leftover `lastChannel` / `lastTo` MUST NOT be copied into
-`prompt.source` / `currentSource`. The default output attachment MUST NOT
-be the emit target. Chat emit MUST fail closed (`Response target
-unresolved — dropping emit`). Do not invent a chat `.response` sink.
-Persist stays independent: `saveMessage` on `turn.complete` plus
-`sessions.read` / `getRecentHistory` by `session_id`.
+CLI-only `sessions send` with `_cliDestination` (waiting CLI, no inbound
+chat) remains a **session destination**. Leftover `lastChannel` / `lastTo`
+MUST NOT be copied into `prompt.source` / `currentSource`. Chat emit MUST
+fail closed for that CLI-only shape.
 
-The default output is only a fallback for proactive and other source-less
-turns (cron, heartbeat, follow-up). It never overrides an inbound source
-and MUST NOT claim a session-relay operator send.
+A session-relay continue without `_cliDestination` (operator/system
+`sessions send` into an already-attached chat session) MUST rebind the
+existing primary/default output attachment so replies reach that chat.
+Leftover `lastChannel` / `lastTo` still MUST NOT become a fake inbound
+source. Channel aliases (`whatsapp` / `whatsapp-baileys`) and WhatsApp
+group chat-id forms (`group:<id>`, `<id>@g.us`, internal `chat_*`) MUST
+match as one identity when stripping leftover lastChannel and when
+binding an inbound source to its subscription. An inbound source that
+is not attached still MUST fail closed.
+
+A generator successor turn that loses `currentSource` (leftover lastChannel,
+form mismatch, or source-less continue) MUST keep the previous bound chat
+when that target is still attached and the new source is empty or the same
+chat identity. It MUST NOT keep the previous target for a different
+unattached inbound or for a CLI-only `_cliDestination` turn.
+
+Observer sessions (`obs:*` / `_observation`) MUST NOT emit to a chat sink.
+Missing chat delivery there is expected, not an unresolved user-chat drop.
+
+Gateway Direct send (`ravi.outbound.deliver` with explicit `channel` /
+`account` / `to`) is independent of this resolver. Approval UX may still
+reach the attached group while streaming assistant emits fail closed on
+`resolveSessionOutputTarget` / `emitResponse` when the per-turn source
+does not match a subscription. That is a source/identity miss, not "no
+WhatsApp route at all".
+
+The default output is the fallback for source-less continues and for
+proactive turns (cron, heartbeat, follow-up). It never overrides a real
+attached inbound source.
 
 ## Turn Isolation
 

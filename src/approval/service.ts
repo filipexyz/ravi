@@ -21,12 +21,39 @@ const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
 };
 
 let approvalServiceDependencies = defaultApprovalServiceDependencies;
+const publishedApprovalResponses = new Set<string>();
 
 export function setApprovalServiceDependenciesForTest(overrides?: Partial<ApprovalServiceDependencies>): void {
   approvalServiceDependencies = {
     ...defaultApprovalServiceDependencies,
     ...(overrides ?? {}),
   };
+  publishedApprovalResponses.clear();
+}
+
+function approvalResponseDedupeKey(data: Record<string, unknown>): string {
+  const messageId = typeof data.messageId === "string" ? data.messageId.trim() : "";
+  if (messageId) return `message:${messageId}`;
+  const sessionName = typeof data.sessionName === "string" ? data.sessionName : "";
+  const type = typeof data.type === "string" ? data.type : "";
+  return `session:${sessionName}:${type}`;
+}
+
+/** One `ravi.approval.response` per request. Reaction traffic must not republish. */
+export async function emitApprovalResponseOnce(data: Record<string, unknown>): Promise<boolean> {
+  const key = approvalResponseDedupeKey(data);
+  if (publishedApprovalResponses.has(key)) {
+    log.info("Skipping duplicate approval.response", { key });
+    return false;
+  }
+  publishedApprovalResponses.add(key);
+  const emitId = typeof data._emitId === "string" && data._emitId.trim() ? data._emitId : `approval-${key}`;
+  await approvalServiceDependencies.nats.emit("ravi.approval.response", {
+    ...data,
+    _emitId: emitId,
+    timestamp: typeof data.timestamp === "number" ? data.timestamp : Date.now(),
+  });
+  return true;
 }
 
 export interface ApprovalTarget {
@@ -71,7 +98,7 @@ export async function requestApproval(
   source: ApprovalTarget,
   text: string,
   options?: { timeoutMs?: number },
-): Promise<{ approved: boolean; reason?: string }> {
+): Promise<{ approved: boolean; reason?: string; messageId?: string }> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let sendResult: { messageId?: string };
@@ -97,7 +124,8 @@ export async function requestApproval(
   }
 
   log.info("Waiting for approval response", { messageId: sendResult.messageId });
-  return waitForApprovalResponse(sendResult.messageId, timeoutMs);
+  const result = await waitForApprovalResponse(sendResult.messageId, timeoutMs);
+  return { ...result, messageId: sendResult.messageId };
 }
 
 export async function requestPollAnswer(
@@ -170,17 +198,15 @@ export async function requestCascadingApproval(
   const approvalText = buildApprovalText(opts.type, opts.text, opts.agentId, isDelegated);
   const result = await requestApproval(targetSource, approvalText, { timeoutMs: opts.timeoutMs });
 
-  approvalServiceDependencies.nats
-    .emit("ravi.approval.response", {
-      type: opts.type,
-      sessionName: opts.sessionName,
-      agentId: opts.agentId,
-      approved: result.approved,
-      reason: result.reason,
-      timestamp: Date.now(),
-      ...(opts.eventData ?? {}),
-    })
-    .catch(() => {});
+  await emitApprovalResponseOnce({
+    type: opts.type,
+    sessionName: opts.sessionName,
+    agentId: opts.agentId,
+    approved: result.approved,
+    reason: result.reason,
+    ...(result.messageId ? { messageId: result.messageId } : {}),
+    ...(opts.eventData ?? {}),
+  }).catch(() => {});
 
   return { ...result, isDelegated };
 }

@@ -160,6 +160,15 @@ describe("router context queries", () => {
     expect(dbPruneStaleRows({ dryRun: true, now: 10 * DAY }).sessionEvents).toBe(2);
   });
 
+  it("keeps SQLite temp_store on DEFAULT so multi-GB databases do not scratch in RAM", () => {
+    const db = getDb();
+    const tempStore = db.query("PRAGMA temp_store").get() as { temp_store: number } | number | null;
+    const value = typeof tempStore === "number" ? tempStore : tempStore?.temp_store;
+    // 0 = DEFAULT, 1 = FILE, 2 = MEMORY. Product default must not be MEMORY.
+    expect(value).toBe(0);
+    expect(value).not.toBe(2);
+  });
+
   it("creates trace indexes, shell trigger columns, and the reaction ledger during schema bootstrap", () => {
     const db = getDb();
     const sessionEventIndexes = new Set(

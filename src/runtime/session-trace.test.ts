@@ -40,6 +40,7 @@ import {
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
+import { formatUserFacingTurnFailure, PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE } from "./public-failure.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import {
   buildRuntimeStartRequest,
@@ -1203,7 +1204,7 @@ describe("runtime session trace instrumentation", () => {
     expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
   });
 
-  it("does not emit session-relay HTTP send to leftover lastChannel or default output", async () => {
+  it("rebounds a session-relay continue without _cliDestination to the primary attached output", async () => {
     const leftoverChat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -1298,7 +1299,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect((await runtimeRequest.prompt.next()).done).toBe(false);
     expect(relayStreaming.currentSource).toBeUndefined();
-    expect(relayStreaming.currentReplyTarget).toBeNull();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(leftoverChat.id);
 
     const relayEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
     const relayEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
@@ -1325,7 +1326,11 @@ describe("runtime session trace instrumentation", () => {
       await runtimeRequest.prompt.return?.(undefined);
     }
 
-    expect(relayEmits).toEqual([]);
+    expect(relayEmits).toHaveLength(1);
+    expect(relayEmits[0]).toMatchObject({
+      response: "pong from session",
+      target: { canonicalChatId: leftoverChat.id },
+    });
     const assistantRows = getRecentHistory(SESSION_NAME, 10).filter((message) => message.role === "assistant");
     expect(assistantRows.map((message) => message.content)).toEqual(["pong from session"]);
 
@@ -1399,6 +1404,230 @@ describe("runtime session trace instrumentation", () => {
         .filter((message) => message.role === "assistant")
         .map((message) => message.content),
     ).toEqual(["pong from session", "inbound slack reply"]);
+  });
+
+  it("rebounds a session-relay continue when leftover lastChannel is group: and source is baileys @g.us", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+    });
+    const session = getSession(SESSION_KEY)!;
+    const recentContextSource: RuntimeMessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+    const relayPrompt = {
+      prompt: "continue after tools",
+      source: recentContextSource,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(relayPrompt, session)).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: recentContextSource,
+      }).target?.canonicalChatId,
+    ).toBe(groupChat.id);
+
+    const relayStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: recentContextSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(relayPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-baileys-group-form-relay",
+      sessionName: SESSION_NAME,
+      prompt: relayPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(relayPrompt, session),
+      streamingSession: relayStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(relayStreaming.currentSource).toBeUndefined();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(relayStreaming.currentReplyTarget?.chatId).toBe("group:test-group-1");
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("keeps the previous bound chat when a successor turn loses currentSource", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const inboundSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+    const successorPrompt = {
+      prompt: "continue after tools",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    const successorStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: inboundSource,
+      lastBoundReplyTarget: inboundSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(successorPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-successor-source-loss",
+      sessionName: SESSION_NAME,
+      prompt: successorPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: successorStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(successorStreaming.currentSource).toBeUndefined();
+    expect(successorStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(successorStreaming.lastBoundReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("keeps CLI-only _cliDestination continues fail-closed for chat emit", async () => {
+    const leftoverChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "leftover-cli-dest@s.whatsapp.net",
+      chatType: "dm",
+      title: "leftover lastChannel",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: leftoverChat.id, setOutputTarget: true });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: leftoverChat.platformChatId,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const leftoverSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: leftoverChat.platformChatId,
+      canonicalChatId: leftoverChat.id,
+    };
+    const cliPrompt = {
+      prompt: "hello from waiting CLI",
+      source: leftoverSource,
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(cliPrompt, session)).toBeUndefined();
+
+    const cliStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: leftoverSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(cliPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-cli-destination-emit",
+      sessionName: SESSION_NAME,
+      prompt: cliPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(cliPrompt, session),
+      streamingSession: cliStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(cliStreaming.currentSource).toBeUndefined();
+    expect(cliStreaming.currentReplyTarget).toBeNull();
+    await runtimeRequest.prompt.return?.(undefined);
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
@@ -2807,10 +3036,7 @@ describe("runtime session trace instrumentation", () => {
       ["Vou listar os agentes deste Ravi.", "- main\n- jarvis"],
     ]);
     const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
-    expect(assistant.map(({ content }) => content)).toEqual([
-      "Vou listar os agentes deste Ravi.",
-      "- main\n- jarvis",
-    ]);
+    expect(assistant.map(({ content }) => content)).toEqual(["Vou listar os agentes deste Ravi.", "- main\n- jarvis"]);
     expect(assistant).toHaveLength(2);
     expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
 
@@ -3184,6 +3410,109 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("recovers an interrupted turn after completed tools instead of discarding silently", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tool batch turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-completed-tools");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-fetch", name: "WebFetch", input: { url: "https://example.test/doc" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-fetch",
+          toolName: "WebFetch",
+          content: "fetched",
+        },
+        { type: "text.delta", text: "working" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: true,
+      materializedOutput: true,
+    });
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("recovers an interrupted turn after tools completed even without materialized text", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tools only turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-tools-only");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
   });
 
   it("drops an interrupted physical turn after durable output while preserving its successor", async () => {
