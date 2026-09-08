@@ -28,10 +28,13 @@
 - `agent_thought_chunk` does not leak hidden reasoning as assistant output.
 - `tool_call` maps to `tool.started`.
 - `tool_call_update` completed/failed maps to `tool.completed`.
-- `session/prompt` `end_turn` maps to `turn.complete` exactly once.
-- `session/prompt` `cancelled` maps to `turn.interrupted`.
+- `session/prompt` `end_turn` maps to `turn.complete` exactly once when the turn has no open tools and either issued no tools or produced post-tool assistant text.
+- `session/prompt` `cancelled` without a local abort and without tools maps to `turn.complete`.
+- `session/prompt` `cancelled` or host interrupt with no tools and no `ok=true` maps to `turn.interrupted`.
 - `session/prompt` rejection maps to `turn.failed`.
-- ACP event stream end after a mid utterance and tool, before `session/prompt` settles, MUST emit recoverable `turn.failed` instead of hanging.
+- ACP event stream end after a mid utterance and tool, before `session/prompt` settles, MUST emit recoverable `turn.failed` instead of hanging or completing.
+- Tools then `handle_prompt.done` / `end_turn` / `cancelled` with zero post-tool assistant text MUST NOT emit `turn.complete`. Open tools fail immediately; closed tools get one continuation `session/prompt`, then visible `turn.failed` if the model still does not reply.
+- The 15:52-shaped timeline (announce, Read completed, Bash started without `exec_done` / without a matching terminal, then prompt end) MUST emit `turn.failed` with a user-visible explanation and MUST NOT emit `turn.complete`.
 
 ## Negative Tests
 

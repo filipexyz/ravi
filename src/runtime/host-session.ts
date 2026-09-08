@@ -436,6 +436,10 @@ export function isExplicitLocalRuntimeAbort(reason?: string | null): boolean {
  * Provider closed the prompt after tools already finished (or after tools plus
  * materialized output) without an explicit local abort. Keep successors and
  * recover visibly instead of discarding the turn as an unsafe interrupt.
+ *
+ * This is the leftover-interrupt path. A tools-then-silence `turn.complete`
+ * must still be refused by the Grok adapter / host continuation gate — do
+ * not treat #473 cancelled→complete as user-visible success.
  */
 export function isProviderEndedAfterCompletedTools(
   session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning">,

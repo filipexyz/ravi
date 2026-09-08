@@ -114,10 +114,13 @@ Initial advertised capabilities MUST be:
 - ACP `tool_call_update` with `completed` or `failed` -> `tool.completed`.
 - ACP `plan` -> `status: thinking`.
 - ACP `usage_update.used` -> `RuntimeUsage.inputTokens` when present; otherwise zeroes.
-- `session/prompt` `stopReason=end_turn` -> `turn.complete` exactly once.
-- `session/prompt` `stopReason=cancelled` or host interrupt -> `turn.interrupted`.
+- `session/prompt` `stopReason=end_turn` -> `turn.complete` exactly once **only when** the turn issued no tools, or every started tool terminated and the model produced a post-tool continuation (or an explicit limit/refusal stop).
+- `session/prompt` `stopReason=cancelled` without a local abort and without tools -> `turn.complete` (end-of-prompt race, not a host interrupt).
+- `session/prompt` `stopReason=cancelled` or host interrupt with no tools and no `ok=true` -> `turn.interrupted`.
+- A turn that issued tools MUST NOT become user-visible `turn.complete` when tools are still open, or when every tool terminated but the model produced zero post-tool assistant text. In that case the adapter MUST either send one continuation `session/prompt` (only if no tools are open) or emit recoverable `turn.failed` with a user-visible explanation.
+- `handle_prompt.done ok=true` after tools is not an explicit model stop. It MUST go through the same continuation / visible-failure gate.
 - `session/prompt` rejection or `refusal` / token-limit stop reasons -> `turn.failed`.
-- Subprocess exit or stream end before a terminal result -> recoverable `turn.failed`.
+- Subprocess exit or stream end before a terminal result -> recoverable `turn.failed`. Stream end after tools with no post-tool reply MUST NOT be rewritten to `turn.complete`.
 
 The adapter MUST emit exactly one Ravi terminal event per accepted Ravi prompt.
 
