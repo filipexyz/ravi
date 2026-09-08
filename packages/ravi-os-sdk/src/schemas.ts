@@ -2118,7 +2118,7 @@ export const AgentsPermissionsInputSchema = {
       "type": "string"
     },
     "profile": {
-      "description": "Profile: bootstrap, full-access, none",
+      "description": "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
       "type": "string"
     }
   },
