@@ -51,6 +51,8 @@ describe("public runtime failures", () => {
     'Config invalid: {"token":"secret-token-value"}',
     'Config invalid: {"apiKey":"secret-api-key-value"}',
     "Request failed with Authorization: Basic dXNlcjpzdXBlcnNlY3JldA==",
+    "No managed runtime credential could be resolved for provider claude model opus. Rejected credentials: acme-claude-credential: agent_not_allowed.",
+    "No managed runtime credential could be resolved for provider codex. Rejected credentials: acme-codex-credential: status:disabled.",
   ])("hides technical or sensitive detail: %s", (raw) => {
     expect(publicRuntimeFailureDetail(raw)).toBe(
       "The agent could not complete this request because of an internal runtime error. Please try again.",
