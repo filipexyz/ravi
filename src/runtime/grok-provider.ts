@@ -1006,7 +1006,8 @@ async function* runGrokTurns(
           context,
         );
 
-        if (state.interrupted || abortSignal.aborted || stopReason === "cancelled") {
+        const locallyAborted = state.interrupted || abortSignal.aborted;
+        if (locallyAborted) {
           const terminal = terminalTracker.interrupt({
             rawEvent: isRecord(result) ? result : { stopReason },
             metadata,
@@ -1016,6 +1017,9 @@ async function* runGrokTurns(
           }
           continue;
         }
+        // Grok ACP may return stopReason=cancelled after completed tools even
+        // when the host did not abort. Fall through to turn.complete so the
+        // host can flush assistant text instead of discarding the turn.
 
         if (stopReason === "refusal" || stopReason === "max_tokens" || stopReason === "max_turn_requests") {
           const terminal = terminalTracker.fail({

@@ -34,6 +34,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeSessionStartLane } from "./session-pool.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
@@ -49,6 +50,9 @@ export interface PendingRuntimeSessionStart {
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
   cancelled?: boolean;
+  queuedAt?: number;
+  lane?: RuntimeSessionStartLane;
+  timeout?: ReturnType<typeof setTimeout>;
 }
 
 export interface StartRuntimeSessionOptions {

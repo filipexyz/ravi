@@ -1232,8 +1232,9 @@ function getDb(): Database {
   db.exec("PRAGMA synchronous = NORMAL");
   // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
   db.exec("PRAGMA cache_size = -64000");
-  // Temp tables & sort scratch in RAM.
-  db.exec("PRAGMA temp_store = MEMORY");
+  // Temp tables & sort scratch on disk. MEMORY + a multi-GB DB can surface as
+  // SQLITE_NOMEM / "out of memory", especially when the host disk is nearly full.
+  db.exec("PRAGMA temp_store = DEFAULT");
   // 256MB memory-mapped read window. Hot queries become page-cache hits.
   db.exec("PRAGMA mmap_size = 268435456");
 

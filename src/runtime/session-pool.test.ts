@@ -10,8 +10,10 @@ import {
   classifyRuntimeSessionStartLane,
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeInteractiveReservedSlots,
+  resolveRuntimePendingStartTimeoutMs,
   resolveRuntimeSessionPoolMax,
   resolveRuntimeStreamingSession,
+  resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
 
 let stateDir: string | null = null;
@@ -102,6 +104,37 @@ describe("runtime session pool", () => {
         source: { channel: "cli", accountId: "local", chatId: "system", actorType: "system" },
       }),
     ).toBe("background");
+    expect(
+      classifyRuntimeSessionStartLane("demo-agent:whatsapp:group:test-group-1", {
+        prompt: "hello from the group",
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "contact",
+        },
+      }),
+    ).toBe("interactive");
+    expect(
+      classifyRuntimeSessionStartLane("demo-agent:whatsapp:group:test-group-1", {
+        prompt: "[System] Inform: group created",
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "system",
+        },
+      }),
+    ).toBe("background");
+  });
+
+  it("reuses idle TTL for pending-start timeout and keeps the 15m turn inactivity default", () => {
+    expect(resolveRuntimePendingStartTimeoutMs("")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
+    expect(resolveRuntimePendingStartTimeoutMs("0")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
+    expect(resolveRuntimePendingStartTimeoutMs("45000")).toBe(45_000);
+    expect(resolveRuntimeTurnInactivityMs("")).toBe(15 * 60 * 1000);
+    expect(resolveRuntimeTurnInactivityMs("0")).toBe(15 * 60 * 1000);
+    expect(resolveRuntimeTurnInactivityMs("120000")).toBe(120_000);
   });
 
   it("resolves a live runtime session by session key even when the map is keyed by name", () => {

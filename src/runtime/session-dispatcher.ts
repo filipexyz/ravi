@@ -20,7 +20,7 @@ import {
   recordRuntimeTraceEvent,
   recordTerminalTurnTrace,
 } from "../session-trace/runtime-trace.js";
-import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
+import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession, dbHasServingTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -63,6 +63,7 @@ import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./mode
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
@@ -74,10 +75,16 @@ import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-aler
 import { resolvePersistedUserText, resolveRuntimePromptText, withSessionSurfaceHint } from "./session-surface-hint.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
+  RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isTaskSessionName,
+  resolveRuntimeIdleSessionTtlMs,
+  resolveRuntimePendingStartTimeoutMs,
   resolveRuntimeStreamingSession,
+  resolveRuntimeTurnInactivityMs,
   type RuntimeSessionPoolSnapshot,
+  type RuntimeSessionStartLane,
   type RuntimeStreamingSessionIdentity,
 } from "./session-pool.js";
 
@@ -131,6 +138,10 @@ export interface RuntimeSessionDispatcherOptions {
   notifyRuntimeRecoveryExhausted(input: RuntimeRecoveryExhaustedAlertInput): Promise<void>;
   getConfigModel(): string;
   crashRecovery: RuntimeCrashRecoveryCoordinator;
+  pendingStartTimeoutMs?: number;
+  idleSessionTtlMs?: number;
+  turnInactivityMs?: number;
+  reclaimIntervalMs?: number;
 }
 
 export interface RuntimeAbortProvenance {
@@ -152,9 +163,47 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
+  readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
   private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
+  private reclaimTimer: ReturnType<typeof setInterval> | null = null;
+  private reclaiming = false;
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
+
+  private pendingStartTimeoutMs(): number {
+    return this.options.pendingStartTimeoutMs ?? resolveRuntimePendingStartTimeoutMs();
+  }
+
+  private idleSessionTtlMs(): number {
+    return this.options.idleSessionTtlMs ?? resolveRuntimeIdleSessionTtlMs();
+  }
+
+  private turnInactivityMs(): number {
+    return this.options.turnInactivityMs ?? resolveRuntimeTurnInactivityMs();
+  }
+
+  private reclaimIntervalMs(): number {
+    return this.options.reclaimIntervalMs ?? RUNTIME_SESSION_RECLAIM_INTERVAL_MS;
+  }
+
+  startPoolReclaimer(): void {
+    if (this.reclaimTimer) return;
+    this.reclaiming = true;
+    this.reclaimNonServingRuntimeSessions();
+    this.reclaimTimer = setInterval(() => {
+      if (!this.reclaiming) return;
+      this.reclaimNonServingRuntimeSessions();
+    }, this.reclaimIntervalMs());
+    this.reclaimTimer.unref?.();
+  }
+
+  stopPoolReclaimer(): void {
+    this.reclaiming = false;
+    if (this.reclaimTimer) {
+      clearInterval(this.reclaimTimer);
+      this.reclaimTimer = null;
+    }
+  }
 
   getRuntimeSessionPoolSnapshot(): RuntimeSessionPoolSnapshot {
     return buildRuntimeSessionPoolSnapshot(this.streamingSessions, {
@@ -349,9 +398,15 @@ export class RuntimeSessionDispatcher {
   }
 
   shutdownAll(): void {
+    this.stopPoolReclaimer();
+    if (this.deferredBootstraps.size > 0) {
+      log.info("Clearing deferred session bootstraps", { count: this.deferredBootstraps.size });
+      this.deferredBootstraps.clear();
+    }
     if (this.pendingStarts.length > 0) {
       log.info("Clearing pending session starts", { count: this.pendingStarts.length });
       for (const pendingStart of this.pendingStarts.splice(0)) {
+        this.clearPendingStartTimeout(pendingStart);
         pendingStart.cancelled = true;
         pendingStart.resolve();
       }
@@ -1161,6 +1216,16 @@ export class RuntimeSessionDispatcher {
       this.releaseRuntimeSessionSlot(sessionName);
     }
 
+    if (
+      prompt._deferRuntimeStart &&
+      !existing &&
+      !this.pendingStartSessions.has(sessionName) &&
+      !this.startingSessions.has(sessionName)
+    ) {
+      this.stashDeferredBootstrap(sessionName, prompt, sessionEntry, agent.id);
+      return;
+    }
+
     if (!existing && this.pendingStartSessions.has(sessionName)) {
       log.info("Streaming: queueing while session start waits for runtime pool slot", { sessionName });
       if (sessionEntry) {
@@ -1228,6 +1293,7 @@ export class RuntimeSessionDispatcher {
         .catch((error) => {
           log.warn("Failed to emit dispatch.queued event", { sessionName, error });
         });
+      this.promotePendingStartLane(sessionName, prompt);
       return;
     }
 
@@ -1318,6 +1384,7 @@ export class RuntimeSessionDispatcher {
       return;
     }
 
+    prompt = this.consumeDeferredBootstrap(sessionName, prompt);
     recordRuntimeTraceEvent({
       sessionKey: sessionEntry?.sessionKey ?? sessionName,
       sessionName,
@@ -1437,12 +1504,24 @@ export class RuntimeSessionDispatcher {
     return Math.max(0, this.options.maxConcurrentSessions - this.options.interactiveReservedSessions);
   }
 
-  private hasRuntimeSessionPoolSlotForStart(sessionName?: string, prompt?: RuntimeLaunchPrompt): boolean {
+  private resolveStartLane(
+    sessionName?: string,
+    prompt?: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
+  ): RuntimeSessionStartLane {
+    return laneOverride ?? classifyRuntimeSessionStartLane(sessionName, prompt);
+  }
+
+  private hasRuntimeSessionPoolSlotForStart(
+    sessionName?: string,
+    prompt?: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
+  ): boolean {
     const used = this.getRuntimeSessionPoolUsedSlots();
     if (used >= this.options.maxConcurrentSessions) {
       return false;
     }
-    const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    const lane = this.resolveStartLane(sessionName, prompt, laneOverride);
     if (lane === "interactive" || this.options.interactiveReservedSessions <= 0) {
       return true;
     }
@@ -1452,9 +1531,10 @@ export class RuntimeSessionDispatcher {
   private getRuntimeSessionPoolNoSlotReason(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
   ): "concurrency_limit" | "interactive_reserved_capacity" | "pending_start_backpressure" {
     if (
-      classifyRuntimeSessionStartLane(sessionName, prompt) === "background" &&
+      this.resolveStartLane(sessionName, prompt, laneOverride) === "background" &&
       this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions &&
       this.getRuntimeSessionPoolUsedSlots() >= this.getBackgroundStartLimit()
     ) {
@@ -1550,11 +1630,15 @@ export class RuntimeSessionDispatcher {
         prompt,
         resolve: () => {},
         cancelled: false,
+        queuedAt: Date.now(),
+        lane,
       };
+      this.armPendingStartTimeout(pendingStart);
       await new Promise<void>((resolve) => {
         pendingStart.resolve = resolve;
         this.pendingStarts.push(pendingStart);
       });
+      this.clearPendingStartTimeout(pendingStart);
       if (pendingStart.cancelled) {
         log.info("Pending session start cancelled", { sessionName });
         return false;
@@ -1720,7 +1804,8 @@ export class RuntimeSessionDispatcher {
     while (this.pendingStarts.length > 0) {
       const nextIndex = this.pendingStarts.findIndex(
         (candidate) =>
-          !candidate.cancelled && this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt),
+          !candidate.cancelled &&
+          this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt, candidate.lane),
       );
       if (nextIndex < 0) {
         break;
@@ -1730,8 +1815,10 @@ export class RuntimeSessionDispatcher {
         break;
       }
       if (next.cancelled) {
+        this.clearPendingStartTimeout(next);
         continue;
       }
+      this.clearPendingStartTimeout(next);
       this.startReservations.add(next.sessionName);
       log.info("Dequeuing pending session start", {
         sessionName: next.sessionName,
@@ -1739,11 +1826,262 @@ export class RuntimeSessionDispatcher {
         reserved: this.getStartReservationCount(),
         queued: this.pendingStarts.length,
         max: this.options.maxConcurrentSessions,
-        lane: classifyRuntimeSessionStartLane(next.sessionName, next.prompt),
+        lane: this.resolveStartLane(next.sessionName, next.prompt, next.lane),
         interactiveReserved: this.options.interactiveReservedSessions,
         backgroundLimit: this.getBackgroundStartLimit(),
       });
       next.resolve();
+    }
+  }
+
+  promotePendingStartLane(sessionName: string, prompt: RuntimeLaunchPrompt): boolean {
+    const incomingLane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    if (incomingLane !== "interactive") {
+      return false;
+    }
+    const index = this.pendingStarts.findIndex(
+      (candidate) => candidate.sessionName === sessionName && !candidate.cancelled,
+    );
+    if (index < 0) {
+      return false;
+    }
+    const pending = this.pendingStarts[index]!;
+    const previousLane = this.resolveStartLane(pending.sessionName, pending.prompt, pending.lane);
+    pending.lane = "interactive";
+    if (index > 0) {
+      this.pendingStarts.splice(index, 1);
+      this.pendingStarts.unshift(pending);
+    }
+    if (previousLane === "interactive") {
+      this.drainPendingStarts();
+      return false;
+    }
+    log.info("Promoted pending session start to interactive", {
+      sessionName,
+      previousLane,
+      queued: this.pendingStarts.length,
+    });
+    this.drainPendingStarts();
+    return true;
+  }
+
+  reclaimNonServingRuntimeSessions(now = Date.now()): {
+    idleEvicted: string[];
+    stuckReleased: string[];
+    orphanTasks: string[];
+    timedOutStarts: string[];
+  } {
+    const idleEvicted: string[] = [];
+    const stuckReleased: string[] = [];
+    const idleTtlMs = this.idleSessionTtlMs();
+    const stuckAfterMs = this.turnInactivityMs();
+
+    for (const [sessionName, session] of this.streamingSessions) {
+      if (session.done) {
+        this.releaseRuntimeSessionSlot(sessionName);
+        continue;
+      }
+      const idleMs = session.lastActivity ? now - session.lastActivity : now;
+      const servingWork =
+        session.starting ||
+        session.turnActive ||
+        session.compacting ||
+        session.toolRunning ||
+        session.pendingMessages.length > 0 ||
+        Boolean(session.pendingWake);
+      if (!servingWork && idleTtlMs > 0 && idleMs >= idleTtlMs) {
+        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs });
+        shutdownRuntimeStreamingSession(session, "idle_session_ttl");
+        this.releaseRuntimeSessionSlot(sessionName);
+        markRuntimeLiveIdle(sessionName, "idle evicted");
+        idleEvicted.push(sessionName);
+        continue;
+      }
+      if (servingWork && (session.turnActive || session.toolRunning || session.starting) && idleMs >= stuckAfterMs) {
+        log.warn("Reclaiming stuck runtime session", { sessionName, idleMs, timeoutMs: stuckAfterMs });
+        if (session.pendingMessages.length > 0) {
+          stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
+        }
+        shutdownRuntimeStreamingSession(session, "stuck_session_reclaim");
+        this.releaseRuntimeSessionSlot(sessionName);
+        markRuntimeLiveIdle(sessionName, "stuck reclaimed");
+        stuckReleased.push(sessionName);
+      }
+    }
+
+    const orphanTasks = this.auditOrphanTaskSessions();
+    const timedOutStarts = this.failExpiredPendingStarts(now);
+    return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  auditOrphanTaskSessions(): string[] {
+    const reaped: string[] = [];
+    for (const [sessionName] of this.streamingSessions) {
+      if (!isTaskSessionName(sessionName)) continue;
+      if (dbHasServingTaskForSession(sessionName)) continue;
+      log.info("Reaping orphan task runtime session", { sessionName });
+      const aborted = this.abortSession(
+        { sessionName },
+        {
+          source: "session-dispatcher",
+          action: "orphan-task-reap",
+          reason: "task_terminal_no_serving_task",
+          actor: "system",
+        },
+      );
+      if (aborted) {
+        reaped.push(sessionName);
+      }
+    }
+    return reaped;
+  }
+
+  private stashDeferredBootstrap(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionEntry: SessionEntry | null,
+    agentId: string,
+  ): void {
+    this.deferredBootstraps.set(sessionName, { ...prompt, _deferRuntimeStart: undefined });
+    if (!prompt._resumeStashedMessages) {
+      saveMessage(sessionName, "user", resolvePersistedUserText(prompt), sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+        agentId: sessionEntry?.agentId ?? agentId,
+        channel: prompt.source?.channel ?? prompt.context?.channelId,
+        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
+      });
+    }
+    log.info("Deferred channel session bootstrap until first interactive turn", { sessionName });
+  }
+
+  private consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    const deferred = this.deferredBootstraps.get(sessionName);
+    if (!deferred) {
+      return prompt;
+    }
+    this.deferredBootstraps.delete(sessionName);
+    const prefix = deferred.prompt?.trim();
+    const incoming = prompt.prompt?.trim();
+    const combined = prefix && incoming && prefix !== incoming ? `${prefix}\n\n${incoming}` : incoming || prefix;
+    return {
+      ...prompt,
+      prompt: combined || prompt.prompt,
+      _deferRuntimeStart: undefined,
+    };
+  }
+
+  private armPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
+    this.clearPendingStartTimeout(pendingStart);
+    const timeoutMs = this.pendingStartTimeoutMs();
+    if (timeoutMs <= 0) {
+      return;
+    }
+    pendingStart.timeout = setTimeout(() => {
+      pendingStart.timeout = undefined;
+      this.failQueuedPendingStart(pendingStart, "pending_start_timeout");
+    }, timeoutMs);
+    pendingStart.timeout.unref?.();
+  }
+
+  private clearPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
+    if (pendingStart.timeout) {
+      clearTimeout(pendingStart.timeout);
+      pendingStart.timeout = undefined;
+    }
+  }
+
+  private failExpiredPendingStarts(now: number): string[] {
+    const timeoutMs = this.pendingStartTimeoutMs();
+    if (timeoutMs <= 0) {
+      return [];
+    }
+    const timedOut: string[] = [];
+    for (const pendingStart of [...this.pendingStarts]) {
+      if (pendingStart.cancelled) continue;
+      const queuedAt = pendingStart.queuedAt ?? now;
+      if (now - queuedAt < timeoutMs) continue;
+      this.failQueuedPendingStart(pendingStart, "pending_start_timeout");
+      timedOut.push(pendingStart.sessionName);
+    }
+    return timedOut;
+  }
+
+  private failQueuedPendingStart(
+    pendingStart: PendingRuntimeSessionStart,
+    reason: "pending_start_timeout",
+  ): void {
+    if (pendingStart.cancelled) {
+      return;
+    }
+    const sessionName = pendingStart.sessionName;
+    const prompt = pendingStart.prompt;
+    const lane = this.resolveStartLane(sessionName, prompt, pendingStart.lane);
+    const source = prompt.source;
+    const userFacing = lane === "interactive" || isUserFacingPendingStartSource(source);
+    pendingStart.cancelled = true;
+    this.clearPendingStartTimeout(pendingStart);
+    const index = this.pendingStarts.indexOf(pendingStart);
+    if (index >= 0) {
+      this.pendingStarts.splice(index, 1);
+    }
+    pendingStart.resolve();
+
+    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    log.warn("Pending session start timed out", {
+      sessionName,
+      lane,
+      reason,
+      queued: this.pendingStarts.length,
+      userFacing,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: traceIdentity.sessionKey,
+      sessionName,
+      agentId: traceIdentity.agentId,
+      eventType: "dispatch.start_timeout",
+      eventGroup: "dispatch",
+      status: "failed",
+      source,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        reason,
+        lane,
+        userFacing,
+      },
+    });
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "session.timeout",
+        reason,
+        lane,
+        sessionName,
+        ...(source ? { _source: source } : {}),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit pending start timeout event", { sessionName, error });
+      });
+
+    if (userFacing && source) {
+      const response = formatUserFacingTurnFailure(
+        "Runtime session start stayed queued too long. Send another message to retry.",
+      );
+      nats
+        .emit(`ravi.session.${sessionName}.response`, {
+          response,
+          target: source,
+          _emitId: Math.random().toString(36).slice(2, 8),
+          _instanceId: this.options.instanceId,
+          _pid: process.pid,
+          _v: 2,
+        })
+        .catch((error) => {
+          log.warn("Failed to emit pending start timeout response", { sessionName, error });
+        });
     }
   }
 
@@ -2778,4 +3116,11 @@ function describeSessionState(session: RuntimeHostStreamingSession): Record<stri
     tool: session.currentToolName ?? null,
     idleMs: session.lastActivity ? Date.now() - session.lastActivity : null,
   };
+}
+
+function isUserFacingPendingStartSource(
+  source: RuntimeLaunchPrompt["source"] | undefined,
+): boolean {
+  const channel = source?.channel?.trim().toLowerCase();
+  return channel === "whatsapp" || channel === "slack" || channel === "telegram" || channel === "discord";
 }

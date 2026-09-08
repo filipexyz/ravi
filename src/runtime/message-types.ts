@@ -238,6 +238,11 @@ export interface PromptMessage {
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
   _turnOrigin?: RuntimeTurnOriginMetadata;
+  /**
+   * Channel bootstrap that must not occupy a runtime pool slot until a later
+   * interactive turn. The dispatcher stashes the inform and prepends it.
+   */
+  _deferRuntimeStart?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

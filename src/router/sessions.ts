@@ -975,6 +975,21 @@ export function getExpiringSessions(withinMs: number): SessionEntry[] {
 }
 
 /**
+ * Mark an ephemeral session expired immediately so the next cleanup tick
+ * deletes it. Used by the task-aware reaper after a one-shot abort.
+ */
+export function expireEphemeralSession(sessionKey: string): boolean {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare("UPDATE sessions SET ephemeral = 1, expires_at = ?, updated_at = ? WHERE session_key = ?").run(
+    now,
+    now,
+    sessionKey,
+  );
+  return getDbChanges() > 0;
+}
+
+/**
  * Get ephemeral sessions that have already expired.
  */
 export function getExpiredSessions(): SessionEntry[] {

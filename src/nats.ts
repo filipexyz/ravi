@@ -81,6 +81,10 @@ export async function ensureConnected(): Promise<NatsConnection> {
   return nc!;
 }
 
+export function isSessionResponseTopic(topic: string): boolean {
+  return /^ravi\.session\.[^.]+\.response$/.test(topic);
+}
+
 export function getNats(): NatsConnection {
   if (!nc) throw new Error("NATS not connected — call connectNats() first");
   return nc;
@@ -93,18 +97,16 @@ export function getNats(): NatsConnection {
 export async function publish(topic: string, data: Record<string, unknown>): Promise<void> {
   const conn = await ensureConnected();
 
-  // Trace .response emissions (helps debug ghost responses)
-  if (topic.includes(".response")) {
-    const hasEmitId = "_emitId" in data;
-    if (!hasEmitId) {
-      const stack = new Error().stack?.split("\n").slice(2, 8).join("\n") || "no stack";
-      log.warn("GHOST_EMIT_DETECTED", {
-        topic,
-        keys: Object.keys(data),
-        fullData: JSON.stringify(data).slice(0, 500),
-        stack,
-      });
-    }
+  // Trace session-response emissions (helps debug ghost chat replies).
+  // Approval/system topics such as `ravi.approval.response` are not chat emits.
+  if (isSessionResponseTopic(topic) && !("_emitId" in data)) {
+    const stack = new Error().stack?.split("\n").slice(2, 8).join("\n") || "no stack";
+    log.warn("GHOST_EMIT_DETECTED", {
+      topic,
+      keys: Object.keys(data),
+      fullData: JSON.stringify(data).slice(0, 500),
+      stack,
+    });
   }
 
   conn.publish(topic, sc.encode(JSON.stringify(data)));

@@ -65,18 +65,20 @@ destination. After `turn.complete`, `sessions send -w` MUST return this
 turn's assistant transcript row (persist may lag). Missing chat delivery
 is not empty success when that transcript exists.
 
-Operator / HTTP / app `sessions.send` with the same shape (session-relay,
-no `--channel`/`--to`, no real inbound chat) is a **session destination
-for emit too**. Leftover `lastChannel` / `lastTo` MUST NOT be copied into
-`prompt.source` / `currentSource`. The default output attachment MUST NOT
-be the emit target. Chat emit MUST fail closed (`Response target
-unresolved — dropping emit`). Do not invent a chat `.response` sink.
-Persist stays independent: `saveMessage` on `turn.complete` plus
-`sessions.read` / `getRecentHistory` by `session_id`.
+CLI-only `sessions send` with `_cliDestination` (waiting CLI, no inbound
+chat) remains a **session destination**. Leftover `lastChannel` / `lastTo`
+MUST NOT be copied into `prompt.source` / `currentSource`. Chat emit MUST
+fail closed for that CLI-only shape.
 
-The default output is only a fallback for proactive and other source-less
-turns (cron, heartbeat, follow-up). It never overrides an inbound source
-and MUST NOT claim a session-relay operator send.
+A session-relay continue without `_cliDestination` (operator/system
+`sessions send` into an already-attached chat session) MUST rebind the
+existing primary/default output attachment so replies reach that chat.
+Leftover `lastChannel` / `lastTo` still MUST NOT become a fake inbound
+source. An inbound source that is not attached still MUST fail closed.
+
+The default output is the fallback for source-less continues and for
+proactive turns (cron, heartbeat, follow-up). It never overrides a real
+attached inbound source.
 
 ## Turn Isolation
 

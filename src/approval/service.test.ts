@@ -156,6 +156,9 @@ describe("approval service", () => {
     expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
     expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
+    const approvalResponse = emitted.find((entry) => entry.topic === "ravi.approval.response");
+    expect(typeof approvalResponse?.data._emitId).toBe("string");
+    expect(String(approvalResponse?.data._emitId ?? "").length).toBeGreaterThan(0);
     expect(externalOrder).toEqual([
       "before-external-approval",
       "ravi.approval.request",

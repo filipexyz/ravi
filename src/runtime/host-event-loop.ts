@@ -64,7 +64,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
-import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
+import { resolveRuntimeIdleSessionTtlMs, resolveRuntimeTurnInactivityMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import {
@@ -1110,10 +1110,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     1_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
-  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
-    1_000,
-    Number(process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS) || 15 * 60 * 1000,
-  );
+  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(1_000, resolveRuntimeTurnInactivityMs());
   const PROVIDER_TURN_INACTIVITY_CHECK_MS = Math.min(
     30_000,
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
@@ -2287,6 +2284,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           },
           statusSkillVisibility,
         );
+        if (status === "idle" && !streaming.turnActive && !streaming.toolRunning && !streaming.compacting) {
+          scheduleIdleSessionEviction();
+        }
 
         // External compaction announcements are user-facing runtime responses.
         // They are suppressed for automation-originated turns (cron, trigger,
@@ -2990,7 +2990,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
-        if (!interruptedReplaySafety.replayable) {
+        const providerEndedAfterCompletedTools =
+          !streaming.internalAbortReason &&
+          interruptedReplaySafety.startedTool &&
+          interruptedReplaySafety.materializedOutput;
+        if (providerEndedAfterCompletedTools) {
+          // Provider closed the prompt after tools already finished. Keep
+          // successors and leave the session idle so a later human turn can
+          // continue, instead of discarding the completed work as unsafe.
+          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+          log.info("Provider ended turn after completed tools; keeping session recoverable", {
+            runId,
+            sessionName,
+            remaining: streaming.pendingMessages.length,
+            startedTool: interruptedReplaySafety.startedTool,
+            materializedOutput: interruptedReplaySafety.materializedOutput,
+            durableBinding: interruptedReplaySafety.durableBinding,
+          });
+        } else if (!interruptedReplaySafety.replayable) {
           const queuedBefore = streaming.pendingMessages.length;
           streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
           log.info("Discarding unsafe interrupted turn while preserving queued successors", {

@@ -1203,7 +1203,7 @@ describe("runtime session trace instrumentation", () => {
     expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
   });
 
-  it("does not emit session-relay HTTP send to leftover lastChannel or default output", async () => {
+  it("rebounds a session-relay continue without _cliDestination to the primary attached output", async () => {
     const leftoverChat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -1298,7 +1298,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect((await runtimeRequest.prompt.next()).done).toBe(false);
     expect(relayStreaming.currentSource).toBeUndefined();
-    expect(relayStreaming.currentReplyTarget).toBeNull();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(leftoverChat.id);
 
     const relayEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
     const relayEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
@@ -1325,7 +1325,11 @@ describe("runtime session trace instrumentation", () => {
       await runtimeRequest.prompt.return?.(undefined);
     }
 
-    expect(relayEmits).toEqual([]);
+    expect(relayEmits).toHaveLength(1);
+    expect(relayEmits[0]).toMatchObject({
+      response: "pong from session",
+      target: { canonicalChatId: leftoverChat.id },
+    });
     const assistantRows = getRecentHistory(SESSION_NAME, 10).filter((message) => message.role === "assistant");
     expect(assistantRows.map((message) => message.content)).toEqual(["pong from session"]);
 
@@ -1399,6 +1403,78 @@ describe("runtime session trace instrumentation", () => {
         .filter((message) => message.role === "assistant")
         .map((message) => message.content),
     ).toEqual(["pong from session", "inbound slack reply"]);
+  });
+
+  it("keeps CLI-only _cliDestination continues fail-closed for chat emit", async () => {
+    const leftoverChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "leftover-cli-dest@s.whatsapp.net",
+      chatType: "dm",
+      title: "leftover lastChannel",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: leftoverChat.id, setOutputTarget: true });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: leftoverChat.platformChatId,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const leftoverSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: leftoverChat.platformChatId,
+      canonicalChatId: leftoverChat.id,
+    };
+    const cliPrompt = {
+      prompt: "hello from waiting CLI",
+      source: leftoverSource,
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(cliPrompt, session)).toBeUndefined();
+
+    const cliStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: leftoverSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(cliPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-cli-destination-emit",
+      sessionName: SESSION_NAME,
+      prompt: cliPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(cliPrompt, session),
+      streamingSession: cliStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(cliStreaming.currentSource).toBeUndefined();
+    expect(cliStreaming.currentReplyTarget).toBeNull();
+    await runtimeRequest.prompt.return?.(undefined);
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {

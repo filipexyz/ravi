@@ -38,6 +38,8 @@ const setSettingsCalls: Array<Record<string, unknown>> = [];
 const createAgentCalls: Array<Record<string, unknown>> = [];
 const upsertChatCalls: Array<Record<string, unknown>> = [];
 const upsertChatParticipantCalls: Array<Record<string, unknown>> = [];
+const publishPromptCalls: Array<Record<string, unknown>> = [];
+let mockAgent: { id: string; cwd: string } | undefined;
 
 let listGroupsResult: Array<Record<string, unknown>> = [];
 let metadataResult: Record<string, unknown> | null = null;
@@ -151,7 +153,9 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../channels/session-prompt.js", () => ({
-  publishChannelSessionPrompt: async () => {},
+  publishChannelSessionPrompt: async (input: Record<string, unknown>) => {
+    publishPromptCalls.push(input);
+  },
 }));
 
 mock.module("../../omni/group-metadata-cache.js", () => ({
@@ -248,7 +252,7 @@ mock.module("../../router/config.js", () => ({
     createAgentCalls.push(input);
     return { id: input.id, cwd: input.cwd };
   },
-  getAgent: () => undefined,
+  getAgent: (id?: string) => (id && mockAgent?.id === id ? mockAgent : undefined),
 }));
 
 mock.module("../../router/resolver.js", () => ({
@@ -346,6 +350,8 @@ beforeEach(() => {
   createAgentCalls.length = 0;
   upsertChatCalls.length = 0;
   upsertChatParticipantCalls.length = 0;
+  publishPromptCalls.length = 0;
+  mockAgent = undefined;
   listGroupsResult = [];
   metadataResult = null;
   historyMock = [];
@@ -595,6 +601,34 @@ describe("whatsapp group write brake", () => {
       participants: ["5511999999999"],
     });
     expect(upsertChatCalls).toHaveLength(1);
+  });
+
+  it("defers the group-create bootstrap inform so it does not occupy a runtime slot", async () => {
+    mockAgent = { id: "demo-agent", cwd: "/tmp/demo-agent" };
+    const commands = new GroupCommands();
+    await silenced(() =>
+      commands.create(
+        "Equipe Teste",
+        "5511999999999",
+        undefined,
+        "demo-agent",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(publishPromptCalls).toHaveLength(1);
+    expect(publishPromptCalls[0]).toMatchObject({
+      action: "session.bootstrap",
+      payload: { _deferRuntimeStart: true },
+    });
   });
 
   it("create fails BEFORE the brake when the routed agent does not exist", async () => {

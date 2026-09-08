@@ -1098,7 +1098,7 @@ describe("Grok Build runtime provider", () => {
     });
   });
 
-  it("emits turn.interrupted when session/prompt stops as cancelled", async () => {
+  it("completes the turn when session/prompt returns cancelled without a local abort", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
@@ -1112,9 +1112,9 @@ describe("Grok Build runtime provider", () => {
 
     expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
       "turn.started",
-      "turn.interrupted",
+      "turn.complete",
     ]);
-    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
   });
 
   it("sends session/cancel from interrupt and control", async () => {

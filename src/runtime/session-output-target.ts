@@ -23,9 +23,8 @@ export interface ResolveSessionOutputTargetInput {
   fallback: MessageTarget | undefined;
   /**
    * Source-less turns may use the session default output attachment.
-   * Session-relay operator/HTTP/app send is a session destination: persist
-   * and `sessions.read` are the sink. Pass false so leftover lastChannel
-   * stripping cannot fall through to WhatsApp/Slack.
+   * CLI-only `_cliDestination` turns stay on the waiting CLI — pass false.
+   * Other session-relay continues rebind the existing primary/default output.
    */
   allowDefaultOutput?: boolean;
 }

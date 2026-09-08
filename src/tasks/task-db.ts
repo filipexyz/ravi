@@ -1311,6 +1311,32 @@ export function dbListChildTasks(parentTaskId: string): TaskRecord[] {
   return rows.map(rowToTask);
 }
 
+export function dbHasServingTaskForSession(sessionName: string, excludeTaskId?: string): boolean {
+  ensureTaskSchema();
+  const db = getDb();
+  const row = excludeTaskId
+    ? (db
+        .prepare(`
+          SELECT 1
+          FROM tasks
+          WHERE assignee_session_name = ?
+            AND status IN ('dispatched', 'in_progress')
+            AND id != ?
+          LIMIT 1
+        `)
+        .get(sessionName, excludeTaskId) as { 1: number } | undefined)
+    : (db
+        .prepare(`
+          SELECT 1
+          FROM tasks
+          WHERE assignee_session_name = ?
+            AND status IN ('dispatched', 'in_progress')
+          LIMIT 1
+        `)
+        .get(sessionName) as { 1: number } | undefined);
+  return Boolean(row);
+}
+
 export function dbHasActiveTaskForSession(sessionName: string, excludeTaskId?: string): boolean {
   ensureTaskSchema();
   const db = getDb();

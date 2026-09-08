@@ -4,7 +4,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { executeWrite, executeWriteWithStats, isSqliteLockError } from "./write-retry.js";
+import {
+  executeWrite,
+  executeWriteWithStats,
+  isSqliteCapacityError,
+  isSqliteLockError,
+  SQLITE_CAPACITY_USER_MESSAGE,
+} from "./write-retry.js";
 
 let dir: string | null = null;
 
@@ -40,6 +46,23 @@ describe("isSqliteLockError", () => {
     expect(isSqliteLockError(new Error("not null violation"))).toBe(false);
     expect(isSqliteLockError("string error")).toBe(false);
     expect(isSqliteLockError(null)).toBe(false);
+  });
+});
+
+describe("isSqliteCapacityError", () => {
+  it("recognizes OOM, SQLITE_FULL, and disk-full errors", () => {
+    expect(isSqliteCapacityError(new Error("SQLiteError: out of memory"))).toBe(true);
+    expect(isSqliteCapacityError(new Error("SQLITE_NOMEM"))).toBe(true);
+    expect(isSqliteCapacityError(new Error("SQLITE_FULL: database or disk is full"))).toBe(true);
+    expect(isSqliteCapacityError(new Error("database or disk is full"))).toBe(true);
+    expect(isSqliteCapacityError(new Error("disk I/O error"))).toBe(true);
+    expect(SQLITE_CAPACITY_USER_MESSAGE).toContain("Vacuum is an operator maintenance step");
+  });
+
+  it("ignores lock and unrelated errors", () => {
+    expect(isSqliteCapacityError(new Error("database is locked"))).toBe(false);
+    expect(isSqliteCapacityError(new Error("constraint failed"))).toBe(false);
+    expect(isSqliteCapacityError("out of memory")).toBe(false);
   });
 });
 

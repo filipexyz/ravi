@@ -675,6 +675,7 @@ async function requestRuntimeUserInput(
       approved: true,
       answers,
       timestamp: Date.now(),
+      _emitId: `approval-${Date.now().toString(36)}`,
       ...eventData,
     })
     .catch(() => {});

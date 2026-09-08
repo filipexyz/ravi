@@ -29,8 +29,8 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
-import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
-import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { dbBlockTask, dbCompleteTask, dbCreateTask, dbDispatchTask, dbHasServingTaskForSession } from "../tasks/task-db.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
 import {
@@ -156,6 +156,11 @@ function createDispatcher(
   maxConcurrentSessions = 10,
   interactiveReservedSessions = 0,
   crashRecovery: RuntimeCrashRecoveryCoordinator = crashRecoveryStub,
+  extras: {
+    pendingStartTimeoutMs?: number;
+    idleSessionTtlMs?: number;
+    turnInactivityMs?: number;
+  } = {},
 ) {
   return new RuntimeSessionDispatcher({
     instanceId: "test",
@@ -165,6 +170,7 @@ function createDispatcher(
     notifyRuntimeRecoveryExhausted: async () => {},
     getConfigModel: () => "test-model",
     crashRecovery,
+    ...extras,
   });
 }
 
@@ -2640,6 +2646,176 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(dispatcher.streamingSessions.has("inline-model-change")).toBe(false);
       expect(pendingResolved).toBe(false);
       expect(dispatcher.pendingStarts).toHaveLength(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not enqueue a deferred group bootstrap and prepends it on the first human start", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-defer-bootstrap-");
+    try {
+      getOrCreateSession("agent:dev:test:defer-bootstrap", "dev", stateDir, { name: "demo-group" });
+      const dispatcher = createDispatcher(1);
+      const bootstrap = dispatcher.handlePromptImmediate("demo-group", {
+        prompt: "[System] Inform: group created",
+        _deferRuntimeStart: true,
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap"),
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "system",
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(true);
+      expect(dispatcher.streamingSessions.size).toBe(0);
+
+      dispatcher.streamingSessions.set("busy", createActiveSession());
+      const humanStart = dispatcher.handlePromptImmediate("demo-group", {
+        prompt: "hello from the group",
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "contact",
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
+      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("[System] Inform: group created");
+      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("hello from the group");
+      expect(dispatcher.pendingStarts[0]?.prompt._turnOrigin).toBeUndefined();
+      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+
+      dispatcher.shutdownAll();
+      await Promise.all([bootstrap, humanStart]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("promotes a background pending start to interactive when a human inbound arrives", async () => {
+    const dispatcher = createDispatcher(3, 1);
+    dispatcher.streamingSessions.set("task-one-work", createActiveSession());
+    dispatcher.streamingSessions.set("task-two-work", createActiveSession());
+    let resolved = false;
+    dispatcher.pendingStarts.push({
+      sessionName: "demo-group",
+      prompt: { prompt: "bootstrap", _cron: true },
+      lane: "background",
+      queuedAt: Date.now(),
+      resolve: () => {
+        resolved = true;
+      },
+    });
+    dispatcher.pendingStartSessions.add("demo-group");
+
+    const promoted = dispatcher.promotePendingStartLane("demo-group", {
+      prompt: "hello from the group",
+      source: {
+        channel: "whatsapp",
+        accountId: "demo",
+        chatId: "group:test-group-1",
+        actorType: "contact",
+      },
+    });
+
+    expect(promoted).toBe(true);
+    expect(resolved).toBe(true);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
+    expect(dispatcher.startReservations.has("demo-group")).toBe(true);
+  });
+
+  it("reclaims idle, stuck, and orphan task sessions", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-reclaim-");
+    try {
+      const created = dbCreateTask({
+        title: "Blocked orphan",
+        instructions: "Blocked tasks are terminal for pool cleanup",
+        createdBy: "test",
+      });
+      const sessionName = `${created.task.id}-work`;
+      dbDispatchTask(created.task.id, {
+        agentId: "dev",
+        sessionName,
+        assignedBy: "test",
+      });
+      dbBlockTask(created.task.id, {
+        actor: "test",
+        agentId: "dev",
+        sessionName,
+        message: "waiting on an operator",
+      });
+      expect(dbHasServingTaskForSession(sessionName)).toBe(false);
+
+      const dispatcher = createDispatcher(4, 0, crashRecoveryStub, {
+        idleSessionTtlMs: 60_000,
+        turnInactivityMs: 60_000,
+      });
+      const now = Date.now();
+      dispatcher.streamingSessions.set(
+        "idle-demo",
+        createActiveSession({ lastActivity: now - 120_000, turnActive: false }),
+      );
+      dispatcher.streamingSessions.set(
+        "stuck-demo",
+        createActiveSession({ lastActivity: now - 120_000, turnActive: true }),
+      );
+      dispatcher.streamingSessions.set(sessionName, createActiveSession({ lastActivity: now }));
+
+      const result = dispatcher.reclaimNonServingRuntimeSessions(now);
+      expect(result.idleEvicted).toContain("idle-demo");
+      expect(result.stuckReleased).toContain("stuck-demo");
+      expect(result.orphanTasks).toContain(sessionName);
+      expect(dispatcher.streamingSessions.has("idle-demo")).toBe(false);
+      expect(dispatcher.streamingSessions.has("stuck-demo")).toBe(false);
+      expect(dispatcher.streamingSessions.has(sessionName)).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("emits a user-facing timeout when an interactive start stays queued", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-timeout-");
+    try {
+      getOrCreateSession("agent:dev:test:start-timeout", "dev", stateDir, { name: "start-timeout" });
+      const dispatcher = createDispatcher(1, 0, crashRecoveryStub, { pendingStartTimeoutMs: 25 });
+      dispatcher.streamingSessions.set("busy", createActiveSession());
+      const emits: Array<{ topic: string; data: Record<string, unknown> }> = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+        emits.push({ topic, data: data as Record<string, unknown> });
+      });
+
+      const queued = dispatcher.handlePromptImmediate("start-timeout", {
+        prompt: "hello from the group",
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "contact",
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(emits.some((entry) => (entry.data as { type?: string }).type === "session.timeout")).toBe(true);
+      expect(
+        emits.some(
+          (entry) =>
+            entry.topic === "ravi.session.start-timeout.response" &&
+            String(entry.data.response ?? "").includes("queued too long"),
+        ),
+      ).toBe(true);
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+
+      emitSpy.mockRestore();
+      dispatcher.shutdownAll();
+      await queued;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

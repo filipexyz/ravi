@@ -178,6 +178,7 @@ export async function requestCascadingApproval(
       approved: result.approved,
       reason: result.reason,
       timestamp: Date.now(),
+      _emitId: `approval-${Date.now().toString(36)}`,
       ...(opts.eventData ?? {}),
     })
     .catch(() => {});

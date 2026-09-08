@@ -9,9 +9,11 @@
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
+import { expireEphemeralSession, getExpiringSessions, getExpiredSessions, listSessions } from "../router/sessions.js";
 import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
+import { isTaskSessionName } from "../runtime/session-pool.js";
+import { dbHasServingTaskForSession } from "../tasks/task-db.js";
 
 const log = logger.child("ephemeral");
 
@@ -68,7 +70,15 @@ Sem ação = sessão será excluída automaticamente.`;
       }
     }
 
-    // 2. Abort and delete expired sessions
+    // 2. Abort ephemeral task-work sessions whose task is no longer serving.
+    // `blocked`/`done`/`failed` are terminal for cleanup (issue #71). Expire
+    // the row in the same tick so the reap is idempotent.
+    const orphaned = reapOrphanEphemeralTaskSessions();
+    if (orphaned > 0) {
+      log.info("Reaped orphan ephemeral task-work sessions", { count: orphaned });
+    }
+
+    // 3. Abort and delete expired sessions
     const expired = getExpiredSessions();
     for (const session of expired) {
       // Abort SDK subprocess first
@@ -92,7 +102,7 @@ Sem ação = sessão será excluída automaticamente.`;
       log.info("Deleted expired ephemeral sessions", { count: deletedCount });
     }
 
-    // 3. Cleanup old message metadata (>7 days)
+    // 4. Cleanup old message metadata (>7 days)
     const cleaned = dbCleanupMessageMeta();
     if (cleaned > 0) {
       log.info("Cleaned up old message metadata", { count: cleaned });
@@ -100,6 +110,30 @@ Sem ação = sessão será excluída automaticamente.`;
   } catch (err) {
     log.error("Ephemeral cleanup tick failed", err);
   }
+}
+
+function reapOrphanEphemeralTaskSessions(): number {
+  let reaped = 0;
+  for (const session of listSessions()) {
+    if (session.ephemeral !== true) continue;
+    const sessionName = session.name ?? session.sessionKey;
+    if (!isTaskSessionName(sessionName)) continue;
+    if (dbHasServingTaskForSession(sessionName)) continue;
+    nats
+      .emit("ravi.session.abort", {
+        sessionKey: session.sessionKey,
+        sessionName,
+        source: "ephemeral-runner",
+        action: "orphan-reap",
+        reason: "task_terminal_no_serving_task",
+        actor: "system",
+      })
+      .catch(() => {});
+    if (expireEphemeralSession(session.sessionKey)) {
+      reaped += 1;
+    }
+  }
+  return reaped;
 }
 
 function rollupTick(): void {
@@ -149,6 +183,10 @@ function pruneTick(): void {
   } catch (err) {
     log.error("TTL prune failed", err);
   }
+}
+
+export async function runEphemeralCleanupTick(): Promise<void> {
+  await tick();
 }
 
 export async function startEphemeralRunner(): Promise<void> {

@@ -1360,6 +1360,9 @@ export class GroupCommands {
               accountId: acctId,
               chatId: `group:${groupId}`,
             },
+            // Do not occupy a background pool slot before anyone speaks.
+            // The dispatcher prepends this inform on the first human turn.
+            _deferRuntimeStart: true,
           },
         });
         jsonPayload.inform = { status: "sent", sessionName: session.name ?? sessionName };

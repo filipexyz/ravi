@@ -824,7 +824,9 @@ async function buildRuntimeStartRequestInternal(
       const replyResolution = resolveSessionOutputTarget({
         sessionKey: dbSessionKey,
         fallback: streamingSession.currentSource,
-        allowDefaultOutput: !isSessionRelayTurn(turnPrompt),
+        // CLI-only turns stay on the waiting CLI. Other session-relay continues
+        // rebind the existing primary/default output so replies reach the chat.
+        allowDefaultOutput: !turnPrompt._cliDestination,
       });
       streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;

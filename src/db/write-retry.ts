@@ -86,6 +86,22 @@ export function isSqliteLockError(err: unknown): boolean {
   return msg.includes("locked") || msg.includes("busy");
 }
 
+/** SQLITE_NOMEM / SQLITE_FULL / disk-full often surface as "out of memory". */
+export function isSqliteCapacityError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("out of memory") ||
+    msg.includes("sqlite_nomem") ||
+    msg.includes("sqlite_full") ||
+    msg.includes("database or disk is full") ||
+    msg.includes("disk i/o error")
+  );
+}
+
+export const SQLITE_CAPACITY_USER_MESSAGE =
+  "Local database is out of memory or disk space. Free disk space, then retry. Vacuum is an operator maintenance step.";
+
 function jitterMs(min: number, max: number): number {
   if (max <= min) return min;
   return min + Math.random() * (max - min);
