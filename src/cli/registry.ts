@@ -21,10 +21,9 @@ import {
   ContractError,
   binaryResponseToContractError,
   contractFailureOutcome,
-  expectedErrorToContractError,
+  mapExecutionErrorToContractError,
   permissionDeniedToContractError,
   renderContractError,
-  unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
@@ -303,7 +302,7 @@ function registerCommand(
           ? err
           : isCloudAuthError(err)
             ? cloudErrorToContractError(op, err)
-            : (expectedErrorToContractError(op, err) ?? unexpectedErrorToContractError(op));
+            : mapExecutionErrorToContractError(op, err);
       if (contractError) {
         if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
         else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);

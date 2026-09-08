@@ -281,6 +281,7 @@ interface GrokEventContext {
   turnIndex: number;
   sessionId?: string;
   assistantText: string;
+  completedTools: number;
   usage: RuntimeUsage;
 }
 
@@ -967,6 +968,7 @@ async function* runGrokTurns(
         turnIndex,
         sessionId: state.sessionId,
         assistantText: "",
+        completedTools: 0,
         usage: emptyUsage(),
       };
 
@@ -1069,6 +1071,37 @@ async function* runGrokTurns(
           });
           if (terminal) {
             yield { type: "status", status: "idle", metadata: terminal.metadata };
+            yield terminal;
+          }
+          continue;
+        }
+
+        if (context.completedTools > 0) {
+          const metadata = buildGrokEventMetadata({ method: "session/prompt", recoveredAfterTools: true }, context);
+          for (const message of takeCompletedGrokAssistantMessages(
+            context,
+            { type: "stream.error", recoveredAfterTools: true },
+            metadata,
+          )) {
+            if (terminalTracker.accept(message)) {
+              yield message;
+            }
+          }
+          const session = buildGrokRuntimeSessionState(state.sessionId, context);
+          const terminal: RuntimeEvent = {
+            type: "turn.complete",
+            providerSessionId: state.sessionId,
+            session,
+            execution: {
+              provider: "grok",
+              model: context.model ?? null,
+              billingType: "unknown",
+            },
+            usage: context.usage,
+            rawEvent: { type: "stream.error", recoveredAfterTools: true },
+            metadata,
+          };
+          if (terminalTracker.accept(terminal)) {
             yield terminal;
           }
           continue;
@@ -1186,6 +1219,7 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
     case "tool_call_update": {
       const status = firstString(update.status);
       if (status === "completed" || status === "failed") {
+        context.completedTools += 1;
         events.push({
           type: "tool.completed",
           toolUseId: firstString(update.toolCallId, update.toolCallID),

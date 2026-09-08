@@ -26,6 +26,7 @@ import {
   installRootUsageContract,
   installUsageContract,
   renderContractError,
+  sqliteCapacityToContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -353,7 +354,8 @@ void bootstrapCli().catch(async (error: unknown) => {
     process.exitCode = error.exitCode;
     return;
   }
-  const contractError = unexpectedErrorToContractError("cli bootstrap");
+  const contractError =
+    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap");
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",

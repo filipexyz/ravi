@@ -40,6 +40,7 @@ import {
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
+import { formatUserFacingTurnFailure, PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE } from "./public-failure.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import {
   buildRuntimeStartRequest,
@@ -2883,10 +2884,7 @@ describe("runtime session trace instrumentation", () => {
       ["Vou listar os agentes deste Ravi.", "- main\n- jarvis"],
     ]);
     const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
-    expect(assistant.map(({ content }) => content)).toEqual([
-      "Vou listar os agentes deste Ravi.",
-      "- main\n- jarvis",
-    ]);
+    expect(assistant.map(({ content }) => content)).toEqual(["Vou listar os agentes deste Ravi.", "- main\n- jarvis"]);
     expect(assistant).toHaveLength(2);
     expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
 
@@ -3260,6 +3258,109 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("recovers an interrupted turn after completed tools instead of discarding silently", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tool batch turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-completed-tools");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-fetch", name: "WebFetch", input: { url: "https://example.test/doc" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-fetch",
+          toolName: "WebFetch",
+          content: "fetched",
+        },
+        { type: "text.delta", text: "working" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: true,
+      materializedOutput: true,
+    });
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("recovers an interrupted turn after tools completed even without materialized text", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tools only turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-tools-only");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
   });
 
   it("drops an interrupted physical turn after durable output while preserving its successor", async () => {

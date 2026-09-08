@@ -950,7 +950,7 @@ describe("Grok Build runtime provider", () => {
     expect(lastAssistant).toBeLessThan(turnComplete);
   });
 
-  it("fails the turn when the ACP stream ends after a mid utterance and tool without settling session/prompt", async () => {
+  it("completes the turn when the ACP stream ends after a mid utterance and completed tool without settling session/prompt", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
@@ -993,13 +993,13 @@ describe("Grok Build runtime provider", () => {
     ).toEqual(["Vou listar os agentes deste Ravi."]);
     expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
       "turn.started",
-      "turn.failed",
+      "turn.complete",
     ]);
     expect(events.at(-1)).toMatchObject({
-      type: "turn.failed",
-      error: "Grok ACP event stream ended before session/prompt settled",
-      recoverable: true,
+      type: "turn.complete",
+      rawEvent: { recoveredAfterTools: true },
     });
+    expect(events.filter((event) => event.type === "turn.interrupted" || event.type === "turn.failed")).toHaveLength(0);
   });
 
   it("keeps token fragments of one Grok marker as a single assistant.message", async () => {
@@ -1096,6 +1096,98 @@ describe("Grok Build runtime provider", () => {
       error: "Grok prompt was rejected",
       recoverable: true,
     });
+  });
+
+  it("completes after Read and WebFetch tools when session/prompt returns cancelled without a local abort", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_read",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "README.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_read",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_fetch",
+            title: "WebFetch",
+            kind: "fetch",
+            rawInput: { url: "https://example.test/doc" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_fetch",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "fetched" } }],
+          }),
+        );
+        return { stopReason: "cancelled" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("leia e busque")).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(2);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.complete",
+    ]);
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
+  });
+
+  it("completes the turn when the ACP stream ends after completed tools", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_read",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "README.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_read",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.endEvents();
+        return new Promise(() => {});
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("leia")).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(1);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.complete",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.complete",
+      rawEvent: { recoveredAfterTools: true },
+    });
+    expect(events.filter((event) => event.type === "turn.interrupted" || event.type === "turn.failed")).toHaveLength(0);
   });
 
   it("completes the turn when session/prompt returns cancelled without a local abort", async () => {

@@ -65,6 +65,39 @@ describe("CLI audit outcomes", () => {
       error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
     });
   });
+
+  it("maps sqlite capacity failures to SQLITE_CAPACITY instead of UNHANDLED_ERROR", async () => {
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    const output: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((value: unknown) => output.push(String(value)));
+
+    let failure: unknown;
+    try {
+      await runWithCliAudit({ group: "sessions", name: "send", input: { json: true } }, () => {
+        throw new Error("SQLiteError: out of memory");
+      });
+    } catch (error) {
+      failure = error;
+    } finally {
+      log.mockRestore();
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ op: "sessions send", code: "SQLITE_CAPACITY", exitCode: 1 });
+    expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
+      success: false,
+      op: "sessions send",
+      error: {
+        code: "SQLITE_CAPACITY",
+        message:
+          "Local database is out of memory or disk space. Free disk space, then retry. Vacuum is an operator maintenance step.",
+      },
+    });
+    expect(output[0]).not.toContain("ravi.db");
+  });
 });
 
 describe("CLI audit redaction", () => {

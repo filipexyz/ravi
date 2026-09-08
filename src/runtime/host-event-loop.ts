@@ -56,6 +56,7 @@ import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getRuntimeTurnReplaySafety,
+  isProviderEndedAfterCompletedTools,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
@@ -66,7 +67,11 @@ import {
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs, resolveRuntimeTurnInactivityMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
-import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import {
+  formatUserFacingTurnFailure,
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  publicRuntimeFailureDetail,
+} from "./public-failure.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -2979,7 +2984,44 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           reason: streaming.internalAbortReason ?? "provider_interrupted",
           metadata: event.metadata ?? null,
         });
-        streaming.interrupted = true;
+        const leftoverResponse = responseText.trim();
+        const providerEndedAfterCompletedTools = isProviderEndedAfterCompletedTools(streaming, interruptedReplaySafety);
+        if (providerEndedAfterCompletedTools) {
+          // Provider closed the prompt after tools already finished. Do not
+          // mark the generator interrupted (that logs a silent unexpected
+          // death). Keep successors and emit leftover text or a recovery hint.
+          streaming.interrupted = false;
+          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+          log.info("Provider ended turn after completed tools; keeping session recoverable", {
+            runId,
+            sessionName,
+            remaining: streaming.pendingMessages.length,
+            startedTool: interruptedReplaySafety.startedTool,
+            materializedOutput: interruptedReplaySafety.materializedOutput,
+            durableBinding: interruptedReplaySafety.durableBinding,
+            toolRunning: streaming.toolRunning,
+          });
+          if (streaming.agentMode !== "sentinel") {
+            await emitResponse(
+              leftoverResponse || formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+            );
+          }
+        } else {
+          streaming.interrupted = true;
+          if (!interruptedReplaySafety.replayable) {
+            const queuedBefore = streaming.pendingMessages.length;
+            streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+            log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+              runId,
+              sessionName,
+              discarded: queuedBefore - streaming.pendingMessages.length,
+              remaining: streaming.pendingMessages.length,
+              startedTool: interruptedReplaySafety.startedTool,
+              materializedOutput: interruptedReplaySafety.materializedOutput,
+              durableBinding: interruptedReplaySafety.durableBinding,
+            });
+          }
+        }
         responseText = "";
         channelResponseText = "";
         clearPendingGeneratedMedia();
@@ -2990,36 +3032,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
-        const providerEndedAfterCompletedTools =
-          !streaming.internalAbortReason &&
-          interruptedReplaySafety.startedTool &&
-          interruptedReplaySafety.materializedOutput;
-        if (providerEndedAfterCompletedTools) {
-          // Provider closed the prompt after tools already finished. Keep
-          // successors and leave the session idle so a later human turn can
-          // continue, instead of discarding the completed work as unsafe.
-          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-          log.info("Provider ended turn after completed tools; keeping session recoverable", {
-            runId,
-            sessionName,
-            remaining: streaming.pendingMessages.length,
-            startedTool: interruptedReplaySafety.startedTool,
-            materializedOutput: interruptedReplaySafety.materializedOutput,
-            durableBinding: interruptedReplaySafety.durableBinding,
-          });
-        } else if (!interruptedReplaySafety.replayable) {
-          const queuedBefore = streaming.pendingMessages.length;
-          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-          log.info("Discarding unsafe interrupted turn while preserving queued successors", {
-            runId,
-            sessionName,
-            discarded: queuedBefore - streaming.pendingMessages.length,
-            remaining: streaming.pendingMessages.length,
-            startedTool: interruptedReplaySafety.startedTool,
-            materializedOutput: interruptedReplaySafety.materializedOutput,
-            durableBinding: interruptedReplaySafety.durableBinding,
-          });
-        }
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
         signalTurnComplete();

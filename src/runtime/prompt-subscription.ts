@@ -271,6 +271,17 @@ export class RuntimePromptSubscription {
             error: ackError,
           });
         }
+        nats
+          .emit(`ravi.session.${sessionName}.runtime`, {
+            type: "turn.failed",
+            error: SQLITE_CAPACITY_USER_MESSAGE,
+            recoverable: false,
+            sessionName,
+            timestamp: new Date().toISOString(),
+          })
+          .catch((emitError) => {
+            log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
+          });
         if (classifyTurnProvenance({ prompt }).background !== true && prompt.source) {
           nats
             .emit(`ravi.session.${sessionName}.response`, {

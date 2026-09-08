@@ -10,6 +10,7 @@ import {
   contractDryRun,
   contractFailureOutcome,
   expectedErrorToContractError,
+  sqliteCapacityToContractError,
 } from "./agent-contract.js";
 import { runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { runWithContext } from "./context.js";
@@ -87,6 +88,17 @@ describe("global cloud failure contract", () => {
       exitCode: 1,
     });
     expect(JSON.stringify(contract)).not.toContain("PRIVATE_CUSTOM_EXPECTED_4N7K");
+  });
+
+  it("maps sqlite capacity errors to SQLITE_CAPACITY instead of UNHANDLED_ERROR", () => {
+    const contract = sqliteCapacityToContractError("sessions send", new Error("SQLiteError: out of memory"));
+    expect(contract).toMatchObject({
+      code: "SQLITE_CAPACITY",
+      op: "sessions send",
+      exitCode: 1,
+    });
+    expect(contract?.envelope().error.message).toContain("Vacuum is an operator maintenance step");
+    expect(sqliteCapacityToContractError("sessions send", new Error("constraint failed"))).toBeNull();
   });
 
   it("classifies an internal PERMISSION_DENIED contract as denied", () => {

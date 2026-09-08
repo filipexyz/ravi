@@ -18,6 +18,7 @@
  * outcome before the process ends.
  */
 import type { Command as CommanderCommand, CommanderError } from "commander";
+import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
 import { sanitizePublicValue } from "./redaction.js";
@@ -108,6 +109,22 @@ export function unexpectedErrorToContractError(op: string): ContractError {
   return new ContractError(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", CONTRACT_EXIT_ERROR, {
     suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
   });
+}
+
+export function sqliteCapacityToContractError(op: string, error: unknown): ContractError | null {
+  if (!isSqliteCapacityError(error)) return null;
+  return new ContractError(op, "SQLITE_CAPACITY", SQLITE_CAPACITY_USER_MESSAGE, CONTRACT_EXIT_ERROR, {
+    retryable: false,
+    suggestedAction: "Free disk space and retry. Vacuum is an operator maintenance step, not a product default.",
+  });
+}
+
+export function mapExecutionErrorToContractError(op: string, error: unknown): ContractError {
+  return (
+    expectedErrorToContractError(op, error) ??
+    sqliteCapacityToContractError(op, error) ??
+    unexpectedErrorToContractError(op)
+  );
 }
 
 export function permissionDeniedToContractError(op: string, reason: string): ContractError {

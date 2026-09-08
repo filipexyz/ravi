@@ -253,6 +253,41 @@ describe("RuntimePromptSubscription", () => {
     expect(message.working).toHaveBeenCalledTimes(renewalsAfterAck);
   });
 
+  it("ACKs sqlite capacity errors and emits a runtime turn.failed without NAK", async () => {
+    const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "continue" });
+    consumedMessages = [message];
+    const handlePrompt = mock(async () => {
+      throw new Error("SQLiteError: out of memory");
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => message.ack.mock.calls.length === 1 && emitCalls.length > 0);
+
+    expect(handlePrompt).toHaveBeenCalledTimes(1);
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    expect(message.nak).not.toHaveBeenCalled();
+    expect(subscription.promptsReceived).toBe(0);
+    expect(emitCalls).toContainEqual(
+      expect.objectContaining({
+        topic: "ravi.session.dev.runtime",
+        payload: expect.objectContaining({
+          type: "turn.failed",
+          recoverable: false,
+          error: expect.stringContaining("Vacuum is an operator maintenance step"),
+        }),
+      }),
+    );
+    expect(JSON.stringify(emitCalls)).not.toContain("ravi.db");
+  });
+
   it("NAKs and stops the pull before ACK or dispatch when intake is fenced", async () => {
     const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "must remain durable" });
     consumedMessages = [message];

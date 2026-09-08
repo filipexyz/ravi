@@ -414,6 +414,20 @@ export function getRuntimeTurnReplaySafety(
 }
 
 /**
+ * Provider closed the prompt after tools already finished (or after tools plus
+ * materialized output) without a local abort. Keep successors and recover
+ * visibly instead of discarding the turn as an unsafe interrupt.
+ */
+export function isProviderEndedAfterCompletedTools(
+  session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning">,
+  safety: Pick<RuntimeTurnReplaySafety, "startedTool" | "materializedOutput">,
+): boolean {
+  if (session.internalAbortReason) return false;
+  if (!safety.startedTool) return false;
+  return safety.materializedOutput || session.toolRunning === false;
+}
+
+/**
  * Return messages safe to carry into a replacement runtime. If the physical
  * turn has durable side-effect/output evidence, its own pending ids are
  * excluded while independently queued successors remain eligible.
