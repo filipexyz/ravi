@@ -83,6 +83,7 @@ import {
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
   isObserverRuntimeSessionName,
+  isObserverRuntimeStart,
   isTaskSessionName,
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimePendingStartTimeoutMs,
@@ -849,6 +850,9 @@ export class RuntimeSessionDispatcher {
     if (!prompt._resumeStashedMessages) {
       prompt = withSessionSurfaceHint(prompt);
     }
+    if (classifyRuntimeSessionStartLane(sessionName, prompt) === "interactive") {
+      this.dropQueuedObserverPendingStarts();
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
@@ -1583,9 +1587,14 @@ export class RuntimeSessionDispatcher {
       }
     }
 
+    const incomingLane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    if (incomingLane === "interactive") {
+      this.dropQueuedObserverPendingStarts();
+    }
+
     if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
-      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
-      if (isObserverRuntimeSessionName(sessionName) || prompt._observation) {
+      const lane = incomingLane;
+      if (isObserverRuntimeStart(sessionName, prompt)) {
         log.info("Dropping observer session start — runtime session pool busy", {
           sessionName,
           active: this.streamingSessions.size,
@@ -1828,11 +1837,10 @@ export class RuntimeSessionDispatcher {
 
   drainPendingStarts(): void {
     while (this.pendingStarts.length > 0) {
-      const nextIndex = this.pendingStarts.findIndex(
-        (candidate) =>
-          !candidate.cancelled &&
-          this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt, candidate.lane),
-      );
+      let nextIndex = this.findDrainablePendingStartIndex("interactive");
+      if (nextIndex < 0) {
+        nextIndex = this.findDrainablePendingStartIndex();
+      }
       if (nextIndex < 0) {
         break;
       }
@@ -1865,6 +1873,7 @@ export class RuntimeSessionDispatcher {
     if (incomingLane !== "interactive") {
       return false;
     }
+    this.dropQueuedObserverPendingStarts();
     const index = this.pendingStarts.findIndex(
       (candidate) => candidate.sessionName === sessionName && !candidate.cancelled,
     );
@@ -2066,7 +2075,38 @@ export class RuntimeSessionDispatcher {
     return timedOut;
   }
 
-  private failQueuedPendingStart(pendingStart: PendingRuntimeSessionStart, reason: "pending_start_timeout"): void {
+  private findDrainablePendingStartIndex(lane?: RuntimeSessionStartLane): number {
+    return this.pendingStarts.findIndex((candidate) => {
+      if (candidate.cancelled) return false;
+      if (!this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt, candidate.lane)) {
+        return false;
+      }
+      if (!lane) return true;
+      return this.resolveStartLane(candidate.sessionName, candidate.prompt, candidate.lane) === lane;
+    });
+  }
+
+  dropQueuedObserverPendingStarts(): string[] {
+    const dropped: string[] = [];
+    for (const pendingStart of [...this.pendingStarts]) {
+      if (pendingStart.cancelled) continue;
+      if (!isObserverRuntimeStart(pendingStart.sessionName, pendingStart.prompt)) continue;
+      this.failQueuedPendingStart(pendingStart, "observer_displaced");
+      dropped.push(pendingStart.sessionName);
+    }
+    if (dropped.length > 0) {
+      log.info("Dropped queued observer session starts for interactive inbound", {
+        dropped,
+        queued: this.pendingStarts.length,
+      });
+    }
+    return dropped;
+  }
+
+  private failQueuedPendingStart(
+    pendingStart: PendingRuntimeSessionStart,
+    reason: "pending_start_timeout" | "observer_displaced",
+  ): void {
     if (pendingStart.cancelled) {
       return;
     }
@@ -2084,18 +2124,21 @@ export class RuntimeSessionDispatcher {
     pendingStart.resolve();
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    log.warn("Pending session start timed out", {
-      sessionName,
-      lane,
-      reason,
-      queued: this.pendingStarts.length,
-      userFacing,
-    });
+    const timedOut = reason === "pending_start_timeout";
+    if (timedOut) {
+      log.warn("Pending session start timed out", {
+        sessionName,
+        lane,
+        reason,
+        queued: this.pendingStarts.length,
+        userFacing,
+      });
+    }
     recordRuntimeTraceEvent({
       sessionKey: traceIdentity.sessionKey,
       sessionName,
       agentId: traceIdentity.agentId,
-      eventType: "dispatch.start_timeout",
+      eventType: timedOut ? "dispatch.start_timeout" : "dispatch.dropped",
       eventGroup: "dispatch",
       status: "failed",
       source,
@@ -2108,7 +2151,7 @@ export class RuntimeSessionDispatcher {
     });
     this.options
       .safeEmit(`ravi.session.${sessionName}.runtime`, {
-        type: "session.timeout",
+        type: timedOut ? "session.timeout" : "dispatch.dropped",
         reason,
         lane,
         sessionName,
@@ -2116,10 +2159,10 @@ export class RuntimeSessionDispatcher {
         timestamp: new Date().toISOString(),
       })
       .catch((error) => {
-        log.warn("Failed to emit pending start timeout event", { sessionName, error });
+        log.warn("Failed to emit pending start failure event", { sessionName, reason, error });
       });
 
-    if (userFacing && source) {
+    if (timedOut && userFacing && source) {
       const response = formatUserFacingTurnFailure(
         "Runtime session start stayed queued too long. Send another message to retry.",
       );

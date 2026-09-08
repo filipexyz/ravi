@@ -1009,7 +1009,10 @@ async function* runGrokTurns(
         );
 
         const locallyAborted = state.interrupted || abortSignal.aborted;
-        if (locallyAborted) {
+        const promptCompletedOk = isGrokAcpPromptCompletedOk(result, stopReason);
+        // handle_prompt.done ok=true (or tools already finished) is end-of-prompt,
+        // not a host interrupt — even if stopReason=cancelled raced with abort.
+        if (locallyAborted && !promptCompletedOk && context.completedTools === 0) {
           const terminal = terminalTracker.interrupt({
             rawEvent: isRecord(result) ? result : { stopReason },
             metadata,
@@ -1729,6 +1732,12 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
       };
     },
   };
+}
+
+export function isGrokAcpPromptCompletedOk(result: unknown, stopReason: string): boolean {
+  if (isRecord(result) && result.ok === true) return true;
+  if (stopReason === "end_turn") return true;
+  return false;
 }
 
 function firstString(...values: unknown[]): string | undefined {

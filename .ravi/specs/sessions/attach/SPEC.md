@@ -89,6 +89,13 @@ unattached inbound or for a CLI-only `_cliDestination` turn.
 Observer sessions (`obs:*` / `_observation`) MUST NOT emit to a chat sink.
 Missing chat delivery there is expected, not an unresolved user-chat drop.
 
+Gateway Direct send (`ravi.outbound.deliver` with explicit `channel` /
+`account` / `to`) is independent of this resolver. Approval UX may still
+reach the attached group while streaming assistant emits fail closed on
+`resolveSessionOutputTarget` / `emitResponse` when the per-turn source
+does not match a subscription. That is a source/identity miss, not "no
+WhatsApp route at all".
+
 The default output is the fallback for source-less continues and for
 proactive turns (cron, heartbeat, follow-up). It never overrides a real
 attached inbound source.

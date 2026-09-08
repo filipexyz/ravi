@@ -115,7 +115,8 @@ export function sqliteCapacityToContractError(op: string, error: unknown): Contr
   if (!isSqliteCapacityError(error)) return null;
   return new ContractError(op, "SQLITE_CAPACITY", SQLITE_CAPACITY_USER_MESSAGE, CONTRACT_EXIT_ERROR, {
     retryable: false,
-    suggestedAction: "Free disk space and retry. Vacuum is an operator maintenance step, not a product default.",
+    suggestedAction:
+      "Reduce concurrent sessions and retry. A large SQLite file can OOM the process even when disk is free. Vacuum is an operator maintenance step, not a product default.",
   });
 }
 

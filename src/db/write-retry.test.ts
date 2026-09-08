@@ -57,6 +57,8 @@ describe("isSqliteCapacityError", () => {
     expect(isSqliteCapacityError(new Error("database or disk is full"))).toBe(true);
     expect(isSqliteCapacityError(new Error("disk I/O error"))).toBe(true);
     expect(SQLITE_CAPACITY_USER_MESSAGE).toContain("Vacuum is an operator maintenance step");
+    expect(SQLITE_CAPACITY_USER_MESSAGE).toContain("process memory");
+    expect(SQLITE_CAPACITY_USER_MESSAGE).toContain("even when the disk is not full");
   });
 
   it("ignores lock and unrelated errors", () => {

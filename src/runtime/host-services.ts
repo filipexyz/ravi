@@ -12,7 +12,12 @@ import {
   UNCONDITIONAL_BLOCKS,
 } from "../bash/index.js";
 import { nats } from "../nats.js";
-import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
+import {
+  authorizeRuntimeContext,
+  emitApprovalResponseOnce,
+  requestPollAnswer,
+  type ApprovalTarget,
+} from "../approval/service.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
@@ -667,18 +672,14 @@ async function requestRuntimeUserInput(
     answers[answerKey] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
   }
 
-  nats
-    .emit("ravi.approval.response", {
-      type: "question",
-      sessionName: options.sessionName,
-      agentId: options.agentId,
-      approved: true,
-      answers,
-      timestamp: Date.now(),
-      _emitId: `approval-${Date.now().toString(36)}`,
-      ...eventData,
-    })
-    .catch(() => {});
+  await emitApprovalResponseOnce({
+    type: "question",
+    sessionName: options.sessionName,
+    agentId: options.agentId,
+    approved: true,
+    answers,
+    ...eventData,
+  }).catch(() => {});
 
   return { approved: true, answers };
 }

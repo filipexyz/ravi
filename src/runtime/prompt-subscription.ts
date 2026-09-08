@@ -257,7 +257,7 @@ export class RuntimePromptSubscription {
       await this.options.handlePrompt(sessionName, prompt);
     } catch (error) {
       if (isSqliteCapacityError(error)) {
-        log.error("Failed to handle prompt because the local database is out of memory or disk space", {
+        log.error("Failed to handle prompt because SQLite/process memory (or disk) is exhausted", {
           sessionName,
           subject: msg.subject,
           error,

@@ -224,6 +224,74 @@ describe("resolveSessionOutputTarget", () => {
     ).toBe(groupChat.id);
   });
 
+  it("keeps the previous bound group when leftover baileys source still overlaps the attached identity", () => {
+    const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const previous = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+    const leftoverBaileys: MessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: leftoverBaileys,
+      previous,
+    });
+    expect(preserved.source).toBe("source-chat");
+    expect(preserved.target?.canonicalChatId).toBe(groupChat.id);
+  });
+
+  it("does not invent a chat sink for a CLI-only successor even when lastBound exists", () => {
+    const session = getOrCreateSession("agent:demo-agent:s-cli-only-preserve", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
+      allowDefaultOutput: false,
+      previous: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:test-group-1",
+        canonicalChatId: groupChat.id,
+      },
+    });
+    expect(preserved.source).toBe("unresolved");
+    expect(preserved.target).toBeNull();
+  });
+
   it("keeps the previous bound group across a source-less successor turn", () => {
     const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
     const groupChat = dbUpsertChat({

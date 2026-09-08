@@ -186,11 +186,15 @@ export function isObserverRuntimeSessionName(sessionName?: string | null): boole
   return Boolean(sessionName?.startsWith("obs:"));
 }
 
+export function isObserverRuntimeStart(sessionName?: string | null, prompt?: RuntimeLaunchPrompt | null): boolean {
+  return isObserverRuntimeSessionName(sessionName) || Boolean(prompt?._observation);
+}
+
 export function classifyRuntimeSessionStartLane(
   sessionName?: string | null,
   prompt?: RuntimeLaunchPrompt | null,
 ): RuntimeSessionStartLane {
-  if (isObserverRuntimeSessionName(sessionName) || prompt?._observation) {
+  if (isObserverRuntimeStart(sessionName, prompt)) {
     return "background";
   }
   if (classifyTurnProvenance({ prompt }).background) {

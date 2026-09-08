@@ -10,6 +10,7 @@ import {
   createGrokAcpSubprocessTransport,
   createGrokRuntimeProvider,
   extractGrokPermissionTool,
+  isGrokAcpPromptCompletedOk,
   GROK_FAIL_CLOSED_TOOL_IDS,
   mapGrokToolNameToRavi,
   resolveGrokAcpClientVersion,
@@ -1188,6 +1189,58 @@ describe("Grok Build runtime provider", () => {
       rawEvent: { recoveredAfterTools: true },
     });
     expect(events.filter((event) => event.type === "turn.interrupted" || event.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it("treats handle_prompt.done ok=true as end-of-prompt, not an interrupt", async () => {
+    expect(isGrokAcpPromptCompletedOk({ ok: true, stopReason: "cancelled" }, "cancelled")).toBe(true);
+    expect(isGrokAcpPromptCompletedOk({ stopReason: "cancelled" }, "cancelled")).toBe(false);
+    expect(isGrokAcpPromptCompletedOk({ stopReason: "end_turn" }, "end_turn")).toBe(true);
+
+    const transport = new FakeGrokAcpTransport();
+    let releasePrompt: ((value: unknown) => void) | undefined;
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_read",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "README.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_read",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        return new Promise((resolve) => {
+          releasePrompt = resolve;
+        });
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const handle = createGrokRuntimeProvider({ transport }).startSession(createStartRequest("leia"));
+    const collected: RuntimeEvent[] = [];
+    const consuming = (async () => {
+      for await (const event of handle.events) {
+        collected.push(event);
+      }
+    })();
+
+    await waitFor(() => transport.requests.some((request) => request.method === "session/prompt"));
+    await handle.interrupt();
+    releasePrompt?.({ ok: true, stopReason: "cancelled" });
+    await consuming;
+
+    expect(collected.filter((event) => event.type === "tool.completed")).toHaveLength(1);
+    expect(collected.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.complete",
+    ]);
+    expect(collected.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
   });
 
   it("completes the turn when session/prompt returns cancelled without a local abort", async () => {

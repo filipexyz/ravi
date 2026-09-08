@@ -93,7 +93,7 @@ describe("CLI audit outcomes", () => {
       error: {
         code: "SQLITE_CAPACITY",
         message:
-          "Local database is out of memory or disk space. Free disk space, then retry. Vacuum is an operator maintenance step.",
+          "Local database ran out of process memory (or disk space). A large SQLite file can OOM even when the disk is not full. Reduce concurrent sessions, then retry. Vacuum is an operator maintenance step.",
       },
     });
     expect(output[0]).not.toContain("ravi.db");

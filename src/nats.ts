@@ -98,7 +98,9 @@ export async function publish(topic: string, data: Record<string, unknown>): Pro
   const conn = await ensureConnected();
 
   // Trace session-response emissions (helps debug ghost chat replies).
-  // Approval/system topics such as `ravi.approval.response` are not chat emits.
+  // Approval/system topics such as `ravi.approval.response` are not chat emits
+  // and must not trip this detector when a reaction resolves HIL without a
+  // matching in-process session.response waiter.
   if (isSessionResponseTopic(topic) && !("_emitId" in data)) {
     const stack = new Error().stack?.split("\n").slice(2, 8).join("\n") || "no stack";
     log.warn("GHOST_EMIT_DETECTED", {

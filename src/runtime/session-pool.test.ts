@@ -8,6 +8,7 @@ import {
   DEFAULT_RUNTIME_SESSION_POOL_MAX,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isObserverRuntimeStart,
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeInteractiveReservedSlots,
   resolveRuntimePendingStartTimeoutMs,
@@ -83,6 +84,8 @@ describe("runtime session pool", () => {
     expect(classifyRuntimeSessionStartLane("obs:abc123:proactive-followup", { prompt: "follow up" })).toBe(
       "background",
     );
+    expect(isObserverRuntimeStart("obs:abc123:proactive-followup")).toBe(true);
+    expect(isObserverRuntimeStart("demo-group")).toBe(false);
     expect(
       classifyRuntimeSessionStartLane("main", {
         prompt: "observe",

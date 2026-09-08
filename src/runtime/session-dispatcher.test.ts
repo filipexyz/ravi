@@ -2790,6 +2790,68 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("cancels queued observer starts when a human inbound arrives and drains interactive first", async () => {
+    const dispatcher = createDispatcher(2, 1);
+    dispatcher.streamingSessions.set("busy", createActiveSession({ turnActive: true }));
+    let observerResolved = false;
+    let humanResolved = false;
+    dispatcher.pendingStarts.push({
+      sessionName: "obs:abc123:proactive-followup",
+      prompt: {
+        prompt: "follow up",
+        _observation: {
+          sourceSessionKey: "agent:demo-agent:main",
+          sourceSessionName: "demo",
+          bindingId: "binding-1",
+          ruleId: "rule-1",
+          role: "proactive-followup",
+          mode: "observe",
+          eventIds: [],
+        },
+      },
+      lane: "background",
+      queuedAt: Date.now(),
+      resolve: () => {
+        observerResolved = true;
+      },
+    });
+    dispatcher.pendingStarts.push({
+      sessionName: "cron-background",
+      prompt: { prompt: "cron tick", _cron: true },
+      lane: "background",
+      queuedAt: Date.now(),
+      resolve: () => {},
+    });
+    dispatcher.pendingStarts.push({
+      sessionName: "demo-group",
+      prompt: {
+        prompt: "hello from the group",
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "contact",
+        },
+      },
+      lane: "interactive",
+      queuedAt: Date.now(),
+      resolve: () => {
+        humanResolved = true;
+      },
+    });
+
+    const dropped = dispatcher.dropQueuedObserverPendingStarts();
+    expect(dropped).toEqual(["obs:abc123:proactive-followup"]);
+    expect(observerResolved).toBe(true);
+    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["cron-background", "demo-group"]);
+
+    dispatcher.streamingSessions.delete("busy");
+    dispatcher.drainPendingStarts();
+    expect(humanResolved).toBe(true);
+    expect(dispatcher.startReservations.has("demo-group")).toBe(true);
+    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["cron-background"]);
+  });
+
   it("reclaims idle observer sessions immediately and drops observer starts when the pool is full", async () => {
     const dispatcher = createDispatcher(1, 0);
     dispatcher.streamingSessions.set(
