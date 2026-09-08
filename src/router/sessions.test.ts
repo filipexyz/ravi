@@ -4,9 +4,12 @@ import { dbUpsertChat } from "./router-db.js";
 import {
   attachChatToSession,
   detachChatFromSession,
+  expireEphemeralSession,
+  getExpiredSessions,
   getOrCreateSession,
   getSession,
   listSessionSubscriptions,
+  setSessionEphemeral,
   updateSessionContext,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
@@ -149,5 +152,26 @@ describe("sessions store", () => {
     expect(listSessionSubscriptions(session.sessionKey)).toEqual([
       expect.objectContaining({ chatId: slackChat.id, outputAttachedAt: undefined }),
     ]);
+  });
+
+  it("marks an ephemeral work session expired so the next cleanup tick can delete it", () => {
+    const sessionKey = "agent:demo-agent:task-work-1";
+    getOrCreateSession(sessionKey, "demo-agent", "/tmp/demo-agent");
+    setSessionEphemeral(sessionKey, 60_000);
+
+    expect(getSession(sessionKey)?.ephemeral).toBe(true);
+    expect(getExpiredSessions().map((entry) => entry.sessionKey)).not.toContain(sessionKey);
+
+    expect(expireEphemeralSession(sessionKey)).toBe(true);
+    expect(expireEphemeralSession(sessionKey)).toBe(true);
+    expect(expireEphemeralSession("agent:demo-agent:missing-work")).toBe(false);
+
+    const expired = getExpiredSessions();
+    expect(expired.map((entry) => entry.sessionKey)).toContain(sessionKey);
+    expect(getSession(sessionKey)).toMatchObject({
+      sessionKey,
+      ephemeral: true,
+    });
+    expect(getSession(sessionKey)?.expiresAt).toBeLessThanOrEqual(Date.now());
   });
 });
