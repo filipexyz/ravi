@@ -64,8 +64,12 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
-import { resolveRuntimeIdleSessionTtlMs, resolveRuntimeTurnInactivityMs } from "./session-pool.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import {
+  isObserverRuntimeSessionName,
+  resolveRuntimeIdleSessionTtlMs,
+  resolveRuntimeTurnInactivityMs,
+} from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
@@ -1803,19 +1807,32 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
-    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
-    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
+    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTargetPreserving>["target"] | undefined;
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTargetPreserving>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
-      if (streaming.currentReplyTarget !== undefined) {
+      if (streaming.suppressChatEmit || isObserverRuntimeSessionName(sessionName)) {
+        log.debug("Chat emit suppressed", {
+          sessionName,
+          reason: streaming.suppressChatEmit ? "turn_suppress" : "observer_session",
+        });
+        clearPendingGeneratedMedia();
+        return;
+      }
+      if (streaming.currentReplyTarget) {
         resolvedTarget = streaming.currentReplyTarget;
-        resolvedSource = resolvedTarget ? (streaming.currentSource ? "source-chat" : "attached-output") : "unresolved";
+        resolvedSource = streaming.currentSource ? "source-chat" : "attached-output";
       } else {
-        const resolution = resolveSessionOutputTarget({
+        const resolution = resolveSessionOutputTargetPreserving({
           sessionKey: session.sessionKey,
           fallback: streaming.currentSource,
+          previous: streaming.lastBoundReplyTarget,
         });
         resolvedTarget = resolution.target;
         resolvedSource = resolution.source;
+        if (resolution.target) {
+          streaming.currentReplyTarget = { ...resolution.target };
+          streaming.lastBoundReplyTarget = { ...resolution.target };
+        }
       }
       if (!resolvedTarget) {
         log.warn("Response target unresolved — dropping emit", {

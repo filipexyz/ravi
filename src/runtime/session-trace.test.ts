@@ -1488,6 +1488,76 @@ describe("runtime session trace instrumentation", () => {
     await runtimeRequest.prompt.return?.(undefined);
   });
 
+  it("keeps the previous bound chat when a successor turn loses currentSource", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const inboundSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+    const successorPrompt = {
+      prompt: "continue after tools",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    const successorStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: inboundSource,
+      lastBoundReplyTarget: inboundSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(successorPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-successor-source-loss",
+      sessionName: SESSION_NAME,
+      prompt: successorPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: successorStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(successorStreaming.currentSource).toBeUndefined();
+    expect(successorStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(successorStreaming.lastBoundReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
   it("keeps CLI-only _cliDestination continues fail-closed for chat emit", async () => {
     const leftoverChat = dbUpsertChat({
       channel: "whatsapp",

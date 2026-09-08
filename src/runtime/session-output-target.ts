@@ -20,7 +20,7 @@ import {
   type SessionChatSubscriptionRecord,
 } from "../router/router-db.js";
 import type { MessageTarget } from "./message-types.js";
-import { sourceMatchesChat } from "./session-chat-identity.js";
+import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("session-output-target");
@@ -74,6 +74,43 @@ export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInpu
     });
   }
   return { target: null, source: "unresolved" };
+}
+
+/**
+ * Successor / source-loss fallback: keep the previous bound chat when the new
+ * turn is source-less, or when the leftover source is the same chat identity.
+ * A different unattached inbound still fail-closes.
+ */
+export function resolveSessionOutputTargetPreserving(
+  input: ResolveSessionOutputTargetInput & { previous?: MessageTarget | null },
+): ResolvedSessionOutputTarget {
+  const resolved = resolveSessionOutputTarget(input);
+  if (resolved.target || input.allowDefaultOutput === false) return resolved;
+  const previous = input.previous;
+  if (!previous || !isSessionReplyTargetAttached(input.sessionKey, previous)) return resolved;
+  if (input.fallback && !sourceOverlapsReplyTarget(input.fallback, previous)) return resolved;
+  return {
+    target: { ...previous },
+    source: input.fallback ? "source-chat" : "attached-output",
+  };
+}
+
+export function isSessionReplyTargetAttached(sessionKey: string, target: MessageTarget): boolean {
+  return Boolean(matchSubscriptionForFallback(sessionKey, target));
+}
+
+export function sourceOverlapsReplyTarget(
+  source: Pick<MessageTarget, "channel" | "chatId" | "canonicalChatId">,
+  target: Pick<MessageTarget, "channel" | "chatId" | "canonicalChatId">,
+): boolean {
+  if (source.channel && target.channel && !runtimeChannelsMatch(source.channel, target.channel)) {
+    return false;
+  }
+  const sourceTokens = [source.canonicalChatId, source.chatId];
+  const targetTokens = [target.canonicalChatId, target.chatId];
+  return sourceTokens.some((sourceToken) =>
+    targetTokens.some((targetToken) => runtimeChatIdsOverlap(sourceToken, targetToken)),
+  );
 }
 
 function matchSubscriptionForFallback(

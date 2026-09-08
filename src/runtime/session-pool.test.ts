@@ -80,6 +80,9 @@ describe("runtime session pool", () => {
   it("classifies runtime starts into interactive and background lanes", () => {
     expect(classifyRuntimeSessionStartLane("main:group:123", { prompt: "hello" })).toBe("interactive");
     expect(classifyRuntimeSessionStartLane("task-123-work", { prompt: "work" })).toBe("background");
+    expect(classifyRuntimeSessionStartLane("obs:abc123:proactive-followup", { prompt: "follow up" })).toBe(
+      "background",
+    );
     expect(
       classifyRuntimeSessionStartLane("main", {
         prompt: "observe",

@@ -2790,6 +2790,38 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("reclaims idle observer sessions immediately and drops observer starts when the pool is full", async () => {
+    const dispatcher = createDispatcher(1, 0);
+    dispatcher.streamingSessions.set(
+      "obs:abc123:proactive-followup",
+      createActiveSession({ lastActivity: Date.now() - 1_000, turnActive: false }),
+    );
+
+    const reclaimed = dispatcher.reclaimIdleObserverSessions(Date.now());
+    expect(reclaimed).toContain("obs:abc123:proactive-followup");
+    expect(dispatcher.streamingSessions.has("obs:abc123:proactive-followup")).toBe(false);
+
+    dispatcher.streamingSessions.set("busy", createActiveSession({ turnActive: true }));
+    const reserved = await (
+      dispatcher as unknown as {
+        reserveRuntimeSessionStart: (sessionName: string, prompt: RuntimeLaunchPrompt) => Promise<boolean>;
+      }
+    ).reserveRuntimeSessionStart("obs:def456:proactive-followup", {
+      prompt: "follow up",
+      _observation: {
+        sourceSessionKey: "agent:demo-agent:main",
+        sourceSessionName: "demo",
+        bindingId: "binding-1",
+        ruleId: "rule-1",
+        role: "proactive-followup",
+        mode: "observe",
+        eventIds: [],
+      },
+    });
+    expect(reserved).toBe(false);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
+  });
+
   it("emits a user-facing timeout when an interactive start stays queued", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-timeout-");
     try {

@@ -40,6 +40,7 @@ import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-
 import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
+import { resolvePreferredRuntimeModel } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 
@@ -198,7 +199,17 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     agent,
     configModel,
   });
-  const model = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
+  const selectedModel = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
+  const model = resolvePreferredRuntimeModel(runtimeProviderId, selectedModel);
+  if (model !== selectedModel) {
+    log.info("Remapped runtime model to provider catalog", {
+      sessionName,
+      provider: runtimeProviderId,
+      requestedModel: selectedModel,
+      model,
+      modelSource: runtimeResolution.sources.model,
+    });
+  }
   try {
     const observation = ensureObserverBindingsForSession({
       sessionName,

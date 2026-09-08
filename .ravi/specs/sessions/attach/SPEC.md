@@ -80,6 +80,15 @@ match as one identity when stripping leftover lastChannel and when
 binding an inbound source to its subscription. An inbound source that
 is not attached still MUST fail closed.
 
+A generator successor turn that loses `currentSource` (leftover lastChannel,
+form mismatch, or source-less continue) MUST keep the previous bound chat
+when that target is still attached and the new source is empty or the same
+chat identity. It MUST NOT keep the previous target for a different
+unattached inbound or for a CLI-only `_cliDestination` turn.
+
+Observer sessions (`obs:*` / `_observation`) MUST NOT emit to a chat sink.
+Missing chat delivery there is expected, not an unresolved user-chat drop.
+
 The default output is the fallback for source-less continues and for
 proactive turns (cron, heartbeat, follow-up). It never overrides a real
 attached inbound source.

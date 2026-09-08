@@ -25,7 +25,8 @@ import {
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import { isObserverRuntimeSessionName } from "./session-pool.js";
 import {
   isRuntimeCredentialSessionCompatible,
   resolveRuntimeCredentialAttemptBinding,
@@ -812,14 +813,22 @@ async function buildRuntimeStartRequestInternal(
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
       streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
-      const replyResolution = resolveSessionOutputTarget({
+      const replyResolution = resolveSessionOutputTargetPreserving({
         sessionKey: dbSessionKey,
         fallback: streamingSession.currentSource,
         // CLI-only turns stay on the waiting CLI. Other session-relay continues
         // rebind the existing primary/default output so replies reach the chat.
         allowDefaultOutput: !turnPrompt._cliDestination,
+        previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
       });
+      streamingSession.suppressChatEmit =
+        Boolean(turnPrompt._cliDestination) ||
+        Boolean(turnPrompt._observation) ||
+        isObserverRuntimeSessionName(sessionName);
       streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
+      if (replyResolution.target) {
+        streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
+      }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,

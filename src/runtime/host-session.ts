@@ -96,6 +96,10 @@ export interface RuntimeHostStreamingSession {
   currentSource?: RuntimeMessageTarget;
   /** Immutable resolved output target for the current turn; null means the turn must not emit externally. */
   currentReplyTarget?: RuntimeMessageTarget | null;
+  /** Last successfully bound chat target in this live stream. Successor turns may reuse it. */
+  lastBoundReplyTarget?: RuntimeMessageTarget;
+  /** CLI-only or observer turns must not emit to a chat sink. */
+  suppressChatEmit?: boolean;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */

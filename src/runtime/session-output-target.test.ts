@@ -11,7 +11,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { attachChatToSession, detachChatFromSession, getOrCreateSession, getSession } from "../router/sessions.js";
 import { dbUpsertChat } from "../router/router-db.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { resolveSessionOutputTarget, resolveSessionOutputTargetPreserving } from "./session-output-target.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import { updateSessionSource } from "../router/index.js";
 import type { MessageTarget } from "./message-types.js";
@@ -222,6 +222,57 @@ describe("resolveSessionOutputTarget", () => {
         fallback: undefined,
       }).target?.canonicalChatId,
     ).toBe(groupChat.id);
+  });
+
+  it("keeps the previous bound group across a source-less successor turn", () => {
+    const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const previous = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
+      previous,
+    });
+    expect(preserved.source).toBe("attached-output");
+    expect(preserved.target?.canonicalChatId).toBe(groupChat.id);
+  });
+
+  it("does not keep the previous target for a different unattached inbound", () => {
+    const session = getOrCreateSession("agent:demo-agent:s-preserve-fail-closed", "demo-agent", "/tmp/demo");
+    const outputChat = makeChat("preserve-default");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+    const other = makeFallback("other-inbound@s.whatsapp.net");
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: other,
+      previous: {
+        channel: "whatsapp",
+        accountId: "luis",
+        chatId: outputChat.platformChatId,
+        canonicalChatId: outputChat.id,
+      },
+    });
+    expect(preserved.source).toBe("unresolved");
+    expect(preserved.target).toBeNull();
   });
 
   it("returns the default output for a source-less turn", () => {

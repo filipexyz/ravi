@@ -94,9 +94,7 @@ export function resolveRuntimeTurnInactivityMs(value = process.env[RUNTIME_TURN_
   return parsed;
 }
 
-export function resolveRuntimePendingStartTimeoutMs(
-  value = process.env[RUNTIME_IDLE_SESSION_TTL_MS_ENV],
-): number {
+export function resolveRuntimePendingStartTimeoutMs(value = process.env[RUNTIME_IDLE_SESSION_TTL_MS_ENV]): number {
   const resolved = resolveRuntimeIdleSessionTtlMs(value);
   return resolved > 0 ? resolved : DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS;
 }
@@ -184,10 +182,17 @@ export function buildRuntimeSessionPoolSnapshot(
   };
 }
 
+export function isObserverRuntimeSessionName(sessionName?: string | null): boolean {
+  return Boolean(sessionName?.startsWith("obs:"));
+}
+
 export function classifyRuntimeSessionStartLane(
   sessionName?: string | null,
   prompt?: RuntimeLaunchPrompt | null,
 ): RuntimeSessionStartLane {
+  if (isObserverRuntimeSessionName(sessionName) || prompt?._observation) {
+    return "background";
+  }
   if (classifyTurnProvenance({ prompt }).background) {
     return "background";
   }

@@ -20,7 +20,11 @@ import {
   recordRuntimeTraceEvent,
   recordTerminalTurnTrace,
 } from "../session-trace/runtime-trace.js";
-import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession, dbHasServingTaskForSession } from "../tasks/task-db.js";
+import {
+  dbHasActiveAssignedTaskForSession,
+  dbHasActiveTaskForSession,
+  dbHasServingTaskForSession,
+} from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -78,6 +82,7 @@ import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isObserverRuntimeSessionName,
   isTaskSessionName,
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimePendingStartTimeoutMs,
@@ -1569,10 +1574,31 @@ export class RuntimeSessionDispatcher {
     }
 
     if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+      const reclaimedObservers = this.reclaimIdleObserverSessions();
+      if (reclaimedObservers.length > 0 && this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+        log.info("Reclaimed idle observer sessions for runtime start", {
+          sessionName,
+          reclaimed: reclaimedObservers,
+        });
+      }
+    }
+
+    if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+      if (isObserverRuntimeSessionName(sessionName) || prompt._observation) {
+        log.info("Dropping observer session start — runtime session pool busy", {
+          sessionName,
+          active: this.streamingSessions.size,
+          queued: this.pendingStarts.length,
+          max: this.options.maxConcurrentSessions,
+          lane,
+          reason: "observer_throttled",
+        });
+        return false;
+      }
       const queued = this.pendingStarts.length + 1;
       const reason = this.getRuntimeSessionPoolNoSlotReason(sessionName, prompt);
       const reserved = this.getStartReservationCount();
-      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
       const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
       log.warn("Session start queued - runtime session pool busy", {
         sessionName,
@@ -1911,9 +1937,33 @@ export class RuntimeSessionDispatcher {
       }
     }
 
+    const observerReclaimed = this.reclaimIdleObserverSessions(now, { drainPendingStarts: true });
+    idleEvicted.push(...observerReclaimed);
     const orphanTasks = this.auditOrphanTaskSessions();
     const timedOutStarts = this.failExpiredPendingStarts(now);
     return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
+    const reclaimed: string[] = [];
+    for (const [sessionName, session] of this.streamingSessions) {
+      if (!isObserverRuntimeSessionName(sessionName)) continue;
+      const servingWork =
+        session.starting ||
+        session.turnActive ||
+        session.compacting ||
+        session.toolRunning ||
+        session.pendingMessages.length > 0 ||
+        Boolean(session.pendingWake);
+      if (servingWork) continue;
+      const idleMs = session.lastActivity ? now - session.lastActivity : now;
+      log.info("Reclaiming idle observer runtime session", { sessionName, idleMs });
+      shutdownRuntimeStreamingSession(session, "idle_observer_reclaim");
+      this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainPendingStarts ?? false });
+      markRuntimeLiveIdle(sessionName, "observer idle evicted");
+      reclaimed.push(sessionName);
+    }
+    return reclaimed;
   }
 
   auditOrphanTaskSessions(): string[] {
@@ -1946,14 +1996,20 @@ export class RuntimeSessionDispatcher {
   ): void {
     this.deferredBootstraps.set(sessionName, { ...prompt, _deferRuntimeStart: undefined });
     if (!prompt._resumeStashedMessages) {
-      saveMessage(sessionName, "user", resolvePersistedUserText(prompt), sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-        agentId: sessionEntry?.agentId ?? agentId,
-        channel: prompt.source?.channel ?? prompt.context?.channelId,
-        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-        commands: prompt.commands,
-      });
+      saveMessage(
+        sessionName,
+        "user",
+        resolvePersistedUserText(prompt),
+        sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+        {
+          agentId: sessionEntry?.agentId ?? agentId,
+          channel: prompt.source?.channel ?? prompt.context?.channelId,
+          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        },
+      );
     }
     log.info("Deferred channel session bootstrap until first interactive turn", { sessionName });
   }
@@ -2010,10 +2066,7 @@ export class RuntimeSessionDispatcher {
     return timedOut;
   }
 
-  private failQueuedPendingStart(
-    pendingStart: PendingRuntimeSessionStart,
-    reason: "pending_start_timeout",
-  ): void {
+  private failQueuedPendingStart(pendingStart: PendingRuntimeSessionStart, reason: "pending_start_timeout"): void {
     if (pendingStart.cancelled) {
       return;
     }
@@ -3118,9 +3171,7 @@ function describeSessionState(session: RuntimeHostStreamingSession): Record<stri
   };
 }
 
-function isUserFacingPendingStartSource(
-  source: RuntimeLaunchPrompt["source"] | undefined,
-): boolean {
+function isUserFacingPendingStartSource(source: RuntimeLaunchPrompt["source"] | undefined): boolean {
   const channel = source?.channel?.trim().toLowerCase();
   return channel === "whatsapp" || channel === "slack" || channel === "telegram" || channel === "discord";
 }
