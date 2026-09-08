@@ -40,7 +40,11 @@ import {
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
-import { formatUserFacingTurnFailure, PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE } from "./public-failure.js";
+import {
+  formatUserFacingTurnFailure,
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+} from "./public-failure.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import {
   buildRuntimeStartRequest,
@@ -3410,6 +3414,99 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+    });
+    seedAdapterTrace(streaming, "turn-grok-open-bash");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(streaming, {
+      ...makeRuntimeSession([
+        { type: "assistant.message", text: "Vou inspecionar o ambiente." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+        },
+        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+      provider: "grok",
+    });
+
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses Grok turn.complete after tools with zero post-tool assistant text", async () => {
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+    });
+    seedAdapterTrace(streaming, "turn-grok-tools-silence");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(streaming, {
+      ...makeRuntimeSession([
+        { type: "assistant.message", text: "Vou inspecionar o ambiente." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_bash",
+          toolName: "Bash",
+          content: "",
+        },
+        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+      provider: "grok",
+    });
+
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
   });
 
   it("recovers an interrupted turn after completed tools instead of discarding silently", async () => {

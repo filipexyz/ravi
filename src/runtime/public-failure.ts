@@ -44,6 +44,9 @@ export function publicRuntimeFailureDetail(error: unknown): string {
 export const PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE =
   "The model stopped after finishing tools. Send another message to continue.";
 
+export const PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE =
+  "The model stopped while a tool was still running. The command may not have finished. Send another message to continue.";
+
 export function formatUserFacingTurnFailure(error: unknown): string {
   return `Error: ${publicRuntimeFailureDetail(error)}`;
 }

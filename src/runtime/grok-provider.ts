@@ -6,6 +6,16 @@ import { fileURLToPath } from "node:url";
 import type { RuntimeEffort } from "./effort.js";
 import { coalesceAssistantTextBlocks, splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import {
+  createTurnToolContinuationLedger,
+  listOpenTurnToolNames,
+  noteTurnPostToolAssistant,
+  noteTurnToolStarted,
+  noteTurnToolTerminal,
+  resolveTurnAfterTools,
+  RUNTIME_POST_TOOL_CONTINUE_PROMPT,
+  type TurnToolContinuationLedger,
+} from "./turn-tool-continuation.js";
 import type {
   RuntimeApprovalHandler,
   RuntimeApprovalQuestion,
@@ -282,6 +292,7 @@ interface GrokEventContext {
   sessionId?: string;
   assistantText: string;
   completedTools: number;
+  tools: TurnToolContinuationLedger;
   usage: RuntimeUsage;
 }
 
@@ -931,7 +942,7 @@ async function* runGrokTurns(
     allowRules: toolAccess.allowRules,
     allowSubagents: toolAccess.allowSubagents,
   };
-  const eventIterator = transport.events[Symbol.asyncIterator]();
+  const eventConsumer = createGrokEventConsumer(transport.events[Symbol.asyncIterator]());
 
   try {
     await transport.start(startInput);
@@ -969,6 +980,7 @@ async function* runGrokTurns(
         sessionId: state.sessionId,
         assistantText: "",
         completedTools: 0,
+        tools: createTurnToolContinuationLedger(),
         usage: emptyUsage(),
       };
 
@@ -987,109 +999,164 @@ async function* runGrokTurns(
       };
 
       try {
-        const promptPromise = transport.request("session/prompt", {
-          sessionId: state.sessionId,
-          prompt: [{ type: "text", text: prompt }],
-        });
+        let continueAttempted = false;
+        let promptText = prompt;
+        let streamDead = false;
+        let result: unknown = { stopReason: "end_turn" };
 
-        for await (const notification of consumeUntilSettled(eventIterator, promptPromise)) {
-          for (const runtimeEvent of normalizeGrokNotification(notification, context)) {
-            if (!terminalTracker.accept(runtimeEvent)) {
-              continue;
+        while (true) {
+          const promptPromise = transport.request("session/prompt", {
+            sessionId: state.sessionId,
+            prompt: [{ type: "text", text: promptText }],
+          });
+
+          try {
+            for await (const notification of eventConsumer.untilSettled(promptPromise)) {
+              for (const runtimeEvent of normalizeGrokNotification(notification, context)) {
+                if (!terminalTracker.accept(runtimeEvent)) {
+                  continue;
+                }
+                yield runtimeEvent;
+              }
             }
-            yield runtimeEvent;
+            result = await promptPromise;
+          } catch (error) {
+            if (abortSignal.aborted || state.interrupted) {
+              const terminal = terminalTracker.interrupt({
+                rawEvent: { type: "stream.error", reason: "interrupt" },
+                metadata: buildGrokEventMetadata({ method: "session/cancel" }, context),
+              });
+              if (terminal) {
+                yield { type: "status", status: "idle", metadata: terminal.metadata };
+                yield terminal;
+              }
+              streamDead = true;
+              result = { type: "stream.error", reason: "interrupt" };
+              break;
+            }
+            streamDead = true;
+            result = {
+              type: "stream.error",
+              recoveredAfterTools: context.tools.issued,
+              error: error instanceof Error ? error.message : String(error),
+            };
           }
-        }
 
-        const result = await promptPromise;
-        const stopReason = firstString(isRecord(result) ? result.stopReason : undefined) ?? "end_turn";
-        const metadata = buildGrokEventMetadata(
-          { method: "session/prompt", stopReason, ...(isRecord(result) ? result : {}) },
-          context,
-        );
+          const stopReason = firstString(isRecord(result) ? result.stopReason : undefined) ?? "end_turn";
+          const metadata = buildGrokEventMetadata(
+            {
+              method: "session/prompt",
+              stopReason,
+              ...(isRecord(result) ? result : {}),
+              ...(continueAttempted ? { continuedAfterTools: true } : {}),
+              ...(streamDead ? { recoveredAfterTools: context.tools.issued } : {}),
+            },
+            context,
+          );
 
-        const locallyAborted = state.interrupted || abortSignal.aborted;
-        const promptCompletedOk = isGrokAcpPromptCompletedOk(result, stopReason);
-        // handle_prompt.done ok=true (or tools already finished) is end-of-prompt,
-        // not a host interrupt — even if stopReason=cancelled raced with abort.
-        if (locallyAborted && !promptCompletedOk && context.completedTools === 0) {
-          const terminal = terminalTracker.interrupt({
-            rawEvent: isRecord(result) ? result : { stopReason },
-            metadata,
-          });
-          if (terminal) {
-            yield terminal;
+          const locallyAborted = state.interrupted || abortSignal.aborted;
+          const promptCompletedOk = !streamDead && isGrokAcpPromptCompletedOk(result, stopReason);
+
+          if (locallyAborted && !promptCompletedOk && !context.tools.issued) {
+            const terminal = terminalTracker.interrupt({
+              rawEvent: isRecord(result) ? result : { stopReason },
+              metadata,
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
           }
-          continue;
-        }
-        // Grok ACP may return stopReason=cancelled after completed tools even
-        // when the host did not abort. Fall through to turn.complete so the
-        // host can flush assistant text instead of discarding the turn.
 
-        if (stopReason === "refusal" || stopReason === "max_tokens" || stopReason === "max_turn_requests") {
-          const terminal = terminalTracker.fail({
-            error: `Grok turn stopped: ${stopReason}`,
-            recoverable: stopReason !== "refusal",
-            rawEvent: isRecord(result) ? result : { stopReason },
-            metadata,
-          });
-          if (terminal) {
-            yield terminal;
+          if (
+            !streamDead &&
+            (stopReason === "refusal" || stopReason === "max_tokens" || stopReason === "max_turn_requests")
+          ) {
+            const terminal = terminalTracker.fail({
+              error: `Grok turn stopped: ${stopReason}`,
+              recoverable: stopReason !== "refusal",
+              rawEvent: isRecord(result) ? result : { stopReason },
+              metadata,
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
           }
-          continue;
-        }
 
-        for (const message of takeCompletedGrokAssistantMessages(
-          context,
-          isRecord(result) ? result : { stopReason },
-          metadata,
-        )) {
-          if (terminalTracker.accept(message)) {
-            yield message;
-          }
-        }
-
-        const session = buildGrokRuntimeSessionState(state.sessionId, context);
-        const terminal: RuntimeEvent = {
-          type: "turn.complete",
-          providerSessionId: state.sessionId,
-          session,
-          execution: {
-            provider: "grok",
-            model: context.model ?? null,
-            billingType: "unknown",
-          },
-          usage: context.usage,
-          rawEvent: isRecord(result) ? result : { stopReason },
-          metadata,
-        };
-        if (terminalTracker.accept(terminal)) {
-          yield terminal;
-        }
-      } catch (error) {
-        if (abortSignal.aborted || state.interrupted) {
-          const terminal = terminalTracker.interrupt({
-            rawEvent: { type: "stream.error", reason: "interrupt" },
-            metadata: buildGrokEventMetadata({ method: "session/cancel" }, context),
-          });
-          if (terminal) {
-            yield { type: "status", status: "idle", metadata: terminal.metadata };
-            yield terminal;
-          }
-          continue;
-        }
-
-        if (context.completedTools > 0) {
-          const metadata = buildGrokEventMetadata({ method: "session/prompt", recoveredAfterTools: true }, context);
           for (const message of takeCompletedGrokAssistantMessages(
             context,
-            { type: "stream.error", recoveredAfterTools: true },
+            isRecord(result) ? result : { stopReason },
             metadata,
           )) {
             if (terminalTracker.accept(message)) {
               yield message;
             }
           }
+
+          const decision = resolveTurnAfterTools({
+            issuedTools: context.tools.issued,
+            openToolNames: listOpenTurnToolNames(context.tools),
+            postToolAssistantChars: context.tools.postToolAssistantChars,
+            locallyAborted,
+            promptCompletedOk,
+            continueAttempted,
+            streamDead,
+          });
+
+          if (decision.action === "continue") {
+            continueAttempted = true;
+            promptText = RUNTIME_POST_TOOL_CONTINUE_PROMPT;
+            const continueStatus: RuntimeEvent = {
+              type: "status",
+              status: "thinking",
+              rawEvent: { continuedAfterTools: true },
+              metadata: buildGrokEventMetadata({ method: "session/prompt", continuedAfterTools: true }, context),
+            };
+            if (terminalTracker.accept(continueStatus)) {
+              yield continueStatus;
+            }
+            continue;
+          }
+
+          if (decision.action === "interrupt") {
+            const terminal = terminalTracker.interrupt({
+              rawEvent: isRecord(result) ? result : { stopReason },
+              metadata,
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
+          }
+
+          if (decision.action === "fail") {
+            const terminal = terminalTracker.fail({
+              error: decision.error,
+              recoverable: decision.recoverable,
+              rawEvent: isRecord(result) ? result : { stopReason },
+              metadata,
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
+          }
+
+          if (streamDead && !context.tools.issued) {
+            const error = isRecord(result) && typeof result.error === "string" ? result.error : "Grok ACP stream ended";
+            const terminal = terminalTracker.fail({
+              error,
+              recoverable: true,
+              rawEvent: { type: "stream.error" },
+              metadata,
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
+          }
+
           const session = buildGrokRuntimeSessionState(state.sessionId, context);
           const terminal: RuntimeEvent = {
             type: "turn.complete",
@@ -1101,23 +1168,13 @@ async function* runGrokTurns(
               billingType: "unknown",
             },
             usage: context.usage,
-            rawEvent: { type: "stream.error", recoveredAfterTools: true },
+            rawEvent: isRecord(result) ? result : { stopReason },
             metadata,
           };
           if (terminalTracker.accept(terminal)) {
             yield terminal;
           }
-          continue;
-        }
-
-        const terminal = terminalTracker.fail({
-          error: error instanceof Error ? error.message : String(error),
-          recoverable: true,
-          rawEvent: { type: "stream.error" },
-          metadata: buildGrokEventMetadata({ method: "session/prompt" }, context),
-        });
-        if (terminal) {
-          yield terminal;
+          break;
         }
       } finally {
         abortSignal.removeEventListener("abort", abortListener);
@@ -1204,6 +1261,7 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
       const text = extractGrokContentText(update.content);
       if (text) {
         events.push(...appendGrokAssistantChunk(context, text, rawEvent, metadata));
+        noteTurnPostToolAssistant(context.tools, text.length);
         events.push({ type: "text.delta", text, metadata });
       }
       break;
@@ -1215,6 +1273,11 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
       events.push(...takeCompletedGrokAssistantMessages(context, rawEvent, metadata));
       const toolUse = buildGrokToolUse(update);
       if (toolUse) {
+        // Grok ACP may later emit tool_call_update completed when handle_prompt
+        // closes, aborting an in-flight run_terminal_cmd before exec_done.
+        // The host then sees tool.completed without a matching Grok exec_done.
+        // A started id that never becomes terminal stays an open tool.
+        noteTurnToolStarted(context.tools, toolUse.id, toolUse.name);
         events.push({ type: "tool.started", toolUse, rawEvent, metadata });
       }
       break;
@@ -1223,9 +1286,12 @@ function normalizeGrokNotification(notification: GrokAcpNotification, context: G
       const status = firstString(update.status);
       if (status === "completed" || status === "failed") {
         context.completedTools += 1;
+        const toolUseId = firstString(update.toolCallId, update.toolCallID);
+        const toolName = mapGrokToolNameToRavi(firstString(update.title, update.kind, update.toolName));
+        noteTurnToolTerminal(context.tools, toolUseId, toolName);
         events.push({
           type: "tool.completed",
-          toolUseId: firstString(update.toolCallId, update.toolCallID),
+          toolUseId,
           toolName: firstString(update.title, update.kind),
           content: update.content,
           isError: status === "failed",
@@ -1582,44 +1648,54 @@ async function safeGrokNotify(
   }
 }
 
-async function* consumeUntilSettled<T, R>(iterator: AsyncIterator<T>, settled: Promise<R>): AsyncGenerator<T> {
+function createGrokEventConsumer<T>(iterator: AsyncIterator<T>): {
+  untilSettled<R>(settled: Promise<R>): AsyncGenerator<T>;
+} {
+  // One pending iterator.read is shared across session/prompt rounds. A fresh
+  // consumeUntilSettled per prompt would abandon the waiter and steal the
+  // continuation's session/update events.
   let pendingNext = iterator.next();
-  let settledValue: { current: R } | undefined;
-  const settledBox = settled.then((value) => {
-    settledValue = { current: value };
-    return value;
-  });
 
-  while (!settledValue) {
-    const winner = await Promise.race([
-      pendingNext.then((result) => ({ tag: "item" as const, result })),
-      settledBox.then(() => ({ tag: "settled" as const })),
-    ]);
-    if (winner.tag === "settled") {
-      break;
-    }
-    if (winner.result.done) {
-      // Stream closed. Give a same-tick session/prompt settlement a chance to
-      // win, then fail closed so the host can emit turn.failed instead of
-      // waiting forever for a prompt that will never settle.
-      await Promise.race([settledBox, Promise.resolve()]);
-      if (!settledValue) {
-        throw new Error("Grok ACP event stream ended before session/prompt settled");
+  return {
+    async *untilSettled<R>(settled: Promise<R>): AsyncGenerator<T> {
+      let settledValue: { current: R } | undefined;
+      const settledBox = settled.then((value) => {
+        settledValue = { current: value };
+        return value;
+      });
+
+      while (!settledValue) {
+        const winner = await Promise.race([
+          pendingNext.then((result) => ({ tag: "item" as const, result })),
+          settledBox.then(() => ({ tag: "settled" as const })),
+        ]);
+        if (winner.tag === "settled") {
+          break;
+        }
+        if (winner.result.done) {
+          // Stream closed. Give a same-tick session/prompt settlement a chance to
+          // win, then fail closed so the host can emit turn.failed instead of
+          // waiting forever for a prompt that will never settle.
+          await Promise.race([settledBox, Promise.resolve()]);
+          if (!settledValue) {
+            throw new Error("Grok ACP event stream ended before session/prompt settled");
+          }
+          return;
+        }
+        yield winner.result.value;
+        pendingNext = iterator.next();
       }
-      return;
-    }
-    yield winner.result.value;
-    pendingNext = iterator.next();
-  }
 
-  while (true) {
-    const leftover = await peekIfResolved(pendingNext);
-    if (!leftover || leftover.done) {
-      return;
-    }
-    yield leftover.value;
-    pendingNext = iterator.next();
-  }
+      while (true) {
+        const leftover = await peekIfResolved(pendingNext);
+        if (!leftover || leftover.done) {
+          return;
+        }
+        yield leftover.value;
+        pendingNext = iterator.next();
+      }
+    },
+  };
 }
 
 function peekIfResolved<T>(promise: Promise<T>): Promise<T | undefined> {

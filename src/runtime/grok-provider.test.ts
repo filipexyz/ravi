@@ -22,6 +22,11 @@ import {
   type GrokAcpStartInput,
   type GrokAcpTransport,
 } from "./grok-provider.js";
+import {
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+} from "./public-failure.js";
+import { RUNTIME_POST_TOOL_CONTINUE_PROMPT } from "./turn-tool-continuation.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
@@ -951,7 +956,7 @@ describe("Grok Build runtime provider", () => {
     expect(lastAssistant).toBeLessThan(turnComplete);
   });
 
-  it("completes the turn when the ACP stream ends after a mid utterance and completed tool without settling session/prompt", async () => {
+  it("fails visibly when the ACP stream ends after a mid utterance and completed tool without a post-tool reply", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
@@ -994,13 +999,14 @@ describe("Grok Build runtime provider", () => {
     ).toEqual(["Vou listar os agentes deste Ravi."]);
     expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
       "turn.started",
-      "turn.complete",
+      "turn.failed",
     ]);
     expect(events.at(-1)).toMatchObject({
-      type: "turn.complete",
-      rawEvent: { recoveredAfterTools: true },
+      type: "turn.failed",
+      error: PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+      recoverable: true,
     });
-    expect(events.filter((event) => event.type === "turn.interrupted" || event.type === "turn.failed")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
   });
 
   it("keeps token fragments of one Grok marker as a single assistant.message", async () => {
@@ -1099,41 +1105,51 @@ describe("Grok Build runtime provider", () => {
     });
   });
 
-  it("completes after Read and WebFetch tools when session/prompt returns cancelled without a local abort", async () => {
+  it("continues ACP after cancelled tools-without-reply, then completes on the post-tool model step", async () => {
     const transport = new FakeGrokAcpTransport();
+    let promptCount = 0;
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
+        promptCount += 1;
+        if (promptCount === 1) {
+          transport.pushEvent(
+            sessionUpdate("tool_call", {
+              toolCallId: "call_read",
+              title: "Read file",
+              kind: "read",
+              rawInput: { path: "README.md" },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call_update", {
+              toolCallId: "call_read",
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: "ok" } }],
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call", {
+              toolCallId: "call_fetch",
+              title: "WebFetch",
+              kind: "fetch",
+              rawInput: { url: "https://example.test/doc" },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call_update", {
+              toolCallId: "call_fetch",
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: "fetched" } }],
+            }),
+          );
+          return { stopReason: "cancelled" };
+        }
         transport.pushEvent(
-          sessionUpdate("tool_call", {
-            toolCallId: "call_read",
-            title: "Read file",
-            kind: "read",
-            rawInput: { path: "README.md" },
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "li e busquei o documento." },
           }),
         );
-        transport.pushEvent(
-          sessionUpdate("tool_call_update", {
-            toolCallId: "call_read",
-            status: "completed",
-            content: [{ type: "content", content: { type: "text", text: "ok" } }],
-          }),
-        );
-        transport.pushEvent(
-          sessionUpdate("tool_call", {
-            toolCallId: "call_fetch",
-            title: "WebFetch",
-            kind: "fetch",
-            rawInput: { url: "https://example.test/doc" },
-          }),
-        );
-        transport.pushEvent(
-          sessionUpdate("tool_call_update", {
-            toolCallId: "call_fetch",
-            status: "completed",
-            content: [{ type: "content", content: { type: "text", text: "fetched" } }],
-          }),
-        );
-        return { stopReason: "cancelled" };
+        return { stopReason: "end_turn" };
       }
       return defaultGrokResponse(method);
     };
@@ -1142,7 +1158,19 @@ describe("Grok Build runtime provider", () => {
       createGrokRuntimeProvider({ transport }).startSession(createStartRequest("leia e busque")).events,
     );
 
+    expect(transport.requests.filter((request) => request.method === "session/prompt")).toHaveLength(2);
+    expect(transport.requests.filter((request) => request.method === "session/prompt")[1]?.params).toEqual({
+      sessionId: "grok-session-1",
+      prompt: [{ type: "text", text: RUNTIME_POST_TOOL_CONTINUE_PROMPT }],
+    });
     expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(2);
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "assistant.message" }> => event.type === "assistant.message",
+        )
+        .map((event) => event.text),
+    ).toEqual(["li e busquei o documento."]);
     expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
       "turn.started",
       "turn.complete",
@@ -1150,7 +1178,7 @@ describe("Grok Build runtime provider", () => {
     expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
   });
 
-  it("completes the turn when the ACP stream ends after completed tools", async () => {
+  it("fails visibly when the ACP stream ends after completed tools with no post-tool reply", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
@@ -1182,42 +1210,52 @@ describe("Grok Build runtime provider", () => {
     expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(1);
     expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
       "turn.started",
-      "turn.complete",
+      "turn.failed",
     ]);
     expect(events.at(-1)).toMatchObject({
-      type: "turn.complete",
-      rawEvent: { recoveredAfterTools: true },
+      type: "turn.failed",
+      error: PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+      recoverable: true,
     });
-    expect(events.filter((event) => event.type === "turn.interrupted" || event.type === "turn.failed")).toHaveLength(0);
   });
 
-  it("treats handle_prompt.done ok=true as end-of-prompt, not an interrupt", async () => {
+  it("continues after handle_prompt.done ok=true instead of interrupting or silently completing", async () => {
     expect(isGrokAcpPromptCompletedOk({ ok: true, stopReason: "cancelled" }, "cancelled")).toBe(true);
     expect(isGrokAcpPromptCompletedOk({ stopReason: "cancelled" }, "cancelled")).toBe(false);
     expect(isGrokAcpPromptCompletedOk({ stopReason: "end_turn" }, "end_turn")).toBe(true);
 
     const transport = new FakeGrokAcpTransport();
     let releasePrompt: ((value: unknown) => void) | undefined;
+    let promptCount = 0;
     transport.responseFor = (method) => {
       if (method === "session/prompt") {
+        promptCount += 1;
+        if (promptCount === 1) {
+          transport.pushEvent(
+            sessionUpdate("tool_call", {
+              toolCallId: "call_read",
+              title: "Read file",
+              kind: "read",
+              rawInput: { path: "README.md" },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call_update", {
+              toolCallId: "call_read",
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: "ok" } }],
+            }),
+          );
+          return new Promise((resolve) => {
+            releasePrompt = resolve;
+          });
+        }
         transport.pushEvent(
-          sessionUpdate("tool_call", {
-            toolCallId: "call_read",
-            title: "Read file",
-            kind: "read",
-            rawInput: { path: "README.md" },
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "arquivo lido." },
           }),
         );
-        transport.pushEvent(
-          sessionUpdate("tool_call_update", {
-            toolCallId: "call_read",
-            status: "completed",
-            content: [{ type: "content", content: { type: "text", text: "ok" } }],
-          }),
-        );
-        return new Promise((resolve) => {
-          releasePrompt = resolve;
-        });
+        return { stopReason: "end_turn" };
       }
       return defaultGrokResponse(method);
     };
@@ -1241,6 +1279,154 @@ describe("Grok Build runtime provider", () => {
       "turn.complete",
     ]);
     expect(collected.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
+    expect(
+      collected.some(
+        (event) => event.type === "assistant.message" && "text" in event && event.text === "arquivo lido.",
+      ),
+    ).toBe(true);
+  });
+
+  it("fails the 15:52 open-Bash timeline instead of completing after tools", async () => {
+    const transport = new FakeGrokAcpTransport();
+    let promptCount = 0;
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        promptCount += 1;
+        transport.pushEvent(
+          sessionUpdate("agent_message_chunk", {
+            content: { type: "text", text: "Vou inspecionar o ambiente." },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_read",
+            title: "Read file",
+            kind: "read",
+            rawInput: { path: "README.md" },
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call_update", {
+            toolCallId: "call_read",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        );
+        transport.pushEvent(
+          sessionUpdate("tool_call", {
+            toolCallId: "call_bash",
+            title: "run_terminal_command",
+            kind: "execute",
+            rawInput: { command: "uname" },
+          }),
+        );
+        return { ok: true, stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("inspecione")).events,
+    );
+
+    expect(promptCount).toBe(1);
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(1);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+      recoverable: true,
+    });
+    expect(
+      events.some(
+        (event) =>
+          event.type === "assistant.message" && "text" in event && event.text === "Vou inspecionar o ambiente.",
+      ),
+    ).toBe(true);
+    expect(
+      events
+        .filter((event) => event.type === "assistant.message")
+        .every((event) => {
+          if (event.type !== "assistant.message") return true;
+          return event.text === "Vou inspecionar o ambiente.";
+        }),
+    ).toBe(true);
+  });
+
+  it("fails the 15:52 synthetic-Bash-complete timeline after one continue with no post-tool text", async () => {
+    const transport = new FakeGrokAcpTransport();
+    let promptCount = 0;
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        promptCount += 1;
+        if (promptCount === 1) {
+          transport.pushEvent(
+            sessionUpdate("agent_message_chunk", {
+              content: { type: "text", text: "Vou inspecionar o ambiente." },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call", {
+              toolCallId: "call_read",
+              title: "Read file",
+              kind: "read",
+              rawInput: { path: "README.md" },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call_update", {
+              toolCallId: "call_read",
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: "ok" } }],
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call", {
+              toolCallId: "call_bash",
+              title: "run_terminal_command",
+              kind: "execute",
+              rawInput: { command: "uname" },
+            }),
+          );
+          transport.pushEvent(
+            sessionUpdate("tool_call_update", {
+              toolCallId: "call_bash",
+              title: "run_terminal_command",
+              kind: "execute",
+              status: "completed",
+              content: [],
+            }),
+          );
+          return { ok: true, stopReason: "end_turn" };
+        }
+        return { ok: true, stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("inspecione")).events,
+    );
+
+    expect(promptCount).toBe(2);
+    expect(transport.requests.filter((request) => request.method === "session/prompt")[1]?.params).toEqual({
+      sessionId: "grok-session-1",
+      prompt: [{ type: "text", text: RUNTIME_POST_TOOL_CONTINUE_PROMPT }],
+    });
+    expect(events.filter((event) => event.type === "tool.completed")).toHaveLength(2);
+    expect(events.filter((event) => event.type.startsWith("turn.")).map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+      recoverable: true,
+    });
   });
 
   it("completes the turn when session/prompt returns cancelled without a local abort", async () => {

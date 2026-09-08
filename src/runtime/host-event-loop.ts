@@ -77,6 +77,15 @@ import {
   publicRuntimeFailureDetail,
 } from "./public-failure.js";
 import {
+  createTurnToolContinuationLedger,
+  listOpenTurnToolNames,
+  noteTurnPostToolAssistant,
+  noteTurnToolStarted,
+  noteTurnToolTerminal,
+  resetTurnToolContinuationLedger,
+  resolveHostTurnCompleteAfterTools,
+} from "./turn-tool-continuation.js";
+import {
   createObservationEvent,
   deliverObservationEvents,
   getObservationDebounceMs,
@@ -972,6 +981,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let providerRawEventCount = 0;
   let responseText = "";
   let channelResponseText = "";
+  const turnToolContinuation = createTurnToolContinuationLedger();
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
   const generatedMediaKeys = new Set<string>();
   const clearPendingGeneratedMedia = () => {
@@ -2045,6 +2055,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (streaming.done) {
         break;
       }
+      if (event.type === "turn.complete") {
+        const blockedComplete = resolveHostTurnCompleteAfterTools({
+          provider: runtimeSession.provider,
+          issuedTools: turnToolContinuation.issued,
+          openToolNames: listOpenTurnToolNames(turnToolContinuation),
+          postToolAssistantChars: turnToolContinuation.postToolAssistantChars,
+        });
+        if (blockedComplete) {
+          log.warn("Refusing user-visible turn.complete after tools without continuation", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            code: blockedComplete.code,
+            openTools: listOpenTurnToolNames(turnToolContinuation),
+            postToolAssistantChars: turnToolContinuation.postToolAssistantChars,
+          });
+          event = {
+            type: "turn.failed",
+            error: blockedComplete.error,
+            recoverable: true,
+            rawEvent: event.rawEvent,
+            metadata: event.metadata,
+          };
+        }
+      }
       if (
         event.type === "turn.complete" &&
         (streaming._providerAuthFailure || isRuntimeProviderLoginStub(responseText))
@@ -2335,6 +2370,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "tool.started") {
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = true;
+        noteTurnToolStarted(turnToolContinuation, event.toolUse.id, event.toolUse.name);
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
@@ -2540,6 +2576,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               markCurrentTurnAttemptSafety({ materializedOutput: true });
               fencePendingProviderRawEvent(correlatedProviderRawEvent);
               for (const utterance of visibleUtterances) {
+                noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
                 recordAssistantState(true, utterance);
                 if (!commentaryResponse) {
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
@@ -2600,6 +2637,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "tool.completed") {
+        noteTurnToolTerminal(turnToolContinuation, event.toolUseId, event.toolName);
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
@@ -2940,6 +2978,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
         streaming.currentTurnInputMutated = false;
         streaming.turnActive = false;
         streaming.currentChannelBackend = undefined;
@@ -3046,6 +3085,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
@@ -3219,6 +3259,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               stashedMessages: stashedCount,
             });
             streaming.currentTurnToolStarted = false;
+            resetTurnToolContinuationLedger(turnToolContinuation);
             streaming.currentTurnInputMutated = false;
             signalTurnComplete();
             clearTraceTurnState();
@@ -3337,6 +3378,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             source: streaming.currentSource,
           });
           streaming.currentTurnToolStarted = false;
+          resetTurnToolContinuationLedger(turnToolContinuation);
           streaming.currentTurnInputMutated = false;
           streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
           streaming.interrupted = true;
@@ -3391,6 +3433,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);

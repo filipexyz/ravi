@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   formatUserFacingTurnFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
   publicRuntimeFailureDetail,
 } from "./public-failure.js";
 
@@ -110,6 +111,9 @@ describe("public runtime failures", () => {
   it("keeps the post-tool recovery hint user-visible", () => {
     expect(formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE)).toBe(
       `Error: ${PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE}`,
+    );
+    expect(formatUserFacingTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE)).toBe(
+      `Error: ${PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE}`,
     );
   });
 });
