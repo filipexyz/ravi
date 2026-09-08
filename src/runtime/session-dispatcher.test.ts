@@ -29,7 +29,13 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
-import { dbBlockTask, dbCompleteTask, dbCreateTask, dbDispatchTask, dbHasServingTaskForSession } from "../tasks/task-db.js";
+import {
+  dbBlockTask,
+  dbCompleteTask,
+  dbCreateTask,
+  dbDispatchTask,
+  dbHasServingTaskForSession,
+} from "../tasks/task-db.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
@@ -2659,7 +2665,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const bootstrap = dispatcher.handlePromptImmediate("demo-group", {
         prompt: "[System] Inform: group created",
         _deferRuntimeStart: true,
-        _turnOrigin: buildChannelTurnOrigin("session.bootstrap"),
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap", {
+          type: "automation",
+          id: "channels:session.bootstrap",
+        }),
         source: {
           channel: "whatsapp",
           accountId: "demo",
@@ -2785,11 +2794,23 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-timeout-");
     try {
       getOrCreateSession("agent:dev:test:start-timeout", "dev", stateDir, { name: "start-timeout" });
-      const dispatcher = createDispatcher(1, 0, crashRecoveryStub, { pendingStartTimeoutMs: 25 });
+      const runtimeEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 1,
+        interactiveReservedSessions: 0,
+        pendingStartTimeoutMs: 25,
+        safeEmit: async (topic, data) => {
+          runtimeEmits.push({ topic, data: data as Record<string, unknown> });
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: crashRecoveryStub,
+      });
       dispatcher.streamingSessions.set("busy", createActiveSession());
-      const emits: Array<{ topic: string; data: Record<string, unknown> }> = [];
+      const responseEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
       const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
-        emits.push({ topic, data: data as Record<string, unknown> });
+        responseEmits.push({ topic, data: data as Record<string, unknown> });
       });
 
       const queued = dispatcher.handlePromptImmediate("start-timeout", {
@@ -2803,9 +2824,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 80));
-      expect(emits.some((entry) => (entry.data as { type?: string }).type === "session.timeout")).toBe(true);
+      expect(runtimeEmits.some((entry) => (entry.data as { type?: string }).type === "session.timeout")).toBe(true);
       expect(
-        emits.some(
+        responseEmits.some(
           (entry) =>
             entry.topic === "ravi.session.start-timeout.response" &&
             String(entry.data.response ?? "").includes("queued too long"),
