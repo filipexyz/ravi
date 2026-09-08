@@ -45,7 +45,12 @@ para destravar tool authority em turnos multiplayer.
 
 Só use capability solta quando ainda não existir profile adequado. Nesse caso,
 coloque a capability em `--capabilities` como bootstrap de um profile estreito.
-`full-access` é break-glass e exige aprovação explícita do operador.
+`full-access` é break-glass e exige aprovação explícita do operador. O profile
+materializa `admin system:*`, `execute executable:*`, `use tool:*` e
+`use toolgroup:*`. Em turnos `turn-runtime` com ator resolvido, o PreToolUse
+do Bash relê esse teto do executor no próximo check — sem reset de sessão.
+Não pede `full-access` para denial operacional comum; não confunda com tag
+`permission.admin` de contato.
 
 Contrato de guidance:
 

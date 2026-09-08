@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { evaluateBashPermission } from "../bash/hook.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { agentCan } from "../permissions/provider-runtime.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
@@ -168,5 +169,38 @@ describe("delegated turn enforcement (end-to-end)", () => {
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
     expect(decision.allowed).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
+  });
+
+  it("lets a WhatsApp group turn execute ssh after full-access without resetting the session", () => {
+    const ctx = turnContext(contactPrompt("luis"));
+    const bashCtx = {
+      agentId: agent.id,
+      kind: ctx.context?.kind,
+      capabilities: ctx.context?.capabilities,
+      metadata: ctx.context?.metadata,
+    };
+
+    expect(evaluateBashPermission("ssh host uptime", bashCtx).allowed).toBe(false);
+
+    dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    expect(evaluateBashPermission("ssh host uptime", bashCtx).allowed).toBe(true);
+    expect(evaluateBashPermission("timeout 1 true", bashCtx).allowed).toBe(true);
+    expect(evaluateBashPermission("bash -c 'echo hi'", bashCtx).allowed).toBe(false);
+  });
+
+  it("lets a WhatsApp group turn execute ssh from explicit execute:executable:*", () => {
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },
+    });
+    const ctx = turnContext(contactPrompt("luis"));
+
+    expect(
+      evaluateBashPermission("ssh host uptime", {
+        agentId: agent.id,
+        kind: ctx.context?.kind,
+        capabilities: ctx.context?.capabilities,
+        metadata: ctx.context?.metadata,
+      }).allowed,
+    ).toBe(true);
   });
 });

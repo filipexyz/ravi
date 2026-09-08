@@ -218,6 +218,13 @@ function canWithBashContext(
   objectType: string,
   objectId: string,
 ): boolean {
+  // Resolved agent-identity / delegated turns use the live executor ceiling so
+  // `ravi agents permissions` expansions and reductions apply on the next
+  // PreToolUse check without requiring a session reset. Unresolved actors and
+  // observation-narrowed turns stay bound to the issued snapshot.
+  if (canUseLiveExecutorCeiling(ctx)) {
+    return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
+  }
   if (hasContextCapabilities(ctx)) {
     if (canWithCapabilityContext(ctx, permission, objectType, objectId)) {
       return true;
@@ -239,6 +246,24 @@ function canWithBashContext(
 function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metadata">): boolean {
   if (ctx.kind === "turn-runtime" || ctx.kind === "invocation-runtime") return true;
   return ctx.metadata?.authorityMode === "delegated" || ctx.metadata?.authorityMode === "agent-identity";
+}
+
+function canUseLiveExecutorCeiling(ctx: BashPermissionContext): boolean {
+  if (!ctx.agentId) return false;
+  if (!isDelegatedBashContext(ctx)) return false;
+  if (isUnresolvedAgentIdentityActor(ctx)) return false;
+  if (hasTurnCapabilityNarrowing(ctx)) return false;
+  return true;
+}
+
+function isUnresolvedAgentIdentityActor(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  return ctx.metadata?.actorResolution === "missing_contact";
+}
+
+function hasTurnCapabilityNarrowing(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  const count = ctx.metadata?.turnCapabilityCount;
+  if (typeof count === "number" && count > 0) return true;
+  return Array.isArray(ctx.metadata?.turnCapabilities) && ctx.metadata.turnCapabilities.length > 0;
 }
 
 function isMaterializedAgentSuperadmin(ctx: Pick<BashPermissionContext, "agentId">): boolean {

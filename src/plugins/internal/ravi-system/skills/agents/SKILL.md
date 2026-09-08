@@ -269,10 +269,13 @@ compatibilidade ampla; não use como recomendação padrão para agents novos.
 
 ### Provider runtime vs hooks externos
 
-`full-access` em `ravi agents permissions` materializa `admin system:*` como
-capability de snapshot do Ravi para o agent e para automações que rodam em nome
-dele. Isso não desativa automaticamente hooks globais do provider, denylist
-local, PreToolUse externo ou políticas instaladas fora do Ravi.
+`full-access` em `ravi agents permissions` é break-glass e materializa
+`admin system:*`, `execute executable:*`, `use tool:*` e `use toolgroup:*` para
+o agent e para automações que rodam em nome dele. Isso desbloqueia o teto de
+execução Bash do Ravi no próximo PreToolUse (turnos `turn-runtime` resolvidos
+releem o teto do executor; não precisa resetar a sessão). Não desativa hooks
+globais do provider, denylist local, PreToolUse externo, blocos incondicionais
+(`bash`/`sh`/`eval`/…) nem políticas instaladas fora do Ravi.
 
 Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access --execute`:
 

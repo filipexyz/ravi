@@ -11,8 +11,8 @@ capability: profiles
 ## Regression Tests
 
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
-  "full-access"` and assert `admin system:*` appears with
-  `agent-default-capabilities` provenance.
+  "full-access"` and assert `admin system:*`, `execute executable:*`, and
+  `use tool:*` appear with `agent-default-capabilities` provenance.
 - Materialize an agent with explicit runtime capabilities and assert only those
   capabilities are added beyond bootstrap.
 - Materialize a contact tagged `permission.admin` and assert admin authority
