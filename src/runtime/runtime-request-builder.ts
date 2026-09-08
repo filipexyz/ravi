@@ -24,6 +24,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import {
   isRuntimeCredentialSessionCompatible,
@@ -281,7 +282,8 @@ function isLeftoverLastChannelSource(
   const chatId = source.chatId?.trim();
   const lastChannel = session.lastChannel?.trim();
   const lastTo = session.lastTo?.trim();
-  return Boolean(channel && chatId && lastChannel && lastTo && channel === lastChannel && chatId === lastTo);
+  if (!channel || !chatId || !lastChannel || !lastTo) return false;
+  return runtimeChannelsMatch(channel, lastChannel) && runtimeChatIdsOverlap(chatId, lastTo);
 }
 
 function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
@@ -323,18 +325,7 @@ function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, sessio
 }
 
 function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnType<typeof dbGetChat>>): boolean {
-  if (source.channel && source.channel !== chat.channel) return false;
-  const sourceChatId = source.chatId?.trim();
-  if (!sourceChatId) return false;
-  const platformTarget = splitCanonicalPlatformChat(chat.platformChatId);
-  const candidates = new Set(
-    [chat.id, chat.platformChatId, chat.normalizedChatId, platformTarget.chatId].filter((value): value is string =>
-      Boolean(value?.trim()),
-    ),
-  );
-  if (!candidates.has(sourceChatId)) return false;
-  if (source.threadId && platformTarget.threadId && source.threadId !== platformTarget.threadId) return false;
-  return true;
+  return sourceMatchesChat(source, chat);
 }
 
 export async function buildRuntimeStartRequest(

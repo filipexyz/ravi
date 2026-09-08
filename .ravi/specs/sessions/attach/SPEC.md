@@ -74,7 +74,11 @@ A session-relay continue without `_cliDestination` (operator/system
 `sessions send` into an already-attached chat session) MUST rebind the
 existing primary/default output attachment so replies reach that chat.
 Leftover `lastChannel` / `lastTo` still MUST NOT become a fake inbound
-source. An inbound source that is not attached still MUST fail closed.
+source. Channel aliases (`whatsapp` / `whatsapp-baileys`) and WhatsApp
+group chat-id forms (`group:<id>`, `<id>@g.us`, internal `chat_*`) MUST
+match as one identity when stripping leftover lastChannel and when
+binding an inbound source to its subscription. An inbound source that
+is not attached still MUST fail closed.
 
 The default output is the fallback for source-less continues and for
 proactive turns (cron, heartbeat, follow-up). It never overrides a real

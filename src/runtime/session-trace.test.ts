@@ -1406,6 +1406,88 @@ describe("runtime session trace instrumentation", () => {
     ).toEqual(["pong from session", "inbound slack reply"]);
   });
 
+  it("rebounds a session-relay continue when leftover lastChannel is group: and source is baileys @g.us", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+    });
+    const session = getSession(SESSION_KEY)!;
+    const recentContextSource: RuntimeMessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+    const relayPrompt = {
+      prompt: "continue after tools",
+      source: recentContextSource,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(relayPrompt, session)).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: recentContextSource,
+      }).target?.canonicalChatId,
+    ).toBe(groupChat.id);
+
+    const relayStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: recentContextSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(relayPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-baileys-group-form-relay",
+      sessionName: SESSION_NAME,
+      prompt: relayPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(relayPrompt, session),
+      streamingSession: relayStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(relayStreaming.currentSource).toBeUndefined();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(relayStreaming.currentReplyTarget?.chatId).toBe("group:test-group-1");
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
   it("keeps CLI-only _cliDestination continues fail-closed for chat emit", async () => {
     const leftoverChat = dbUpsertChat({
       channel: "whatsapp",
