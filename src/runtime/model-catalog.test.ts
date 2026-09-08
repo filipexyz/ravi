@@ -111,6 +111,7 @@ describe("model catalog", () => {
     expect(getDefaultModelForProvider("grok")).toBe("grok-4");
     expect(resolvePreferredRuntimeModel("grok", "opus")).toBe("grok-4");
     expect(resolvePreferredRuntimeModel("grok", "sonnet")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "claude-opus-4-6")).toBe("grok-4");
     expect(resolvePreferredRuntimeModel("grok", "grok-4")).toBe("grok-4");
   });
 });

@@ -157,13 +157,7 @@ export function resolvePreferredRuntimeModel(
 export function isClaudeModelAlias(model: string | null | undefined): boolean {
   const value = model?.trim().toLowerCase();
   if (!value) return false;
-  return (
-    CLAUDE_MODEL_ALIASES.has(value) ||
-    value.includes("claude") ||
-    value.includes("sonnet") ||
-    value.includes("opus") ||
-    value.includes("haiku")
-  );
+  return CLAUDE_MODEL_ALIASES.has(value) || value.includes("claude");
 }
 
 function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null | undefined): string | null {
