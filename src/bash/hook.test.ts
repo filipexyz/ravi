@@ -168,6 +168,15 @@ describe("createBashPermissionHook", () => {
       expect(isDenied(result)).toBe(true);
     });
 
+    it("blocks unconditional shells even with execute:executable:*", () => {
+      const decision = evaluateBashPermission("bash -c 'echo hi'", {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed).toBe(false);
+    });
+
     it("checks all executables in piped commands", async () => {
       // Has cat but not grep
       const result = await callBashHook(
@@ -354,7 +363,7 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Write", "main", context))).toBe(false);
   });
 
-    it("keeps scoped contexts bounded to their issued capabilities", async () => {
+  it("keeps scoped contexts bounded to their issued capabilities", async () => {
     const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
 
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
@@ -389,10 +398,7 @@ describe("turn-runtime executor ceiling", () => {
     };
   }
 
-  function whatsappToolContext(
-    capabilities: ContextCapability[],
-    metadata: Record<string, unknown> = {},
-  ): ToolContext {
+  function whatsappToolContext(capabilities: ContextCapability[], metadata: Record<string, unknown> = {}): ToolContext {
     return {
       ...makeToolContext(agentId, capabilities, "turn-runtime"),
       context: {

@@ -289,10 +289,6 @@ function checkExecutablePermissionsForContext(
   command: string,
   ctx: BashPermissionContext,
 ): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
-  if (canWithBashContext(ctx, "execute", "executable", "*")) {
-    return { allowed: true };
-  }
-
   const patternCheck = checkDangerousPatterns(command);
   if (!patternCheck.safe) {
     return { allowed: false, reason: patternCheck.reason };
@@ -309,9 +305,26 @@ function checkExecutablePermissionsForContext(
   for (const exec of parsed.executables) {
     if (UNCONDITIONAL_BLOCKS.has(exec)) {
       blocked.push(exec);
-      continue;
     }
+  }
 
+  if (blocked.length > 0) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot execute: ${blocked.join(", ")}`,
+      deniedCapabilities: blocked.map((executable) => ({
+        relation: "execute",
+        objectType: "executable",
+        objectId: executable,
+      })),
+    };
+  }
+
+  if (canWithBashContext(ctx, "execute", "executable", "*")) {
+    return { allowed: true };
+  }
+
+  for (const exec of parsed.executables) {
     if (BUILTIN_EXECUTABLES.has(exec)) continue;
 
     if (!canWithBashContext(ctx, "execute", "executable", exec)) {
