@@ -73,7 +73,8 @@ export function prepareRuntimeInterruptSuccessor(
     session.currentSource ??
     session.pendingMessages.find(
       (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
-    )?.launchPrompt?.source;
+    )?.launchPrompt?.source ??
+    (session.suppressChatEmit ? undefined : session.currentReplyTarget);
   const nextSurfaceIndex = successors.findIndex(
     (message) => !isSameRuntimeTurnSurface(activeSource, message.launchPrompt?.source),
   );

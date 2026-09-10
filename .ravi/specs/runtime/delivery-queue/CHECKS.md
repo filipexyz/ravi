@@ -29,6 +29,11 @@
 - A pending provider callback write blocks every interrupt lane, including `immediate_interrupt`.
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
 
+- A transport-only scheduled followup ahead of a canonical human message from
+  the same chat does not prevent the human message from interrupting.
+- Different accounts, instances, chats, threads and conflicting canonical ids
+  remain separate interrupt surfaces.
+
 ## Queue Integrity
 
 - Pending prompt atoms keep source, context, pending id, barrier, queue time, task barrier metadata, and launch metadata.

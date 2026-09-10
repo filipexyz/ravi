@@ -504,6 +504,56 @@ describe("runtime delivery queue", () => {
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([first, second]);
   });
 
+  for (const suppressed of [false, true]) {
+    it(`uses the bound output for a source-less resumed turn (suppressed=${suppressed})`, () => {
+      const active = createQueuedRuntimeUserMessage({ prompt: "CLI resume" });
+      const human = createQueuedRuntimeUserMessage(surfacePrompt("human steering", "whatsapp", "chat-a"));
+      const session = makeStreamingSession({
+        turnActive: true,
+        currentReplyTarget: human.launchPrompt!.source,
+        suppressChatEmit: suppressed,
+        pendingMessages: [active, human],
+        currentTurnPendingIds: [active.pendingId!],
+      });
+      const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+      if (suppressed) expect(prepared).toBeNull();
+      else expect(prepared?.message.pendingId).toBe(human.pendingId);
+    });
+  }
+
+  for (const blocked of [false, true]) {
+    it(`handles a cron without canonical identity before human steering (different account=${blocked})`, () => {
+      const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "whatsapp", "chat-a"));
+      const source = active.launchPrompt!.source!;
+      const cron = createQueuedRuntimeUserMessage({
+        prompt: "scheduled followup",
+        deliveryBarrier: "after_response",
+        source: {
+          channel: source.channel,
+          accountId: blocked ? "another-account" : source.accountId,
+          chatId: source.chatId,
+          suppressPresence: true,
+        },
+      });
+      const human = createQueuedRuntimeUserMessage(surfacePrompt("human steering", "whatsapp", "chat-a"));
+      const session = makeStreamingSession({
+        turnActive: true,
+        currentSource: source,
+        pendingMessages: [active, cron, human],
+        currentTurnPendingIds: [active.pendingId!],
+      });
+      const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+      if (blocked) {
+        expect(prepared).toBeNull();
+        expect(session.pendingMessages).toEqual([active, cron, human]);
+      } else {
+        expect(prepared?.message.pendingId).toBe(human.pendingId);
+        expect(prepared?.coalescedMessages).not.toContain(cron);
+        expect(session.pendingMessages).toContain(cron);
+      }
+    });
+  }
+
   it("does not interrupt an active turn for a different reply surface", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
     const otherSurface = createQueuedRuntimeUserMessage(surfacePrompt("wait", "whatsapp", "chat-b"));

@@ -25,6 +25,7 @@ const emitMock = mock(async (topic: string, payload: Record<string, unknown>) =>
 });
 
 type RuntimePresenceEventData = {
+  _replyTarget?: ResponseMessage["target"];
   type?: string;
   status?: string;
   nativeEvent?: string;
@@ -671,6 +672,22 @@ describe("Gateway session trace instrumentation", () => {
       if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
       else process.env.OMNI_API_KEY = oldApiKey;
     }
+  });
+
+  it("starts and stops typing at the attached output on a source-less CLI resume", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async (_instanceId: string, _chatId: string, _active?: boolean) => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      { sendTyping },
+    );
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _replyTarget: target });
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping.mock.calls[0]).toEqual([expect.any(String), target.chatId, true]);
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _replyTarget: target });
+    expect(sendTyping).toHaveBeenCalledTimes(2);
+    expect(sendTyping.mock.calls[1]).toEqual([expect.any(String), target.chatId, false]);
   });
 
   it("renews active presence one second after a delivered response when runtime activity continues", async () => {

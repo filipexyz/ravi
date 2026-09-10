@@ -2285,6 +2285,37 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  for (const suppressed of [false, true]) {
+    it(`routes source-less runtime presence to the bound output (suppressed=${suppressed})`, async () => {
+      const target = attachSpeakingOutputChat();
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentSource: undefined,
+        currentReplyTarget: target,
+        suppressChatEmit: suppressed,
+      });
+      seedAdapterTrace(streaming);
+      const emitted: Array<Record<string, unknown>> = [];
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "attached reply" },
+          { type: "turn.complete", providerSessionId: "provider-after", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".runtime")) emitted.push(data);
+          },
+        },
+      );
+      expect(emitted.some((event) => event.type === "turn.complete")).toBe(true);
+      for (const event of emitted) {
+        expect(event._source).toBeUndefined();
+        expect(event._replyTarget).toEqual(suppressed ? undefined : target);
+      }
+    });
+  }
+
   it("keeps the turn-start reply target when subscriptions change mid-turn", async () => {
     const attachedSource = attachSpeakingOutputChat();
     const capturedTarget = resolveSessionOutputTarget({
@@ -3414,6 +3445,35 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("keeps an intentional tool-boundary interrupt silent and retains the successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "old input" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "new user input" });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      currentTurnSuperseded: true,
+      interrupted: true,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+    seedAdapterTrace(streaming, "turn-human-interrupt");
+    const responses: unknown[] = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response`) responses.push(data);
+    });
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "tool.started", toolUse: { id: "read-1", name: "Read", input: { path: "README.md" } } },
+        { type: "tool.completed", toolUseId: "read-1", toolName: "Read", content: "ok" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+    expect(responses).toEqual([]);
+    expect(streaming.pendingMessages.map((message) => message.pendingId)).toContain(successor.pendingId);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
   });
 
   it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {

@@ -59,8 +59,8 @@ surface when the turn starts.
 4. A source-less turn with no default output MUST fail closed for *chat*
    delivery. It MUST NOT invent a chat `.response` sink.
 
-CLI-only `sessions send` (no `--channel`/`--to`, no inbound chat, named
-session) is **not** a source-less attach turn. The waiting CLI is the
+CLI-only `sessions send` (no `--channel`/`--to`, no inbound chat, and no
+output attachment) uses the CLI transcript as its output. The waiting CLI is the
 destination. After `turn.complete`, `sessions send -w` MUST return this
 turn's assistant transcript row (persist may lag). Missing chat delivery
 is not empty success when that transcript exists.
@@ -73,6 +73,10 @@ fail closed for that CLI-only shape.
 A session-relay continue without `_cliDestination` (operator/system
 `sessions send` into an already-attached chat session) MUST rebind the
 existing primary/default output attachment so replies reach that chat.
+The CLI MUST NOT set `_cliDestination` when an output attachment exists.
+Runtime presence MUST follow the bound reply target when there is no inbound
+source, without fabricating inbound provenance. Suppressed chat output MUST
+NOT expose a reply target for presence.
 Leftover `lastChannel` / `lastTo` still MUST NOT become a fake inbound
 source. Channel aliases (`whatsapp` / `whatsapp-baileys`) and WhatsApp
 group chat-id forms (`group:<id>`, `<id>@g.us`, internal `chat_*`) MUST

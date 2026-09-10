@@ -792,6 +792,17 @@ describe("SessionCommands delivery barriers", () => {
     };
   });
 
+  it("preserves the attached output when an operator resumes through CLI", async () => {
+    sessionSubscriptions = [{ sessionKey: "agent:dev:main", chatId: "chat-attached", outputAttachedAt: 1 }];
+    const commands = new SessionCommands();
+    await captureLogsAsync(async () => {
+      await commands.send("dev", "continue");
+    });
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload._cliDestination).not.toBe(true);
+    expect(publishedPrompts[0]?.payload.source).toBeUndefined();
+  });
+
   it("sends cross-session prompts as follow-up by default", async () => {
     const commands = new SessionCommands();
 
@@ -2322,7 +2333,13 @@ describe("SessionCommands read", () => {
     );
 
     expect(payload.messages).toHaveLength(4);
-    expect(payload.messages.map((message: { role: string; text: string; id: number }) => [message.id, message.role, message.text])).toEqual([
+    expect(
+      payload.messages.map((message: { role: string; text: string; id: number }) => [
+        message.id,
+        message.role,
+        message.text,
+      ]),
+    ).toEqual([
       [1, "user", "hello"],
       [2, "assistant", "welcome"],
       [3, "user", "ping"],

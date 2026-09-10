@@ -3239,3 +3239,130 @@ rl.on("line", (line) => {
     expect(failures[0]?.recoverable).toBe(true);
   });
 });
+
+describe("Codex automatic goal continuation", () => {
+  for (const ending of [
+    "complete",
+    "paused",
+    "blocked",
+    "budgetLimited",
+    "usageLimited",
+    "cleared",
+    "interrupted",
+    "failed",
+  ] as const) {
+    it(`keeps successor events attached until the goal is ${ending}`, async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-goal-"));
+      const command = join(cwd, "fake-codex-app-server.mjs");
+      const requestsPath = join(cwd, "requests.jsonl");
+      writeFileSync(
+        command,
+        `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const event = (method, params) => send({method, params: {threadId:"thread_goal", ...params}});
+const goal = (status) => event("thread/goal/updated", {turnId:"turn_first",goal:{status}});
+createInterface({input:process.stdin}).on("line", (line) => {
+ const m = JSON.parse(line);
+ if (m.method === "initialize") send({id:m.id,result:{}});
+ if (m.method === "thread/start") send({id:m.id,result:{thread:{id:"thread_goal"}}});
+ if (m.method !== "turn/start") return;
+ appendFileSync(${JSON.stringify(requestsPath)}, m.method + "\\n");
+ send({id:m.id,result:{turn:{id:"turn_first",status:"inProgress",items:[]}}});
+ goal("active");
+ event("thread/tokenUsage/updated", {turnId:"turn_first",tokenUsage:{last:{inputTokens:10,outputTokens:2,cachedInputTokens:3}}});
+ event("turn/completed", {turn:{id:"turn_first",status:"completed",items:[]}});
+ // Delayed successor: a completed physical turn must not close the consumer.
+ setTimeout(() => {
+   event("turn/started", {threadId:"thread_child",turn:{id:"child_turn",status:"inProgress",items:[]}});
+   event("item/completed", {threadId:"thread_child",turnId:"child_turn",item:{id:"child_message",type:"agentMessage",text:"must not leak"}});
+   event("turn/started", {turn:{id:"turn_next",status:"inProgress",items:[]}});
+   // Late predecessor notifications must not complete or contaminate the successor.
+   event("turn/completed", {turn:{id:"turn_first",status:"completed",items:[]}});
+   event("item/completed", {turnId:"turn_next",item:{id:"tool_next",type:"commandExecution",command:"echo ok",status:"completed",aggregatedOutput:"ok",exitCode:0}});
+   event("item/completed", {turnId:"turn_next",item:{id:"message_next",type:"agentMessage",text:"successor received"}});
+   event("thread/tokenUsage/updated", {turnId:"turn_next",tokenUsage:{last:{inputTokens:20,outputTokens:4,cachedInputTokens:5}}});
+   const ending = ${JSON.stringify(ending)};
+   if (ending === "complete") goal("complete");
+   event("turn/completed", {turn:{id:"turn_next",status:ending === "interrupted" ? "interrupted" : ending === "failed" ? "failed" : "completed",items:[],error:{message:"fixture failure"}}});
+   // A paused goal between physical turns releases the logical delivery too.
+   if (!["complete", "interrupted", "failed"].includes(ending)) setTimeout(() => ending === "cleared" ? event("thread/goal/cleared", {}) : goal(ending), 25);
+ }, 30);
+});
+`,
+      );
+      chmodSync(command, 0o755);
+      const session = createCodexRuntimeProvider({ command }).startSession(makeStartRequest(["work"], { cwd }));
+      const events = await collectEvents(session.events);
+      expect(readFileSync(requestsPath, "utf8").trim().split("\n")).toEqual(["turn/start"]);
+      expect(findEventsByType(events, "turn.started").map((event) => event.turn.id)).toEqual([
+        "turn_first",
+        "turn_next",
+      ]);
+      expect(findEventsByType(events, "tool.completed")).toHaveLength(1);
+      expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["successor received"]);
+      const terminals = events.filter((event) =>
+        ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.type),
+      );
+      expect(terminals).toHaveLength(1);
+      expect(terminals[0]?.type).toBe(
+        ending === "failed" ? "turn.failed" : ending === "interrupted" ? "turn.interrupted" : "turn.complete",
+      );
+      if (ending !== "interrupted" && ending !== "failed") {
+        expect(findEventsByType(events, "turn.complete")[0]?.usage).toMatchObject({
+          inputTokens: 30,
+          outputTokens: 6,
+          cacheReadTokens: 8,
+        });
+      }
+    });
+  }
+
+  it("binds resumed goal notifications to the accepted input turn before consuming them", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-goal-resume-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import {createInterface} from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const event = (method, params) => send({method,params:{threadId:"thread_resumed",...params}});
+createInterface({input:process.stdin}).on("line", line => {
+ const m = JSON.parse(line);
+ if(m.method === "initialize") send({id:m.id,result:{}});
+ if(m.method === "thread/resume") {
+   send({id:m.id,result:{thread:{id:"thread_resumed",turns:[]}}});
+   event("turn/started",{turn:{id:"resume_auto",status:"inProgress",items:[]}});
+ }
+ if(m.method === "thread/goal/get") send({id:m.id,result:{goal:{status:"active"}}});
+ if(m.method === "turn/start") {
+   event("turn/completed",{turn:{id:"resume_auto",status:"interrupted",items:[]}});
+   send({id:m.id,result:{turn:{id:"accepted",status:"inProgress",items:[]}}});
+   event("turn/completed",{turn:{id:"accepted",status:"completed",items:[]}});
+   setTimeout(() => {
+     event("turn/started",{turn:{id:"successor",status:"inProgress",items:[]}});
+     event("item/completed",{turnId:"successor",item:{id:"answer",type:"agentMessage",text:"resumed goal continued"}});
+     event("thread/goal/updated",{goal:{status:"complete"}});
+     event("turn/completed",{turn:{id:"successor",status:"completed",items:[]}});
+   },30);
+ }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const session = createCodexRuntimeProvider({ command }).startSession(
+      makeStartRequest(["continue"], {
+        cwd,
+        resume: "thread_resumed",
+      }),
+    );
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.started").map((event) => event.turn.id)).toEqual(["accepted", "successor"]);
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual([
+      "resumed goal continued",
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+  });
+});

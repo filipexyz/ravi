@@ -442,10 +442,10 @@ export function isExplicitLocalRuntimeAbort(reason?: string | null): boolean {
  * not treat #473 cancelled→complete as user-visible success.
  */
 export function isProviderEndedAfterCompletedTools(
-  session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning">,
+  session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning" | "currentTurnSuperseded">,
   safety: Pick<RuntimeTurnReplaySafety, "startedTool" | "materializedOutput">,
 ): boolean {
-  if (isExplicitLocalRuntimeAbort(session.internalAbortReason)) return false;
+  if (session.currentTurnSuperseded || isExplicitLocalRuntimeAbort(session.internalAbortReason)) return false;
   if (safety.startedTool && safety.materializedOutput) return true;
   if (session.internalAbortReason) return false;
   if (!safety.startedTool) return false;

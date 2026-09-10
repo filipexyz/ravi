@@ -930,6 +930,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     interruptRequested: boolean;
     interruptPromise?: Promise<void>;
     turnStartedEmitted: boolean;
+    goalContinuation?: CodexCliEvent;
+    completedNativeTurnIds: Set<string>;
+    chainUsage?: CodexCliUsage;
   };
 
   let child: ReturnType<typeof spawn> | null = null;
@@ -939,6 +942,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
   let currentInstructionSources: string[] = [];
+  let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
@@ -970,6 +974,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     const eventTurnId = notificationTurnId(params);
+    if (eventTurnId && turn.completedNativeTurnIds.has(eventTurnId)) return false;
     if (eventTurnId && turn.turnId && eventTurnId !== turn.turnId) {
       return false;
     }
@@ -1493,6 +1498,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       return;
     }
     turn.turnStartedEmitted = true;
+    turn.goalContinuation = undefined;
     turn.queue.push({
       type: "turn.started",
       source: "codex.app-server",
@@ -1554,6 +1560,21 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const turn = activeTurn;
 
     switch (method) {
+      case "thread/goal/updated":
+      case "thread/goal/cleared": {
+        // Goals are thread-scoped. Their turnId may refer to the predecessor,
+        // so do not apply the active-turn filter to goal state notifications.
+        if (notificationThreadId(params) !== (turn?.threadId ?? currentThreadId)) break;
+        currentGoalStatus = method === "thread/goal/cleared" ? undefined : firstString(asRecord(params.goal)?.status);
+        if (turn) {
+          turn.queue.push({ type: "thread.goal.updated", thread_id: turn.threadId, goal_status: currentGoalStatus });
+          if (currentGoalStatus !== "active" && turn.goalContinuation) {
+            turn.queue.push(turn.goalContinuation);
+            settleTurn(turn);
+          }
+        }
+        break;
+      }
       case "error": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.queue.push({
@@ -1713,17 +1734,37 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         const turnId = firstString(notificationTurnId(params), turn.turnId);
         const status = typeof completedTurn?.status === "string" ? completedTurn.status : "completed";
         if (status === "completed") {
-          turn.queue.push({
+          const usage: CodexCliUsage = {
+            input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.lastUsage?.input_tokens),
+            output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.lastUsage?.output_tokens),
+            cached_input_tokens:
+              toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.lastUsage?.cached_input_tokens),
+          };
+          const terminal: CodexCliEvent = {
             type: "turn.completed",
             source: "codex.app-server",
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
-            usage: turn.lastUsage ?? {},
+            usage,
             model: resolvedModel,
             model_provider: resolvedModelProvider,
             instruction_sources: currentInstructionSources,
-          });
+          };
+          if (currentGoalStatus === "active" && !turn.interruptRequested) {
+            // Codex owns automatic goal continuation. Keep the logical Ravi
+            // delivery active across physical turns; never inject a new prompt.
+            turn.queue.push({ ...terminal, type: "turn.goal_continuation" });
+            turn.goalContinuation = terminal;
+            if (turnId) turn.completedNativeTurnIds.add(turnId);
+            turn.chainUsage = usage;
+            turn.lastUsage = undefined;
+            turn.turnId = undefined;
+            turn.turnStartedEmitted = false;
+            pendingDynamicToolResults.clear();
+            break;
+          }
+          turn.queue.push(terminal);
         } else if (status === "interrupted") {
           turn.queue.push({
             type: "turn.interrupted",
@@ -1820,6 +1861,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             persistExtendedHistory: false,
           });
 
+    currentGoalStatus = undefined;
     resumedThreadResponse = resumeThreadId && !forkThreadId ? threadResponse : null;
 
     const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
@@ -1831,6 +1873,16 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       forkThreadId ? undefined : currentThreadId,
       forkThreadId ? undefined : (resumeThreadId ?? undefined),
     );
+    if (resumeThreadId && currentThreadId) {
+      // A persisted goal need not emit an update on resume. Older servers may
+      // not implement goal/get; bound this optional capability probe.
+      try {
+        const response = await sendRequest("thread/goal/get", { threadId: currentThreadId }, { timeoutMs: 1_000 });
+        currentGoalStatus = firstString(asRecord(response.goal)?.status);
+      } catch {
+        currentGoalStatus = undefined;
+      }
+    }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
@@ -1952,6 +2004,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         settled: false,
         interruptRequested: false,
         turnStartedEmitted: false,
+        completedNativeTurnIds: new Set(),
       };
       activeTurn = turn;
 
@@ -2044,7 +2097,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             }
           }
 
-          flushBufferedThreadNotifications();
+          // Resume may emit an automatic goal turn before turn/start accepts
+          // this input. Bind the response first, then filter buffered events.
+          bufferingThreadNotifications = true;
 
           const requestTurnStart = async () => {
             turn.threadId = currentThreadId ?? input.resume;
@@ -2107,7 +2162,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             });
             await requestTurnStart();
           }
+          bufferingThreadNotifications = false;
+          flushBufferedThreadNotifications();
         } catch (error) {
+          bufferingThreadNotifications = false;
+          bufferedThreadNotifications.splice(0);
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             signalCodexTransportProcess(child, "SIGKILL");

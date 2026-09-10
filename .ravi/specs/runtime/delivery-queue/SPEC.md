@@ -92,6 +92,23 @@ CLI commands MAY expose these as `--barrier followup`, `--barrier steer`, `--ste
 
 Immediate delivery is a request, not permission to break safety. The runtime MUST still avoid interrupting startup, compaction, and unsafe tool execution.
 
+## Reply Surface Identity
+
+A source-less CLI resume uses its bound reply target as the active interrupt
+surface unless chat output is suppressed.
+
+When one prompt lacks a canonical chat id, matching channel, account, transport
+chat id and thread MUST identify the same interrupt surface. Conflicting
+explicit instance ids or canonical chat ids MUST remain separate. Known channel
+and account aliases resolve to the same transport identity. A scheduled
+followup with transport-only identity MUST NOT block later human steering
+from that same chat. This comparison MUST NOT merge authority envelopes or
+promote the scheduled prompt into the steer lane.
+
+An intentional interrupt that supersedes the current turn MUST NOT be
+classified as an unexpected provider stop after completed tools or emit a
+public recovery error. Queued successors remain eligible for delivery.
+
 ## Queue Semantics
 
 Each session owns its pending prompt queue. The queue MUST preserve the original prompt atom payload, source, context, delivery barrier, task barrier metadata, enqueue timestamp, and pending id.
