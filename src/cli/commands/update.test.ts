@@ -87,6 +87,7 @@ describe("update command helpers", () => {
     expect(() => validateExpectedIntegrity("sha512-A")).toThrow("sha512");
   });
 
+  // This smoke check boots the complete CLI in a child process.
   it("returns one machine-readable usage error for an invalid exact version", () => {
     const stateDir = join(tmpdir(), `ravi-update-contract-${process.pid}`);
     const env: NodeJS.ProcessEnv = {
@@ -100,6 +101,7 @@ describe("update command helpers", () => {
       cwd: process.cwd(),
       encoding: "utf8",
       env,
+      timeout: 15_000,
     });
     rmSync(stateDir, { recursive: true, force: true });
 
@@ -110,7 +112,7 @@ describe("update command helpers", () => {
       op: "ravi update",
       error: { code: "USAGE_ERROR", retryable: false },
     });
-  });
+  }, 20_000);
 
   it("detects common global install paths", () => {
     expect(detectFromBinaryPath("/home/tester/.bun/bin/ravi")).toBe("bun");
