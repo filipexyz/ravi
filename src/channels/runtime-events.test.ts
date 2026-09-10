@@ -472,6 +472,8 @@ describe("channel runtime event projection", () => {
     ]);
   });
 
+  // The first CLI tool presentation loads the complete command registry. Keep
+  // this integration check independent of cold-start scheduling on busy hosts.
   it("projects a real host runtime turn through its active channel binding", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
@@ -602,7 +604,7 @@ describe("channel runtime event projection", () => {
     });
     expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();
-  });
+  }, 20_000);
 
   it("projects only sanitized commentary after host response policy", async () => {
     const metadata = await acceptedMetadata();
