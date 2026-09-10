@@ -1167,9 +1167,10 @@ describe("Ravi app router", () => {
     expect(JSON.stringify(result)).not.toContain("PRIVATE REASON CODE SENTINEL");
   });
 
-  it("fails closed on provider invalid JSON and timeout", async () => {
+  it("fails closed on provider invalid JSON", async () => {
     const root = makeRepo();
-    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks", { timeoutMs: 250 }));
+    // Parsing failure must not race the short deadline used by the timeout test.
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
 
     const invalidJson = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
@@ -1188,6 +1189,11 @@ describe("Ravi app router", () => {
       decision: "invalid",
       reasonCode: "provider_invalid_json",
     });
+  });
+
+  it("fails closed on provider timeout", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks", { timeoutMs: 250 }));
 
     const timeout = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
