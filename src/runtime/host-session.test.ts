@@ -30,6 +30,17 @@ describe("isProviderEndedAfterCompletedTools", () => {
     ).toBe(true);
   });
 
+  it("does not report intentional steering after completed tools as provider failure", () => {
+    for (const materializedOutput of [false, true]) {
+      expect(
+        isProviderEndedAfterCompletedTools(
+          { toolRunning: false, currentTurnSuperseded: true },
+          { startedTool: true, materializedOutput },
+        ),
+      ).toBe(false);
+    }
+  });
+
   it("does not recover text-only interrupts", () => {
     expect(
       isProviderEndedAfterCompletedTools({ toolRunning: false }, { startedTool: false, materializedOutput: true }),

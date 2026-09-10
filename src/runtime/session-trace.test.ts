@@ -3447,6 +3447,35 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("keeps an intentional tool-boundary interrupt silent and retains the successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "old input" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "new user input" });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      currentTurnSuperseded: true,
+      interrupted: true,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+    seedAdapterTrace(streaming, "turn-human-interrupt");
+    const responses: unknown[] = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response`) responses.push(data);
+    });
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "tool.started", toolUse: { id: "read-1", name: "Read", input: { path: "README.md" } } },
+        { type: "tool.completed", toolUseId: "read-1", toolName: "Read", content: "ok" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+    expect(responses).toEqual([]);
+    expect(streaming.pendingMessages.map((message) => message.pendingId)).toContain(successor.pendingId);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
+  });
+
   it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
     const streaming = makeStreamingSession({
       agentMode: "active",
