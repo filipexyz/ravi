@@ -3127,8 +3127,8 @@ export class SessionCommands {
         sessionKey: session.sessionKey,
         request,
         goalMetadata: {
-          ...(taskId ? { taskId } : {}),
-          ...(projectId ? { projectId } : {}),
+          ...((normalizedAction === "set" || normalizedAction === "create") && taskId ? { taskId } : {}),
+          ...((normalizedAction === "set" || normalizedAction === "create") && projectId ? { projectId } : {}),
           ...(normalizedAction === "block" ? { blockedReason: reason?.trim() } : {}),
         },
       },

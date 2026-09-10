@@ -82,7 +82,16 @@ export async function handleRuntimeGoalControl(
     }
     if (result.ok) {
       if (result.goal === undefined) throw new Error("Runtime goal control did not return a confirmed snapshot");
-      syncRuntimeSessionGoal(session.sessionKey, result.goal, data.goalMetadata);
+      const metadata =
+        request.operation === "goal.set" && result.data?.changed !== false
+          ? {
+              ...(request.goal?.objective !== undefined
+                ? { taskId: data.goalMetadata?.taskId, projectId: data.goalMetadata?.projectId }
+                : {}),
+              ...(request.goal?.status === "blocked" ? { blockedReason: data.goalMetadata?.blockedReason } : {}),
+            }
+          : undefined;
+      syncRuntimeSessionGoal(session.sessionKey, result.goal, metadata);
       if (activate && result.goal?.status === "active" && storedControl && result.data?.changed !== false) {
         await options.wake(name, result.goal);
         result.data = { ...result.data, execution: "queued" };

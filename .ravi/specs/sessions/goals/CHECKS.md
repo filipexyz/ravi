@@ -16,6 +16,8 @@ normative: false
 - Active runtime updates use the live control handle without another input.
 - Idle activation retires the loaded runtime before metadata control, then uses managed prompt delivery.
 - Cold reads and non-active mutations do not start inference.
+- Reads and unchanged create-only operations preserve local task/project links and blocker annotations.
+- Task/project flags are applied only by successful goal set/create operations.
 - Pause/resume omit the objective and preserve usage and local links.
 - Missing/malformed responses and rejected mutations cannot claim success.
 - Native goal events and resume hydration update the projection.

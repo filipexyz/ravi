@@ -125,6 +125,27 @@ describe("provider-neutral goal host", () => {
     expect(calls).toEqual(["stored", "control"]);
   });
 
+  it("refreshes native accounting without accepting metadata changes on a read", async () => {
+    const blocked = { ...snapshot, status: "blocked" as const };
+    syncRuntimeSessionGoal(key, blocked, {
+      taskId: "task_original",
+      projectId: "project_original",
+      blockedReason: "Original blocker",
+    });
+    providerResult = { ok: true, operation: "goal.get", goal: { ...blocked, tokensUsed: 13, updatedAt: 3000 } };
+    await run(
+      { operation: "goal.get" },
+      { goalMetadata: { taskId: "task_other", projectId: "project_other", blockedReason: "Unrequested change" } },
+    );
+    expect(getSessionGoal(key)).toMatchObject({
+      tokensUsed: 13,
+      taskId: "task_original",
+      projectId: "project_original",
+      blockedReason: "Original blocker",
+    });
+    expect(calls).toEqual(["stored", "control"]);
+  });
+
   it("uses managed activation if the provider finished before the host observed completion", async () => {
     live(true);
     storedResult = providerResult;
@@ -156,8 +177,13 @@ describe("provider-neutral goal host", () => {
   });
 
   it("does not wake for an existing create-only goal", async () => {
+    syncRuntimeSessionGoal(key, snapshot, { taskId: "task_original", projectId: "project_original" });
     providerResult.data = { changed: false };
-    await run({ operation: "goal.set", goal: { objective: "Another objective", createOnly: true } });
+    await run(
+      { operation: "goal.set", goal: { objective: "Another objective", createOnly: true } },
+      { goalMetadata: { taskId: "task_other", projectId: "project_other" } },
+    );
+    expect(getSessionGoal(key)).toMatchObject({ taskId: "task_original", projectId: "project_original" });
     expect(calls).toEqual(["stored", "control"]);
   });
 

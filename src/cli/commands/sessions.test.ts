@@ -2629,6 +2629,35 @@ describe("SessionCommands runtime goals", () => {
     expect(sessionGoal.status).toBe("blocked");
   });
 
+  it("keeps task and project flags exclusive to goal set and create", async () => {
+    for (const action of ["get", "pause", "resume", "block", "complete", "clear"]) {
+      providerRequestResponse = {
+        result: {
+          ok: true,
+          operation: action === "get" ? "goal.get" : action === "clear" ? "goal.clear" : "goal.set",
+          goal: action === "clear" ? null : { objective: "Existing fixture", status: "active" },
+        },
+      };
+      await captureLogsAsync(() =>
+        new SessionCommands().goal(
+          action,
+          "dev",
+          undefined,
+          undefined,
+          "task_other",
+          "project_other",
+          undefined,
+          undefined,
+          "Fixture blocker",
+          true,
+        ),
+      );
+      expect(providerRequestCalls.at(-1)?.data.goalMetadata).toEqual(
+        action === "block" ? { blockedReason: "Fixture blocker" } : {},
+      );
+    }
+  });
+
   it("rejects local accounting so runtime usage cannot be counted twice", async () => {
     await expect(
       new SessionCommands().goal("account", "dev", undefined, undefined, undefined, undefined, "12", "3"),

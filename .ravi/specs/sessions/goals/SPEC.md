@@ -54,6 +54,8 @@ The adapter owns native continuation. The host MUST NOT invent another provider 
 
 `session_goals` holds one confirmed snapshot per Ravi session. Native objective/status/usage/timestamps replace the projected values. Task/project links and a CLI blocking reason are local annotations, preserved while the goal identity remains the same. A new objective/creation time generates a new local correlation id.
 
+Reads and unchanged create-only requests MUST preserve local annotations. Task/project flags apply only to successful set/create mutations; only explicit block requests may set the local blocking reason.
+
 Native blocked snapshots may have no reason field. CLI `block` still requires a concrete reason, stores it locally after runtime confirmation, and clears it when the goal leaves blocked status.
 
 Runtime usage MUST NOT also be incremented by CLI accounting. The legacy `account` action returns an actionable error. `goal get` refreshes current accounting.
