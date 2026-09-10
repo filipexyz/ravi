@@ -1351,6 +1351,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const augmented = {
       ...event,
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
+        ? { _replyTarget: streaming.currentReplyTarget }
+        : {}),
       ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
     };
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);

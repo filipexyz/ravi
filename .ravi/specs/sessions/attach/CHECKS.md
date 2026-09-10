@@ -7,10 +7,12 @@
 - Inbound from an attached source MUST emit to that source chat or thread.
 - A source-less cron/heartbeat/follow-up turn MUST emit to the default
   attachment when one exists.
-- Operator / HTTP / app `sessions.send` without `--channel`/`--to` MUST NOT
-  emit to leftover `lastChannel`/`lastTo` or the default output attachment.
-  Chat emit MUST fail closed. `sessions.read` / `getRecentHistory` MUST
-  still contain this turn's assistant row.
+- Operator `sessions send` without `--channel`/`--to` MUST use an attached
+  default output for delivery and runtime presence. It MUST NOT fabricate
+  inbound source metadata from leftover `lastChannel`/`lastTo`.
+- Without an output attachment or explicit destination, CLI chat emit MUST
+  fail closed. `sessions.read` / `getRecentHistory` MUST still contain this
+  turn's assistant row.
 - An unattached inbound source MUST fail closed instead of using the default.
 - CLI-only `sessions send -w` MUST return this turn's assistant transcript
   when no `.response` is emitted. Previous-turn rows MUST NOT leak.

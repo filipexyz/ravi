@@ -68,7 +68,7 @@ describe("session CLI surface", () => {
         source: { channel: "whatsapp", chatId: "5511" },
       }),
     ).toBe(false);
-    expect(isCliWaitDestination({ hasOutputAttachment: true })).toBe(true);
+    expect(isCliWaitDestination({ hasOutputAttachment: true })).toBe(false);
   });
 
   it("does not treat @@SILENT@@ as CLI text", () => {

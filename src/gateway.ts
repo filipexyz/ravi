@@ -1531,8 +1531,12 @@ export class Gateway {
       status?: string;
       nativeEvent?: string;
       _source?: PresenceTarget & { sourceMessageId?: string };
+      _replyTarget?: PresenceTarget;
     },
   ): Promise<void> {
+    // Presence follows the bound output for source-less CLI resumes.
+    // Keep the original runtime event source/provenance unchanged.
+    data = { ...data, _source: data._source ?? data._replyTarget };
     if (data.type === "turn.interrupted") {
       if (this.terminalRuntimeSessions.has(sessionName)) return;
       if (this.isPresenceSuppressed(data._source)) {

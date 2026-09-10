@@ -47,8 +47,8 @@ export function buildSessionSendPrompt(input: SessionSendPromptInput): string {
 export function isCliWaitDestination(input: CliWaitDestinationInput): boolean {
   if (input.channelOverride?.trim() || input.toOverride?.trim()) return false;
   if (input.source?.channel?.trim() && input.source?.chatId?.trim()) return false;
-  // Default output attach is not a chat destination for operator session-relay.
-  // Persist + `sessions.read` / CLI transcript are the sink.
+  if (input.hasOutputAttachment) return false;
+  // Without an explicit or attached output, the CLI transcript is the sink.
   return true;
 }
 

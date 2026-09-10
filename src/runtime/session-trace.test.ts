@@ -2285,6 +2285,37 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  for (const suppressed of [false, true]) {
+    it(`routes source-less runtime presence to the bound output (suppressed=${suppressed})`, async () => {
+      const target = attachSpeakingOutputChat();
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentSource: undefined,
+        currentReplyTarget: target,
+        suppressChatEmit: suppressed,
+      });
+      seedAdapterTrace(streaming);
+      const emitted: Array<Record<string, unknown>> = [];
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "attached reply" },
+          { type: "turn.complete", providerSessionId: "provider-after", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".runtime")) emitted.push(data);
+          },
+        },
+      );
+      expect(emitted.some((event) => event.type === "turn.complete")).toBe(true);
+      for (const event of emitted) {
+        expect(event._source).toBeUndefined();
+        expect(event._replyTarget).toEqual(suppressed ? undefined : target);
+      }
+    });
+  }
+
   it("keeps the turn-start reply target when subscriptions change mid-turn", async () => {
     const attachedSource = attachSpeakingOutputChat();
     const capturedTarget = resolveSessionOutputTarget({
