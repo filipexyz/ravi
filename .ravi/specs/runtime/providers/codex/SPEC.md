@@ -56,7 +56,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - `item/started` -> `item.started` and optionally `tool.started`
 - `item/completed` -> `item.completed`, `assistant.message`, and optionally `tool.completed`
 - `item/agentMessage/delta` -> `text.delta`
-- `turn/completed` completed -> `turn.complete`
+- `turn/completed` completed -> `turn.complete` when the logical delivery is finished; an active goal emits a non-terminal `turn.goal_continuation` raw event and retains the consumer for the next native turn
 - `turn/completed` interrupted -> `turn.interrupted`
 - `turn/completed` other status -> `turn.failed`
 - JSON-RPC approval request -> `approval.requested` / `approval.resolved`
@@ -98,7 +98,12 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Ravi operations requested by the model MUST execute through the shell/CLI path under the current Ravi context.
 - Command/file/permission/user-input approval requests MUST route through Ravi approval handlers.
 - An unexpected dynamic tool JSON-RPC response MUST always include normalized `contentItems`; missing output MUST become text fallback, but the semantic result MUST remain a failed tool event.
-- A completed native turn MUST produce `turn.complete` with provider session state.
+- A completed native turn without an active goal MUST produce `turn.complete` with provider session state.
+- Goals are thread-scoped. The adapter MUST track `thread/goal/updated` and `thread/goal/cleared` independently of physical turn ids and probe `thread/goal/get` on resume with a bounded timeout for older servers.
+- While a goal is active, successful physical turn completion MUST NOT close the event queue, mark the host idle, release the logical delivery, or inject another `turn/start`. Codex owns automatic continuation. Successor events MUST retain native thread/turn metadata under the same logical Ravi delivery.
+- The adapter MUST accept a successor only on the bound thread after a completed predecessor; late predecessor and child-thread events MUST remain excluded.
+- Usage for completed physical goal turns MUST be accumulated into the logical terminal usage. A paused, cleared, blocked, limited, or completed goal MUST release a delivery waiting between physical turns. A failed or interrupted native turn MUST terminate immediately, even when goal state remains active.
+- Start/resume notifications MUST remain buffered until the explicit `turn/start` response binds the accepted native turn. An automatic resume turn MUST NOT seize the incoming delivery before that binding.
 - A native interrupted turn or interrupt request MUST produce `turn.interrupted`, not `turn.failed`, unless the native process actually fails before interruption can be established.
 - A native exit without terminal event MUST become recoverable `turn.failed`.
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.

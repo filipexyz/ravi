@@ -33,3 +33,14 @@
 - Model is omitted because default model should be native default.
 - Native thread id exists but provider session params are missing.
 - A resume response followed immediately by terminal notifications is buffered and reconciled without losing events.
+
+## Automatic goals
+
+- `bun test src/runtime/codex-provider.test.ts --test-name-pattern "Codex automatic goal continuation"`
+- Assert delayed native successors still deliver messages and tools without a second `turn/start`.
+- Assert late predecessor terminals and child thread events cannot close the goal delivery.
+- Assert complete/pause/interruption/failure produce exactly one logical terminal; completed physical turn usage is accumulated.
+- Assert resumed automatic events cannot override the explicit input turn binding.
+- For live validation, compare native rollout physical turn ids with Ravi provider raw/item/tool events across a goal continuation. Do not publish production rollout contents or identifiers.
+
+Protocol reference: https://learn.chatgpt.com/docs/app-server (thread goals and turn events). Validate generated bindings with the installed Codex version via `codex app-server generate-ts --experimental --out <temporary-directory>`.
