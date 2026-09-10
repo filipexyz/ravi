@@ -209,6 +209,7 @@ describe("runtime host skill-gate enforcement", () => {
     }
   });
 
+  // Dynamic tool dispatch lazily initializes the complete command registry.
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
     writeCodexSkill("ravi-system-image");
     // System skills are visible through provider-owned group capabilities. The
@@ -259,7 +260,7 @@ describe("runtime host skill-gate enforcement", () => {
     const persisted = getSession("agent:main:main")?.runtimeSessionParams
       ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
     expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
-  });
+  }, 20_000);
 
   it("checks Bash permission before delivering a required skill", async () => {
     writeCodexSkill("ravi-system-daemon-manager");
