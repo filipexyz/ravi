@@ -1,3 +1,4 @@
+import { syncRuntimeSessionGoal } from "./session-goals.js";
 import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -3002,6 +3003,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
         scheduleIdleSessionEviction();
+        continue;
+      }
+
+      if (event.type === "goal.updated") {
+        syncRuntimeSessionGoal(session.sessionKey, event.goal);
+        await emitRuntimeEvent({ type: "goal.updated", goal: event.goal });
         continue;
       }
 

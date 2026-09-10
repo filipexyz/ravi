@@ -2822,7 +2822,7 @@ const sessionGoalObjectSchema = z
     sessionKey: z.string(),
     goalId: z.string(),
     objective: z.string(),
-    status: z.enum(["active", "paused", "budget_limited", "blocked", "complete"]),
+    status: z.enum(["active", "paused", "budget_limited", "usage_limited", "blocked", "complete"]),
     tokenBudget: z.number().nullable(),
     tokensUsed: z.number(),
     timeUsedSeconds: z.number(),

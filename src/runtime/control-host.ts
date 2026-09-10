@@ -15,6 +15,8 @@ export interface RuntimeControlNatsRequest {
   sessionKey?: string;
   request?: RuntimeControlRequest;
   replyTopic?: string;
+  /** Ravi correlation metadata, applied only after the runtime confirms a goal operation. */
+  goalMetadata?: { taskId?: string; projectId?: string; blockedReason?: string };
 }
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;

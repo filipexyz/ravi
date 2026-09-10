@@ -22,6 +22,7 @@ const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
 const resetSessionCalls: string[] = [];
 const revokedRuntimeContextCalls: Array<{ sessionKey: string; reason?: string }> = [];
 const providerRequestCalls: Array<{ topic: string; data: Record<string, unknown>; timeoutMs: number }> = [];
+let providerRequestResponse: Record<string, unknown> = { success: true };
 let listedSessions: Array<Record<string, unknown>> = [];
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
@@ -395,7 +396,7 @@ mock.module("../../runtime/context-registry.js", () => ({
 mock.module("../../utils/request-reply.js", () => ({
   requestReply: mock(async (topic: string, data: Record<string, unknown>, timeoutMs: number) => {
     providerRequestCalls.push({ topic, data, timeoutMs });
-    return { success: true };
+    return providerRequestResponse;
   }),
 }));
 
@@ -449,7 +450,7 @@ function captureLogs(run: () => void): string {
   return lines.join("\n");
 }
 
-async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
+async function captureLogsAsync(run: () => Promise<unknown>): Promise<string> {
   const lines: string[] = [];
   const originalLog = console.log;
   console.log = (...args: unknown[]) => {
@@ -497,6 +498,7 @@ beforeEach(() => {
   resetSessionCalls.length = 0;
   revokedRuntimeContextCalls.length = 0;
   providerRequestCalls.length = 0;
+  providerRequestResponse = { success: true };
 });
 
 describe("SessionCommands wait mode", () => {
@@ -2575,6 +2577,71 @@ describe("SessionCommands read", () => {
     expect(payload.transcript.chatIdVariants).toContain("63295117615153@lid");
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0].text).toContain("histórico certo da DM");
+  });
+});
+
+describe("SessionCommands runtime goals", () => {
+  beforeEach(() => {
+    resolvedSession = { sessionKey: "agent:dev:main", name: "dev", agentId: "dev", agentCwd: "/tmp/dev" };
+  });
+
+  it("sends goal creation through runtime control with local links kept out of the provider payload", async () => {
+    providerRequestResponse = {
+      result: {
+        ok: true,
+        operation: "goal.set",
+        goal: { objective: "Finish fixture", status: "active" },
+        data: { changed: true },
+      },
+    };
+    await captureLogsAsync(() =>
+      new SessionCommands().goal(
+        "set",
+        "dev",
+        "Finish fixture",
+        "100",
+        "task_fixture",
+        "project_fixture",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(providerRequestCalls).toEqual([
+      {
+        topic: "ravi.session.runtime.control",
+        timeoutMs: 30000,
+        data: {
+          sessionName: "dev",
+          sessionKey: "agent:dev:main",
+          request: { operation: "goal.set", goal: { objective: "Finish fixture", status: "active", tokenBudget: 100 } },
+          goalMetadata: { taskId: "task_fixture", projectId: "project_fixture" },
+        },
+      },
+    ]);
+  });
+
+  it("reports a rejected runtime mutation instead of claiming the goal is active", async () => {
+    sessionGoal = { objective: "Existing fixture", status: "blocked" };
+    providerRequestResponse = { result: { ok: false, operation: "goal.set", error: "Runtime rejected goal" } };
+    await expect(new SessionCommands().goal("resume", "dev")).rejects.toThrow("Runtime rejected goal");
+    expect(sessionGoal.status).toBe("blocked");
+  });
+
+  it("rejects local accounting so runtime usage cannot be counted twice", async () => {
+    await expect(
+      new SessionCommands().goal("account", "dev", undefined, undefined, undefined, undefined, "12", "3"),
+    ).rejects.toThrow("usage is owned by the runtime");
+    expect(providerRequestCalls).toHaveLength(0);
+  });
+
+  it("does not send the objective when resuming, preserving runtime accounting", async () => {
+    providerRequestResponse = {
+      result: { ok: true, operation: "goal.set", goal: { objective: "Existing fixture", status: "active" } },
+    };
+    await captureLogsAsync(() => new SessionCommands().goal("resume", "dev"));
+    expect(providerRequestCalls[0]?.data.request).toEqual({ operation: "goal.set", goal: { status: "active" } });
   });
 });
 

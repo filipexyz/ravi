@@ -1,3 +1,4 @@
+import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -1358,7 +1359,7 @@ function getDb(): Database {
       session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
       goal_id TEXT NOT NULL,
       objective TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','blocked','complete')),
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','usage_limited','blocked','complete')),
       token_budget INTEGER,
       tokens_used INTEGER NOT NULL DEFAULT 0,
       time_used_seconds INTEGER NOT NULL DEFAULT 0,
@@ -3592,6 +3593,7 @@ function ensureCostEventMigrations(database: Database): void {
 
 function ensureSessionGoalBlockedMigration(database: Database): void {
   ensureColumn(database, "session_goals", "blocked_reason", "TEXT");
+  ensureSessionGoalStatusSchema(database);
 }
 
 function ensureAgentVisibilityMigration(database: Database): void {

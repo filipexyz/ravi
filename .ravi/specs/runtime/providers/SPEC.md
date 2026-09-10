@@ -52,6 +52,12 @@ Host-side debounce and provider-native steering are different layers:
 
 Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST opt in through the runtime handle and MUST NOT disable debounce unless the agent/channel config says so. Handles that only expose generic runtime control default to Ravi queue + interrupt semantics.
 
+## Runtime goals
+
+Providers may advertise `goal.get`, `goal.set` and `goal.clear` through runtime control capabilities. They return provider-neutral `RuntimeGoal` snapshots, normalize timestamps to Unix milliseconds, and emit `goal.updated` for native state changes. The runtime owns lifecycle, continuation and usage; the Ravi host mirrors confirmed snapshots and maintains local links.
+
+An optional `controlSession` method performs metadata-only control of a persisted unloaded session, using opaque provider session params for storage identity. It MUST NOT start inference. The host uses live handles during work, and retires idle handles before activating through stored control plus managed prompt delivery. Unsupported providers MUST fail explicitly. See `sessions/goals` for the complete contract.
+
 ## Model Selectors
 
 Agent `model` values are provider-specific strings, but Ravi MUST still reject selectors that are structurally invalid before saving config. Validation belongs in the runtime model catalog/provider-local code, not scattered across unrelated CLIs.

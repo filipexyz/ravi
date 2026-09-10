@@ -44,7 +44,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
 - Shell env bridge: the Codex app-server receives Ravi runtime env and is launched with an explicit `shell_environment_policy` that allows the shell to inherit only core shell env plus `RAVI_*`, including `RAVI_CONTEXT_KEY`.
 - Approvals: mapped into Ravi `RuntimeApprovalRequest`.
-- Runtime control: thread list/read/rollback/fork and turn steer/interrupt.
+- Runtime control: thread list/read/rollback/fork, turn steer/interrupt, and goal get/set/clear.
 - Tool access requirement: `tool_surface`.
 - Host session hooks/plugins/spec server/remote spawn: not supported.
 
@@ -61,6 +61,14 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - `turn/completed` other status -> `turn.failed`
 - JSON-RPC approval request -> `approval.requested` / `approval.resolved`
 - JSON-RPC dynamic tool call -> defensive synthetic `item.started` / `item.completed` plus protocol-safe semantic failure. It MUST NOT execute a Ravi CLI registry command.
+
+## Native goal controls
+
+`goal.get/set/clear` map to the experimental app-server `thread/goal/get/set/clear` API, documented at https://learn.chatgpt.com/docs/app-server#manage-a-thread-goal. They operate on the same persisted goal as native model tools and `/goal`. Updates without an objective preserve native accounting; `createOnly` reads the existing goal before attempting creation.
+
+Native `budgetLimited`/`usageLimited` map to `budget_limited`/`usage_limited`; native timestamps in seconds map to Unix milliseconds. Full goal notifications and resume snapshots emit canonical `goal.updated` events. A malformed response MUST fail explicitly.
+
+Stored goal control initializes an experimental app-server connection without `thread/start` or `thread/resume`, sends the metadata RPC, then closes the connection. It MUST NOT load the thread: setting an active goal on a loaded idle thread can start native work immediately. Opaque session params preserve a custom `CODEX_HOME` locator for stored control.
 
 ## Skill Visibility
 
