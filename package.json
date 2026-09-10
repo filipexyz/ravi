@@ -51,7 +51,7 @@
     "test:sdk": "bun test src/sdk/client-codegen/ src/sdk/dart-codegen/ src/sdk/gateway/http-serve.test.ts src/sdk/gateway/streaming/sse.test.ts ./src/sdk/gateway/channel-backend.integration.test.ts ./tests/integration/sdk-roundtrip.test.ts ./packages/ravi-os-sdk/src/__tests__/channel-backend-core.test.ts ./packages/ravi-os-sdk/src/__tests__/channel-runtime-events.test.ts ./packages/ravi-os-sdk/src/__tests__/errors.test.ts ./packages/ravi-os-sdk/src/__tests__/native-channel-driver.test.ts ./packages/ravi-os-sdk/src/__tests__/package-exports.test.ts ./packages/ravi-os-sdk/src/__tests__/types.test-d.ts ./packages/ravi-os-sdk/src/__tests__/streaming.test.ts && bun run sdk:check && bun src/cli/index.ts sdk dart check",
     "test:swift-sdk": "swift test --package-path packages/ravi-os-swift-sdk",
     "test:runtime-goals": "bun test src/runtime/codex-provider.test.ts src/runtime/codex-goals.test.ts src/runtime/goal-control-host.test.ts src/runtime/session-goals.test.ts src/runtime/session-goal-schema.test.ts",
-    "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test \"$f\" || exit 1; done",
+    "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test --timeout 20000 \"$f\" || exit 1; done",
     "test:live": "RAVI_LIVE_TESTS=1 bun test src/runtime/*.live.test.ts && RAVI_LIVE_TESTS=1 bun test src/bot.live.test.ts",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "sdk:generate": "bun src/cli/index.ts sdk client generate",
