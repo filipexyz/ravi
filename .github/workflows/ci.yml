@@ -18,8 +18,8 @@ on:
       - "Makefile"
       - ".env.example"
       - "LICENSE"
-  pull_request:
-    branches: [main, dev]
+  # Stacked PRs must run the same checks when targeting another feature branch.
+  pull_request: {}
 
 concurrency:
   group: ci-${{ github.ref }}

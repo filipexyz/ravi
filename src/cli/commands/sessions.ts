@@ -137,18 +137,8 @@ import {
 } from "../../whatsapp-overlay/model.js";
 import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
-import {
-  accountSessionGoalUsage,
-  blockSessionGoal,
-  clearSessionGoal,
-  completeSessionGoal,
-  createSessionGoal,
-  getSessionGoal,
-  pauseActiveSessionGoal,
-  replaceSessionGoal,
-  resumeSessionGoal,
-  type SessionGoal,
-} from "../../runtime/session-goals.js";
+import { getSessionGoal, type SessionGoal } from "../../runtime/session-goals.js";
+import type { RuntimeControlRequest, RuntimeControlResult } from "../../runtime/types.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -3013,7 +3003,7 @@ export class SessionCommands {
 
   @Command({
     name: "goal",
-    description: "Inspect or mutate persisted session goal state",
+    description: "Control the runtime native goal and refresh its confirmed session snapshot",
   })
   @CommandAccess({
     kind: "mutate",
@@ -3021,7 +3011,7 @@ export class SessionCommands {
     action: "goal",
     risk: "medium",
   })
-  goal(
+  async goal(
     @Arg("action", {
       description: "get|set|create|pause|resume|block|complete|clear|account",
     })
@@ -3048,12 +3038,12 @@ export class SessionCommands {
     })
     projectId?: string,
     @Option({ flags: "--tokens <n>", description: "Token delta for account" })
-    tokenDeltaStr?: string,
+    _tokenDeltaStr?: string,
     @Option({
       flags: "--seconds <n>",
       description: "Elapsed seconds delta for account",
     })
-    secondsStr?: string,
+    _secondsStr?: string,
     @Option({
       flags: "--reason <text>",
       description: "Concrete reason for blocking",
@@ -3076,87 +3066,81 @@ export class SessionCommands {
       }
     }
 
-    let goal: SessionGoal | null = null;
-    let changed = false;
     const budget = parseIntegerOption(budgetStr, "budget", { positive: true });
-
+    let request: RuntimeControlRequest;
     switch (normalizedAction) {
       case "get":
-        goal = getSessionGoal(session.sessionKey);
-        break;
-      case "set":
-        if (!objective?.trim()) {
-          fail("Goal objective is required for action: set");
-          return;
-        }
-        goal = replaceSessionGoal({
-          sessionKey: session.sessionKey,
-          objective,
-          tokenBudget: budget,
-          taskId,
-          projectId,
-        });
-        changed = true;
-        break;
-      case "create":
-        if (!objective?.trim()) {
-          fail("Goal objective is required for action: create");
-          return;
-        }
-        goal = createSessionGoal({
-          sessionKey: session.sessionKey,
-          objective,
-          tokenBudget: budget,
-          taskId,
-          projectId,
-        });
-        changed = Boolean(goal);
-        break;
-      case "pause":
-        goal = pauseActiveSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
-        goal = goal ?? getSessionGoal(session.sessionKey);
-        break;
-      case "resume":
-        goal = resumeSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
-        break;
-      case "block": {
-        if (!reason?.trim()) {
-          fail("Blocked reason is required for action: block (use --reason)");
-          return;
-        }
-        goal = blockSessionGoal(session.sessionKey, reason);
-        changed = goal?.status === "blocked";
-        goal = goal ?? getSessionGoal(session.sessionKey);
-        break;
-      }
-      case "complete":
-        goal = completeSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
+        request = { operation: "goal.get" };
         break;
       case "clear":
-        changed = clearSessionGoal(session.sessionKey);
-        goal = null;
+        request = { operation: "goal.clear" };
         break;
-      case "account": {
-        const tokenDelta = parseIntegerOption(tokenDeltaStr, "tokens") ?? 0;
-        const timeDeltaSeconds = parseIntegerOption(secondsStr, "seconds") ?? 0;
-        const result = accountSessionGoalUsage({
-          sessionKey: session.sessionKey,
-          tokenDelta,
-          timeDeltaSeconds,
-        });
-        goal = result.goal;
-        changed = result.kind === "updated";
+      case "set":
+      case "create":
+        if (!objective?.trim()) {
+          fail(`Goal objective is required for action: ${normalizedAction}`);
+          return;
+        }
+        request = {
+          operation: "goal.set",
+          goal: {
+            objective: objective.trim(),
+            status: "active",
+            ...(budget !== undefined ? { tokenBudget: budget } : {}),
+            ...(normalizedAction === "create" ? { createOnly: true } : {}),
+          },
+        };
         break;
-      }
+      case "pause":
+      case "resume":
+      case "block":
+      case "complete":
+        if (normalizedAction === "block" && !reason?.trim()) {
+          fail("Blocked reason is required for action: block");
+          return;
+        }
+        request = {
+          operation: "goal.set",
+          goal: {
+            status:
+              normalizedAction === "pause"
+                ? "paused"
+                : normalizedAction === "resume"
+                  ? "active"
+                  : normalizedAction === "block"
+                    ? "blocked"
+                    : "complete",
+          },
+        };
+        break;
+      case "account":
+        fail("Goal usage is owned by the runtime; use goal get to refresh the confirmed accounting.");
+        return;
       default:
-        fail(
-          `Unknown goal action: ${action}. Use get, set, create, pause, resume, block, complete, clear, or account.`,
-        );
+        fail(`Unknown goal action: ${action}. Use get, set, create, pause, resume, block, complete, or clear.`);
         return;
     }
+    const reply = await requestReply<{ result?: RuntimeControlResult; error?: string }>(
+      "ravi.session.runtime.control",
+      {
+        sessionName: session.name,
+        sessionKey: session.sessionKey,
+        request,
+        goalMetadata: {
+          ...((normalizedAction === "set" || normalizedAction === "create") && taskId ? { taskId } : {}),
+          ...((normalizedAction === "set" || normalizedAction === "create") && projectId ? { projectId } : {}),
+          ...(normalizedAction === "block" ? { blockedReason: reason?.trim() } : {}),
+        },
+      },
+      30_000,
+    );
+    const result = reply.result;
+    if (!result?.ok || result.goal === undefined) {
+      fail(result?.error ?? reply.error ?? "Runtime did not confirm the goal operation");
+      return;
+    }
+    const goal = getSessionGoal(session.sessionKey);
+    const changed = result.data?.changed === true;
 
     const payload = {
       action: normalizedAction,

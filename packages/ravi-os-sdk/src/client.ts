@@ -5779,7 +5779,7 @@ export class RaviClient {
         });
       }
     },
-    /** Inspect or mutate persisted session goal state */
+    /** Control the runtime native goal and refresh its confirmed session snapshot */
     goal: async (action: string, nameOrKey: string, objective?: string, options?: {
       budget?: string;
       project?: string;

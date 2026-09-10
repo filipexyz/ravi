@@ -1,10 +1,11 @@
+import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import type { Statement } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 
 export const SESSION_GOAL_OBJECTIVE_MAX_CHARS = 4000;
 
-export type SessionGoalStatus = "active" | "paused" | "budget_limited" | "blocked" | "complete";
+export type SessionGoalStatus = RuntimeGoalStatus;
 
 export type SessionGoalAccountingMode =
   | "active_status_only"
@@ -382,6 +383,7 @@ export function buildSessionGoalPromptSection(sessionKey: string): string | null
   const lines: string[] = [];
   lines.push(`Goal ID: ${goal.goalId}`);
   lines.push(`Status: ${goal.status}`);
+  lines.push("Snapshot only; refresh with `ravi sessions goal get`.");
 
   const objectivePreview = goal.objective.length > 500 ? `${goal.objective.slice(0, 497)}...` : goal.objective;
   lines.push(`Objective: ${objectivePreview}`);
@@ -400,4 +402,42 @@ export function buildSessionGoalPromptSection(sessionKey: string): string | null
   }
 
   return lines.join("\n");
+}
+
+/** Project a confirmed runtime snapshot; local commands never invent native status or usage. */
+export function syncRuntimeSessionGoal(
+  sessionKey: string,
+  goal: RuntimeGoal | null,
+  links?: { taskId?: string; projectId?: string; blockedReason?: string },
+): SessionGoal | null {
+  if (!goal) {
+    clearSessionGoal(sessionKey);
+    return null;
+  }
+  const previous = getSessionGoal(sessionKey);
+  const sameGoal = previous?.objective === goal.objective && previous.createdAt === goal.createdAt;
+  if (sameGoal && previous.updatedAt > goal.updatedAt) return previous;
+  const goalId = sameGoal ? previous.goalId : randomUUID();
+  getDb()
+    .prepare(`INSERT INTO session_goals (session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds, task_id, project_id, blocked_reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_key) DO UPDATE SET goal_id=excluded.goal_id, objective=excluded.objective, status=excluded.status,
+      token_budget=excluded.token_budget, tokens_used=excluded.tokens_used, time_used_seconds=excluded.time_used_seconds,
+      task_id=excluded.task_id, project_id=excluded.project_id, blocked_reason=excluded.blocked_reason,
+      created_at=excluded.created_at, updated_at=excluded.updated_at`)
+    .run(
+      sessionKey,
+      goalId,
+      goal.objective,
+      goal.status,
+      goal.tokenBudget,
+      goal.tokensUsed,
+      goal.timeUsedSeconds,
+      links?.taskId ?? (sameGoal ? previous.taskId : null) ?? null,
+      links?.projectId ?? (sameGoal ? previous.projectId : null) ?? null,
+      goal.status === "blocked" ? (links?.blockedReason ?? (sameGoal ? previous.blockedReason : null) ?? null) : null,
+      goal.createdAt,
+      goal.updatedAt,
+    );
+  return getSessionGoal(sessionKey);
 }

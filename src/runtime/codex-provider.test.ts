@@ -2579,6 +2579,8 @@ rl.on("line", (line) => {
       id: "cmd_req",
       method: "item/commandExecution/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         command: "pwd",
         item: {
           id: "cmd_approval",
@@ -2594,6 +2596,8 @@ rl.on("line", (line) => {
       id: "file_req",
       method: "item/fileChange/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         item: {
           id: "file_approval",
           type: "fileChange",
@@ -2608,6 +2612,8 @@ rl.on("line", (line) => {
       id: "perm_req",
       method: "item/permissions/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         permissions: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
       },
     });
@@ -2616,6 +2622,8 @@ rl.on("line", (line) => {
       id: "input_req",
       method: "item/tool/requestUserInput",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         questions: [
           {
             id: "choice",
@@ -3262,7 +3270,7 @@ import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
 const event = (method, params) => send({method, params: {threadId:"thread_goal", ...params}});
-const goal = (status) => event("thread/goal/updated", {turnId:"turn_first",goal:{status}});
+const goal = (status) => event("thread/goal/updated", {turnId:"turn_first",goal:{objective:"Fixture goal",status,tokenBudget:null,tokensUsed:12,timeUsedSeconds:3,createdAt:1,updatedAt:2}});
 createInterface({input:process.stdin}).on("line", (line) => {
  const m = JSON.parse(line);
  if (m.method === "initialize") send({id:m.id,result:{}});
@@ -3335,7 +3343,7 @@ createInterface({input:process.stdin}).on("line", line => {
    send({id:m.id,result:{thread:{id:"thread_resumed",turns:[]}}});
    event("turn/started",{turn:{id:"resume_auto",status:"inProgress",items:[]}});
  }
- if(m.method === "thread/goal/get") send({id:m.id,result:{goal:{status:"active"}}});
+ if(m.method === "thread/goal/get") send({id:m.id,result:{goal:{objective:"Fixture goal",status:"active",tokenBudget:null,tokensUsed:12,timeUsedSeconds:3,createdAt:1,updatedAt:2}}});
  if(m.method === "turn/start") {
    event("turn/completed",{turn:{id:"resume_auto",status:"interrupted",items:[]}});
    send({id:m.id,result:{turn:{id:"accepted",status:"inProgress",items:[]}}});
@@ -3343,7 +3351,7 @@ createInterface({input:process.stdin}).on("line", line => {
    setTimeout(() => {
      event("turn/started",{turn:{id:"successor",status:"inProgress",items:[]}});
      event("item/completed",{turnId:"successor",item:{id:"answer",type:"agentMessage",text:"resumed goal continued"}});
-     event("thread/goal/updated",{goal:{status:"complete"}});
+     event("thread/goal/updated",{goal:{objective:"Fixture goal",status:"complete",tokenBudget:null,tokensUsed:24,timeUsedSeconds:6,createdAt:1,updatedAt:3}});
      event("turn/completed",{turn:{id:"successor",status:"completed",items:[]}});
    },30);
  }

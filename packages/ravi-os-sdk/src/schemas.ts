@@ -59869,6 +59869,7 @@ export const SessionsGoalReturnSchema = {
                 "active",
                 "paused",
                 "budget_limited",
+                "usage_limited",
                 "blocked",
                 "complete"
               ],
@@ -60431,6 +60432,7 @@ export const SessionsRecapReturnSchema = {
                 "active",
                 "paused",
                 "budget_limited",
+                "usage_limited",
                 "blocked",
                 "complete"
               ],

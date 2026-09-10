@@ -60803,6 +60803,7 @@ public enum RaviSchemas {
                   "active",
                   "paused",
                   "budget_limited",
+                  "usage_limited",
                   "blocked",
                   "complete"
                 ],
@@ -61379,6 +61380,7 @@ public enum RaviSchemas {
                   "active",
                   "paused",
                   "budget_limited",
+                  "usage_limited",
                   "blocked",
                   "complete"
                 ],

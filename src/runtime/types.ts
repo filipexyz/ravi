@@ -224,7 +224,30 @@ export interface RuntimeHostServices {
   ): Promise<RuntimeDynamicToolCallResult>;
 }
 
+export type RuntimeGoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "usage_limited" | "complete";
+
+export interface RuntimeGoal {
+  objective: string;
+  status: RuntimeGoalStatus;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  /** Unix milliseconds; provider timestamp units are normalized by the adapter. */
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RuntimeGoalUpdate {
+  objective?: string;
+  status?: RuntimeGoalStatus;
+  tokenBudget?: number | null;
+  createOnly?: boolean;
+}
+
 export type RuntimeControlOperation =
+  | "goal.get"
+  | "goal.set"
+  | "goal.clear"
   | "thread.list"
   | "thread.read"
   | "thread.rollback"
@@ -251,6 +274,7 @@ export interface RuntimeControlState {
 
 export interface RuntimeControlRequest {
   operation: RuntimeControlOperation;
+  goal?: RuntimeGoalUpdate;
   threadId?: string;
   turnId?: string;
   expectedTurnId?: string;
@@ -274,6 +298,7 @@ export interface RuntimeControlResult {
   ok: boolean;
   operation: RuntimeControlOperation;
   data?: Record<string, unknown>;
+  goal?: RuntimeGoal | null;
   state?: RuntimeControlState;
   error?: string;
 }
@@ -455,6 +480,7 @@ export interface RuntimeStartRequest {
 }
 
 export type RuntimeEvent =
+  | ({ type: "goal.updated"; goal: RuntimeGoal | null } & RuntimeEventBase)
   | ({
       type: "provider.raw";
       rawEvent: Record<string, unknown>;
@@ -596,5 +622,10 @@ export interface RuntimeProvider {
 }
 
 export interface SessionRuntimeProvider extends RuntimeProvider {
+  /** Metadata control for a persisted, unloaded session. Must not start model work. */
+  controlSession?(
+    input: { cwd: string; sessionId: string; sessionParams?: Record<string, unknown>; env?: Record<string, string> },
+    request: RuntimeControlRequest,
+  ): Promise<RuntimeControlResult>;
   startSession(input: RuntimeStartRequest): RuntimeSessionHandle;
 }

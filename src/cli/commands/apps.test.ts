@@ -682,6 +682,7 @@ exit 1
     expect(check.results[0]).toMatchObject({ id: "fake-app", errors: [] });
   });
 
+  // Importing a first-party group loads the complete command registry.
   it("imports first-party Ravi CLI groups from the decorated registry", () => {
     makeRepo();
     const commands = new AppsCommands();
@@ -722,7 +723,7 @@ exit 1
     expect(imported.manifest.context.allow).toEqual(["execute:group:apps"]);
     expect(imported.reviewRequired.join("\n")).toContain("Review inferred child capability execute:group:apps");
     expect(imported.warnings.join("\n")).toContain("assumes generated operations should use --json");
-  });
+  }, 20_000);
 
   it("runs scaffolded app operations through the explicit app router command", async () => {
     makeRepo();

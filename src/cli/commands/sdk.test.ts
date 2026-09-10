@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,9 @@ import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { SdkClientCommands, SdkDartCommands, SdkOpenApiCommands, SdkSwiftCommands } from "./sdk.js";
+
+// These integration checks load the complete CLI registry before generating artifacts.
+setDefaultTimeout(20_000);
 
 function makeTmpDir(label: string): string {
   return mkdtempSync(join(tmpdir(), `ravi-sdk-${label}-`));

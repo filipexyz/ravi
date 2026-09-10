@@ -1,3 +1,4 @@
+import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -78,6 +79,9 @@ const CODEX_SHELL_ENV_INCLUDE_ONLY = [
   "LC_*",
 ];
 const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
+  "goal.get",
+  "goal.set",
+  "goal.clear",
   "thread.list",
   "thread.read",
   "thread.rollback",
@@ -139,6 +143,7 @@ interface CodexCliTurnHandle {
 }
 
 interface CodexCliTransport {
+  initializeControl?(input: CodexCliTurnRequest): Promise<void>;
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
@@ -276,6 +281,29 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         ...(materialized ? { env: materialized.env } : {}),
         ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
       };
+    },
+    async controlSession(input, request) {
+      const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
+      try {
+        if (!transport.initializeControl || !transport.control)
+          throw new Error("Stored-session control is unavailable");
+        await transport.initializeControl({
+          cwd: input.cwd,
+          env: {
+            ...process.env,
+            ...input.env,
+            ...(typeof input.sessionParams?.codexHome === "string"
+              ? { CODEX_HOME: input.sessionParams.codexHome }
+              : {}),
+          },
+          resume: input.sessionId,
+          prompt: "",
+          systemPromptAppend: "",
+        });
+        return await transport.control({ ...request, threadId: input.sessionId });
+      } finally {
+        await transport.close?.();
+      }
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
@@ -631,6 +659,11 @@ async function* normalizeCodexEvents(
             yield { type: "status", status, rawEvent, metadata };
           }
 
+          if (event.type === "thread.goal.updated") {
+            yield { type: "goal.updated", goal: normalizeCodexGoal(event.goal), metadata };
+            continue;
+          }
+
           if (event.type === "agent_message.delta") {
             const delta = firstString(event.delta);
             if (delta) {
@@ -822,7 +855,7 @@ async function* normalizeCodexEvents(
             const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
-              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility),
+              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility, input.env?.CODEX_HOME),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -938,6 +971,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let child: ReturnType<typeof spawn> | null = null;
   let transport: CodexTransport | null = null;
   let closed = true;
+  let metadataControlOnly = false;
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
@@ -1381,6 +1415,55 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   const handleRuntimeControl = async (request: RuntimeControlRequest): Promise<RuntimeControlResult> => {
     try {
       switch (request.operation) {
+        case "goal.get":
+        case "goal.set":
+        case "goal.clear": {
+          const threadId = resolveControlThreadId(request);
+          const activates =
+            request.operation === "goal.set" &&
+            (request.goal?.status === "active" || (!!request.goal?.objective && request.goal.status === undefined));
+          if (activates && !metadataControlOnly && (!activeTurn || activeTurn.settled)) {
+            return {
+              ...buildRuntimeControlError(request, new Error("Goal activation requires a managed runtime wake")),
+              data: { execution: "requires_managed_wake" },
+            };
+          }
+          if (request.operation === "goal.set" && request.goal?.createOnly) {
+            const existing = await sendRequest("thread/goal/get", { threadId });
+            if (!("goal" in existing)) throw new Error("Codex did not confirm the stored goal");
+            if (existing.goal)
+              return {
+                ...buildRuntimeControlSuccess(request, { changed: false }),
+                goal: normalizeCodexGoal(existing.goal),
+              };
+          }
+          const update = request.goal;
+          if (request.operation === "goal.set" && !update) throw new Error("goal.set requires a goal update");
+          const data = await sendRequest(
+            request.operation === "goal.get"
+              ? "thread/goal/get"
+              : request.operation === "goal.clear"
+                ? "thread/goal/clear"
+                : "thread/goal/set",
+            {
+              threadId,
+              ...(request.operation === "goal.set"
+                ? {
+                    ...(update?.objective !== undefined ? { objective: update.objective } : {}),
+                    ...(update?.status !== undefined ? { status: codexGoalStatus(update.status) } : {}),
+                    ...(update?.tokenBudget !== undefined ? { tokenBudget: update.tokenBudget } : {}),
+                  }
+                : {}),
+            },
+          );
+          if (request.operation !== "goal.clear" && !("goal" in data))
+            throw new Error("Codex did not confirm the goal operation");
+          const goal = request.operation === "goal.clear" ? null : normalizeCodexGoal(data.goal);
+          if (request.operation === "goal.set" && !goal) throw new Error("Codex did not confirm the goal update");
+          currentGoalStatus = goal ? codexGoalStatus(goal.status) : undefined;
+          return { ...buildRuntimeControlSuccess(request, { changed: request.operation !== "goal.get" }), goal };
+        }
+
         case "thread.list": {
           const data = await sendRequest("thread/list", {
             cursor: request.cursor ?? null,
@@ -1567,7 +1650,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         if (notificationThreadId(params) !== (turn?.threadId ?? currentThreadId)) break;
         currentGoalStatus = method === "thread/goal/cleared" ? undefined : firstString(asRecord(params.goal)?.status);
         if (turn) {
-          turn.queue.push({ type: "thread.goal.updated", thread_id: turn.threadId, goal_status: currentGoalStatus });
+          turn.queue.push({
+            type: "thread.goal.updated",
+            thread_id: turn.threadId,
+            goal: method === "thread/goal/cleared" ? null : params.goal,
+            goal_status: currentGoalStatus,
+          });
           if (currentGoalStatus !== "active" && turn.goalContinuation) {
             turn.queue.push(turn.goalContinuation);
             settleTurn(turn);
@@ -1879,6 +1967,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       try {
         const response = await sendRequest("thread/goal/get", { threadId: currentThreadId }, { timeoutMs: 1_000 });
         currentGoalStatus = firstString(asRecord(response.goal)?.status);
+        activeTurn?.queue.push({
+          type: "thread.goal.updated",
+          thread_id: currentThreadId,
+          goal: response.goal ?? null,
+        });
       } catch {
         currentGoalStatus = undefined;
       }
@@ -1888,7 +1981,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
-  async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
+  async function ensureClient(input: CodexCliTurnRequest, controlOnly = false): Promise<void> {
+    metadataControlOnly = controlOnly;
     const hookResult = shouldMaterializeCodexHookForCommand(command)
       ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
       : null;
@@ -1943,7 +2037,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
-        await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
+        if (controlOnly) currentThreadId = input.resume;
+        else await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
       } finally {
         bootstrapPromise = null;
       }
@@ -1984,6 +2079,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   return {
+    initializeControl: (input) => ensureClient(input, true),
     control: handleRuntimeControl,
     startTurn(input) {
       if (activeTurn && !activeTurn.settled) {
@@ -2568,6 +2664,7 @@ function buildCodexSessionState(
   sessionId: string | undefined,
   cwd: string,
   skillVisibility: RuntimeSkillVisibilitySnapshot,
+  codexHome?: string,
 ): RuntimeSessionState | undefined {
   if (!sessionId) {
     return undefined;
@@ -2578,6 +2675,7 @@ function buildCodexSessionState(
       sessionId,
       cwd,
       skillVisibility,
+      ...(codexHome ? { codexHome } : {}),
     },
     displayId: sessionId,
   };
@@ -3225,16 +3323,18 @@ function buildRuntimeApprovalRequest(
   currentThreadId: string | undefined,
 ): RuntimeApprovalRequest {
   const item = normalizeAppServerItem(params.item) ?? asRecord(params.item) ?? undefined;
+  const threadId = firstString(params.threadId, params.thread_id, turn?.threadId, currentThreadId);
+  const turnId = firstString(params.turnId, params.turn_id, turn?.turnId);
   const metadataEvent = {
     type: method,
     source: "codex.app-server",
-    thread_id: turn?.threadId ?? currentThreadId,
-    turn_id: turn?.turnId,
+    thread_id: threadId,
+    turn_id: turnId,
     ...(item ? { item } : {}),
   };
   const metadata = buildCodexEventMetadata(metadataEvent, {
-    threadId: turn?.threadId ?? currentThreadId,
-    turnId: turn?.turnId,
+    threadId,
+    turnId,
   });
 
   if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
@@ -3611,4 +3711,29 @@ function isAbortLikeError(error: unknown): boolean {
     return true;
   }
   return /abort|terminated/i.test(error.message);
+}
+
+function codexGoalStatus(status: RuntimeGoalStatus): string {
+  return status === "budget_limited" ? "budgetLimited" : status === "usage_limited" ? "usageLimited" : status;
+}
+
+function normalizeCodexGoal(value: unknown): RuntimeGoal | null {
+  const goal = asRecord(value);
+  if (!goal) return null;
+  const status =
+    goal.status === "budgetLimited" ? "budget_limited" : goal.status === "usageLimited" ? "usage_limited" : goal.status;
+  if (
+    typeof goal.objective !== "string" ||
+    !["active", "paused", "blocked", "budget_limited", "usage_limited", "complete"].includes(String(status))
+  )
+    throw new Error("Invalid Codex goal response");
+  return {
+    objective: goal.objective,
+    status: status as RuntimeGoalStatus,
+    tokenBudget: typeof goal.tokenBudget === "number" ? goal.tokenBudget : null,
+    tokensUsed: toNumber(goal.tokensUsed),
+    timeUsedSeconds: toNumber(goal.timeUsedSeconds),
+    createdAt: toNumber(goal.createdAt) * 1000,
+    updatedAt: toNumber(goal.updatedAt) * 1000,
+  };
 }

@@ -12219,7 +12219,7 @@ export type SessionsGoalReturn = {
     objective: string;
     projectId: string | null;
     sessionKey: string;
-    status: "active" | "paused" | "budget_limited" | "blocked" | "complete";
+    status: "active" | "paused" | "budget_limited" | "usage_limited" | "blocked" | "complete";
     taskId: string | null;
     timeUsedSeconds: number;
     tokenBudget: number | null;
@@ -12366,7 +12366,7 @@ export type SessionsRecapReturn = {
     objective: string;
     projectId: string | null;
     sessionKey: string;
-    status: "active" | "paused" | "budget_limited" | "blocked" | "complete";
+    status: "active" | "paused" | "budget_limited" | "usage_limited" | "blocked" | "complete";
     taskId: string | null;
     timeUsedSeconds: number;
     tokenBudget: number | null;

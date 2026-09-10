@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4f70e55c2d2e0c3b"
+    "version": "c3335ce72a2b5968"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -74684,6 +74684,7 @@
                                 "active",
                                 "paused",
                                 "budget_limited",
+                                "usage_limited",
                                 "blocked",
                                 "complete"
                               ],
@@ -74781,7 +74782,7 @@
           }
         },
         "security": [],
-        "summary": "Inspect or mutate persisted session goal state",
+        "summary": "Control the runtime native goal and refresh its confirmed session snapshot",
         "tags": [
           "sessions"
         ]
@@ -75442,6 +75443,7 @@
                                 "active",
                                 "paused",
                                 "budget_limited",
+                                "usage_limited",
                                 "blocked",
                                 "complete"
                               ],
