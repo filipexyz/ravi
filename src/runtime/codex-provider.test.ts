@@ -1772,6 +1772,32 @@ process.on("SIGTERM", () => {
     expect(config).toEqual([{ path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md"), enabled: false }]);
   });
 
+  it("enables one native alias per logical skill and keeps an available baseline fallback", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-aliases");
+    const userSessions = join(cwd, "skills", "ravi-user-skills-sessions", "SKILL.md");
+    const systemSessions = join(cwd, "skills", "ravi-system-sessions", "SKILL.md");
+    const userSkillCreator = join(cwd, "skills", "ravi-user-skills-skill-creator", "SKILL.md");
+
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "sessions", path: userSessions },
+              { name: "sessions", path: systemSessions },
+              { name: "skill-creator", path: userSkillCreator },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["sessions", "ravi-system-sessions", "skill-creator", "ravi-system-skill-creator"],
+    );
+
+    expect(config).toEqual([{ path: userSessions, enabled: false }]);
+  });
+
   it("fails closed when Codex cannot return its native skill inventory", () => {
     expect(() => buildCodexDisabledSkillConfig({ data: [] }, "/tmp/missing", ["events"])).toThrow(
       "Codex skill inventory is unavailable",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildSkillVisibilitySnapshot,
+  filterSkillNamesByAllowlist,
   isStoredSkillVisibilityCompatible,
   markLoadedFromRaviSkillToolCall,
   mergeSkillVisibilitySnapshots,
@@ -12,8 +13,23 @@ describe("skill visibility policy", () => {
     expect(skillNameMatchesAllowlist("tiny", ["tiny"])).toBe(true);
     expect(skillNameMatchesAllowlist("ravi-user-skills-tiny", ["tiny"])).toBe(true);
     expect(skillNameMatchesAllowlist("unmanaged-tiny", ["tiny"])).toBe(false);
-    expect(skillNameMatchesAllowlist("ravi-user-skills-sessions", ["sessions", "ravi-system-sessions"])).toBe(false);
+    expect(skillNameMatchesAllowlist("ravi-user-skills-sessions", ["sessions", "ravi-system-sessions"])).toBe(true);
     expect(skillNameMatchesAllowlist("ravi-system-sessions", ["sessions", "ravi-system-sessions"])).toBe(true);
+  });
+
+  it("selects one provider alias per logical skill and falls back when the canonical alias is absent", () => {
+    expect(
+      filterSkillNamesByAllowlist(
+        [
+          "ravi-user-skills-sessions",
+          "ravi-system-sessions",
+          "ravi-user-skills-skill-creator",
+          "ravi-user-skills-building-ravi-apps",
+          "ravi-user-skills-tiny",
+        ],
+        ["sessions", "ravi-system-sessions", "skill-creator", "ravi-system-skill-creator", "building-ravi-apps"],
+      ),
+    ).toEqual(["ravi-system-sessions", "ravi-user-skills-skill-creator", "ravi-user-skills-building-ravi-apps"]);
   });
 
   it("rejects resume when the stored catalog contains a revoked skill", () => {

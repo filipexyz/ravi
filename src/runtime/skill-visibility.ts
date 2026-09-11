@@ -163,12 +163,28 @@ export function skillNameMatchesAllowlist(name: string, allowlist: readonly stri
   const prefix = MANAGED_SKILL_PREFIXES.find((candidate) => nativeSlug.startsWith(candidate));
   if (!prefix) return false;
   const bareSlug = nativeSlug.slice(prefix.length);
-  if (!allowedSlugs.has(bareSlug)) return false;
+  return allowedSlugs.has(bareSlug);
+}
 
-  const hasCanonicalManagedAlias = MANAGED_SKILL_PREFIXES.some((candidate) =>
-    allowedSlugs.has(`${candidate}${bareSlug}`),
-  );
-  return !hasCanonicalManagedAlias;
+export function filterSkillNamesByAllowlist(names: readonly string[], allowlist: readonly string[]): string[] {
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  const selected = new Map<string, { name: string; priority: number; index: number }>();
+
+  names.forEach((name, index) => {
+    const slug = slugifySkillName(name);
+    const prefixIndex = MANAGED_SKILL_PREFIXES.findIndex((prefix) => slug.startsWith(prefix));
+    const bareSlug = prefixIndex >= 0 ? slug.slice(MANAGED_SKILL_PREFIXES[prefixIndex]!.length) : slug;
+    const exact = allowedSlugs.has(slug);
+    if (!exact && !allowedSlugs.has(bareSlug)) return;
+
+    const candidate = { name, priority: exact ? 0 : prefixIndex + 1, index };
+    const current = selected.get(bareSlug);
+    if (!current || candidate.priority < current.priority) {
+      selected.set(bareSlug, candidate);
+    }
+  });
+
+  return [...selected.values()].sort((left, right) => left.index - right.index).map((entry) => entry.name);
 }
 
 export function isStoredSkillVisibilityCompatible(

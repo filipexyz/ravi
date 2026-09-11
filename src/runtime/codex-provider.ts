@@ -17,8 +17,8 @@ import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./a
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import {
   buildCodexSkillVisibilitySnapshot,
+  filterSkillNamesByAllowlist,
   markLoadedFromInstructionSources,
-  skillNameMatchesAllowlist,
 } from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
@@ -293,7 +293,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
       const allSyncedSkillNames = skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [];
       const syncedSkillNames = input.allowedSkills?.length
-        ? allSyncedSkillNames.filter((name) => skillNameMatchesAllowlist(name, input.allowedSkills!))
+        ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
         : allSyncedSkillNames;
       const skillVisibility = buildCodexSkillVisibilitySnapshot(syncedSkillNames);
 
@@ -357,16 +357,24 @@ export function buildCodexDisabledSkillConfig(
     throw new Error("Codex skill inventory is unavailable for allowlist enforcement.");
   }
 
-  return row.skills.flatMap((entry) => {
+  const entries = row.skills.map((entry) => {
     const skill = asRecord(entry);
     const path = firstString(skill?.path);
     const name = firstString(skill?.name);
     if (!path || !name) {
       throw new Error("Codex skill inventory contains an invalid entry.");
     }
-    const directoryName = basename(dirname(path));
-    return skillNameMatchesAllowlist(directoryName, allowedSkills) ? [] : [{ path, enabled: false as const }];
+    return { path, identity: basename(dirname(path)) };
   });
+  const selectedNames = new Set(
+    filterSkillNamesByAllowlist(
+      entries.map((entry) => entry.identity),
+      allowedSkills,
+    ),
+  );
+  return entries.flatMap((entry) =>
+    selectedNames.has(entry.identity) ? [] : [{ path: entry.path, enabled: false as const }],
+  );
 }
 
 function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {
