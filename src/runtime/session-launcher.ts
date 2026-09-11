@@ -368,16 +368,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     const runtimeSession = runtimeProvider.startSession(runtimeRequest);
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
-    const effectiveResumeId = runtimeRequest.forkSession
-      ? undefined
-      : runtimeRequest.resumeSession?.displayId?.trim() || runtimeRequest.resume?.trim() || undefined;
+    const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
     // Do not stamp last-used `runtimeProvider` until a successful authenticated
     // turn. A failed Claude `/login` stub used to overwrite Codex here.
-    // The builder's final continuity decision supersedes the resolver's early
-    // resume candidate. Its core-owned params must survive this handoff intact.
-    session.runtimeSessionDisplayId = effectiveResumeId;
-    session.providerSessionId = effectiveResumeId;
-    session.sdkSessionId = effectiveResumeId;
+    if (canResumeStoredSession && persistedRuntimeProviderSessionId) {
+      session.runtimeSessionParams = storedRuntimeSessionParams;
+      session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+      session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+      session.sdkSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+    }
 
     await markRuntimeTaskAcceptedForPrompt(sessionName, prompt);
 

@@ -1,44 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SkillGateMetadata } from "../cli/skill-gates.js";
-import { nats } from "../nats.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
 import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
-import { dbDeleteSkillGrant, dbUpdateContextRuntimeState } from "../router/router-db.js";
-import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { dbUpdateAgent } from "../router/router-db.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
   setPermissionAuditPublisherForTest,
 } from "../permissions/denials.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
-import type { EvaluateSkillGateInput } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
-import { buildSkillPolicyContextBinding } from "./skill-policy-runtime.js";
-import { readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 let stateDir: string | null = null;
 let previousCodexHome: string | undefined;
-let restoreNatsEmit: (() => void) | undefined;
-let publishedGateEvents: Record<string, unknown>[];
 
 beforeEach(async () => {
-  publishedGateEvents = [];
-  const emit = spyOn(nats, "emit").mockImplementation(async (_topic, data) => {
-    publishedGateEvents.push(data);
-  });
-  restoreNatsEmit = () => emit.mockRestore();
   previousCodexHome = process.env.CODEX_HOME;
   stateDir = await createIsolatedRaviState("ravi-skill-gate-");
   process.env.CODEX_HOME = join(stateDir, "codex");
 });
 
 afterEach(async () => {
-  restoreNatsEmit?.();
-  restoreNatsEmit = undefined;
   setPermissionAuditPublisherForTest();
   if (previousCodexHome === undefined) {
     delete process.env.CODEX_HOME;
@@ -49,48 +34,18 @@ afterEach(async () => {
   stateDir = null;
 });
 
-function writeSkill(name: string, requirements: object | null = { kind: "none" }): void {
-  if (!stateDir) throw new Error("Missing isolated test directory.");
-  const dir = join(stateDir, ".agents", "skills", name);
+function writeCodexSkill(name: string): void {
+  const dir = join(process.env.CODEX_HOME!, "skills", name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "SKILL.md"),
-    `---\nname: ${name}\ndescription: Test skill\n${requirements ? `ravi.requires: ${JSON.stringify(requirements)}\n` : ""}---\n\n# ${name}\n\nUse this skill before running the tool.\n`,
-  );
-}
-
-function bindSkillPolicy(context: ContextRecord, availableCapabilities: readonly string[] = []): ContextRecord {
-  if (!stateDir || !context.agentId) throw new Error("Missing managed test scope.");
-  return dbUpdateContextRuntimeState(context.contextId, {
-    metadata: {
-      ...context.metadata,
-      skillPolicyBinding: buildSkillPolicyContextBinding({
-        scope: { agentId: context.agentId, executionId: "execution-test", contextKey: context.contextKey },
-        cwd: stateDir,
-        runtimeCapabilities: { tools: { availableCapabilities }, dynamicTools: { mode: "host" } },
-      }),
-    },
-  });
-}
-
-function managedContext(capabilities: ContextCapability[] = [], availableCapabilities: readonly string[] = []) {
-  if (!stateDir) throw new Error("Missing isolated test directory.");
-  getOrCreateSession("agent:main:main", "main", stateDir, { name: "skill-gate-test", runtimeProvider: "codex" });
-  return bindSkillPolicy(
-    createRuntimeContext({
-      kind: "agent-runtime",
-      agentId: "main",
-      sessionKey: "agent:main:main",
-      sessionName: "skill-gate-test",
-      capabilities,
-    }),
-    availableCapabilities,
+    `---\nname: ${name}\ndescription: Test skill\n---\n\n# ${name}\n\nUse this skill before running the tool.\n`,
   );
 }
 
 describe("evaluateSkillGate", () => {
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
-    writeSkill("demo-skill");
+    writeCodexSkill("demo-skill");
     // Custom skills must be granted to the agent (Invariant G,
     // spec skills/scoping/per-agent-visibility) before the gate delivers them.
     dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
@@ -100,14 +55,12 @@ describe("evaluateSkillGate", () => {
       providerSessionId: "thread-1",
       runtimeSessionDisplayId: "thread-1",
     });
-    const context = bindSkillPolicy(
-      createRuntimeContext({
-        kind: "agent-runtime",
-        agentId: "main",
-        sessionKey: "agent:main:main",
-        sessionName: "skill-gate-test",
-      }),
-    );
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+    });
 
     const first = evaluateSkillGate({
       gate: { skill: "demo-skill", source: "config" },
@@ -119,9 +72,9 @@ describe("evaluateSkillGate", () => {
     expect(first.code).toBe("RAVI_SKILL_REQUIRED");
     expect(first.reason).toContain("# demo-skill");
 
-    const persisted = readSkillVisibilityFromParams(getSession("agent:main:main")?.runtimeSessionParams);
-    expect(persisted.loadedSkills).toEqual(["local:workspace:agents:demo-skill"]);
-    expect(JSON.stringify(publishedGateEvents)).not.toContain("# demo-skill");
+    const persisted = getSession("agent:main:main")?.runtimeSessionParams
+      ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["demo-skill"]);
 
     const second = evaluateSkillGate({
       gate: { skill: "demo-skill", source: "config" },
@@ -130,7 +83,7 @@ describe("evaluateSkillGate", () => {
     });
 
     expect(second.allowed).toBe(true);
-  }, 15000);
+  });
 
   it("reports configuration errors distinctly when the declared skill does not exist", () => {
     // Grant a made-up skill to isolate this test from the Invariant G
@@ -138,14 +91,12 @@ describe("evaluateSkillGate", () => {
     // where the skill is allowed to the agent but not installed/publish-ed.
     dbUpsertSkillGrant({ agentId: "main", skillName: "missing-skill" });
     getOrCreateSession("agent:main:main", "main", stateDir!, { name: "skill-gate-test", runtimeProvider: "codex" });
-    const context = bindSkillPolicy(
-      createRuntimeContext({
-        kind: "agent-runtime",
-        agentId: "main",
-        sessionKey: "agent:main:main",
-        sessionName: "skill-gate-test",
-      }),
-    );
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+    });
 
     const decision = evaluateSkillGate({
       gate: { skill: "missing-skill", source: "config" },
@@ -155,99 +106,7 @@ describe("evaluateSkillGate", () => {
 
     expect(decision.allowed).toBe(false);
     expect(decision.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    expect(decision.reason).toContain("not visible in the current skill policy");
-  });
-
-  it("requires explicit local-operator authority outside a managed context", () => {
-    const input = {
-      gate: { skill: "demo-skill", source: "config" },
-      toolName: "demo_run",
-    } satisfies EvaluateSkillGateInput;
-    expect(evaluateSkillGate(input).allowed).toBe(false);
-    expect(evaluateSkillGate({ ...input, localOperator: true }).allowed).toBe(true);
-    expect(evaluateSkillGate({ toolName: "ungated" }).allowed).toBe(true);
-  });
-
-  it("does not use an already-loaded skill after its grant is revoked", () => {
-    writeSkill("revoked-skill");
-    dbUpsertSkillGrant({ agentId: "main", skillName: "revoked-skill" });
-    const input = {
-      gate: { skill: "revoked-skill", source: "config" },
-      context: managedContext(),
-      toolName: "demo_run",
-    } satisfies EvaluateSkillGateInput;
-    expect(evaluateSkillGate(input).code).toBe("RAVI_SKILL_REQUIRED");
-    expect(evaluateSkillGate(input).allowed).toBe(true);
-
-    dbDeleteSkillGrant("main", "revoked-skill");
-
-    const denied = evaluateSkillGate(input);
-    expect(denied.allowed).toBe(false);
-    expect(denied.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    expect(denied.reason).not.toContain("# revoked-skill");
-  });
-
-  it("does not open the catalog when no agent skill grants are configured", () => {
-    writeSkill("unselected-skill");
-    const decision = evaluateSkillGate({
-      gate: { skill: "unselected-skill", source: "config" },
-      context: managedContext(),
-      toolName: "demo_run",
-    });
-    expect(decision.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    expect(decision.reason).not.toContain("# unselected-skill");
-    expect(getSession("agent:main:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
-  });
-
-  it("does not deliver a granted skill without explicit requirement metadata", () => {
-    writeSkill("undeclared-skill", null);
-    dbUpsertSkillGrant({ agentId: "main", skillName: "undeclared-skill" });
-    const decision = evaluateSkillGate({
-      gate: { skill: "undeclared-skill", source: "config" },
-      context: managedContext(),
-      toolName: "demo_run",
-    });
-    expect(decision.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    expect(decision.reason).not.toContain("# undeclared-skill");
-  });
-
-  it("does not let a grant bypass a denied tool requirement", () => {
-    writeSkill("reader", { kind: "any-of", alternatives: [["fs.read"]] });
-    dbUpsertSkillGrant({ agentId: "main", skillName: "reader" });
-    const decision = evaluateSkillGate({
-      gate: { skill: "reader", source: "config" },
-      context: managedContext([], ["fs.read"]),
-      toolName: "demo_run",
-    });
-    expect(decision.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    expect(decision.reason).not.toContain("# reader");
-  });
-
-  it("rechecks baseline requirements instead of treating baseline as authority", () => {
-    const gate = { skill: "ravi-system-tasks", source: "config" } satisfies SkillGateMetadata;
-    const denied = evaluateSkillGate({ gate, context: managedContext(), toolName: "tasks_list" });
-    expect(denied.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
-    const context = managedContext(
-      [
-        { permission: "use", objectType: "tool", objectId: "Bash" },
-        { permission: "execute", objectType: "executable", objectId: "ravi" },
-        { permission: "execute", objectType: "group", objectId: "tasks" },
-      ],
-      ["exec.shell"],
-    );
-    expect(evaluateSkillGate({ gate, context, toolName: "tasks_list" }).code).toBe("RAVI_SKILL_REQUIRED");
-  });
-
-  it("does not bypass a missing runtime binding even with localOperator set", () => {
-    const context = managedContext();
-    dbUpdateContextRuntimeState(context.contextId, { metadata: {} });
-    const decision = evaluateSkillGate({
-      gate: { skill: "ravi-system-tasks", source: "config" },
-      context,
-      localOperator: true,
-      toolName: "tasks_list",
-    });
-    expect(decision.code).toBe("RAVI_SKILL_GATE_CONFIG_ERROR");
+    expect(decision.reason).toContain("no installed or catalog skill provides it");
   });
 
   it("resolves flexible operator-configured gates for tools and external CLI commands", () => {
@@ -309,6 +168,42 @@ describe("evaluateSkillGate", () => {
   });
 });
 
+describe("ravi skills show resource authorization", () => {
+  it("blocks a non-granted skill at the host boundary and permits a granted skill", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-show-authorization",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-show-authorization",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-show-authorization",
+      toolContext: {},
+    });
+
+    const denied = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-denied-skill --json",
+      input: {},
+    });
+    const allowed = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-allowed-skill --json",
+      input: {},
+    });
+
+    expect(denied.approved).toBe(false);
+    expect(denied.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(allowed.approved).toBe(true);
+  });
+});
+
 describe("runtime host skill-gate enforcement", () => {
   it("never persists or publishes the full command denied by native runtime policy", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
@@ -351,24 +246,26 @@ describe("runtime host skill-gate enforcement", () => {
   });
 
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
+    writeCodexSkill("ravi-system-image");
+    // System skills are visible through provider-owned group capabilities. The
+    // tool-local context permission below authorizes execution but must not
+    // accidentally become the agent's persisted skill allowlist.
+    dbUpdateAgent("main", {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:image_generate"] } },
+    });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
       providerSessionId: "thread-1",
       runtimeSessionDisplayId: "thread-1",
     });
-    const context = bindSkillPolicy(
-      createRuntimeContext({
-        kind: "agent-runtime",
-        agentId: "main",
-        sessionKey: "agent:main:main",
-        sessionName: "skill-gate-test",
-        capabilities: [
-          { permission: "use", objectType: "tool", objectId: "image_generate", source: "test" },
-          { permission: "execute", objectType: "group", objectId: "image", source: "test" },
-        ],
-      }),
-    );
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "image_generate", source: "test" }],
+    });
     let callbackSnapshot: RuntimeSkillVisibilitySnapshot | undefined;
     const services = createRuntimeHostServices({
       context,
@@ -392,15 +289,16 @@ describe("runtime host skill-gate enforcement", () => {
       throw new Error("Expected skill gate to return text content.");
     }
     expect(contentItem.text).toContain("RAVI_SKILL_REQUIRED: image_generate requires skill ravi-system-image");
-    expect(contentItem.text).toContain("ravi image");
-    expect(callbackSnapshot?.loadedSkills).toEqual(["ravi-system:image"]);
+    expect(contentItem.text).toContain("# ravi-system-image");
+    expect(callbackSnapshot?.loadedSkills).toEqual(["ravi-system-image"]);
 
-    const persisted = readSkillVisibilityFromParams(getSession("agent:main:main")?.runtimeSessionParams);
-    expect(persisted.loadedSkills).toEqual(["ravi-system:image"]);
+    const persisted = getSession("agent:main:main")?.runtimeSessionParams
+      ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
   });
 
   it("checks Bash permission before delivering a required skill", async () => {
-    writeSkill("ravi-system-daemon-manager");
+    writeCodexSkill("ravi-system-daemon-manager");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -432,7 +330,7 @@ describe("runtime host skill-gate enforcement", () => {
   });
 
   it("does not infer a Ravi skill gate from quoted Bash text", async () => {
-    writeSkill("ravi-system-tasks");
+    writeCodexSkill("ravi-system-tasks");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",

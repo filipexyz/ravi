@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import {
   dbListSkillGateRules,
   getSession,
@@ -7,6 +6,13 @@ import {
   updateRuntimeProviderState,
   type ContextRecord,
 } from "../router/index.js";
+import {
+  findInstalledSkill,
+  findSkillByName,
+  listCatalogSkills,
+  slugifySkillName,
+  type RaviSkill,
+} from "../skills/manager.js";
 import { parseBashCommand } from "../bash/parser.js";
 import {
   inferRaviCommandSkillGate,
@@ -16,9 +22,7 @@ import {
 } from "../cli/skill-gates.js";
 import { nats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
-import { resolveRuntimeContext } from "./context-registry.js";
-import { resolveManagedSkillPolicyForContext } from "./skill-policy-runtime.js";
-import type { SkillCatalogEntry } from "./skill-policy.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import { markLoadedFromSkillGate, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
@@ -35,21 +39,18 @@ export interface SkillGateDecision {
 export interface EvaluateSkillGateInput {
   gate?: SkillGateMetadata;
   context?: ContextRecord | null;
-  localOperator?: boolean;
   toolName: string;
 }
 
 export interface EvaluateRuntimeToolSkillGateInput {
   toolName: string;
   context?: ContextRecord | null;
-  localOperator?: boolean;
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
 }
 
 export interface EvaluateRuntimeCommandSkillGateInput {
   commandLine: string;
   context?: ContextRecord | null;
-  localOperator?: boolean;
   toolName?: string;
   executables?: readonly string[];
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
@@ -71,7 +72,6 @@ export function evaluateRuntimeToolSkillGate(input: EvaluateRuntimeToolSkillGate
   return evaluateResolvedRuntimeSkillGate({
     gate: runtimeSkillGateForTool(input.toolName),
     context: input.context,
-    localOperator: input.localOperator,
     toolName: input.toolName,
     onSkillGatePersisted: input.onSkillGatePersisted,
   });
@@ -81,7 +81,6 @@ export function evaluateRuntimeCommandSkillGate(input: EvaluateRuntimeCommandSki
   return evaluateResolvedRuntimeSkillGate({
     gate: runtimeSkillGateForCommand(input.commandLine, { executables: input.executables }),
     context: input.context,
-    localOperator: input.localOperator,
     toolName: input.toolName ?? "Bash",
     onSkillGatePersisted: input.onSkillGatePersisted,
   });
@@ -104,49 +103,67 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     return { allowed: true };
   }
 
-  if (!input.context && input.localOperator === true) return { allowed: true };
-
-  const context = input.context
-    ? resolveRuntimeContext(input.context.contextKey, { touch: false, readOnly: true })
-    : null;
-  if (!context || context.contextId !== input.context?.contextId || context.agentId !== input.context.agentId) {
-    return configurationError(input, "no live managed context is bound to this call.");
+  const session = resolveContextSession(input.context);
+  if (!session) {
+    if (input.context) {
+      return {
+        allowed: false,
+        code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+        skill: input.gate.skill,
+        reason: `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but no runtime session is bound to this context.`,
+      };
+    }
+    return { allowed: true };
   }
-  const session = resolveContextSession(context);
-  if (!session || session.agentId !== context.agentId) {
-    return configurationError(input, "no matching runtime session is bound to this context.");
-  }
 
-  let skill: SkillCatalogEntry | undefined;
-  const gateSkill = input.gate.skill;
-  try {
-    const policy = resolveManagedSkillPolicyForContext(context);
-    skill = policy.skills.find((entry) => skillMatchesIdentity(entry, gateSkill));
-  } catch {
-    return configurationError(input, "the current skill policy could not be resolved.", session);
-  }
-  if (!skill) return configurationError(input, "the skill is not visible in the current skill policy.", session);
-
-  // Delivery evidence never substitutes for current authority, including after revocation.
   const snapshot = readSkillVisibilityFromParams(session.runtimeSessionParams);
-  const selectedSkill = skill;
-  if (snapshot.loadedSkills.some((loaded) => skillMatchesIdentity(selectedSkill, loaded))) return { allowed: true };
+  if (snapshot.loadedSkills.some((loadedSkill) => loadedSkillMatchesGate(loadedSkill, input.gate!.skill))) {
+    return { allowed: true };
+  }
 
-  let content: string;
-  try {
-    content = readSelectedSkillContent(skill);
-  } catch {
-    return configurationError(input, "the selected skill resource could not be read.", session);
+  if (!skillAllowedForAgent(session.agentId, input.gate.skill)) {
+    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it via 'ravi skills grant' or a group permission.`;
+    emitSkillGateEvent(session, {
+      type: "skill.gate.error",
+      toolName: input.toolName,
+      gate: input.gate,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      reason,
+    });
+    return {
+      allowed: false,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      skill: input.gate.skill,
+      reason,
+    };
+  }
+
+  const skill = resolveSkillForGate(input.gate.skill);
+  if (!skill) {
+    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but no installed or catalog skill provides it.`;
+    emitSkillGateEvent(session, {
+      type: "skill.gate.error",
+      toolName: input.toolName,
+      gate: input.gate,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      reason,
+    });
+    return {
+      allowed: false,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      skill: input.gate.skill,
+      reason,
+    };
   }
 
   const nextSkillVisibility = markLoadedFromSkillGate(snapshot, {
     provider: session.runtimeProvider ?? "unknown",
-    skill: skill.id,
-    source: "skill-policy",
-    path: skill.resource.path,
+    skill: input.gate.skill,
+    source: skill.source,
+    path: skill.skillFilePath,
     toolName: input.toolName,
   });
-  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, content);
+  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill);
   persistSkillGateVisibility(
     session,
     nextSkillVisibility,
@@ -190,32 +207,8 @@ function resolveContextSession(context: ContextRecord | null | undefined): Sessi
   );
 }
 
-function configurationError(input: EvaluateSkillGateInput, detail: string, session?: SessionEntry): SkillGateDecision {
-  const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate?.skill}, but ${detail}`;
-  if (session && input.gate) {
-    emitSkillGateEvent(session, {
-      type: "skill.gate.error",
-      toolName: input.toolName,
-      gate: input.gate,
-      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
-      reason,
-    });
-  }
-  return { allowed: false, code: "RAVI_SKILL_GATE_CONFIG_ERROR", skill: input.gate?.skill, reason };
-}
-
-function skillMatchesIdentity(skill: SkillCatalogEntry, value: string): boolean {
-  const identity = value.trim().toLowerCase();
-  return [skill.id, ...skill.aliases].some((name) => name.trim().toLowerCase() === identity);
-}
-
-function readSelectedSkillContent(skill: SkillCatalogEntry): string {
-  if (skill.resource.files) {
-    const file = skill.resource.files.find((entry) => entry.path === "SKILL.md");
-    if (!file) throw new Error("Selected skill resource has no SKILL.md.");
-    return file.content;
-  }
-  return readFileSync(skill.resource.path, "utf8");
+function resolveSkillForGate(skillName: string): RaviSkill | null {
+  return findInstalledSkill(skillName) ?? findSkillByName(listCatalogSkills(), skillName);
 }
 
 function persistSkillGateVisibility(
@@ -285,12 +278,12 @@ function emitSkillGateEvent(
     .catch(() => {});
 }
 
-function buildSoftGateMessage(toolName: string, skillName: string, content: string): string {
+function buildSoftGateMessage(toolName: string, skillName: string, skill: RaviSkill): string {
   return [
     `RAVI_SKILL_REQUIRED: ${toolName} requires skill ${skillName}.`,
     `The skill has been delivered and marked as loaded for this session. Read it, then retry the original tool call.`,
     "",
-    content,
+    skill.content,
   ].join("\n");
 }
 
@@ -300,4 +293,27 @@ export function skillGateErrorPayload(decision: SkillGateDecision): Record<strin
     skill: decision.skill ?? null,
     message: decision.reason ?? "Skill gate denied the tool call.",
   };
+}
+
+export function loadedSkillMatchesGate(loadedSkill: string, gateSkill: string): boolean {
+  return loadedSkill === gateSkill || slugifySkillName(loadedSkill) === slugifySkillName(gateSkill);
+}
+
+/**
+ * Invariant G (spec skills/scoping/per-agent-visibility): if the agent has an
+ * active allowlist and the required skill is NOT in it, the gate MUST NOT
+ * deliver the corpus from the global catalog. Returns true when the skill is
+ * allowed, and also when the agent has no active configuration (Invariant F
+ * — grandfather: no allowlist ≡ full catalog visibility).
+ */
+function skillAllowedForAgent(agentId: string | undefined, gateSkill: string): boolean {
+  if (!agentId) return true;
+  const resolved = resolveAgentSkills(agentId);
+  if (!resolved.hasConfiguration) return true;
+  const gateSlug = slugifySkillName(gateSkill);
+  for (const allowed of resolved.allowlist) {
+    if (allowed === gateSkill) return true;
+    if (slugifySkillName(allowed) === gateSlug) return true;
+  }
+  return false;
 }

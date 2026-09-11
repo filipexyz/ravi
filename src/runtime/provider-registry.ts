@@ -2,7 +2,6 @@ import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import { createGrokRuntimeProvider } from "./grok-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
-import { assertSkillExposureContract, enforceSkillExposureAtStart } from "./skill-exposure-contract.js";
 import type {
   RuntimeCompatibilityIssue,
   RuntimeCompatibilityRequest,
@@ -25,9 +24,6 @@ const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFacto
 const builtInRuntimeProviderIds = new Set<RuntimeProviderId>(["claude", "codex", "grok", "pi"]);
 
 export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
-  const provider = factory();
-  assertProviderIdentity(providerId, provider);
-  assertSkillExposureContract(provider);
   runtimeProviderFactories.set(providerId, factory);
 }
 
@@ -49,15 +45,7 @@ export function createRuntimeProvider(
   if (!factory) {
     throw new Error(`Unknown runtime provider '${providerId}'`);
   }
-  const provider = factory();
-  assertProviderIdentity(providerId, provider);
-  return enforceSkillExposureAtStart(provider);
-}
-
-function assertProviderIdentity(providerId: RuntimeProviderId, provider: SessionRuntimeProvider): void {
-  if (!providerId.trim() || provider.id !== providerId || typeof provider.startSession !== "function") {
-    throw new Error("Runtime factory does not implement its registered provider identity.");
-  }
+  return factory();
 }
 
 export function getRuntimeCompatibilityIssues(

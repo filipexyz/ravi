@@ -64937,27 +64937,6 @@ export const SkillsInspectReturnSchema = {
       },
       "type": "array"
     },
-    "diagnostics": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "skillId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
     "hasConfiguration": {
       "type": "boolean"
     },
@@ -64989,53 +64968,6 @@ export const SkillsInspectReturnSchema = {
         "fromGrants"
       ],
       "type": "object"
-    },
-    "revisions": {
-      "additionalProperties": false,
-      "properties": {
-        "catalog": {
-          "type": "string"
-        },
-        "permissions": {
-          "type": "string"
-        },
-        "policy": {
-          "type": "string"
-        },
-        "toolSurface": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "policy",
-        "catalog",
-        "permissions",
-        "toolSurface"
-      ],
-      "type": "object"
-    },
-    "scope": {
-      "additionalProperties": false,
-      "properties": {
-        "agentId": {
-          "type": "string"
-        },
-        "contextId": {
-          "type": "string"
-        },
-        "executionId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "agentId",
-        "executionId",
-        "contextId"
-      ],
-      "type": "object"
-    },
-    "snapshotId": {
-      "type": "string"
     }
   },
   "required": [

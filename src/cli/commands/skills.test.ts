@@ -697,6 +697,39 @@ describe("skills agent-first contract", () => {
     expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
   });
 
+  it("enforces the current agent allowlist on skills show", () => {
+    const commands = new SkillsCommands();
+    const agentId = "skills-show-agent";
+    dbCreateAgent({ id: agentId, cwd: "/tmp/skills-show-agent" });
+    withoutLogs(() => runWithContext({}, () => commands.grant(agentId, KNOWN_CATALOG_SKILL, undefined, true)));
+    const deniedSkill = skillManager
+      .listCatalogSkills()
+      .find(
+        (skill) =>
+          skill.name !== KNOWN_CATALOG_SKILL && !["sessions", "tasks", "specs", "skill-creator"].includes(skill.name),
+      );
+    expect(deniedSkill).toBeDefined();
+
+    const allowed = withoutLogs(() =>
+      runWithContext({ transport: "tool", agentId }, () =>
+        commands.show(KNOWN_CATALOG_SKILL, undefined, undefined, true),
+      ),
+    );
+    expect(allowed.skill.name).toBe(KNOWN_CATALOG_SKILL);
+
+    const contractError = expectContractError(() =>
+      runWithContext({ transport: "tool", agentId }, () =>
+        commands.show(deniedSkill!.name, undefined, undefined, true),
+      ),
+    );
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().error.code).toBe("SKILL_NOT_AUTHORIZED");
+
+    expect(() =>
+      withoutLogs(() => runWithContext({}, () => commands.show(deniedSkill!.name, undefined, undefined, true))),
+    ).not.toThrow();
+  });
+
   it("emits AGENT_NOT_FOUND envelope with suggestions on skills grant --json (exit 1)", () => {
     const commands = new SkillsCommands();
     const contractError = expectContractError(() =>

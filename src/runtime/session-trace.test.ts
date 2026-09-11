@@ -56,8 +56,6 @@ import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type {
   RuntimeCapabilities,
-  RuntimePrepareSessionRequest,
-  RuntimePrepareSessionResult,
   RuntimeEvent,
   RuntimeProviderId,
   RuntimeSessionHandle,
@@ -84,18 +82,10 @@ const capabilities: RuntimeCapabilities = {
     permissionMode: "ravi-host",
     accessRequirement: "tool_and_executable",
     supportsParallelCalls: false,
-    availableCapabilities: [],
   },
   systemPrompt: { mode: "append" },
   terminalEvents: { guarantee: "adapter" },
   skillVisibility: { availability: "none", loadedState: "none" },
-  skillExposure: {
-    contractVersion: 1,
-    modes: ["textual"],
-    nativeDiscovery: { user: "none", project: "none", plugins: "none" },
-    modelCallFence: { contractVersion: 1, guarantee: "before-every-model-call" },
-    contextUpdate: "rebuild",
-  },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,
@@ -121,17 +111,6 @@ const source: RuntimeMessageTarget = {
   identityProvenance: { source: "test" },
   sourceMessageId: "wamid-1",
 };
-
-function prepareTraceSkillExposure(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
-  if (!input.skillPolicy) throw new Error("Trace fixture requires the core skill policy.");
-  return {
-    skillExposure: {
-      snapshotId: input.skillPolicy.id,
-      mode: input.skillExposureMode ?? "textual",
-      preparedIds: input.skillPolicy.skills.map((skill) => skill.id),
-    },
-  };
-}
 
 function makeAgent(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -487,7 +466,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
 
@@ -679,7 +657,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -778,7 +755,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: "codex",
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -1096,7 +1072,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -1297,7 +1272,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const runtimeResolution = {
@@ -1483,7 +1457,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -1554,7 +1527,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -1628,7 +1600,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
     const { runtimeRequest } = await buildRuntimeStartRequest({
@@ -1693,7 +1664,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: PROVIDER,
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
 
@@ -1770,7 +1740,6 @@ describe("runtime session trace instrumentation", () => {
     const provider: SessionRuntimeProvider = {
       id: "codex",
       getCapabilities: () => capabilities,
-      prepareSession: prepareTraceSkillExposure,
       startSession: () => makeRuntimeSession([]),
     };
 

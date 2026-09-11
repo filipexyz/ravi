@@ -9,7 +9,6 @@ import {
   unregisterRuntimeProvider,
 } from "./index.js";
 import type { RuntimeProvider } from "./types.js";
-import { fixtureRuntimeProvider, fixtureSkillExposureCapabilities } from "./skill-exposure.fixtures.js";
 
 describe("runtime compatibility preflight", () => {
   it("uses Codex as the default runtime provider", () => {
@@ -112,9 +111,7 @@ describe("runtime compatibility preflight", () => {
     try {
       registerRuntimeProvider("test-provider", () => ({
         id: "test-provider",
-        prepareSession: fixtureRuntimeProvider().prepareSession,
         getCapabilities: () => ({
-          skillExposure: fixtureSkillExposureCapabilities(),
           runtimeControl: { supported: false, operations: [] },
           dynamicTools: { mode: "none" },
           execution: { mode: "sdk" },

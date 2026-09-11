@@ -50,39 +50,6 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
 }
 
 describe("runtime delivery queue", () => {
-  it("waits for asynchronous policy validation before delivering a reused-session turn", async () => {
-    let releaseValidation = () => {};
-    const validation = new Promise<void>((resolve) => {
-      releaseValidation = resolve;
-    });
-    const session = makeStreamingSession({
-      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "next authorized turn" })],
-    });
-    const generator = createRuntimeMessageGenerator({
-      sessionName: "policy-barrier",
-      session,
-      stashedMessages: new Map(),
-      beforeTurnStart: async () => {
-        await validation;
-      },
-    });
-    let delivered = false;
-    const next = generator.next().then((message) => {
-      delivered = true;
-      return message;
-    });
-    try {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      expect(delivered).toBe(false);
-    } finally {
-      releaseValidation();
-      await next;
-      session.done = true;
-      session.onTurnComplete?.();
-      await generator.return(undefined);
-    }
-  });
-
   it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {
     expect(resolveRuntimeToolEffectFence("claude", "ravi-host")).toBe("host_write_ahead");
     expect(resolveRuntimeToolEffectFence("grok", "ravi-host")).toBe("host_write_ahead");

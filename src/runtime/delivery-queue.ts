@@ -425,10 +425,7 @@ export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
-  beforeTurnStart?: (input: {
-    deliverableMessages: RuntimeUserMessage[];
-    combinedPrompt: string;
-  }) => void | Promise<void>;
+  beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -517,7 +514,7 @@ export async function* createRuntimeMessageGenerator({
     session.runtimeTerminalSseEmitted = false;
 
     try {
-      await beforeTurnStart?.({
+      beforeTurnStart?.({
         combinedPrompt: combined,
         deliverableMessages: deliverable.map((message) => ({ ...message })),
       });

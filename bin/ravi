@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ravi CLI wrapper - runs the TypeScript CLI with bun
+# Ravi CLI wrapper - runs the bundled CLI with bun
 
 # Resolve the actual script location (following symlinks)
 SOURCE="${BASH_SOURCE[0]}"

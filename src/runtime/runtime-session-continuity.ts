@@ -10,8 +10,6 @@ export interface RuntimeSessionContinuityOptions {
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
   defaultRuntimeProviderId: RuntimeProviderId;
-  /** A policy rebuild cannot inherit instructions from either this session or its parent. */
-  contextRebuildReason?: "skill-policy-change";
 }
 
 export interface RuntimeSessionContinuity {
@@ -20,7 +18,6 @@ export interface RuntimeSessionContinuity {
 }
 
 export function resolveRuntimeSessionContinuity(options: RuntimeSessionContinuityOptions): RuntimeSessionContinuity {
-  if (options.contextRebuildReason === "skill-policy-change") return {};
   const resumableStoredProviderSessionId = options.canResumeStoredSession ? options.storedProviderSessionId : undefined;
   const forkFromProviderSessionId = resolveRuntimeForkSession(options, resumableStoredProviderSessionId);
   const resumeProviderSessionId = options.supportsSessionResume

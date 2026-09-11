@@ -98,7 +98,7 @@ export function buildPluginSkillVisibilitySnapshot(input: {
   evidenceKind: RuntimeSkillVisibilityEvidenceKind;
   /**
    * Optional allowlist of skill identifiers actually exposed to the runtime.
-   * When provided, including an empty list, the snapshot reflects only skills the
+   * When provided (and non-empty) the snapshot reflects only skills the
    * runtime can index — matching what the provider's context filter sees
    * (spec skills/scoping/per-agent-visibility, Invariant T).
    */
@@ -108,8 +108,8 @@ export function buildPluginSkillVisibilitySnapshot(input: {
   const now = input.now ?? Date.now();
   const rawSkills = listPluginSkills(input.plugins ?? []);
   const filteredSkills =
-    input.allowedSkills !== undefined
-      ? rawSkills.filter((skill) => skillMatchesAllowlist(skill, input.allowedSkills ?? []))
+    input.allowedSkills && input.allowedSkills.length > 0
+      ? rawSkills.filter((skill) => skillMatchesAllowlist(skill, input.allowedSkills!))
       : rawSkills;
   const records = filteredSkills.map((skill): RuntimeSkillVisibilityRecord => {
     return {
@@ -149,6 +149,31 @@ function skillMatchesAllowlist(skill: PluginSkillDescriptor, allowlist: readonly
     }
   }
   return false;
+}
+
+const MANAGED_SKILL_PREFIXES = ["ravi-system-", "ravi-dev-", "ravi-user-skills-"] as const;
+
+/** Match provider-native aliases such as `ravi-system-sessions` to the
+ * canonical allowlist entry `sessions`. */
+export function skillNameMatchesAllowlist(name: string, allowlist: readonly string[]): boolean {
+  const nativeSlug = slugifySkillName(name);
+  return allowlist.some((entry) => {
+    const allowedSlug = slugifySkillName(entry);
+    if (nativeSlug === allowedSlug) return true;
+    return MANAGED_SKILL_PREFIXES.some((prefix) => nativeSlug === `${prefix}${allowedSlug}`);
+  });
+}
+
+export function isStoredSkillVisibilityCompatible(
+  params: Record<string, unknown> | null | undefined,
+  allowedSkills: readonly string[] | undefined,
+): boolean {
+  if (!allowedSkills) return true;
+  if (!isRecord(params?.skillVisibility)) return false;
+  const snapshot = readSkillVisibilityFromParams(params);
+  return (
+    snapshot.skills.length > 0 && snapshot.skills.every((skill) => skillNameMatchesAllowlist(skill.id, allowedSkills))
+  );
 }
 
 export function buildCodexSkillVisibilitySnapshot(
@@ -376,8 +401,13 @@ export function mergeSkillVisibilitySnapshots(
     return stored;
   }
 
+  const incomingIds = new Set(incoming.skills.map((skill) => slugifySkillName(skill.id)));
+  const retainedStored = incomingIds.size
+    ? stored.skills.filter((skill) => incomingIds.has(slugifySkillName(skill.id)))
+    : stored.skills;
+
   return buildSkillVisibilitySnapshot(
-    [...stored.skills, ...incoming.skills],
+    [...retainedStored, ...incoming.skills],
     Math.max(stored.updatedAt ?? 0, incoming.updatedAt ?? 0, now),
   );
 }
@@ -460,7 +490,7 @@ function detectLoadedSkillFromRaviSkillToolCall(
   const outputSkill = parseSkillFromShowOutput(input.output);
   const dedicatedToolSkill = extractDedicatedSkillShowName(input.toolName, input.toolInput);
   const command = extractCommandFromToolInput(input.toolInput);
-  const commandSkill = command ? extractSkillShowNameFromCommand(command) : null;
+  const commandSkill = command ? extractRaviSkillShowNameFromCommand(command) : null;
   if (!dedicatedToolSkill && !commandSkill) {
     return null;
   }
@@ -545,7 +575,7 @@ function extractCommandFromToolInput(toolInput: unknown): string | null {
   return firstNonEmptyString(toolInput.command, toolInput.cmd, toolInput.script, toolInput.commandLine);
 }
 
-function extractSkillShowNameFromCommand(command: string): string | null {
+export function extractRaviSkillShowNameFromCommand(command: string): string | null {
   const match = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b([^;&\n\r]*)/m.exec(
     command,
   );

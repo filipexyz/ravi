@@ -4,21 +4,10 @@ import {
   type Options,
   type PermissionResult,
   type Query,
-  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import {
-  accessSync,
-  chmodSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { YAML } from "bun";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type {
   RuntimeEvent,
@@ -39,83 +28,65 @@ import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
-import { RUNTIME_BUILTIN_TOOLS } from "../cli/tool-registry.js";
-import { assertPreparedSkillExposure } from "./skill-exposure-contract.js";
-import type { SkillExposureCapabilities } from "./skill-exposure-contract.js";
-import type { SkillPolicySnapshot } from "./skill-policy.js";
-import { createModelCallFence } from "./model-call-fence.js";
-import { bindClaudeModelCalls } from "./claude-model-call-binding.js";
-import { observeClaudeSkillPayload } from "./claude-skill-payload.js";
-import type { ModelCallProxy } from "./model-call-proxy.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
 const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] as const;
 
-const CLAUDE_SKILL_EXPOSURE: SkillExposureCapabilities = {
-  contractVersion: 1,
-  modelCallFence: { contractVersion: 1, guarantee: "before-every-model-call" },
-  modes: ["native-restricted"],
-  nativeDiscovery: { user: "restricted", project: "restricted", plugins: "restricted" },
-  contextUpdate: "rebuild",
-};
-
-// SDK skills filters the main session only. Native delegation is unavailable
-// until the SDK can bind every child context to the same restricted discovery.
-// RAVI's independently authorized CLI delegation remains available.
-const CLAUDE_UNSCOPED_DELEGATION_TOOLS = ["Agent", "Task", "TeamCreate", "SendMessage"];
-const CLAUDE_SCOPED_TOOLS = [
-  "Read",
-  "Edit",
-  "Write",
-  "Glob",
-  "Grep",
-  "NotebookEdit",
-  "Bash",
-  "WebFetch",
-  "WebSearch",
-  "EnterPlanMode",
-  "ExitPlanMode",
-  "AskUserQuestion",
-  "TodoWrite",
-  "ToolSearch",
-  "EnterWorktree",
-  "Skill",
-];
-
-function claudeNativeSkillNames(
-  snapshot: SkillPolicySnapshot,
-  nativeNames: Readonly<Record<string, string>> | undefined,
-): string[] {
-  if (!nativeNames || Object.keys(nativeNames).length !== snapshot.skills.length) {
-    throw new Error("Claude native skill mapping does not match the authorized snapshot.");
+/**
+ * Discover the agent's own local skills (its curated arsenal) from the setting
+ * source directories the Claude runtime loads via `settingSources`:
+ * `<cwd>/.claude/skills` for "project" and `~/.claude/skills` for "user".
+ *
+ * spec: skills/scoping/per-agent-visibility (Invariant F/B — no-break).
+ *
+ * `Options.skills`, when set, filters EVERY discovered skill — plugins AND
+ * these local ones. `resolveAgentSkills` is provider-agnostic and cannot know
+ * these filesystem sources, so the Claude adapter unions them back in: an agent
+ * must never lose the skills placed directly in its own workspace.
+ */
+function listLocalSkillNames(cwd: string | undefined, settingSources: ("user" | "project")[] | undefined): string[] {
+  const sources = settingSources ?? ["project"];
+  const dirs: string[] = [];
+  if (sources.includes("project") && cwd) {
+    dirs.push(join(cwd, ".claude", "skills"));
   }
-  const names = snapshot.skills.map((skill) => nativeNames[skill.id]);
-  if (names.some((name) => !name || !/^[a-z0-9-]+:[a-z0-9-]+$/i.test(name)) || new Set(names).size !== names.length) {
-    throw new Error("Claude native skill mapping contains missing, invalid, or duplicate names.");
+  if (sources.includes("user")) {
+    dirs.push(join(homedir(), ".claude", "skills"));
   }
-  return names;
+  const names = new Set<string>();
+  for (const dir of dirs) {
+    if (!existsSync(dir)) {
+      continue;
+    }
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && existsSync(join(dir, entry.name, "SKILL.md"))) {
+          names.add(entry.name);
+        }
+      }
+    } catch {
+      // An unreadable skill dir contributes nothing; it must never throw into session start.
+    }
+  }
+  return [...names];
 }
 
-function assertClaudeSkillCompatibility(snapshot: SkillPolicySnapshot): void {
-  for (const skill of snapshot.skills) {
-    const content = skill.resource.files
-      ? skill.resource.files.find((file) => file.path === "SKILL.md")?.content
-      : readFileSync(skill.resource.path, "utf8");
-    if (content === undefined) throw new Error("Claude skill preparation is missing an authorized resource.");
-    const frontmatter = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content)?.[1];
-    if (frontmatter === undefined) continue;
-    let metadata: unknown;
-    try {
-      metadata = YAML.parse(frontmatter);
-    } catch {
-      // Parser errors may contain source lines; do not expose skill contents.
-      throw new Error("Claude skill preparation contains invalid frontmatter.");
-    }
-    if (typeof metadata === "object" && metadata !== null && "context" in metadata && metadata.context === "fork") {
-      throw new Error("Claude cannot restrict child discovery for a forked skill; use a compatible adapter.");
-    }
+/**
+ * When a per-agent skill allowlist is active, ensure the agent's own local
+ * skills survive the `Options.skills` filter. No-op when no allowlist is set
+ * (Invariant F — grandfather / full visibility) or when there are no local
+ * skills to add.
+ */
+export function withLocalSkillsPreserved(input: RuntimeStartRequest): RuntimeStartRequest {
+  if (!input.allowedSkills || input.allowedSkills.length === 0) {
+    return input;
   }
+  const localSkills = listLocalSkillNames(input.cwd, input.settingSources);
+  if (localSkills.length === 0) {
+    return input;
+  }
+  return { ...input, allowedSkills: [...new Set([...input.allowedSkills, ...localSkills])] };
 }
 
 export interface ClaudeRuntimeProvider extends SessionRuntimeProvider {
@@ -144,9 +115,6 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           semantics: "terminal-event",
         },
         tools: {
-          availableCapabilities: RUNTIME_BUILTIN_TOOLS.filter((tool) =>
-            CLAUDE_SCOPED_TOOLS.includes(tool.nativeName),
-          ).map((tool) => tool.capability),
           permissionMode: "ravi-host",
           accessRequirement: "tool_and_executable",
           supportsParallelCalls: false,
@@ -161,7 +129,6 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           availability: "plugins",
           loadedState: "provider-events",
         },
-        skillExposure: CLAUDE_SKILL_EXPOSURE,
         modelBroker: {
           protocols: ["anthropic-messages"],
           principalIsolation: "one-shot-capability",
@@ -178,62 +145,33 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
-      if (input.skillPolicy) {
-        if (input.skillExposureMode !== "native-restricted") {
-          throw new Error("Claude requires the native-restricted skill exposure mode.");
-        }
-        claudeNativeSkillNames(input.skillPolicy, input.skillNativeNames);
-        assertClaudeSkillCompatibility(input.skillPolicy);
-      }
       ensureClaudeSettings(input.cwd);
       const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
       return {
         env: {
-          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: input.skillPolicy ? "0" : "1",
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
           CLAUDECODE: "",
           ...(materialized?.env ?? {}),
         },
-        ...(input.skillPolicy
-          ? {
-              skillExposure: {
-                snapshotId: input.skillPolicy.id,
-                mode: "native-restricted",
-                preparedIds: input.skillPolicy.skills.map((skill) => skill.id),
-              },
-            }
-          : {}),
       };
     },
     startSession(input) {
-      const request = input;
-      if (request.skillPolicy) {
-        assertPreparedSkillExposure(request.skillPolicy, CLAUDE_SKILL_EXPOSURE, request.skillExposure);
-        claudeNativeSkillNames(request.skillPolicy, request.skillNativeNames);
-        if (!request.verifySkillPolicy) throw new Error("Claude skill policy requires a revision verifier.");
-        if (!request.verifySkillPolicyAtDispatch || !request.onSkillPolicyInvalidated) {
-          throw new Error("Claude skill policy requires dispatch verification and invalidation handling.");
-        }
-      }
+      // Invariant F/B (spec: skills/scoping/per-agent-visibility): when a
+      // per-agent allowlist is active, the agent's own local skills
+      // (<cwd>/.claude/skills, ~/.claude/skills) must survive the Options.skills
+      // filter — they are its curated arsenal, invisible to the agnostic core.
+      const request = withLocalSkillsPreserved(input);
       const resumeSessionId = readRuntimeSessionId(request.resumeSession) ?? request.resume;
-      const skillVisibility = request.skillPolicy
-        ? emptySkillVisibilitySnapshot()
-        : buildPluginSkillVisibilitySnapshot({
-            provider: "claude",
-            plugins: request.plugins,
-            state: "advertised",
-            confidence: "declared",
-            evidenceKind: "plugin-bootstrap",
-            ...(request.allowedSkills !== undefined ? { allowedSkills: request.allowedSkills } : {}),
-          });
+      const skillVisibility = buildPluginSkillVisibilitySnapshot({
+        provider: "claude",
+        plugins: request.plugins,
+        state: "advertised",
+        confidence: "declared",
+        evidenceKind: "plugin-bootstrap",
+        ...(request.allowedSkills && request.allowedSkills.length > 0 ? { allowedSkills: request.allowedSkills } : {}),
+      });
       let activeQuery: Query | null = null;
       let currentModel = request.model;
-      let closed = false;
-      let activeModelProxy: ModelCallProxy | undefined;
-      const closeQuery = (queryResult: Query): void => {
-        if (activeQuery !== queryResult) return;
-        activeQuery = null;
-        queryResult.close();
-      };
 
       return {
         provider: "claude",
@@ -245,20 +183,14 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           setActiveQuery: (queryResult) => {
             activeQuery = queryResult;
           },
-          isClosed: () => closed,
-          closeQuery,
-          setModelProxy: (proxy) => {
-            activeModelProxy = proxy;
-          },
         }),
         interrupt: async () => {
           await activeQuery?.interrupt();
         },
         close: async () => {
-          closed = true;
           const queryResult = activeQuery;
-          if (queryResult) closeQuery(queryResult);
-          await activeModelProxy?.close();
+          activeQuery = null;
+          queryResult?.close();
         },
         setModel: async (model: string) => {
           if (request.modelBroker && model !== request.modelBroker.model) {
@@ -286,16 +218,13 @@ async function* runClaudeTurns(
     skillVisibility?: RuntimeSkillVisibilitySnapshot;
     getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
-    isClosed(): boolean;
-    closeQuery(queryResult: Query): void;
-    setModelProxy(proxy: ModelCallProxy | undefined): void;
   },
 ): AsyncGenerator<RuntimeEvent> {
   let resumeSessionId = runtime.initialResumeSessionId;
   let useForkSession = input.forkSession;
 
   for await (const message of input.prompt) {
-    if (input.abortController.signal.aborted || runtime.isClosed()) {
+    if (input.abortController.signal.aborted) {
       break;
     }
 
@@ -303,124 +232,23 @@ async function* runClaudeTurns(
     if (!prompt.trim()) {
       continue;
     }
-    if (input.skillPolicy && prompt.trimStart().startsWith("/")) {
-      // Native slash expansion bypasses the SDK's main-session skill filter.
-      // Do not pass this input to the SDK or classify it as a stale policy.
-      yield {
-        type: "turn.failed",
-        error:
-          "RAVI_CLAUDE_NATIVE_SLASH_UNSUPPORTED: Native slash commands are unavailable with restricted skills; request an authorized skill in plain language.",
-        recoverable: false,
-        rawEvent: { type: "input.unsupported", reason: "native-slash-command" },
-      };
-      continue;
-    }
 
     // The host rotates `input.env` before yielding each turn. Snapshot it here
     // so authority changes apply between queries, never during an active one.
-    const terminalTracker = createRuntimeTerminalEventTracker();
-    let queryResult: Query | undefined;
-    let modelProxy: ModelCallProxy | undefined;
-    let modelPolicyInvalidated = false;
-    const observationEvents: RuntimeEvent[] = [];
-    const fenceOptions = input.skillPolicy
-      ? {
-          binding: { snapshotId: input.skillPolicy.id, scope: input.skillPolicy.scope },
-          assertCurrent: () => input.verifySkillPolicy?.(),
-          assertCurrentAtDispatch: () => input.verifySkillPolicyAtDispatch?.(),
-          notifyInvalidated: (event: import("./model-call-fence.js").ModelCallInvalidation) => {
-            modelPolicyInvalidated = true;
-            // Notify the host directly before closing the SDK stream: it may never
-            // emit a usable provider event once the HTTP attempt is refused.
-            try {
-              input.onSkillPolicyInvalidated?.(event);
-            } finally {
-              if (queryResult) runtime.closeQuery(queryResult);
-            }
-          },
-        }
-      : undefined;
-    const fence = fenceOptions ? createModelCallFence(fenceOptions) : undefined;
-    let releasePrompt: (allowed: boolean) => void = () => {};
-    const promptPermission = new Promise<boolean>((resolve) => {
-      releasePrompt = resolve;
+    const env = buildClaudeCodeEnvironment(input.env);
+    const queryResult = query({
+      prompt,
+      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
+        resumeSessionId,
+        forkSession: useForkSession,
+        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
+      }),
     });
-    const gatedPrompt = async function* (): AsyncGenerator<SDKUserMessage> {
-      if (await promptPermission) {
-        yield { type: "user", message: { role: "user", content: prompt }, session_id: "", parent_tool_use_id: null };
-      }
-    };
+    runtime.setActiveQuery(queryResult);
+
+    const terminalTracker = createRuntimeTerminalEventTracker();
     try {
-      if (fence) await fence.run(() => {});
-      else await input.verifySkillPolicy?.();
-      const env = buildClaudeCodeEnvironment(input.env);
-      queryResult = query({
-        // Pin the native transport before releasing the user message. The
-        // proxy then checks the actual payload before any model dispatch.
-        prompt: input.skillPolicy ? gatedPrompt() : prompt,
-        options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
-          resumeSessionId,
-          forkSession: useForkSession,
-          pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
-        }),
-      });
-      runtime.setActiveQuery(queryResult);
-      if (input.skillPolicy) {
-        const snapshot = input.skillPolicy;
-        if (!fence || !fenceOptions) throw new Error("Claude model call policy binding is missing.");
-        modelProxy = await bindClaudeModelCalls({
-          ...fenceOptions,
-          fence,
-          query: queryResult,
-          environment: env,
-          beforeDispatch(request) {
-            if (request.method !== "POST" || request.path !== "/v1/messages") return;
-            const observed = observeClaudeSkillPayload(request.body, snapshot, input.skillNativeNames ?? {}, prompt);
-            if (runtime.skillVisibility) {
-              const now = Date.now();
-              runtime.skillVisibility.skills = observed.advertisedIds.map((id) => ({
-                id,
-                provider: "claude",
-                state: "advertised",
-                confidence: "observed",
-                lastSeenAt: now,
-                evidence: [{ kind: "system-prompt", eventType: "model.request", observedAt: now }],
-              }));
-              runtime.skillVisibility.updatedAt = now;
-            }
-            observationEvents.push({
-              type: "provider.raw",
-              rawEvent: { type: "skill.exposure.observed", ...observed },
-            });
-          },
-          ...(input.modelBroker
-            ? {
-                upstreamBaseOverride: env.ANTHROPIC_BASE_URL,
-                upstreamHeaders: input.modelBroker.transport.publicHeaders,
-              }
-            : {}),
-        });
-        runtime.setModelProxy(modelProxy);
-        await fence.run(() => {});
-        if (input.abortController.signal.aborted || runtime.isClosed()) {
-          throw new Error("Claude skill preparation was aborted before the prompt was released.");
-        }
-        releasePrompt(true);
-      }
       for await (const event of normalizeClaudeEvents(queryResult)) {
-        while (observationEvents.length) {
-          const observation = observationEvents.shift();
-          if (observation) yield observation;
-        }
-        if (modelPolicyInvalidated) {
-          const failed = terminalTracker.fail({
-            error: "The skill policy changed; a newly authorized context is required.",
-            recoverable: true,
-            failureKind: "skill-policy",
-          });
-          if (failed) yield failed;
-          break;
-        }
         if (!terminalTracker.accept(event)) {
           continue;
         }
@@ -434,57 +262,41 @@ async function* runClaudeTurns(
         yield event;
       }
       if (!terminalTracker.terminalEmitted) {
-        const terminal = modelPolicyInvalidated
-          ? terminalTracker.fail({
-              error: "The skill policy changed; a newly authorized context is required.",
-              recoverable: true,
-              failureKind: "skill-policy",
+        const terminal = input.abortController.signal.aborted
+          ? terminalTracker.interrupt({
+              rawEvent: {
+                type: "stream.ended",
+                reason: "abort",
+              },
             })
-          : input.abortController.signal.aborted
-            ? terminalTracker.interrupt({
-                rawEvent: {
-                  type: "stream.ended",
-                  reason: "abort",
-                },
-              })
-            : terminalTracker.fail({
-                error: "Runtime provider stream ended without a terminal event",
-                recoverable: true,
-                rawEvent: {
-                  type: "stream.ended",
-                  reason: "missing_terminal_event",
-                },
-              });
+          : terminalTracker.fail({
+              error: "Runtime provider stream ended without a terminal event",
+              recoverable: true,
+              rawEvent: {
+                type: "stream.ended",
+                reason: "missing_terminal_event",
+              },
+            });
         if (terminal) {
           yield terminal;
         }
       }
     } catch (error) {
-      const terminal = modelPolicyInvalidated
-        ? terminalTracker.fail({
-            error: "The skill policy changed; a newly authorized context is required.",
-            recoverable: true,
-            failureKind: "skill-policy",
+      const terminal = input.abortController.signal.aborted
+        ? terminalTracker.interrupt({
+            rawEvent: {
+              type: "stream.error",
+              reason: "abort",
+            },
           })
-        : input.abortController.signal.aborted
-          ? terminalTracker.interrupt({
-              rawEvent: {
-                type: "stream.error",
-                reason: "abort",
-              },
-            })
-          : terminalTracker.fail({
-              error: error instanceof Error ? error.message : String(error),
-              recoverable: true,
-            });
+        : terminalTracker.fail({
+            error: error instanceof Error ? error.message : String(error),
+            recoverable: true,
+          });
       if (terminal) {
         yield terminal;
       }
     } finally {
-      releasePrompt(false);
-      if (input.skillPolicy && queryResult) runtime.closeQuery(queryResult);
-      await modelProxy?.close();
-      runtime.setModelProxy(undefined);
       runtime.setActiveQuery(null);
     }
   }
@@ -542,28 +354,9 @@ function buildClaudeQueryOptions(
     settingSources: input.modelBroker ? ["user"] : (input.settingSources ?? ["project"]),
     ...(input.hooks ? { hooks: input.hooks } : {}),
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
-    ...(input.skillPolicy
-      ? {
-          skills: claudeNativeSkillNames(input.skillPolicy, input.skillNativeNames),
-          tools: CLAUDE_SCOPED_TOOLS,
-          disallowedTools: [
-            ...new Set([...readDisallowedClaudeTools(input.permissionOptions), ...CLAUDE_UNSCOPED_DELEGATION_TOOLS]),
-          ],
-        }
-      : input.allowedSkills !== undefined
-        ? { skills: input.allowedSkills }
-        : {}),
+    ...(input.allowedSkills && input.allowedSkills.length > 0 ? { skills: input.allowedSkills } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
-}
-
-function readDisallowedClaudeTools(options: RuntimeStartRequest["permissionOptions"]): string[] {
-  const value = options?.disallowedTools;
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some((name) => typeof name !== "string")) {
-    throw new Error("Claude disallowed tool configuration must contain tool names.");
-  }
-  return value.filter((name): name is string => typeof name === "string");
 }
 
 function resolveClaudeThinkingConfig(thinking?: RuntimeThinking, model?: string): Options["thinking"] | undefined {

@@ -1,10 +1,8 @@
 import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
-import { serve } from "bun";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
-import type { SkillPolicySnapshot } from "./skill-policy.js";
 
 let nextMessages: any[] = [];
 let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
@@ -12,27 +10,6 @@ let querySetModelCalls: Array<string | undefined> = [];
 let queryCloseCalls = 0;
 let queryGate: Promise<void> | null = null;
 let releaseQueryGate: (() => void) | null = null;
-let nativeSkillNames: string[] = [];
-let nativeDiscoveryGate: Promise<void> | undefined;
-let consumedPrompts: unknown[] = [];
-let nativeDiscoveryCalls = 0;
-let onNativeModelTurn: ((env: Record<string, string>) => Promise<void>) | undefined;
-let fixtureUpstream: import("bun").Server<undefined> | undefined;
-let fixtureModelCalls = 0;
-
-function nativeModelBody(names = nativeSkillNames): string {
-  const content = [{ type: "text", text: "authorized prompt" }];
-  if (names.length)
-    content.unshift({
-      type: "text",
-      text: `<system-reminder>\nThe following skills are available for use with the Skill tool:\n\n${names.map((name) => `- ${name}: Native fixture.`).join("\n")}\n</system-reminder>`,
-    });
-  return JSON.stringify({ model: "fixture-model", max_tokens: 1, messages: [{ role: "user", content }] });
-}
-
-function isAsyncPrompt(value: unknown): value is AsyncIterable<unknown> {
-  return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
-}
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   createSdkMcpServer: (config: Record<string, unknown>) => ({
@@ -46,39 +23,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: (input: { prompt: unknown; options: Record<string, unknown> }) => {
     queryCalls.push(input);
     const messages = [...nextMessages];
-    const prompt = input.prompt;
-    let nativeEnv: Record<string, string> = {};
-    const consumePrompt = (async () => {
-      if (isAsyncPrompt(prompt)) {
-        for await (const message of prompt) consumedPrompts.push(message);
-      } else consumedPrompts.push(prompt);
-    })();
     return {
-      getSettings: async () => {
-        await nativeDiscoveryGate;
-        return { effective: { env: nativeEnv }, sources: [], applied: {} };
-      },
-      applyFlagSettings: async (settings: { env: Record<string, string> }) => {
-        nativeEnv = { ...settings.env };
-      },
-      getContextUsage: async () => {
-        nativeDiscoveryCalls++;
-        await nativeDiscoveryGate;
-        return {
-          totalTokens: nativeSkillNames.length * 20,
-          categories: [],
-          ...(nativeSkillNames.length
-            ? {
-                skills: {
-                  totalSkills: 219,
-                  includedSkills: nativeSkillNames.length,
-                  tokens: nativeSkillNames.length * 20,
-                  skillFrontmatter: nativeSkillNames.map((name) => ({ name, source: "plugin", tokens: 20 })),
-                },
-              }
-            : {}),
-        };
-      },
       interrupt: async () => {},
       setModel: async (model?: string) => {
         querySetModelCalls.push(model);
@@ -88,13 +33,6 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         releaseQueryGate?.();
       },
       async *[Symbol.asyncIterator]() {
-        await consumePrompt;
-        if (onNativeModelTurn) await onNativeModelTurn(nativeEnv);
-        else if (isAsyncPrompt(prompt) && consumedPrompts.length > 0 && nativeEnv.ANTHROPIC_BASE_URL) {
-          await (
-            await fetch(`${nativeEnv.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", body: nativeModelBody() })
-          ).text();
-        }
         if (queryGate) {
           await queryGate;
         }
@@ -125,7 +63,6 @@ function makeStartRequest(
     cwd: "/tmp/ravi-claude",
     abortController: new AbortController(),
     systemPromptAppend: "",
-    env: { RAVI_MODEL_BROKER_ACTIVE: "1" },
     ...overrides,
   };
 }
@@ -158,21 +95,13 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 describe("createClaudeRuntimeProvider", () => {
   let tempDir: string | null = null;
 
-  afterEach(async () => {
+  afterEach(() => {
     nextMessages = [];
     queryCalls = [];
     querySetModelCalls = [];
     queryCloseCalls = 0;
     queryGate = null;
     releaseQueryGate = null;
-    nativeSkillNames = [];
-    nativeDiscoveryGate = undefined;
-    consumedPrompts = [];
-    nativeDiscoveryCalls = 0;
-    onNativeModelTurn = undefined;
-    await fixtureUpstream?.stop(true);
-    fixtureUpstream = undefined;
-    fixtureModelCalls = 0;
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -199,246 +128,6 @@ describe("createClaudeRuntimeProvider", () => {
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(settings.PermissionRequest[0].matcher).toBe("*");
-  });
-
-  function policyRequest(names: string[] = ["ravi-system:tasks"]): RuntimeStartRequest {
-    fixtureUpstream ??= serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch() {
-        fixtureModelCalls++;
-        return new Response("ok");
-      },
-    });
-    const snapshot: SkillPolicySnapshot = {
-      contractVersion: 1,
-      id: "claude-policy-1",
-      status: names.length ? "ready" : "empty",
-      scope: { agentId: "restricted", executionId: "execution-1", contextKey: "context-1" },
-      revisions: { policy: "1", permissions: "1", catalog: "1", toolSurface: "1" },
-      skills: names.map((id) => ({
-        id,
-        name: id.split(":").at(-1) ?? id,
-        aliases: [],
-        resource: {
-          path: `/authorized/${id}/SKILL.md`,
-          files: [{ path: "SKILL.md", content: "---\nname: tasks\n---\nFixture." }],
-        },
-        requirements: { kind: "none" },
-      })),
-      provenance: {},
-      diagnostics: [],
-    };
-    return makeStartRequest(
-      (async function* () {
-        yield {
-          type: "user",
-          message: { role: "user", content: "authorized prompt" },
-          session_id: "",
-          parent_tool_use_id: null,
-        };
-      })(),
-      {
-        env: { RAVI_MODEL_BROKER_ACTIVE: "1", ANTHROPIC_BASE_URL: fixtureUpstream.url.origin },
-        skillPolicy: snapshot,
-        skillNativeNames: Object.fromEntries(names.map((name) => [name, name])),
-        skillExposure: { snapshotId: snapshot.id, mode: "native-restricted", preparedIds: names },
-        verifySkillPolicy: async () => {},
-        verifySkillPolicyAtDispatch: () => {},
-        onSkillPolicyInvalidated: () => {},
-      },
-    );
-  }
-
-  it("binds preparation to the central snapshot without adding local skills", () => {
-    tempDir = mkdtempSync(join(tmpdir(), "ravi-claude-policy-"));
-    const request = policyRequest();
-    const prepared = createClaudeRuntimeProvider().prepareSession?.({
-      agentId: "restricted",
-      cwd: tempDir,
-      skillPolicy: request.skillPolicy,
-      skillNativeNames: request.skillNativeNames,
-      skillExposureMode: "native-restricted",
-    });
-    expect(prepared).toMatchObject({
-      skillExposure: {
-        snapshotId: "claude-policy-1",
-        mode: "native-restricted",
-        preparedIds: ["ravi-system:tasks"],
-      },
-    });
-  });
-
-  it("pins native routing before releasing input and observes the effective payload without token-count calls", async () => {
-    nativeSkillNames = ["ravi-system:tasks"];
-    nextMessages = [{ type: "result", subtype: "success", session_id: "verified-native" }];
-    let releaseDiscovery = () => {};
-    nativeDiscoveryGate = new Promise<void>((resolve) => {
-      releaseDiscovery = resolve;
-    });
-    const handle = createClaudeRuntimeProvider().startSession(policyRequest());
-    const pending = collectEvents(handle.events);
-    await waitFor(() => queryCalls.length === 1);
-    expect(consumedPrompts).toEqual([]);
-    releaseDiscovery();
-    const events = await pending;
-    expect(queryCalls[0]?.options.skills).toEqual(["ravi-system:tasks"]);
-    expect(consumedPrompts).toHaveLength(1);
-    expect(nativeDiscoveryCalls).toBe(0);
-    expect(fixtureModelCalls).toBe(1);
-    expect(handle.skillVisibility?.skills).toEqual([
-      expect.objectContaining({ id: "ravi-system:tasks", confidence: "observed", state: "advertised" }),
-    ]);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "provider.raw",
-        rawEvent: expect.objectContaining({
-          type: "skill.exposure.observed",
-          snapshotId: "claude-policy-1",
-          discoverableIds: ["ravi-system:tasks"],
-          evidence: "effective-prompt",
-        }),
-      }),
-    );
-  });
-
-  it("keeps an explicit empty snapshot empty at the native SDK boundary", async () => {
-    nextMessages = [{ type: "result", subtype: "success", session_id: "verified-empty" }];
-    const handle = createClaudeRuntimeProvider().startSession(policyRequest([]));
-    await collectEvents(handle.events);
-    expect(queryCalls[0]?.options.skills).toEqual([]);
-    expect(nativeDiscoveryCalls).toBe(0);
-    expect(handle.skillVisibility?.skills).toEqual([]);
-  });
-
-  it.each([
-    ["unlisted native skill", ["ravi-system:tasks", "personal-secret"]],
-    ["missing authorized skill", []],
-    ["duplicate skill", ["ravi-system:tasks", "ravi-system:tasks"]],
-  ])("refuses to forward the model payload for %s", async (_reason, discovered) => {
-    nativeSkillNames = discovered;
-    const events = await collectEvents(createClaudeRuntimeProvider().startSession(policyRequest()).events);
-    expect(fixtureModelCalls).toBe(0);
-    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
-    expect(queryCloseCalls).toBe(1);
-  });
-
-  it("does not start an SDK query when the policy is stale", async () => {
-    const request = policyRequest();
-    request.verifySkillPolicy = async () => {
-      throw new Error("Skill policy changed");
-    };
-    const events = await collectEvents(createClaudeRuntimeProvider().startSession(request).events);
-    expect(queryCalls).toHaveLength(0);
-    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
-  });
-
-  it("refuses native slash expansion before any SDK query can load an unlisted skill", async () => {
-    const request = policyRequest([]);
-    request.prompt = (async function* () {
-      yield {
-        type: "user",
-        message: { role: "user", content: "  /fixture-denied arg" },
-        session_id: "",
-        parent_tool_use_id: null,
-      };
-    })();
-    const events = await collectEvents(createClaudeRuntimeProvider().startSession(request).events);
-    expect(queryCalls.length).toBe(0);
-    expect(fixtureModelCalls).toBe(0);
-    expect(findEventsByType(events, "turn.failed")).toEqual([
-      expect.objectContaining({ recoverable: false, error: expect.stringContaining("slash") }),
-    ]);
-    expect(findEventsByType(events, "turn.failed")[0]?.failureKind).toBeUndefined();
-  });
-
-  it("rechecks policy after discovery before releasing the prompt", async () => {
-    nativeSkillNames = ["ravi-system:tasks"];
-    let checks = 0;
-    const request = policyRequest();
-    request.verifySkillPolicy = async () => {
-      if (++checks === 2) throw new Error("Skill policy changed");
-    };
-    const events = await collectEvents(createClaudeRuntimeProvider().startSession(request).events);
-    expect(queryCalls).toHaveLength(1);
-    expect(consumedPrompts).toEqual([]);
-    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
-  });
-
-  it("blocks native delegation whose separate skill discovery cannot be restricted", async () => {
-    nativeSkillNames = ["ravi-system:tasks"];
-    nextMessages = [{ type: "result", subtype: "success", session_id: "verified-no-native-delegation" }];
-    const request = policyRequest();
-    request.permissionOptions = { disallowedTools: ["WebFetch"] };
-    const provider = createClaudeRuntimeProvider();
-    await collectEvents(provider.startSession(request).events);
-    expect(queryCalls[0]?.options.disallowedTools).toEqual(
-      expect.arrayContaining(["WebFetch", "Agent", "Task", "TeamCreate", "SendMessage"]),
-    );
-    expect(provider.getCapabilities().tools.availableCapabilities).not.toContain("agent.task.start");
-    expect(provider.getCapabilities().tools.availableCapabilities).not.toContain("team.create");
-  });
-
-  it("closes a policy query only once when the caller closes during preflight", async () => {
-    nativeSkillNames = ["ravi-system:tasks"];
-    let releaseDiscovery = () => {};
-    nativeDiscoveryGate = new Promise<void>((resolve) => {
-      releaseDiscovery = resolve;
-    });
-    const request = policyRequest();
-    const handle = createClaudeRuntimeProvider().startSession(request);
-    const pending = collectEvents(handle.events);
-    await waitFor(() => queryCalls.length === 1);
-    await handle.close?.();
-    releaseDiscovery();
-    await pending;
-    expect(queryCloseCalls).toBe(1);
-    expect(consumedPrompts).toEqual([]);
-  });
-
-  it("rejects a policy execution without a revision verifier", () => {
-    const request = policyRequest();
-    request.verifySkillPolicy = undefined;
-    expect(() => createClaudeRuntimeProvider().startSession(request)).toThrow("revision verifier");
-    expect(queryCalls.length).toBe(0);
-  });
-
-  it("fences the SDK's second model request and reports a typed policy failure", async () => {
-    let received = 0;
-    let revoked = false;
-    let notified = 0;
-    const upstream = serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch() {
-        received++;
-        return new Response("ok");
-      },
-    });
-    nextMessages = [{ type: "result", subtype: "success", session_id: "must-not-complete" }];
-    const request = policyRequest([]);
-    request.env = { RAVI_MODEL_BROKER_ACTIVE: "1", ANTHROPIC_BASE_URL: upstream.url.origin };
-    request.verifySkillPolicyAtDispatch = () => {
-      if (revoked) throw new Error("Fixture revoked");
-    };
-    request.onSkillPolicyInvalidated = () => {
-      notified++;
-    };
-    onNativeModelTurn = async (env) => {
-      const base = env.ANTHROPIC_BASE_URL ?? upstream.url.origin;
-      await (await fetch(`${base}/v1/messages`, { method: "POST", body: nativeModelBody([]) })).text();
-      revoked = true;
-      await (await fetch(`${base}/v1/messages`, { method: "POST", body: nativeModelBody([]) })).text();
-    };
-    try {
-      const events = await collectEvents(createClaudeRuntimeProvider().startSession(request).events);
-      expect(received).toBe(1);
-      expect(notified).toBe(1);
-      expect(findEventsByType(events, "turn.complete").length).toBe(0);
-      expect(events).toContainEqual(expect.objectContaining({ type: "turn.failed", failureKind: "skill-policy" }));
-    } finally {
-      await upstream.stop(true);
-    }
   });
 
   it("advertises the allowlisted canonical app builder through the Claude plugin", () => {

@@ -1,10 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
-import { createCodexRuntimeProvider } from "./codex-provider.js";
-import * as codexTransport from "./codex-transport.js";
+import { buildCodexDisabledSkillConfig, createCodexRuntimeProvider } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
@@ -119,30 +118,6 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
 const CODEX_DYNAMIC_TOOL_DISABLED_TEXT = "No Ravi dynamic tool handler is available for this Codex request.";
 
 describe("createCodexRuntimeProvider", () => {
-  let fixtureTransportSpy: { mockRestore(): void } | undefined;
-
-  beforeAll(() => {
-    if (process.env.RAVI_TEST_PREFLIGHT_VERIFIED !== "1") {
-      throw new Error("Run this file with scripts/run-isolated-tests.mjs before loading provider fixtures.");
-    }
-    const createRealTransport = codexTransport.createCodexTransport;
-    fixtureTransportSpy = spyOn(codexTransport, "createCodexTransport").mockImplementation((kind, options) => {
-      if (basename(options.command) !== "fake-codex-app-server.mjs") {
-        throw new Error("This test file permits only its local fake app-server executable.");
-      }
-      // Windows cannot execute a JavaScript shebang. Keep the real transport,
-      // process and JSON-RPC behavior; only supply the fixture's interpreter.
-      return createRealTransport(kind, {
-        ...options,
-        command: process.execPath,
-        baseArgs: ["--no-env-file", options.command, ...options.baseArgs],
-        env: { ...process.env, ...options.env },
-      });
-    });
-  });
-
-  afterAll(() => fixtureTransportSpy?.mockRestore());
-
   it("exposes explicit transport cleanup on the runtime session handle", async () => {
     let closeCalls = 0;
     const provider = createCodexRuntimeProvider({
@@ -1247,18 +1222,12 @@ appendFileSync(${JSON.stringify(envPath)}, JSON.stringify({
 
 const send = (ws, message) => ws.send(JSON.stringify(message));
 const server = Bun.serve({
-  hostname: "127.0.0.1",
   port: 0,
   fetch(request, server) {
     if (server.upgrade(request)) return;
     return new Response("upgrade required", { status: 426 });
   },
   websocket: {
-    close() {
-      // This single-client fixture ends when the real transport closes its channel.
-      server.stop(true);
-      process.exit(0);
-    },
     message(ws, payload) {
       const message = JSON.parse(String(payload));
       if (message.id && message.method === "initialize") {
@@ -1746,6 +1715,67 @@ process.on("SIGTERM", () => {
     const skillVisibility = completion?.session?.params?.skillVisibility as any;
     expect(skillVisibility.loadedSkills).toEqual([]);
     expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
+  });
+
+  it("filters the synchronized catalog with the resolved agent allowlist", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_filtered_skills" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-user-skills-tiny"],
+    });
+
+    provider.prepareSession?.({
+      agentId: "agent-a",
+      cwd: "/tmp/ravi-codex-filtered",
+      plugins: [],
+    });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd: "/tmp/ravi-codex-filtered",
+        allowedSkills: ["events"],
+      }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-events");
+    expect(calls[0]?.systemPromptAppend).not.toContain("ravi-user-skills-tiny");
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["ravi-system-events"]);
+  });
+
+  it("builds native Codex disable entries for every skill outside the allowlist", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-filter");
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "ravi-system-events", path: join(cwd, "skills", "ravi-system-events", "SKILL.md") },
+              { name: "tiny", path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md") },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["events"],
+    );
+
+    expect(config).toEqual([{ path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md"), enabled: false }]);
+  });
+
+  it("fails closed when Codex cannot return its native skill inventory", () => {
+    expect(() => buildCodexDisabledSkillConfig({ data: [] }, "/tmp/missing", ["events"])).toThrow(
+      "Codex skill inventory is unavailable",
+    );
   });
 
   it("omits the advertised skill-name catalog on CLI-only Codex starts", async () => {

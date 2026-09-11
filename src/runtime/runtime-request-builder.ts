@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
-import { updateRuntimeProviderState } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
@@ -14,15 +13,7 @@ import {
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
-import { assertPreparedSkillExposure, assertSkillExposureContract } from "./skill-exposure-contract.js";
-import { buildSkillExposureText } from "./skill-exposure-text.js";
-import {
-  buildAuthorizedSkillPolicyContinuity,
-  readSkillPolicyRebuild,
-  readSkillPolicySessionBinding,
-  resolveSkillPolicySessionTransition,
-  SKILL_POLICY_REBUILD_REASON,
-} from "./skill-policy-lifecycle.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -54,6 +45,7 @@ import {
   refreshRuntimeRequestContextForTurn,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
+import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
@@ -479,7 +471,6 @@ async function buildRuntimeStartRequestInternal(
     agent,
     sessionName,
     sessionCwd,
-    executionId: runId,
     resolvedSource,
     approvalSource,
     toolContext,
@@ -487,7 +478,7 @@ async function buildRuntimeStartRequestInternal(
     session,
     ...(modelBroker ? { modelBroker } : {}),
   });
-  const { hostServices, providerBootstrap, runtimePlugins, skillPolicy, skillNativeNames } = preparedBootstrap;
+  const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
@@ -520,47 +511,25 @@ async function buildRuntimeStartRequestInternal(
     };
   };
 
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const allowedSkills =
+    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
+      ? resolvedAllowedSkills.allowlist
+      : undefined;
+  const canResumeSkillSession = isStoredSkillVisibilityCompatible(storedRuntimeSessionParams, allowedSkills);
   const canResumeCredentialSession =
     canResumeStoredSession &&
+    canResumeSkillSession &&
     isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
-  const skillTransition = resolveSkillPolicySessionTransition({
-    previous: readSkillPolicySessionBinding(storedRuntimeSessionParams),
-    snapshot: skillPolicy,
-    effectiveContextKey: skillPolicy.scope.contextKey,
-    hasProviderContext: Boolean(storedProviderSessionId),
-  });
-  const storedSkillRebuild = readSkillPolicyRebuild(storedRuntimeSessionParams);
-  const rebuildSkillContext = skillTransition.action === "rebuild";
-  const canResumeAuthorizedSession = canResumeCredentialSession && !rebuildSkillContext;
-  // A new thread has no proof for the contents of its parent's native history.
-  const blockUnprovedParentFork = !canResumeAuthorizedSession && dbSessionKey.includes(":thread:");
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
     runtimeProviderId,
     supportsSessionFork: runtimeCapabilities.supportsSessionFork,
     supportsSessionResume: runtimeCapabilities.supportsSessionResume,
     storedProviderSessionId,
-    canResumeStoredSession: canResumeAuthorizedSession,
+    canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
-    ...(rebuildSkillContext || blockUnprovedParentFork ? { contextRebuildReason: SKILL_POLICY_REBUILD_REASON } : {}),
   });
-  const skillContinuity = !canResumeAuthorizedSession
-    ? (storedSkillRebuild?.continuity ??
-      (rebuildSkillContext ? buildAuthorizedSkillPolicyContinuity({ humanInputs: [], effects: [] }) : undefined))
-    : undefined;
-  const nextSessionParams = {
-    ...(canResumeAuthorizedSession ? storedRuntimeSessionParams : {}),
-    skillPolicySession: skillTransition.binding,
-    ...(skillContinuity
-      ? {
-          skillPolicyRebuild: {
-            contractVersion: 1,
-            reason: SKILL_POLICY_REBUILD_REASON,
-            continuity: skillContinuity,
-          },
-        }
-      : {}),
-  };
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
@@ -576,14 +545,8 @@ async function buildRuntimeStartRequestInternal(
     ctx: prompt.context,
     sessionName,
     cwd: sessionCwd,
-    sessionRuntimeParams: nextSessionParams,
+    sessionRuntimeParams: session.runtimeSessionParams,
     runtimeContext,
-    extraSections: [
-      ...(providerBootstrap?.skillExposure?.mode === "textual"
-        ? [{ title: "Authorized skills", content: buildSkillExposureText(skillPolicy) }]
-        : []),
-      ...(skillContinuity ? [{ title: "Authorized task continuity", content: skillContinuity.prompt }] : []),
-    ],
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
@@ -648,18 +611,10 @@ async function buildRuntimeStartRequestInternal(
       rotatedBootstrap = await runtimeProvider.prepareSession?.({
         agentId: agent.id,
         cwd: sessionCwd,
-        skillPolicy,
-        skillNativeNames,
-        skillExposureMode: providerBootstrap?.skillExposure?.mode,
         ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
         hostServices,
         modelBroker: candidate,
       });
-      assertPreparedSkillExposure(
-        skillPolicy,
-        assertSkillExposureContract(runtimeProvider),
-        rotatedBootstrap?.skillExposure,
-      );
     } catch (error) {
       if (planned) {
         await abandonClaimedRuntimeModelBrokerPlan(planned, "provider_reconfiguration_failed").catch(() => undefined);
@@ -754,12 +709,12 @@ async function buildRuntimeStartRequestInternal(
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
       cwd: sessionCwd,
-      resume: Boolean(resumeProviderSessionId || canResumeAuthorizedSession),
+      resume: Boolean(resumeProviderSessionId || canResumeCredentialSession),
       fork: Boolean(forkFromProviderSessionId),
       providerSessionIdBefore:
         forkFromProviderSessionId ??
         resumeProviderSessionId ??
-        (canResumeAuthorizedSession ? storedProviderSessionId : null) ??
+        (canResumeCredentialSession ? storedProviderSessionId : null) ??
         null,
       contextId: runtimeContext.contextId,
       source: streamingSession.currentSource ?? null,
@@ -856,7 +811,7 @@ async function buildRuntimeStartRequestInternal(
     sessionName,
     session: streamingSession,
     stashedMessages,
-    beforeTurnStart: async (input) => {
+    beforeTurnStart: (input) => {
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
@@ -897,7 +852,6 @@ async function buildRuntimeStartRequestInternal(
         resolvedSource: turnSource,
         approvalSource,
       });
-      await preparedBootstrap.refreshSkillPolicy();
     },
     traceTurnStart,
   });
@@ -910,10 +864,10 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
       ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
-      ...(canResumeAuthorizedSession
+      ...(canResumeCredentialSession
         ? {
             resumeSession: {
-              params: nextSessionParams,
+              params: storedRuntimeSessionParams,
               displayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
             },
           }
@@ -931,14 +885,7 @@ async function buildRuntimeStartRequestInternal(
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
-      skillPolicy,
-      skillNativeNames,
-      skillExposure: providerBootstrap?.skillExposure,
-      verifySkillPolicy: preparedBootstrap.verifySkillPolicy,
-      verifySkillPolicyAtDispatch: preparedBootstrap.verifySkillPolicyAtDispatch,
-      onSkillPolicyInvalidated: () => {
-        streamingSession.internalAbortReason = SKILL_POLICY_REBUILD_REASON;
-      },
+      ...(allowedSkills ? { allowedSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
       ...(modelBroker ? { modelBroker } : {}),
@@ -946,19 +893,6 @@ async function buildRuntimeStartRequestInternal(
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
-  // Persist the core binding before a provider can observe the request. Keep
-  // last-used provider ownership unchanged until an authenticated turn succeeds.
-  updateRuntimeProviderState(dbSessionKey, session.runtimeProvider, {
-    providerSessionId: canResumeAuthorizedSession ? storedProviderSessionId : undefined,
-    runtimeSessionDisplayId: canResumeAuthorizedSession ? session.runtimeSessionDisplayId : undefined,
-    runtimeSessionParams: nextSessionParams,
-  });
-  session.runtimeSessionParams = nextSessionParams;
-  if (!canResumeAuthorizedSession) {
-    session.providerSessionId = undefined;
-    session.sdkSessionId = undefined;
-    session.runtimeSessionDisplayId = undefined;
-  }
   lifecycle.pendingModelBroker = undefined;
   return result;
 }

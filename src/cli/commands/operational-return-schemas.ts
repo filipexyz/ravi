@@ -1182,15 +1182,6 @@ export const skillInspectReturnSchema = z
     agentId: z.string(),
     hasConfiguration: z.boolean(),
     allowlist: z.array(z.string()),
-    snapshotId: z.string().optional(),
-    scope: z.object({ agentId: z.string(), executionId: z.string(), contextId: z.string() }).strict().optional(),
-    revisions: z
-      .object({ policy: z.string(), catalog: z.string(), permissions: z.string(), toolSurface: z.string() })
-      .strict()
-      .optional(),
-    diagnostics: z
-      .array(z.object({ skillId: z.string().optional(), code: z.string(), detail: z.string().optional() }).strict())
-      .optional(),
     provenance: z
       .object({
         baseline: z.array(z.string()),
