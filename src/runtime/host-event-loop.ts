@@ -55,6 +55,7 @@ import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
+  getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
   isProviderEndedAfterCompletedTools,
   runtimeTurnAttemptTerminalEventType,
@@ -111,6 +112,14 @@ import { classifyTurnProvenance } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import { createToolLivenessLease, DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS } from "./tool-liveness.js";
+import { SkillPolicyChangedError } from "./skill-exposure-contract.js";
+import { ModelCallFenceError } from "./model-call-fence.js";
+import {
+  buildAuthorizedSkillPolicyContinuity,
+  readSkillPolicyRebuild,
+  SKILL_POLICY_REBUILD_REASON,
+  type SkillPolicyEffect,
+} from "./skill-policy-lifecycle.js";
 
 const log = logger.child("bot");
 
@@ -998,6 +1007,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
   let restartStashedReason: string | undefined;
+  let managedContextRecovery = false;
   const observationEvents: ObservationEvent[] = [];
   const debouncedObservationEvents: ObservationEvent[] = [];
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1596,6 +1606,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (skillPolicyInvalidationHandled || managedContextRecovery) return;
     if (streaming.durableTurnPreparationFailed) {
       if (!restartStashedReason) {
         // The prompt was never yielded to the provider. Preserve it even when
@@ -1732,8 +1743,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
+    const coreOwnedKeys = new Set(["skillPolicySession", "skillPolicyRebuild"]);
+    const mergedParams = {
+      ...Object.fromEntries(Object.entries(params ?? {}).filter(([key]) => !coreOwnedKeys.has(key))),
+      ...Object.fromEntries(
+        Object.entries(session.runtimeSessionParams ?? {}).filter(([key]) => coreOwnedKeys.has(key)),
+      ),
+    };
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return params;
+      return Object.keys(mergedParams).length > 0 || params ? mergedParams : undefined;
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1743,7 +1761,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
     return {
-      ...(params ?? {}),
+      ...mergedParams,
       skillVisibility,
     };
   };
@@ -1899,8 +1917,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const runtimeEventIterator = runtimeSession.events[Symbol.asyncIterator]();
-  let runtimeSessionClosePromise: Promise<void> | null = null;
-  const closeRuntimeSession = (): Promise<void> => {
+  let runtimeSessionClosePromise: Promise<boolean> | null = null;
+  const closeRuntimeSession = (): Promise<boolean> => {
     if (runtimeSessionClosePromise) {
       return runtimeSessionClosePromise;
     }
@@ -1921,10 +1939,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
       }
-      await Promise.all([
+      const closed = await Promise.all([
         (async () => {
           try {
-            await runtimeSession.close?.();
+            if (!runtimeSession.close) return false;
+            await runtimeSession.close();
+            return true;
           } catch (error) {
             log.warn("Failed to close runtime session handle", {
               runId,
@@ -1932,11 +1952,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
               error,
             });
+            return false;
           }
         })(),
         (async () => {
           try {
             await runtimeEventIterator.return?.();
+            return true;
           } catch (error) {
             log.warn("Failed to close runtime event iterator", {
               runId,
@@ -1944,15 +1966,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
               error,
             });
+            return false;
           }
         })(),
       ]);
+      return closed.every(Boolean);
     };
 
     let timeout: ReturnType<typeof setTimeout> | undefined;
     runtimeSessionClosePromise = Promise.race([
       closeResources(),
-      new Promise<void>((resolve) => {
+      new Promise<boolean>((resolve) => {
         timeout = setTimeout(() => {
           log.warn("Timed out closing runtime session resources", {
             runId,
@@ -1960,7 +1984,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             provider: runtimeSession.provider,
             timeoutMs: RUNTIME_SESSION_CLOSE_TIMEOUT_MS,
           });
-          resolve();
+          resolve(false);
         }, RUNTIME_SESSION_CLOSE_TIMEOUT_MS);
         timeout.unref?.();
       }),
@@ -2045,6 +2069,70 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
+  let skillPolicyInvalidationHandled = false;
+  const handleSkillPolicyInvalidation = async () => {
+    if (skillPolicyInvalidationHandled) return;
+    skillPolicyInvalidationHandled = true;
+    streaming.internalAbortReason = SKILL_POLICY_REBUILD_REASON;
+    streaming.done = true;
+    streaming.interrupted = true;
+    // A replacement stream owns its own authority. Never invalidate it while
+    // cleaning up a handle that no longer owns this session's runtime slot.
+    if (streamingSessions.get(sessionName) !== streaming) return;
+
+    const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+    const effects: SkillPolicyEffect[] = [...turnToolContinuation.started.keys()].map((id) => ({
+      id,
+      status: turnToolContinuation.terminal.has(id) ? "completed" : "uncertain",
+    }));
+    if (streaming.currentToolId && !effects.some((effect) => effect.id === streaming.currentToolId)) {
+      effects.push({ id: streaming.currentToolId, status: "uncertain" });
+    }
+    if (!safety.replayable && effects.length === 0) {
+      effects.push({
+        id: streaming.currentCrashRecoveryAttemptId ?? streaming.currentTraceTurnId ?? "unreconciled-turn",
+        status: "uncertain",
+      });
+    }
+    const continuity = buildAuthorizedSkillPolicyContinuity({ humanInputs: [], effects });
+    const runtimeSessionParams = {
+      skillPolicyRebuild: { contractVersion: 1, reason: SKILL_POLICY_REBUILD_REASON, continuity },
+    };
+    // This single state update clears native resume IDs while recording the
+    // rebuild fence. It does not reset/delete canonical messages or effects.
+    updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, { runtimeSessionParams });
+    session.sdkSessionId = undefined;
+    session.providerSessionId = undefined;
+    session.runtimeSessionDisplayId = undefined;
+    session.runtimeSessionParams = runtimeSessionParams;
+    revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: SKILL_POLICY_REBUILD_REASON });
+
+    const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    if (stashedCount > 0) restartStashedReason = SKILL_POLICY_REBUILD_REASON;
+    recordTerminalTraceOnce({
+      status: "interrupted",
+      eventType: "turn.interrupted",
+      abortReason: SKILL_POLICY_REBUILD_REASON,
+      error: null,
+      payloadJson: {
+        reason: SKILL_POLICY_REBUILD_REASON,
+        stashedCount,
+        effectCount: effects.length,
+        replayable: safety.replayable,
+      },
+    });
+    await emitHostRuntimeTerminal({
+      type: "turn.interrupted",
+      reason: SKILL_POLICY_REBUILD_REASON,
+      requiresReconciliation: continuity.requiresReconciliation,
+    });
+    markRuntimeLiveIdle(
+      sessionName,
+      safety.replayable ? "rebuilding authorized skill context" : "skill authority changed; prior effects preserved",
+    );
+    signalTurnComplete();
+  };
+
   try {
     while (!streaming.done) {
       const next = await readNextRuntimeEvent();
@@ -2052,6 +2140,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         break;
       }
       let event = next.value;
+      if (event.type === "turn.failed" && event.failureKind === "skill-policy") {
+        await handleSkillPolicyInvalidation();
+        break;
+      }
       if (streaming.done) {
         break;
       }
@@ -3292,21 +3384,45 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           rawEvent: event.rawEvent,
         });
         if (contextWindowFailure && currentTurnReplaySafety.replayable) {
+          managedContextRecovery =
+            session.runtimeSessionParams?.skillPolicySession !== undefined ||
+            session.runtimeSessionParams?.skillPolicyRebuild !== undefined;
           await projectRuntimeEventToChannel(event);
-          const history = getRecentHistory(sessionName, 48);
-          const recovery = buildRuntimeContextRecoveryPrompt({
-            sessionName,
-            runtimeProvider: runtimeSession.provider,
-            model,
-            error: event.error,
-            history,
-          });
-          const resetApplied = resetSession(session.sessionKey);
+          // A transcript's role=user is not proof of human origin. Managed
+          // recovery carries only validated effect state and a clarification
+          // notice; it must not resurrect revoked provider instructions.
+          const history = managedContextRecovery ? [] : getRecentHistory(sessionName, 48);
+          const continuity = managedContextRecovery
+            ? buildAuthorizedSkillPolicyContinuity({
+                humanInputs: [],
+                effects: readSkillPolicyRebuild(session.runtimeSessionParams)?.continuity.effects ?? [],
+              })
+            : undefined;
+          const recovery = continuity
+            ? { prompt: continuity.prompt, chars: continuity.prompt.length, messageCount: 0, truncated: false }
+            : buildRuntimeContextRecoveryPrompt({
+                sessionName,
+                runtimeProvider: runtimeSession.provider,
+                model,
+                error: event.error,
+                history,
+              });
+          let resetApplied = false;
+          if (continuity) {
+            const runtimeSessionParams = {
+              skillPolicySession: session.runtimeSessionParams?.skillPolicySession,
+              skillPolicyRebuild: { contractVersion: 1, reason: SKILL_POLICY_REBUILD_REASON, continuity },
+            };
+            updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, { runtimeSessionParams });
+            session.runtimeSessionParams = runtimeSessionParams;
+          } else {
+            resetApplied = resetSession(session.sessionKey);
+            session.runtimeProvider = undefined;
+            session.runtimeSessionParams = undefined;
+          }
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
-          session.runtimeProvider = undefined;
           session.runtimeSessionDisplayId = undefined;
-          session.runtimeSessionParams = undefined;
           revokeAgentRuntimeContextsForSession(session.sessionKey, {
             reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
           });
@@ -3319,7 +3435,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             _agentId: agent.id,
             _runtimeProviderId: runtimeSession.provider,
           });
-          stashedMessages.set(sessionName, [recoveredMessage]);
+          stashedMessages.set(sessionName, [
+            recoveredMessage,
+            ...(managedContextRecovery ? getPendingRuntimeTurnSuccessors(streaming) : []),
+          ]);
           restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
 
           log.warn("Recovering runtime after context window exhaustion", {
@@ -3330,6 +3449,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             matched: contextWindowFailure.matched,
             confidence: contextWindowFailure.confidence,
             resetApplied,
+            authorizedContinuityOnly: managedContextRecovery,
             historyMessages: history.length,
             recoveryPromptChars: recovery.chars,
           });
@@ -3472,7 +3592,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         signalTurnComplete();
       }
     }
+  } catch (error) {
+    if (error instanceof SkillPolicyChangedError || error instanceof ModelCallFenceError) {
+      await handleSkillPolicyInvalidation();
+    } else {
+      throw error;
+    }
   } finally {
+    if (streaming.internalAbortReason === SKILL_POLICY_REBUILD_REASON) {
+      try {
+        await handleSkillPolicyInvalidation();
+      } catch (error) {
+        restartStashedReason = undefined;
+        log.error("Failed to preserve skill-policy rebuild state; automatic restart is blocked", {
+          runId,
+          sessionName,
+          errorKind: error instanceof Error ? error.name : typeof error,
+        });
+      }
+    }
     // Never let an exceptional/ownership-loss path externalize a raw envelope
     // that did not reach its canonical write-ahead boundary.
     pendingProviderRawEvents.length = 0;
@@ -3535,7 +3673,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
-    await closeRuntimeSession();
+    const runtimeResourcesClosed = await closeRuntimeSession();
 
     const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
     if (stillOwnsRuntimeSlot) {
@@ -3568,7 +3706,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     if (stillOwnsRuntimeSlot) {
       try {
-        if (restartStashedReason && restartStashedSession) {
+        if (
+          restartStashedReason &&
+          restartStashedSession &&
+          ((restartStashedReason !== SKILL_POLICY_REBUILD_REASON && !managedContextRecovery) || runtimeResourcesClosed)
+        ) {
           await restartStashedSession({
             sessionName,
             reason: restartStashedReason,

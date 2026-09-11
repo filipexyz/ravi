@@ -1,0 +1,205 @@
+[
+  {
+    "alias": "ravi-architecture",
+    "owners": [
+      "ravi-dev:ravi-architecture",
+      "ravi-user-skills:ravi-architecture"
+    ]
+  },
+  {
+    "alias": "cli-creator",
+    "owners": [
+      "ravi-dev:cli-creator",
+      "ravi-user-skills:cli-creator"
+    ]
+  },
+  {
+    "alias": "context-cli",
+    "owners": [
+      "ravi-dev:context-cli",
+      "ravi-user-skills:context-cli"
+    ]
+  },
+  {
+    "alias": "prompt-builder",
+    "owners": [
+      "ravi-dev:prompt-builder",
+      "ravi-user-skills:prompt-builder"
+    ]
+  },
+  {
+    "alias": "agents-manager",
+    "owners": [
+      "ravi-system:agents-manager",
+      "ravi-user-skills:agents-manager"
+    ]
+  },
+  {
+    "alias": "artifacts",
+    "owners": [
+      "ravi-system:artifacts",
+      "ravi-user-skills:artifacts"
+    ]
+  },
+  {
+    "alias": "audio",
+    "owners": [
+      "ravi-system:audio",
+      "ravi-user-skills:audio"
+    ]
+  },
+  {
+    "alias": "channels-manager",
+    "owners": [
+      "ravi-system:channels-manager",
+      "ravi-user-skills:channels-manager"
+    ]
+  },
+  {
+    "alias": "contacts-manager",
+    "owners": [
+      "ravi-system:contacts-manager",
+      "ravi-user-skills:contacts-manager"
+    ]
+  },
+  {
+    "alias": "cron-manager",
+    "owners": [
+      "ravi-system:cron-manager",
+      "ravi-user-skills:cron-manager"
+    ]
+  },
+  {
+    "alias": "daemon-manager",
+    "owners": [
+      "ravi-system:daemon-manager",
+      "ravi-user-skills:daemon-manager"
+    ]
+  },
+  {
+    "alias": "events",
+    "owners": [
+      "ravi-system:events",
+      "ravi-user-skills:events"
+    ]
+  },
+  {
+    "alias": "heartbeat-manager",
+    "owners": [
+      "ravi-system:heartbeat-manager",
+      "ravi-user-skills:heartbeat-manager"
+    ]
+  },
+  {
+    "alias": "image",
+    "owners": [
+      "ravi-system:image",
+      "ravi-user-skills:image"
+    ]
+  },
+  {
+    "alias": "instances-manager",
+    "owners": [
+      "ravi-system:instances-manager",
+      "ravi-user-skills:instances-manager"
+    ]
+  },
+  {
+    "alias": "permissions-manager",
+    "owners": [
+      "ravi-system:permissions-manager",
+      "ravi-user-skills:permissions-manager"
+    ]
+  },
+  {
+    "alias": "projects",
+    "owners": [
+      "ravi-system:projects",
+      "ravi-user-skills:projects"
+    ]
+  },
+  {
+    "alias": "prox-calls",
+    "owners": [
+      "ravi-system:prox-calls",
+      "ravi-user-skills:prox-calls"
+    ]
+  },
+  {
+    "alias": "routes-manager",
+    "owners": [
+      "ravi-system:routes-manager",
+      "ravi-user-skills:routes-manager"
+    ]
+  },
+  {
+    "alias": "sessions",
+    "owners": [
+      "ravi-system:sessions",
+      "ravi-user-skills:sessions"
+    ]
+  },
+  {
+    "alias": "settings-manager",
+    "owners": [
+      "ravi-system:settings-manager",
+      "ravi-user-skills:settings-manager"
+    ]
+  },
+  {
+    "alias": "skill-creator",
+    "owners": [
+      "ravi-system:skill-creator",
+      "ravi-user-skills:skill-creator"
+    ]
+  },
+  {
+    "alias": "specs",
+    "owners": [
+      "ravi-system:specs",
+      "ravi-user-skills:specs"
+    ]
+  },
+  {
+    "alias": "stickers",
+    "owners": [
+      "ravi-system:stickers",
+      "ravi-user-skills:stickers"
+    ]
+  },
+  {
+    "alias": "tasks-eval",
+    "owners": [
+      "ravi-system:tasks-eval",
+      "ravi-user-skills:tasks-eval"
+    ]
+  },
+  {
+    "alias": "tasks",
+    "owners": [
+      "ravi-system:tasks",
+      "ravi-user-skills:tasks"
+    ]
+  },
+  {
+    "alias": "trigger-manager",
+    "owners": [
+      "ravi-system:trigger-manager",
+      "ravi-user-skills:trigger-manager"
+    ]
+  },
+  {
+    "alias": "video",
+    "owners": [
+      "ravi-system:video",
+      "ravi-user-skills:video"
+    ]
+  },
+  {
+    "alias": "whatsapp-manager",
+    "owners": [
+      "ravi-system:whatsapp-manager",
+      "ravi-user-skills:whatsapp-manager"
+    ]
+  }
+]

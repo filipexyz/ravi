@@ -191,13 +191,17 @@ function getUserPlugins(): PluginSpec[] {
   return plugins;
 }
 
-/**
- * Discover all plugins from internal and user directories.
- *
- * Internal plugins are loaded first, then user plugins.
- *
- * @returns Array of plugin specs ready for the SDK
- */
+/** Read source locations without preparing plugins or swallowing discovery errors. */
+export function discoverSkillSourcePlugins(root = USER_PLUGINS_DIR): PluginSpec[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name))
+    .filter((path) => existsSync(join(path, ".claude-plugin", "plugin.json")))
+    .map((path) => ({ type: "local", path }));
+}
+
+/** Legacy full plugin discovery; managed skill exposure uses source discovery above. */
 export function discoverPlugins(): PluginSpec[] {
   const internal = getInternalPlugins();
   const user = getUserPlugins();

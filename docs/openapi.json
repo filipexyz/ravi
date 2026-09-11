@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4f70e55c2d2e0c3b"
+    "version": "37cd8772506012fc"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -81052,6 +81052,27 @@
                       },
                       "type": "array"
                     },
+                    "diagnostics": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "skillId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "hasConfiguration": {
                       "type": "boolean"
                     },
@@ -81083,6 +81104,53 @@
                         "fromGrants"
                       ],
                       "type": "object"
+                    },
+                    "revisions": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "catalog": {
+                          "type": "string"
+                        },
+                        "permissions": {
+                          "type": "string"
+                        },
+                        "policy": {
+                          "type": "string"
+                        },
+                        "toolSurface": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "catalog",
+                        "permissions",
+                        "toolSurface"
+                      ],
+                      "type": "object"
+                    },
+                    "scope": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "contextId": {
+                          "type": "string"
+                        },
+                        "executionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "agentId",
+                        "executionId",
+                        "contextId"
+                      ],
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
                     }
                   },
                   "required": [

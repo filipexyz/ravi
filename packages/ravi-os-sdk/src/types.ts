@@ -13278,12 +13278,29 @@ export type SkillsInspectInput = {
 export type SkillsInspectReturn = {
   agentId: string;
   allowlist: string[];
+  diagnostics?: Array<{
+    code: string;
+    detail?: string;
+    skillId?: string;
+  }>;
   hasConfiguration: boolean;
   provenance: {
     baseline: string[];
     fromCapabilities: string[];
     fromGrants: string[];
   };
+  revisions?: {
+    catalog: string;
+    permissions: string;
+    policy: string;
+    toolSurface: string;
+  };
+  scope?: {
+    agentId: string;
+    contextId: string;
+    executionId: string;
+  };
+  snapshotId?: string;
 };
 
 /** Input shape for `skills.install`. */

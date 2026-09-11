@@ -3,9 +3,11 @@
  */
 
 import "reflect-metadata";
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { fail } from "../context.js";
+import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
@@ -34,6 +36,11 @@ import {
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
+import { resolveManagedSkillPolicyForContext } from "../../runtime/skill-policy-runtime.js";
+import { SkillPolicyError } from "../../runtime/skill-policy.js";
+import type { SkillCatalogEntry, SkillPolicySnapshot } from "../../runtime/skill-policy.js";
+import { resolveRuntimeContext } from "../../runtime/context-registry.js";
+import { authorizePermission } from "../../permissions/provider-runtime.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
@@ -65,6 +72,114 @@ function syncCodex(): string[] {
   return syncCodexSkills(discoverPlugins());
 }
 
+function policyFailure(op: string, message: string): never {
+  throw new ContractError(op, "SKILL_POLICY_UNAVAILABLE", message, 3, {
+    retryable: false,
+    suggestedAction: "Refresh the managed execution context or use an authorized local operator.",
+  });
+}
+
+function managedSkillPolicy(op = "skills"): SkillPolicySnapshot | null {
+  const local = getContext({ localOnly: true });
+  const isManaged = hasRuntimeInvocationContext() || Boolean(local?.agentId || local?.sessionKey || local?.context);
+  if (!isManaged) return null;
+  const current = getContext();
+  if (!current?.context || (current.agentId && current.agentId !== current.context.agentId)) {
+    policyFailure(op, "Managed skill discovery requires a resolved execution context.");
+  }
+  try {
+    return resolveManagedSkillPolicyForContext(current.context);
+  } catch (error) {
+    if (error instanceof SkillPolicyError)
+      policyFailure(op, "Managed skill discovery requires a current policy binding.");
+    throw error;
+  }
+}
+
+function policySkillMatches(skill: SkillCatalogEntry, name: string): boolean {
+  return skill.id === name || skill.aliases.includes(name);
+}
+
+function scopedPolicySkills(
+  snapshot: SkillPolicySnapshot,
+  options: { source?: string; installed?: boolean; includeCodex?: boolean; op?: string } = {},
+): readonly SkillCatalogEntry[] {
+  if (options.source) {
+    const source = parseSkillSource(options.source);
+    if (source.type !== "local" || !source.rootPath) {
+      policyFailure(options.op ?? "skills", "Managed skill discovery only supports authorized local snapshot sources.");
+    }
+    const sourceRoot = source.rootPath;
+    return snapshot.skills.filter((skill) => {
+      if (!isAbsolute(skill.resource.path)) return false;
+      const path = relative(sourceRoot, skill.resource.path);
+      return path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+    });
+  }
+  if (options.installed || options.includeCodex) {
+    const installed = listInstalledSkills({ includeCodex: options.includeCodex === true });
+    return snapshot.skills.filter((skill) =>
+      installed.some(
+        (candidate) =>
+          `${candidate.pluginName ?? candidate.source}:${candidate.name}` === skill.id &&
+          resolve(candidate.skillFilePath) === resolve(skill.resource.path),
+      ),
+    );
+  }
+  return snapshot.skills;
+}
+
+function policySkillRecord(skill: SkillCatalogEntry, includeContent = false): RaviSkill {
+  const namespace = skill.id.slice(0, skill.id.lastIndexOf(":"));
+  const content = includeContent
+    ? (skill.resource.files?.find((file) => file.path === "SKILL.md")?.content ??
+      readFileSync(skill.resource.path, "utf8"))
+    : "";
+  return {
+    name: skill.name,
+    description: skill.description,
+    path: dirname(skill.resource.path),
+    skillFilePath: skill.resource.path,
+    content,
+    source: namespace,
+    ...(skill.resource.pluginPath ? { pluginName: namespace } : {}),
+  };
+}
+
+function policyInspection(snapshot: SkillPolicySnapshot) {
+  const contextKey = getContext()?.context?.contextKey;
+  const context = contextKey ? resolveRuntimeContext(contextKey, { touch: false, readOnly: true }) : null;
+  if (!context || context.agentId !== snapshot.scope.agentId) {
+    policyFailure("skills inspect", "Skill inspection requires the current execution context.");
+  }
+  const isAdmin = authorizePermission({
+    context,
+    permission: "admin",
+    objectType: "system",
+    objectId: "*",
+  }).allowed;
+  return {
+    agentId: snapshot.scope.agentId,
+    hasConfiguration: !snapshot.diagnostics.some((diagnostic) => diagnostic.code === "configuration-absent"),
+    allowlist: snapshot.skills.map((skill) => skill.id),
+    provenance: {
+      baseline: snapshot.skills
+        .filter((skill) => snapshot.provenance[skill.id]?.includes("baseline"))
+        .map((skill) => skill.id),
+      fromCapabilities: snapshot.skills
+        .filter((skill) => snapshot.provenance[skill.id]?.includes("capability"))
+        .map((skill) => skill.id),
+      fromGrants: snapshot.skills
+        .filter((skill) => snapshot.provenance[skill.id]?.includes("grant"))
+        .map((skill) => skill.id),
+    },
+    snapshotId: snapshot.id,
+    scope: { agentId: snapshot.scope.agentId, executionId: snapshot.scope.executionId, contextId: context.contextId },
+    revisions: snapshot.revisions,
+    ...(isAdmin ? { diagnostics: snapshot.diagnostics } : {}),
+  };
+}
+
 // ============================================================
 // Manual v2 contract helpers (error envelope + suggestions).
 // Text mode keeps the legacy `fail()` behavior; `--json` emits the
@@ -74,6 +189,8 @@ function syncCodex(): string[] {
 
 /** Skill names a caller can actually reference: catalog ∪ installed. */
 function knownSkillNames(options: { includeCodex?: boolean } = {}): string[] {
+  const snapshot = managedSkillPolicy();
+  if (snapshot) return snapshot.skills.map((skill) => skill.name);
   const names = new Set<string>();
   for (const skill of listCatalogSkills()) names.add(skill.name);
   for (const skill of listInstalledSkills({ includeCodex: options.includeCodex === true })) names.add(skill.name);
@@ -535,11 +652,16 @@ export class SkillsCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
   ) {
-    const discovered = source
-      ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
-      : installed === true || includeCodex === true
-        ? listInstalledSkills({ includeCodex: includeCodex === true })
-        : listCatalogSkills();
+    const snapshot = managedSkillPolicy("skills list");
+    const discovered = snapshot
+      ? scopedPolicySkills(snapshot, { source, installed, includeCodex, op: "skills list" }).map((skill) =>
+          policySkillRecord(skill),
+        )
+      : source
+        ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
+        : installed === true || includeCodex === true
+          ? listInstalledSkills({ includeCodex: includeCodex === true })
+          : listCatalogSkills();
     const tagFilter = tagSlug?.trim() || null;
     const skills = filterItemsByCanonicalTag(discovered, "skill", tagFilter ?? undefined, (skill) => skill.name);
     const page = paginateCliItems(skills, { limit, offset });
@@ -610,9 +732,20 @@ export class SkillsCommands {
     installed?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills show");
     let skill: RaviSkill | null;
     let candidates: string[];
-    if (source) {
+    if (snapshot) {
+      const entries = scopedPolicySkills(snapshot, {
+        source,
+        installed,
+        includeCodex: installed === true,
+        op: "skills show",
+      });
+      const selected = entries.find((entry) => policySkillMatches(entry, name));
+      skill = selected ? policySkillRecord(selected, true) : null;
+      candidates = entries.map((entry) => entry.name);
+    } else if (source) {
       // Resolve inside the callback (temp clones are cleaned up on return) and
       // fail with the envelope OUTSIDE it, keeping cleanup + exit code intact.
       const resolved = withResolvedSkillSource(source, (resolvedSource) => {
@@ -676,6 +809,9 @@ export class SkillsCommands {
     })
     execute?: boolean,
   ) {
+    if (managedSkillPolicy("skills install")) {
+      policyFailure("skills install", "Global skill installation requires an explicit local operator.");
+    }
     const requestedSkill = normalizeRequestedSkillName(name, skillName);
     if (!requestedSkill && all !== true) {
       fail("Pass a skill name or --all.");
@@ -775,6 +911,9 @@ export class SkillsCommands {
   @CommandAccess({ kind: "mutate", resource: "skills", action: "sync", risk: "high" })
   @Returns(skillsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    if (managedSkillPolicy("skills sync")) {
+      policyFailure("skills sync", "Global skill synchronization requires an explicit local operator.");
+    }
     const codexSynced = syncCodex();
     const payload = {
       success: true,
@@ -803,6 +942,7 @@ export class SkillsCommands {
     @Option({ flags: "--note <text>", description: "Optional operator note" }) note?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills grant");
     const agentId = agent?.trim();
     const skillName = skill?.trim();
     if (!agentId) fail("Agent id is required.");
@@ -810,9 +950,13 @@ export class SkillsCommands {
     if (!getAgent(agentId)) {
       failAgentNotFound("skills grant", agentId, asJson);
     }
-    const resolved =
-      findSkillByName(listCatalogSkills(), skillName) ??
-      findSkillByName(listInstalledSkills({ includeCodex: false }), skillName);
+    const selected = snapshot?.skills.find((entry) => policySkillMatches(entry, skillName));
+    const resolved = snapshot
+      ? selected
+        ? policySkillRecord(selected)
+        : null
+      : (findSkillByName(listCatalogSkills(), skillName) ??
+        findSkillByName(listInstalledSkills({ includeCodex: false }), skillName));
     if (!resolved) {
       failSkillNotFound("skills grant", skillName, {
         asJson,
@@ -821,7 +965,7 @@ export class SkillsCommands {
       });
     }
 
-    const canonicalSkillName = resolved.name;
+    const canonicalSkillName = selected?.id ?? resolved.name;
     const grant = dbUpsertSkillGrant({
       agentId,
       skillName: canonicalSkillName,
@@ -854,11 +998,17 @@ export class SkillsCommands {
     @Arg("skill", { description: "Skill name" }) skill: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills revoke");
     const agentId = agent?.trim();
-    const skillName = skill?.trim();
+    const requested = skill?.trim();
+    const selected = snapshot?.skills.find((entry) => policySkillMatches(entry, requested));
+    const skillName = selected?.id ?? requested;
     if (!agentId) fail("Agent id is required.");
     if (!skillName) fail("Skill name is required.");
-    const removed = dbDeleteSkillGrant(agentId, skillName);
+    const removed =
+      snapshot && !selected
+        ? false
+        : dbDeleteSkillGrant(agentId, skillName) || Boolean(selected && dbDeleteSkillGrant(agentId, selected.name));
     const payload = {
       success: removed,
       agentId,
@@ -893,8 +1043,9 @@ export class SkillsCommands {
     @Option({ flags: "--dry-run", description: "Preview counts without writing any grant" }) dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills grant-batch");
     const agentIds = this.resolveAgentAxis("skills grant-batch", agent, allAgents, asJson);
-    const skillNames = this.resolveSkillAxis("skills grant-batch", skill, allSkills, asJson);
+    const skillNames = this.resolveSkillAxis("skills grant-batch", skill, allSkills, asJson, snapshot);
     const trimmedNote = note?.trim();
 
     const errors: Array<{ agentId: string; skillName: string; error: string }> = [];
@@ -948,8 +1099,9 @@ export class SkillsCommands {
     @Option({ flags: "--dry-run", description: "Preview counts without removing any grant" }) dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills revoke-batch");
     const agentIds = this.resolveAgentAxis("skills revoke-batch", agent, allAgents, asJson);
-    const skillNames = this.resolveSkillAxis("skills revoke-batch", skill, allSkills, asJson);
+    const skillNames = this.resolveSkillAxis("skills revoke-batch", skill, allSkills, asJson, snapshot);
 
     const errors: Array<{ agentId: string; skillName: string; error: string }> = [];
     let removed = 0;
@@ -1013,9 +1165,19 @@ export class SkillsCommands {
     skill: string | undefined,
     allSkills: boolean | undefined,
     asJson?: boolean,
+    snapshot: SkillPolicySnapshot | null = null,
   ): string[] {
     const single = skill?.trim();
     if (single && allSkills) fail("Use either --skill <name> or --all-skills, not both.");
+    if (snapshot) {
+      if (allSkills) return snapshot.skills.map((entry) => entry.id).sort();
+      if (single) {
+        const selected = snapshot.skills.find((entry) => policySkillMatches(entry, single));
+        if (selected) return [selected.id];
+        failSkillNotFound(op, single, { asJson, candidates: snapshot.skills.map((entry) => entry.name) });
+      }
+      fail("Specify a skill axis: --skill <name> or --all-skills.");
+    }
     if (allSkills) {
       const names = new Set<string>();
       for (const s of listCatalogSkills()) names.add(s.name);
@@ -1072,26 +1234,24 @@ export class SkillsCommands {
     @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const snapshot = managedSkillPolicy("skills inspect");
     const agentId = agent?.trim();
     if (!agentId) fail("Agent id is required.");
+    if (snapshot && agentId !== snapshot.scope.agentId) {
+      policyFailure("skills inspect", "Skill inspection requires the target agent execution context and scope.");
+    }
     if (!getAgent(agentId)) failAgentNotFound("skills inspect", agentId, asJson);
-    const resolved = resolveAgentSkills(agentId);
-    const payload = {
-      agentId,
-      hasConfiguration: resolved.hasConfiguration,
-      allowlist: resolved.allowlist,
-      provenance: resolved.provenance,
-    };
+    const payload = snapshot ? policyInspection(snapshot) : { agentId, ...resolveAgentSkills(agentId) };
     if (asJson) {
       printJson(payload);
     } else {
       console.log(`# skills.inspect ${agentId}`);
-      console.log(`hasConfiguration=${resolved.hasConfiguration}`);
-      console.log(`allowlist (${resolved.allowlist.length}):`);
-      for (const skill of resolved.allowlist) console.log(`  - ${skill}`);
-      console.log(`from baseline (${resolved.provenance.baseline.length})`);
-      console.log(`from capabilities (${resolved.provenance.fromCapabilities.length})`);
-      console.log(`from grants (${resolved.provenance.fromGrants.length})`);
+      console.log(`hasConfiguration=${payload.hasConfiguration}`);
+      console.log(`allowlist (${payload.allowlist.length}):`);
+      for (const skill of payload.allowlist) console.log(`  - ${skill}`);
+      console.log(`from baseline (${payload.provenance.baseline.length})`);
+      console.log(`from capabilities (${payload.provenance.fromCapabilities.length})`);
+      console.log(`from grants (${payload.provenance.fromGrants.length})`);
     }
     return payload;
   }
@@ -1110,11 +1270,25 @@ export class SkillsCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each grant" })
     fields?: string,
   ) {
+    const snapshot = managedSkillPolicy("skills who");
     const agentId = agentFilter?.trim();
     const skillName = skill?.trim();
     let grants: DbSkillGrant[] = [];
     let scopeLabel = "";
-    if (agentId) {
+    if (snapshot) {
+      grants =
+        !agentId || agentId === snapshot.scope.agentId
+          ? dbListSkillGrantsForAgent(snapshot.scope.agentId).filter(
+              (grant) =>
+                snapshot.skills.some((entry) => policySkillMatches(entry, grant.skillName)) &&
+                (!skillName ||
+                  snapshot.skills.some(
+                    (entry) => policySkillMatches(entry, skillName) && policySkillMatches(entry, grant.skillName),
+                  )),
+            )
+          : [];
+      scopeLabel = `agent ${snapshot.scope.agentId}`;
+    } else if (agentId) {
       grants = dbListSkillGrantsForAgent(agentId);
       scopeLabel = `agent ${agentId}`;
     } else if (skillName) {

@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
+import { updateRuntimeProviderState } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
@@ -13,7 +14,15 @@ import {
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
-import { resolveAgentSkills } from "./allowed-skills.js";
+import { assertPreparedSkillExposure, assertSkillExposureContract } from "./skill-exposure-contract.js";
+import { buildSkillExposureText } from "./skill-exposure-text.js";
+import {
+  buildAuthorizedSkillPolicyContinuity,
+  readSkillPolicyRebuild,
+  readSkillPolicySessionBinding,
+  resolveSkillPolicySessionTransition,
+  SKILL_POLICY_REBUILD_REASON,
+} from "./skill-policy-lifecycle.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -470,6 +479,7 @@ async function buildRuntimeStartRequestInternal(
     agent,
     sessionName,
     sessionCwd,
+    executionId: runId,
     resolvedSource,
     approvalSource,
     toolContext,
@@ -477,7 +487,7 @@ async function buildRuntimeStartRequestInternal(
     session,
     ...(modelBroker ? { modelBroker } : {}),
   });
-  const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
+  const { hostServices, providerBootstrap, runtimePlugins, skillPolicy, skillNativeNames } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
@@ -513,15 +523,44 @@ async function buildRuntimeStartRequestInternal(
   const canResumeCredentialSession =
     canResumeStoredSession &&
     isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
+  const skillTransition = resolveSkillPolicySessionTransition({
+    previous: readSkillPolicySessionBinding(storedRuntimeSessionParams),
+    snapshot: skillPolicy,
+    effectiveContextKey: skillPolicy.scope.contextKey,
+    hasProviderContext: Boolean(storedProviderSessionId),
+  });
+  const storedSkillRebuild = readSkillPolicyRebuild(storedRuntimeSessionParams);
+  const rebuildSkillContext = skillTransition.action === "rebuild";
+  const canResumeAuthorizedSession = canResumeCredentialSession && !rebuildSkillContext;
+  // A new thread has no proof for the contents of its parent's native history.
+  const blockUnprovedParentFork = !canResumeAuthorizedSession && dbSessionKey.includes(":thread:");
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
     runtimeProviderId,
     supportsSessionFork: runtimeCapabilities.supportsSessionFork,
     supportsSessionResume: runtimeCapabilities.supportsSessionResume,
     storedProviderSessionId,
-    canResumeStoredSession: canResumeCredentialSession,
+    canResumeStoredSession: canResumeAuthorizedSession,
     defaultRuntimeProviderId,
+    ...(rebuildSkillContext || blockUnprovedParentFork ? { contextRebuildReason: SKILL_POLICY_REBUILD_REASON } : {}),
   });
+  const skillContinuity = !canResumeAuthorizedSession
+    ? (storedSkillRebuild?.continuity ??
+      (rebuildSkillContext ? buildAuthorizedSkillPolicyContinuity({ humanInputs: [], effects: [] }) : undefined))
+    : undefined;
+  const nextSessionParams = {
+    ...(canResumeAuthorizedSession ? storedRuntimeSessionParams : {}),
+    skillPolicySession: skillTransition.binding,
+    ...(skillContinuity
+      ? {
+          skillPolicyRebuild: {
+            contractVersion: 1,
+            reason: SKILL_POLICY_REBUILD_REASON,
+            continuity: skillContinuity,
+          },
+        }
+      : {}),
+  };
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
@@ -537,17 +576,18 @@ async function buildRuntimeStartRequestInternal(
     ctx: prompt.context,
     sessionName,
     cwd: sessionCwd,
-    sessionRuntimeParams: session.runtimeSessionParams,
+    sessionRuntimeParams: nextSessionParams,
     runtimeContext,
+    extraSections: [
+      ...(providerBootstrap?.skillExposure?.mode === "textual"
+        ? [{ title: "Authorized skills", content: buildSkillExposureText(skillPolicy) }]
+        : []),
+      ...(skillContinuity ? [{ title: "Authorized task continuity", content: skillContinuity.prompt }] : []),
+    ],
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
-  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
-  const allowedSkills =
-    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
-      ? resolvedAllowedSkills.allowlist
-      : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
@@ -608,10 +648,18 @@ async function buildRuntimeStartRequestInternal(
       rotatedBootstrap = await runtimeProvider.prepareSession?.({
         agentId: agent.id,
         cwd: sessionCwd,
+        skillPolicy,
+        skillNativeNames,
+        skillExposureMode: providerBootstrap?.skillExposure?.mode,
         ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
         hostServices,
         modelBroker: candidate,
       });
+      assertPreparedSkillExposure(
+        skillPolicy,
+        assertSkillExposureContract(runtimeProvider),
+        rotatedBootstrap?.skillExposure,
+      );
     } catch (error) {
       if (planned) {
         await abandonClaimedRuntimeModelBrokerPlan(planned, "provider_reconfiguration_failed").catch(() => undefined);
@@ -706,12 +754,12 @@ async function buildRuntimeStartRequestInternal(
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
       cwd: sessionCwd,
-      resume: Boolean(resumeProviderSessionId || canResumeCredentialSession),
+      resume: Boolean(resumeProviderSessionId || canResumeAuthorizedSession),
       fork: Boolean(forkFromProviderSessionId),
       providerSessionIdBefore:
         forkFromProviderSessionId ??
         resumeProviderSessionId ??
-        (canResumeCredentialSession ? storedProviderSessionId : null) ??
+        (canResumeAuthorizedSession ? storedProviderSessionId : null) ??
         null,
       contextId: runtimeContext.contextId,
       source: streamingSession.currentSource ?? null,
@@ -808,7 +856,7 @@ async function buildRuntimeStartRequestInternal(
     sessionName,
     session: streamingSession,
     stashedMessages,
-    beforeTurnStart: (input) => {
+    beforeTurnStart: async (input) => {
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
@@ -849,6 +897,7 @@ async function buildRuntimeStartRequestInternal(
         resolvedSource: turnSource,
         approvalSource,
       });
+      await preparedBootstrap.refreshSkillPolicy();
     },
     traceTurnStart,
   });
@@ -861,10 +910,10 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
       ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
-      ...(canResumeCredentialSession
+      ...(canResumeAuthorizedSession
         ? {
             resumeSession: {
-              params: storedRuntimeSessionParams,
+              params: nextSessionParams,
               displayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
             },
           }
@@ -882,7 +931,14 @@ async function buildRuntimeStartRequestInternal(
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
-      ...(allowedSkills ? { allowedSkills } : {}),
+      skillPolicy,
+      skillNativeNames,
+      skillExposure: providerBootstrap?.skillExposure,
+      verifySkillPolicy: preparedBootstrap.verifySkillPolicy,
+      verifySkillPolicyAtDispatch: preparedBootstrap.verifySkillPolicyAtDispatch,
+      onSkillPolicyInvalidated: () => {
+        streamingSession.internalAbortReason = SKILL_POLICY_REBUILD_REASON;
+      },
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
       ...(modelBroker ? { modelBroker } : {}),
@@ -890,6 +946,19 @@ async function buildRuntimeStartRequestInternal(
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+  // Persist the core binding before a provider can observe the request. Keep
+  // last-used provider ownership unchanged until an authenticated turn succeeds.
+  updateRuntimeProviderState(dbSessionKey, session.runtimeProvider, {
+    providerSessionId: canResumeAuthorizedSession ? storedProviderSessionId : undefined,
+    runtimeSessionDisplayId: canResumeAuthorizedSession ? session.runtimeSessionDisplayId : undefined,
+    runtimeSessionParams: nextSessionParams,
+  });
+  session.runtimeSessionParams = nextSessionParams;
+  if (!canResumeAuthorizedSession) {
+    session.providerSessionId = undefined;
+    session.sdkSessionId = undefined;
+    session.runtimeSessionDisplayId = undefined;
+  }
   lifecycle.pendingModelBroker = undefined;
   return result;
 }

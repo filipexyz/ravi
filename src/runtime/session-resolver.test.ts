@@ -14,6 +14,7 @@ import { configStore } from "../config-store.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
+import { fixtureRuntimeProvider, fixtureSkillExposureCapabilities } from "./skill-exposure.fixtures.js";
 
 const SESSION_KEY = "agent:main:dm:resolver";
 const SESSION_NAME = "main-dm-resolver";
@@ -23,6 +24,7 @@ let stateDir: string | null = null;
 
 function createFileBackedProviderCapabilities(): RuntimeCapabilities {
   return {
+    skillExposure: fixtureSkillExposureCapabilities(),
     runtimeControl: { supported: false, operations: [] },
     dynamicTools: { mode: "none" },
     execution: { mode: "subprocess-rpc" },
@@ -52,6 +54,7 @@ function registerFileBackedProvider(): void {
     (): SessionRuntimeProvider => ({
       id: FILE_BACKED_PROVIDER,
       getCapabilities: createFileBackedProviderCapabilities,
+      prepareSession: fixtureRuntimeProvider().prepareSession,
       startSession: () => ({
         provider: FILE_BACKED_PROVIDER,
         events: (async function* () {})(),

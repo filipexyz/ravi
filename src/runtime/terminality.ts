@@ -12,7 +12,7 @@ export function isRuntimeTerminalEvent(event: RuntimeEvent): event is RuntimeTer
 export interface RuntimeFailedTerminalInput {
   error: string;
   recoverable?: boolean;
-  failureKind?: "transport";
+  failureKind?: "transport" | "skill-policy";
   rawEvent?: Record<string, unknown>;
   metadata?: RuntimeEventMetadata;
 }

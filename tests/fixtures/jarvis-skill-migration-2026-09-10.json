@@ -1,0 +1,4363 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-10T19:14:02.156Z",
+  "package": {
+    "path": "/home/ravi/.nvm/versions/node/v22.22.2/lib/node_modules/ravi.bot",
+    "realPath": "/home/ravi/.nvm/versions/node/v22.22.2/lib/node_modules/ravi.bot",
+    "version": "3.260907.1",
+    "gitHead": null,
+    "bundleSha256": "033bd498932bc77812fb6da4b77d85b9340744c92dc21bc038a1cc378b63e842"
+  },
+  "database": "/home/ravi/.ravi/ravi.db",
+  "agent": {
+    "id": "jarvis",
+    "cwd": "/home/ravi/jarvis",
+    "provider": "codex",
+    "runtimePermissions": {
+      "profile": "full-access",
+      "capabilities": [
+        {
+          "permission": "use",
+          "objectType": "tool",
+          "objectId": "*"
+        },
+        {
+          "permission": "use",
+          "objectType": "toolgroup",
+          "objectId": "*"
+        },
+        {
+          "permission": "execute",
+          "objectType": "group",
+          "objectId": "*"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "sde"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "ravi"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "echo"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "printf"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "cat"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "head"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "tail"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "ls"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "find"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "grep"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "egrep"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "awk"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "gawk"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "sed"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "cut"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "tr"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "sort"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "uniq"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "wc"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "nl"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "jq"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "yq"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "python3"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "node"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "npm"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "npx"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "bun"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "gh"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "git"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "rg"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "date"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "sleep"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "seq"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "env"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "which"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "file"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "stat"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "basename"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "dirname"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "realpath"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "readlink"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "mkdir"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "cp"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "mv"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "touch"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "ln"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "diff"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "tee"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "comm"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "paste"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "fold"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "column"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "base64"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "md5sum"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "sha256sum"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "tar"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "gzip"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "gunzip"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "zip"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "unzip"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "xargs"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "test"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "pwd"
+        },
+        {
+          "permission": "view",
+          "objectType": "agent",
+          "objectId": "*"
+        },
+        {
+          "permission": "execute",
+          "objectType": "executable",
+          "objectId": "*"
+        },
+        {
+          "permission": "access",
+          "objectType": "session",
+          "objectId": "*"
+        },
+        {
+          "permission": "manage",
+          "objectType": "session",
+          "objectId": "*"
+        },
+        {
+          "permission": "write",
+          "objectType": "session",
+          "objectId": "*"
+        },
+        {
+          "permission": "create",
+          "objectType": "session",
+          "objectId": "*"
+        },
+        {
+          "permission": "read",
+          "objectType": "chats.lists",
+          "objectId": "*"
+        },
+        {
+          "permission": "mutate",
+          "objectType": "chats.lists",
+          "objectId": "delta"
+        },
+        {
+          "permission": "mutate",
+          "objectType": "whatsapp.group",
+          "objectId": "send"
+        }
+      ]
+    }
+  },
+  "grants": [
+    "agent-browser",
+    "agent-spec-authoring",
+    "agents-manager",
+    "apps",
+    "architect",
+    "artifacts",
+    "audio",
+    "automation-recipes",
+    "channels-manager",
+    "cli-creator",
+    "commands",
+    "configuring-llm-providers",
+    "contacts-manager",
+    "context-cli",
+    "cotacao-frete-sde",
+    "creating-task-profiles",
+    "crm-manager",
+    "cron-manager",
+    "cross-manager",
+    "daemon-manager",
+    "deploy-checklist-ravi",
+    "emissao-nf-sde",
+    "events",
+    "gmail-account-onboarding",
+    "heartbeat-manager",
+    "image",
+    "instances-manager",
+    "interviewing-agents",
+    "inventario-atualizar-sde",
+    "matrix-manager",
+    "meetings",
+    "observers",
+    "orchestrating-swarm",
+    "permissions-manager",
+    "pi-provider",
+    "projects",
+    "prompt-builder",
+    "prox-calls",
+    "ravi-architecture",
+    "ravi-media-send",
+    "ravi-rules",
+    "reading-lists",
+    "routes-manager",
+    "scoping-domain-discovery",
+    "sde-ravi-surfaces",
+    "sessions",
+    "settings-manager",
+    "skill-creator",
+    "skill-gates",
+    "slack",
+    "specs",
+    "stickers",
+    "tag-rules",
+    "tasks",
+    "tasks-eval",
+    "tasks-manager",
+    "trigger-debug",
+    "trigger-manager",
+    "troubleshooting",
+    "video",
+    "web-design-guidelines",
+    "whatsapp-manager"
+  ],
+  "contextSummary": [],
+  "permissionSources": [
+    {
+      "name": "runtime-bootstrap-provider.ts",
+      "digest": "2db0eec73f51b129142561c62dea8c353420b6ac191b490a630142dca0994c3e"
+    },
+    {
+      "name": "agent-default-capabilities-provider.ts",
+      "digest": "8a23c32acca5167d0b051400bb9646cb7fd9299f184edd7ea461e839771e388a"
+    },
+    {
+      "name": "provider-registry.ts",
+      "digest": "b963feac4bf2ef46dd311303ed813d335b13d7d6a44199a701e1910965bcfcee"
+    }
+  ],
+  "catalog": [
+    {
+      "name": "app-creator",
+      "directory": "app-creator",
+      "source": "catalog:ravi-dev/app-creator",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "1807dfcab1883d75cca3f59519207d20dfda624ec79415a80885cc12e2c5dbbc"
+    },
+    {
+      "name": "ravi-architecture",
+      "directory": "architecture",
+      "source": "catalog:ravi-dev/architecture",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "f9a02f5f1d56209fcda5cde3f889cb20dbe88f7884a2cc175f9d0d5b5a84546c"
+    },
+    {
+      "name": "cli-creator",
+      "directory": "cli-creator",
+      "source": "catalog:ravi-dev/cli-creator",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "3c4a8a5650adf3a69fb645a7e97d3d9c7b25939b451d25a15fee04d0579aa4be"
+    },
+    {
+      "name": "context-cli",
+      "directory": "context-cli",
+      "source": "catalog:ravi-dev/context-cli",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "01d914db7b3b7edc09764096beeee7e4edf4217bb7bd1350a928541ffaf60c02"
+    },
+    {
+      "name": "prompt-builder",
+      "directory": "prompt-builder",
+      "source": "catalog:ravi-dev/prompt-builder",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "ce39773abdc4e990414825a78eaca28278fb6eb02b55dcb250d70ba4833fc13a"
+    },
+    {
+      "name": "ravi-rules",
+      "directory": "ravi-rules",
+      "source": "catalog:ravi-dev/ravi-rules",
+      "pluginName": "ravi-dev",
+      "requirements": [],
+      "digest": "0a37440fcd43699982becbc09fc361e00b461b2b7239251e07541486f631bb24"
+    },
+    {
+      "name": "agents-manager",
+      "directory": "agents",
+      "source": "catalog:ravi-system/agents",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "9431ef9d70a79077369880bfacbbefd43c2580f14ff9b96eb8d00d38e5980382"
+    },
+    {
+      "name": "apps",
+      "directory": "apps",
+      "source": "catalog:ravi-system/apps",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "c6643981fcb197b67685cf51aadfd0c03eb2bced79ac696bcd2e80df54f2eebf"
+    },
+    {
+      "name": "architect",
+      "directory": "architect",
+      "source": "catalog:ravi-system/architect",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "266c1b89ab3f84d4666f218d20b37277d2f4950ab2a46c5985cc068a4ea59c29"
+    },
+    {
+      "name": "artifacts",
+      "directory": "artifacts",
+      "source": "catalog:ravi-system/artifacts",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "61c30865e2a8b836ac087255d0364cd790232090b4df175b0642716aa6baca17"
+    },
+    {
+      "name": "audio",
+      "directory": "audio",
+      "source": "catalog:ravi-system/audio",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "5c37f17e042fd8a9d1cd88543602d1694d1a3488f4dbfebdb3cf2c9009d5578a"
+    },
+    {
+      "name": "automation-recipes",
+      "directory": "automation-recipes",
+      "source": "catalog:ravi-system/automation-recipes",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "7ad1c26669d8a7e97989e492497464e97571ad8ed2962059a2ed0edce35906e7"
+    },
+    {
+      "name": "channels-manager",
+      "directory": "channels",
+      "source": "catalog:ravi-system/channels",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "c2deec96a12842af37f77180df2d26cc4fe6bac683b4b12d5b104c040e11937a"
+    },
+    {
+      "name": "commands",
+      "directory": "commands",
+      "source": "catalog:ravi-system/commands",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "614f18de0a336c380222db965649a9f9685306f055e75bd55060c198bf0374cf"
+    },
+    {
+      "name": "contacts-manager",
+      "directory": "contacts",
+      "source": "catalog:ravi-system/contacts",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "fb876db88bbc07b29ff9d25cbac5ff94ed960c57c7046283d881f84926becd8e"
+    },
+    {
+      "name": "crm-manager",
+      "directory": "crm",
+      "source": "catalog:ravi-system/crm",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "34b0682337aa958c5f56d46c6d3d580f692db8421838578f07c7a9a4c0143566"
+    },
+    {
+      "name": "cron-manager",
+      "directory": "cron",
+      "source": "catalog:ravi-system/cron",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "1613b5cd09d0fa868a101ae5e374987243f69453f8f48bee698045b8bcea401f"
+    },
+    {
+      "name": "cross-manager",
+      "directory": "cross",
+      "source": "catalog:ravi-system/cross",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "2f463ba31524e00f3b75aa620ceb179e59ec9833177d36b628ec61f0a07a6d67"
+    },
+    {
+      "name": "daemon-manager",
+      "directory": "daemon",
+      "source": "catalog:ravi-system/daemon",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "e3ba7a197d08d50fc058293d3a59f46984656be8f39d1ddc3727ef0be2be5911"
+    },
+    {
+      "name": "events",
+      "directory": "events",
+      "source": "catalog:ravi-system/events",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "d8c57d1e384420fbae1251c77c0f5c491d4d5fb1a90528281816624b26de025b"
+    },
+    {
+      "name": "heartbeat-manager",
+      "directory": "heartbeat",
+      "source": "catalog:ravi-system/heartbeat",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "664691e1c626a68af0123f9992d91969c4f9db234f48913a7c8b55e3e58d781e"
+    },
+    {
+      "name": "image",
+      "directory": "image",
+      "source": "catalog:ravi-system/image",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "4c9ad9f9839e235b61580585642c64c2eebc184d02c7cec5705966ffd1242fac"
+    },
+    {
+      "name": "instances-manager",
+      "directory": "instances",
+      "source": "catalog:ravi-system/instances",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "5c7c0dd7d26c2fb060b55efafee1c0d9601d0f24a510b2cdadb2e1fc87c40643"
+    },
+    {
+      "name": "matrix-manager",
+      "directory": "matrix",
+      "source": "catalog:ravi-system/matrix",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "0e5e2e6557bd1fe4106263cd432ae253fcf8b55474e4cd76d2d5f28e58907ddd"
+    },
+    {
+      "name": "meetings",
+      "directory": "meetings",
+      "source": "catalog:ravi-system/meetings",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "003d5105edd45b78b127f954cd73988fe6a29362a2a5c78e75ba7535e6e26eb1"
+    },
+    {
+      "name": "observers",
+      "directory": "observers",
+      "source": "catalog:ravi-system/observers",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "3b9192e9f9bbefa212e1cdc0d77e47ae718aa3b1409efb9d6d47cc1f95c7aa29"
+    },
+    {
+      "name": "pages",
+      "directory": "pages",
+      "source": "catalog:ravi-system/pages",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "5e324cb616a007f43f5022bcd00a76ad63bcf2ec29db16251c3ed832df26e927"
+    },
+    {
+      "name": "permissions-manager",
+      "directory": "permissions",
+      "source": "catalog:ravi-system/permissions",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "e84dc797d96dfbb2091bf67747d844280382a24324f9b9c71143c8b90018cb40"
+    },
+    {
+      "name": "projects",
+      "directory": "projects",
+      "source": "catalog:ravi-system/projects",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "b04421da7916c7bbfb7107e81bf1d642c3edd94f345392cac8af2465b79cdabc"
+    },
+    {
+      "name": "prox-calls",
+      "directory": "prox-calls",
+      "source": "catalog:ravi-system/prox-calls",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "becc19667f6d76528e3a4ee5d3099a13acf9810d629222df970c8e1ab8190f8c"
+    },
+    {
+      "name": "routes-manager",
+      "directory": "routes",
+      "source": "catalog:ravi-system/routes",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "bda3c52a3e8c3b23b926f57eadb5021628b41a3af3535e0c7104a588c9764bd3"
+    },
+    {
+      "name": "sessions",
+      "directory": "sessions",
+      "source": "catalog:ravi-system/sessions",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "e75abadca52f28f2dfd3b1e774676d73f4b98dba1bfff51a629d9c21b8f56c2f"
+    },
+    {
+      "name": "settings-manager",
+      "directory": "settings",
+      "source": "catalog:ravi-system/settings",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "de22278f104ad9be60bf1fb07b96332cfd100ba94b00bfa6d41772dda2a3ce9f"
+    },
+    {
+      "name": "skill-gates",
+      "directory": "skill-gates",
+      "source": "catalog:ravi-system/skill-gates",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "9b4eb06fa293021d6cbb349774ce382f80c51a85bb0d86ae20eb284bd5557d89"
+    },
+    {
+      "name": "skill-creator",
+      "directory": "skills",
+      "source": "catalog:ravi-system/skills",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "f855a57e2aa7e20a162a1f2d730d81e45e97d756c56f56f76030332f9c8060d9"
+    },
+    {
+      "name": "slack",
+      "directory": "slack",
+      "source": "catalog:ravi-system/slack",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "08caa732e19169b358700cd8fe61a77a849e453c5a74307865285e8b1d61eb65"
+    },
+    {
+      "name": "specs",
+      "directory": "specs",
+      "source": "catalog:ravi-system/specs",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "a1e77e379bb1f128bd7ac1aaf886ea7a644bda53ef76aa27a3715c374f7aa32c"
+    },
+    {
+      "name": "stickers",
+      "directory": "stickers",
+      "source": "catalog:ravi-system/stickers",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "3dfc90ef56caaba917d88ab1203c3a05e9096eb6744d99710674b2734584c2cd"
+    },
+    {
+      "name": "tag-rules",
+      "directory": "tag-rules",
+      "source": "catalog:ravi-system/tag-rules",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "503a0dccc9abcf805938f41461bf23300514ce735517aa8f8464d36731f150d8"
+    },
+    {
+      "name": "tasks-eval",
+      "directory": "tasks-eval",
+      "source": "catalog:ravi-system/tasks-eval",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "e35e08d3852b7b7d205eb2b04968e9602cfa3e4bb37602be231f8345bd83fc12"
+    },
+    {
+      "name": "tasks-manager",
+      "directory": "tasks-manager",
+      "source": "catalog:ravi-system/tasks-manager",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "f8ab1273cd011c295afa62f2dac3e96938b2c87cf2c3482416b91f1893a0a274"
+    },
+    {
+      "name": "tasks",
+      "directory": "tasks",
+      "source": "catalog:ravi-system/tasks",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "9d1e3d29e2957c77541051be98f9e79e33ad881a4261e3f65d936e5bfc008743"
+    },
+    {
+      "name": "trigger-manager",
+      "directory": "triggers",
+      "source": "catalog:ravi-system/triggers",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "e31846d3cd5f5961e11219329a4b46fea061415d8dbb34e79f7431fe325e47e7"
+    },
+    {
+      "name": "video",
+      "directory": "video",
+      "source": "catalog:ravi-system/video",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "c897d2a92579c2db4320aa7328441715892f3e7bb035d8bfff7fe4417ae8f24b"
+    },
+    {
+      "name": "whatsapp-manager",
+      "directory": "whatsapp",
+      "source": "catalog:ravi-system/whatsapp",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "3c833641902a0e9b1ed47724bb5f95ed8c49a3e03611a180dc711d4153ce6076"
+    },
+    {
+      "name": "provider-continuity",
+      "directory": "provider-continuity",
+      "source": "plugin:ravi-system",
+      "pluginName": "ravi-system",
+      "requirements": [],
+      "digest": "48e919dc26e3d48e7632f6fcbf2eea92c1dd8a0626287209b09b7a696ba72aec"
+    },
+    {
+      "name": "agent-browser",
+      "directory": "agent-browser-core",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "7f63886dfb220457828180c2ea2788146f48843463ae7ba27565f651ae7b6576"
+    },
+    {
+      "name": "agent-capability-skill-selection",
+      "directory": "agent-capability-skill-selection",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "4f90e37216d7d98a2143a8a6bbc1e9493c2271d397066301d48b89143e70627c"
+    },
+    {
+      "name": "agent-spec-authoring",
+      "directory": "agent-spec-authoring",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "8afe932535f00846e5b705133c5fb156ef5c27dfe4fd967b0f8d5e417bc2bc7b"
+    },
+    {
+      "name": "agentless-verified-build-loop",
+      "directory": "agentless-verified-build-loop",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "baf8ccf632d35911e3c94c7a88bc6b8ddba68685c73129ee13250badba468511"
+    },
+    {
+      "name": "agents-health-check",
+      "directory": "agents-health-check",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "bf1511b22749d89e6b3ac569204af8687f9152ccab1ef81abb5213a3d50e3a87"
+    },
+    {
+      "name": "agents-manager",
+      "directory": "agents-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e5213cf580b0de818efb2c1efa25516934f7bcc09047d439c7439a792180fdde"
+    },
+    {
+      "name": "analise-longa-duracao",
+      "directory": "analise-longa-duracao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0e32a74d43efa2acc3474a6fe7b49a117ff270dc3845cbcac9316d2b6cbccabe"
+    },
+    {
+      "name": "analyzing-search-visibility-opportunities",
+      "directory": "analyzing-search-visibility-opportunities",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e805e08f3b384ec78640de3ba31ddc807d5c90477dc660ae5786cd5fc864839c"
+    },
+    {
+      "name": "app-factory",
+      "directory": "app-factory",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b39b72913f36647b41914306a6a441ed077e19b6c9c095445979e4a320f59c22"
+    },
+    {
+      "name": "approval-reaction-publication-handlers",
+      "directory": "approval-reaction-publication-handlers",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "49178f61ecbbcd4d0306d62d927c5c8e09052ac771c101917a9eda61687beee6"
+    },
+    {
+      "name": "architecture-decision-explanations",
+      "directory": "architecture-decision-explanations",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "100d50e4ac8c66575ae6c118ca915fee43c326e7fd2188f3aaa0f6c55aae1cda"
+    },
+    {
+      "name": "artifacts",
+      "directory": "artifacts",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a0d930182655c344a56412a26fed0d7f098b8d3a94ecbd1cf4a16595f04eabd3"
+    },
+    {
+      "name": "assessing-reference-implementation-gaps",
+      "directory": "assessing-reference-implementation-gaps",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "20a9322cb4294705e91fb94f72318758534d2d49fd204462ca1850e8bd327c6d"
+    },
+    {
+      "name": "assurance-gate",
+      "directory": "assurance-gate",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3c873a2bcb45ab52693b8c3267d4ba39723dd8cd811e57bc7f12139b20b66445"
+    },
+    {
+      "name": "atam-ravi",
+      "directory": "atam-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0bd12ed555ed8fc6a5f61f3608aee2a3820f39e6a7bd2c7076d9b44058cd047b"
+    },
+    {
+      "name": "atomic-filesystem-cache-publication",
+      "directory": "atomic-filesystem-cache-publication",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0cb86f422a9fc2fbd9f4e4aa11426049bd60603e471a3abc1eff836d833e4c55"
+    },
+    {
+      "name": "audio",
+      "directory": "audio",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "c3422b6265809be8b8cc8f13d9ae1da3ed43842901483cc7402fd0751241a6e6"
+    },
+    {
+      "name": "auditing-cron-health",
+      "directory": "auditing-cron-health",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e27d6d180945c0352d4025a9eafdfdbb9411c92c48638034c83040b86d4ec347"
+    },
+    {
+      "name": "auditing-crons",
+      "directory": "auditing-crons",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "1e2b909c0971bfd3f9b95c05fc5e06712f6baba625be845a67eaf362ba1d95f4"
+    },
+    {
+      "name": "authoring-method-profiles",
+      "directory": "authoring-method-profiles",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "93e4908f33c4ce92b469628cedf6ff537cb7ce07153b5ae23cd3207a23dbf1d0"
+    },
+    {
+      "name": "authoring-methodology-profiles",
+      "directory": "authoring-methodology-profiles",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "afbe0e7d7288cc85504b14060aa99bae09153a403d91fb73c35706c6f7f56520"
+    },
+    {
+      "name": "authoring-methodology-task-profiles",
+      "directory": "authoring-methodology-task-profiles",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "76cb11175f4de6e5247af76c2b296d1c167712f0fc216a457cf8985e23019bbd"
+    },
+    {
+      "name": "authorizing-agent-skills",
+      "directory": "authorizing-agent-skills",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e3dea145a8e673c2523ac082640d91732905f440e596ec2f1da5efe360337916"
+    },
+    {
+      "name": "autonomous-feature-orchestration",
+      "directory": "autonomous-feature-orchestration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "426bc07edfa9058abe7e0a07fb6f0a1c12badf71b656b64be981708a0ddd094b"
+    },
+    {
+      "name": "avaliacao-de-shortlists-de-locais",
+      "directory": "avaliacao-de-shortlists-de-locais",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d0234d6fb8731bc34f21a111e9d01eb4107367abd6d66dadf413f8e20694343a"
+    },
+    {
+      "name": "build-agent-facades",
+      "directory": "build-agent-facades",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "9b60196d2f0be8518fda2b3777388f68529a6d825c324fa1097fa8c3593af904"
+    },
+    {
+      "name": "building-ravi-apps",
+      "directory": "building-ravi-apps",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a0e5527368edb74df38d1b30a02bb292ba713a33b93b56246147681b8c9d70b3"
+    },
+    {
+      "name": "channels-manager",
+      "directory": "channels-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "cc7947d728ce35abaf20a0dfd8f81939f6a8490ad21185d4e4825f27ebb8ebba"
+    },
+    {
+      "name": "classificacao-emails-citavel",
+      "directory": "classificacao-emails-citavel",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ad2c7bdd7ce99da0d4d4b99b500878dd9dd7c816e6c6cce7f5c18ef86c1916f8"
+    },
+    {
+      "name": "classificacao-threads-linha-do-tempo",
+      "directory": "classificacao-threads-linha-do-tempo",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3e4091b9305578debafd41e5e634dcf63c62ab4d87769b8f9532e26ab3bcea36"
+    },
+    {
+      "name": "cli-agent-first-closed-loop",
+      "directory": "cli-agent-first-closed-loop",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "12fc7c4b62120f252f0766d2e2cbf635dac7c055239edeb26834253d149fe7bd"
+    },
+    {
+      "name": "cli-creator",
+      "directory": "cli-creator",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "c749d45ecfa6a6be7b60f71f0f0b37926c99aea962cc1cff144e93848bd69822"
+    },
+    {
+      "name": "cli-ux",
+      "directory": "cli-ux",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2520afe9638d630e13516f982aa38876658259bb8b36e69d639d50a7ed2ade51"
+    },
+    {
+      "name": "coleta-dados-batch",
+      "directory": "coleta-dados-batch",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "9b3534a65f315ecc33cc0aabce32f8319c8fb7367f7423fb91b7d5c4521169aa"
+    },
+    {
+      "name": "commonkads-ravi",
+      "directory": "commonkads-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "381a504326f88e294362637cf9d3b828431907ee239f779990874e3a8c561df8"
+    },
+    {
+      "name": "conciliacao-e-baixa-de-recebimentos",
+      "directory": "conciliacao-e-baixa-de-recebimentos",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0b83241fc9ee1bdde71bc04843dd09c78e586a2209c880c4e953b338f9a8d633"
+    },
+    {
+      "name": "configuring-llm-providers",
+      "directory": "configuring-llm-providers",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ed13ea205eab51e701b2a2b13274bade47712fc80569ebf10de0cb99cbec1782"
+    },
+    {
+      "name": "contacts-manager",
+      "directory": "contacts-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b02110be1b6059a7548a3c23a039ede882c2f722cd056a39f3b69c8139d81211"
+    },
+    {
+      "name": "context-cli",
+      "directory": "context-cli",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "66071a942d784c1559f80575a6a7aa5a2cb65335ed9812b488f255022a66604b"
+    },
+    {
+      "name": "controlled-customer-workflow-smoke-testing",
+      "directory": "controlled-customer-workflow-smoke-testing",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "6a4b4fea016906d9619c05d5de8c393d1a0c620a5ee556fb53f60421d9136651"
+    },
+    {
+      "name": "controlled-operational-smoke",
+      "directory": "controlled-operational-smoke",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e4ce14f2cbe336322c34b9bcc798693ca29e5ce5e8268552a801e90bbbc25728"
+    },
+    {
+      "name": "cotacao-frete",
+      "directory": "cotacao-frete",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "80e316c5ed5f392ca6d90b645232e40acd347b603e5b8df15daf72fd789c2a12"
+    },
+    {
+      "name": "cotacao-frete-sde",
+      "directory": "cotacao-frete-sde",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "28efa0b358b5222572f5666920c6cef7f22cdb0cf9bad52a5a956de3ca41af62"
+    },
+    {
+      "name": "creating-task-profiles",
+      "directory": "creating-task-profiles",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2a054e5cc97f008a0784f821d41c836c4bb9a7711b0bda87675cbe7f9b926a4f"
+    },
+    {
+      "name": "criacao-pagina-prospeccao-industrial",
+      "directory": "criacao-pagina-prospeccao-industrial",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ffa1055db1d5c3e499461ab32b8b23413714ee287adc9d1c0db017aec529c1cb"
+    },
+    {
+      "name": "criacao-pedidos-sde",
+      "directory": "criacao-pedidos-sde",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "686432f22c98286281660bcd568c121b0e0eed2fc862ff84dce69449ea1cb70e"
+    },
+    {
+      "name": "crm-cli-text-safety",
+      "directory": "crm-cli-text-safety",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "901cea55830f779c93230d828e979c3106cc2ccf61ec45ec7abae696efb83452"
+    },
+    {
+      "name": "crm-fila-falsos-positivos",
+      "directory": "crm-fila-falsos-positivos",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "288ca38bee5b196087beb67488e40070f0dc2478b2d495a3702dd38f542dfc07"
+    },
+    {
+      "name": "cron-manager",
+      "directory": "cron-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "1a1f6f61933778e2f49cc670532c5777087db57940ed2f60e9b959001d0e9f9d"
+    },
+    {
+      "name": "daemon-manager",
+      "directory": "daemon-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0954bfa470dfbf4a60461ad7aa579c061b78d44ac80fd34b5beac6e2f4addcbd"
+    },
+    {
+      "name": "data-contracts-ravi",
+      "directory": "data-contracts-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "8399195d826fd2f77576aa9d77c9e89e92ba00ef87a18267f5340e1d860a0ac5"
+    },
+    {
+      "name": "data-source-contracts",
+      "directory": "data-source-contracts",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "4bca66110a55dae83fe3610d66d15df7a3737b5f43a955a43166446d08e3abcc"
+    },
+    {
+      "name": "ddd-eventstorming-ravi",
+      "directory": "ddd-eventstorming-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3d463bbf4976557c935ec1e9ee55a08de53761e1a73d7bb4356ba411d1463ade"
+    },
+    {
+      "name": "decision-table-dmn-ravi",
+      "directory": "decision-table-dmn-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "198c9b4dad6799aba92b6ad33a779f249d66ebec055a3a0285183d5f734f10b8"
+    },
+    {
+      "name": "delegating-heavy-work",
+      "directory": "delegating-heavy-work",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "06854343efc441dcb5d81c9dd6d33f35f447ad17174f3a996a86e07814a15515"
+    },
+    {
+      "name": "ravi-user-skills-deploy-checklist-ravi",
+      "directory": "deploy-checklist-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2326342ce14dbe2ad1bbd664327d4daa7cebfae670a800afe8707977a1ac4a7f"
+    },
+    {
+      "name": "designing-gated-customer-case-workflows",
+      "directory": "designing-gated-customer-case-workflows",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3d7d26a57570b03854ce90482d69261b2a87a55d12ff00c7528095ee2ef941f5"
+    },
+    {
+      "name": "diagnosing-provider-runtime-faults",
+      "directory": "diagnosing-provider-runtime-faults",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "78784445a20af3ca77b8c13ef56b8e91bd21a8156d3cede7982cd96567e36aa5"
+    },
+    {
+      "name": "discovering-adapter-contracts",
+      "directory": "discovering-adapter-contracts",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "1b04ccb06e96244f2651bd9134b20deafb5652d36c79001e1a02be7f2219930a"
+    },
+    {
+      "name": "email-investigation",
+      "directory": "email-investigation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "1adfc52b9d93b768795fd5700103f32ff684472d609be92a4e7ca94d27cfe37a"
+    },
+    {
+      "name": "email-thread-batch-classification",
+      "directory": "email-thread-batch-classification",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "7f8844c1124ec522f631cc3418392f39c41cf27b8941c60bc7f123533561239b"
+    },
+    {
+      "name": "email-thread-timeline-reader",
+      "directory": "email-thread-timeline-reader",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "c592d30dbd18596e2543f080014c86f951db8e9270f0ab7fb4b752dd3ecd4645"
+    },
+    {
+      "name": "email-thread-wave-classification",
+      "directory": "email-thread-wave-classification",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d4e17f8c8648803ed847f70638dc9d5c9dcf1726d3d066777d33b7caced0fdcd"
+    },
+    {
+      "name": "emissao-nf-sde",
+      "directory": "emissao-nf-sde",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "98243d865e3ef982cc2342bc718b7b90b1deeca5c576fb3a6f0ccc1f0e96f54d"
+    },
+    {
+      "name": "evaluate-agent-facades",
+      "directory": "evaluate-agent-facades",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "8b8ea37a288272e3c97718831a680368795e8ef46ca047388ea76b4a0bca504e"
+    },
+    {
+      "name": "events",
+      "directory": "events",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ebac30644f3ef5156b506628511c76ecef3b655598c7d242756c56cced166cbb"
+    },
+    {
+      "name": "evidence-governance",
+      "directory": "evidence-governance",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "43d96d9d5ec13ecfedc7244b10727c830f1dbf5877464249c1d20003357bb5b7"
+    },
+    {
+      "name": "fabrica-ravi-apps",
+      "directory": "fabrica-ravi-apps",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "9d5f43e6cde38739917068bddc878f5d52f834f5f9f2c5f0f4c6ceb269d852d7"
+    },
+    {
+      "name": "feature-cycle-spine-discipline",
+      "directory": "feature-cycle-spine-discipline",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3de5ff7e84ba2ddc8894f3f76b8d1dfdf5d2863123890c8634f13846caf6f30d"
+    },
+    {
+      "name": "feature-project-context-anchoring",
+      "directory": "feature-project-context-anchoring",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f2a93bed91b66c9cb1b3be31adfae237dcb947788ff20ab502bd37da18909d42"
+    },
+    {
+      "name": "find-skills",
+      "directory": "find-skills",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "c00eeea0e13e74fe4a9d84ba0a8542205a1b736d65f13134fe1a6647eb14976f"
+    },
+    {
+      "name": "fleet-runtime-target-rollouts",
+      "directory": "fleet-runtime-target-rollouts",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "870e7a97faad16ecfabb5ad15e72f0b78f2db7d8300de7b3d77e747464e8ffb8"
+    },
+    {
+      "name": "fmea-ravi",
+      "directory": "fmea-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "359d6be10b55cbe7414ffd1e68e4bdebbcc5afff41c36a7fa567243a66b7b171"
+    },
+    {
+      "name": "gmail-account-onboarding",
+      "directory": "gmail-account-onboarding",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d23361e82178e82bdee47fc4310dfd05829b6d8d7abe8a4aab81ebbd583d67f2"
+    },
+    {
+      "name": "gmail-evidence-batch-triage",
+      "directory": "gmail-evidence-batch-triage",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d65ad898567a797c4580de70d510a835f74c4d9cde28831f8f51811c9b7e2987"
+    },
+    {
+      "name": "gmail-reader-batch-classificacao",
+      "directory": "gmail-reader-batch-classificacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f514925f580669d06b4e38414ff5c2284bb8dc8f9ff55dfce32812349bab1461"
+    },
+    {
+      "name": "gmail-thread-batch-classification",
+      "directory": "gmail-thread-batch-classification",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b7bda00d147786fe15ac113adb87cac3a0ac7a632c92abfd357e2c80ec6557d4"
+    },
+    {
+      "name": "gmail-thread-classificacao-lote",
+      "directory": "gmail-thread-classificacao-lote",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ca52a15595e11ac7bf35e78008bea986495af05a763c08b080f7a77aaf28ae06"
+    },
+    {
+      "name": "gmail-thread-reader-batch",
+      "directory": "gmail-thread-reader-batch",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "bd753b3f38194b34e1afd3ecf43b78996e3fce321614b780d43bebb18aef7f6d"
+    },
+    {
+      "name": "gmail-thread-reader-batches",
+      "directory": "gmail-thread-reader-batches",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "97a2e6d674cd13145069cafdb27b051560a7b849209a44baa1a19e50a1975a84"
+    },
+    {
+      "name": "gmail-thread-reading-wave",
+      "directory": "gmail-thread-reading-wave",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "637c1aafffb6b85fe33c0f0761b19f32fe66f7caf60351b40d3b7101867be6b2"
+    },
+    {
+      "name": "gmail-thread-triage-investigacao",
+      "directory": "gmail-thread-triage-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "66b29f3aef709f3df6725f8b66da0178aa2ddf7094c260684a3022cad57ee5a2"
+    },
+    {
+      "name": "graphify",
+      "directory": "graphify",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3898b1042721cad27d6f87ca44f638415a7f763203aefd86b90f9358ffea3a43"
+    },
+    {
+      "name": "heartbeat-manager",
+      "directory": "heartbeat-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0481c4a449ca639340b3b13174fd52f12205e0740c317fe22a7f72eb815e8eac"
+    },
+    {
+      "name": "image",
+      "directory": "image",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "5de38d2ed2d3a17d635f7df9f9e475620d6629faff70fb34b0968693048f3074"
+    },
+    {
+      "name": "impact-propagation",
+      "directory": "impact-propagation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d4410d6ab6b8d8a173e13b032c45aa5a5e95b8c6eba1dc9e92203601e2dd3c6a"
+    },
+    {
+      "name": "implementing-facade-batches",
+      "directory": "implementing-facade-batches",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "7e52119d2ba0c7a707d861e8553b86907f5d20f81d6836dc0a2e8dca5be136a3"
+    },
+    {
+      "name": "incremental-rollout-ravi",
+      "directory": "incremental-rollout-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b82fc67ce24dec8b8706dc25aff1c672d9fb91e34da12c37abec008a25cb31e2"
+    },
+    {
+      "name": "independent-code-review-handoffs",
+      "directory": "independent-code-review-handoffs",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "1192c08a62f74642a8f2986bf6f3783e3d1019d8cefbef85a5d98129ebac4f17"
+    },
+    {
+      "name": "instances-manager",
+      "directory": "instances-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ca30ca603346072cd29abc1571e2c880f891c1ec38f98e4ac18e63313d7a39a2"
+    },
+    {
+      "name": "integrating-code-safely",
+      "directory": "integrating-code-safely",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "601a051c86c920d3e106dcefd186bab8ddff4b6184ab78a527b9f6fa4db6b85a"
+    },
+    {
+      "name": "internal-task-delivery-isolation",
+      "directory": "internal-task-delivery-isolation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "80df2afcc33449e9246374bb7504445874329a37ea93a6b878661a237e6f46db"
+    },
+    {
+      "name": "interviewing-agents",
+      "directory": "interviewing-agents",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e082e4cae8c947332629a563a59be954da8d1203266bf0f70ca0608c11e10d15"
+    },
+    {
+      "name": "inventario-atualizar-sde",
+      "directory": "inventario-atualizar-sde",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "dd2645de29c375d76e6e4bfd30ac12efb4abde5cc6a610950528770c34092b84"
+    },
+    {
+      "name": "investigacao-documental",
+      "directory": "investigacao-documental",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "34cc28ef5b5e17fcf5036ea271e267aef56c1153babd8f648e9ac4c42a734c14"
+    },
+    {
+      "name": "investigacao-documental-email",
+      "directory": "investigacao-documental-email",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a836a4bb1a031684737e13db6fc820e3f2fd0b77971904a7b24b031fd25477c0"
+    },
+    {
+      "name": "investigacao-documental-gmail-ondas",
+      "directory": "investigacao-documental-gmail-ondas",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "092a3928ee86d1a7cfb6a3a0f2cf4caee4c3d12f819d0e9c8d7be2bf23eddf07"
+    },
+    {
+      "name": "investigacao-email-leitura-lotes",
+      "directory": "investigacao-email-leitura-lotes",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "85aca4786193f76e472f182ed71a623a92b137778fa5ed7a223ff7eb7efde0df"
+    },
+    {
+      "name": "investigacao-email-linha-tempo",
+      "directory": "investigacao-email-linha-tempo",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "db0ab7db002aa2e1560816b3099b57d252128616e1cab123343f033df8f4c547"
+    },
+    {
+      "name": "investigacao-threads-gmail",
+      "directory": "investigacao-threads-gmail",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e5a9cc0cacdc33f51f81e4af59db7b66093401cac5fe597610c8e7a2c7071581"
+    },
+    {
+      "name": "investigating-ravi-system-state",
+      "directory": "investigating-ravi-system-state",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "8a820164cf43e30b2e28c09fe5872f0508359ac143a27b556718649acdd14d0a"
+    },
+    {
+      "name": "leitor-lote-email-investigacao",
+      "directory": "leitor-lote-email-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2cb18cddc6bca800e7e75b10808bef987c7d593c47f543d74aa759d2a31504c6"
+    },
+    {
+      "name": "leitor-threads-investigacao",
+      "directory": "leitor-threads-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "fb90e57d137df3205038895ae1034b4c49b2d58b049d181dcf39d59ebbd47cf3"
+    },
+    {
+      "name": "leitura-classificacao-email-investigacao",
+      "directory": "leitura-classificacao-email-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "aa601ec92af46ba1dbe2f285b696839f76f5e851181141775b46e381442eb03f"
+    },
+    {
+      "name": "leitura-classificacao-threads-email",
+      "directory": "leitura-classificacao-threads-email",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "8d076d731f0e73b6785be2bbab11eca1bf78ceabfde7dc75917174b153b01ae4"
+    },
+    {
+      "name": "leitura-classificacao-threads-gmail",
+      "directory": "leitura-classificacao-threads-gmail",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "cd14a2b8993bd8c2093fa414f88091b241ccfcf5ca44a79614a1ac7b1952039b"
+    },
+    {
+      "name": "leitura-emails-investigacao",
+      "directory": "leitura-emails-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "38be9b09de46d809e44ddd5ee1d5c19d5c1977eb581520c8b3fdfa203ffbd8c9"
+    },
+    {
+      "name": "leitura-lote-email-investigacao",
+      "directory": "leitura-lote-email-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e9a47b0cc2750dc77355823b950d183ee17a20f5a6aca4b91088ed809a07a4b4"
+    },
+    {
+      "name": "leitura-lote-emails-investigacao",
+      "directory": "leitura-lote-emails-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d3813c39fc2aa3a8ae89162b1a7b65da7c5d95bb19f7a77d4dbf891ef4ae6a59"
+    },
+    {
+      "name": "leitura-lote-gmail-investigacao",
+      "directory": "leitura-lote-gmail-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2fb0f2254dc651d417fd5162584940e568c3e76198199add010d4831bd7579a4"
+    },
+    {
+      "name": "leitura-lote-investigacao-email",
+      "directory": "leitura-lote-investigacao-email",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3a10541053e139487aa7a2ee81e5c97c91c3384f630083bc42e71e60219fe022"
+    },
+    {
+      "name": "leitura-lote-threads-email",
+      "directory": "leitura-lote-threads-email",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "efce209eeaba05c5a61a4b56dc0af3f156ad837c885b60f5ecb8c61eaec3fd65"
+    },
+    {
+      "name": "leitura-lote-threads-gmail",
+      "directory": "leitura-lote-threads-gmail",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "75e93fa4843a25038988db6c2e48dad7756b6b62cd82647396e4d7945f810000"
+    },
+    {
+      "name": "leitura-lotes-email-investigacao",
+      "directory": "leitura-lotes-email-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "9c961659f662d46e28847ee4ab63239abe80a34b16e5530287a075a005fb65cb"
+    },
+    {
+      "name": "leitura-lotes-gmail-investigacao",
+      "directory": "leitura-lotes-gmail-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "467f9688ad449a0dc2f9b796894f5094042cadc816b9b67f63bd12d945de40da"
+    },
+    {
+      "name": "leitura-lotes-threads-gmail",
+      "directory": "leitura-lotes-threads-gmail",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b10b2acc5fe46c810c59e2c540daf9c1e21ab9b7a720cef02fb5299b6243a6e1"
+    },
+    {
+      "name": "leitura-threads-investigacao",
+      "directory": "leitura-threads-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "547dfc13d21e4533038955d21040458ab39b38c9e8cd79985c3e819cd8b9709d"
+    },
+    {
+      "name": "lotes-leitores-investigacao",
+      "directory": "lotes-leitores-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "62226df7e3cb46856524d6add1786f8622a06a9c3839885fbada556e26cefd3d"
+    },
+    {
+      "name": "main-launch-from-outcome",
+      "directory": "main-launch-from-outcome",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0c345684c1692b76497c3d7102cf54ced3a88c004dbc319fa56a21a6b7caf211"
+    },
+    {
+      "name": "market-sizing-analysis",
+      "directory": "market-sizing-analysis",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "373c3f2089d5fa5228c3d24bf12ffacc6fefe04208d0df114ad75832c596e943"
+    },
+    {
+      "name": "method-executor-orchestration",
+      "directory": "method-executor-orchestration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ca9fb21ab7159ed8e5a3633ce6bf0965a3fb72fac17c0bb165cc67cc552ac11e"
+    },
+    {
+      "name": "methodology-bridge",
+      "directory": "methodology-bridge",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2ae79b055658ff56bfce308a49cf67746170affedd1b7d01445ac08b92be7d46"
+    },
+    {
+      "name": "monitoring-agent-behavior",
+      "directory": "monitoring-agent-behavior",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0de668bac1a272a867c9ffe463015f4a8592136ab31588bfb6e66c17849d150b"
+    },
+    {
+      "name": "multi-wave-verification-orchestration",
+      "directory": "multi-wave-verification-orchestration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "61e3e8d47fcb8feb7b0f0b5379017bec4b098472cde60c0d928a5c7ef4c5738e"
+    },
+    {
+      "name": "objective-lock",
+      "directory": "objective-lock",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2f257dd41fa0d4e2e47065ca4ef69c5ea0dbc9c5e14df8f73954f1c35203edf1"
+    },
+    {
+      "name": "observing-task-status",
+      "directory": "observing-task-status",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a139eedadc1d298970af7ed3e64e41f2f6f83d01e18a32038070cec40e7d1958"
+    },
+    {
+      "name": "operational-promotion-verification",
+      "directory": "operational-promotion-verification",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "6d81580f18782ade7b9a7ced0fa29d8bfcbb0c9189ae5f02ca1dda541036ed50"
+    },
+    {
+      "name": "orchestrating-swarm",
+      "directory": "orchestrating-swarm",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "424fc1e13875b424d2c052af64b2c7b3ea99206278eb3782316630ae609a4b40"
+    },
+    {
+      "name": "orchestrator-discipline",
+      "directory": "orchestrator-discipline",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "74f3a0f4584dce2eda4d45b43993ba3d7094c400877e386c849e075282f27a60"
+    },
+    {
+      "name": "outcome-driven-task-execution",
+      "directory": "outcome-driven-task-execution",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "551e78cea61c6237c95f4ac0e0017ff3b3f191a2186a8e521761077b8228f894"
+    },
+    {
+      "name": "parallel-reader-orchestration",
+      "directory": "parallel-reader-orchestration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "6d51b966d591f3bcf227fae2f90c682410c0e58f40832ae325e88417f3d53e72"
+    },
+    {
+      "name": "permissions-manager",
+      "directory": "permissions-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "60748932355e7a1cc8bfd1f22528a7a3226de2ce4c138fe149838baea089430e"
+    },
+    {
+      "name": "personal-media-replies",
+      "directory": "personal-media-replies",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "339d18bc82f92d80f2df4fd783fa0230b8bea63964607a4fcf9521fd917c9162"
+    },
+    {
+      "name": "pi-provider",
+      "directory": "pi-provider",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "944cb41fc6dd56e620793ef1bcc50edc1f4c8315bcc73198b476ff56d5bfb693"
+    },
+    {
+      "name": "premortem-red-team-ravi",
+      "directory": "premortem-red-team-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d754edbb95e917ca0792e94789fbb942f1aaaef6babd13df8353506b2a039d66"
+    },
+    {
+      "name": "project-bootstrap",
+      "directory": "project-bootstrap",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "addfefce41e0aad60a6b0c51681b6df83b3c14c9109b1a86494a99a69fad3978"
+    },
+    {
+      "name": "project-context-recovery",
+      "directory": "project-context-recovery",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "52add1af6a63ae23b18d5cea5acb4fb04a4900c8721a1d501e435710eea7fe07"
+    },
+    {
+      "name": "project-process-orchestration",
+      "directory": "project-process-orchestration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "109f2d003e56d50bf4d3a2719aca6696dc71de2858d32d59f2010c9444fed68d"
+    },
+    {
+      "name": "projects",
+      "directory": "projects",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "6344d36d7e9369f9ce4c8744108c3e65b007e2e303b84faa6a6a4973042ab681"
+    },
+    {
+      "name": "prompt-builder",
+      "directory": "prompt-builder",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ce39773abdc4e990414825a78eaca28278fb6eb02b55dcb250d70ba4833fc13a"
+    },
+    {
+      "name": "prox-calls",
+      "directory": "prox-calls",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b14c0e82b2febf811aad921d7b02dcc096ccb4827d35fdaaa5185a2fa6c6b75f"
+    },
+    {
+      "name": "ravi-apps-integration",
+      "directory": "ravi-apps-integration",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "feab612d74eab2dd0a9ccdded49f9c3070e7a91d2ad58f7fc4fe50502fbed9ca"
+    },
+    {
+      "name": "ravi-apps-migration-execution-strategy",
+      "directory": "ravi-apps-migration-execution-strategy",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "dbc57b88263d181644681525a7983faed6b4c4d3ed754c4d34fadc29d0a86b0b"
+    },
+    {
+      "name": "ravi-architecture",
+      "directory": "ravi-architecture",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f9a02f5f1d56209fcda5cde3f889cb20dbe88f7884a2cc175f9d0d5b5a84546c"
+    },
+    {
+      "name": "ravi-dev-cli-standard",
+      "directory": "ravi-dev-cli-standard",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a1d037686f9de2c66330174992a8bc067e6d1a331f36943a105a7c8ed9e1cb37"
+    },
+    {
+      "name": "ravi-dev-pr-workflow",
+      "directory": "ravi-dev-pr-workflow",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "255dc4c3e5aff3837893321033fdcc7c293c293f79a2378cf050467ae14e149f"
+    },
+    {
+      "name": "ravi-dev-skill-loop-design",
+      "directory": "ravi-dev-skill-loop-design",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "5cccd600a7f65649e21929bbb156d5e6ca01ce436dc78a40b485885557df56bd"
+    },
+    {
+      "name": "ravi-dev-skill-management",
+      "directory": "ravi-dev-skill-management",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "668c219773a564750f4f2fd4ceab8240c868a7844edde108d3fba5766db5e821"
+    },
+    {
+      "name": "ravi-light-threat-modeling",
+      "directory": "ravi-light-threat-modeling",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "abfb7b24d966ecd69000d03d9036bd4c5f0ca014baafef4dc696b25b88f5a6d6"
+    },
+    {
+      "name": "ravi-media-send",
+      "directory": "ravi-media-send",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "99d59499fdcc8c64ee1b8c2fb35cc9527cfddeedb0e9f8631d59052c59a60b1f"
+    },
+    {
+      "name": "ravi-orchestrator",
+      "directory": "ravi-orchestrator",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "76719ab9b37e52e062ace074d466d38a831717e9a62c695826e262fb8449fd86"
+    },
+    {
+      "name": "ravi-pages-workflow",
+      "directory": "ravi-pages-workflow",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b735eb81ed3fc57874d2d034fda7245ed5ccc09c87f2952faf04110e68f045fb"
+    },
+    {
+      "name": "react-methodology",
+      "directory": "react-methodology",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2b406617e8f7e4d56eb55b8dea5e623e66c65298da52411abc9df38feab48208"
+    },
+    {
+      "name": "read-only-workflow-validation",
+      "directory": "read-only-workflow-validation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b85fd28629d09ef3621160b2bfc952929df86fdd7c71a97db791895b318e2dc0"
+    },
+    {
+      "name": "reading-lists",
+      "directory": "reading-lists",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "08f787cdde236f780afebed711a36fea8400ab09ae781d2d29c4a858f882e9c3"
+    },
+    {
+      "name": "reconciliacao-de-fontes-de-dados",
+      "directory": "reconciliacao-de-fontes-de-dados",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a70c247c268e1a242db78d874c1638717faea180b8f25612ecc59f315ebb56e9"
+    },
+    {
+      "name": "reconciliacao-fila-contexto-crm",
+      "directory": "reconciliacao-fila-contexto-crm",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e05b69e70f0e0cbc71fae9df4eea184b0518273d205b641398828e03711709e1"
+    },
+    {
+      "name": "routes-manager",
+      "directory": "routes-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d0397dff171ba16392bdb4fcc8930d347290191956b7dbaa92e214454a63c505"
+    },
+    {
+      "name": "running-durable-background-work",
+      "directory": "running-durable-background-work",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "3f6458c2bf2799ec34cbffb76ce6f8772b65f3efb88591fad921350e2fffd03f"
+    },
+    {
+      "name": "runtime-incident-investigation",
+      "directory": "runtime-incident-investigation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "5d33bcac780ed14f11cba4d954887b669285d38df1fe198235a9b22aeab7642a"
+    },
+    {
+      "name": "runtime-target-failover-manual",
+      "directory": "runtime-target-failover-manual",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "343c99a2ce34b7bdc7a994f97fbba19ab9087f820a39834616d771c3d528ce76"
+    },
+    {
+      "name": "scoping-domain-discovery",
+      "directory": "scoping-domain-discovery",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "91f0ca6bc214ef5ce214e5b79d7d2a502df1c41b948c450167416ae36252a44e"
+    },
+    {
+      "name": "sde-crm-daily-sweep",
+      "directory": "sde-crm-daily-sweep",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f5a4a144eb0f7bd6e02b83a87d18397834886fac05569ab2e04680aa3da9c603"
+    },
+    {
+      "name": "sde-ravi-surfaces",
+      "directory": "sde-ravi-surfaces",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "75fd7cdfdb532898581b2ebf0d117e9290cda684da464b21f66a196764211dff"
+    },
+    {
+      "name": "security-finding-escalation",
+      "directory": "security-finding-escalation",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "93615826aff66c31e211e290ffbd365f33b5792435d6e97d67647e3ffb70be73"
+    },
+    {
+      "name": "select-methodologies",
+      "directory": "select-methodologies",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "65ae0f51e98c3fd1355c228369df55135c0e07f338b5d1e60bec41dded962e2e"
+    },
+    {
+      "name": "select-standards",
+      "directory": "select-standards",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e8fc076c3c9a27078489a7fd386728334486895f654411614fb54171bc75a11c"
+    },
+    {
+      "name": "selective-ravi-skill-loading",
+      "directory": "selective-ravi-skill-loading",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "0f81af89217155e8ad9b82127c216e2e93bcfdb2c12808db996b5dc6805fbeb5"
+    },
+    {
+      "name": "sessions",
+      "directory": "sessions",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a6e45dbd3424a8a9359396504b065c96818ec2d58e4f6f408c3788942343509d"
+    },
+    {
+      "name": "settings-manager",
+      "directory": "settings-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "70e79896e8083e91d1eb56f32f9a952cfaedba0fa5cb8e0ba9ce9ad8e418d5cf"
+    },
+    {
+      "name": "situational-method-discovery",
+      "directory": "situational-method-discovery",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "83df6dc8a6cb700486bc173b76e3e581b6782e148698db3594e77a3cc6e87e16"
+    },
+    {
+      "name": "skill-access-diagnostics",
+      "directory": "skill-access-diagnostics",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "ed2067f8e061b82bff96efc41b5a711d0f4e62691114f0dfd0669442da9045e0"
+    },
+    {
+      "name": "skill-creator",
+      "directory": "skill-creator",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "13eca62253d8122c419dffd3a28ca160e40cc3cce8906c16c13956f8f715d9b2"
+    },
+    {
+      "name": "source-doc-reader",
+      "directory": "source-doc-reader",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "46c5a6024a524e3bb5300dc3186071935620beb8e46c323924fa793c4fee84a8"
+    },
+    {
+      "name": "spec-by-example-ravi",
+      "directory": "spec-by-example-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "434a92eb428c981aa7788d862e72525a8baebf7af9b0fe075095dee06058b365"
+    },
+    {
+      "name": "specs",
+      "directory": "specs",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "c05eaa14365266cb4475b7db9978e46e771f5b13adb7c21e0235df8c6d63d2b6"
+    },
+    {
+      "name": "startup-financial-modeling",
+      "directory": "startup-financial-modeling",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e0eca3a2a8267ba9f33b62fcc09bcbde4f68ccec9734fd89d6c6a1ee5009f383"
+    },
+    {
+      "name": "stickers",
+      "directory": "stickers",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f3e68dca6bffb2ffa0794b9e6952a5cd777a09d659866fbbe987d752cedd99d4"
+    },
+    {
+      "name": "stride-ravi",
+      "directory": "stride-ravi",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "08356175f7c94cb5905c4455b2aa1a5b62f5e4d84c2623bd9a03ed3cce258dc6"
+    },
+    {
+      "name": "submitting-prs",
+      "directory": "submitting-prs",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f120eb8427fa5a4bfbaf1728292e99e4880cb5cd5a01334359c03c35a80703a6"
+    },
+    {
+      "name": "synthesis-decision",
+      "directory": "synthesis-decision",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "6c89e7cd716a70d82c5144961ad8f9329628f5c790449634795c405e44be3c3c"
+    },
+    {
+      "name": "systematic-debugging",
+      "directory": "systematic-debugging",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787"
+    },
+    {
+      "name": "task-handoff",
+      "directory": "task-handoff",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "5fba6a8c470c565f1048ad14cbed7211261b5b71073391722b3855aca56d6b4f"
+    },
+    {
+      "name": "task-status-observer-sync",
+      "directory": "task-status-observer-sync",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "37cb20a38666ef7043e452e2ab9c7e2f90ffde38a0c7a42dd41f08e151a6b651"
+    },
+    {
+      "name": "task-status-recovery",
+      "directory": "task-status-recovery",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b403eebdea0680a29a53b83d5ab48aa6d4788a59a281223ec702cc651ba7443f"
+    },
+    {
+      "name": "tasks",
+      "directory": "tasks",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "948fd65b9ad8abe84b2fc6a765546861b3806883c10785e3fff8abee6351cfb0"
+    },
+    {
+      "name": "tasks-eval",
+      "directory": "tasks-eval",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "7aa74f53287df47f14587c84abec133d5d13e7ccecd21447aff386ab35f3846f"
+    },
+    {
+      "name": "test-driven-development",
+      "directory": "test-driven-development",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "bf1b8216e523851a411e91d429a7c1c2a173e79d88957bc78e348218d50edd54"
+    },
+    {
+      "name": "tiny",
+      "directory": "tiny",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "be1dab6af912bc3b3294ce4634a2b6e24af6d1ffca02fc9eb5de376154314a93"
+    },
+    {
+      "name": "triagem-email-fiscal-contador",
+      "directory": "triagem-email-fiscal-contador",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "408692f1f019c7700473c39a0197ef74c67dedadf0a7fc58dc0f9f4364ff1e34"
+    },
+    {
+      "name": "triagem-emails-investigacao",
+      "directory": "triagem-emails-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "297b0afdfee97c319ce39e8245e7993630231d484908aca9aad462024e988273"
+    },
+    {
+      "name": "triagem-threads-email-investigacao",
+      "directory": "triagem-threads-email-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "290797c21a12860f8691b5fd144b3141122e6b746356ba604fa6a673c257f36f"
+    },
+    {
+      "name": "triagem-threads-gmail-investigacao",
+      "directory": "triagem-threads-gmail-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "a43566528278f941c6a1990fe44039dad442b8e7c626db7bbc656fc2e337cce4"
+    },
+    {
+      "name": "triagem-threads-investigacao",
+      "directory": "triagem-threads-investigacao",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "16e3fefad8c06677e7d8fcde17d188d91c9928b7b7d56bfe31cb5fde70460989"
+    },
+    {
+      "name": "trigger-debug",
+      "directory": "trigger-debug",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "b759386be7a96384b19144301040d3d7335d643a43bafcd02a085ef7c7d15e24"
+    },
+    {
+      "name": "trigger-manager",
+      "directory": "trigger-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e3a8890495ae32bf3c6765c19359d6f4f8def811b3e89717990fc75681fcf110"
+    },
+    {
+      "name": "troubleshooting",
+      "directory": "troubleshooting",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "d7a5f9036ce4a217f345bfa49b96258b45ed4c2e8f314db9b9fffa3bf61acf0c"
+    },
+    {
+      "name": "validating-methodology-profiles",
+      "directory": "validating-methodology-profiles",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "683a3158dec9f303e20a5315357a72c7174da4b19edbdd6a25a375c97aa10d47"
+    },
+    {
+      "name": "verification-before-completion",
+      "directory": "verification-before-completion",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3"
+    },
+    {
+      "name": "verifying-changes-against-live-systems",
+      "directory": "verifying-changes-against-live-systems",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "260e658f90351c1b54a5ad00ff4fcfe114783d75e1f946bea947e0ebbddc4520"
+    },
+    {
+      "name": "video",
+      "directory": "video",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "e6a5d7d6aaf815bfd62a330842b20eda4ca537faf84c0711d5bfce3ff2e7b605"
+    },
+    {
+      "name": "vps-disk-cleanup",
+      "directory": "vps-disk-cleanup",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "2f334cdc80de48121e29d37204eb04c0e0197e32a84b5c09d90b76d2999a542a"
+    },
+    {
+      "name": "web-design-guidelines",
+      "directory": "web-design-guidelines",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f"
+    },
+    {
+      "name": "whatsapp-manager",
+      "directory": "whatsapp-manager",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "89bcb5fb2e4f3d367d0f198c2dcfe70ba594de02053838e006389032b3c57fa5"
+    },
+    {
+      "name": "zittei-reader-lot",
+      "directory": "zittei-reader-lot",
+      "source": "plugin:ravi-user-skills",
+      "pluginName": "ravi-user-skills",
+      "requirements": [],
+      "digest": "7cc4a3706cb70357e212f2ef130f024232d283cf32a113fd725888d807b1d286"
+    },
+    {
+      "name": "consolidating-conversations",
+      "directory": ".archived-consolidating-conversations-20260613021543",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "e0f6b58a6cb5dd73ea1f9f61758578f89b07e14678c1eddc9f8b8b48faab1c86"
+    },
+    {
+      "name": "managing-brand",
+      "directory": "managing-brand",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "92e202b67e4400c5fd11fe25b0507f15a981f6b0236d077e2ebc726773b19437"
+    },
+    {
+      "name": "managing-customers",
+      "directory": "managing-customers",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "9da9244d3b3d6064faf89ba097cffcf9ff806c225a914c298eaea6eae458f517"
+    },
+    {
+      "name": "managing-ecommerce",
+      "directory": "managing-ecommerce",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "4be73616d1898abb26677d1c1e3171b528d5800c108af41e8dfee33a7d9e8484"
+    },
+    {
+      "name": "managing-finances-v2",
+      "directory": "managing-finances-v2",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "d9478bd65da15ff2566b4dd7f2e589cccae13d599e0c93ea0f11968fb0ac5e6a"
+    },
+    {
+      "name": "managing-inventory",
+      "directory": "managing-inventory",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "ae50100066f280228111b2626ee71591497fbb388ff62e382e13388625bbb443"
+    },
+    {
+      "name": "managing-logistics",
+      "directory": "managing-logistics",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "086c106848c967cbb3874b3ad487b8b075c13e134f7491b065b9b0eb27576dc0"
+    },
+    {
+      "name": "registering-products",
+      "directory": "registering-products",
+      "source": "local:workspace:claude",
+      "requirements": [],
+      "digest": "a109018b31124d90747976252b9d5c61de427e21bac3a7baae6d8cab2c8ed520"
+    }
+  ],
+  "nativeDiskSkills": [
+    {
+      "name": "ravi-user-skills-app-factory",
+      "directory": ".disabled-ravi-user-skills-app-factory-20260824",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4b57b4dc669123eaa7bc4be0ae8e6c364b712cfef0d4401010f5dba235ba9bf1"
+    },
+    {
+      "name": "building-ravi-apps",
+      "directory": "building-ravi-apps",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a0e5527368edb74df38d1b30a02bb292ba713a33b93b56246147681b8c9d70b3"
+    },
+    {
+      "name": "cli-agent-first-closed-loop",
+      "directory": "cli-agent-first-closed-loop",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "12fc7c4b62120f252f0766d2e2cbf635dac7c055239edeb26834253d149fe7bd"
+    },
+    {
+      "name": "graphify",
+      "directory": "graphify",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3898b1042721cad27d6f87ca44f638415a7f763203aefd86b90f9358ffea3a43"
+    },
+    {
+      "name": "ravi-dev-app-creator",
+      "directory": "ravi-dev-app-creator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "222271a53ebe5a3acd181ad2df9a01a13f8182f90dabc6edd7b8685280a20e4f"
+    },
+    {
+      "name": "ravi-dev-cli-creator",
+      "directory": "ravi-dev-cli-creator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "660c8d32001aefa120569fbce0127899df2155c80149d39f48da0cf79736fb34"
+    },
+    {
+      "name": "ravi-dev-context-cli",
+      "directory": "ravi-dev-context-cli",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "cb50dc48a061b67d1e291f8819f93f77f69a40715f93cf25041128ac879602d4"
+    },
+    {
+      "name": "ravi-dev-prompt-builder",
+      "directory": "ravi-dev-prompt-builder",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "dd7dd8eb95889f13686f9ef4331d472cb7e4a3cf3d664192ec691da63657efc7"
+    },
+    {
+      "name": "ravi-dev-ravi-architecture",
+      "directory": "ravi-dev-ravi-architecture",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8d2c379b99928bd3fe5af2b9f4dda56fb665f25d87dc13f0044a94d98d192594"
+    },
+    {
+      "name": "ravi-dev-ravi-rules",
+      "directory": "ravi-dev-ravi-rules",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "25fe2645933c59ced7513e054dddca9a147d2782addde09a8267e86d59e7d707"
+    },
+    {
+      "name": "ravi-system-agents-manager",
+      "directory": "ravi-system-agents-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "90e7f8c72fb3c026ddbf0257aae6b85a6bf7df1ddf1901445f70af5e3f493682"
+    },
+    {
+      "name": "ravi-system-apps",
+      "directory": "ravi-system-apps",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4b4f60f7b6651fcf5e0453e889cac607053e117ab013f91c66bde6d0c29f9ad1"
+    },
+    {
+      "name": "ravi-system-architect",
+      "directory": "ravi-system-architect",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4fa1109c293d7cf129002aec380df5ef48fb774aeb81cb43cf3e71da5c656a64"
+    },
+    {
+      "name": "ravi-system-artifacts",
+      "directory": "ravi-system-artifacts",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fed4b77c4e0b38a4abf1a361e96b236374cc92c2708e22461d4907f112f99f8e"
+    },
+    {
+      "name": "ravi-system-audio",
+      "directory": "ravi-system-audio",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2b1003e062dd6b0e357d54dcb2f2aacef2b87be09eadff451089638bb3b54b8f"
+    },
+    {
+      "name": "ravi-system-automation-recipes",
+      "directory": "ravi-system-automation-recipes",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2d78d985a6afd949da6b31e0dd68391c95e8ab7868db02eb17ce3a613a87c81f"
+    },
+    {
+      "name": "ravi-system-channels-manager",
+      "directory": "ravi-system-channels-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "1f9705b7f272aad0e25c5f0dab29fe9e9f2e60c1ffacfa671d1ffeda51f03ca0"
+    },
+    {
+      "name": "ravi-system-commands",
+      "directory": "ravi-system-commands",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "cfeb82c2c3ac3a559373e51c721947cd337e8bcfaed6c78ace93a421605c09ff"
+    },
+    {
+      "name": "ravi-system-contacts-manager",
+      "directory": "ravi-system-contacts-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6886ff993c3a68c888df6f4c2fb3eedb8ab9bc1b2a4d4003d0a9e5dd5e0ecdc1"
+    },
+    {
+      "name": "ravi-system-crm-manager",
+      "directory": "ravi-system-crm-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a928b6fc147db54ac958a9ee52427690523e579f094cb42b4e49c5767e0cafb1"
+    },
+    {
+      "name": "ravi-system-cron-manager",
+      "directory": "ravi-system-cron-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "bd8c896173e94f6a71202e9308a164581a825d491cc0b938a49e9ec9e6579616"
+    },
+    {
+      "name": "ravi-system-cross-manager",
+      "directory": "ravi-system-cross-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "14b7fbfc5f5e610e47e8fc4a2f76e5b2e7b35745e827f83d539d53e1349e4c5e"
+    },
+    {
+      "name": "ravi-system-daemon-manager",
+      "directory": "ravi-system-daemon-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "239bd35e03fcd9410de044605f39ea80ce3f1c6a481b9d1226ee4a327ed93a76"
+    },
+    {
+      "name": "ravi-system-events",
+      "directory": "ravi-system-events",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "62733a8f78fce314a6f6ced8f909f20c4373f35463a168ba2a226201687e8b75"
+    },
+    {
+      "name": "ravi-system-gsc",
+      "directory": "ravi-system-gsc",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c29eb197254299120439b69a2517052f75065d5fe97dbadc1f4d6269155da5db"
+    },
+    {
+      "name": "ravi-system-heartbeat-manager",
+      "directory": "ravi-system-heartbeat-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "50a346fa62804a3d4174ea3908b49249c1e7ac868fcc4b43e8b988a968b2a5b8"
+    },
+    {
+      "name": "ravi-system-image",
+      "directory": "ravi-system-image",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d26fe9db78e78bd4a6ffe1a88e070b3f9daaa3d5152f159dbc090f6b16aff3d4"
+    },
+    {
+      "name": "ravi-system-instances-manager",
+      "directory": "ravi-system-instances-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4f8713e75f16d74b4084271689816748dce950e6828e042e34bd961692b88e47"
+    },
+    {
+      "name": "ravi-system-matrix-manager",
+      "directory": "ravi-system-matrix-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9f9c0bc7a3be2c45f69bddb66f02a22e9ab4e8d02732965a1de393f81131e649"
+    },
+    {
+      "name": "ravi-system-meetings",
+      "directory": "ravi-system-meetings",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5e9cb996a1062ddffe398c5fb36471c0077ea8197eaabf19f3a4d97e448c9e31"
+    },
+    {
+      "name": "ravi-system-observers",
+      "directory": "ravi-system-observers",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2c5c03e89f8fca3eeb6a7be2e2498ef6dab5a63de3924c8fe5c9f011ebdc49e6"
+    },
+    {
+      "name": "ravi-system-pages",
+      "directory": "ravi-system-pages",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "1903dede0788c3e6e000ce57d49afaa733164ccfdddffba73bc552ddeaf7392f"
+    },
+    {
+      "name": "ravi-system-permissions-manager",
+      "directory": "ravi-system-permissions-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "88ad9abcfaf3fae9d1588922b6aa2561de1eec066abfcf8d52a0f0fb4968c7f4"
+    },
+    {
+      "name": "ravi-system-projects",
+      "directory": "ravi-system-projects",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ed32d6816b31efb0b55f2bc03596d7ce9171413527e494610c6c0e88fc42736e"
+    },
+    {
+      "name": "ravi-system-provider-continuity",
+      "directory": "ravi-system-provider-continuity",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a1dc88eac3abe4e1181ed823b25471fc21b0303e9d8482634cf30fbd436a5ed7"
+    },
+    {
+      "name": "ravi-system-prox-calls",
+      "directory": "ravi-system-prox-calls",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "98cfcda23ce0a356e8d0730ce8faa4f83e1b4851b8841c004761e6d11b30d85d"
+    },
+    {
+      "name": "ravi-system-routes-manager",
+      "directory": "ravi-system-routes-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d9262995f2e0660d8451ef0a1f61b04fa64d1741f7f8c5f7cb7638f42ca60308"
+    },
+    {
+      "name": "ravi-system-sessions",
+      "directory": "ravi-system-sessions",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d49d6961c4b9bed0f58c56c610586f30bf3a45338c9588792d77004b6b2433ca"
+    },
+    {
+      "name": "ravi-system-settings-manager",
+      "directory": "ravi-system-settings-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b2e94fb6d3de95bf22e18642cd44eeb3e375372e50dd1c4c4677d1696bba5d44"
+    },
+    {
+      "name": "ravi-system-skill-creator",
+      "directory": "ravi-system-skill-creator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5830fb68b67799d5d49171d673068c2795c8d73366a9cd3c117cb921e0675782"
+    },
+    {
+      "name": "ravi-system-skill-gates",
+      "directory": "ravi-system-skill-gates",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "bfe29592d44b832032314e0b85ffa05fedfd3e8bdd26521512ce7abecc8b4782"
+    },
+    {
+      "name": "ravi-system-slack",
+      "directory": "ravi-system-slack",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fe12f2e78f3aadc369e20815cb72b8c0a932edbdf0452a99f1a309f559363bb9"
+    },
+    {
+      "name": "ravi-system-specs",
+      "directory": "ravi-system-specs",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fa687113cd5c187db5ab35588322249b1430bb7f54b42f0ecae37302d3998f31"
+    },
+    {
+      "name": "ravi-system-stickers",
+      "directory": "ravi-system-stickers",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "db4f43f0320be14b22a15f23d3a480bad06a15d5858f93c19f713c20a968f3e9"
+    },
+    {
+      "name": "ravi-system-tag-rules",
+      "directory": "ravi-system-tag-rules",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "10b9c11cb29c32599b925cd0bfa880b678604ba5d2b0a02361dfb3a307442e34"
+    },
+    {
+      "name": "ravi-system-tasks",
+      "directory": "ravi-system-tasks",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6b12004a6eed90d4de4b3764175da830ba5d5d01b07751da3af1c4b4254dbc83"
+    },
+    {
+      "name": "ravi-system-tasks-eval",
+      "directory": "ravi-system-tasks-eval",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8cfff222594c70ab6472c76c7cb16bea194e0de85f44e961f916867e0ccba5f3"
+    },
+    {
+      "name": "ravi-system-tasks-manager",
+      "directory": "ravi-system-tasks-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d9ff9563933eec3ef406d106fb351f5acc776677a6ca7be8fff239f3b9d4089e"
+    },
+    {
+      "name": "ravi-system-trigger-manager",
+      "directory": "ravi-system-trigger-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d333f30a08237412b4229289a599089b4654d3263b297d1ecddf55fa12e345c3"
+    },
+    {
+      "name": "ravi-system-video",
+      "directory": "ravi-system-video",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9936c1b09faabe654b7f192998d25f36c7b112c27ad9dc80a4dee27b4822a213"
+    },
+    {
+      "name": "ravi-system-whatsapp-manager",
+      "directory": "ravi-system-whatsapp-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "09b31b8e006345e092d11285a870ee5b460f48b0a615c9dae34153b93c6df263"
+    },
+    {
+      "name": "ravi-user-skills-agent-browser",
+      "directory": "ravi-user-skills-agent-browser",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ad95849599fe434ebf5d15bb1a80f247587b6e0560c328810f799d060b543842"
+    },
+    {
+      "name": "ravi-user-skills-agent-capability-skill-selection",
+      "directory": "ravi-user-skills-agent-capability-skill-selection",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ab01a2716850333975ee9456d57b879beea2ba03165bea19ae3c7e0e847275c3"
+    },
+    {
+      "name": "ravi-user-skills-agent-spec-authoring",
+      "directory": "ravi-user-skills-agent-spec-authoring",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "194401fb02c5bccf169a5fe7460a94c895b9ecf570b3534317b981425863cbc9"
+    },
+    {
+      "name": "ravi-user-skills-agentless-verified-build-loop",
+      "directory": "ravi-user-skills-agentless-verified-build-loop",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "030d9949df9c9a42f6f9aac6eb83f26086b75d1f4a5366c7cbb1503bca1a803a"
+    },
+    {
+      "name": "ravi-user-skills-agents-health-check",
+      "directory": "ravi-user-skills-agents-health-check",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0d3e30ee2c2821db5602990568849e7781863276411aba50b0556b23ec14b186"
+    },
+    {
+      "name": "ravi-user-skills-agents-manager",
+      "directory": "ravi-user-skills-agents-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "69fbe4a941c2b953d9fe790838bacaf78615aa4eb77f84c3581664869cbdf0bb"
+    },
+    {
+      "name": "ravi-user-skills-analise-estrategica-reuniao",
+      "directory": "ravi-user-skills-analise-estrategica-reuniao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ae20f5ce83198d840d4ca6279118c6674e34b20d024265a53abbfc105ab1d5b7"
+    },
+    {
+      "name": "ravi-user-skills-analise-longa-duracao",
+      "directory": "ravi-user-skills-analise-longa-duracao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "72047fcde0c7f73f7387ab38eb60759d3bc1a44418ed48371fc2044b3e87819e"
+    },
+    {
+      "name": "ravi-user-skills-analyzing-search-visibility-opportunities",
+      "directory": "ravi-user-skills-analyzing-search-visibility-opportunities",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7af144a685dce8254db29392a1db49f733f3a97acea4fb48661e5053192e3dc6"
+    },
+    {
+      "name": "ravi-user-skills-app-factory",
+      "directory": "ravi-user-skills-app-factory",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4b57b4dc669123eaa7bc4be0ae8e6c364b712cfef0d4401010f5dba235ba9bf1"
+    },
+    {
+      "name": "ravi-user-skills-approval-reaction-publication-handlers",
+      "directory": "ravi-user-skills-approval-reaction-publication-handlers",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "13844ec8484599cf729212a6f70a5c43a3d5ea0c4fa3b692b2d017a6d75fabcb"
+    },
+    {
+      "name": "ravi-user-skills-architecture-decision-explanations",
+      "directory": "ravi-user-skills-architecture-decision-explanations",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "08c2c5a89d13f006a71daedcd89c08d342869c2b3cf4b06f9b8928983f79a4a2"
+    },
+    {
+      "name": "ravi-user-skills-artifacts",
+      "directory": "ravi-user-skills-artifacts",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d57096a56368302485b1ebad11638f8d1d79e23d4cd1d8bfa55f977d6a043c72"
+    },
+    {
+      "name": "ravi-user-skills-assessing-reference-implementation-gaps",
+      "directory": "ravi-user-skills-assessing-reference-implementation-gaps",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "096643eda42a3365cf21007513a7ddaab1f464d6b22edf8b3791aa5a777d536b"
+    },
+    {
+      "name": "ravi-user-skills-assurance-gate",
+      "directory": "ravi-user-skills-assurance-gate",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c00391d068fe26d7c8285217862bbb865944867f2e58668c9b9016532962c7ab"
+    },
+    {
+      "name": "ravi-user-skills-atam-ravi",
+      "directory": "ravi-user-skills-atam-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5a54ad0f0647a0a69f656191e511cb13df936cacb024e32932815f292f8db260"
+    },
+    {
+      "name": "ravi-user-skills-atomic-filesystem-cache-publication",
+      "directory": "ravi-user-skills-atomic-filesystem-cache-publication",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "27f8f929f89471faaa7fccff10827627014caaac28cc11ffeaf47417f9ffede5"
+    },
+    {
+      "name": "ravi-user-skills-audio",
+      "directory": "ravi-user-skills-audio",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9a7c63aabecf69c4182f6eab9df07e3292b323404a1a287f97e7051f49ff9427"
+    },
+    {
+      "name": "ravi-user-skills-auditing-cron-health",
+      "directory": "ravi-user-skills-auditing-cron-health",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8131b875c4d5b469c3f09e27bf0cd7c337986e28ec6abe653f83825b8998c473"
+    },
+    {
+      "name": "ravi-user-skills-auditing-crons",
+      "directory": "ravi-user-skills-auditing-crons",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a904ac5abbaf7bafc0bc259b9c0ef2782d42ab6eb9db0e680916b06c4cb364c1"
+    },
+    {
+      "name": "ravi-user-skills-authoring-method-profiles",
+      "directory": "ravi-user-skills-authoring-method-profiles",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "95c38144293b406bc8990c8a4b04c7608a6e4c937ed125a3f41a6d25e7bb7c78"
+    },
+    {
+      "name": "ravi-user-skills-authoring-methodology-profiles",
+      "directory": "ravi-user-skills-authoring-methodology-profiles",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3f321a517db9c66cd4fc5b3f551683508c9640facdea4ffb1312451013ce1fb9"
+    },
+    {
+      "name": "ravi-user-skills-authoring-methodology-task-profiles",
+      "directory": "ravi-user-skills-authoring-methodology-task-profiles",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e02c4fb9016fafce7dedcb77d8dce3c79e1e8c3b6c6649de780b3b8cc21f778f"
+    },
+    {
+      "name": "ravi-user-skills-authorizing-agent-skills",
+      "directory": "ravi-user-skills-authorizing-agent-skills",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7aeb61348d4843552eee396c8e13218dc7fef3fb1dd7818dffed3a2bc8ac695b"
+    },
+    {
+      "name": "ravi-user-skills-autonomous-feature-orchestration",
+      "directory": "ravi-user-skills-autonomous-feature-orchestration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "86140e3226e84e1136a24ec4e52d26be83d3d9f689b9a4776a5a43a95b1aaf4b"
+    },
+    {
+      "name": "ravi-user-skills-avaliacao-de-shortlists-de-locais",
+      "directory": "ravi-user-skills-avaliacao-de-shortlists-de-locais",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "091e0b49e6a9ad93315b577c051418cc225b800ad1dd81b9741774cd1974ff20"
+    },
+    {
+      "name": "ravi-user-skills-build-agent-facades",
+      "directory": "ravi-user-skills-build-agent-facades",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9a13a1fe6bf3629d977f4e7d0bdc8f225dba95c6342f3fe0a2d20224c164d65d"
+    },
+    {
+      "name": "ravi-user-skills-building-ravi-apps",
+      "directory": "ravi-user-skills-building-ravi-apps",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c59ac5fe9705ee76b84bc6820e770050b094f781363cefc727b12afadb88e8c0"
+    },
+    {
+      "name": "ravi-user-skills-channels-manager",
+      "directory": "ravi-user-skills-channels-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "83dca9c9d94df92cc970d9fb37cbae2014043dfacd1344a79d4a889dc9a52c44"
+    },
+    {
+      "name": "ravi-user-skills-classificacao-emails-citavel",
+      "directory": "ravi-user-skills-classificacao-emails-citavel",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "605420bbf4caff46d62dbae1291b8ed7ba68232c108c8166137a41052e02a705"
+    },
+    {
+      "name": "ravi-user-skills-classificacao-threads-linha-do-tempo",
+      "directory": "ravi-user-skills-classificacao-threads-linha-do-tempo",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ecb452ba141ef9a955ebfaf3fe80bc61eb581d26c3f97f4604f919384352a205"
+    },
+    {
+      "name": "ravi-user-skills-cli-agent-first-closed-loop",
+      "directory": "ravi-user-skills-cli-agent-first-closed-loop",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "490669c3dd9409450ceba29ac172ae4e67909d8a6a0b1d13416b2acbda5085a4"
+    },
+    {
+      "name": "ravi-user-skills-cli-creator",
+      "directory": "ravi-user-skills-cli-creator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c4c045d18afb4852bf9ba50264b65ee3f89c09025a36784bc073abfe36d05a06"
+    },
+    {
+      "name": "ravi-user-skills-cli-ux",
+      "directory": "ravi-user-skills-cli-ux",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0c045c9eab18acb1a81844fe249568f94913bccd1c3bd4fe22eb22a598cc765d"
+    },
+    {
+      "name": "ravi-user-skills-coleta-dados-batch",
+      "directory": "ravi-user-skills-coleta-dados-batch",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "61421432a9075a44f754607762276c1aaa0edf6ba1842b83f8ce25a9dcc06cb2"
+    },
+    {
+      "name": "ravi-user-skills-commonkads-ravi",
+      "directory": "ravi-user-skills-commonkads-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b7dde0a2ca2bc0f852e7214bff48b64494425286189cd82d3553e1ab0c33ed81"
+    },
+    {
+      "name": "ravi-user-skills-conciliacao-e-baixa-de-recebimentos",
+      "directory": "ravi-user-skills-conciliacao-e-baixa-de-recebimentos",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c2565ec7d897b955e56fb53791a4acc79db36d8844e7f7500573d6e2ef30eae3"
+    },
+    {
+      "name": "ravi-user-skills-configuring-llm-providers",
+      "directory": "ravi-user-skills-configuring-llm-providers",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2a741ab2f4f22ccdc0dd61d6dad1678cf0c1fe5dd7ea90cbd83bdb12461200ca"
+    },
+    {
+      "name": "ravi-user-skills-contacts-manager",
+      "directory": "ravi-user-skills-contacts-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5d6ce788472cc7ebf029e28c1c21329d55c7c37562f5d10fdbf998e79f23385d"
+    },
+    {
+      "name": "ravi-user-skills-context-cli",
+      "directory": "ravi-user-skills-context-cli",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0e09bbb45356a248235831d9f14d9eb74e0393a86f35fcfe0b0b20a876b79fea"
+    },
+    {
+      "name": "ravi-user-skills-controlled-customer-workflow-smoke-testing",
+      "directory": "ravi-user-skills-controlled-customer-workflow-smoke-testing",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d68ca75b249a8a951ae09b9f150f59315acf9043b0703a397c2636dda26a5887"
+    },
+    {
+      "name": "ravi-user-skills-controlled-operational-smoke",
+      "directory": "ravi-user-skills-controlled-operational-smoke",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4c410d2fab28bc212490ca60e55380840ced4c3a6f674d6505e16ea52adc460c"
+    },
+    {
+      "name": "ravi-user-skills-cotacao-frete",
+      "directory": "ravi-user-skills-cotacao-frete",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e1281674d08e638f52ec605ab55c9c9bb19caa5e28890238401d7491450d0e77"
+    },
+    {
+      "name": "ravi-user-skills-cotacao-frete-sde",
+      "directory": "ravi-user-skills-cotacao-frete-sde",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "cd78b5124c6a6489b12696fedb82bacc6721ab372cb811ca74e40a0170e834ee"
+    },
+    {
+      "name": "ravi-user-skills-creating-task-profiles",
+      "directory": "ravi-user-skills-creating-task-profiles",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7d1f068b850da98d57cadcd35efc42f6fc16e47314eb342dbd48b3c602a15eea"
+    },
+    {
+      "name": "ravi-user-skills-criacao-ata-executiva-ravi-pages",
+      "directory": "ravi-user-skills-criacao-ata-executiva-ravi-pages",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f08f7666b5b5598f3f1d93eea517e1405955380cfb8dfbf29154e7ee77b799c7"
+    },
+    {
+      "name": "ravi-user-skills-criacao-pagina-prospeccao-industrial",
+      "directory": "ravi-user-skills-criacao-pagina-prospeccao-industrial",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e217742a4629bf51efa3599d5462fd2dd4d664248e2ff1c7bf1e10dfa9d95577"
+    },
+    {
+      "name": "ravi-user-skills-criacao-pedidos-sde",
+      "directory": "ravi-user-skills-criacao-pedidos-sde",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b72737b6cefffefbd38465caa0152cb9fcddee6352624e609c2ef25d62fc6639"
+    },
+    {
+      "name": "ravi-user-skills-crm-cli-text-safety",
+      "directory": "ravi-user-skills-crm-cli-text-safety",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "15dfa8a974153888ae968f3fb8c65d4405dc4cd3481f38e62dfbff10284fc320"
+    },
+    {
+      "name": "ravi-user-skills-crm-fila-falsos-positivos",
+      "directory": "ravi-user-skills-crm-fila-falsos-positivos",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a2e1d92917aec3ddce1654c8f3493a933c88fdedf3bf69c4e0b50fb8a70811e3"
+    },
+    {
+      "name": "ravi-user-skills-cron-manager",
+      "directory": "ravi-user-skills-cron-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8164c32f59d6f2e622608d6d0de453bee74ed5c63f65c5fe4a9886306a696481"
+    },
+    {
+      "name": "ravi-user-skills-daemon-manager",
+      "directory": "ravi-user-skills-daemon-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "41204f2377045f665018db223e88dd48161e5eaff5736bac156ab0206c967f08"
+    },
+    {
+      "name": "ravi-user-skills-data-contracts-ravi",
+      "directory": "ravi-user-skills-data-contracts-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9b4981879ec1f30992d861adaf53eccc44182195356399895fbe10ae666b9900"
+    },
+    {
+      "name": "ravi-user-skills-data-source-contracts",
+      "directory": "ravi-user-skills-data-source-contracts",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ee50d9a273fc9377c255bfd611377759ea968ddb2836f9a45a490033f57df1ff"
+    },
+    {
+      "name": "ravi-user-skills-ddd-eventstorming-ravi",
+      "directory": "ravi-user-skills-ddd-eventstorming-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0a239ad3a2cd36e52ffe4f0b72d211bd6850a7eae71c3557e4b5e1e07fb90bed"
+    },
+    {
+      "name": "ravi-user-skills-decision-table-dmn-ravi",
+      "directory": "ravi-user-skills-decision-table-dmn-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fba48866040841b58db21251a8b6284be15843959773e5d34364fea29965ec8d"
+    },
+    {
+      "name": "ravi-user-skills-delegating-heavy-work",
+      "directory": "ravi-user-skills-delegating-heavy-work",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0cc34fc6e49e4225d02691810e0bbefcf20ec1ade9d740134b84cd4fbcfcf77c"
+    },
+    {
+      "name": "ravi-user-skills-designing-gated-customer-case-workflows",
+      "directory": "ravi-user-skills-designing-gated-customer-case-workflows",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "abde0d86590af5e6a792f4954d45f4dbff54a692034bce0ac3eca7447b52cfaa"
+    },
+    {
+      "name": "ravi-user-skills-diagnosing-provider-runtime-faults",
+      "directory": "ravi-user-skills-diagnosing-provider-runtime-faults",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6515bc888835080cd6ad487360e2a42265ee6d9d00bd48843ca5e2b7aa8cc442"
+    },
+    {
+      "name": "ravi-user-skills-discovering-adapter-contracts",
+      "directory": "ravi-user-skills-discovering-adapter-contracts",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "31e8992ed57fc7ca9c654dcc40bf2ece32eb78a7d7b8bb8eb8933f821d87fb1a"
+    },
+    {
+      "name": "ravi-user-skills-email-investigation",
+      "directory": "ravi-user-skills-email-investigation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "da50b8572762127bd0faa369d8bcba1f47f58875c7cc0b4c046bca179a13afb3"
+    },
+    {
+      "name": "ravi-user-skills-email-thread-batch-classification",
+      "directory": "ravi-user-skills-email-thread-batch-classification",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "000398895f9d71839242e02d58fd18dd06e857779cb25148dc50b938df931c6d"
+    },
+    {
+      "name": "ravi-user-skills-email-thread-timeline-reader",
+      "directory": "ravi-user-skills-email-thread-timeline-reader",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "668ed74c3b37e87c0ec6e9c8512889a3661f20e510c7d013936eba24d11835f8"
+    },
+    {
+      "name": "ravi-user-skills-email-thread-wave-classification",
+      "directory": "ravi-user-skills-email-thread-wave-classification",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "1845b26b48d113e122cd44fcc0e24481ff43dbae6b0da3c81cc29eb4f81060a3"
+    },
+    {
+      "name": "ravi-user-skills-emissao-nf-sde",
+      "directory": "ravi-user-skills-emissao-nf-sde",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e4b253eca6b38f3ff859a90a4fe950b793f6303b400e46549314878c98d58d94"
+    },
+    {
+      "name": "ravi-user-skills-evaluate-agent-facades",
+      "directory": "ravi-user-skills-evaluate-agent-facades",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "14ae853bac59bf98a0c147d1c45f4dbe4a62efc134a93bd34b135828f652704e"
+    },
+    {
+      "name": "ravi-user-skills-events",
+      "directory": "ravi-user-skills-events",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "55e16ab896ca2b293b30624415e4eb22b0156709df46ba51e32bc48c9f386ac0"
+    },
+    {
+      "name": "ravi-user-skills-evidence-governance",
+      "directory": "ravi-user-skills-evidence-governance",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "388688adc52537e78a06f46d0ca9959806c366ae924a2ad02132f93ee72df0c9"
+    },
+    {
+      "name": "ravi-user-skills-fabrica-ravi-apps",
+      "directory": "ravi-user-skills-fabrica-ravi-apps",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "51d2626e793a9adf39cc3942b607a2c5c013a222ca27ea38d401d561df44722d"
+    },
+    {
+      "name": "ravi-user-skills-feature-cycle-spine-discipline",
+      "directory": "ravi-user-skills-feature-cycle-spine-discipline",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "75df7d49f8941eb70e81589804811ed693c03f9328719dd0db006864cea80291"
+    },
+    {
+      "name": "ravi-user-skills-feature-project-context-anchoring",
+      "directory": "ravi-user-skills-feature-project-context-anchoring",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "27369e27691328cc57089e7a21d0b9909f4b1fa8668d9707a791479002631e36"
+    },
+    {
+      "name": "ravi-user-skills-find-skills",
+      "directory": "ravi-user-skills-find-skills",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f709b7e6ce57ed7bdd0acf2c33b377ac5b2b4fbaaa5e5df71415fe51c5150faa"
+    },
+    {
+      "name": "ravi-user-skills-fleet-runtime-target-rollouts",
+      "directory": "ravi-user-skills-fleet-runtime-target-rollouts",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c7f4feb85f6dc571997a52819584cf1443e1285671932b1f150cc739fbd712b4"
+    },
+    {
+      "name": "ravi-user-skills-fmea-ravi",
+      "directory": "ravi-user-skills-fmea-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f5069df2dbe89f13f3dcaf8791a41a46646f617f469209a599b0ff9614b3910a"
+    },
+    {
+      "name": "ravi-user-skills-gmail-account-onboarding",
+      "directory": "ravi-user-skills-gmail-account-onboarding",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e7812cfb1880778b0bb9d2fd8dfc3da39f527e139e0c65cd74faa90f57b24ff6"
+    },
+    {
+      "name": "ravi-user-skills-gmail-evidence-batch-triage",
+      "directory": "ravi-user-skills-gmail-evidence-batch-triage",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "dfa566ec4d3da6f34cd5d19c4c59cfa59bbc6d69ca04e2454ca5f57aeeff1e46"
+    },
+    {
+      "name": "ravi-user-skills-gmail-reader-batch-classificacao",
+      "directory": "ravi-user-skills-gmail-reader-batch-classificacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "62e11208558922d6b3ca26644f28e3c4e45e58c7581bec10ef91f7268ff115fd"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-batch-classification",
+      "directory": "ravi-user-skills-gmail-thread-batch-classification",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9e9f5f0173ac862361918a42c28fd964c5309548e039f23d83335ea073462e38"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-classificacao-lote",
+      "directory": "ravi-user-skills-gmail-thread-classificacao-lote",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "48c1b6832191fb134876e7e09f3e8e3c16cab215958db4910935c75cc4d3413c"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-reader-batch",
+      "directory": "ravi-user-skills-gmail-thread-reader-batch",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "660062de43545c0c3f13ef0c7f526a1d91ac8de102bc155dc2a15bf173e06ba9"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-reader-batches",
+      "directory": "ravi-user-skills-gmail-thread-reader-batches",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5bab85d694e71b1d7ba85a7fac16bcf7a604318235291d8f8b7dcc880e4ef2ef"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-reading-wave",
+      "directory": "ravi-user-skills-gmail-thread-reading-wave",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "41b2c85df2961f81392926682258da8e4b292bb2885e0aba62105917332fcde5"
+    },
+    {
+      "name": "ravi-user-skills-gmail-thread-triage-investigacao",
+      "directory": "ravi-user-skills-gmail-thread-triage-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0f9272ba52434f3eeb564438fbec8efc556f8931629c3e037a17ca51fff51dd7"
+    },
+    {
+      "name": "ravi-user-skills-graphify",
+      "directory": "ravi-user-skills-graphify",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9eeefbb4669f226f7669fd44ad9a3b7e9bc056f5d445248e0131bc7bcb2b1af3"
+    },
+    {
+      "name": "ravi-user-skills-heartbeat-manager",
+      "directory": "ravi-user-skills-heartbeat-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f0a1a3e19f939d0f11333cb48a8ddc2b670fbabd3b407bc422fcdeb659872b30"
+    },
+    {
+      "name": "ravi-user-skills-image",
+      "directory": "ravi-user-skills-image",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "69d20c2c94f05eeb6db90f2ca63d00adc002266fc4b72e8770df622de863241f"
+    },
+    {
+      "name": "ravi-user-skills-impact-propagation",
+      "directory": "ravi-user-skills-impact-propagation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4783adbbd7849fa4bae9d4a763db588bd9c45c1e3b7fd3bc0d39ba2493fa40f3"
+    },
+    {
+      "name": "ravi-user-skills-implementing-facade-batches",
+      "directory": "ravi-user-skills-implementing-facade-batches",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ca94eb21a150a5dfd567f4df4f68a267444453d88ec5a1ed3a1170a7092f90ee"
+    },
+    {
+      "name": "ravi-user-skills-incremental-rollout-ravi",
+      "directory": "ravi-user-skills-incremental-rollout-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e2d85494d89432a08713e91bdb88a96cb946facd975dea1dceef0a9f3bb19e85"
+    },
+    {
+      "name": "ravi-user-skills-independent-code-review-handoffs",
+      "directory": "ravi-user-skills-independent-code-review-handoffs",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ab9cc30627fcdc7de5c19aeeb1dc37f1f57cfa61280feeef41112026e5dba07c"
+    },
+    {
+      "name": "ravi-user-skills-instances-manager",
+      "directory": "ravi-user-skills-instances-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "12048443efbcf025040f3a04dc2100be71873a7ea5f1e9b5dac2e199ee3a6286"
+    },
+    {
+      "name": "ravi-user-skills-integrating-code-safely",
+      "directory": "ravi-user-skills-integrating-code-safely",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c9d1a65804722ff3fbf7dde6255e337882c2c13de53a555cc708f99c798617c7"
+    },
+    {
+      "name": "ravi-user-skills-internal-task-delivery-isolation",
+      "directory": "ravi-user-skills-internal-task-delivery-isolation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "63d0a2cae9ac19bfbd2ace205edcbb8b88081e54bc8d01530038fcd622f66651"
+    },
+    {
+      "name": "ravi-user-skills-interviewing-agents",
+      "directory": "ravi-user-skills-interviewing-agents",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4792b1f0b65c55a82fc0754e5ad97a1ea96bbcebcbc48b07f1f1b27918cffb7a"
+    },
+    {
+      "name": "ravi-user-skills-inventario-atualizar-sde",
+      "directory": "ravi-user-skills-inventario-atualizar-sde",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "644950f8d8636515284124b1914e018464839db7c25920ae9bfeced89342709b"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-documental",
+      "directory": "ravi-user-skills-investigacao-documental",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "36ed35246ddb57221e2520b88dd5e787678aabb6f658c9bef83fd1fb5ff7661f"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-documental-email",
+      "directory": "ravi-user-skills-investigacao-documental-email",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2b97454e408f397b52d3aa0d36e0e930a3227ea19d36eaef3569c8ef67e14cce"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-documental-gmail-ondas",
+      "directory": "ravi-user-skills-investigacao-documental-gmail-ondas",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "85d7e609ea3fc51c70485aa71b8c7c1e20873e7375755acdbeed47d3a74ad1f3"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-email-leitura-lotes",
+      "directory": "ravi-user-skills-investigacao-email-leitura-lotes",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "bddbf0fcc443a5217b31354067f2114fe0201b50a1cb21d3c67a6ec55bd1576d"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-email-linha-tempo",
+      "directory": "ravi-user-skills-investigacao-email-linha-tempo",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "dbdb42d24be033c500002a59a7db41e3a7c32f7b0f901f66262f9f78cf88936c"
+    },
+    {
+      "name": "ravi-user-skills-investigacao-threads-gmail",
+      "directory": "ravi-user-skills-investigacao-threads-gmail",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "53b85c3e9a10c5300ca9607e92dbe14113a5994c75b3f63d74f3d0c9793b9446"
+    },
+    {
+      "name": "ravi-user-skills-investigating-ravi-system-state",
+      "directory": "ravi-user-skills-investigating-ravi-system-state",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0093479f2f1d47092fe097fe44e13c1a52307f5f036fd0d82e0f0aec3f955148"
+    },
+    {
+      "name": "ravi-user-skills-leitor-lote-email-investigacao",
+      "directory": "ravi-user-skills-leitor-lote-email-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3b6353e390aa23755c420403c4ee444a607b3a709f47c9d3ec983efecaa4bd56"
+    },
+    {
+      "name": "ravi-user-skills-leitor-threads-investigacao",
+      "directory": "ravi-user-skills-leitor-threads-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "203e70396dfaddd81ed920d0146c7bdc8bc438744f510c1896859f3d7f3be215"
+    },
+    {
+      "name": "ravi-user-skills-leitura-classificacao-email-investigacao",
+      "directory": "ravi-user-skills-leitura-classificacao-email-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "dea4d530d08bc4e94277f11bcddad78eb22cb8f031fef165943ad1172dc8835e"
+    },
+    {
+      "name": "ravi-user-skills-leitura-classificacao-threads-email",
+      "directory": "ravi-user-skills-leitura-classificacao-threads-email",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f6f56604a16fdc431ec77634d7670a67bfe59ec95eb39d3b1b75ee35e5da6dc0"
+    },
+    {
+      "name": "ravi-user-skills-leitura-classificacao-threads-gmail",
+      "directory": "ravi-user-skills-leitura-classificacao-threads-gmail",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "050473e591c4539030f6a3c7e2c9b54b8aa5dd5f76d68880fb893e9b6880f8fa"
+    },
+    {
+      "name": "ravi-user-skills-leitura-emails-investigacao",
+      "directory": "ravi-user-skills-leitura-emails-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3f6cb8617e11444ab184ee746a854620ca7c6660785b749ffb1f573b33520922"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-email-investigacao",
+      "directory": "ravi-user-skills-leitura-lote-email-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "11bc36465f64d99680982d7f06fa166a39b443a317b6bb19c746d81d26c14cbc"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-emails-investigacao",
+      "directory": "ravi-user-skills-leitura-lote-emails-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5dfbfaffb9d011c3ad1589ef778cd81db315ef84126b04ac71a6eec086dd46d4"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-gmail-investigacao",
+      "directory": "ravi-user-skills-leitura-lote-gmail-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "807f587cc3428f6509b2bad29f3838befe15613f9da54414f7bda5700aaee966"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-investigacao-email",
+      "directory": "ravi-user-skills-leitura-lote-investigacao-email",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a0731a13ce166b3f5840dc8ae2b63f35c73f80dbc4a0eb48339808f7fa914aac"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-threads-email",
+      "directory": "ravi-user-skills-leitura-lote-threads-email",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "af6c831c5e4aeec125029f8bc7c34fa7837a36438afa7a5b6b72b18fdeccdc9d"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lote-threads-gmail",
+      "directory": "ravi-user-skills-leitura-lote-threads-gmail",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "5ffde2ed27182c99a1c8561e4b0300920e91264845ec28d35ba92aa4b0032f36"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lotes-email-investigacao",
+      "directory": "ravi-user-skills-leitura-lotes-email-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fd2939b900fe7289985627f430bab3070af510694face5c77ece331c31315bc9"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lotes-gmail-investigacao",
+      "directory": "ravi-user-skills-leitura-lotes-gmail-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "4167db67afad4e1c48a089bc8e708bba222037dfee46ac0c03cb198e33907ebc"
+    },
+    {
+      "name": "ravi-user-skills-leitura-lotes-threads-gmail",
+      "directory": "ravi-user-skills-leitura-lotes-threads-gmail",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9861246f634ee5c710552c4c265854111b6e8994b86a9140fecc90f571afeec3"
+    },
+    {
+      "name": "ravi-user-skills-leitura-threads-investigacao",
+      "directory": "ravi-user-skills-leitura-threads-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "00c3d3e281f4a98a9a5436a699f4ba3830c755babfed333cce3fd641254d5100"
+    },
+    {
+      "name": "ravi-user-skills-lotes-leitores-investigacao",
+      "directory": "ravi-user-skills-lotes-leitores-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "99565b9ce30a75950cd8743492f5e43d09e50192111cb16bf92f6ba352c36488"
+    },
+    {
+      "name": "ravi-user-skills-main-launch-from-outcome",
+      "directory": "ravi-user-skills-main-launch-from-outcome",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "dd64b9a22a0d818ef5b2385c304d020b509bf2ebdd00e04f5bd9f64ec920eb44"
+    },
+    {
+      "name": "ravi-user-skills-market-sizing-analysis",
+      "directory": "ravi-user-skills-market-sizing-analysis",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2ddd72156727d37afb21205fefd422532002dcc8202e6826966661b7fe2e20ef"
+    },
+    {
+      "name": "ravi-user-skills-method-executor-orchestration",
+      "directory": "ravi-user-skills-method-executor-orchestration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9db5b67fdc47ac56c59a698694b490e9a7e51fe8930cf7f7ecab64e06587211d"
+    },
+    {
+      "name": "ravi-user-skills-methodology-bridge",
+      "directory": "ravi-user-skills-methodology-bridge",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "40a638bdbcb7b108e34c44a45393410fd1d85963fadf384d5b368c1606cb84fb"
+    },
+    {
+      "name": "ravi-user-skills-monitoring-agent-behavior",
+      "directory": "ravi-user-skills-monitoring-agent-behavior",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "927e67a64c768cf6c039cbdc0b8759f69dd0b5e7142655feece07d2247e50ef6"
+    },
+    {
+      "name": "ravi-user-skills-multi-wave-verification-orchestration",
+      "directory": "ravi-user-skills-multi-wave-verification-orchestration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6873e2a127076c16b18402befab7d74a96bdeeefe44225780b51869f839cf324"
+    },
+    {
+      "name": "ravi-user-skills-objective-lock",
+      "directory": "ravi-user-skills-objective-lock",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "1328ee63909fdf6f6f011e6adc7569c75ff99d860f001402aee2a0c61b1bddd4"
+    },
+    {
+      "name": "ravi-user-skills-observing-task-status",
+      "directory": "ravi-user-skills-observing-task-status",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0525c4e886acf4a5ea4daed728de645992713c21f07c26be05d4bddc76710f3a"
+    },
+    {
+      "name": "ravi-user-skills-operational-promotion-verification",
+      "directory": "ravi-user-skills-operational-promotion-verification",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b85ebf42aa2ca7c91ae23ae3abd06cfb8170c32e8aee0a2d9983213811242bfe"
+    },
+    {
+      "name": "ravi-user-skills-orchestrating-swarm",
+      "directory": "ravi-user-skills-orchestrating-swarm",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b27a3fef8374ede83c7bc0d1a0b4afe1e4a7fcaf005a0009c56c07055333ec90"
+    },
+    {
+      "name": "ravi-user-skills-orchestrator-discipline",
+      "directory": "ravi-user-skills-orchestrator-discipline",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7a6095cedfba3b73238aced283dbdb898d17cc8186f183d5acce771dcbe69488"
+    },
+    {
+      "name": "ravi-user-skills-outcome-driven-task-execution",
+      "directory": "ravi-user-skills-outcome-driven-task-execution",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "18ffb0ae0ea72611af558b95f2cfd73ed00c1257f4649462baf3161e18fe896b"
+    },
+    {
+      "name": "ravi-user-skills-parallel-reader-orchestration",
+      "directory": "ravi-user-skills-parallel-reader-orchestration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "cb783f707dc79f291e5559e5b102cc9162b61b64ef8bfbac3e3338375dbe5510"
+    },
+    {
+      "name": "ravi-user-skills-permissions-manager",
+      "directory": "ravi-user-skills-permissions-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "86d847f7f69bc888f3e77f7b9f62e1a0a9dcbd6b1fc2ce9baa3a7ae0cc6cfe4f"
+    },
+    {
+      "name": "ravi-user-skills-personal-media-replies",
+      "directory": "ravi-user-skills-personal-media-replies",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8e3a50857cb5f3b9ffa014786129259fcedc6342c4cf1750f4c7f10d24a448f7"
+    },
+    {
+      "name": "ravi-user-skills-pi-provider",
+      "directory": "ravi-user-skills-pi-provider",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ad5d29ed4604e19cdd0c89db1eada675a37ea574e009f2efea4ba06c1ac483f1"
+    },
+    {
+      "name": "ravi-user-skills-premortem-red-team-ravi",
+      "directory": "ravi-user-skills-premortem-red-team-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "14341d1e8c3be07274431c5c5601b85ee12fbc86af821a6095fba27fd66545af"
+    },
+    {
+      "name": "ravi-user-skills-project-bootstrap",
+      "directory": "ravi-user-skills-project-bootstrap",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "caa3ce3bf3817afbe9abc4db145190f11411de041d60b85f695ca4db1c90a004"
+    },
+    {
+      "name": "ravi-user-skills-project-context-recovery",
+      "directory": "ravi-user-skills-project-context-recovery",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "799afbc4087aeab9378b50aa4ad1242c7f72d854fe02815e4f25d77215e231d2"
+    },
+    {
+      "name": "ravi-user-skills-project-process-orchestration",
+      "directory": "ravi-user-skills-project-process-orchestration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d4e1c771ea83aecf53a408dd80e7c10846f41d3d09c2132efc81331bd9a469f8"
+    },
+    {
+      "name": "ravi-user-skills-projects",
+      "directory": "ravi-user-skills-projects",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e7d93ee8487874235bd115c87da9e2d3a70d4dedc3bfa05ee3b5271eecc7a8e1"
+    },
+    {
+      "name": "ravi-user-skills-prompt-builder",
+      "directory": "ravi-user-skills-prompt-builder",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c4dcfe7be9148effab8141efa0d4e2a90dd800777d1ebdb401f83e1fe9ab70d2"
+    },
+    {
+      "name": "ravi-user-skills-prox-calls",
+      "directory": "ravi-user-skills-prox-calls",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "fd4ca5b9b4cf3906772496127a2ba19fc6f3a0eb488a2e06bc47559471a1fbe6"
+    },
+    {
+      "name": "ravi-user-skills-ravi-apps-integration",
+      "directory": "ravi-user-skills-ravi-apps-integration",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e75a759dec010d9694bcf576d337a5ddfe3635986cbc7ca4613b4aaaac4857eb"
+    },
+    {
+      "name": "ravi-user-skills-ravi-apps-migration-execution-strategy",
+      "directory": "ravi-user-skills-ravi-apps-migration-execution-strategy",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f44b4a9728eae94c1f370d824e15286d53135e80953cf2b38e104eb6f4c280bc"
+    },
+    {
+      "name": "ravi-user-skills-ravi-architecture",
+      "directory": "ravi-user-skills-ravi-architecture",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "af66e80b87cc1817fefdf2c3b1c6ed9b46d67ed6fc67be55d58afe5ad6353710"
+    },
+    {
+      "name": "ravi-user-skills-ravi-dev-cli-standard",
+      "directory": "ravi-user-skills-ravi-dev-cli-standard",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "bd9902b8fff3d5cdc67cb0aeb85d1a34cbbf3e4f3caf0d1912af983c10888e77"
+    },
+    {
+      "name": "ravi-user-skills-ravi-dev-pr-workflow",
+      "directory": "ravi-user-skills-ravi-dev-pr-workflow",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "11ad9c79f9c6e3d814765d60b8dba01f9e7facd7b9937f6e34715fc0ec184ac9"
+    },
+    {
+      "name": "ravi-user-skills-ravi-dev-skill-loop-design",
+      "directory": "ravi-user-skills-ravi-dev-skill-loop-design",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "1547e36659e4ba4da55b9e9584eb96c73ecf2f92625e4e67b0b9da8dbb7f6595"
+    },
+    {
+      "name": "ravi-user-skills-ravi-dev-skill-management",
+      "directory": "ravi-user-skills-ravi-dev-skill-management",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8836b15cd14059a8a898c163b981271177df36eede3c1bd745ab6457bdeeec42"
+    },
+    {
+      "name": "ravi-user-skills-ravi-light-threat-modeling",
+      "directory": "ravi-user-skills-ravi-light-threat-modeling",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9452c43b2d08e8811532f37664eb7e5a1d86b3323ce21a0dede48fe76221e9bf"
+    },
+    {
+      "name": "ravi-user-skills-ravi-media-send",
+      "directory": "ravi-user-skills-ravi-media-send",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a6f704762b1d13e5300f8e15b0f9d9b2b7b4a463f3fbc036b996fefcab7897fe"
+    },
+    {
+      "name": "ravi-user-skills-ravi-orchestrator",
+      "directory": "ravi-user-skills-ravi-orchestrator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ec45011ce3a86090cb304cbd1c9c0140a24a6f1eb604c25782235132ed974045"
+    },
+    {
+      "name": "ravi-user-skills-ravi-pages-workflow",
+      "directory": "ravi-user-skills-ravi-pages-workflow",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6bba37b105b8bb821e5c2d5b2d422fb23096f62b58e19ec5693a503ef8f12151"
+    },
+    {
+      "name": "ravi-user-skills-ravi-user-skills-deploy-checklist-ravi",
+      "directory": "ravi-user-skills-ravi-user-skills-deploy-checklist-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a206bb89a02c8f73081a86c7d0202e6c2f52b6d1ae0f978614c0207649b4b088"
+    },
+    {
+      "name": "ravi-user-skills-react-methodology",
+      "directory": "ravi-user-skills-react-methodology",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7effcb51b05784178092abb383ac5a60c71695abc5251304deeec4a002612c28"
+    },
+    {
+      "name": "ravi-user-skills-read-only-workflow-validation",
+      "directory": "ravi-user-skills-read-only-workflow-validation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9a0de398853e76ae57487211a068738121703923aea2a08dde5338b1cbc0de90"
+    },
+    {
+      "name": "ravi-user-skills-reading-lists",
+      "directory": "ravi-user-skills-reading-lists",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "25279eb368e0bf8ad7c43d992a8a2d8d88aa05ff3b9332dcd501eb5e5bddb86b"
+    },
+    {
+      "name": "ravi-user-skills-reconciliacao-de-fontes-de-dados",
+      "directory": "ravi-user-skills-reconciliacao-de-fontes-de-dados",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b20dee9f36abc0df46c917044f1d49299847c393da334493adfee397725a89b7"
+    },
+    {
+      "name": "ravi-user-skills-reconciliacao-fila-contexto-crm",
+      "directory": "ravi-user-skills-reconciliacao-fila-contexto-crm",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9cbfa8befde367114a7396dd084e079b84c6a930c6d46d72cfc1c9504346fbb9"
+    },
+    {
+      "name": "ravi-user-skills-routes-manager",
+      "directory": "ravi-user-skills-routes-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b89fbbe2bd1146593358b74d3bc378b5f2c7e82bca2790022638311b019390b2"
+    },
+    {
+      "name": "ravi-user-skills-running-durable-background-work",
+      "directory": "ravi-user-skills-running-durable-background-work",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "c1978336ab89bd40eade52887aabb48bf9a527906ddd2a33e18e23d536344a8b"
+    },
+    {
+      "name": "ravi-user-skills-runtime-incident-investigation",
+      "directory": "ravi-user-skills-runtime-incident-investigation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d32dc2718f827c8bf4e79a1269b2b70be6dfa8cbad8dffdc33b6a97fd9613777"
+    },
+    {
+      "name": "ravi-user-skills-runtime-target-failover-manual",
+      "directory": "ravi-user-skills-runtime-target-failover-manual",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b1a7ab5eacfdb8fed7126ab6475056b0a63c8ef711963b101ef9e57100d01600"
+    },
+    {
+      "name": "ravi-user-skills-scoping-domain-discovery",
+      "directory": "ravi-user-skills-scoping-domain-discovery",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "24568f8a7fcbbcd3b64b2d4a8924ad37344ef051213ce7e9778a7f982be1c772"
+    },
+    {
+      "name": "ravi-user-skills-sde-crm-daily-sweep",
+      "directory": "ravi-user-skills-sde-crm-daily-sweep",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9f5cd7a1ae8cd3d669152f3e9c0c5bd2bdf07587b9a6574be71024275bd2f695"
+    },
+    {
+      "name": "ravi-user-skills-sde-ravi-surfaces",
+      "directory": "ravi-user-skills-sde-ravi-surfaces",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f277923e4953287b3b579fa80cfa07c4e630cb0c83d274e1c81e0cd970b240ce"
+    },
+    {
+      "name": "ravi-user-skills-security-finding-escalation",
+      "directory": "ravi-user-skills-security-finding-escalation",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "856e6a290e25cd947ce7be7a299057a4ba6adf52e9c716a314019717037b0fc9"
+    },
+    {
+      "name": "ravi-user-skills-select-methodologies",
+      "directory": "ravi-user-skills-select-methodologies",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "770dfdc8fc27baa30a6dee95e92aa3d879327bed130183784df60f90ba3fceb0"
+    },
+    {
+      "name": "ravi-user-skills-select-standards",
+      "directory": "ravi-user-skills-select-standards",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6f670ada09598a01c3283862f41ca40efb77b2b11a3ee4f26f7e6be844cdfeea"
+    },
+    {
+      "name": "ravi-user-skills-selective-ravi-skill-loading",
+      "directory": "ravi-user-skills-selective-ravi-skill-loading",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b20f955f5976ed3756f8ac3dfa00de95f8f843fd2970b00f212e0f0777ffd79d"
+    },
+    {
+      "name": "ravi-user-skills-sessions",
+      "directory": "ravi-user-skills-sessions",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "692c58c6f2dc379c63dea4122ced7a7fa864be5c8895b127d4b88f72e228cd84"
+    },
+    {
+      "name": "ravi-user-skills-settings-manager",
+      "directory": "ravi-user-skills-settings-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a84d8961fa32805c894ef3bd35b4a8f8ecdace5bd84ea72b5ab80216a6a192b7"
+    },
+    {
+      "name": "ravi-user-skills-situational-method-discovery",
+      "directory": "ravi-user-skills-situational-method-discovery",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0285678ba543cfc4ca601e2e76df4a3a33cceae003f9cedd2cb62b836eca3564"
+    },
+    {
+      "name": "ravi-user-skills-skill-access-diagnostics",
+      "directory": "ravi-user-skills-skill-access-diagnostics",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "417f04b13b5614a333e3ce82746ae0590a332b9afb25c378d6c8ffb290b45637"
+    },
+    {
+      "name": "ravi-user-skills-skill-creator",
+      "directory": "ravi-user-skills-skill-creator",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "06fb309495570b8e51f25d4f70afb9ad36860b69592715e71299e37919eeafff"
+    },
+    {
+      "name": "ravi-user-skills-source-doc-reader",
+      "directory": "ravi-user-skills-source-doc-reader",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3191919acec067464ada5cbc6764119d3f55ad8c17cd7d6d75cd68a1d330e843"
+    },
+    {
+      "name": "ravi-user-skills-spec-by-example-ravi",
+      "directory": "ravi-user-skills-spec-by-example-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f2b279b59071e25098af1ec373904781a6fa5817fa5bab52f9102462d08daa34"
+    },
+    {
+      "name": "ravi-user-skills-specs",
+      "directory": "ravi-user-skills-specs",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "87aa32a2c09675e65c2d2c6de9249d8d42f80bbc854bf8da3fa8b451b091caa4"
+    },
+    {
+      "name": "ravi-user-skills-startup-financial-modeling",
+      "directory": "ravi-user-skills-startup-financial-modeling",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "38046b9bade35ec0878ccd193b0a00c8c85bb2f18a045862530c00b8f5340d98"
+    },
+    {
+      "name": "ravi-user-skills-stickers",
+      "directory": "ravi-user-skills-stickers",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8d4b26c88b2b063260a6140910879a00263fc41177d9f0ae8066b49a6e25aacd"
+    },
+    {
+      "name": "ravi-user-skills-stride-ravi",
+      "directory": "ravi-user-skills-stride-ravi",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a7c3bc111afaed0023616f95bdfd6b049f3571e5a0965ac8b2a500f376ec1692"
+    },
+    {
+      "name": "ravi-user-skills-submitting-prs",
+      "directory": "ravi-user-skills-submitting-prs",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "a205c0512c167d81da6b044cccb7724bcc08538099d8d6d320c9d9a3ed2633ca"
+    },
+    {
+      "name": "ravi-user-skills-synthesis-decision",
+      "directory": "ravi-user-skills-synthesis-decision",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2c889c5057373d1e48a71f493f95063c71fb2c47bc42adf6e933e381bd99b38b"
+    },
+    {
+      "name": "ravi-user-skills-systematic-debugging",
+      "directory": "ravi-user-skills-systematic-debugging",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "f66c466f90e50939c10b9e233cc93d3f53f74c4f4f447b8745fe2be894320f7a"
+    },
+    {
+      "name": "ravi-user-skills-task-handoff",
+      "directory": "ravi-user-skills-task-handoff",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "52601359428b140c38580f24f6dd5dfba4912d546ef3609eef28cbeff0bfea51"
+    },
+    {
+      "name": "ravi-user-skills-task-status-observer-sync",
+      "directory": "ravi-user-skills-task-status-observer-sync",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "deef2dd0b4e87d8cf9aff4700ec37b90a7272751615b430d8cf9d177f6ae773b"
+    },
+    {
+      "name": "ravi-user-skills-task-status-recovery",
+      "directory": "ravi-user-skills-task-status-recovery",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "8dd375e6ea0d878666b71fc30497d0f34267c6ffb117264a032e0180cc209ee1"
+    },
+    {
+      "name": "ravi-user-skills-tasks",
+      "directory": "ravi-user-skills-tasks",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "92ed065d0fbbaa0d87201b54ba1431b7f78790439a1803c51d4e557974be81b0"
+    },
+    {
+      "name": "ravi-user-skills-tasks-eval",
+      "directory": "ravi-user-skills-tasks-eval",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "47659d66a4b79b9e17d322de92d8b9d0058b33dadcefddd3eb4cd5b806de04bb"
+    },
+    {
+      "name": "ravi-user-skills-test-driven-development",
+      "directory": "ravi-user-skills-test-driven-development",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0964c80777ad367c5b54fe58b39df239478917b5d6310fccb0119f5b60897c9b"
+    },
+    {
+      "name": "ravi-user-skills-tiny",
+      "directory": "ravi-user-skills-tiny",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b158f5d11ee02968234b9ba13a0e16facc2c40285560e15ac5dd72a065f7f406"
+    },
+    {
+      "name": "ravi-user-skills-triagem-email-fiscal-contador",
+      "directory": "ravi-user-skills-triagem-email-fiscal-contador",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "d331aff26dbff8b89ed5f56f41bea42ec897a45253c3114f75f0e93a905d3c50"
+    },
+    {
+      "name": "ravi-user-skills-triagem-emails-investigacao",
+      "directory": "ravi-user-skills-triagem-emails-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7742d06b74e0914bb9e1dbcd2c8468456447baeb1cdb42e44c8de91bb4624a4e"
+    },
+    {
+      "name": "ravi-user-skills-triagem-threads-email-investigacao",
+      "directory": "ravi-user-skills-triagem-threads-email-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "ae912aef00ff9f24489f705c19544f34c21dae346115bfbc06ed7bf4cd4d7977"
+    },
+    {
+      "name": "ravi-user-skills-triagem-threads-gmail-investigacao",
+      "directory": "ravi-user-skills-triagem-threads-gmail-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "6c5f0c4d26658ab9f20f73ef6a3fd13ae0965157966e34fdb9b766111fc5dcf8"
+    },
+    {
+      "name": "ravi-user-skills-triagem-threads-investigacao",
+      "directory": "ravi-user-skills-triagem-threads-investigacao",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "b5aaeabe35e665412d9f6e6a72b17dcea7506059464e3a481bdf590e81b96f3a"
+    },
+    {
+      "name": "ravi-user-skills-trigger-debug",
+      "directory": "ravi-user-skills-trigger-debug",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "aab18d29a7f83ced39d6f3170fe237b18ae9c4ac7a74325f7ad5d48bdc10e42e"
+    },
+    {
+      "name": "ravi-user-skills-trigger-manager",
+      "directory": "ravi-user-skills-trigger-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "38b6e4cbb3958979d6961cd9d85720b0cc9ce39142b46a7fc74741f4dc95e588"
+    },
+    {
+      "name": "ravi-user-skills-troubleshooting",
+      "directory": "ravi-user-skills-troubleshooting",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "0bbe128552c9e50d1c23d85345b4c73cd3f094da5c66b2cd93330220f6896990"
+    },
+    {
+      "name": "ravi-user-skills-validating-methodology-profiles",
+      "directory": "ravi-user-skills-validating-methodology-profiles",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3a6a7dc96e1983e8303151fb312d0111f2d09d9403ad903c961eb33ea29ff065"
+    },
+    {
+      "name": "ravi-user-skills-verification-before-completion",
+      "directory": "ravi-user-skills-verification-before-completion",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "9049913a6ee87b9545113ec333aa7fd79cfbad4c54828c77704c6f89e79eb42c"
+    },
+    {
+      "name": "ravi-user-skills-verifying-changes-against-live-systems",
+      "directory": "ravi-user-skills-verifying-changes-against-live-systems",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7839bee6d456accacac118cacb4f8643aea133f232c7763375a7a1585cd62b8e"
+    },
+    {
+      "name": "ravi-user-skills-video",
+      "directory": "ravi-user-skills-video",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "7da09ed02db1632e55276ad812072ed4d4d5df68062d3ef915a0e31b88aa8c72"
+    },
+    {
+      "name": "ravi-user-skills-vps-disk-cleanup",
+      "directory": "ravi-user-skills-vps-disk-cleanup",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "3571eb40d2c4bcadcaf46e563a7cdcd3bbfc77fe06a443c70a54d71836c4f7d4"
+    },
+    {
+      "name": "ravi-user-skills-web-design-guidelines",
+      "directory": "ravi-user-skills-web-design-guidelines",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e8bf79ec2c119d9241e70d2a2c2c62bfd270031047478fe5f43c10d8f22f03b4"
+    },
+    {
+      "name": "ravi-user-skills-whatsapp-manager",
+      "directory": "ravi-user-skills-whatsapp-manager",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "2702127a9f5ffb706f93ef262060a8db94a46d2922b04d01dfa10a286b59bdc1"
+    },
+    {
+      "name": "ravi-user-skills-zittei-reader-lot",
+      "directory": "ravi-user-skills-zittei-reader-lot",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "06d38426ea80912da2b28bf129713b337f71aa2eb18f24dcfc35193ec223b42a"
+    },
+    {
+      "name": "select-standards",
+      "directory": "select-standards",
+      "source": "codex-home",
+      "requirements": [],
+      "digest": "e8fc076c3c9a27078489a7fd386728334486895f654411614fb54171bc75a11c"
+    }
+  ],
+  "limitations": [
+    "No execution context for Jarvis was assumed or created.",
+    "Disk inventory is not proof of native model exposure.",
+    "Only named source directories are inventoried; runtime plugins passed by a future execution are not assumed.",
+    "Runtime revision is unknown when package gitHead is absent."
+  ]
+}

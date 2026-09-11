@@ -303,6 +303,8 @@ export interface RuntimeUsageCapabilities {
 }
 
 export interface RuntimeToolCapabilities {
+  /** Canonical capabilities actually offered by this adapter, independent of permission. */
+  availableCapabilities?: readonly string[];
   permissionMode: RuntimeToolPermissionMode;
   accessRequirement: RuntimeToolAccessRequirement;
   supportsParallelCalls: boolean;
@@ -360,6 +362,9 @@ export interface RuntimePlugin {
 }
 
 export interface RuntimePrepareSessionRequest {
+  skillPolicy?: import("./skill-policy.js").SkillPolicySnapshot;
+  skillNativeNames?: Readonly<Record<string, string>>;
+  skillExposureMode?: import("./skill-exposure-contract.js").SkillExposureMode;
   agentId: string;
   cwd: string;
   plugins?: RuntimePlugin[];
@@ -369,6 +374,7 @@ export interface RuntimePrepareSessionRequest {
 }
 
 export interface RuntimePrepareSessionResult {
+  skillExposure?: import("./skill-exposure-contract.js").PreparedSkillExposure;
   env?: Record<string, string>;
   startRequest?: Partial<Pick<RuntimeStartRequest, "approveRuntimeRequest" | "dynamicTools" | "handleRuntimeToolCall">>;
 }
@@ -417,6 +423,15 @@ interface RuntimeEventBase {
 }
 
 export interface RuntimeStartRequest {
+  skillPolicy?: import("./skill-policy.js").SkillPolicySnapshot;
+  skillNativeNames?: Readonly<Record<string, string>>;
+  skillExposure?: import("./skill-exposure-contract.js").PreparedSkillExposure;
+  /** Verify current policy before delivering the next model request. */
+  verifySkillPolicy?: () => void | Promise<void>;
+  /** Last synchronous check immediately before forwarding an upstream request. */
+  verifySkillPolicyAtDispatch?: () => void;
+  /** Host-owned invalidation channel; never classify policy rejection as credential failure. */
+  onSkillPolicyInvalidated?: (event: import("./model-call-fence.js").ModelCallInvalidation) => void;
   prompt: AsyncGenerator<RuntimePromptMessage>;
   model: string;
   effort?: RuntimeEffort;
@@ -441,15 +456,14 @@ export interface RuntimeStartRequest {
   /** Same immutable secretless broker route prepared for this physical provider session. */
   modelBroker?: RuntimeModelBrokerBinding;
   /**
-   * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
-   * When present + non-empty the provider adapter narrows the runtime skill
-   * catalog to this list. When absent or empty, providers keep their default
-   * "load every discovered skill" behavior (Invariant F — grandfather).
+   * Legacy low-level adapter input, not an authorization decision.
+   * Managed runtime calls must provide skillPolicy and prepared skillExposure.
+   * An explicitly empty list never means an unrestricted catalog.
    */
   allowedSkills?: string[];
   /**
-   * CLI-only bootstrap: skip the advertised skill-name catalog. The Ravi system
-   * prompt remains large; this does not claim a 23k-token reduction.
+   * CLI-only bootstrap: skip the legacy skill-name catalog, not the managed
+   * snapshot envelope. The Ravi system prompt remains independently sized.
    */
   omitAdvertisedSkillCatalog?: boolean;
 }
@@ -533,7 +547,7 @@ export type RuntimeEvent =
       error: string;
       recoverable?: boolean;
       /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */
-      failureKind?: "transport";
+      failureKind?: "transport" | "skill-policy";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
@@ -564,6 +578,7 @@ export interface RuntimeSessionHandle {
 }
 
 export interface RuntimeCapabilities {
+  skillExposure?: import("./skill-exposure-contract.js").SkillExposureCapabilities;
   runtimeControl: RuntimeControlCapabilities;
   dynamicTools: RuntimeDynamicToolCapabilities;
   execution: RuntimeExecutionCapabilities;

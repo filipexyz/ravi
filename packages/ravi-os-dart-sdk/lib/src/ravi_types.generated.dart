@@ -18296,19 +18296,27 @@ class SkillsGrantBatchReturn {
 SkillsGrantBatchReturn skillsGrantBatchReturnFromJson(Object? json) => SkillsGrantBatchReturn.fromJsonValue(json);
 
 class SkillsInspectReturn {
-  const SkillsInspectReturn({required this.agentId, required this.allowlist, required this.hasConfiguration, required this.provenance});
+  const SkillsInspectReturn({required this.agentId, required this.allowlist, this.diagnostics, required this.hasConfiguration, required this.provenance, this.revisions, this.scope, this.snapshotId});
 
   final String agentId;
   final List<String> allowlist;
+  final List<RaviJson>? diagnostics;
   final bool hasConfiguration;
   final RaviJson provenance;
+  final RaviJson? revisions;
+  final RaviJson? scope;
+  final String? snapshotId;
 
   factory SkillsInspectReturn.fromJson(Map<String, Object?> json) {
     return SkillsInspectReturn(
       agentId: raviJsonAsString(json["agentId"]),
       allowlist: raviJsonAsList(json["allowlist"], raviJsonAsString),
+      diagnostics: json["diagnostics"] == null ? null : raviJsonAsList(json["diagnostics"], RaviJson.from),
       hasConfiguration: raviJsonAsBool(json["hasConfiguration"]),
       provenance: RaviJson.from(json["provenance"]),
+      revisions: json["revisions"] == null ? null : RaviJson.from(json["revisions"]),
+      scope: json["scope"] == null ? null : RaviJson.from(json["scope"]),
+      snapshotId: json["snapshotId"] == null ? null : raviJsonAsString(json["snapshotId"]),
     );
   }
 

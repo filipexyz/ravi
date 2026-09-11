@@ -1,9 +1,18 @@
 import { spawn } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
+import { RUNTIME_BUILTIN_TOOLS } from "../cli/tool-registry.js";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { logger } from "../utils/logger.js";
-import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import {
+  ensureCodexBashHookConfig,
+  getCodexHooksPath,
+  inspectCodexHookConfig,
+  buildRaviCodexHookCommand,
+  isRaviCodexHookGroup,
+} from "./codex-hooks.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -56,6 +65,98 @@ import type {
 import { toCodexRuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
+import { assertPreparedSkillExposure } from "./skill-exposure-contract.js";
+import type { SkillExposureCapabilities } from "./skill-exposure-contract.js";
+import type { SkillPolicySnapshot } from "./skill-policy.js";
+import { buildSkillPolicySessionBinding, readSkillPolicySessionBinding } from "./skill-policy-lifecycle.js";
+import { inspectCodexSkillPrompt } from "./codex-skill-prompt.js";
+import {
+  captureCodexNativeSkillInventory,
+  captureCodexNativeDiscoveryRevision,
+  CodexNativeSkillInventoryError,
+  readCodexNativeDiscoveryOptions,
+} from "./codex-native-skill-inventory.js";
+import { createModelCallFence } from "./model-call-fence.js";
+import { startModelCallProxy } from "./model-call-proxy.js";
+import type { ModelCallProxy } from "./model-call-proxy.js";
+import {
+  buildCodexProtectedModelConfig,
+  CODEX_SKILL_FENCE_PROVIDER,
+  resolveCodexProtectedModelRoute,
+} from "./codex-skill-model-route.js";
+
+const CODEX_SKILL_EXPOSURE: SkillExposureCapabilities = {
+  contractVersion: 1,
+  modes: ["textual"],
+  nativeDiscovery: { user: "disabled", project: "disabled", plugins: "disabled" },
+  modelCallFence: { contractVersion: 1, guarantee: "before-every-model-call" },
+  contextUpdate: "rebuild",
+};
+
+function codexPolicyVisibility(snapshot: SkillPolicySnapshot): RuntimeSkillVisibilitySnapshot {
+  const now = Date.now();
+  return {
+    skills: snapshot.skills.map((skill) => ({
+      id: skill.id,
+      provider: "codex",
+      state: "advertised",
+      confidence: "declared",
+      source: "skill-policy",
+      loadedAt: null,
+      lastSeenAt: now,
+      evidence: [{ kind: "system-prompt", observedAt: now, detail: snapshot.id }],
+    })),
+    loadedSkills: [],
+    updatedAt: now,
+  };
+}
+
+class CodexProtectedPreflightError extends Error {
+  constructor(readonly code: "unsupported-native-command" | "authorization-hook-unavailable") {
+    super("Protected Codex preflight is unavailable.");
+  }
+}
+
+function codexHookForTurn(input: CodexCliTurnRequest, command: string) {
+  if (!shouldMaterializeCodexHookForCommand(command)) {
+    if (input.skillPolicy) throw new CodexProtectedPreflightError("unsupported-native-command");
+    return null;
+  }
+  if (!input.skillPolicy) return ensureCodexBashHookConfig(input.env?.CODEX_HOME);
+  // The user's existing authorization gate is read-only for direct bindings.
+  // Broker preparation installs the same gate only in its isolated CODEX_HOME.
+  try {
+    const path = getCodexHooksPath(input.env.CODEX_HOME);
+    const signature = readFileSync(path, "utf8");
+    if (!inspectCodexHookConfig(signature, path).ok) throw new Error("Invalid gate");
+    const parsed: unknown = JSON.parse(signature);
+    const groups = asRecord(asRecord(parsed)?.hooks)?.PreToolUse;
+    const expectedCommand = buildRaviCodexHookCommand();
+    const commands = Array.isArray(groups)
+      ? groups.filter(isRaviCodexHookGroup).flatMap((group) => {
+          const handlers = asRecord(group)?.hooks;
+          return Array.isArray(handlers) ? handlers.map((handler) => asRecord(handler)?.command) : [];
+        })
+      : [];
+    if (commands.length !== 1 || commands[0] !== expectedCommand) throw new Error("Unscoped gate");
+    return { path, signature, changed: false };
+  } catch {
+    throw new CodexProtectedPreflightError("authorization-hook-unavailable");
+  }
+}
+
+function codexPreparedSkillPaths(input: CodexCliTurnRequest): string[] {
+  try {
+    return (input.skillPlugins ?? []).flatMap((plugin) =>
+      readdirSync(join(plugin.path, "skills"), { withFileTypes: true }).map((entry) => {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("Invalid materialization");
+        return join(plugin.path, "skills", entry.name, "SKILL.md");
+      }),
+    );
+  } catch {
+    throw new Error("Protected Codex skill materialization is invalid.");
+  }
+}
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
@@ -109,6 +210,12 @@ interface CodexJsonRpcMessage extends Record<string, unknown> {
 }
 
 interface CodexCliTurnRequest {
+  skillPolicy?: RuntimeStartRequest["skillPolicy"];
+  verifySkillPolicy?: RuntimeStartRequest["verifySkillPolicy"];
+  verifySkillPolicyAtDispatch?: RuntimeStartRequest["verifySkillPolicyAtDispatch"];
+  onSkillPolicyInvalidated?: RuntimeStartRequest["onSkillPolicyInvalidated"];
+  skillPlugins?: RuntimePlugin[];
+  modelBroker?: RuntimeStartRequest["modelBroker"];
   cwd: string;
   env: NodeJS.ProcessEnv;
   model?: string;
@@ -228,6 +335,11 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           semantics: "terminal-event",
         },
         tools: {
+          availableCapabilities: RUNTIME_BUILTIN_TOOLS.filter((tool) =>
+            ["exec.shell", "fs.edit", "fs.write", "web.search", "user.ask", "plan.todo.write"].includes(
+              tool.capability,
+            ),
+          ).map((tool) => tool.capability),
           permissionMode: "ravi-host",
           accessRequirement: "tool_surface",
           supportsParallelCalls: false,
@@ -242,6 +354,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           availability: "codex-skills",
           loadedState: "instruction-sources",
         },
+        skillExposure: CODEX_SKILL_EXPOSURE,
         modelBroker: {
           protocols: ["openai-responses"],
           principalIsolation: "none",
@@ -258,6 +371,22 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
+      if (input.skillPolicy) {
+        if (input.skillExposureMode !== "textual") {
+          throw new Error("Protected Codex sessions require textual skill exposure.");
+        }
+        const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
+        if (materialized) ensureCodexBashHookConfig(materialized.configDir);
+        return {
+          skillExposure: {
+            snapshotId: input.skillPolicy.id,
+            mode: "textual",
+            preparedIds: input.skillPolicy.skills.map((skill) => skill.id),
+          },
+          ...(materialized ? { env: materialized.env } : {}),
+          ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
+        };
+      }
       ensureAgentInstructionFiles(input.cwd);
       const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
       ensureCodexBashHookConfig(materialized?.configDir);
@@ -278,6 +407,27 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
     },
     startSession(input) {
+      if (input.skillPolicy) {
+        if (options.transport) throw new Error("The injected Codex transport has no protected model-call contract.");
+        if (!input.verifySkillPolicy) throw new Error("Protected Codex sessions require a skill policy verifier.");
+        if (!input.verifySkillPolicyAtDispatch)
+          throw new Error("Protected Codex sessions require a synchronous dispatch verifier.");
+        if (!input.onSkillPolicyInvalidated)
+          throw new Error("Protected Codex sessions require a host invalidation callback.");
+        assertPreparedSkillExposure(input.skillPolicy, CODEX_SKILL_EXPOSURE, input.skillExposure);
+        if (input.resume || input.resumeSession?.params?.sessionId) {
+          const binding = readSkillPolicySessionBinding(input.resumeSession?.params ?? undefined);
+          const expected = buildSkillPolicySessionBinding(input.skillPolicy, input.skillPolicy.scope.contextKey);
+          const coreRebound =
+            binding?.snapshotId === expected.snapshotId && binding.contextFingerprint === expected.contextFingerprint;
+          const samePhysicalSnapshot =
+            !binding && input.resumeSession?.params?.skillPolicySnapshotId === input.skillPolicy.id;
+          if (!coreRebound && !samePhysicalSnapshot) {
+            throw new Error("Codex history does not belong to the authorized skill snapshot; rebuild the context.");
+          }
+        }
+        input = { ...input, ...(input.env ? { env: { ...input.env } } : {}) };
+      }
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
       let closePromise: Promise<void> | null = null;
       const closeTransport = (): Promise<void> => {
@@ -290,7 +440,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         activeTurn: null,
         interrupted: false,
       };
-      const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
+      const skillVisibility = input.skillPolicy
+        ? codexPolicyVisibility(input.skillPolicy)
+        : (skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]));
 
       return {
         provider: "codex",
@@ -302,7 +454,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           transport,
           defaultModel,
           state,
-          skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
+          input.skillPolicy ? [] : (skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? []),
           closeTransport,
         ),
         interrupt: async () => {
@@ -314,6 +466,20 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         },
         close: closeTransport,
         control: async (request) => {
+          if (input.skillPolicy && request.operation === "thread.fork") {
+            return {
+              ok: false,
+              operation: request.operation,
+              state: {
+                provider: "codex",
+                activeTurn: Boolean(state.activeTurn),
+                supportedOperations: CODEX_RUNTIME_CONTROL_OPERATIONS.filter(
+                  (operation) => operation !== "thread.fork",
+                ),
+              },
+              error: "Protected Codex forks require a separately prepared skill snapshot binding.",
+            };
+          }
           if (transport.control) {
             return transport.control(request);
           }
@@ -569,6 +735,7 @@ async function* normalizeCodexEvents(
     input.cwd,
     input.systemPromptAppend,
     input.omitAdvertisedSkillCatalog ? [] : syncedSkillNames,
+    Boolean(input.skillPolicy),
   );
   const effort = toCodexRuntimeEffort(input.effort);
 
@@ -584,6 +751,12 @@ async function* normalizeCodexEvents(
       }
 
       const turn = transport.startTurn({
+        skillPolicy: input.skillPolicy,
+        verifySkillPolicy: input.verifySkillPolicy,
+        verifySkillPolicyAtDispatch: input.verifySkillPolicyAtDispatch,
+        onSkillPolicyInvalidated: input.onSkillPolicyInvalidated,
+        skillPlugins: input.plugins,
+        modelBroker: input.modelBroker,
         cwd: input.cwd,
         env: input.env ?? process.env,
         model: resolveCodexModelArg(input.model, defaultModel),
@@ -803,7 +976,8 @@ async function* normalizeCodexEvents(
             const terminal: RuntimeEvent = {
               type: "turn.failed",
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
-              recoverable: true,
+              recoverable: event.failure_kind !== "skill-policy",
+              ...(event.failure_kind === "skill-policy" ? { failureKind: "skill-policy" } : {}),
               rawEvent,
               metadata,
             };
@@ -816,13 +990,15 @@ async function* normalizeCodexEvents(
           if (event.type === "turn.completed") {
             previousSessionId = metadata.thread?.id ?? turnSessionId;
             const skillVisibility = markLoadedFromInstructionSources(
-              buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+              input.skillPolicy
+                ? codexPolicyVisibility(input.skillPolicy)
+                : buildCodexSkillVisibilitySnapshot(syncedSkillNames),
               stringArray(event.instruction_sources),
             );
             const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
-              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility),
+              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility, input.skillPolicy?.id),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -950,6 +1126,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
   let resumedThreadResponse: Record<string, unknown> | null = null;
+  let modelCallProxy: ModelCallProxy | undefined;
+  let protectedConfig: Record<string, unknown> | undefined;
+  let protectedSnapshotId: string | undefined;
+  let protectedInvalidated = false;
+  let protectedStage = "preflight";
   let bufferingThreadNotifications = false;
   const bufferedThreadNotifications: CodexJsonRpcMessage[] = [];
 
@@ -1070,9 +1251,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
-    const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
-      : null;
+    const hookResult = codexHookForTurn(input, command);
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
     // diagnosing silent hangs in the JSON-RPC layer.
@@ -1765,6 +1944,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
+    if (
+      input.skillPolicy &&
+      (!protectedConfig || protectedInvalidated || protectedSnapshotId !== input.skillPolicy.id)
+    ) {
+      throw new Error("Protected Codex model-call binding is unavailable.");
+    }
+    const sessionConfig = { model_reasoning_effort: effort, ...protectedConfig };
+    const modelProvider = protectedConfig ? CODEX_SKILL_FENCE_PROVIDER : null;
     if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.
       currentThreadId = undefined;
@@ -1776,13 +1963,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           beforeTurnId: forkBeforeTurnId,
           path: null,
           model: null,
-          modelProvider: null,
+          modelProvider,
           serviceTier: null,
           cwd: input.cwd,
           approvalPolicy: "never",
           approvalsReviewer: null,
           sandbox: CODEX_APP_SERVER_SANDBOX,
-          config: { model_reasoning_effort: effort },
+          config: sessionConfig,
           baseInstructions: null,
           developerInstructions: null,
           ephemeral: false,
@@ -1792,11 +1979,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         ? await sendRequest("thread/resume", {
             threadId: resumeThreadId,
             model: input.model ?? null,
-            modelProvider: null,
+            modelProvider,
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config: sessionConfig,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
             dynamicTools: null,
@@ -1805,11 +1992,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           })
         : await sendRequest("thread/start", {
             model: input.model ?? null,
-            modelProvider: null,
+            modelProvider,
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config: sessionConfig,
             serviceName: null,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -1836,10 +2023,133 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
+  async function prepareProtectedModelCalls(input: CodexCliTurnRequest): Promise<void> {
+    const policy = input.skillPolicy;
+    const verify = input.verifySkillPolicy;
+    const verifyAtDispatch = input.verifySkillPolicyAtDispatch;
+    if (!policy || !verify || !verifyAtDispatch)
+      throw new Error("Protected Codex requires an immutable policy and verifier.");
+    await verify();
+    protectedStage = "discovery-configuration";
+    const configResponse = await sendRequest("config/read", { includeLayers: true });
+    const discoveryOptions = readCodexNativeDiscoveryOptions(configResponse);
+    protectedStage = "native-content-inventory";
+    const skillPaths = codexPreparedSkillPaths(input);
+    if (skillPaths.length !== policy.skills.length)
+      throw new Error("Protected Codex materialization differs from the snapshot.");
+    const inventoryResponse = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
+    const inventory = captureCodexNativeSkillInventory(inventoryResponse, input.cwd, skillPaths);
+    const userHome = input.env.USERPROFILE ?? input.env.HOME ?? homedir();
+    const codexHome = input.env.CODEX_HOME ?? join(userHome, ".codex");
+    protectedStage = "native-discovery-inventory";
+    const discoveryRevision = captureCodexNativeDiscoveryRevision(
+      inventoryResponse,
+      input.cwd,
+      codexHome,
+      userHome,
+      discoveryOptions,
+    );
+    const confirmedResponse = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
+    if (
+      captureCodexNativeSkillInventory(confirmedResponse, input.cwd, skillPaths).revision !== inventory.revision ||
+      captureCodexNativeDiscoveryRevision(inventoryResponse, input.cwd, codexHome, userHome, discoveryOptions) !==
+        discoveryRevision
+    ) {
+      throw new Error("Native Codex discovery changed during preparation.");
+    }
+    const hookSignature = codexHookForTurn(input, command)?.signature;
+    protectedStage = "model-routing";
+    const route = resolveCodexProtectedModelRoute(
+      configResponse,
+      await sendRequest("account/read", { refreshToken: false }),
+    );
+    const fence = createModelCallFence({
+      binding: { snapshotId: policy.id, scope: policy.scope },
+      assertCurrent: async () => {
+        await verify();
+        if (protectedInvalidated || codexHookForTurn(input, command)?.signature !== hookSignature) {
+          throw new Error("Protected Codex authorization changed.");
+        }
+        const current = captureCodexNativeSkillInventory(
+          await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true }),
+          input.cwd,
+          codexPreparedSkillPaths(input),
+        );
+        if (current.revision !== inventory.revision) throw new Error("Protected Codex skill inventory changed.");
+      },
+      assertCurrentAtDispatch: () => {
+        const verified: unknown = verifyAtDispatch();
+        if (verified !== undefined) {
+          if (verified instanceof Promise) void verified.catch(() => {});
+          throw new Error("Codex requires synchronous policy verification at dispatch.");
+        }
+        if (
+          protectedInvalidated ||
+          codexHookForTurn(input, command)?.signature !== hookSignature ||
+          captureCodexNativeDiscoveryRevision(inventoryResponse, input.cwd, codexHome, userHome, discoveryOptions) !==
+            discoveryRevision ||
+          captureCodexNativeSkillInventory(inventoryResponse, input.cwd, codexPreparedSkillPaths(input)).revision !==
+            inventory.revision
+        ) {
+          throw new Error("Protected Codex skill inventory changed at dispatch.");
+        }
+      },
+      notifyInvalidated: (event) => {
+        protectedInvalidated = true;
+        const turn = activeTurn;
+        if (turn && !turn.settled) {
+          turn.queue.push({
+            type: "turn.failed",
+            failure_kind: "skill-policy",
+            error: { message: "Skill policy changed; a fresh authorized runtime context is required." },
+          });
+          settleTurn(turn, { exitCode: 1, stderr: "" });
+        }
+        try {
+          input.onSkillPolicyInvalidated?.(event);
+        } finally {
+          if (child && !closed) signalCodexTransportProcess(child, "SIGTERM");
+        }
+      },
+    });
+    const fixedHeaders = input.modelBroker?.transport.publicHeaders;
+    modelCallProxy = startModelCallProxy({
+      fence,
+      beforeDispatch: (request) => {
+        if (request.method === "POST") {
+          const observed = inspectCodexSkillPrompt(request.body, policy);
+          activeTurn?.queue.push({ type: "skill.exposure.observed", ...observed, phase: "request-draft" });
+        }
+      },
+      routes: [
+        {
+          method: "POST",
+          path: "/responses",
+          upstream: { url: `${route.upstreamBaseUrl}/responses`, headers: fixedHeaders },
+        },
+        {
+          method: "POST",
+          path: "/responses/compact",
+          upstream: { url: `${route.upstreamBaseUrl}/responses/compact`, headers: fixedHeaders },
+        },
+        {
+          method: "GET",
+          path: "/models",
+          queryKeys: ["client_version"],
+          upstream: { url: `${route.upstreamBaseUrl}/models`, headers: fixedHeaders },
+        },
+      ],
+    });
+    protectedConfig = buildCodexProtectedModelConfig(route, modelCallProxy.baseUrl, inventory.disabledSkills);
+    protectedSnapshotId = policy.id;
+    protectedStage = "thread-configuration";
+  }
+
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
-    const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
-      : null;
+    if (protectedInvalidated || (protectedSnapshotId && protectedSnapshotId !== input.skillPolicy?.id)) {
+      throw new Error("Protected Codex model-call binding is invalidated.");
+    }
+    const hookResult = codexHookForTurn(input, command);
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     const hookChanged =
       hookResult !== null && activeHookConfigSignature !== null && hookResult.signature !== activeHookConfigSignature;
@@ -1891,6 +2201,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
+        if (input.skillPolicy) await prepareProtectedModelCalls(input);
+
         await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
       } finally {
         bootstrapPromise = null;
@@ -1905,10 +2217,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       return closePromise;
     }
     if (!child || closed) {
-      return Promise.resolve();
+      const proxy = modelCallProxy;
+      modelCallProxy = undefined;
+      return proxy?.close() ?? Promise.resolve();
     }
     const targetChild = child;
     closePromise = (async () => {
+      const proxy = modelCallProxy;
+      modelCallProxy = undefined;
+      await proxy?.close();
       transport?.closeChannel();
       signalCodexTransportProcess(targetChild, "SIGTERM");
       forcedKillTimer = setTimeout(() => {
@@ -2108,7 +2425,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             await requestTurnStart();
           }
         } catch (error) {
-          settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
+          if (input.skillPolicy) {
+            if (!turn.settled)
+              turn.queue.push({
+                type: "turn.failed",
+                failure_kind: "skill-policy",
+                error: {
+                  message: `Protected Codex ${protectedStage} failed${error instanceof CodexNativeSkillInventoryError || error instanceof CodexProtectedPreflightError ? ` (${error.code})` : ""}.`,
+                },
+              });
+            settleTurn(turn, { exitCode: 1, stderr: "" });
+          } else {
+            settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
+          }
           if (child && !closed) {
             signalCodexTransportProcess(child, "SIGKILL");
           }
@@ -2278,8 +2607,9 @@ async function buildCodexSystemPromptAppend(
   cwd: string,
   runtimeSystemPromptAppend: string,
   syncedSkillNames: string[],
+  protectedSkills = false,
 ): Promise<string> {
-  const sections = [buildCodexSkillCatalogInstruction(syncedSkillNames)];
+  const sections = protectedSkills ? [] : [buildCodexSkillCatalogInstruction(syncedSkillNames)];
   let runtimeInstructions = runtimeSystemPromptAppend.trim();
   const workspaceInstructions = runtimePromptIncludesWorkspaceInstructions(runtimeInstructions)
     ? null
@@ -2509,6 +2839,7 @@ function buildCodexSessionState(
   sessionId: string | undefined,
   cwd: string,
   skillVisibility: RuntimeSkillVisibilitySnapshot,
+  skillPolicySnapshotId?: string,
 ): RuntimeSessionState | undefined {
   if (!sessionId) {
     return undefined;
@@ -2519,6 +2850,7 @@ function buildCodexSessionState(
       sessionId,
       cwd,
       skillVisibility,
+      ...(skillPolicySnapshotId ? { skillPolicySnapshotId } : {}),
     },
     displayId: sessionId,
   };

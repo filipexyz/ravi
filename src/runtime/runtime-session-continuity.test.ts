@@ -72,6 +72,25 @@ describe("runtime session continuity", () => {
     });
   });
 
+  it("never resumes or forks old context during a skill policy reconstruction", () => {
+    getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
+    updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-with-revoked-skills");
+
+    const options = {
+      dbSessionKey: THREAD_SESSION_KEY,
+      runtimeProviderId: "codex",
+      supportsSessionFork: true,
+      supportsSessionResume: true,
+      storedProviderSessionId: "child-with-revoked-skills",
+      canResumeStoredSession: true,
+      defaultRuntimeProviderId: "claude",
+      contextRebuildReason: "skill-policy-change",
+    } satisfies Parameters<typeof resolveRuntimeSessionContinuity>[0];
+
+    expect(resolveRuntimeSessionContinuity(options)).toEqual({});
+    expect(resolveRuntimeSessionContinuity({ ...options, canResumeStoredSession: false })).toEqual({});
+  });
+
   it("forks from a forced route parent session key", () => {
     getOrCreateSession(ALIAS_PARENT_SESSION_KEY, "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
     updateProviderSession(ALIAS_PARENT_SESSION_KEY, "codex", "parent-provider-session");

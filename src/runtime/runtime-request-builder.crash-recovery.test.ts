@@ -9,6 +9,8 @@ import { installCrashRecoveryApprovalFences } from "./runtime-request-builder.js
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
 import type {
   RuntimeCapabilities,
+  RuntimePrepareSessionRequest,
+  RuntimePrepareSessionResult,
   RuntimeHostServices,
   RuntimeSessionHandle,
   SessionRuntimeProvider,
@@ -422,10 +424,18 @@ const traceCapabilities: RuntimeCapabilities = {
     permissionMode: "ravi-host",
     accessRequirement: "tool_and_executable",
     supportsParallelCalls: false,
+    availableCapabilities: [],
   },
   systemPrompt: { mode: "append" },
   terminalEvents: { guarantee: "adapter" },
   skillVisibility: { availability: "none", loadedState: "none" },
+  skillExposure: {
+    contractVersion: 1,
+    modes: ["textual"],
+    nativeDiscovery: { user: "none", project: "none", plugins: "none" },
+    modelCallFence: { contractVersion: 1, guarantee: "before-every-model-call" },
+    contextUpdate: "rebuild",
+  },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,
@@ -442,6 +452,17 @@ const traceSource: RuntimeMessageTarget = {
   chatId: "builder-test",
   sourceMessageId: "message-builder-test",
 };
+
+function prepareTraceSkillExposure(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
+  if (!input.skillPolicy) throw new Error("Crash recovery fixture requires the core skill policy.");
+  return {
+    skillExposure: {
+      snapshotId: input.skillPolicy.id,
+      mode: input.skillExposureMode ?? "textual",
+      preparedIds: input.skillPolicy.skills.map((skill) => skill.id),
+    },
+  };
+}
 
 function traceSession(stateDir: string): SessionEntry {
   return {
@@ -515,6 +536,7 @@ describe("runtime request durable attempt preparation", () => {
     const runtimeProvider: SessionRuntimeProvider = {
       id: TRACE_PROVIDER_ID,
       getCapabilities: () => traceCapabilities,
+      prepareSession: prepareTraceSkillExposure,
       startSession: () => emptyRuntimeSession(),
     };
     const crashRecovery = {
@@ -574,6 +596,7 @@ describe("runtime request durable attempt preparation", () => {
     const runtimeProvider: SessionRuntimeProvider = {
       id: TRACE_PROVIDER_ID,
       getCapabilities: () => providerNativeCapabilities,
+      prepareSession: prepareTraceSkillExposure,
       startSession: () => emptyRuntimeSession(),
     };
     let attemptInput: { metadata?: Record<string, unknown> } | undefined;

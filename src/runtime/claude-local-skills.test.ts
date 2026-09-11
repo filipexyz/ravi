@@ -1,18 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { withLocalSkillsPreserved } from "./claude-provider.js";
-import type { RuntimeStartRequest } from "./types.js";
-
-/**
- * spec: skills/scoping/per-agent-visibility — Invariant F/B regression.
- *
- * Guards the F1 blocker: when a per-agent allowlist is active, the agent's own
- * local skills (its `.claude/skills` arsenal) MUST survive the Options.skills
- * filter. Without this, main (admin:system:* → allowlist active) would lose all
- * ~22 local skills the moment the feature goes live.
- */
+import { createClaudeRuntimeProvider } from "./claude-provider.js";
+import type { SkillPolicySnapshot } from "./skill-policy.js";
 
 function makeAgentWorkspace(skillNames: string[]): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-local-skills-"));
@@ -24,57 +15,95 @@ function makeAgentWorkspace(skillNames: string[]): string {
   return root;
 }
 
-function makeRequest(overrides: Record<string, unknown>): RuntimeStartRequest {
-  return { cwd: "/tmp", model: "claude-x", ...overrides } as unknown as RuntimeStartRequest;
-}
+const emptyPolicy: SkillPolicySnapshot = {
+  contractVersion: 1,
+  id: "empty-local-policy",
+  status: "empty",
+  scope: { agentId: "restricted", executionId: "execution", contextKey: "context" },
+  revisions: { policy: "1", catalog: "1", permissions: "1", toolSurface: "1" },
+  skills: [],
+  provenance: {},
+  diagnostics: [],
+};
 
-describe("withLocalSkillsPreserved", () => {
-  test("no-op when no allowlist is active (Invariant F — grandfather)", () => {
+describe("Claude local skill policy", () => {
+  test("preserves personal files without admitting them to an empty preparation", () => {
     const cwd = makeAgentWorkspace(["swarm-orchestrator"]);
-    const req = makeRequest({ cwd, allowedSkills: undefined });
-    // Returns the same object untouched → SDK omits `skills` → full visibility.
-    expect(withLocalSkillsPreserved(req)).toBe(req);
-  });
-
-  test("no-op when the allowlist is an empty array", () => {
-    const cwd = makeAgentWorkspace(["swarm-orchestrator"]);
-    const req = makeRequest({ cwd, allowedSkills: [] });
-    expect(withLocalSkillsPreserved(req).allowedSkills).toEqual([]);
-  });
-
-  test("unions the agent's own local project skills into an active allowlist", () => {
-    const cwd = makeAgentWorkspace(["swarm-orchestrator", "devils-advocate"]);
-    const req = makeRequest({ cwd, allowedSkills: ["ravi-system-tasks"], settingSources: ["project"] });
-    const out = withLocalSkillsPreserved(req).allowedSkills ?? [];
-    expect(out).toContain("ravi-system-tasks");
-    expect(out).toContain("swarm-orchestrator");
-    expect(out).toContain("devils-advocate");
-  });
-
-  test("does not duplicate a local skill already present in the allowlist", () => {
-    const cwd = makeAgentWorkspace(["managing-vault"]);
-    const req = makeRequest({
+    const file = join(cwd, ".claude", "skills", "swarm-orchestrator", "SKILL.md");
+    const personalContent = readFileSync(file, "utf8");
+    const prepared = createClaudeRuntimeProvider().prepareSession?.({
+      agentId: "restricted",
       cwd,
-      allowedSkills: ["managing-vault", "ravi-system-tasks"],
-      settingSources: ["project"],
+      skillPolicy: emptyPolicy,
+      skillNativeNames: {},
+      skillExposureMode: "native-restricted",
     });
-    const out = withLocalSkillsPreserved(req).allowedSkills ?? [];
-    expect(out.filter((s) => s === "managing-vault")).toHaveLength(1);
+    expect(prepared).toMatchObject({
+      skillExposure: { snapshotId: "empty-local-policy", mode: "native-restricted", preparedIds: [] },
+    });
+    expect(readFileSync(file, "utf8")).toBe(personalContent);
   });
 
-  test("ignores directories that have no SKILL.md", () => {
-    const root = mkdtempSync(join(tmpdir(), "ravi-local-skills-"));
-    mkdirSync(join(root, ".claude", "skills", "not-a-skill"), { recursive: true });
-    const req = makeRequest({ cwd: root, allowedSkills: ["ravi-system-tasks"], settingSources: ["project"] });
-    const out = withLocalSkillsPreserved(req).allowedSkills ?? [];
-    expect(out).not.toContain("not-a-skill");
-    expect(out).toContain("ravi-system-tasks");
+  test("refuses native names not authorized by the supplied snapshot", () => {
+    const cwd = makeAgentWorkspace([]);
+    expect(() =>
+      createClaudeRuntimeProvider().prepareSession?.({
+        agentId: "restricted",
+        cwd,
+        skillPolicy: emptyPolicy,
+        skillNativeNames: { extra: "personal:extra" },
+        skillExposureMode: "native-restricted",
+      }),
+    ).toThrow("native skill");
   });
 
-  test("skips project skills when settingSources excludes 'project'", () => {
-    const cwd = makeAgentWorkspace(["swarm-orchestrator"]);
-    const req = makeRequest({ cwd, allowedSkills: ["ravi-system-tasks"], settingSources: ["user"] });
-    const out = withLocalSkillsPreserved(req).allowedSkills ?? [];
-    expect(out).not.toContain("swarm-orchestrator");
+  test("refuses a strategy this adapter cannot enforce", () => {
+    const cwd = makeAgentWorkspace([]);
+    expect(() =>
+      createClaudeRuntimeProvider().prepareSession?.({
+        agentId: "restricted",
+        cwd,
+        skillPolicy: emptyPolicy,
+        skillNativeNames: {},
+        skillExposureMode: "textual",
+      }),
+    ).toThrow("native-restricted");
   });
+
+  test.each(["context: fork", 'context: "fork"', "context: >-\n  fork"])(
+    "refuses a forked skill whose child discovery cannot be restricted: %s",
+    (declaration) => {
+      const cwd = makeAgentWorkspace([]);
+      const policy: SkillPolicySnapshot = {
+        ...emptyPolicy,
+        status: "ready",
+        skills: [
+          {
+            id: "fixture:forked",
+            name: "forked",
+            aliases: [],
+            requirements: { kind: "none" },
+            resource: {
+              path: "/fixture/SKILL.md",
+              files: [
+                {
+                  path: "SKILL.md",
+                  content: `---\nname: forked\n${declaration}\n---\nFixture.`,
+                },
+              ],
+            },
+          },
+        ],
+      };
+      expect(() =>
+        createClaudeRuntimeProvider().prepareSession?.({
+          agentId: "restricted",
+          cwd,
+          skillPolicy: policy,
+          skillNativeNames: { "fixture:forked": "fixture:forked" },
+          skillExposureMode: "native-restricted",
+        }),
+      ).toThrow("forked skill");
+    },
+  );
 });

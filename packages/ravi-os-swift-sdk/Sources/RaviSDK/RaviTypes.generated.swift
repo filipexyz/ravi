@@ -21227,21 +21227,33 @@ public struct SkillsGrantBatchReturn: Codable, Sendable {
 public struct SkillsInspectReturn: Codable, Sendable {
   public var agentId: String
   public var allowlist: [String]
+  public var diagnostics: [RaviJSON]?
   public var hasConfiguration: Bool
   public var provenance: RaviJSON
+  public var revisions: RaviJSON?
+  public var scope: RaviJSON?
+  public var snapshotId: String?
 
-  public init(agentId: String, allowlist: [String], hasConfiguration: Bool, provenance: RaviJSON) {
+  public init(agentId: String, allowlist: [String], diagnostics: [RaviJSON]? = nil, hasConfiguration: Bool, provenance: RaviJSON, revisions: RaviJSON? = nil, scope: RaviJSON? = nil, snapshotId: String? = nil) {
     self.agentId = agentId
     self.allowlist = allowlist
+    self.diagnostics = diagnostics
     self.hasConfiguration = hasConfiguration
     self.provenance = provenance
+    self.revisions = revisions
+    self.scope = scope
+    self.snapshotId = snapshotId
   }
 
   enum CodingKeys: String, CodingKey {
     case agentId = "agentId"
     case allowlist = "allowlist"
+    case diagnostics = "diagnostics"
     case hasConfiguration = "hasConfiguration"
     case provenance = "provenance"
+    case revisions = "revisions"
+    case scope = "scope"
+    case snapshotId = "snapshotId"
   }
 }
 

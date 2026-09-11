@@ -98,7 +98,7 @@ export function buildPluginSkillVisibilitySnapshot(input: {
   evidenceKind: RuntimeSkillVisibilityEvidenceKind;
   /**
    * Optional allowlist of skill identifiers actually exposed to the runtime.
-   * When provided (and non-empty) the snapshot reflects only skills the
+   * When provided, including an empty list, the snapshot reflects only skills the
    * runtime can index — matching what the provider's context filter sees
    * (spec skills/scoping/per-agent-visibility, Invariant T).
    */
@@ -108,8 +108,8 @@ export function buildPluginSkillVisibilitySnapshot(input: {
   const now = input.now ?? Date.now();
   const rawSkills = listPluginSkills(input.plugins ?? []);
   const filteredSkills =
-    input.allowedSkills && input.allowedSkills.length > 0
-      ? rawSkills.filter((skill) => skillMatchesAllowlist(skill, input.allowedSkills!))
+    input.allowedSkills !== undefined
+      ? rawSkills.filter((skill) => skillMatchesAllowlist(skill, input.allowedSkills ?? []))
       : rawSkills;
   const records = filteredSkills.map((skill): RuntimeSkillVisibilityRecord => {
     return {

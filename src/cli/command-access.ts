@@ -193,7 +193,7 @@ function commandObjectCandidates(group: string, command: string): string[] {
   return [`${group}_${command}`, group];
 }
 
-function commandAccessCandidates(input: CliCommandAccessInput & { access: CommandAccessOptions }): Array<{
+export function commandAccessCandidates(input: CliCommandAccessInput & { access: CommandAccessOptions }): Array<{
   permission: string;
   objectType: string;
   objectId: string;
