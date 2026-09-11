@@ -111,4 +111,26 @@ describe("skill visibility policy", () => {
     expect(loaded.loadedSkills).toEqual(["ravi-user-skills-tiny"]);
     expect(loaded.skills[0]?.evidence?.at(-1)?.eventType).toBe("ravi.skills.show");
   });
+
+  it("maps a bare CLI skill result back to its advertised provider alias", () => {
+    const snapshot = buildSkillVisibilitySnapshot([
+      {
+        id: "ravi-user-skills-building-ravi-apps",
+        provider: "codex",
+        state: "advertised",
+        confidence: "declared",
+        lastSeenAt: 1,
+      },
+    ]);
+
+    const loaded = markLoadedFromRaviSkillToolCall(snapshot, {
+      provider: "codex",
+      toolName: "shell",
+      toolInput: { command: "ravi skills show building-ravi-apps --json" },
+      output: { skill: { name: "building-ravi-apps", source: "codex" } },
+      now: 2,
+    });
+
+    expect(loaded.loadedSkills).toEqual(["ravi-user-skills-building-ravi-apps"]);
+  });
 });

@@ -2414,6 +2414,7 @@ describe("runtime session trace instrumentation", () => {
           displayId: "provider-after",
           params: {
             sessionId: "provider-after",
+            skillVisibility: makeRaviTaskSkillVisibility(),
           },
         },
         usage: { inputTokens: 10, outputTokens: 4 },
@@ -2446,6 +2447,12 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.complete");
+    const terminalPayload = terminal?.payloadJson as
+      | { session?: { params?: { skillVisibility?: RuntimeSkillVisibilitySnapshot } } }
+      | undefined;
+    const terminalSession = terminalPayload?.session;
+    expect(terminalSession?.params?.skillVisibility?.loadedSkills).toEqual(["ravi-system-tasks"]);
   });
 
   it("keeps skill-gate loaded state when provider turn completion reports only advertised skills", async () => {

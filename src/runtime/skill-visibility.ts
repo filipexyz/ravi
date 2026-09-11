@@ -303,7 +303,11 @@ export function markLoadedFromRaviSkillToolCall(
   });
 
   const records = snapshot.skills.map((skill) => {
-    if (skill.id === loadedSkill.id || slugifySkillName(skill.id) === loadedSlug) {
+    if (
+      skill.id === loadedSkill.id ||
+      slugifySkillName(skill.id) === loadedSlug ||
+      skillNameMatchesAllowlist(skill.id, [loadedSkill.id])
+    ) {
       found = true;
       return loadedRecord(skill);
     }
