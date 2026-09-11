@@ -365,9 +365,7 @@ export function buildCodexDisabledSkillConfig(
       throw new Error("Codex skill inventory contains an invalid entry.");
     }
     const directoryName = basename(dirname(path));
-    return skillNameMatchesAllowlist(name, allowedSkills) || skillNameMatchesAllowlist(directoryName, allowedSkills)
-      ? []
-      : [{ path, enabled: false as const }];
+    return skillNameMatchesAllowlist(directoryName, allowedSkills) ? [] : [{ path, enabled: false as const }];
   });
 }
 

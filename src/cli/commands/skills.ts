@@ -637,12 +637,8 @@ export class SkillsCommands {
     const runtimeAgentId = hasRuntimeInvocationContext() ? getContext()?.agentId?.trim() : undefined;
     if (runtimeAgentId) {
       const visibility = resolveAgentSkills(runtimeAgentId);
-      const authorized =
-        !visibility.hasConfiguration ||
-        skillNameMatchesAllowlist(skill.name, visibility.allowlist) ||
-        (skill.pluginName
-          ? skillNameMatchesAllowlist(`${skill.pluginName}-${skill.name}`, visibility.allowlist)
-          : false);
+      const skillIdentity = skill.pluginName ? `${skill.pluginName}-${skill.name}` : skill.name;
+      const authorized = !visibility.hasConfiguration || skillNameMatchesAllowlist(skillIdentity, visibility.allowlist);
       if (!authorized) {
         contractFail("skills show", "SKILL_NOT_AUTHORIZED", `Skill not authorized for agent: ${skill.name}`, {
           asJson,

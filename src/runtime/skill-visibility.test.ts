@@ -12,6 +12,8 @@ describe("skill visibility policy", () => {
     expect(skillNameMatchesAllowlist("tiny", ["tiny"])).toBe(true);
     expect(skillNameMatchesAllowlist("ravi-user-skills-tiny", ["tiny"])).toBe(true);
     expect(skillNameMatchesAllowlist("unmanaged-tiny", ["tiny"])).toBe(false);
+    expect(skillNameMatchesAllowlist("ravi-user-skills-sessions", ["sessions", "ravi-system-sessions"])).toBe(false);
+    expect(skillNameMatchesAllowlist("ravi-system-sessions", ["sessions", "ravi-system-sessions"])).toBe(true);
   });
 
   it("rejects resume when the stored catalog contains a revoked skill", () => {

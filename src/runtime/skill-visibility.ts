@@ -157,11 +157,18 @@ const MANAGED_SKILL_PREFIXES = ["ravi-system-", "ravi-dev-", "ravi-user-skills-"
  * canonical allowlist entry `sessions`. */
 export function skillNameMatchesAllowlist(name: string, allowlist: readonly string[]): boolean {
   const nativeSlug = slugifySkillName(name);
-  return allowlist.some((entry) => {
-    const allowedSlug = slugifySkillName(entry);
-    if (nativeSlug === allowedSlug) return true;
-    return MANAGED_SKILL_PREFIXES.some((prefix) => nativeSlug === `${prefix}${allowedSlug}`);
-  });
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  if (allowedSlugs.has(nativeSlug)) return true;
+
+  const prefix = MANAGED_SKILL_PREFIXES.find((candidate) => nativeSlug.startsWith(candidate));
+  if (!prefix) return false;
+  const bareSlug = nativeSlug.slice(prefix.length);
+  if (!allowedSlugs.has(bareSlug)) return false;
+
+  const hasCanonicalManagedAlias = MANAGED_SKILL_PREFIXES.some((candidate) =>
+    allowedSlugs.has(`${candidate}${bareSlug}`),
+  );
+  return !hasCanonicalManagedAlias;
 }
 
 export function isStoredSkillVisibilityCompatible(
