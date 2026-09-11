@@ -1,10 +1,24 @@
 # Per-Agent Skill Visibility / WHY
 
+## Decisão v4 — enforcement uniforme (2026-09-11)
+
+Um incidente em produção mostrou que os grants estavam persistidos corretamente, mas o runtime Codex ainda anunciava o catálogo global e permitia `ravi skills show` para uma skill não concedida. A telemetria também não relacionava leituras via CLI a `loadedSkills`.
+
+A v4 mantém o núcleo criado na v3 e reaproveita `resolveAgentSkills(agentId)` como fonte canônica. A mudança está nas bordas:
+
+1. Claude, Codex e Pi recebem a mesma allowlist resolvida por agente.
+2. O adaptador Codex intersecta o inventário nativo com essa allowlist e materializa `skills.config` com as entradas não autorizadas desabilitadas.
+3. `ravi skills show` aplica autorização por recurso no CLI e na fronteira do host.
+4. Toda entrega observada de `SKILL.md`, inclusive via CLI, atualiza `loadedSkills` e o snapshot terminal do turno.
+5. Grants explícitos são autoritativos. A derivação por permissões permanece apenas como fallback para agentes sem grants explícitos.
+
+Isso preserva a independência entre instruções e permissões de efeito: uma skill visível ensina um procedimento; executar ferramentas continua sujeito à camada própria de autorização.
+
 ## Origem
 
 Discussão RM × main em 2026-07-02. Pain estrutural: (1) todas as skills do `ravi skills` entram no contexto de TODO agente, todo turno — mesmo sem permissão pra aquelas ferramentas → poluição; (2) uma skill personalizada útil a 2 agentes precisa ser duplicada em cada pasta. RM pediu: "o sistema disponibiliza só as skills que o agente PRECISA" + "uma central de skills personalizadas reutilizáveis".
 
-## Decisão v3 (KISS) — supera a v2
+## Decisão v3 (KISS) — histórico, superada pela v4
 
 A v2 usava um **mapa manual `skill → {agentes}` para TODAS as skills** e travava o escopo em **claude-only**. A v3 corrige os dois:
 

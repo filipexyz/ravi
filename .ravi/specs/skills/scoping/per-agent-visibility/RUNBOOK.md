@@ -2,19 +2,37 @@
 
 Procedimento operacional de deploy, verificação e rollback. Validado em produção 2026-07-03.
 
-## Componentes
+## Atualização v4 — Claude, Codex e Pi
+
+O deploy de 2026-09-11 reutilizou `resolveAgentSkills` e adicionou enforcement nas bordas dos três providers. Para validar um agente configurado:
+
+```bash
+ravi skills inspect <agent> --json
+ravi sessions send <session> "Responda apenas OK" --raw --wait --json
+ravi sessions trace <session> --since 1h --raw --json
+```
+
+O trace terminal MUST mostrar `skillVisibility.skills` igual à allowlist lógica efetiva. Uma leitura concedida MUST aparecer em `loadedSkills`; uma leitura não concedida MUST falhar com `SKILL_NOT_AUTHORIZED`.
+
+Em produção, `ravi-facade` anunciou 14 skills, bloqueou `ravi-user-skills-tiny`, carregou `building-ravi-apps` e preservou o mesmo thread Codex após restart/resume.
+
+O artefato deve ser gerado pelo build oficial, empacotado e instalado como pacote global. O daemon só volta a receber tráfego depois de `ravi daemon status --json` confirmar `online` e `runtime.alignment = aligned`. O pacote anterior deve permanecer disponível para rollback; no deploy desta revisão, o fallback preservado foi `/home/ravi/rollback/ravi.bot-3.260907.1-83610aec.tgz`.
+
+## Histórico v3 — procedimento anterior
+
+### Componentes
 
 1. **Mecanismo (PR #157):** `resolveAgentSkills(agentId)` (núcleo agnóstico) → allowlist por agente → `Options.skills` (enforcement Claude). `withLocalSkillsPreserved` mantém as skills locais do agente.
 2. **Least-privilege default:** `runtime-bootstrap-provider.ts` dá a agente novo só `BASELINE_COMMAND_GROUPS` (sessions/tasks/specs/skills + self/doctor) em vez de `execute:group:*`. Domínio/admin é opt-in.
 
-## Pré-deploy — checagens de segurança (todas passaram 2026-07-03)
+### Pré-deploy — checagens de segurança (todas passaram 2026-07-03)
 
 - `bun run typecheck` limpo · `bun test` (feature + permissions) verde · `bun run build` OK.
 - **Órfãos:** 0 de 84 agentes ficariam sem acesso (todos têm admin OU `execute:group:*` explícito). Script: materializar caps de cada agente, checar `admin:system:*` OU `execute:group:*`.
 - **Automações:** 26 crons + 47 triggers — todo executor é agente seguro; 4 triggers sem dono são os "hello" de teste, DESLIGADOS.
 - **Código assumindo coringa:** varredura `grep 'objectId: "\*"'` — só concessões/gate, nenhum helper que quebra.
 
-## Deploy
+### Deploy
 
 O daemon de produção roda de `ravi-src-dev/dist/bundle/index.js` (pm2 `ravi`). Deploy = build + restart:
 
@@ -28,7 +46,7 @@ setsid nohup bash /tmp/safe-restart.sh >/dev/null 2>&1 < /dev/null &
 
 O restart interrompe todas as sessões por ~10-40s (inclui a sessão `main`). HITL: exige "sim" explícito do RM.
 
-## Verificação pós-deploy
+### Verificação pós-deploy
 
 ```bash
 pm2 jlist   # ravi online, restart +1, sem crash-loop
@@ -51,7 +69,7 @@ Resultado 2026-07-03: agente limitado listou só as 5 skills permitidas. Filtro 
 
 > Nota: agente novo nasce no provider `codex` (default global) → turno falha 401 sem credencial OpenAI. Para o teste, criar com `--provider claude`. Default codex é config separada a revisar.
 
-## Rollback
+### Rollback
 
 Automático via `/tmp/safe-restart.sh` se o daemon não voltar saudável. Manual:
 
