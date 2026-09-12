@@ -35,6 +35,10 @@ public final class RaviClient {
     BridgesNamespace(transport: transport)
   }
 
+  public var bug: BugNamespace {
+    BugNamespace(transport: transport)
+  }
+
   public var calendars: CalendarsNamespace {
     CalendarsNamespace(transport: transport)
   }
@@ -668,6 +672,33 @@ public struct BridgesNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["bridges"], command: "revoke", body: requestBody, as: BridgesRevokeReturn.self)
+  }
+}
+
+public struct BugNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: BugListOptions = .init()) async throws -> BugListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bug"], command: "list", body: requestBody, as: BugListReturn.self)
+  }
+
+  public func report(_ options: BugReportOptions = .init()) async throws -> BugReportReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bug"], command: "report", body: requestBody, as: BugReportReturn.self)
+  }
+
+  public func status(_ id: String, _ options: BugStatusOptions = .init()) async throws -> BugStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bug"], command: "status", body: requestBody, as: BugStatusReturn.self)
   }
 }
 

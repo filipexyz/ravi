@@ -17,6 +17,7 @@ class RaviClient {
   ArtifactsNamespace get artifacts => ArtifactsNamespace(_transport);
   AudioNamespace get audio => AudioNamespace(_transport);
   BridgesNamespace get bridges => BridgesNamespace(_transport);
+  BugNamespace get bug => BugNamespace(_transport);
   CalendarsNamespace get calendars => CalendarsNamespace(_transport);
   ChannelsNamespace get channels => ChannelsNamespace(_transport);
   ChatsNamespace get chats => ChatsNamespace(_transport);
@@ -689,6 +690,46 @@ class BridgesNamespace {
       command: "revoke",
       body: requestBody,
       decode: bridgesRevokeReturnFromJson,
+    );
+  }
+}
+
+class BugNamespace {
+  const BugNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<BugListReturn> list([BugListOptions options = const BugListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bug"],
+      command: "list",
+      body: requestBody,
+      decode: bugListReturnFromJson,
+    );
+  }
+
+  Future<BugReportReturn> report([BugReportOptions options = const BugReportOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bug"],
+      command: "report",
+      body: requestBody,
+      decode: bugReportReturnFromJson,
+    );
+  }
+
+  Future<BugStatusReturn> status(String id, [BugStatusOptions options = const BugStatusOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bug"],
+      command: "status",
+      body: requestBody,
+      decode: bugStatusReturnFromJson,
     );
   }
 }

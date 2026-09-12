@@ -2760,6 +2760,195 @@ public struct BridgesRevokeReturn: Codable, Sendable {
   }
 }
 
+public struct BugListOptions: Codable, Sendable {
+  public var console: String?
+  public var fields: String?
+  public var limit: String?
+  public var offset: String?
+
+  public init(console: String? = nil, fields: String? = nil, limit: String? = nil, offset: String? = nil) {
+    self.console = console
+    self.fields = fields
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case fields = "fields"
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.fields {
+      body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BugListReturn: Codable, Sendable {
+  public var bugs: [[String: RaviJSON]]
+  public var consoleUrl: String
+  public var items: [[String: RaviJSON]]
+  public var pagination: RaviJSON
+  public var success: Bool
+  public var total: Double
+
+  public init(bugs: [[String: RaviJSON]], consoleUrl: String, items: [[String: RaviJSON]], pagination: RaviJSON, success: Bool, total: Double) {
+    self.bugs = bugs
+    self.consoleUrl = consoleUrl
+    self.items = items
+    self.pagination = pagination
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bugs = "bugs"
+    case consoleUrl = "consoleUrl"
+    case items = "items"
+    case pagination = "pagination"
+    case success = "success"
+    case total = "total"
+  }
+}
+
+public struct BugReportOptions: Codable, Sendable {
+  public var console: String?
+  public var dossierFile: String?
+  public var dossierJson: String?
+  public var execute: Bool?
+  public var severity: String?
+  public var summary: String?
+  public var surface: String?
+  public var title: String?
+
+  public init(console: String? = nil, dossierFile: String? = nil, dossierJson: String? = nil, execute: Bool? = nil, severity: String? = nil, summary: String? = nil, surface: String? = nil, title: String? = nil) {
+    self.console = console
+    self.dossierFile = dossierFile
+    self.dossierJson = dossierJson
+    self.execute = execute
+    self.severity = severity
+    self.summary = summary
+    self.surface = surface
+    self.title = title
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case dossierFile = "dossierFile"
+    case dossierJson = "dossierJson"
+    case execute = "execute"
+    case severity = "severity"
+    case summary = "summary"
+    case surface = "surface"
+    case title = "title"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dossierFile {
+      body["dossierFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dossierJson {
+      body["dossierJson"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.severity {
+      body["severity"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.summary {
+      body["summary"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.surface {
+      body["surface"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.title {
+      body["title"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BugReportReturn: Codable, Sendable {
+  public var bug: [String: RaviJSON]
+  public var consoleUrl: String
+  public var id: String
+  public var success: Bool
+  public var url: String
+
+  public init(bug: [String: RaviJSON], consoleUrl: String, id: String, success: Bool, url: String) {
+    self.bug = bug
+    self.consoleUrl = consoleUrl
+    self.id = id
+    self.success = success
+    self.url = url
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bug = "bug"
+    case consoleUrl = "consoleUrl"
+    case id = "id"
+    case success = "success"
+    case url = "url"
+  }
+}
+
+public struct BugStatusOptions: Codable, Sendable {
+  public var console: String?
+
+  public init(console: String? = nil) {
+    self.console = console
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BugStatusReturn: Codable, Sendable {
+  public var bug: [String: RaviJSON]
+  public var consoleUrl: String
+  public var id: String
+  public var success: Bool
+  public var url: String
+
+  public init(bug: [String: RaviJSON], consoleUrl: String, id: String, success: Bool, url: String) {
+    self.bug = bug
+    self.consoleUrl = consoleUrl
+    self.id = id
+    self.success = success
+    self.url = url
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bug = "bug"
+    case consoleUrl = "consoleUrl"
+    case id = "id"
+    case success = "success"
+    case url = "url"
+  }
+}
+
 public struct CalendarsAvailabilityOptions: Codable, Sendable {
   public var calendar: String?
   public var fields: String?

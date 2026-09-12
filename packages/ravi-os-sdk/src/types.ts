@@ -1830,6 +1830,68 @@ export type BridgesRevokeReturn = {
   success: true;
 };
 
+/** Input shape for `bug.list`. */
+export type BugListInput = {
+  console?: string;
+  fields?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `bug.list`. */
+export type BugListReturn = {
+  bugs: Array<Record<string, unknown>>;
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  success: true;
+  total: number;
+};
+
+/** Input shape for `bug.report`. */
+export type BugReportInput = {
+  console?: string;
+  dossierFile?: string;
+  dossierJson?: string;
+  execute?: boolean;
+  severity?: string;
+  summary?: string;
+  surface?: string;
+  title?: string;
+};
+
+/** Return shape for `bug.report`. */
+export type BugReportReturn = {
+  bug: Record<string, unknown>;
+  consoleUrl: string;
+  id: string;
+  success: true;
+  url: string;
+};
+
+/** Input shape for `bug.status`. */
+export type BugStatusInput = {
+  console?: string;
+  id: string;
+};
+
+/** Return shape for `bug.status`. */
+export type BugStatusReturn = {
+  bug: Record<string, unknown>;
+  consoleUrl: string;
+  id: string;
+  success: true;
+  url: string;
+};
+
 /** Input shape for `calendars.availability`. */
 export type CalendarsAvailabilityInput = {
   calendar?: string;
