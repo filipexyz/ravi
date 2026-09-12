@@ -97,9 +97,8 @@ The runtime abstraction exists so new execution engines can be added without cop
 
 ## Validation
 
-- `bun test src/runtime/provider-contract.test.ts`
+- `bun run test:runtime-host` (also included in `bun run test`)
 - `bun test src/runtime/session-dispatcher.test.ts src/runtime/delivery-queue.test.ts`
-- `bun test src/runtime/session-trace.test.ts`
 - `bun test src/runtime/runtime-session-continuity.test.ts src/runtime/session-resolver.test.ts`
 - `bun test src/bot.runtime-guards.test.ts`
 - `bunx tsc --noEmit --pretty false`
