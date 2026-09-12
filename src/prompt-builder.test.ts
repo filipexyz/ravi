@@ -67,6 +67,7 @@ describe("buildSystemPrompt", () => {
       "system.commands",
       "session.attach",
       "session.actions",
+      "bug.report",
       "automation.background_followups",
       "session.runtime",
       "session.boundary",
@@ -85,6 +86,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ravi sessions actions --json");
     expect(prompt).toContain("ravi sessions delete-message <message-id> --execute");
     expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
+    expect(prompt).toContain("## Bug Reports");
+    expect(prompt).toContain("ask the user whether to file a Ravi bug report");
+    expect(prompt).toContain("ravi bug report");
+    expect(prompt).toContain("Do not use `ravi feedback` for product/runtime bugs");
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
     expect(prompt).toContain("Do this in the background without announcing it in your visible response.");

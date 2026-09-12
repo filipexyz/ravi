@@ -2,6 +2,7 @@
  * Builds the system prompt appendix for agents
  */
 
+import { BUG_REPORT_SESSION_PROMPT } from "./bug-report/prompt.js";
 import type { ChannelContext } from "./runtime/message-types.js";
 import { renderChannelCapabilities, supportsChannelCapability } from "./channels/capabilities.js";
 
@@ -405,6 +406,7 @@ export function buildSystemPromptSections(
   // multi-input primitive is discoverable. See sessions/attach spec.
   add("session.attach", "Session Attach", sessionAttachText(), 25);
   add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
+  add("bug.report", "Bug Reports", BUG_REPORT_SESSION_PROMPT, 31);
   if (!isSentinel) {
     add("automation.background_followups", "Background Followup Automation", backgroundFollowupAutomationText(), 32);
   }

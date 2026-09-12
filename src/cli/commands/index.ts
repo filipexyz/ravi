@@ -11,6 +11,7 @@ export * from "./apps.js";
 export * from "./artifacts.js";
 export * from "./audio.js";
 export * from "./bridges.js";
+export * from "./bug.js";
 export * from "./calendar.js";
 export * from "./channel-backend.js";
 export * from "./channels.js";
