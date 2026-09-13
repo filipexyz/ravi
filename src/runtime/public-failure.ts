@@ -18,6 +18,8 @@ const INTERNAL_ERROR_PATTERNS = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
   /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i,
   /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/\S+/i,
+  /\bNo managed runtime credential could be resolved\b/i,
+  /\bRejected credentials:/i,
 ];
 
 export function publicRuntimeFailureDetail(error: unknown): string {
