@@ -1465,6 +1465,7 @@ async function answerPiExtensionUiRequest(
   const response = await resolvePiExtensionUiResponse(event, {
     canUseTool: input.canUseTool,
     approveRuntimeRequest: input.approveRuntimeRequest,
+    allowedSkills: input.allowedSkills,
   });
   if (!response) {
     return;

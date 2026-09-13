@@ -31,5 +31,7 @@ bun test src/runtime/allowed-skills.test.ts src/runtime/provider-contract.test.t
   exists.
 - Pi MUST filter the catalog through the agent allowlist, advertise it in the
   system prompt, and keep `loadedSkills` empty without explicit load evidence.
+- Pi MUST deny unauthorized skill invocation at tool-authorization time
+  (`SKILL_NOT_AUTHORIZED`) and MUST allow an authorized skill read.
 - The provider contract MUST expose the same skill-visibility capability shape
   for Claude Code, Codex, and Pi.
