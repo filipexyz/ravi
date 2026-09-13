@@ -430,6 +430,54 @@ describe("Pi runtime provider", () => {
     expect(transport.starts[0]?.systemPromptAppend).toContain("availability only");
   });
 
+  it("filters the Pi catalog to the agent allowlist and still denies a hidden skill at tool time", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pi-skills-filter-"));
+    const writeSkill = (plugin: string, name: string) => {
+      const skillPath = join(root, plugin, "skills", name);
+      mkdirSync(skillPath, { recursive: true });
+      writeFileSync(
+        join(skillPath, "SKILL.md"),
+        ["---", `name: ${name}`, `description: ${name} skill.`, "---", "", `# ${name}`].join("\n"),
+      );
+      return join(root, plugin);
+    };
+    const appCreatorPlugin = writeSkill("ravi-dev", "app-creator");
+    const whatsappPlugin = writeSkill("ravi-system", "whatsapp-manager");
+
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-hidden-skill",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: join(whatsappPlugin, "skills", "whatsapp-manager", "SKILL.md") },
+      }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("use a skill", {
+        plugins: [
+          { type: "local", path: appCreatorPlugin },
+          { type: "local", path: whatsappPlugin },
+        ],
+        canUseTool: async () => ({ behavior: "allow" }),
+        allowedSkills: ["ravi-dev-app-creator"],
+      }),
+    );
+
+    expect(handle.skillVisibility.skills.map((skill) => skill.id)).toEqual(["app-creator"]);
+    expect(handle.skillVisibility.skills.map((skill) => skill.id)).not.toContain("whatsapp-manager");
+
+    await collectRuntimeEvents(handle.events);
+
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
+    expect(transport.starts[0]?.systemPromptAppend).not.toContain("whatsapp-manager");
+    expect(transport.writes).toEqual([{ type: "extension_ui_response", id: "ui-hidden-skill", confirmed: false }]);
+  });
+
   it("closes the Pi RPC transport idempotently", async () => {
     const transport = new FakePiRpcTransport();
     const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("close"));
