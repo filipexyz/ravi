@@ -92,11 +92,21 @@ describe("bug CLI commands", () => {
         path: "/api/cli/bugs",
         accessToken: "access-secret",
         body: {
-          ...VALID_DOSSIER,
-          source: "cli",
+          schemaVersion: VALID_DOSSIER.schemaVersion,
+          title: VALID_DOSSIER.title,
+          summary: VALID_DOSSIER.summary,
+          severity: VALID_DOSSIER.severity,
+          surface: VALID_DOSSIER.surface,
+          payload: {
+            ...VALID_DOSSIER,
+            source: "cli",
+          },
         },
       },
     ]);
+    expect(calls[0]?.body).not.toHaveProperty("source");
+    expect(calls[0]?.body).not.toHaveProperty("organizationId");
+    expect(calls[0]?.body).not.toHaveProperty("projectId");
     expect(payload).toMatchObject({
       success: true,
       consoleUrl: "https://console.example",
@@ -319,7 +329,11 @@ describe("bug agent-first contract", () => {
       command.report(undefined, undefined, undefined, undefined, undefined, file, undefined, true, true),
     );
     expect(calls[0]?.path).toBe("/api/cli/bugs");
-    expect(calls[0]?.body).toMatchObject({ title: VALID_DOSSIER.title, source: "cli" });
+    expect(calls[0]?.body).toMatchObject({
+      title: VALID_DOSSIER.title,
+      payload: { title: VALID_DOSSIER.title, source: "cli" },
+    });
+    expect(calls[0]?.body).not.toHaveProperty("source");
     expect(JSON.parse(output).id).toBe("bug_file");
   });
 });

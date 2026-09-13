@@ -89,9 +89,12 @@ partial so the first call can be `ravi bug report` with no dossier.
    never as the write-brake exit `3`.
 5. A thrown `ContractError` (the brake) MUST NOT be wrapped by the
    CloudAuthError mapper — it bubbles to the dispatcher preserving exit 3.
-6. `--execute` MUST POST the validated dossier to `/api/cli/bugs` with
-   `source: "cli"` and print `id` + tracking URL. The client path is stable
-   even if the sibling Console PR lands later.
+6. `--execute` MUST POST a Console `createBodySchema` body to
+   `/api/cli/bugs`: top-level `{schemaVersion, title, summary, severity,
+   surface?}` plus required `payload` (the full dossier, with `source`
+   inside `payload` only). `organizationId` / `projectId` MUST be sent
+   only when dossier `context` refs parse as UUIDs; slugs MUST NOT be
+   sent as those fields. Then print `id` + tracking URL.
 7. `bug status <id>` MUST GET `/api/cli/bugs/<id>`. `bug list` MUST GET
    `/api/cli/bugs` (the authenticated user's reports), expose `--json`,
    `--limit`, `--offset`, and `--fields`, and paginate for agents.
@@ -123,7 +126,9 @@ partial so the first call can be `ravi bug report` with no dossier.
 
 The CLI client path is:
 
-- `POST /api/cli/bugs` — create; body is the dossier + `source`
+- `POST /api/cli/bugs` — create; body is Console `createBodySchema`
+  (`title`, `summary`, `severity`, required `payload`, optional
+  `schemaVersion` / `surface` / UUID `organizationId` / `projectId`)
 - `GET /api/cli/bugs` — list the authenticated user's reports
 - `GET /api/cli/bugs/:id` — show one report
 

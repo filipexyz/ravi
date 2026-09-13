@@ -6,8 +6,11 @@
   with a content-minimized plan plus the `ravi.bug_report/v1` collection
   prompt, and MUST NOT read credentials nor perform any network call.
 - `bug report --dossier-json '<valid>' --execute` MUST POST to
-  `/api/cli/bugs` with the normalized dossier and `source: "cli"`, then
-  print the bug id and tracking URL.
+  `/api/cli/bugs` with Console `createBodySchema` (`title`, `summary`,
+  `severity`, required `payload` holding the full dossier + `source`).
+  Slug org/project refs MUST stay inside `payload.context` and MUST NOT
+  appear as top-level `organizationId` / `projectId`. Then print the bug
+  id and tracking URL.
 - The dry-run plan MUST omit raw title, summary, evidence, organization /
   project refs, session hints, and Console override. `surface` MAY remain.
 - Invalid `--severity`, broken `--dossier-json` / `--dossier-file`,

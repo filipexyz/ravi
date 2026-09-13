@@ -7,10 +7,12 @@ step that does not POST until the dossier is ready.
 
 The brake decision is the same question as feedback: does `bug report` stay
 on the machine or leave it? `src/bug-report/client.ts` authenticates with
-stored cloud credentials (`ravi login`) and POSTs to Console
-`/api/cli/bugs`. The record is attributed to the authenticated user and the
-CLI cannot retract it. That is external publication — the Manual v2 write
-brake applies. Hence `report` is dry-run by default and `--execute` performs
+stored cloud credentials (`ravi login`) and POSTs a mapped Console
+`createBodySchema` body to `/api/cli/bugs` (`title`, `summary`,
+`severity`, required `payload` holding the full dossier; UUID refs only).
+The record is attributed to the authenticated user and the CLI cannot
+retract it. That is external publication — the Manual v2 write brake
+applies. Hence `report` is dry-run by default and `--execute` performs
 the real submission.
 
 Two ordering rules keep the brake honest:

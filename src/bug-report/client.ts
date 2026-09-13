@@ -53,10 +53,7 @@ export class RaviBugReportClient {
       return await this.client.requestJson<Record<string, unknown>>(
         "POST",
         BUG_REPORT_API_PATH,
-        {
-          ...dossier,
-          source: options.source ?? "cli",
-        },
+        toConsoleBugCreateBody(dossier, options.source),
         accessToken,
       );
     } catch (error) {
@@ -176,6 +173,44 @@ function requireStoredCredentials(credentials: CloudCredentials | null, consoleU
   return credentials;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Map a local `ravi.bug_report/v1` dossier onto Console `createBodySchema`.
+ * Unknown top-level keys (including `source`) are stripped; the full dossier
+ * is preserved under required `payload`. organizationId/projectId are sent
+ * only when the dossier refs parse as UUIDs.
+ */
+export function toConsoleBugCreateBody(
+  dossier: BugReportDossier,
+  source: BugReportSubmitOptions["source"] = "cli",
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    schemaVersion: dossier.schemaVersion,
+    title: dossier.title,
+    summary: dossier.summary,
+    severity: dossier.severity,
+    payload: {
+      ...dossier,
+      source: source ?? "cli",
+    },
+  };
+  if (dossier.surface?.trim()) {
+    body.surface = dossier.surface.trim();
+  }
+  const organizationId = asUuid(dossier.context?.organizationRef);
+  const projectId = asUuid(dossier.context?.projectRef);
+  if (organizationId) body.organizationId = organizationId;
+  if (projectId) body.projectId = projectId;
+  return body;
+}
+
+export function asUuid(value: string | undefined): string | undefined {
+  const text = value?.trim();
+  if (!text || !UUID_PATTERN.test(text)) return undefined;
+  return text.toLowerCase();
+}
+
 function requireBugId(value: string): string {
   const id = value.trim();
   if (!id) throw new CloudAuthError("PAYLOAD_INVALID", "Missing bug id.");
@@ -194,7 +229,12 @@ function bugIdFromPayload(payload: Record<string, unknown>): string | null {
 }
 
 function trackingUrl(consoleUrl: string, payload: Record<string, unknown>, id: string): string {
-  return stringValue(payload.url) ?? stringValue(payload.trackingUrl) ?? `${consoleUrl}/bugs/${id}`;
+  return (
+    stringValue(payload.url) ??
+    stringValue(payload.trackingUrl) ??
+    stringValue(payload.consoleUrl) ??
+    `${consoleUrl}/bugs/${id}`
+  );
 }
 
 function stringValue(value: unknown): string | null {
