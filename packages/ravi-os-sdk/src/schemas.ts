@@ -9364,6 +9364,44 @@ export const BugReportReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "follow": {
+      "additionalProperties": false,
+      "properties": {
+        "filter": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "session": {
+          "const": "main",
+          "type": "string"
+        },
+        "subscribed": {
+          "type": "boolean"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "triggerId": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "subscribed",
+        "topic",
+        "filter",
+        "session"
+      ],
+      "type": "object"
+    },
     "id": {
       "type": "string"
     },
