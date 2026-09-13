@@ -468,8 +468,8 @@ describe("Pi runtime provider", () => {
       }),
     );
 
-    expect(handle.skillVisibility.skills.map((skill) => skill.id)).toEqual(["app-creator"]);
-    expect(handle.skillVisibility.skills.map((skill) => skill.id)).not.toContain("whatsapp-manager");
+    expect(handle.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["app-creator"]);
+    expect(handle.skillVisibility?.skills.map((skill) => skill.id)).not.toContain("whatsapp-manager");
 
     await collectRuntimeEvents(handle.events);
 
