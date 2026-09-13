@@ -288,4 +288,78 @@ describe("Pi tool permission bridge", () => {
     expect(isPiPermissionBridgeError(new PiPermissionBridgeError())).toBe(true);
     expect(isPiPermissionBridgeError(new Error("nope"))).toBe(false);
   });
+
+  it("denies unauthorized skill use on the Pi authorize path and allows a granted skill", async () => {
+    const handlers = {
+      canUseTool: async () => ({ behavior: "allow" as const }),
+      allowedSkills: ["ravi-dev-app-creator"],
+    };
+
+    await expect(
+      authorizePiToolCall("read", { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" }, handlers),
+    ).resolves.toEqual({
+      allowed: false,
+      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+    });
+
+    await expect(authorizePiToolCall("Skill", { skill: "ravi-system-image" }, handlers)).resolves.toEqual({
+      allowed: false,
+      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+    });
+
+    await expect(
+      authorizePiToolCall(
+        "read",
+        { path: "/workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md" },
+        handlers,
+      ),
+    ).resolves.toEqual({ allowed: true });
+
+    await expect(authorizePiToolCall("read", { path: "README.md" }, handlers)).resolves.toEqual({
+      allowed: true,
+    });
+  });
+
+  it("still requires Bash command authorization before applying the skill allowlist", async () => {
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: "ravi skills show ravi-system-image --json" },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        },
+      ),
+    ).resolves.toEqual({
+      allowed: false,
+      reason: "Pi command execution authorizer is unavailable.",
+    });
+
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: "ravi skills show ravi-system-image --json" },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+          approveRuntimeRequest: async () => ({ approved: true }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        },
+      ),
+    ).resolves.toEqual({
+      allowed: false,
+      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+    });
+
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: "ravi skills show ravi-dev-app-creator --json" },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+          approveRuntimeRequest: async () => ({ approved: true }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        },
+      ),
+    ).resolves.toEqual({ allowed: true });
+  });
 });

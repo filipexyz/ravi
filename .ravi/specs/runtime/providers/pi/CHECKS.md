@@ -10,6 +10,9 @@
 - A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with `confirmed: false` and blocks the tool.
 - The same path allows a granted Read/tool call.
 - Bash requires both `canUseTool("Bash")` and `authorizeCommandExecution`. Missing handlers, thrown authorization, and unconditional/observation denials fail closed.
+- Unauthorized skill use (Read/`Skill`/`ravi skills show` of a skill outside `allowedSkills`) MUST be denied on the extension authorize path with `SKILL_NOT_AUTHORIZED`, even when `canUseTool` would otherwise allow the tool.
+- Authorized skill use and ordinary non-skill file reads MUST still be allowed when the tool itself is granted.
+- The advertised Pi skill catalog MUST remain filtered by the same allowlist. Catalog text is not a substitute for the tool-time gate.
 - RPC steer, interrupt, busy-retry, and dead-transport restart still work with the permission bridge loaded.
 - `startSession` starts a fake RPC client and returns a valid runtime handle.
 - `interrupt()` sends `abort` and emits `turn.interrupted`.

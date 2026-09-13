@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildSkillVisibilitySnapshot,
+  extractRequestedSkillFromCommandLine,
+  extractRequestedSkillFromToolCall,
+  extractSkillNameFromFilesystemPath,
   filterSkillNamesByAllowlist,
+  isSkillNameAuthorizedOnAllowlist,
   isStoredSkillVisibilityCompatible,
   markLoadedFromRaviSkillToolCall,
   mergeSkillVisibilitySnapshots,
@@ -132,5 +136,33 @@ describe("skill visibility policy", () => {
     });
 
     expect(loaded.loadedSkills).toEqual(["ravi-user-skills-building-ravi-apps"]);
+  });
+});
+
+describe("skill invocation extraction", () => {
+  it("extracts dedicated Skill tool names and ravi skills show commands", () => {
+    expect(extractRequestedSkillFromToolCall("Skill", { skill: "ravi-system-image" })).toBe("ravi-system-image");
+    expect(extractRequestedSkillFromToolCall("skills_show", { name: "tiny" })).toBe("tiny");
+    expect(extractRequestedSkillFromCommandLine("ravi skills show ravi-user-skills-tiny --json")).toBe(
+      "ravi-user-skills-tiny",
+    );
+  });
+
+  it("extracts a skill from Read/Edit of skills/<name>/SKILL.md and ignores ordinary files", () => {
+    expect(extractSkillNameFromFilesystemPath("/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md")).toBe(
+      "whatsapp-manager",
+    );
+    expect(
+      extractRequestedSkillFromToolCall("Read", {
+        path: "/workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",
+      }),
+    ).toBe("app-creator");
+    expect(extractRequestedSkillFromToolCall("Read", { path: "README.md" })).toBeNull();
+    expect(extractRequestedSkillFromCommandLine("cat /tmp/plugins/ravi-system/skills/image/SKILL.md")).toBe("image");
+  });
+
+  it("matches catalog aliases when checking a path-derived skill against an allowlist", () => {
+    expect(isSkillNameAuthorizedOnAllowlist("app-creator", ["ravi-dev-app-creator"])).toBe(true);
+    expect(isSkillNameAuthorizedOnAllowlist("whatsapp-manager", ["ravi-dev-app-creator"])).toBe(false);
   });
 });

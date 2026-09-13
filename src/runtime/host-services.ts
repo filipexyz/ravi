@@ -40,8 +40,8 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
-import { resolveAgentSkills } from "./allowed-skills.js";
-import { extractRaviSkillShowNameFromCommand, skillNameMatchesAllowlist } from "./skill-visibility.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -451,20 +451,17 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
-  const requestedSkill = extractRaviSkillShowNameFromCommand(command);
-  if (requestedSkill) {
-    const visibility = resolveAgentSkills(options.agentId);
-    if (visibility.hasConfiguration && !skillNameMatchesAllowlist(requestedSkill, visibility.allowlist)) {
-      const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
-      emitRuntimePolicyDenied(options, {
-        type: "tool",
-        denied: `skill:${requestedSkill}`,
-        reason,
-        command,
-        blockType: "runtime_skill_not_authorized",
-      });
-      return { approved: false, reason };
-    }
+  const requestedSkill = extractRequestedSkillFromCommandLine(command);
+  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${requestedSkill}`,
+      reason,
+      command,
+      blockType: "runtime_skill_not_authorized",
+    });
+    return { approved: false, reason };
   }
 
   const dangerous = checkDangerousPatterns(command);
@@ -605,7 +602,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -619,6 +616,39 @@ async function authorizeRuntimeToolUse(
 
   if (!result.allowed) {
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  const requestedSkill = extractRequestedSkillFromToolCall(request.toolName, request.input);
+  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${requestedSkill}`,
+      reason,
+      blockType: "runtime_skill_not_authorized",
+      detail: { toolName: request.toolName, skill: requestedSkill },
+    });
+    return { approved: false, reason };
+  }
+
+  const gateDecision = evaluateRuntimeToolSkillGate({
+    context: options.context,
+    toolName: request.toolName,
+    onSkillGatePersisted: options.onSkillGatePersisted,
+  });
+  if (!gateDecision.allowed) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: gateDecision.skill ? `skill:${gateDecision.skill}` : "skill:<required>",
+      reason: gateDecision.reason ?? `${request.toolName} requires a skill.`,
+      blockType: "runtime_tool_skill_gate_denied",
+      detail: {
+        toolName: request.toolName,
+        ...(gateDecision.skill ? { skill: gateDecision.skill } : {}),
+        ...(gateDecision.code ? { code: gateDecision.code } : {}),
+      },
+    });
+    return { approved: false, reason: gateDecision.reason ?? `${request.toolName} requires a skill.` };
   }
 
   return {

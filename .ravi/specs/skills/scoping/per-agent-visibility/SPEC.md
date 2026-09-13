@@ -16,7 +16,7 @@ owners:
   - main
 status: active
 normative: true
-review: "v4 2026-09-11 — allowlist canônica aplicada em Claude, Codex e Pi; grants explícitos autoritativos; leitura por recurso e telemetria terminal."
+review: "v5 2026-09-13 — Pi aplica a allowlist no authorize path (tool-time), não só no catálogo do prompt."
 ---
 
 <!-- markdownlint-disable-next-line MD025 -->
@@ -39,7 +39,7 @@ Ambos produzem uma **allowlist por agente** que alimenta o **filtro nativo do mo
 - **Adaptador de enforcement (por provider):** aplica a allowlist ao motor.
   - `claude` → `Options.skills` nativo, preservando skills locais autorizadas.
   - `codex` → `skills/list` nativo, catálogo lógico deduplicado e `skills.config` desabilitando toda entrada fora da allowlist.
-  - `pi` → catálogo filtrado no prompt; a leitura explícita passa por `ravi skills show`.
+  - `pi` → catálogo filtrado no prompt; `ravi skills show`, `Skill` e Read/Edit de `SKILL.md` passam pelo mesmo authorize path do permission extension (`canUseTool` / host `authorizeToolUse`). Skill fora da allowlist MUST falhar com `SKILL_NOT_AUTHORIZED`.
 - **O SISTEMA NÃO é preso a provider.** Só o passo de *enforcement* varia. (Correção explícita da versão anterior, que tratava a feature inteira como "claude-only".)
 
 ## Estado atual v4 (validado em produção, 2026-09-11)
@@ -81,6 +81,7 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 3. O Codex consulta o inventário nativo, seleciona uma cópia por nome lógico e desabilita o restante antes de `thread/start`, `thread/resume` ou `thread/fork`.
 4. O CLI e o host autorizam `skills show` contra o agente da sessão atual.
 5. O host converte a skill lida de volta ao alias anunciado e persiste a evidência no snapshot do turno.
+6. No Pi, o permission extension chama `authorizePiToolCall` antes de qualquer tool. Além do REBAC e do Bash `authorizeCommandExecution`, o authorize path aplica a allowlist a invocações de skill (Skill tool, `ravi skills show`, Read/Edit de `skills/<name>/SKILL.md`). Filtrar o catálogo no prompt NÃO é a barreira de segurança.
 
 ## Scope
 
@@ -90,6 +91,6 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 
 ## Boundaries
 
-- O controle protege catálogo e leitura pela interface Ravi; não transforma instruções em permissões de efeito.
+- O controle protege catálogo e leitura pela interface Ravi e, no Pi, a invocação via tool no authorize path; não transforma instruções em permissões de efeito.
 - NÃO substitui permissions (REBAC de comandos) — as skills de sistema *seguem* a permissão, não a redefinem.
 - NÃO cobre versionamento/distribuição de skills entre instâncias.
