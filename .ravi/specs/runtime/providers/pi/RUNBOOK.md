@@ -5,17 +5,18 @@
 1. Verify the Pi executable or package entrypoint is available.
 2. Verify the target cwd exists and is the intended Ravi agent cwd.
 3. Verify model/provider credentials are configured in Pi's agent dir or inherited env.
-4. Verify the Ravi agent does not require restricted tool access in the RPC MVP.
-5. Verify `RuntimeCapabilities` compatibility passes before starting the provider.
+4. Verify `RuntimeCapabilities` compatibility passes before starting the provider. Restricted agents are allowed when the permission extension is loaded (`tools.permissionMode=ravi-host`).
+5. Verify the spawned Pi command includes `--extension` pointing at the materialized Ravi permission extension.
 
 ## Start A Session
 
-1. Spawn Pi in RPC mode.
+1. Spawn Pi in RPC mode with the Ravi permission extension.
 2. Attach a strict JSONL reader to stdout.
 3. Capture stderr for logs only.
 4. Send `get_state` after startup.
 5. If resuming, validate `sessionFile` and cwd before `switch_session`.
 6. Emit synthetic `thread.started` metadata from `get_state` when available.
+7. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Cancel any other dialog. Do not wait for a command `response` on those writes.
 
 ## Run A Prompt
 
@@ -50,6 +51,8 @@
 - Check whether Pi emitted `message_update`, `tool_execution_*`, `turn_end`, or `agent_end`.
 - Check whether the adapter incorrectly treated Pi `turn_end` as Ravi terminal.
 - Check whether a parallel tool batch left Ravi host state with one active stale tool.
+- Check whether Pi emitted `extension_ui_request` and whether Ravi answered `extension_ui_response`. A hang on the first tool often means the host did not write the UI response.
+- Check whether a restricted deny is coming from `canUseTool` or from Bash `authorizeCommandExecution` (unconditional blocks, observation, skill gate).
 - Check stderr for process-level failures.
 - Check whether `get_state.isStreaming` disagrees with Ravi `turnActive`.
 - If channels saw the literal string "Agent is already processing", confirm the busy-retry backoff exhausted all 5 attempts (~3.85s). After that budget the adapter MUST restart the Pi process (when it can) and retry once. A still-busy `turn.failed` MUST carry `failureKind=transport` so the host respawns instead of reusing the stuck runtime. Inspect `provider.raw` for `compaction_start` without a matching `compaction_end`, and confirm the previous turn was not a leftover `agent_end` consumed as a ~60ms fake `turn.complete`.

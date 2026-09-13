@@ -25,13 +25,13 @@ The cost is extra process management and less direct control over tools. That tr
 
 Pi has its own tools and can execute them in parallel. Ravi has its own permission model and currently tracks one active tool in the host event loop.
 
-Bridging tools before the provider contract is hardened would create a confusing hybrid:
+Owning Pi tools from Ravi before the provider contract is hardened would create a confusing hybrid:
 
 - Some tools would obey Ravi policy.
 - Some tools would obey Pi internals.
 - Tool events could race the current Ravi tracking model.
 
-The MVP should declare full Pi tool ownership and block restricted Ravi agents. Tool bridging belongs in the SDK phase.
+The RPC MVP therefore kept tool *execution* inside Pi. Permission is different: Pi RPC events are observational and cannot block a call. The hook bridge loads a Ravi-owned extension so `tool_call` runs in-process, then the host answers over the RPC extension UI protocol. Every tool is authorized by Ravi before Pi executes it. Dynamic tools, parallel tool tracking, and Claude-style PreToolUse skill gates stay on the later SDK path.
 
 ## Why The Spec Forces Capability Work
 

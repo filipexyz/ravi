@@ -55,6 +55,7 @@ describe("runtime delivery queue", () => {
     expect(resolveRuntimeToolEffectFence("grok", "ravi-host")).toBe("host_write_ahead");
     expect(resolveRuntimeToolEffectFence("codex", "ravi-host")).toBe("provider_event_only");
     expect(resolveRuntimeToolEffectFence("pi", "provider-native")).toBe("provider_event_only");
+    expect(resolveRuntimeToolEffectFence("pi", "ravi-host")).toBe("provider_event_only");
   });
 
   it("refreshes lastActivity when a new turn starts on a reused session", async () => {

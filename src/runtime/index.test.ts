@@ -84,12 +84,19 @@ describe("runtime compatibility preflight", () => {
     ).not.toThrow();
   });
 
-  it("blocks restricted tool access for Pi until Ravi-hosted tool hooks exist", () => {
-    const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("pi"), {
-      toolAccessMode: "restricted",
-    });
+  it("allows Pi providers to satisfy restricted tool access through Ravi-hosted hooks", () => {
+    const provider = createRuntimeProvider("pi");
 
-    expect(issues.map((issue) => issue.code)).toEqual(["restricted_tool_access_unsupported"]);
+    expect(() =>
+      assertRuntimeCompatibility(provider, {
+        toolAccessMode: "restricted",
+      }),
+    ).not.toThrow();
+    expect(
+      getRuntimeCompatibilityIssues(provider, {
+        toolAccessMode: "restricted",
+      }),
+    ).toEqual([]);
   });
 
   it("allows Grok providers to satisfy restricted tool access through Ravi-hosted hooks", () => {

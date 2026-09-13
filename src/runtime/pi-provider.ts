@@ -29,6 +29,11 @@ import {
 } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { resolveRuntimeModelBrokerProviderModel } from "./model-broker.js";
+import {
+  createPiApprovalHandler,
+  materializePiPermissionExtensionFile,
+  resolvePiExtensionUiResponse,
+} from "./pi-tool-permissions.js";
 
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
@@ -105,6 +110,7 @@ export interface PiRpcStartInput {
   modelArg?: string;
   thinkingLevel?: PiThinkingLevel;
   systemPromptAppend?: string;
+  extensionPath?: string;
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -129,6 +135,8 @@ export interface PiRpcTransport {
   events: AsyncIterable<PiRpcEvent>;
   start(input: PiRpcStartInput): Promise<void> | void;
   send(command: PiRpcCommand): Promise<PiRpcResponse>;
+  /** Fire-and-forget stdin write used by the permission UI sub-protocol. */
+  writeMessage?(message: Record<string, unknown>): Promise<void>;
   /** Discard events already queued from a previous turn without blocking. */
   drainPendingEvents?(): PiRpcEvent[];
   close(): Promise<void>;
@@ -200,7 +208,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           semantics: "terminal-event",
         },
         tools: {
-          permissionMode: "provider-native",
+          permissionMode: "ravi-host",
           accessRequirement: "tool_and_executable",
           supportsParallelCalls: false,
         },
@@ -221,7 +229,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
-        supportsToolHooks: false,
+        supportsToolHooks: true,
         supportsHostSessionHooks: false,
         supportsPlugins: false,
         supportsMcpServers: false,
@@ -231,7 +239,12 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
-      return materialized ? { env: materialized.env } : {};
+      return {
+        ...(materialized?.env ? { env: materialized.env } : {}),
+        ...(input.hostServices
+          ? { startRequest: { approveRuntimeRequest: createPiApprovalHandler(input.hostServices) } }
+          : {}),
+      };
     },
     startSession(input) {
       if (input.modelBroker) assertNoPiModelBrokerCredentialEnv(input.env);
@@ -497,6 +510,20 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
         });
       });
     },
+    writeMessage(message) {
+      if (!child || closed) {
+        return Promise.reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
+      }
+      return new Promise<void>((resolve, reject) => {
+        child!.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
     async close() {
       stopStdoutReader?.();
       stopStdoutReader = null;
@@ -528,7 +555,13 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
 }
 
 export function buildPiRpcSpawnEnv(input: Pick<PiRpcStartInput, "env">): NodeJS.ProcessEnv {
-  return { ...input.env };
+  const env = { ...input.env };
+  // Tool execution still shares the Pi RPC process. Keep provider secrets out
+  // of that env even after permission hooks unlock restricted agents.
+  for (const key of SANITIZED_ENV_VARS) {
+    delete env[key];
+  }
+  return env;
 }
 
 async function* runPiTurns(
@@ -542,7 +575,9 @@ async function* runPiTurns(
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
-    env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
+    env: buildPiRpcSpawnEnv({
+      env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
+    }),
     provider: input.modelBroker ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker) : modelSelector.provider,
     model: modelSelector.modelId,
     modelArg: input.modelBroker
@@ -550,6 +585,7 @@ async function* runPiTurns(
       : modelSelector.modelArg,
     thinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
+    extensionPath: materializePiPermissionExtensionFile(),
   };
   let transport = state.transport ?? createTransport();
   state.transport = transport;
@@ -666,6 +702,9 @@ async function* runPiTurns(
           }
 
           const event = next.value;
+          if (event.type === "extension_ui_request") {
+            await answerPiExtensionUiRequest(transport, event, input);
+          }
           if (event.type === "agent_start" || event.type === "turn_start") {
             context.lifecycleStarted = true;
             context.ignoreStaleTerminals = false;
@@ -1235,7 +1274,7 @@ async function safePiCommand(transport: PiRpcTransport, command: PiRpcCommand): 
   }
 }
 
-function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[]): string[] {
+export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[] = []): string[] {
   const args = [...commandArgs, "--mode", "rpc"];
   const modelArg = input.modelArg ?? input.model;
 
@@ -1252,8 +1291,29 @@ function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[]): s
   if (systemPromptAppend) {
     args.push("--append-system-prompt", systemPromptAppend);
   }
+  if (input.extensionPath) {
+    args.push("--extension", input.extensionPath);
+  }
 
   return args;
+}
+
+async function answerPiExtensionUiRequest(
+  transport: PiRpcTransport,
+  event: PiRpcEvent,
+  input: RuntimeStartRequest,
+): Promise<void> {
+  const response = await resolvePiExtensionUiResponse(event, {
+    canUseTool: input.canUseTool,
+    approveRuntimeRequest: input.approveRuntimeRequest,
+  });
+  if (!response) {
+    return;
+  }
+  if (!transport.writeMessage) {
+    throw new Error("Pi RPC transport cannot answer extension UI permission requests");
+  }
+  await transport.writeMessage(response);
 }
 
 function attachStrictJsonlLineReader(stream: NodeJS.ReadableStream, onLine: (line: string) => void): () => void {

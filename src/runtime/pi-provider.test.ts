@@ -3,15 +3,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createPiRuntimeProvider,
+  buildPiRpcProcessArgs,
   buildPiRpcSpawnEnv,
+  createPiRuntimeProvider,
   type PiRpcCommand,
   type PiRpcEvent,
   type PiRpcResponse,
   type PiRpcStartInput,
   type PiRpcTransport,
 } from "./pi-provider.js";
-import type { RuntimeEvent, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import { PI_PERMISSION_UI_TITLE } from "./pi-tool-permissions.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
@@ -24,6 +26,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   readonly events: TestQueue<PiRpcEvent> = createTestQueue<PiRpcEvent>();
   readonly starts: PiRpcStartInput[] = [];
   readonly commands: PiRpcCommand[] = [];
+  readonly writes: Record<string, unknown>[] = [];
 
   responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
   closed = false;
@@ -40,6 +43,10 @@ class FakePiRpcTransport implements PiRpcTransport {
       return response;
     }
     return defaultResponse(command);
+  }
+
+  async writeMessage(message: Record<string, unknown>): Promise<void> {
+    this.writes.push(message);
   }
 
   async close(): Promise<void> {
@@ -65,7 +72,9 @@ describe("Pi runtime provider", () => {
     const previous = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "daemon-secret-must-not-leak";
     try {
-      const env = buildPiRpcSpawnEnv({ env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime" } });
+      const env = buildPiRpcSpawnEnv({
+        env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime", OPENAI_API_KEY: "must-not-reach-tools" },
+      });
       expect(env.OPENAI_API_KEY).toBeUndefined();
       expect(env).toEqual({ PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime" });
     } finally {
@@ -102,13 +111,108 @@ describe("Pi runtime provider", () => {
         requiresCwdMatch: true,
       },
       tools: {
-        permissionMode: "provider-native",
+        permissionMode: "ravi-host",
         supportsParallelCalls: false,
       },
+      supportsToolHooks: true,
       terminalEvents: {
         guarantee: "adapter",
       },
     });
+  });
+
+  it("loads the Ravi permission extension on the Pi RPC process", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    await collectRuntimeEvents(createPiRuntimeProvider({ transport }).startSession(createStartRequest("hooks")).events);
+
+    const extensionPath = transport.starts[0]?.extensionPath;
+    expect(extensionPath).toMatch(/ravi-permission-extension\.js$/);
+    expect(buildPiRpcProcessArgs(transport.starts[0]!)).toEqual(
+      expect.arrayContaining(["--mode", "rpc", "--extension", extensionPath]),
+    );
+  });
+
+  it("denies a restricted Pi tool over the extension UI bridge and allows it when granted", async () => {
+    const deniedTransport = new FakePiRpcTransport();
+    deniedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-deny",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({ toolName: "bash", input: { command: "curl evil.test" } }),
+    });
+    deniedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: deniedTransport }).startSession(
+        createStartRequest("nega", {
+          canUseTool: async () => ({ behavior: "deny", reason: "Bash permission denied." }),
+        }),
+      ).events,
+    );
+    expect(deniedTransport.writes).toEqual([
+      { type: "extension_ui_response", id: "ui-deny", confirmed: false },
+    ]);
+
+    const allowedTransport = new FakePiRpcTransport();
+    allowedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-allow",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({ toolName: "read", input: { path: "README.md" } }),
+    });
+    allowedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: allowedTransport }).startSession(
+        createStartRequest("permite", {
+          canUseTool: async (toolName) => ({
+            behavior: toolName === "Read" ? "allow" : "deny",
+            reason: `${toolName} permission denied.`,
+          }),
+        }),
+      ).events,
+    );
+    expect(allowedTransport.writes).toEqual([
+      { type: "extension_ui_response", id: "ui-allow", confirmed: true },
+    ]);
+  });
+
+  it("wires prepareSession command approvals through Ravi host services", async () => {
+    const hostServices: RuntimeHostServices = {
+      authorizeCapability: async () => ({ allowed: true, inherited: false }),
+      authorizeCommandExecution: async (request) => ({
+        approved: request.command === "git status",
+        reason: request.command === "git status" ? undefined : "blocked",
+      }),
+      authorizeToolUse: async () => ({ approved: true }),
+      requestUserInput: async () => ({ approved: true, answers: {} }),
+      listDynamicTools: () => [],
+      executeDynamicTool: async () => ({ success: true, contentItems: [] }),
+    };
+    const prepared = await createPiRuntimeProvider().prepareSession?.({
+      agentId: "pi-probe",
+      cwd: "/tmp",
+      hostServices,
+    });
+    const approve = prepared?.startRequest?.approveRuntimeRequest;
+    expect(approve).toBeTypeOf("function");
+    await expect(
+      approve!({
+        kind: "command_execution",
+        toolName: "Bash",
+        input: { command: "git status" },
+      }),
+    ).resolves.toEqual({ approved: true });
+    await expect(
+      approve!({
+        kind: "command_execution",
+        toolName: "Bash",
+        input: { command: "rm -rf /" },
+      }),
+    ).resolves.toEqual({ approved: false, reason: "blocked" });
   });
 
   it("indexes allowed Ravi plugin skills in the Pi system prompt without claiming they were loaded", async () => {
