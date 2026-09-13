@@ -4888,6 +4888,45 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.done).toBe(true);
   });
 
+  it("replays a stuck already-processing failure as a broken runtime instead of reusing it", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continue after interrupt",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-already-processing");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+          recoverable: true,
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "continue after interrupt",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_transport_failure" }]);
+    expect(streaming.done).toBe(true);
+  });
+
   it("replays a recoverable provider transport failure before any effect instead of exposing INTERNAL", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "survive a transient websocket close",

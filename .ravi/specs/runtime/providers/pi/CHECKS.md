@@ -13,7 +13,10 @@
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
 - Active-turn `turn.steer` sends Pi RPC `steer` and does not become Ravi host prompt concatenation.
 - A `prompt` response rejected with "already processing" is retried as a plain `prompt` on the bounded busy backoff and resolves once Pi reports idle. No retry adds `streamingBehavior`.
-- Persistent "already processing" responses exhaust the busy backoff and surface a single `turn.failed`, never silently drop the prompt.
+- Persistent "already processing" responses exhaust the busy backoff, then restart the Pi RPC transport when a factory is available and retry the same plain `prompt` once more. If it is still busy, they surface a single `turn.failed` with `failureKind=transport` so the host respawns instead of reusing the stuck process.
+- After `turn.interrupted` / `turn.failed` / abort, leftover queued Pi events are drained and `abort` is sent again. If `get_state` still reports `isStreaming` / `isProcessing` / `isCompacting`, the adapter restarts the transport before the next prompt.
+- Leftover `agent_end` / `turn_end` from the interrupted run MUST NOT complete the next Ravi prompt. The next prompt waits for a fresh `agent_start` / `turn_start` (or a respawned transport) before accepting a terminal.
+- Interrupt then a subsequent prompt MUST emit `turn.interrupted` for the first turn and a real terminal for the second, never a ~instant fake `turn.complete`.
 
 ## Event Mapping Tests
 

@@ -641,6 +641,15 @@ function runtimeEventLogLevel(eventType: string): "debug" | "info" {
     : "info";
 }
 
+function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<string, unknown> }): boolean {
+  const details = [event.error, event.rawEvent?.error, event.rawEvent?.message]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+    .join("\n")
+    .toLowerCase();
+  return details.includes("already processing");
+}
+
 function isRecoverableInterruptionFailure(event: {
   error?: string;
   recoverable?: boolean;
@@ -2176,10 +2185,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
               const internalAbortReason = streaming.internalAbortReason;
               const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+              const replayable = getRuntimeTurnReplaySafety(streaming, crashRecovery).replayable;
               const transportRecoverable =
                 event.recoverable !== false &&
-                event.failureKind === "transport" &&
-                getRuntimeTurnReplaySafety(streaming, crashRecovery).replayable;
+                replayable &&
+                (event.failureKind === "transport" || isAlreadyProcessingFailure(event));
               return {
                 internalAbortReason,
                 suppressedRecoverable: interruptedRecoverable || internalRecoverable || transportRecoverable,
