@@ -61,10 +61,7 @@ export function bugFollowMatchesEvent(bugId: string, data: unknown): boolean {
   return evaluateFilter(bugFollowFilter(bugId), data);
 }
 
-export function buildBugFollowTriggerInput(
-  bugId: string,
-  context: BugFollowContext = {},
-): TriggerInput {
+export function buildBugFollowTriggerInput(bugId: string, context: BugFollowContext = {}): TriggerInput {
   return {
     name: bugFollowTriggerName(bugId),
     topic: BUG_STATUS_WATCH_TOPIC,

@@ -687,8 +687,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     category: "watch",
     pattern: "ravi.watch.console.bug.status",
     title: "Followed Console bug status",
-    description:
-      "Normalized watch event after Console delivers watch.console.bug.status to subscribers of that bugId.",
+    description: "Normalized watch event after Console delivers watch.console.bug.status to subscribers of that bugId.",
     payload:
       "{ version, eventId, watchId, connector, placement, eventType, subject, source, payload: { bugId, title, status, consoleUrl }, occurredAt }",
     schema: {

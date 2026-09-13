@@ -6,11 +6,7 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { BUG_REPORT_COLLECTION_PROMPT } from "../../bug-report/prompt.js";
 import { BUG_REPORT_SCHEMA_ID } from "../../bug-report/schema.js";
-import {
-  BUG_STATUS_WATCH_TOPIC,
-  bugFollowFilter,
-  type BugFollowTriggerDeps,
-} from "../../bug-report/follow.js";
+import { BUG_STATUS_WATCH_TOPIC, bugFollowFilter, type BugFollowTriggerDeps } from "../../bug-report/follow.js";
 import type { Trigger, TriggerInput } from "../../triggers/index.js";
 
 afterAll(() => mock.restore());
@@ -182,7 +178,7 @@ describe("bug CLI commands", () => {
         throw new Error("sqlite locked");
       },
     });
-    const client = makeClient(async (method, path) => {
+    const client = makeClient(async (_method, path) => {
       if (path.endsWith("/subscribe")) {
         throw new Error("subscribe route missing");
       }
