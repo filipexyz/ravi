@@ -77,6 +77,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "artifacts",
   "audio",
   "bridges",
+  "bug",
   "calendars",
   "channels",
   "chats",

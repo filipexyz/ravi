@@ -9200,6 +9200,377 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let BugListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum reports to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of reports to skip (default: 0)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let BugListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bugs": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "total",
+      "pagination",
+      "bugs",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BugReportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "dossierFile": {
+        "description": "Path to a dossier JSON file",
+        "type": "string"
+      },
+      "dossierJson": {
+        "description": "Full ravi.bug_report/v1 JSON object",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually submit the bug dossier to Ravi Console; default is a dry-run that prints the collection prompt (exit 3)",
+        "type": "boolean"
+      },
+      "severity": {
+        "description": "low|medium|high|critical",
+        "type": "string"
+      },
+      "summary": {
+        "description": "What broke and why it matters",
+        "type": "string"
+      },
+      "surface": {
+        "description": "Product surface, e.g. cli/runtime",
+        "type": "string"
+      },
+      "title": {
+        "description": "Short bug title",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let BugReportReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bug": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "bug",
+      "id",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BugStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "id": {
+        "description": "Bug report id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BugStatusReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bug": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "bug",
+      "id",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CalendarsAvailabilityInputSchema = #"""
   {
     "additionalProperties": false,

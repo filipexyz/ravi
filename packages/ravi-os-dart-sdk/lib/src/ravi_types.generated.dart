@@ -2287,6 +2287,162 @@ class BridgesRevokeReturn {
 
 BridgesRevokeReturn bridgesRevokeReturnFromJson(Object? json) => BridgesRevokeReturn.fromJsonValue(json);
 
+class BugListOptions {
+  const BugListOptions({this.console, this.fields, this.limit, this.offset});
+
+  final String? console;
+  final String? fields;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (fields != null) {
+      into["fields"] = RaviJson.from(fields);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class BugListReturn {
+  const BugListReturn({required this.bugs, required this.consoleUrl, required this.items, required this.pagination, required this.success, required this.total});
+
+  final List<Map<String, RaviJson>> bugs;
+  final String consoleUrl;
+  final List<Map<String, RaviJson>> items;
+  final RaviJson pagination;
+  final bool success;
+  final double total;
+
+  factory BugListReturn.fromJson(Map<String, Object?> json) {
+    return BugListReturn(
+      bugs: raviJsonAsList(json["bugs"], raviJsonAsRaviJsonMap),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], raviJsonAsRaviJsonMap),
+      pagination: RaviJson.from(json["pagination"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static BugListReturn fromJsonValue(Object? json) {
+    return BugListReturn.fromJson(raviJsonObject(json, "BugListReturn"));
+  }
+}
+
+BugListReturn bugListReturnFromJson(Object? json) => BugListReturn.fromJsonValue(json);
+
+class BugReportOptions {
+  const BugReportOptions({this.console, this.dossierFile, this.dossierJson, this.execute, this.severity, this.summary, this.surface, this.title});
+
+  final String? console;
+  final String? dossierFile;
+  final String? dossierJson;
+  final bool? execute;
+  final String? severity;
+  final String? summary;
+  final String? surface;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (dossierFile != null) {
+      into["dossierFile"] = RaviJson.from(dossierFile);
+    }
+    if (dossierJson != null) {
+      into["dossierJson"] = RaviJson.from(dossierJson);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (severity != null) {
+      into["severity"] = RaviJson.from(severity);
+    }
+    if (summary != null) {
+      into["summary"] = RaviJson.from(summary);
+    }
+    if (surface != null) {
+      into["surface"] = RaviJson.from(surface);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class BugReportReturn {
+  const BugReportReturn({required this.bug, required this.consoleUrl, required this.id, required this.success, required this.url});
+
+  final Map<String, RaviJson> bug;
+  final String consoleUrl;
+  final String id;
+  final bool success;
+  final String url;
+
+  factory BugReportReturn.fromJson(Map<String, Object?> json) {
+    return BugReportReturn(
+      bug: raviJsonAsRaviJsonMap(json["bug"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      id: raviJsonAsString(json["id"]),
+      success: raviJsonAsBool(json["success"]),
+      url: raviJsonAsString(json["url"]),
+    );
+  }
+
+  static BugReportReturn fromJsonValue(Object? json) {
+    return BugReportReturn.fromJson(raviJsonObject(json, "BugReportReturn"));
+  }
+}
+
+BugReportReturn bugReportReturnFromJson(Object? json) => BugReportReturn.fromJsonValue(json);
+
+class BugStatusOptions {
+  const BugStatusOptions({this.console});
+
+  final String? console;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+  }
+}
+
+class BugStatusReturn {
+  const BugStatusReturn({required this.bug, required this.consoleUrl, required this.id, required this.success, required this.url});
+
+  final Map<String, RaviJson> bug;
+  final String consoleUrl;
+  final String id;
+  final bool success;
+  final String url;
+
+  factory BugStatusReturn.fromJson(Map<String, Object?> json) {
+    return BugStatusReturn(
+      bug: raviJsonAsRaviJsonMap(json["bug"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      id: raviJsonAsString(json["id"]),
+      success: raviJsonAsBool(json["success"]),
+      url: raviJsonAsString(json["url"]),
+    );
+  }
+
+  static BugStatusReturn fromJsonValue(Object? json) {
+    return BugStatusReturn.fromJson(raviJsonObject(json, "BugStatusReturn"));
+  }
+}
+
+BugStatusReturn bugStatusReturnFromJson(Object? json) => BugStatusReturn.fromJsonValue(json);
+
 class CalendarsAvailabilityOptions {
   const CalendarsAvailabilityOptions({this.calendar, this.fields, this.from, this.limit, this.to});
 
