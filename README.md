@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg" />
@@ -365,6 +367,7 @@ bun run build
 bun run typecheck
 bun run test
 bun run sdk:check
+bun run test:swift-sdk
 ```
 
 Focused checks:
