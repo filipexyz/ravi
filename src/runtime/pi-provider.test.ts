@@ -17,6 +17,7 @@ interface TestQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
   end(): void;
   fail(error: unknown): void;
+  drain(): T[];
 }
 
 class FakePiRpcTransport implements PiRpcTransport {
@@ -44,6 +45,10 @@ class FakePiRpcTransport implements PiRpcTransport {
   async close(): Promise<void> {
     this.closed = true;
     this.closeCalls++;
+  }
+
+  drainPendingEvents(): PiRpcEvent[] {
+    return this.events.drain();
   }
 
   pushEvent(event: PiRpcEvent): void {
@@ -546,7 +551,160 @@ describe("Pi runtime provider", () => {
 
     const promptCount = transport.commands.filter((command) => command.type === "prompt").length;
     expect(promptCount).toBe(6); // initial + 5 backoff retries
-    expect(events.at(-1)).toMatchObject({ type: "turn.failed" });
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      recoverable: true,
+    });
+  });
+
+  it("does not treat leftover agent_end after interrupt as the next turn's complete", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+      toolResults: [],
+    });
+    transport.pushEvent({
+      type: "agent_end",
+      messages: [],
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt" && command.message === "depois") {
+        transport.pushEvent({ type: "agent_start" });
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("segundo turno")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") }),
+      ).events,
+    );
+
+    const terminals = events.filter(
+      (event) => event.type === "turn.complete" || event.type === "turn.failed" || event.type === "turn.interrupted",
+    );
+    expect(terminals.map((event) => event.type)).toEqual(["turn.interrupted", "turn.complete"]);
+    expect(terminals[1]).toMatchObject({
+      type: "turn.complete",
+      usage: {
+        outputTokens: 4,
+      },
+    });
+    expect(transport.commands.filter((command) => command.type === "prompt")).toEqual([
+      expect.objectContaining({ type: "prompt", message: "aborta" }),
+      expect.objectContaining({ type: "prompt", message: "depois" }),
+    ]);
+  });
+
+  it("recovers a stuck Pi runtime after interrupt so the next prompt is accepted", async () => {
+    const stuckTransport = new FakePiRpcTransport();
+    let aborted = false;
+    stuckTransport.responseFor = (command) => {
+      if (command.type === "abort") {
+        aborted = true;
+      }
+      if (command.type === "get_state") {
+        return piResponse(command, {
+          isStreaming: aborted,
+          isProcessing: aborted,
+          sessionFile: "/tmp/pi-session.jsonl",
+        });
+      }
+      return defaultResponse(command);
+    };
+    stuckTransport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+    });
+
+    const liveTransport = new FakePiRpcTransport();
+    liveTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        liveTransport.pushEvent({ type: "agent_start" });
+        liveTransport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("recuperado")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const transports = [stuckTransport, liveTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? liveTransport,
+      }).startSession(createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") })).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.complete",
+      usage: {
+        outputTokens: 4,
+      },
+    });
+    expect(stuckTransport.closed).toBe(true);
+    expect(liveTransport.starts).toHaveLength(1);
+    expect(liveTransport.commands).toContainEqual(expect.objectContaining({ type: "prompt", message: "depois" }));
+    expect(stuckTransport.commands.filter((command) => command.type === "abort").length).toBeGreaterThan(0);
+  });
+
+  it("restarts a Pi transport that stays busy after interrupt instead of looping fake-completes", async () => {
+    const stuckTransport = new FakePiRpcTransport();
+    stuckTransport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        return piResponse(command, { isStreaming: true, isProcessing: true });
+      }
+      if (command.type === "prompt") {
+        if (command.message === "depois") {
+          return {
+            id: command.id,
+            type: "response",
+            command: "prompt",
+            success: false,
+            error:
+              "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+          };
+        }
+        return defaultResponse(command);
+      }
+      return defaultResponse(command);
+    };
+    stuckTransport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+    });
+
+    const liveTransport = new FakePiRpcTransport();
+    liveTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        liveTransport.pushEvent({ type: "agent_start" });
+        liveTransport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("respawned")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const transports = [stuckTransport, liveTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? liveTransport,
+      }).startSession(createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") })).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.failed")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.complete" });
+    expect(stuckTransport.closed).toBe(true);
+    expect(liveTransport.starts.length).toBeGreaterThanOrEqual(1);
   });
 
   it("restarts a dead Pi RPC transport before sending a prompt", async () => {
@@ -623,8 +781,8 @@ function modelBrokerBinding(): NonNullable<RuntimeStartRequest["modelBroker"]> {
   };
 }
 
-async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
-  yield {
+function promptMessage(text: string): RuntimePromptMessage {
+  return {
     type: "user",
     message: {
       role: "user",
@@ -633,6 +791,15 @@ async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
     session_id: "session",
     parent_tool_use_id: null,
   };
+}
+
+async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
+  yield promptMessage(text);
+}
+
+async function* twoPrompts(first: string, second: string): AsyncGenerator<RuntimePromptMessage> {
+  yield promptMessage(first);
+  yield promptMessage(second);
 }
 
 async function collectRuntimeEvents(events: AsyncIterable<RuntimeEvent>): Promise<RuntimeEvent[]> {
@@ -716,6 +883,9 @@ function createTestQueue<T>(): TestQueue<T> {
       while (waiters.length > 0) {
         waiters.shift()!.reject(error);
       }
+    },
+    drain() {
+      return values.splice(0, values.length);
     },
     [Symbol.asyncIterator]() {
       return {

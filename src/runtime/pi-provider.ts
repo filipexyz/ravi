@@ -86,6 +86,7 @@ interface PiRpcSessionState extends Record<string, unknown> {
   model?: PiModel | null;
   thinkingLevel?: unknown;
   isStreaming?: unknown;
+  isProcessing?: unknown;
   isCompacting?: unknown;
   steeringMode?: unknown;
   followUpMode?: unknown;
@@ -128,6 +129,8 @@ export interface PiRpcTransport {
   events: AsyncIterable<PiRpcEvent>;
   start(input: PiRpcStartInput): Promise<void> | void;
   send(command: PiRpcCommand): Promise<PiRpcResponse>;
+  /** Discard events already queued from a previous turn without blocking. */
+  drainPendingEvents?(): PiRpcEvent[];
   close(): Promise<void>;
 }
 
@@ -135,6 +138,7 @@ interface AsyncQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
   end(): void;
   fail(error: unknown): void;
+  drain(): T[];
 }
 
 interface PendingRequest {
@@ -146,6 +150,12 @@ interface PendingRequest {
 interface PiSessionRuntimeState {
   activeTurn: boolean;
   interrupted: boolean;
+  /**
+   * After interrupt/fail, leftover `agent_end` / `turn_end` from the previous
+   * Pi run can still be in-flight. Ignore those as terminals until the next
+   * prompt observes `agent_start` or `turn_start`.
+   */
+  ignoreStaleTerminals: boolean;
   currentState?: PiRpcSessionState;
   started: boolean;
   transport?: PiRpcTransport;
@@ -254,6 +264,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       const state: PiSessionRuntimeState = {
         activeTurn: false,
         interrupted: false,
+        ignoreStaleTerminals: false,
         started: false,
         transport: initialTransport,
         pendingSteers: [],
@@ -410,6 +421,9 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
 
   return {
     events: queue,
+    drainPendingEvents() {
+      return queue.drain();
+    },
     async start(input) {
       if (child) {
         throw new Error("Pi RPC transport is already started");
@@ -584,6 +598,8 @@ async function* runPiTurns(
         turnIndex,
         itemIndex: 0,
         state: state.currentState,
+        ignoreStaleTerminals: state.ignoreStaleTerminals,
+        lifecycleStarted: !state.ignoreStaleTerminals,
       };
 
       state.activeTurn = true;
@@ -592,21 +608,34 @@ async function* runPiTurns(
         void safePiCommand(transport, { type: "abort" });
       };
       abortSignal.addEventListener("abort", abortListener, { once: true });
+      let lastTerminalFailed = false;
+      let lastTerminalInterrupted = false;
 
       try {
         let promptResponse: PiRpcResponse;
         try {
-          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
+          promptResponse = await sendPiPromptOrRecover(transport, prompt, abortSignal, restartTransport, state);
         } catch (error) {
           if (!isPiTransportDisconnectedError(error) || !(await restartTransport())) {
             throw error;
           }
-          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
+          state.ignoreStaleTerminals = false;
+          context.ignoreStaleTerminals = false;
+          context.lifecycleStarted = true;
+          promptResponse = await sendPiPromptOrRecover(
+            state.transport ?? transport,
+            prompt,
+            abortSignal,
+            restartTransport,
+            state,
+          );
         }
         if (!promptResponse.success) {
+          lastTerminalFailed = true;
           const terminal = terminalTracker.fail({
             error: promptResponse.error ?? "Pi prompt was rejected",
             recoverable: true,
+            ...(isPiBusyResponse(promptResponse) ? { failureKind: "transport" as const } : {}),
             rawEvent: promptResponse,
             metadata: buildPiEventMetadata(promptResponse, context),
           });
@@ -637,6 +666,11 @@ async function* runPiTurns(
           }
 
           const event = next.value;
+          if (event.type === "agent_start" || event.type === "turn_start") {
+            context.lifecycleStarted = true;
+            context.ignoreStaleTerminals = false;
+            state.ignoreStaleTerminals = false;
+          }
           for (const runtimeEvent of normalizePiEvent(event, context)) {
             if (!terminalTracker.accept(runtimeEvent)) {
               continue;
@@ -653,6 +687,12 @@ async function* runPiTurns(
             attachPiSkillVisibility(terminal, options.skillVisibility);
             if (terminal.type === "turn.complete") {
               state.currentState = context.state;
+            }
+            if (terminal.type === "turn.failed") {
+              lastTerminalFailed = true;
+            }
+            if (terminal.type === "turn.interrupted") {
+              lastTerminalInterrupted = true;
             }
             yield terminal;
             break;
@@ -686,7 +726,20 @@ async function* runPiTurns(
         }
       } finally {
         abortSignal.removeEventListener("abort", abortListener);
+        const interrupted = state.interrupted || abortSignal.aborted;
         state.activeTurn = false;
+        drainPendingPiEvents(transport);
+        if (!abortSignal.aborted && (interrupted || lastTerminalFailed || lastTerminalInterrupted)) {
+          const idle = await recoverPiAfterInterrupt(transport, state);
+          state.ignoreStaleTerminals = true;
+          context.ignoreStaleTerminals = true;
+          if (!idle && (await restartTransport())) {
+            state.ignoreStaleTerminals = false;
+            context.ignoreStaleTerminals = false;
+          }
+        } else if (interrupted || lastTerminalInterrupted) {
+          state.ignoreStaleTerminals = true;
+        }
         state.interrupted = false;
       }
     }
@@ -706,6 +759,8 @@ interface PiEventContext {
   activeTurnId?: string;
   state?: PiRpcSessionState;
   lastAssistantMessage?: PiAgentMessage;
+  ignoreStaleTerminals?: boolean;
+  lifecycleStarted?: boolean;
 }
 
 function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEvent[] {
@@ -802,6 +857,9 @@ async function maybeBuildPiTerminalEvent(
   terminalTracker: ReturnType<typeof createRuntimeTerminalEventTracker>,
 ): Promise<Extract<RuntimeEvent, { type: "turn.complete" | "turn.failed" | "turn.interrupted" }> | null> {
   const rawEvent = event as Record<string, unknown>;
+  if (shouldIgnoreStalePiTerminal(event, context)) {
+    return null;
+  }
 
   if (event.type === "turn_end") {
     const message = asPiAgentMessage(event.message);
@@ -1065,8 +1123,57 @@ function sendPiPrompt(transport: PiRpcTransport, prompt: string): Promise<PiRpcR
 
 export function isPiBusyResponse(response: PiRpcResponse): boolean {
   if (response.success) return false;
-  const error = typeof response.error === "string" ? response.error : "";
-  return error.includes("already processing");
+  return isPiAlreadyProcessingError(response.error);
+}
+
+export function isPiAlreadyProcessingError(error: unknown): boolean {
+  const text = typeof error === "string" ? error : "";
+  return text.toLowerCase().includes("already processing");
+}
+
+function isPiSessionBusy(session?: PiRpcSessionState): boolean {
+  return session?.isStreaming === true || session?.isProcessing === true || session?.isCompacting === true;
+}
+
+function drainPendingPiEvents(transport: PiRpcTransport): PiRpcEvent[] {
+  return transport.drainPendingEvents?.() ?? [];
+}
+
+async function recoverPiAfterInterrupt(transport: PiRpcTransport, state: PiSessionRuntimeState): Promise<boolean> {
+  await safePiCommand(transport, { type: "abort" });
+  drainPendingPiEvents(transport);
+  const current = await readPiState(transport, state.currentState);
+  state.currentState = current;
+  return !isPiSessionBusy(current);
+}
+
+function shouldIgnoreStalePiTerminal(event: PiRpcEvent, context: PiEventContext): boolean {
+  if (!context.ignoreStaleTerminals || context.lifecycleStarted) {
+    return false;
+  }
+  return event.type === "turn_end" || event.type === "agent_end";
+}
+
+async function sendPiPromptOrRecover(
+  transport: PiRpcTransport,
+  prompt: string,
+  signal: AbortSignal,
+  restartTransport: () => Promise<boolean>,
+  state: PiSessionRuntimeState,
+): Promise<PiRpcResponse> {
+  const response = await sendPiPromptWithBusyRetry(transport, prompt, signal);
+  if (!isPiBusyResponse(response) || signal.aborted) {
+    return response;
+  }
+  if (!(await restartTransport())) {
+    return response;
+  }
+  state.ignoreStaleTerminals = false;
+  const nextTransport = state.transport;
+  if (!nextTransport) {
+    return response;
+  }
+  return sendPiPromptWithBusyRetry(nextTransport, prompt, signal);
 }
 
 function piPromptBackoffMs(attempt: number): number | undefined {
@@ -1224,6 +1331,9 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
       while (waiters.length > 0) {
         waiters.shift()!.reject(error);
       }
+    },
+    drain() {
+      return values.splice(0, values.length);
     },
     [Symbol.asyncIterator]() {
       return {
