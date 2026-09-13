@@ -5,6 +5,8 @@
 - Provider id is `pi`.
 - Capability matrix includes generic extended fields before provider is enabled broadly.
 - Restricted agents are accepted because `tools.permissionMode` is `ravi-host` and `supportsToolHooks` is true.
+- Simulated extension load failure (missing `ravi.permission.hooks.ready` handshake) MUST fail the turn with `failureKind=transport`, MUST NOT send `prompt`, and MUST NOT emit `tool.started`. Capability advertisement staying `ravi-host` while tools run ungoverned is forbidden.
+- A pre-handshake `tool_execution_start` or a transport restart that comes back without the handshake MUST fail closed the same way.
 - A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with `confirmed: false` and blocks the tool.
 - The same path allows a granted Read/tool call.
 - Bash requires both `canUseTool("Bash")` and `authorizeCommandExecution`. Missing handlers, thrown authorization, and unconditional/observation denials fail closed.

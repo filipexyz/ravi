@@ -409,6 +409,23 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the Pi provider focused tests are in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      [
+        "src/runtime/pi-provider.ts",
+        "src/runtime/pi-tool-permissions.ts",
+        "src/runtime/pi-provider.test.ts",
+        "src/runtime/pi-tool-permissions.test.ts",
+      ],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("passes when the Ravi env file focused test is in the diff", () => {
     const cwd = makeWorkspace();
 
