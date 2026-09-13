@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isSkillAuthorizedForAgent } from "./allowed-skills.js";
+import { extractRequestedSkillFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
   RuntimeApprovalQuestion,
@@ -71,6 +73,13 @@ export default function (pi) {
 export interface PiToolPermissionHandlers {
   canUseTool?: RuntimeToolPermissionHandler;
   approveRuntimeRequest?: RuntimeApprovalHandler;
+  /**
+   * Canonical allowlist already applied to the Pi catalog. When present and
+   * non-empty, skill invocation is gated against this list (hard deny).
+   */
+  allowedSkills?: readonly string[];
+  /** Used when `allowedSkills` is absent so Invariant F grandfather still applies. */
+  agentId?: string;
 }
 
 export interface PiToolPermissionDecision {
@@ -136,6 +145,9 @@ export function mapPiToolNameToRavi(name?: string): string {
   }
   if (normalized.includes("websearch") || normalized.includes("webquery")) {
     return "WebSearch";
+  }
+  if (normalized === "skill" || normalized === "skillshow" || normalized.includes("skillshow")) {
+    return "Skill";
   }
   return raw || "tool";
 }
@@ -250,7 +262,22 @@ export async function authorizePiToolCall(
     }
   }
 
+  const requestedSkill = extractRequestedSkillFromToolCall(mapped, input);
+  if (requestedSkill && !isPiSkillAuthorized(requestedSkill, handlers)) {
+    return {
+      allowed: false,
+      reason: `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`,
+    };
+  }
+
   return { allowed: true };
+}
+
+function isPiSkillAuthorized(skillName: string, handlers: PiToolPermissionHandlers): boolean {
+  if (handlers.allowedSkills && handlers.allowedSkills.length > 0) {
+    return isSkillNameAuthorizedOnAllowlist(skillName, handlers.allowedSkills);
+  }
+  return isSkillAuthorizedForAgent(handlers.agentId, skillName);
 }
 
 export async function resolvePiExtensionUiResponse(

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertSkillGrant, dbDeleteSkillGrant } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { BASELINE_SYSTEM_SKILL_SLUGS, resolveAgentSkills } from "./allowed-skills.js";
+import { BASELINE_SYSTEM_SKILL_SLUGS, isSkillAuthorizedForAgent, resolveAgentSkills } from "./allowed-skills.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId, source: "test" };
@@ -163,5 +163,13 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(resolved.allowlist).not.toContain(`my-custom:org-thing`);
     expect(resolved.allowlist).not.toContain(`custom-org-thing`);
     expect(resolved.provenance.fromGrants).toEqual([exoticSlug]);
+  });
+
+  it("hard-denies a skill that is not on the agent's allowlist", () => {
+    dbUpsertSkillGrant({ agentId: "pi-agent", skillName: "gmail-pack" });
+    expect(isSkillAuthorizedForAgent("pi-agent", "gmail-pack")).toBe(true);
+    expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-sessions")).toBe(true);
+    expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-whatsapp-manager")).toBe(false);
+    expect(isSkillAuthorizedForAgent(undefined, "ravi-system-whatsapp-manager")).toBe(true);
   });
 });

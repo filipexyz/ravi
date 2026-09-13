@@ -5,6 +5,7 @@ import {
   findInstalledSkill,
   findSkillByName,
   listCatalogSkills,
+  listInstalledSkills,
   slugifySkillName,
 } from "../skills/manager.js";
 import type {
@@ -581,15 +582,118 @@ function resolveLoadedSkillId(
   return input.outputSkill?.name ?? input.resolved?.name ?? input.requestedName;
 }
 
+const DEDICATED_SKILL_TOOL_NAMES = new Set(["skill", "skills_show", "ravi_skills_show"]);
+const SKILL_FILE_PATH_PATTERN = /(?:^|[/\s"'`])skills\/([^/]+)\/SKILL\.md\b/i;
+
 function extractDedicatedSkillShowName(toolName: string | undefined, toolInput: unknown): string | null {
   const normalized = toolName?.trim().toLowerCase().replace(/[-.]/g, "_");
-  if (!normalized || !["skills_show", "ravi_skills_show"].includes(normalized)) {
+  if (!normalized || !DEDICATED_SKILL_TOOL_NAMES.has(normalized)) {
     return null;
   }
   if (!isRecord(toolInput)) {
     return null;
   }
   return firstNonEmptyString(toolInput.name, toolInput.skill, toolInput.skillName, toolInput.id);
+}
+
+/**
+ * Detect a skill the tool is trying to load or invoke. Covers dedicated Skill
+ * tools, `ravi skills show`, and Read/Edit of `skills/<name>/SKILL.md`.
+ */
+export function extractRequestedSkillFromToolCall(
+  toolName: string | undefined,
+  toolInput: Record<string, unknown> | undefined,
+): string | null {
+  const dedicated = extractDedicatedSkillShowName(toolName, toolInput);
+  if (dedicated) {
+    return dedicated;
+  }
+
+  const command = extractCommandFromToolInput(toolInput);
+  if (command) {
+    const fromCommand = extractRequestedSkillFromCommandLine(command);
+    if (fromCommand) {
+      return fromCommand;
+    }
+  }
+
+  if (!toolInput) {
+    return null;
+  }
+  const path = firstNonEmptyString(
+    toolInput.path,
+    toolInput.file_path,
+    toolInput.filePath,
+    toolInput.target_file,
+    toolInput.targetFile,
+    toolInput.filename,
+    toolInput.file,
+  );
+  return path ? extractSkillNameFromFilesystemPath(path) : null;
+}
+
+export function extractRequestedSkillFromCommandLine(command: string): string | null {
+  return extractRaviSkillShowNameFromCommand(command) ?? extractSkillNameFromFilesystemPath(command);
+}
+
+export function extractSkillNameFromFilesystemPath(value: string): string | null {
+  const normalized = normalizePathForMatch(value);
+  if (!/(?:^|\/)skills\/[^/]+/i.test(normalized) && !/SKILL\.md$/i.test(normalized)) {
+    return null;
+  }
+  const known = resolveSkillNameFromKnownSkillPaths(normalized);
+  if (known) {
+    return known;
+  }
+
+  const skillFile = SKILL_FILE_PATH_PATTERN.exec(normalized);
+  if (skillFile?.[1]) {
+    return skillFile[1];
+  }
+  const skillDir = /(?:^|\/)skills\/([^/]+)\/SKILL\.md$/i.exec(normalized);
+  return skillDir?.[1] ?? null;
+}
+
+function resolveSkillNameFromKnownSkillPaths(normalizedPath: string): string | null {
+  const known = [...listCatalogSkills(), ...listInstalledSkills({ includeCodex: true })];
+  for (const skill of known) {
+    const skillFile = normalizePathForMatch(skill.skillFilePath);
+    const skillDir = normalizePathForMatch(skill.path);
+    if (normalizedPath === skillFile || normalizedPath === skillDir) {
+      return skill.name;
+    }
+    if (skillFile && (normalizedPath.endsWith(`/${skillFile}`) || skillFile.endsWith(`/${normalizedPath}`))) {
+      return skill.name;
+    }
+    if (skillDir && (normalizedPath === skillDir || normalizedPath.startsWith(`${skillDir}/`))) {
+      return skill.name;
+    }
+    if (skillDir && normalizedPath.endsWith(`/${skillDir}/SKILL.md`)) {
+      return skill.name;
+    }
+  }
+  return null;
+}
+
+/**
+ * Allowlist match that also accepts catalog/plugin aliases
+ * (`app-creator` ↔ `ravi-dev-app-creator`).
+ */
+export function isSkillNameAuthorizedOnAllowlist(skillName: string, allowlist: readonly string[]): boolean {
+  if (skillNameMatchesAllowlist(skillName, allowlist)) {
+    return true;
+  }
+  const resolved = findSkillByName(listCatalogSkills(), skillName) ?? findInstalledSkill(skillName);
+  if (!resolved) {
+    return false;
+  }
+  const candidates = [resolved.name];
+  if (resolved.pluginName) {
+    candidates.push(`${resolved.pluginName}-${resolved.name}`);
+    candidates.push(`${resolved.pluginName}:${resolved.name}`);
+    candidates.push(`${resolved.pluginName}-${basename(resolved.path)}`);
+  }
+  return candidates.some((candidate) => skillNameMatchesAllowlist(candidate, allowlist));
 }
 
 function extractCommandFromToolInput(toolInput: unknown): string | null {

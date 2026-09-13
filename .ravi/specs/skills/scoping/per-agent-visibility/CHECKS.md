@@ -13,6 +13,9 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [x] Cold start e session resume preservam o catálogo filtrado.
 - [x] A redução do catálogo diminui os input tokens do cold start de forma mensurável.
 - [x] Permissões de ferramentas continuam independentes da visibilidade de skills.
+- [x] Pi: Read/`Skill` de skill não concedida é negado no permission-extension authorize path com `SKILL_NOT_AUTHORIZED`.
+- [x] Pi: Read/`Skill` de skill concedida é autorizado; arquivos comuns (ex. `README.md`) não disparam o gate.
+- [x] Pi: o catálogo do system prompt continua filtrado pela mesma allowlist.
 
 ## Cenários herdados
 

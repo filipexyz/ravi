@@ -2,6 +2,7 @@ import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbListSkillGrantsForAgent } from "../router/router-db.js";
 import type { ContextCapability } from "../router/router-db.js";
+import { isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 
 /**
  * Per-agent skill visibility — provider-agnostic core.
@@ -134,4 +135,15 @@ export function resolveAgentSkills(
       fromGrants: grantNames,
     },
   };
+}
+
+/**
+ * Hard allowlist gate (Invariant G). Agents without configuration stay
+ * grandfathered (Invariant F).
+ */
+export function isSkillAuthorizedForAgent(agentId: string | undefined, skillName: string): boolean {
+  if (!agentId?.trim()) return true;
+  const resolved = resolveAgentSkills(agentId);
+  if (!resolved.hasConfiguration) return true;
+  return isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist);
 }

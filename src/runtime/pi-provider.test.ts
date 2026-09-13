@@ -184,6 +184,54 @@ describe("Pi runtime provider", () => {
     expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-allow", confirmed: true }]);
   });
 
+  it("denies unauthorized skill reads over the permission extension and allows a granted skill", async () => {
+    const deniedTransport = new FakePiRpcTransport();
+    deniedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-skill-deny",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" },
+      }),
+    });
+    deniedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: deniedTransport }).startSession(
+        createStartRequest("skill deny", {
+          canUseTool: async () => ({ behavior: "allow" }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        }),
+      ).events,
+    );
+    expect(deniedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-skill-deny", confirmed: false }]);
+
+    const allowedTransport = new FakePiRpcTransport();
+    allowedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-skill-allow",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: "/workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md" },
+      }),
+    });
+    allowedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: allowedTransport }).startSession(
+        createStartRequest("skill allow", {
+          canUseTool: async () => ({ behavior: "allow" }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        }),
+      ).events,
+    );
+    expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-skill-allow", confirmed: true }]);
+  });
+
   it("fails closed when the permission extension handshake never arrives", async () => {
     const transport = new FakePiRpcTransport();
     transport.emitPermissionHandshake = false;

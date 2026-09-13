@@ -202,6 +202,54 @@ describe("ravi skills show resource authorization", () => {
     expect(denied.reason).toContain("SKILL_NOT_AUTHORIZED");
     expect(allowed.approved).toBe(true);
   });
+
+  it("blocks an unauthorized skill at authorizeToolUse for Read and Skill tools", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-tool-authorization",
+      runtimeProvider: "pi",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-tool-authorization",
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Read", source: "test" },
+        { permission: "use", objectType: "tool", objectId: "Skill", source: "test" },
+      ],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-tool-authorization",
+      toolContext: {},
+    });
+
+    const deniedRead = await services.authorizeToolUse({
+      toolName: "Read",
+      input: { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" },
+    });
+    const deniedSkill = await services.authorizeToolUse({
+      toolName: "Skill",
+      input: { skill: "ravi-system-whatsapp-manager" },
+    });
+    const allowedRead = await services.authorizeToolUse({
+      toolName: "Read",
+      input: { path: "README.md" },
+    });
+    const allowedSkill = await services.authorizeToolUse({
+      toolName: "Skill",
+      input: { name: "allowed-skill" },
+    });
+
+    expect(deniedRead.approved).toBe(false);
+    expect(deniedRead.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(deniedSkill.approved).toBe(false);
+    expect(deniedSkill.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(allowedRead.approved).toBe(true);
+    expect(allowedSkill.approved).toBe(true);
+  });
 });
 
 describe("runtime host skill-gate enforcement", () => {
