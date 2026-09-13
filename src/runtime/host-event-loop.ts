@@ -1123,8 +1123,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // Tight timeout for the well-known codex bug: after we deliver a tool result,
   // codex's app-server occasionally drops the JSON-RPC callback and never asks
   // the model for the next step. The agent can't make progress until we abort.
-  // 3 minutes is enough for legitimate xhigh thinking on most workloads while
-  // recovering quickly from the silent hang.
+  // Compaction is provider work and can legitimately exceed this window, so
+  // suspend the watch until the provider leaves compacting status.
   // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
   const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
     1_000,
@@ -1137,6 +1137,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   );
   const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  let providerInactivityWatchArmed = false;
   const toolLivenessLease = createToolLivenessLease({
     inactivityTimeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
     onInactive: (toolUseId) => {
@@ -1181,6 +1182,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     },
   });
   const clearProviderInactivityWatch = () => {
+    providerInactivityWatchArmed = false;
     if (providerInactivityTimer !== undefined) {
       clearTimeout(providerInactivityTimer);
       providerInactivityTimer = undefined;
@@ -1188,8 +1190,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const armProviderInactivityWatch = () => {
     clearProviderInactivityWatch();
+    if (streaming.done || !streaming.turnActive || streaming.abortController.signal.aborted) return;
+    // Keep the watch armed while suspended, including result-delivered events
+    // that arrive during compaction. The next non-compacting status starts a
+    // fresh inactivity window rather than charging for compaction time.
+    providerInactivityWatchArmed = true;
+    if (streaming.compacting) return;
     providerInactivityTimer = setTimeout(() => {
       providerInactivityTimer = undefined;
+      providerInactivityWatchArmed = false;
+      if (streaming.done || !streaming.turnActive || streaming.compacting || streaming.abortController.signal.aborted)
+        return;
       log.warn("Provider inactive after tool result — aborting session", {
         sessionName,
         timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
@@ -2111,11 +2122,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+      // Update compaction before asynchronous projection so the after-tool
+      // watch cannot expire while handling the compaction-start event itself.
+      const wasCompacting = streaming.compacting;
+      if (event.type === "status") streaming.compacting = event.status === "compacting";
 
       // Any event from the provider counts as activity — reset the inactivity watchdog.
       // The watchdog is armed after tool.result_delivered (Codex) or after
       // tool.completed for providers that finish the tool in-process (Grok/Claude/Pi).
-      if (providerInactivityTimer !== undefined && event.type !== "tool.result_delivered") {
+      if (providerInactivityWatchArmed && event.type !== "tool.result_delivered") {
         armProviderInactivityWatch();
       }
 
@@ -2189,6 +2204,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 : "failed"
               : undefined;
       if (receivedTerminalStatus) {
+        clearProviderInactivityWatch();
         const terminal = terminalizeCurrentCrashRecoveryAttempt(receivedTerminalStatus);
         if (!terminal) {
           log.warn("Ignoring provider terminal event after crash recovery ownership loss", {
@@ -2276,8 +2292,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       // Track compaction status - block interrupts while compacting
       if (event.type === "status") {
         const status = event.status;
-        const wasCompacting = streaming.compacting;
-        streaming.compacting = status === "compacting";
         const compactionChanged = streaming.compacting !== wasCompacting;
         // Snapshot whether compaction announcements may be externalized for the
         // turn effectively executing. Falls back to source-only classification

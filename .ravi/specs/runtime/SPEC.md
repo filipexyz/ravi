@@ -83,6 +83,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Cloud trace export MUST be asynchronous and best-effort by default. A failed export MUST NOT fail, block, or delay local runtime execution.
 - Background starts such as cron, trigger, heartbeat, task, and observation turns MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
 - Provider turns that stop emitting runtime events MUST be bounded by a host-side inactivity timeout. On timeout the event loop MUST record `session.timeout` plus a terminal `turn.failed` snapshot with status `timeout`, request provider interruption before closing the transport when supported, preserve pending/current turn messages, and restart from the stashed queue when possible.
+- Provider compaction MUST suspend the after-tool inactivity timeout, including tool-result deliveries received while compacting. Leaving compaction MUST give an armed watch a fresh inactivity window; terminal events MUST clear it. Compaction time MUST NOT be classified as post-tool provider silence.
 - A provider adapter that can reconcile ambiguous delivery MUST advertise that strategy on its live session handle. Such a recovery MUST keep one stable client delivery id and reconcile it against compatible resumed provider state before deciding whether to reattach, hydrate a completed turn, or replay; failed/interrupted terminal replay additionally requires durable host authority. Without the advertised strategy, the host MUST NOT send an unsafe ambiguous turn back to the provider.
 - Inactivity recovery MUST have a bounded per-session circuit breaker. Exhaustion MUST remain internally observable and notify the operator without exposing raw runtime errors in an end-user channel.
 - Stalled-turn recovery MUST be explicit and traceable. Silent clearing of `turnActive` or dropping queued messages is forbidden.
@@ -96,9 +97,8 @@ The runtime abstraction exists so new execution engines can be added without cop
 
 ## Validation
 
-- `bun test src/runtime/provider-contract.test.ts`
+- `bun run test:runtime-host` (also included in `bun run test`)
 - `bun test src/runtime/session-dispatcher.test.ts src/runtime/delivery-queue.test.ts`
-- `bun test src/runtime/session-trace.test.ts`
 - `bun test src/runtime/runtime-session-continuity.test.ts src/runtime/session-resolver.test.ts`
 - `bun test src/bot.runtime-guards.test.ts`
 - `bunx tsc --noEmit --pretty false`

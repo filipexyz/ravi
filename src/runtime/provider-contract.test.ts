@@ -170,7 +170,17 @@ describe("runtime provider contract", () => {
     expect(createCodexRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
         supported: true,
-        operations: ["thread.list", "thread.read", "thread.rollback", "thread.fork", "turn.steer", "turn.interrupt"],
+        operations: [
+          "goal.get",
+          "goal.set",
+          "goal.clear",
+          "thread.list",
+          "thread.read",
+          "thread.rollback",
+          "thread.fork",
+          "turn.steer",
+          "turn.interrupt",
+        ],
       },
       dynamicTools: {
         mode: "none",

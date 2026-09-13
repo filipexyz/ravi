@@ -3097,6 +3097,81 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-mid-then-continue")?.status).toBe("complete");
   });
 
+  it.each([
+    { delivery: "in-process", hangsAfterCompaction: false },
+    { delivery: "in-process", hangsAfterCompaction: true },
+    { delivery: "callback", hangsAfterCompaction: false },
+    { delivery: "callback", hangsAfterCompaction: true },
+  ])("pauses after-tool inactivity during compaction (%j)", async ({ delivery, hangsAfterCompaction }) => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    const turnId = `turn-tool-compaction-${delivery}-${hangsAfterCompaction}`;
+    seedAdapterTrace(streaming, turnId);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSessionThenHang([]);
+    const hangEvents = runtimeSession.events;
+    let abortedDuringCompaction: boolean | undefined;
+    let compactionCompletedAt = 0;
+    if (delivery === "callback") runtimeSession.provider = "codex";
+    runtimeSession.events = (async function* (): AsyncGenerator<RuntimeEvent> {
+      yield { type: "tool.started", toolUse: { id: "tool-before-compact", name: "shell", input: {} } };
+      yield {
+        type: "tool.completed",
+        toolUseId: "tool-before-compact",
+        toolName: "shell",
+        content: "done",
+        ...(delivery === "callback" ? { metadata: { item: { type: "dynamic_tool_call" } } } : {}),
+      };
+      yield { type: "status", status: "compacting" };
+      if (delivery === "callback") {
+        // A delayed callback can arrive after compaction has already started.
+        yield { type: "tool.result_delivered", toolCallId: "tool-before-compact" };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      abortedDuringCompaction = streaming.abortController.signal.aborted;
+      compactionCompletedAt = Date.now();
+      yield { type: "status", status: "thinking" };
+      if (hangsAfterCompaction) {
+        yield* hangEvents;
+      } else {
+        yield { type: "assistant.message", text: "Finished after compaction." };
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-compaction",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      }
+    })();
+
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(abortedDuringCompaction).toBe(false);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(hangsAfterCompaction);
+    const terminals = listSessionEvents(SESSION_KEY).filter((event) =>
+      ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.eventType),
+    );
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.eventType).toBe(hangsAfterCompaction ? "turn.failed" : "turn.complete");
+    expect(getSessionTurn(turnId)?.status).toBe(hangsAfterCompaction ? "timeout" : "complete");
+    if (hangsAfterCompaction) {
+      expect(terminals[0]!.timestamp - compactionCompletedAt).toBeGreaterThanOrEqual(1_000);
+      expect(terminals[0]?.payloadJson).toMatchObject({ abort_reason: "provider_inactive" });
+    }
+  });
+
   it("terminalizes a mid-turn utterance plus tool hang instead of leaving only the mid row", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";

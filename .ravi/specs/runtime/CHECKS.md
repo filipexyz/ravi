@@ -21,6 +21,7 @@
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.
 - Internal `turn.failed` diagnostics retain the raw error while channel responses, live-state summaries, waited CLI errors, and observation prompts omit local paths, runtime exception details, and credential-shaped values.
 - Provider inactivity requests interruption before the runtime transport closes.
+- After a tool, compaction may exceed the post-tool inactivity window without aborting the turn. This applies both to in-process tool completions and callbacks delivered during compaction. A provider that goes silent after leaving compaction still times out after a fresh full window.
 - Ambiguous inactivity recovery preserves the logical delivery id and marks only the active turn for reconciliation.
 - A second consecutive inactivity for the same session is suppressed, traced, and sent to the operator alert path instead of the user channel.
 
