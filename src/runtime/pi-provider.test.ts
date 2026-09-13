@@ -151,9 +151,7 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(deniedTransport.writes).toEqual([
-      { type: "extension_ui_response", id: "ui-deny", confirmed: false },
-    ]);
+    expect(deniedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-deny", confirmed: false }]);
 
     const allowedTransport = new FakePiRpcTransport();
     allowedTransport.pushEvent({
@@ -175,9 +173,7 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(allowedTransport.writes).toEqual([
-      { type: "extension_ui_response", id: "ui-allow", confirmed: true },
-    ]);
+    expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-allow", confirmed: true }]);
   });
 
   it("wires prepareSession command approvals through Ravi host services", async () => {

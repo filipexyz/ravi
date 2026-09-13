@@ -37,21 +37,29 @@ describe("Pi tool permission bridge", () => {
   });
 
   it("denies a restricted policy and allows the same tool when granted", async () => {
-    const denied = await authorizePiToolCall("bash", { command: "git status" }, {
-      canUseTool: async (toolName) => ({
-        behavior: "deny",
-        reason: `${toolName} permission denied.`,
-      }),
-      approveRuntimeRequest: async () => ({ approved: true }),
-    });
+    const denied = await authorizePiToolCall(
+      "bash",
+      { command: "git status" },
+      {
+        canUseTool: async (toolName) => ({
+          behavior: "deny",
+          reason: `${toolName} permission denied.`,
+        }),
+        approveRuntimeRequest: async () => ({ approved: true }),
+      },
+    );
     expect(denied).toEqual({ allowed: false, reason: "Bash permission denied." });
 
-    const allowed = await authorizePiToolCall("read", { path: "README.md" }, {
-      canUseTool: async (toolName) => ({
-        behavior: toolName === "Read" ? "allow" : "deny",
-        reason: `${toolName} permission denied.`,
-      }),
-    });
+    const allowed = await authorizePiToolCall(
+      "read",
+      { path: "README.md" },
+      {
+        canUseTool: async (toolName) => ({
+          behavior: toolName === "Read" ? "allow" : "deny",
+          reason: `${toolName} permission denied.`,
+        }),
+      },
+    );
     expect(allowed).toEqual({ allowed: true });
   });
 
@@ -83,10 +91,14 @@ describe("Pi tool permission bridge", () => {
 
   it("denies bash when the tool is granted but command execution is blocked", async () => {
     await expect(
-      authorizePiToolCall("bash", { command: "rm -rf /" }, {
-        canUseTool: async () => ({ behavior: "allow" }),
-        approveRuntimeRequest: async () => ({ approved: false, reason: "rm is blocked by Ravi command policy." }),
-      }),
+      authorizePiToolCall(
+        "bash",
+        { command: "rm -rf /" },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+          approveRuntimeRequest: async () => ({ approved: false, reason: "rm is blocked by Ravi command policy." }),
+        },
+      ),
     ).resolves.toEqual({
       allowed: false,
       reason: "rm is blocked by Ravi command policy.",
@@ -95,9 +107,13 @@ describe("Pi tool permission bridge", () => {
 
   it("denies bash when a command is present but no executable authorizer exists", async () => {
     await expect(
-      authorizePiToolCall("bash", { command: "git status" }, {
-        canUseTool: async () => ({ behavior: "allow" }),
-      }),
+      authorizePiToolCall(
+        "bash",
+        { command: "git status" },
+        {
+          canUseTool: async () => ({ behavior: "allow" }),
+        },
+      ),
     ).resolves.toEqual({
       allowed: false,
       reason: "Pi command execution authorizer is unavailable.",
@@ -106,11 +122,15 @@ describe("Pi tool permission bridge", () => {
 
   it("fails closed when authorization throws", async () => {
     await expect(
-      authorizePiToolCall("read", { path: "secret.md" }, {
-        canUseTool: async () => {
-          throw new Error("observation plane unresolved");
+      authorizePiToolCall(
+        "read",
+        { path: "secret.md" },
+        {
+          canUseTool: async () => {
+            throw new Error("observation plane unresolved");
+          },
         },
-      }),
+      ),
     ).resolves.toEqual({
       allowed: false,
       reason: "observation plane unresolved",
