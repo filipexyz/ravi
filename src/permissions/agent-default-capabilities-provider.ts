@@ -176,10 +176,31 @@ function compactRuntimePermissionsConfig(config: AgentRuntimePermissionsConfig):
 
 function profileCapabilities(profile: AgentRuntimePermissionProfile | undefined, source: string): ContextCapability[] {
   if (profile !== "full-access") return [];
+  // Break-glass: admin remains the snapshot short-circuit, but Bash PreToolUse
+  // and turn inspection also need an explicit execute/use ceiling so operators
+  // can see `execute:executable:*` on materialized agent and turn contexts.
   return [
     {
       permission: "admin",
       objectType: "system",
+      objectId: "*",
+      source,
+    },
+    {
+      permission: "execute",
+      objectType: "executable",
+      objectId: "*",
+      source,
+    },
+    {
+      permission: "use",
+      objectType: "tool",
+      objectId: "*",
+      source,
+    },
+    {
+      permission: "use",
+      objectType: "toolgroup",
       objectId: "*",
       source,
     },

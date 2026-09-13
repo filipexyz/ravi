@@ -141,7 +141,20 @@ describe("Permission Provider Runtime", () => {
       objectId: "*",
       source: "agent-default-capabilities:agent:trusted-agent",
     });
+    expect(capabilities).toContainEqual({
+      permission: "execute",
+      objectType: "executable",
+      objectId: "*",
+      source: "agent-default-capabilities:agent:trusted-agent",
+    });
+    expect(capabilities).toContainEqual({
+      permission: "use",
+      objectType: "tool",
+      objectId: "*",
+      source: "agent-default-capabilities:agent:trusted-agent",
+    });
     expect(canWithCapabilities(capabilities, "execute", "executable", "omni")).toBe(true);
+    expect(canWithCapabilities(capabilities, "execute", "executable", "ssh")).toBe(true);
   });
 
   it("materializes explicit agent runtime capabilities without growing the bootstrap allowlist", () => {

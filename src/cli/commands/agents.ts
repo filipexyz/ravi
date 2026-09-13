@@ -1250,7 +1250,7 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("profile", {
       required: false,
-      description: "Profile: bootstrap, full-access, none",
+      description: "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
     })
     profile?: string,
     @Option({
@@ -1374,7 +1374,12 @@ export class AgentsCommands {
     } else {
       console.log(`\u2713 Runtime permissions set: ${id} -> ${describeRuntimePermissionConfig(after)}`);
       if (after?.profile === "full-access") {
-        console.log("  Break-glass: materializes admin system:* for the agent and its own automation turns");
+        console.log(
+          "  Break-glass: materializes admin system:*, execute executable:*, and use tool:* for the agent and its own automation turns",
+        );
+        console.log(
+          "  This unlocks the Ravi Bash execute ceiling on the next tool check. Provider-native hooks and unconditional dangerous-pattern blocks still apply.",
+        );
         console.log(
           "  Prefer replacing this with a provider-owned permission profile or narrow explicit capabilities.",
         );
