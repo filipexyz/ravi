@@ -168,6 +168,42 @@ describe("evaluateSkillGate", () => {
   });
 });
 
+describe("ravi skills show resource authorization", () => {
+  it("blocks a non-granted skill at the host boundary and permits a granted skill", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-show-authorization",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-show-authorization",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-show-authorization",
+      toolContext: {},
+    });
+
+    const denied = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-denied-skill --json",
+      input: {},
+    });
+    const allowed = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-allowed-skill --json",
+      input: {},
+    });
+
+    expect(denied.approved).toBe(false);
+    expect(denied.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(allowed.approved).toBe(true);
+  });
+});
+
 describe("runtime host skill-gate enforcement", () => {
   it("never persists or publishes the full command denied by native runtime policy", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;

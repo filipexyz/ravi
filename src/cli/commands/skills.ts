@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { fail } from "../context.js";
+import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
@@ -34,6 +34,7 @@ import {
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
+import { skillNameMatchesAllowlist } from "../../runtime/skill-visibility.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
@@ -631,6 +632,19 @@ export class SkillsCommands {
 
     if (!skill) {
       failSkillNotFound("skills show", name, { asJson, candidates });
+    }
+
+    const runtimeAgentId = hasRuntimeInvocationContext() ? getContext()?.agentId?.trim() : undefined;
+    if (runtimeAgentId) {
+      const visibility = resolveAgentSkills(runtimeAgentId);
+      const skillIdentity = skill.pluginName ? `${skill.pluginName}-${skill.name}` : skill.name;
+      const authorized = !visibility.hasConfiguration || skillNameMatchesAllowlist(skillIdentity, visibility.allowlist);
+      if (!authorized) {
+        contractFail("skills show", "SKILL_NOT_AUTHORIZED", `Skill not authorized for agent: ${skill.name}`, {
+          asJson,
+          details: { suggestedAction: `Grant '${skill.name}' to agent '${runtimeAgentId}' before loading it` },
+        });
+      }
     }
 
     const payload = { skill: serializeSkill(skill, { includeContent: true }) };

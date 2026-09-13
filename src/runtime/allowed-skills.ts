@@ -8,10 +8,9 @@ import type { ContextCapability } from "../router/router-db.js";
  *
  * spec: skills/scoping/per-agent-visibility
  *
- * Produces a per-agent allowlist derived from three sources (Invariant R):
- *   1. BASELINE — kit essencial (Invariant B), sempre presente.
- *   2. System skills DERIVED FROM PERMISSION (Invariant D). No manual mapping.
- *   3. Custom grants (`ravi skills grant`).
+ * Produces a per-agent allowlist from the operational baseline plus either:
+ *   1. explicit grants (`ravi skills grant`), when present; or
+ *   2. system skills derived from permissions for legacy agents without grants.
  *
  * The enforcement layer (claude-provider / codex adapter) is responsible for
  * applying the allowlist to its runtime (Invariant N). Nothing in this module
@@ -121,16 +120,17 @@ export function resolveAgentSkills(
 
   const grants = dbListSkillGrantsForAgent(trimmed);
   const grantNames = grants.flatMap((grant) => expandSkillNames(grant.skillName));
+  const effectiveDerivedNames = grants.length > 0 ? [] : derivedNames;
 
   const hasConfiguration = adminAll || groupCaps.length > 0 || grants.length > 0;
-  const allowlist = [...new Set([...baselineNames, ...derivedNames, ...grantNames])];
+  const allowlist = [...new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames])];
 
   return {
     hasConfiguration,
     allowlist,
     provenance: {
       baseline: baselineNames,
-      fromCapabilities: derivedNames,
+      fromCapabilities: effectiveDerivedNames,
       fromGrants: grantNames,
     },
   };

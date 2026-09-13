@@ -1,6 +1,6 @@
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { spawn } from "node:child_process";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { logger } from "../utils/logger.js";
@@ -16,7 +16,11 @@ import {
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
-import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
+import {
+  buildCodexSkillVisibilitySnapshot,
+  filterSkillNamesByAllowlist,
+  markLoadedFromInstructionSources,
+} from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
   RuntimeApprovalHandler,
@@ -124,6 +128,7 @@ interface CodexCliTurnRequest {
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
+  allowedSkills?: string[];
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
   handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
@@ -192,7 +197,6 @@ interface PendingDynamicToolResult {
 
 interface CodexSkillVisibilityByCwd {
   syncedSkillNames: string[];
-  snapshot: RuntimeSkillVisibilitySnapshot;
 }
 
 export interface CreateCodexRuntimeProviderOptions {
@@ -273,10 +277,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           })
         : syncSkills(input.plugins ?? []);
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
-      skillVisibilityByCwd.set(input.cwd, {
-        syncedSkillNames,
-        snapshot: buildCodexSkillVisibilitySnapshot(syncedSkillNames),
-      });
+      skillVisibilityByCwd.set(input.cwd, { syncedSkillNames });
       return {
         ...(materialized ? { env: materialized.env } : {}),
         ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
@@ -318,21 +319,18 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         activeTurn: null,
         interrupted: false,
       };
-      const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
+      const allSyncedSkillNames = skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [];
+      const syncedSkillNames = input.allowedSkills?.length
+        ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
+        : allSyncedSkillNames;
+      const skillVisibility = buildCodexSkillVisibilitySnapshot(syncedSkillNames);
 
       return {
         provider: "codex",
         ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
         concurrentInputStrategy: "interrupt",
         skillVisibility,
-        events: normalizeCodexEvents(
-          input,
-          transport,
-          defaultModel,
-          state,
-          skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
-          closeTransport,
-        ),
+        events: normalizeCodexEvents(input, transport, defaultModel, state, syncedSkillNames, closeTransport),
         interrupt: async () => {
           if (!state.activeTurn) {
             return;
@@ -370,6 +368,41 @@ function createCodexRuntimeStartRequest(
   return {
     approveRuntimeRequest: createCodexApprovalHandler(hostServices),
   };
+}
+
+export function buildCodexDisabledSkillConfig(
+  inventory: unknown,
+  cwd: string,
+  allowedSkills: readonly string[],
+): Array<{ path: string; enabled: false }> {
+  const root = asRecord(inventory);
+  const rows = Array.isArray(root?.data) ? root.data : [];
+  const targetCwd = resolve(cwd);
+  const row = rows
+    .map(asRecord)
+    .find((candidate) => typeof candidate?.cwd === "string" && resolve(candidate.cwd) === targetCwd);
+  if (!row || !Array.isArray(row.skills)) {
+    throw new Error("Codex skill inventory is unavailable for allowlist enforcement.");
+  }
+
+  const entries = row.skills.map((entry) => {
+    const skill = asRecord(entry);
+    const path = firstString(skill?.path);
+    const name = firstString(skill?.name);
+    if (!path || !name) {
+      throw new Error("Codex skill inventory contains an invalid entry.");
+    }
+    return { path, identity: basename(dirname(path)) };
+  });
+  const selectedNames = new Set(
+    filterSkillNamesByAllowlist(
+      entries.map((entry) => entry.identity),
+      allowedSkills,
+    ),
+  );
+  return entries.flatMap((entry) =>
+    selectedNames.has(entry.identity) ? [] : [{ path: entry.path, enabled: false as const }],
+  );
 }
 
 function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {
@@ -623,6 +656,7 @@ async function* normalizeCodexEvents(
         resume: previousSessionId,
         forkFrom: forkFromSessionId,
         systemPromptAppend,
+        allowedSkills: input.allowedSkills,
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
@@ -1894,6 +1928,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
+    const config: Record<string, unknown> = { model_reasoning_effort: effort };
+    if (input.allowedSkills?.length) {
+      const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
+      config["skills.config"] = buildCodexDisabledSkillConfig(inventory, input.cwd, input.allowedSkills);
+    }
     if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.
       currentThreadId = undefined;
@@ -1911,7 +1950,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           approvalPolicy: "never",
           approvalsReviewer: null,
           sandbox: CODEX_APP_SERVER_SANDBOX,
-          config: { model_reasoning_effort: effort },
+          config,
           baseInstructions: null,
           developerInstructions: null,
           ephemeral: false,
@@ -1925,7 +1964,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
             dynamicTools: null,
@@ -1938,7 +1977,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config,
             serviceName: null,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,

@@ -40,6 +40,8 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
+import { extractRaviSkillShowNameFromCommand, skillNameMatchesAllowlist } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -447,6 +449,22 @@ async function authorizeRuntimeCommandExecution(
   if (!preliminary.allowed && preliminary.denialType === "env_spoofing") {
     emitBashDeniedAudit(command, preliminary, options.agentId);
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const requestedSkill = extractRaviSkillShowNameFromCommand(command);
+  if (requestedSkill) {
+    const visibility = resolveAgentSkills(options.agentId);
+    if (visibility.hasConfiguration && !skillNameMatchesAllowlist(requestedSkill, visibility.allowlist)) {
+      const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+      emitRuntimePolicyDenied(options, {
+        type: "tool",
+        denied: `skill:${requestedSkill}`,
+        reason,
+        command,
+        blockType: "runtime_skill_not_authorized",
+      });
+      return { approved: false, reason };
+    }
   }
 
   const dangerous = checkDangerousPatterns(command);

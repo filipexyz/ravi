@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
-import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { buildCodexDisabledSkillConfig, createCodexRuntimeProvider } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
@@ -1715,6 +1715,93 @@ process.on("SIGTERM", () => {
     const skillVisibility = completion?.session?.params?.skillVisibility as any;
     expect(skillVisibility.loadedSkills).toEqual([]);
     expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
+  });
+
+  it("filters the synchronized catalog with the resolved agent allowlist", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_filtered_skills" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-user-skills-tiny"],
+    });
+
+    provider.prepareSession?.({
+      agentId: "agent-a",
+      cwd: "/tmp/ravi-codex-filtered",
+      plugins: [],
+    });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd: "/tmp/ravi-codex-filtered",
+        allowedSkills: ["events"],
+      }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-events");
+    expect(calls[0]?.systemPromptAppend).not.toContain("ravi-user-skills-tiny");
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["ravi-system-events"]);
+  });
+
+  it("builds native Codex disable entries for every skill outside the allowlist", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-filter");
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "ravi-system-events", path: join(cwd, "skills", "ravi-system-events", "SKILL.md") },
+              { name: "tiny", path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md") },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["events"],
+    );
+
+    expect(config).toEqual([{ path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md"), enabled: false }]);
+  });
+
+  it("enables one native alias per logical skill and keeps an available baseline fallback", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-aliases");
+    const userSessions = join(cwd, "skills", "ravi-user-skills-sessions", "SKILL.md");
+    const systemSessions = join(cwd, "skills", "ravi-system-sessions", "SKILL.md");
+    const userSkillCreator = join(cwd, "skills", "ravi-user-skills-skill-creator", "SKILL.md");
+
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "sessions", path: userSessions },
+              { name: "sessions", path: systemSessions },
+              { name: "skill-creator", path: userSkillCreator },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["sessions", "ravi-system-sessions", "skill-creator", "ravi-system-skill-creator"],
+    );
+
+    expect(config).toEqual([{ path: userSessions, enabled: false }]);
+  });
+
+  it("fails closed when Codex cannot return its native skill inventory", () => {
+    expect(() => buildCodexDisabledSkillConfig({ data: [] }, "/tmp/missing", ["events"])).toThrow(
+      "Codex skill inventory is unavailable",
+    );
   });
 
   it("omits the advertised skill-name catalog on CLI-only Codex starts", async () => {

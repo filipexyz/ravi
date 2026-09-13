@@ -151,6 +151,54 @@ function skillMatchesAllowlist(skill: PluginSkillDescriptor, allowlist: readonly
   return false;
 }
 
+const MANAGED_SKILL_PREFIXES = ["ravi-system-", "ravi-dev-", "ravi-user-skills-"] as const;
+
+/** Match provider-native aliases such as `ravi-system-sessions` to the
+ * canonical allowlist entry `sessions`. */
+export function skillNameMatchesAllowlist(name: string, allowlist: readonly string[]): boolean {
+  const nativeSlug = slugifySkillName(name);
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  if (allowedSlugs.has(nativeSlug)) return true;
+
+  const prefix = MANAGED_SKILL_PREFIXES.find((candidate) => nativeSlug.startsWith(candidate));
+  if (!prefix) return false;
+  const bareSlug = nativeSlug.slice(prefix.length);
+  return allowedSlugs.has(bareSlug);
+}
+
+export function filterSkillNamesByAllowlist(names: readonly string[], allowlist: readonly string[]): string[] {
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  const selected = new Map<string, { name: string; priority: number; index: number }>();
+
+  names.forEach((name, index) => {
+    const slug = slugifySkillName(name);
+    const prefixIndex = MANAGED_SKILL_PREFIXES.findIndex((prefix) => slug.startsWith(prefix));
+    const bareSlug = prefixIndex >= 0 ? slug.slice(MANAGED_SKILL_PREFIXES[prefixIndex]!.length) : slug;
+    const exact = allowedSlugs.has(slug);
+    if (!exact && !allowedSlugs.has(bareSlug)) return;
+
+    const candidate = { name, priority: exact ? 0 : prefixIndex + 1, index };
+    const current = selected.get(bareSlug);
+    if (!current || candidate.priority < current.priority) {
+      selected.set(bareSlug, candidate);
+    }
+  });
+
+  return [...selected.values()].sort((left, right) => left.index - right.index).map((entry) => entry.name);
+}
+
+export function isStoredSkillVisibilityCompatible(
+  params: Record<string, unknown> | null | undefined,
+  allowedSkills: readonly string[] | undefined,
+): boolean {
+  if (!allowedSkills) return true;
+  if (!isRecord(params?.skillVisibility)) return false;
+  const snapshot = readSkillVisibilityFromParams(params);
+  return (
+    snapshot.skills.length > 0 && snapshot.skills.every((skill) => skillNameMatchesAllowlist(skill.id, allowedSkills))
+  );
+}
+
 export function buildCodexSkillVisibilitySnapshot(
   syncedSkillNames: string[],
   now = Date.now(),
@@ -255,7 +303,11 @@ export function markLoadedFromRaviSkillToolCall(
   });
 
   const records = snapshot.skills.map((skill) => {
-    if (skill.id === loadedSkill.id || slugifySkillName(skill.id) === loadedSlug) {
+    if (
+      skill.id === loadedSkill.id ||
+      slugifySkillName(skill.id) === loadedSlug ||
+      skillNameMatchesAllowlist(skill.id, [loadedSkill.id])
+    ) {
       found = true;
       return loadedRecord(skill);
     }
@@ -376,8 +428,13 @@ export function mergeSkillVisibilitySnapshots(
     return stored;
   }
 
+  const incomingIds = new Set(incoming.skills.map((skill) => slugifySkillName(skill.id)));
+  const retainedStored = incomingIds.size
+    ? stored.skills.filter((skill) => incomingIds.has(slugifySkillName(skill.id)))
+    : stored.skills;
+
   return buildSkillVisibilitySnapshot(
-    [...stored.skills, ...incoming.skills],
+    [...retainedStored, ...incoming.skills],
     Math.max(stored.updatedAt ?? 0, incoming.updatedAt ?? 0, now),
   );
 }
@@ -460,7 +517,7 @@ function detectLoadedSkillFromRaviSkillToolCall(
   const outputSkill = parseSkillFromShowOutput(input.output);
   const dedicatedToolSkill = extractDedicatedSkillShowName(input.toolName, input.toolInput);
   const command = extractCommandFromToolInput(input.toolInput);
-  const commandSkill = command ? extractSkillShowNameFromCommand(command) : null;
+  const commandSkill = command ? extractRaviSkillShowNameFromCommand(command) : null;
   if (!dedicatedToolSkill && !commandSkill) {
     return null;
   }
@@ -545,7 +602,7 @@ function extractCommandFromToolInput(toolInput: unknown): string | null {
   return firstNonEmptyString(toolInput.command, toolInput.cmd, toolInput.script, toolInput.commandLine);
 }
 
-function extractSkillShowNameFromCommand(command: string): string | null {
+export function extractRaviSkillShowNameFromCommand(command: string): string | null {
   const match = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b([^;&\n\r]*)/m.exec(
     command,
   );

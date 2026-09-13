@@ -2901,7 +2901,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
-            session: event.session ?? null,
+            session: event.session
+              ? { ...event.session, params: runtimeSessionParams ?? event.session.params }
+              : runtimeSessionParams
+                ? { displayId: runtimeSessionDisplayId, params: runtimeSessionParams }
+                : null,
             metadata: event.metadata ?? null,
             pricing:
               resolvedCost?.pricingStatus === "priced"

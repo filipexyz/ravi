@@ -45,6 +45,7 @@ import {
   refreshRuntimeRequestContextForTurn,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
+import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
@@ -510,8 +511,15 @@ async function buildRuntimeStartRequestInternal(
     };
   };
 
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const allowedSkills =
+    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
+      ? resolvedAllowedSkills.allowlist
+      : undefined;
+  const canResumeSkillSession = isStoredSkillVisibilityCompatible(storedRuntimeSessionParams, allowedSkills);
   const canResumeCredentialSession =
     canResumeStoredSession &&
+    canResumeSkillSession &&
     isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
@@ -543,11 +551,6 @@ async function buildRuntimeStartRequestInternal(
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
-  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
-  const allowedSkills =
-    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
-      ? resolvedAllowedSkills.allowlist
-      : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;

@@ -100,6 +100,18 @@ describe("resolveAgentSkills — provider-agnostic core", () => {
 });
 
 describe("resolveAgentSkills — custom grants integration", () => {
+  it("treats explicit grants as authoritative over permission-derived skills", () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("main", {
+      capabilitiesOverride: [cap("execute", "group", "*")],
+    });
+
+    expect(resolved.provenance.fromCapabilities).toEqual([]);
+    expect(resolved.provenance.fromGrants).toContain("gmail-pack");
+    expect(resolved.allowlist).not.toContain("ravi-system-agents-manager");
+  });
+
   let stateDir: string | null = null;
 
   beforeEach(async () => {
