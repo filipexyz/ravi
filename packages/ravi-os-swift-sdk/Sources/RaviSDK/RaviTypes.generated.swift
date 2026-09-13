@@ -2886,13 +2886,15 @@ public struct BugReportOptions: Codable, Sendable {
 public struct BugReportReturn: Codable, Sendable {
   public var bug: [String: RaviJSON]
   public var consoleUrl: String
+  public var follow: RaviJSON?
   public var id: String
   public var success: Bool
   public var url: String
 
-  public init(bug: [String: RaviJSON], consoleUrl: String, id: String, success: Bool, url: String) {
+  public init(bug: [String: RaviJSON], consoleUrl: String, follow: RaviJSON? = nil, id: String, success: Bool, url: String) {
     self.bug = bug
     self.consoleUrl = consoleUrl
+    self.follow = follow
     self.id = id
     self.success = success
     self.url = url
@@ -2901,6 +2903,7 @@ public struct BugReportReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case bug = "bug"
     case consoleUrl = "consoleUrl"
+    case follow = "follow"
     case id = "id"
     case success = "success"
     case url = "url"

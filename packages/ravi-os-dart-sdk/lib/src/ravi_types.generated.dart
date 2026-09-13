@@ -2380,10 +2380,11 @@ class BugReportOptions {
 }
 
 class BugReportReturn {
-  const BugReportReturn({required this.bug, required this.consoleUrl, required this.id, required this.success, required this.url});
+  const BugReportReturn({required this.bug, required this.consoleUrl, this.follow, required this.id, required this.success, required this.url});
 
   final Map<String, RaviJson> bug;
   final String consoleUrl;
+  final RaviJson? follow;
   final String id;
   final bool success;
   final String url;
@@ -2392,6 +2393,7 @@ class BugReportReturn {
     return BugReportReturn(
       bug: raviJsonAsRaviJsonMap(json["bug"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      follow: json["follow"] == null ? null : RaviJson.from(json["follow"]),
       id: raviJsonAsString(json["id"]),
       success: raviJsonAsBool(json["success"]),
       url: raviJsonAsString(json["url"]),
