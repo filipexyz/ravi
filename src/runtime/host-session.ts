@@ -34,7 +34,9 @@ export function resolveRuntimeToolEffectFence(
 ): RuntimeToolEffectFence {
   // Codex currently advertises ravi-host permissions, but normal threads run
   // with approvalPolicy=never and its provider hook has no durable attempt ACK.
-  // Pi likewise reports tool start only after its in-process loop may execute.
+  // Pi now gates tools through a Ravi extension before execution, but tool
+  // start events remain asynchronous and there is no Claude-style PreToolUse
+  // durable ACK yet. Keep Pi conservative until that ACK is proven.
   if (provider === "codex" || provider === "pi") {
     return "provider_event_only";
   }

@@ -4,7 +4,11 @@
 
 - Provider id is `pi`.
 - Capability matrix includes generic extended fields before provider is enabled broadly.
-- Restricted agents are rejected in RPC MVP.
+- Restricted agents are accepted because `tools.permissionMode` is `ravi-host` and `supportsToolHooks` is true.
+- A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with `confirmed: false` and blocks the tool.
+- The same path allows a granted Read/tool call.
+- Bash requires both `canUseTool("Bash")` and `authorizeCommandExecution`. Missing handlers, thrown authorization, and unconditional/observation denials fail closed.
+- RPC steer, interrupt, busy-retry, and dead-transport restart still work with the permission bridge loaded.
 - `startSession` starts a fake RPC client and returns a valid runtime handle.
 - `interrupt()` sends `abort` and emits `turn.interrupted`.
 - `setModel()` sends `set_model` and affects subsequent prompt metadata.

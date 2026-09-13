@@ -15,10 +15,12 @@ tags:
   - rpc
 applies_to:
   - src/runtime/pi-provider.ts
+  - src/runtime/pi-tool-permissions.ts
   - src/runtime/provider-registry.ts
   - src/runtime/types.ts
   - src/runtime/provider-contract.test.ts
   - src/runtime/pi-provider.test.ts
+  - src/runtime/pi-tool-permissions.test.ts
 owners:
   - ravi-dev
 status: draft
@@ -52,8 +54,8 @@ The MVP MUST use RPC JSONL. The SDK path MAY replace or complement RPC after the
 - Session state: Pi `sessionFile`, `sessionId`, `sessionName`, cwd, model provider/id, thinking level, agent dir, and integration mode stored in `RuntimeSessionState.params`.
 - Display id: `sessionName` when available, otherwise `sessionId`.
 - System prompt mode: append Ravi instructions to Pi's coding-agent prompt; do not replace Pi's base prompt in the MVP.
-- Tool mode: Pi uses its own built-in tools in the MVP.
-- Permission mode: restricted Ravi tool policy is unsupported in the MVP and MUST be rejected by capability checks.
+- Tool mode: Pi still executes its own built-in tools. Ravi does not inject dynamic tools in this slice.
+- Permission mode: Ravi-hosted. A Pi extension registers the in-process `tool_call` / `tool_result` hooks (Pi's `beforeToolCall` / `afterToolCall` equivalents) and asks the Ravi host over the RPC extension UI protocol before any tool executes. Restricted agents are allowed when this bridge is active.
 
 ## Capability Target
 
@@ -64,7 +66,7 @@ Initial advertised capabilities SHOULD be:
 - `execution`: `subprocess-rpc`.
 - `sessionState`: `file-backed` with cwd validation.
 - `usage`: `terminal-event`.
-- `tools.permissionMode`: `provider-native` in the MVP.
+- `tools.permissionMode`: `ravi-host`.
 - `tools.accessRequirement`: `tool_and_executable`.
 - `tools.supportsParallelCalls`: false until the adapter/host explicitly handles Pi parallel tool events.
 - `systemPrompt`: `append`.
@@ -72,7 +74,7 @@ Initial advertised capabilities SHOULD be:
 - `supportsSessionResume`: true only when `sessionFile` and cwd are valid.
 - `supportsSessionFork`: false in the MVP, even though Pi has fork/clone commands, until Ravi's fork semantics are explicitly mapped.
 - `supportsPartialText`: true.
-- `supportsToolHooks`: false in the MVP.
+- `supportsToolHooks`: true. The RPC subprocess loads a Ravi-owned extension that blocks tools until the host answers.
 - `supportsHostSessionHooks`: false in the MVP.
 - `supportsPlugins`: false for Ravi plugins.
 - `supportsMcpServers`: false.
@@ -155,7 +157,10 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MAY accept `turn.steer` before the first Ravi turn is active only to bridge the bootstrap gap where the host session already exists and the first prompt is still pending delivery.
 - The provider MUST reject overlapping prompt submission unless the operation is represented as explicit active-turn control.
 - When the host receives a normal human prompt while a provider turn is active and the delivery barrier is `after_tool`, the host MAY use canonical `turn.steer` instead of abort/requeue. This decision belongs in the host dispatcher/control layer, not inside Pi prompt submission.
-- The provider MUST not expose restricted Ravi agents until Pi tool permission hooks are bridged to Ravi host services.
+- The provider MUST route every Pi tool decision through Ravi host services (`canUseTool`, and for shell `authorizeCommandExecution`) before the tool executes. Missing handlers, thrown authorization, unknown dialogs, and unresolved observation/unconditional Bash denials MUST fail closed.
+- The provider MUST keep Pi model/provider secrets out of the tool-sharing RPC process env even after `supportsToolHooks` is true. Secret injection remains a follow-up until Pi can isolate model credentials from tool env.
+- The provider MUST NOT advertise Ravi dynamic tools, parallel tool support, or host-session PreToolUse hooks in this slice. Tool-level skill gates that only run on Claude `PreToolUse` remain open unless the call is Bash command authorization.
+- Crash-recovery MUST keep Pi on `toolEffectFence=provider_event_only` until a durable PreToolUse-equivalent ACK is proven. The permission bridge authorizes before execution; it does not yet replace that fence.
 - The provider MUST not save Pi session file paths as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Pi session file.
 - Pi native fork/clone MUST NOT flip canonical `supportsSessionFork` until file-backed parent/child state, prompt atom mapping, and replay semantics are tested.
@@ -201,12 +206,27 @@ Implement these generic Ravi changes before building the Pi adapter:
 - Create one dev agent/session using `provider=pi`.
 - Validate text, tool, interrupt, resume, and model/thinking switch flows before exposing to task workers.
 
+## Permission Hook Bridge
+
+This slice keeps the RPC JSONL execution path (prompt, steer, interrupt, resume). It does not migrate sessions onto `createAgentSession`.
+
+Ravi MUST materialize a Pi extension and spawn RPC with `--extension <path>`. That extension:
+
+- listens for `tool_call` (blocking, before execution) and `tool_result` (observational after);
+- asks the host with `ctx.ui.confirm("ravi.permission.request", <json>)`;
+- blocks the tool unless the host confirms.
+
+The RPC adapter MUST answer `extension_ui_request` on stdin with `extension_ui_response` without waiting for a command `response`. Map Pi names (`bash`, `read`, `write`, `edit`) onto Ravi REBAC names (`Bash`, `Read`, `Write`, `Edit`). A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. Authorization throws become deny. Unrelated extension dialogs MUST be cancelled.
+
+This is not a split policy: Pi-native tools still execute inside Pi, but every call is authorized by Ravi before execution. Provider-native leftovers are execution, session files, compaction, and the skill catalog prompt — not permission decisions.
+
 ## Later SDK Path
 
-After the RPC MVP passes, Ravi MAY add an SDK-backed Pi provider variant. SDK integration is the right place for:
+A later SDK-backed Pi provider MAY replace or complement RPC. SDK integration remains the right place for:
 
 - Ravi dynamic tools as Pi custom tools.
-- Ravi permission policy through Pi `beforeToolCall` / `afterToolCall` hooks.
+- In-process `beforeToolCall` / `afterToolCall` without the extension UI hop.
 - Direct session manager integration.
 - Lower latency and fewer subprocess lifecycle edge cases.
 - Richer control over resources, skills, and prompt composition.
+- Tool-level skill gates that today depend on Claude `PreToolUse`.
