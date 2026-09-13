@@ -158,6 +158,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST reject overlapping prompt submission unless the operation is represented as explicit active-turn control.
 - When the host receives a normal human prompt while a provider turn is active and the delivery barrier is `after_tool`, the host MAY use canonical `turn.steer` instead of abort/requeue. This decision belongs in the host dispatcher/control layer, not inside Pi prompt submission.
 - The provider MUST route every Pi tool decision through Ravi host services (`canUseTool`, and for shell `authorizeCommandExecution`) before the tool executes. Missing handlers, thrown authorization, unknown dialogs, and unresolved observation/unconditional Bash denials MUST fail closed.
+- The provider MUST treat `tools.permissionMode=ravi-host` as a live-bridge contract, not a static advertisement. After spawning RPC with `--extension`, it MUST wait for the extension handshake (`extension_ui_request` notify `ravi.permission.hooks.ready` from `session_start`) before sending any `prompt`. Missing handshake, a Ravi-extension `extension_error`, a `tool_execution_start` before handshake, or a transport that cannot write `extension_ui_response` MUST fail closed: no prompt, no tool.started, and a `turn.failed` with `failureKind=transport`. Advertising `ravi-host` while running an ungoverned Pi session is forbidden.
 - The provider MUST keep Pi model/provider secrets out of the tool-sharing RPC process env even after `supportsToolHooks` is true. Secret injection remains a follow-up until Pi can isolate model credentials from tool env.
 - The provider MUST NOT advertise Ravi dynamic tools, parallel tool support, or host-session PreToolUse hooks in this slice. Tool-level skill gates that only run on Claude `PreToolUse` remain open unless the call is Bash command authorization.
 - Crash-recovery MUST keep Pi on `toolEffectFence=provider_event_only` until a durable PreToolUse-equivalent ACK is proven. The permission bridge authorizes before execution; it does not yet replace that fence.
@@ -212,11 +213,12 @@ This slice keeps the RPC JSONL execution path (prompt, steer, interrupt, resume)
 
 Ravi MUST materialize a Pi extension and spawn RPC with `--extension <path>`. That extension:
 
+- emits `ctx.ui.notify("ravi.permission.hooks.ready", "info")` on `session_start` so the host can prove the bridge is live;
 - listens for `tool_call` (blocking, before execution) and `tool_result` (observational after);
 - asks the host with `ctx.ui.confirm("ravi.permission.request", <json>)`;
 - blocks the tool unless the host confirms.
 
-The RPC adapter MUST answer `extension_ui_request` on stdin with `extension_ui_response` without waiting for a command `response`. Map Pi names (`bash`, `read`, `write`, `edit`) onto Ravi REBAC names (`Bash`, `Read`, `Write`, `Edit`). A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. Authorization throws become deny. Unrelated extension dialogs MUST be cancelled.
+Pi continues after a failed `--extension` load. That is why the handshake is required: fail-closed host answers do not help if `tool_call` never registered. The adapter MUST NOT send `prompt` until the handshake is observed (or a matching `extension_error` / pre-handshake `tool_execution_start` fails the session). The RPC adapter MUST answer `extension_ui_request` on stdin with `extension_ui_response` without waiting for a command `response`. Map Pi names (`bash`, `read`, `write`, `edit`) onto Ravi REBAC names (`Bash`, `Read`, `Write`, `Edit`). A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. Authorization throws become deny. Unrelated extension dialogs MUST be cancelled.
 
 This is not a split policy: Pi-native tools still execute inside Pi, but every call is authorized by Ravi before execution. Provider-native leftovers are execution, session files, compaction, and the skill catalog prompt — not permission decisions.
 

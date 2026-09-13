@@ -12,7 +12,11 @@ import {
   type PiRpcStartInput,
   type PiRpcTransport,
 } from "./pi-provider.js";
-import { PI_PERMISSION_UI_TITLE } from "./pi-tool-permissions.js";
+import {
+  createPiPermissionHooksReadyEvent,
+  PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+  PI_PERMISSION_UI_TITLE,
+} from "./pi-tool-permissions.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
@@ -29,11 +33,15 @@ class FakePiRpcTransport implements PiRpcTransport {
   readonly writes: Record<string, unknown>[] = [];
 
   responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
+  emitPermissionHandshake = true;
   closed = false;
   closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
     this.starts.push(input);
+    if (this.emitPermissionHandshake) {
+      this.pushEvent(createPiPermissionHooksReadyEvent(`hooks-ready-${this.starts.length}`) as PiRpcEvent);
+    }
   }
 
   async send(command: PiRpcCommand): Promise<PiRpcResponse> {
@@ -174,6 +182,123 @@ describe("Pi runtime provider", () => {
       ).events,
     );
     expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-allow", confirmed: true }]);
+  });
+
+  it("fails closed when the permission extension handshake never arrives", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.emitPermissionHandshake = false;
+    transport.pushEvent({
+      type: "tool_execution_start",
+      toolName: "bash",
+      toolCallId: "ungoverned-1",
+      input: { command: "curl evil.test" },
+    });
+    transport.pushEvent({
+      type: "tool_execution_end",
+      toolCallId: "ungoverned-1",
+      toolName: "bash",
+      result: "ok",
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ungoverned")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("ungoverned"),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      recoverable: true,
+      error: "Pi tool started before permission hooks were confirmed live. Refusing ungoverned ravi-host execution.",
+    });
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+    expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
+      tools: { permissionMode: "ravi-host" },
+      supportsToolHooks: true,
+    });
+  });
+
+  it("fails closed when the transport cannot answer extension UI permission requests", async () => {
+    const transport = new FakePiRpcTransport();
+    Object.defineProperty(transport, "writeMessage", { value: undefined });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("sem ui"),
+      ).events,
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "turn.failed",
+        failureKind: "transport",
+        error: "Pi RPC transport cannot answer extension UI permission requests",
+      }),
+    ]);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+  });
+
+  it("fails closed when the permission extension never proves it is live", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.emitPermissionHandshake = false;
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("silent load failure")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("ainda sem hooks"),
+      ).events,
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "turn.failed",
+        failureKind: "transport",
+        recoverable: true,
+        error: PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+      }),
+    ]);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+  });
+
+  it("fails closed after transport restart if the permission handshake is missing", async () => {
+    const deadTransport = new FakePiRpcTransport();
+    deadTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        throw new Error("Pi RPC transport is not connected");
+      }
+      return defaultResponse(command);
+    };
+
+    const ungovernedTransport = new FakePiRpcTransport();
+    ungovernedTransport.emitPermissionHandshake = false;
+    ungovernedTransport.pushEvent({
+      type: "tool_execution_start",
+      toolName: "bash",
+      toolCallId: "restart-ungoverned",
+      input: { command: "curl evil.test" },
+    });
+    ungovernedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ungoverned")] });
+
+    const transports = [deadTransport, ungovernedTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? ungovernedTransport,
+        permissionHooksReadyTimeoutMs: 50,
+      }).startSession(createStartRequest("continua")).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      error: "Pi tool started before permission hooks were confirmed live. Refusing ungoverned ravi-host execution.",
+    });
+    expect(ungovernedTransport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
   });
 
   it("wires prepareSession command approvals through Ravi host services", async () => {

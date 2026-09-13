@@ -31,7 +31,7 @@ Owning Pi tools from Ravi before the provider contract is hardened would create 
 - Some tools would obey Pi internals.
 - Tool events could race the current Ravi tracking model.
 
-The RPC MVP therefore kept tool *execution* inside Pi. Permission is different: Pi RPC events are observational and cannot block a call. The hook bridge loads a Ravi-owned extension so `tool_call` runs in-process, then the host answers over the RPC extension UI protocol. Every tool is authorized by Ravi before Pi executes it. Dynamic tools, parallel tool tracking, and Claude-style PreToolUse skill gates stay on the later SDK path.
+The RPC MVP therefore kept tool *execution* inside Pi. Permission is different: Pi RPC events are observational and cannot block a call. The hook bridge loads a Ravi-owned extension so `tool_call` runs in-process, then the host answers over the RPC extension UI protocol. Every tool is authorized by Ravi before Pi executes it. Pi continues after a failed `--extension` load, so a missing `ravi.permission.hooks.ready` handshake MUST abort the session before any prompt. Advertising `ravi-host` while tools run ungoverned is a governance lie. Dynamic tools, parallel tool tracking, and Claude-style PreToolUse skill gates stay on the later SDK path.
 
 ## Why The Spec Forces Capability Work
 

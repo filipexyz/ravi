@@ -5,7 +5,7 @@
 1. Verify the Pi executable or package entrypoint is available.
 2. Verify the target cwd exists and is the intended Ravi agent cwd.
 3. Verify model/provider credentials are configured in Pi's agent dir or inherited env.
-4. Verify `RuntimeCapabilities` compatibility passes before starting the provider. Restricted agents are allowed when the permission extension is loaded (`tools.permissionMode=ravi-host`).
+4. Verify `RuntimeCapabilities` compatibility passes before starting the provider. Restricted agents are allowed only when the permission extension is live (`tools.permissionMode=ravi-host`). Compatibility is a contract: the session MUST still prove the bridge with `ravi.permission.hooks.ready` before any prompt.
 5. Verify the spawned Pi command includes `--extension` pointing at the materialized Ravi permission extension.
 
 ## Start A Session
@@ -15,8 +15,9 @@
 3. Capture stderr for logs only.
 4. Send `get_state` after startup.
 5. If resuming, validate `sessionFile` and cwd before `switch_session`.
-6. Emit synthetic `thread.started` metadata from `get_state` when available.
-7. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Cancel any other dialog. Do not wait for a command `response` on those writes.
+6. Wait for `extension_ui_request` notify `ravi.permission.hooks.ready` before sending any `prompt`. If it never arrives, or a tool starts first, fail the turn (`failureKind=transport`) and do not run an ungoverned ravi-host session.
+7. Emit synthetic `thread.started` metadata from `get_state` when available.
+8. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Cancel any other dialog. Do not wait for a command `response` on those writes.
 
 ## Run A Prompt
 
@@ -51,6 +52,7 @@
 - Check whether Pi emitted `message_update`, `tool_execution_*`, `turn_end`, or `agent_end`.
 - Check whether the adapter incorrectly treated Pi `turn_end` as Ravi terminal.
 - Check whether a parallel tool batch left Ravi host state with one active stale tool.
+- Check whether Pi emitted `extension_ui_request` notify `ravi.permission.hooks.ready` after spawn. A missing handshake means `--extension` did not load; the adapter MUST fail closed instead of sending `prompt`.
 - Check whether Pi emitted `extension_ui_request` and whether Ravi answered `extension_ui_response`. A hang on the first tool often means the host did not write the UI response.
 - Check whether a restricted deny is coming from `canUseTool` or from Bash `authorizeCommandExecution` (unconditional blocks, observation, skill gate).
 - Check stderr for process-level failures.

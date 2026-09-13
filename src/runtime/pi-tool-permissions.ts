@@ -13,6 +13,18 @@ import type {
 export const PI_PERMISSION_UI_TITLE = "ravi.permission.request";
 export const PI_PERMISSION_EXTENSION_FILENAME = "ravi-permission-extension.js";
 export const PI_PERMISSION_HOOKS_READY_MESSAGE = "ravi.permission.hooks.ready";
+export const PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE =
+  "Pi permission extension did not confirm ravi-host hooks are live. Refusing to run an ungoverned Pi session.";
+export const DEFAULT_PI_PERMISSION_HOOKS_READY_TIMEOUT_MS = 5_000;
+
+export class PiPermissionBridgeError extends Error {
+  readonly failureKind = "transport" as const;
+
+  constructor(message = PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE) {
+    super(message);
+    this.name = "PiPermissionBridgeError";
+  }
+}
 
 export const PI_RAVI_PERMISSION_EXTENSION_SOURCE = `/**
  * Ravi-owned Pi permission bridge.
@@ -26,7 +38,10 @@ const READY = ${JSON.stringify(PI_PERMISSION_HOOKS_READY_MESSAGE)};
 
 export default function (pi) {
   pi.on("session_start", (_event, ctx) => {
-    ctx.ui?.notify?.(READY, "info");
+    if (!ctx.ui?.notify) {
+      throw new Error("Ravi permission bridge UI is unavailable");
+    }
+    ctx.ui.notify(READY, "info");
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -127,6 +142,32 @@ export function mapPiToolNameToRavi(name?: string): string {
 
 export function isPiBashTool(name?: string): boolean {
   return mapPiToolNameToRavi(name) === "Bash";
+}
+
+export function createPiPermissionHooksReadyEvent(id = "ravi-hooks-ready"): Record<string, unknown> {
+  return {
+    type: "extension_ui_request",
+    id,
+    method: "notify",
+    message: PI_PERMISSION_HOOKS_READY_MESSAGE,
+    notifyType: "info",
+  };
+}
+
+export function isPiPermissionHooksReadyEvent(event: Record<string, unknown>): boolean {
+  if (firstString(event.type) !== "extension_ui_request") {
+    return false;
+  }
+  const request = parsePiPermissionUiRequest(event);
+  return (
+    request.kind === "fire-and-forget" &&
+    request.method === "notify" &&
+    request.message === PI_PERMISSION_HOOKS_READY_MESSAGE
+  );
+}
+
+export function isPiPermissionBridgeError(error: unknown): error is PiPermissionBridgeError {
+  return error instanceof PiPermissionBridgeError;
 }
 
 export function parsePiPermissionUiRequest(event: Record<string, unknown>): PiExtensionUiRequest {

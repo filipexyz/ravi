@@ -9,9 +9,13 @@ import {
   authorizePiToolCall,
   buildPiPermissionUiResponse,
   createPiApprovalHandler,
+  createPiPermissionHooksReadyEvent,
+  isPiPermissionBridgeError,
+  isPiPermissionHooksReadyEvent,
   mapPiToolNameToRavi,
   materializePiPermissionExtensionFile,
   parsePiPermissionUiRequest,
+  PiPermissionBridgeError,
   resolvePiExtensionUiResponse,
 } from "./pi-tool-permissions.js";
 import type { RuntimeHostServices } from "./types.js";
@@ -259,6 +263,29 @@ describe("Pi tool permission bridge", () => {
     expect(source).toContain('pi.on("tool_call"');
     expect(source).toContain('pi.on("tool_result"');
     expect(source).toContain(PI_PERMISSION_UI_TITLE);
+    expect(source).toContain(PI_PERMISSION_HOOKS_READY_MESSAGE);
+    expect(source).toContain("Ravi permission bridge UI is unavailable");
     expect(source).toContain("block: true");
+  });
+
+  it("recognizes only the Ravi permission-hooks handshake notify", () => {
+    expect(isPiPermissionHooksReadyEvent(createPiPermissionHooksReadyEvent())).toBe(true);
+    expect(
+      isPiPermissionHooksReadyEvent({
+        type: "extension_ui_request",
+        method: "notify",
+        message: "some other extension loaded",
+      }),
+    ).toBe(false);
+    expect(
+      isPiPermissionHooksReadyEvent({
+        type: "extension_ui_request",
+        method: "confirm",
+        title: PI_PERMISSION_UI_TITLE,
+        message: JSON.stringify({ toolName: "read", input: {} }),
+      }),
+    ).toBe(false);
+    expect(isPiPermissionBridgeError(new PiPermissionBridgeError())).toBe(true);
+    expect(isPiPermissionBridgeError(new Error("nope"))).toBe(false);
   });
 });
