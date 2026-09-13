@@ -6,6 +6,12 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { BUG_REPORT_COLLECTION_PROMPT } from "../../bug-report/prompt.js";
 import { BUG_REPORT_SCHEMA_ID } from "../../bug-report/schema.js";
+import {
+  BUG_STATUS_WATCH_TOPIC,
+  bugFollowFilter,
+  type BugFollowTriggerDeps,
+} from "../../bug-report/follow.js";
+import type { Trigger, TriggerInput } from "../../triggers/index.js";
 
 afterAll(() => mock.restore());
 const actualCliContextModule = await import("../context.js");
@@ -23,6 +29,32 @@ mock.module("../context.js", () => ({
 
 const { BugCommands } = await import("./bug.js");
 const { ContractError } = await import("../agent-contract.js");
+
+function makeFollowDeps(overrides: Partial<BugFollowTriggerDeps> = {}): BugFollowTriggerDeps & {
+  createdTriggers: TriggerInput[];
+} {
+  const createdTriggers: TriggerInput[] = [];
+  return {
+    createdTriggers,
+    listTriggers: () => [],
+    createTrigger: (input) => {
+      createdTriggers.push(input);
+      return {
+        id: "trg_follow",
+        ...input,
+        session: input.session ?? "main",
+        enabled: true,
+        fireCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      } as Trigger;
+    },
+    emitTriggersRefresh: async () => {},
+    getFollowContext: () => ({ agentId: "main", sessionName: "agent:main:main" }),
+    resolveAccountForAgent: () => undefined,
+    ...overrides,
+  };
+}
 
 const VALID_DOSSIER = {
   schemaVersion: BUG_REPORT_SCHEMA_ID,
@@ -60,8 +92,12 @@ const VALID_DOSSIER = {
 describe("bug CLI commands", () => {
   it("submits a validated dossier through POST /api/cli/bugs with --execute", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const follow = makeFollowDeps();
     const client = makeClient(async (method, path, body, accessToken) => {
       calls.push({ method, path, body, accessToken });
+      if (path.endsWith("/subscribe")) {
+        return { ok: true, bugId: "bug_1" };
+      }
       return {
         id: "bug_1",
         title: VALID_DOSSIER.title,
@@ -69,7 +105,7 @@ describe("bug CLI commands", () => {
         url: "https://console.example/bugs/bug_1",
       };
     });
-    const command = new BugCommands({ client, readCredentials: makeReadCredentials() });
+    const command = new BugCommands({ client, readCredentials: makeReadCredentials(), ...follow });
 
     const { output } = await captureConsole(() =>
       command.report(
@@ -103,17 +139,98 @@ describe("bug CLI commands", () => {
           },
         },
       },
+      {
+        method: "POST",
+        path: "/api/cli/bugs/bug_1/subscribe",
+        accessToken: "access-secret",
+        body: { installationId: "ins_123" },
+      },
     ]);
     expect(calls[0]?.body).not.toHaveProperty("source");
     expect(calls[0]?.body).not.toHaveProperty("organizationId");
     expect(calls[0]?.body).not.toHaveProperty("projectId");
+    expect(follow.createdTriggers).toHaveLength(1);
+    expect(follow.createdTriggers[0]).toMatchObject({
+      name: "bug-follow:bug_1",
+      topic: BUG_STATUS_WATCH_TOPIC,
+      session: "main",
+      replySession: "agent:main:main",
+      cooldownMs: 30_000,
+      filter: bugFollowFilter("bug_1"),
+    });
+    expect(follow.createdTriggers[0]?.filter).toBe('data.payload.bugId == "bug_1" || data.bugId == "bug_1"');
     expect(payload).toMatchObject({
       success: true,
       consoleUrl: "https://console.example",
       id: "bug_1",
       url: "https://console.example/bugs/bug_1",
       bug: { id: "bug_1", severity: "high" },
+      follow: {
+        ok: true,
+        subscribed: true,
+        triggerId: "trg_follow",
+        topic: BUG_STATUS_WATCH_TOPIC,
+        filter: bugFollowFilter("bug_1"),
+        session: "main",
+      },
     });
+  });
+
+  it("keeps create successful when Console subscribe or trigger follow fails", async () => {
+    const follow = makeFollowDeps({
+      createTrigger: () => {
+        throw new Error("sqlite locked");
+      },
+    });
+    const client = makeClient(async (method, path) => {
+      if (path.endsWith("/subscribe")) {
+        throw new Error("subscribe route missing");
+      }
+      return { id: "bug_9", url: "https://console.example/bugs/bug_9" };
+    });
+    const command = new BugCommands({ client, readCredentials: makeReadCredentials(), ...follow });
+
+    const { output } = await captureConsole(() =>
+      command.report(
+        VALID_DOSSIER.title,
+        VALID_DOSSIER.summary,
+        VALID_DOSSIER.severity,
+        VALID_DOSSIER.surface,
+        JSON.stringify(VALID_DOSSIER),
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+    expect(payload).toMatchObject({
+      success: true,
+      id: "bug_9",
+      follow: {
+        ok: false,
+        subscribed: false,
+      },
+    });
+    expect(payload.follow.warning).toContain("subscribe route missing");
+    expect(payload.follow.warning).toContain("sqlite locked");
+    expect(payload.follow.filter).toBe(bugFollowFilter("bug_9"));
+
+    const human = await captureConsole(() =>
+      command.report(
+        VALID_DOSSIER.title,
+        VALID_DOSSIER.summary,
+        VALID_DOSSIER.severity,
+        VALID_DOSSIER.surface,
+        JSON.stringify(VALID_DOSSIER),
+        undefined,
+        undefined,
+        false,
+        true,
+      ),
+    );
+    expect(human.output).toContain("Bug reported: bug_9");
+    expect(human.output).toContain("auto-follow failed");
   });
 
   it("reads status from GET /api/cli/bugs/:id", async () => {
@@ -122,7 +239,11 @@ describe("bug CLI commands", () => {
       calls.push({ method, path, body });
       return { id: "bug_9", status: "open", title: "Crash" };
     });
-    const command = new BugCommands({ client, readCredentials: makeReadCredentials() });
+    const command = new BugCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      ...makeFollowDeps(),
+    });
     const { output } = await captureConsole(() => command.status("bug_9", undefined, true));
     expect(calls).toEqual([{ method: "GET", path: "/api/cli/bugs/bug_9", body: undefined }]);
     expect(JSON.parse(output)).toMatchObject({
@@ -144,7 +265,11 @@ describe("bug CLI commands", () => {
         ],
       };
     });
-    const command = new BugCommands({ client, readCredentials: makeReadCredentials() });
+    const command = new BugCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      ...makeFollowDeps(),
+    });
     const { output } = await captureConsole(() => command.list(undefined, "1", "0", true));
     expect(calls[0]).toEqual({ method: "GET", path: "/api/cli/bugs?limit=1&offset=0" });
     const payload = JSON.parse(output);
@@ -164,12 +289,14 @@ describe("bug agent-first contract", () => {
       return {};
     });
     let credentialReads = 0;
+    const follow = makeFollowDeps();
     const command = new BugCommands({
       client,
       readCredentials: () => {
         credentialReads += 1;
         return makeCredentials();
       },
+      ...follow,
     });
 
     let thrown: unknown;
@@ -229,6 +356,7 @@ describe("bug agent-first contract", () => {
     expect(serializedPlan).toContain("ravi.bug_report/v1");
     expect(calls).toHaveLength(0);
     expect(credentialReads).toBe(0);
+    expect(follow.createdTriggers).toHaveLength(0);
   });
 
   it("prints the collection prompt on a flagless dry-run without touching auth", async () => {
@@ -317,12 +445,14 @@ describe("bug agent-first contract", () => {
     const file = join(dir, "dossier.json");
     writeFileSync(file, JSON.stringify(VALID_DOSSIER));
     const calls: Array<{ path: string; body: unknown }> = [];
+    const follow = makeFollowDeps();
     const command = new BugCommands({
       client: makeClient(async (_method, path, body) => {
         calls.push({ path, body });
         return { id: "bug_file" };
       }),
       readCredentials: makeReadCredentials(),
+      ...follow,
     });
 
     const { output } = await captureConsole(() =>
@@ -335,6 +465,8 @@ describe("bug agent-first contract", () => {
     });
     expect(calls[0]?.body).not.toHaveProperty("source");
     expect(JSON.parse(output).id).toBe("bug_file");
+    expect(calls.some((call) => call.path === "/api/cli/bugs/bug_file/subscribe")).toBe(true);
+    expect(follow.createdTriggers[0]?.filter).toBe(bugFollowFilter("bug_file"));
   });
 });
 

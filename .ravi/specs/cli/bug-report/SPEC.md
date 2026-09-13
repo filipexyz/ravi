@@ -17,6 +17,7 @@ applies_to:
   - src/cli/commands/bug.ts
   - src/cli/agent-contract.ts
   - src/bug-report/client.ts
+  - src/bug-report/follow.ts
   - src/bug-report/schema.ts
   - src/bug-report/prompt.ts
   - src/prompt-builder.ts
@@ -44,7 +45,9 @@ The happy path is agent-first and two-step:
    `ravi.bug_report/v1`. Exit with the write brake (`WRITE_REQUIRES_EXECUTE`,
    exit `3` + plan), consistent with `ravi feedback send`.
 2. With `--execute` and a valid dossier, POST to Console `POST /api/cli/bugs`
-   and print the bug id plus a tracking URL.
+   and print the bug id plus a tracking URL. Then auto-follow that bug:
+   subscribe this installation and arm a per-bugId trigger into the current
+   session. Follow failures MUST NOT fail the create that already succeeded.
 
 Read ops `bug status <id>` and `bug list` return the caller's own reports.
 
@@ -95,12 +98,27 @@ partial so the first call can be `ravi bug report` with no dossier.
    inside `payload` only). `organizationId` / `projectId` MUST be sent
    only when dossier `context` refs parse as UUIDs; slugs MUST NOT be
    sent as those fields. Then print `id` + tracking URL.
-7. `bug status <id>` MUST GET `/api/cli/bugs/<id>`. `bug list` MUST GET
+7. After a successful `--execute` create, the CLI MUST auto-follow that bug
+   as a post-create hook (warn-only; create stays successful):
+   - `POST /api/cli/bugs/:id/subscribe` with the current cloud-auth
+     `installationId` so Console push-delivers `watch.console.bug.status`
+     only to subscribers of that bugId.
+   - Ensure a `ravi triggers` record exists that fires into the **current
+     session** (`session: main`, `replySession` from the caller context)
+     on topic `ravi.watch.console.bug.status` (Console delivery
+     `watch.console.bug.status` → local `ravi.watch.<connector>.<event>`).
+   - The trigger filter MUST include only this bugId:
+     `data.payload.bugId == "<id>" || data.bugId == "<id>"`.
+     Other bugIds MUST NOT match. Do not create a broad "all my bugs"
+     trigger. Cooldown is 30s. Message is short: status + title +
+     consoleUrl.
+   - Reuse an existing `bug-follow:<id>` trigger when present.
+8. `bug status <id>` MUST GET `/api/cli/bugs/<id>`. `bug list` MUST GET
    `/api/cli/bugs` (the authenticated user's reports), expose `--json`,
    `--limit`, `--offset`, and `--fields`, and paginate for agents.
-8. Existing cloud error semantics stay: `AUTH_REQUIRED` / `AUTH_EXPIRED`
+9. Existing cloud error semantics stay: `AUTH_REQUIRED` / `AUTH_EXPIRED`
    teach `ravi login`. Reads and `--execute` require login; dry-run MUST NOT.
-9. Sessions MUST carry a short always-on prompt: if the session finds a
+10. Sessions MUST carry a short always-on prompt: if the session finds a
    product/runtime bug, ask the user whether to file a Ravi bug report; if
    yes, use `ravi bug report` (collect/sanitize first; only `--execute`
    after the dossier is ready). Do not spam. Do not submit without
@@ -131,10 +149,19 @@ The CLI client path is:
   `schemaVersion` / `surface` / UUID `organizationId` / `projectId`)
 - `GET /api/cli/bugs` — list the authenticated user's reports
 - `GET /api/cli/bugs/:id` — show one report
+- `POST /api/cli/bugs/:id/subscribe` — follow this bug from the current
+  CLI installation. Body is `{ installationId }` from stored cloud-auth
+  credentials. Console MUST push `watch.console.bug.status` only to
+  subscribers of that bugId. After the local delivery bridge the NATS
+  subject is `ravi.watch.console.bug.status` (catalog family
+  `ravi.watch.*.*` / `ravi.watch.>`). Expected payload fields for the
+  per-bug filter: `payload.bugId` on the normalized watch event, or
+  flattened `bugId`.
 
 Tracking URL preference: response `url` or `trackingUrl`, else
 `<consoleUrl>/bugs/<id>`. A sibling `ravi-console` PR may land the HTTP
-handlers; this repo MUST keep the client path stable.
+handlers; this repo MUST keep the client path constants stable
+(`BUG_REPORT_API_PATH`, `bugReportSubscribeApiPath`).
 
 ## Internal consumers
 
@@ -145,6 +172,7 @@ The default runtime system prompt (`src/prompt-builder.ts`, section
 ## Validation
 
 - `bun test src/cli/commands/bug.test.ts` green (contract block included).
+- `bun test src/bug-report/follow.test.ts` green (per-bugId filter scope).
 - `bun test src/prompt-builder.test.ts` green (session prompt present).
 - Live checks: `ravi bug report --json` → exit 3 + plan + collection prompt,
   no network; `ravi bug report --dossier-json '<valid>' --execute --json` →
@@ -160,3 +188,8 @@ The default runtime system prompt (`src/prompt-builder.ts`, section
   regress the agent-first collect step.
 - Routing bugs through `ravi feedback send --kind bug` would split the
   Console inbox and skip the dossier/sanitization contract.
+- A broad `ravi.watch.console.bug.*` trigger without a per-bugId filter
+  would wake this session for other sessions' bugs. The post-create hook
+  MUST keep the filter scoped to the created id.
+- Throwing from the subscribe/trigger hook would fail a create that
+  already succeeded. Follow is warn-only.

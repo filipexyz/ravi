@@ -108,6 +108,7 @@ The trigger topic catalog exposes these subjects for routine consumption:
 | `instances.unregistered` | `ravi.instances.unregistered` | audit |
 | `inbox.mail.received` | `ravi.inbox.mail.received` | inbox |
 | `console.inbox.item` | `ravi.console.inbox.item` | watch |
+| `watch.console.bug.status` | `ravi.watch.console.bug.status` | watch |
 | `watch.event` | `ravi.watch.*.*` | watch |
 | `task.event` | `ravi.task.*.event` | tasks |
 | `tags.rule.applied` | `ravi.tags.rule.applied` | custom |

@@ -10,7 +10,12 @@
   `severity`, required `payload` holding the full dossier + `source`).
   Slug org/project refs MUST stay inside `payload.context` and MUST NOT
   appear as top-level `organizationId` / `projectId`. Then print the bug
-  id and tracking URL.
+  id and tracking URL. Then it MUST `POST /api/cli/bugs/<id>/subscribe`
+  with `{ installationId }` and ensure a trigger on
+  `ravi.watch.console.bug.status` whose filter matches only that bugId
+  (`data.payload.bugId == "<id>" || data.bugId == "<id>"`) and fires
+  into the current/`main` session (cooldown 30s). Follow failure MUST
+  warn and MUST NOT fail the create.
 - The dry-run plan MUST omit raw title, summary, evidence, organization /
   project refs, session hints, and Console override. `surface` MAY remain.
 - Invalid `--severity`, broken `--dossier-json` / `--dossier-file`,
@@ -30,5 +35,7 @@
   filing and to use `ravi bug report` (not `ravi feedback`) after a yes.
 - `bun test src/cli/commands/bug.test.ts` SHOULD pass after any change to
   the bug-report contract surface.
+- `bun test src/bug-report/follow.test.ts` SHOULD prove the filter is
+  scoped to the created bugId and rejects other ids.
 - `bun test src/prompt-builder.test.ts` SHOULD still include the bug-report
   session paragraph.
