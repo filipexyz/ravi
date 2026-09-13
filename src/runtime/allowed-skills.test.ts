@@ -3,7 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { dbUpsertSkillGrant, dbDeleteSkillGrant } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { BASELINE_SYSTEM_SKILL_SLUGS, resolveAgentSkills } from "./allowed-skills.js";
-import { isSkillAuthorizedForAgent } from "./skill-visibility.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId, source: "test" };

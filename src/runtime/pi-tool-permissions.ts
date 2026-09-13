@@ -1,11 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  extractRequestedSkillFromToolCall,
-  isSkillAuthorizedForAgent,
-  isSkillNameAuthorizedOnAllowlist,
-} from "./skill-visibility.js";
+import { extractRequestedSkillFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
   RuntimeApprovalQuestion,
@@ -79,10 +75,9 @@ export interface PiToolPermissionHandlers {
   /**
    * Canonical allowlist already applied to the Pi catalog. When present and
    * non-empty, skill invocation is gated against this list (hard deny).
+   * Absent/empty keeps Invariant F grandfather behavior.
    */
   allowedSkills?: readonly string[];
-  /** Used when `allowedSkills` is absent so Invariant F grandfather still applies. */
-  agentId?: string;
 }
 
 export interface PiToolPermissionDecision {
@@ -277,10 +272,10 @@ export async function authorizePiToolCall(
 }
 
 function isPiSkillAuthorized(skillName: string, handlers: PiToolPermissionHandlers): boolean {
-  if (handlers.allowedSkills && handlers.allowedSkills.length > 0) {
-    return isSkillNameAuthorizedOnAllowlist(skillName, handlers.allowedSkills);
+  if (!handlers.allowedSkills || handlers.allowedSkills.length === 0) {
+    return true;
   }
-  return isSkillAuthorizedForAgent(handlers.agentId, skillName);
+  return isSkillNameAuthorizedOnAllowlist(skillName, handlers.allowedSkills);
 }
 
 export async function resolvePiExtensionUiResponse(

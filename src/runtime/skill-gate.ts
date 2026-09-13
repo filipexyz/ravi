@@ -22,11 +22,8 @@ import {
 } from "../cli/skill-gates.js";
 import { nats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
-import {
-  isSkillAuthorizedForAgent,
-  markLoadedFromSkillGate,
-  readSkillVisibilityFromParams,
-} from "./skill-visibility.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { markLoadedFromSkillGate, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 export type ConfiguredSkillGateRule = SkillGateRuleConfig;

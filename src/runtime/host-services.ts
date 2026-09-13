@@ -40,11 +40,8 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
-import {
-  extractRequestedSkillFromCommandLine,
-  extractRequestedSkillFromToolCall,
-  isSkillAuthorizedForAgent,
-} from "./skill-visibility.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
