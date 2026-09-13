@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertSkillGrant, dbDeleteSkillGrant } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { BASELINE_SYSTEM_SKILL_SLUGS, isSkillAuthorizedForAgent, resolveAgentSkills } from "./allowed-skills.js";
+import { BASELINE_SYSTEM_SKILL_SLUGS, resolveAgentSkills } from "./allowed-skills.js";
+import { isSkillAuthorizedForAgent } from "./skill-visibility.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId, source: "test" };

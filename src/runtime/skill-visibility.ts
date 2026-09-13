@@ -8,6 +8,7 @@ import {
   listInstalledSkills,
   slugifySkillName,
 } from "../skills/manager.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import type {
   RuntimeEventMetadata,
   RuntimePlugin,
@@ -694,6 +695,17 @@ export function isSkillNameAuthorizedOnAllowlist(skillName: string, allowlist: r
     candidates.push(`${resolved.pluginName}-${basename(resolved.path)}`);
   }
   return candidates.some((candidate) => skillNameMatchesAllowlist(candidate, allowlist));
+}
+
+/**
+ * Hard allowlist gate (Invariant G). Agents without configuration stay
+ * grandfathered (Invariant F).
+ */
+export function isSkillAuthorizedForAgent(agentId: string | undefined, skillName: string): boolean {
+  if (!agentId?.trim()) return true;
+  const resolved = resolveAgentSkills(agentId);
+  if (!resolved.hasConfiguration) return true;
+  return isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist);
 }
 
 function extractCommandFromToolInput(toolInput: unknown): string | null {
