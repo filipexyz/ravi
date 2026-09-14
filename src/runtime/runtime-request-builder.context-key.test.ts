@@ -155,16 +155,18 @@ describe("runtime request first-turn context key", () => {
       crashRecovery: crashRecovery(),
     });
 
-    const publishedKey = runtimeRequest.env.RAVI_CONTEXT_KEY;
-    const toolSpawnEnv = { ...runtimeRequest.env };
+    const runtimeEnv = runtimeRequest.env;
+    if (!runtimeEnv) throw new Error("expected runtime env");
+    const publishedKey = runtimeEnv.RAVI_CONTEXT_KEY;
+    const toolSpawnEnv = { ...runtimeEnv };
     expect(publishedKey).toBeTruthy();
-    expect(resolveRuntimeContext(publishedKey!, { touch: false })).not.toBeNull();
+    expect(resolveRuntimeContext(publishedKey, { touch: false })).not.toBeNull();
 
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
-    expect(runtimeRequest.env.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
     expect(toolSpawnEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
-    expect(resolveRuntimeContext(toolSpawnEnv.RAVI_CONTEXT_KEY!, { touch: false })?.contextKey).toBe(publishedKey);
+    expect(resolveRuntimeContext(toolSpawnEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextKey).toBe(publishedKey);
     expect(
       dbListContexts({ sessionKey: SESSION_KEY, kind: "turn-runtime", includeInactive: true }).filter(
         (context) => !context.revokedAt,
@@ -175,9 +177,9 @@ describe("runtime request first-turn context key", () => {
     streaming.onTurnComplete?.();
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
-    expect(runtimeRequest.env.RAVI_CONTEXT_KEY).not.toBe(publishedKey);
-    expect(resolveRuntimeContext(publishedKey!, { touch: false })).toBeNull();
-    expect(resolveRuntimeContext(runtimeRequest.env.RAVI_CONTEXT_KEY!, { touch: false })).not.toBeNull();
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).not.toBe(publishedKey);
+    expect(resolveRuntimeContext(publishedKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })).not.toBeNull();
 
     streaming.done = true;
     streaming.onTurnComplete?.();
