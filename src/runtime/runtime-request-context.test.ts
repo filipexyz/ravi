@@ -706,6 +706,54 @@ describe("runtime request context authority", () => {
     expect(dbGetContext(runtimeContext.contextId)?.revokedAt).toBeUndefined();
   });
 
+  it("rotates instead of throwing when in-place activation cannot find the published context", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "list agents");
+    const missingContext = {
+      contextId: "ctx_test_runtime",
+      contextKey: "rctx_test_runtime",
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      sessionName,
+      capabilities: [],
+      createdAt: Date.now(),
+    };
+    const toolContext: Record<string, unknown> = {
+      contextId: missingContext.contextId,
+      context: missingContext,
+    };
+    const runtimeEnv: Record<string, string> = {
+      RAVI_CONTEXT_KEY: missingContext.contextKey,
+    };
+
+    expect(dbGetContext(missingContext.contextId)).toBeNull();
+
+    const refreshed = refreshRuntimeRequestContextForTurn({
+      runtimeContext: missingContext,
+      toolContext,
+      runtimeEnv,
+      rotateContext: false,
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(refreshed.contextId).not.toBe("ctx_test_runtime");
+    expect(refreshed.contextKey).not.toBe("rctx_test_runtime");
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(refreshed.contextKey);
+    expect(dbGetContext(refreshed.contextId)?.revokedAt).toBeUndefined();
+    expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(refreshed.contextId);
+  });
+
   it("does not require admin-tagged contact authority for agent identity group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {

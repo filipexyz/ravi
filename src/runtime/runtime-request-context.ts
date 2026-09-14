@@ -1,5 +1,6 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
 import {
+  dbGetContext,
   dbUpdateContextCapabilities,
   dbUpdateContextRuntimeState,
   type ContextCapability,
@@ -144,12 +145,13 @@ export function refreshRuntimeRequestContextForTurn(options: {
     }),
   });
 
-  if (options.rotateContext === false) {
+  const persistedInPlace =
+    options.rotateContext === false &&
     persistRuntimeContextInPlace(options.runtimeContext, {
       ...derived,
       sessionName: options.sessionName,
     });
-  } else {
+  if (!persistedInPlace) {
     const nextContext = createRuntimeContext({
       kind: TURN_SCOPED_AUTHORITY_KIND,
       agentId: options.agent.id,
@@ -161,7 +163,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
       ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
     });
     const previousContextId = options.runtimeContext.contextId;
-    if (previousContextId !== nextContext.contextId) {
+    if (previousContextId !== nextContext.contextId && dbGetContext(previousContextId)) {
       revokeRuntimeContext(previousContextId, {
         cascade: false,
         reason: "turn_context_rotated",
@@ -281,15 +283,22 @@ function persistRuntimeContextInPlace(
     source: ContextSource | undefined;
     sessionName: string;
   },
-): ContextRecord {
-  dbUpdateContextCapabilities(runtimeContext.contextId, derived.capabilities);
-  const persisted = dbUpdateContextRuntimeState(runtimeContext.contextId, {
-    sessionName: derived.sessionName,
-    source: derived.source,
-    metadata: derived.metadata,
-  });
-  Object.assign(runtimeContext, persisted);
-  return runtimeContext;
+): boolean {
+  if (!dbGetContext(runtimeContext.contextId)) {
+    return false;
+  }
+  try {
+    dbUpdateContextCapabilities(runtimeContext.contextId, derived.capabilities);
+    const persisted = dbUpdateContextRuntimeState(runtimeContext.contextId, {
+      sessionName: derived.sessionName,
+      source: derived.source,
+      metadata: derived.metadata,
+    });
+    Object.assign(runtimeContext, persisted);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {
