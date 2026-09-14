@@ -475,6 +475,12 @@ describe("runCoverageGate", () => {
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(
+      runCoverageGate(
+        ["src/runtime/runtime-request-builder.ts", "src/runtime/runtime-request-builder.context-key.test.ts"],
+        cwd,
+      ).ok,
+    ).toBe(true);
   });
 
   it("accepts last-used provider and restart-resume focused tests for runtime changes", () => {

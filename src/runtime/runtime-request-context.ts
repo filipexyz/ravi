@@ -1,5 +1,12 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
-import { type ContextCapability, type ContextRecord } from "../router/router-db.js";
+import {
+  dbGetContext,
+  dbUpdateContextCapabilities,
+  dbUpdateContextRuntimeState,
+  type ContextCapability,
+  type ContextRecord,
+  type ContextSource,
+} from "../router/router-db.js";
 import {
   buildEffectiveCapabilities,
   hasAnyCapability,
@@ -102,6 +109,14 @@ export function refreshRuntimeRequestContextForTurn(options: {
   runtimeContext: ContextRecord;
   toolContext: Record<string, unknown>;
   runtimeEnv?: Record<string, string>;
+  raviEnv?: Record<string, string>;
+  /**
+   * Subsequent turns mint a fresh turn-runtime snapshot and revoke the previous
+   * key. The first activation of a request-build context must keep the already
+   * published `RAVI_CONTEXT_KEY` live — tools/shell often copy env at session
+   * start, before this refresh runs.
+   */
+  rotateContext?: boolean;
   dbSessionKey: string;
   sessionName: string;
   sessionCwd: string;
@@ -113,14 +128,13 @@ export function refreshRuntimeRequestContextForTurn(options: {
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
 }): ContextRecord {
-  const capabilities = buildRuntimeContextCapabilities(options.agent.id, options.sessionName, options.prompt);
-  const nextContext = createRuntimeContextForPrompt({
+  const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
     sessionName: options.sessionName,
     prompt: options.prompt,
     resolvedSource: options.resolvedSource,
-    capabilities,
+    capabilities: buildRuntimeContextCapabilities(options.agent.id, options.sessionName, options.prompt),
     metadata: buildRuntimeContextMetadata({
       prompt: options.prompt,
       resolvedSource: options.resolvedSource,
@@ -131,34 +145,53 @@ export function refreshRuntimeRequestContextForTurn(options: {
     }),
   });
 
-  const previousContextId = options.runtimeContext.contextId;
-  if (previousContextId !== nextContext.contextId) {
-    revokeRuntimeContext(previousContextId, {
-      cascade: false,
-      reason: "turn_context_rotated",
+  const persistedInPlace =
+    options.rotateContext === false &&
+    persistRuntimeContextInPlace(options.runtimeContext, {
+      ...derived,
+      sessionName: options.sessionName,
     });
+  if (!persistedInPlace) {
+    const nextContext = createRuntimeContext({
+      kind: TURN_SCOPED_AUTHORITY_KIND,
+      agentId: options.agent.id,
+      sessionKey: options.dbSessionKey,
+      sessionName: options.sessionName,
+      source: derived.source,
+      capabilities: derived.capabilities,
+      metadata: derived.metadata,
+      ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
+    });
+    const previousContextId = options.runtimeContext.contextId;
+    if (previousContextId !== nextContext.contextId && dbGetContext(previousContextId)) {
+      revokeRuntimeContext(previousContextId, {
+        cascade: false,
+        reason: "turn_context_rotated",
+      });
+    }
+    Object.assign(options.runtimeContext, nextContext);
   }
 
-  Object.assign(options.runtimeContext, nextContext);
   options.toolContext.contextId = options.runtimeContext.contextId;
   options.toolContext.context = options.runtimeContext;
   options.toolContext.sessionKey = options.dbSessionKey;
   options.toolContext.sessionName = options.sessionName;
   options.toolContext.agentId = options.agent.id;
   options.toolContext.source = options.resolvedSource;
+  const nextRaviEnv = buildRaviRuntimeEnv({
+    runtimeContext: options.runtimeContext,
+    dbSessionKey: options.dbSessionKey,
+    sessionName: options.sessionName,
+    sessionCwd: options.sessionCwd,
+    agent: options.agent,
+    prompt: options.prompt,
+    resolvedSource: options.resolvedSource,
+  });
   if (options.runtimeEnv) {
-    refreshManagedRaviRuntimeEnv(
-      options.runtimeEnv,
-      buildRaviRuntimeEnv({
-        runtimeContext: options.runtimeContext,
-        dbSessionKey: options.dbSessionKey,
-        sessionName: options.sessionName,
-        sessionCwd: options.sessionCwd,
-        agent: options.agent,
-        prompt: options.prompt,
-        resolvedSource: options.resolvedSource,
-      }),
-    );
+    refreshManagedRaviRuntimeEnv(options.runtimeEnv, nextRaviEnv);
+  }
+  if (options.raviEnv) {
+    refreshManagedRaviRuntimeEnv(options.raviEnv, nextRaviEnv);
   }
   return options.runtimeContext;
 }
@@ -205,20 +238,67 @@ function createRuntimeContextForPrompt(options: {
   capabilities: ContextCapability[];
   metadata: Record<string, unknown>;
 }): ContextRecord {
-  const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
+  const derived = deriveRuntimeContextForPrompt(options);
   return createRuntimeContext({
     kind: TURN_SCOPED_AUTHORITY_KIND,
     agentId: options.agentId,
     sessionKey: options.sessionKey,
     sessionName: options.sessionName,
-    source: buildContextSource(options.resolvedSource),
+    source: derived.source,
+    capabilities: derived.capabilities,
+    metadata: derived.metadata,
+    ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
+  });
+}
+
+function deriveRuntimeContextForPrompt(options: {
+  agentId: string;
+  sessionKey: string;
+  sessionName: string;
+  prompt: RuntimeLaunchPrompt;
+  resolvedSource?: RuntimeMessageTarget;
+  capabilities: ContextCapability[];
+  metadata: Record<string, unknown>;
+}): {
+  capabilities: ContextCapability[];
+  metadata: Record<string, unknown>;
+  source: ContextSource | undefined;
+} {
+  const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
+  return {
     capabilities: identity.capabilities,
     metadata: {
       ...options.metadata,
       ...identity.metadata,
     },
-    ttlMs: DEFAULT_DERIVED_CONTEXT_TTL_MS,
-  });
+    source: buildContextSource(options.resolvedSource),
+  };
+}
+
+function persistRuntimeContextInPlace(
+  runtimeContext: ContextRecord,
+  derived: {
+    capabilities: ContextCapability[];
+    metadata: Record<string, unknown>;
+    source: ContextSource | undefined;
+    sessionName: string;
+  },
+): boolean {
+  if (!dbGetContext(runtimeContext.contextId)) {
+    return false;
+  }
+  try {
+    dbUpdateContextCapabilities(runtimeContext.contextId, derived.capabilities);
+    const persisted = dbUpdateContextRuntimeState(runtimeContext.contextId, {
+      sessionName: derived.sessionName,
+      source: derived.source,
+      metadata: derived.metadata,
+    });
+    Object.assign(runtimeContext, persisted);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {
