@@ -579,6 +579,26 @@ export function buildPiRpcSpawnEnv(input: Pick<PiRpcStartInput, "env">): NodeJS.
   return env;
 }
 
+function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
+  return buildPiRpcSpawnEnv({
+    env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
+  });
+}
+
+/** Snapshot of managed Ravi authority env that must stay live in the Pi process. */
+export function buildPiManagedRuntimeEnvSignature(env: NodeJS.ProcessEnv): string {
+  return JSON.stringify(
+    Object.entries(env)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .filter(([key]) => key.startsWith("RAVI_"))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function piManagedRuntimeEnvChanged(current: NodeJS.ProcessEnv, next: NodeJS.ProcessEnv): boolean {
+  return buildPiManagedRuntimeEnvSignature(current) !== buildPiManagedRuntimeEnvSignature(next);
+}
+
 async function* runPiTurns(
   input: RuntimeStartRequest,
   createTransport: () => PiRpcTransport,
@@ -594,9 +614,7 @@ async function* runPiTurns(
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
-    env: buildPiRpcSpawnEnv({
-      env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
-    }),
+    env: resolvePiRpcProcessEnv(input),
     provider: input.modelBroker ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker) : modelSelector.provider,
     model: modelSelector.modelId,
     modelArg: input.modelBroker
@@ -618,7 +636,18 @@ async function* runPiTurns(
     return eventIterator.next();
   };
 
+  // The host rotates `input.env` (RAVI_CONTEXT_KEY and related managed Ravi
+  // keys) before yielding each turn. Snapshot at start/restart so the long-lived
+  // Pi process never keeps a revoked context key.
+  const applyCurrentPiRpcSpawnEnv = (): boolean => {
+    const nextEnv = resolvePiRpcProcessEnv(input);
+    const changed = piManagedRuntimeEnvChanged(startInput.env, nextEnv);
+    startInput.env = nextEnv;
+    return changed;
+  };
+
   const startTransport = async () => {
+    applyCurrentPiRpcSpawnEnv();
     await transport.start(startInput);
     state.started = true;
     state.permissionHooksReady = false;
@@ -657,27 +686,6 @@ async function* runPiTurns(
   };
 
   try {
-    try {
-      await startTransport();
-    } catch (error) {
-      if (!isPiPermissionBridgeError(error)) {
-        throw error;
-      }
-      for await (const promptMessage of input.prompt) {
-        if (!extractPromptText(promptMessage)) {
-          continue;
-        }
-        yield {
-          type: "turn.failed",
-          error: error.message,
-          recoverable: true,
-          failureKind: "transport",
-          rawEvent: { type: "permission.bridge_unavailable" },
-        };
-        return;
-      }
-      return;
-    }
     let turnIndex = 0;
 
     for await (const promptMessage of input.prompt) {
@@ -688,6 +696,29 @@ async function* runPiTurns(
       const prompt = extractPromptText(promptMessage);
       if (!prompt) {
         continue;
+      }
+
+      // Start (or respawn) after the host has applied this turn's runtime env.
+      // Eager spawn at session open would bake the pre-rotation context key,
+      // which refreshRuntimeRequestContextForTurn then revokes.
+      if (!state.started) {
+        try {
+          await startTransport();
+        } catch (error) {
+          if (!isPiPermissionBridgeError(error)) {
+            throw error;
+          }
+          yield {
+            type: "turn.failed",
+            error: error.message,
+            recoverable: true,
+            failureKind: "transport",
+            rawEvent: { type: "permission.bridge_unavailable" },
+          };
+          return;
+        }
+      } else if (applyCurrentPiRpcSpawnEnv()) {
+        await restartTransport();
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();

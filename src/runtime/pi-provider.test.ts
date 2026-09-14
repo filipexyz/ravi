@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildPiManagedRuntimeEnvSignature,
   buildPiRpcProcessArgs,
   buildPiRpcSpawnEnv,
   createPiRuntimeProvider,
@@ -38,7 +39,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
-    this.starts.push(input);
+    this.starts.push({ ...input, env: { ...input.env } });
     if (this.emitPermissionHandshake) {
       this.pushEvent(createPiPermissionHooksReadyEvent(`hooks-ready-${this.starts.length}`) as PiRpcEvent);
     }
@@ -89,6 +90,103 @@ describe("Pi runtime provider", () => {
       if (previous === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = previous;
     }
+  });
+
+  it("treats rotated RAVI_CONTEXT_KEY as a managed Pi spawn-env change", () => {
+    const first = buildPiRpcSpawnEnv({
+      env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_first", RAVI_TASK_ID: "task_stale" },
+    });
+    const second = buildPiRpcSpawnEnv({
+      env: { PATH: "/other", RAVI_CONTEXT_KEY: "rctx_second" },
+    });
+    const sameKey = buildPiRpcSpawnEnv({
+      env: { PATH: "/other", RAVI_CONTEXT_KEY: "rctx_first", RAVI_TASK_ID: "task_stale" },
+    });
+
+    expect(buildPiManagedRuntimeEnvSignature(first)).not.toBe(buildPiManagedRuntimeEnvSignature(second));
+    expect(buildPiManagedRuntimeEnvSignature(first)).toBe(buildPiManagedRuntimeEnvSignature(sameKey));
+  });
+
+  it("refreshes Ravi authority env between turns by respawning Pi when the context key rotates", async () => {
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_first",
+      RAVI_TASK_ID: "task_stale",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      transport.responseFor = (command) => {
+        if (command.type === "get_state") {
+          return piResponse(command, { sessionFile: "/tmp/pi-session.jsonl" });
+        }
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      return transport;
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+        createStartRequest("first", {
+          env,
+          prompt: (async function* () {
+            yield promptMessage("first");
+            env.RAVI_CONTEXT_KEY = "rctx_second";
+            delete env.RAVI_TASK_ID;
+            yield promptMessage("second");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transports).toHaveLength(2);
+    expect(transports[0]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_first");
+    expect(transports[0]?.starts[0]?.env.RAVI_TASK_ID).toBe("task_stale");
+    expect(transports[1]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(transports[1]?.starts[0]?.env.RAVI_TASK_ID).toBeUndefined();
+    expect(transports[0]?.closed).toBe(true);
+    expect(transports[1]?.commands).toContainEqual(
+      expect.objectContaining({ type: "switch_session", sessionPath: "/tmp/pi-session.jsonl" }),
+    );
+  });
+
+  it("reuses the Pi RPC process when managed Ravi env is unchanged between turns", async () => {
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_same",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      transport.responseFor = (command) => {
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      return transport;
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+        createStartRequest("first", { env, prompt: twoPrompts("first", "second") }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transports).toHaveLength(1);
+    expect(transports[0]?.starts).toHaveLength(1);
+    expect(transports[0]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_same");
+    expect(transports[0]?.commands.filter((command) => command.type === "prompt")).toEqual([
+      expect.objectContaining({ type: "prompt", message: "first" }),
+      expect.objectContaining({ type: "prompt", message: "second" }),
+    ]);
   });
 
   it("rejects upstream credentials before starting a proxied Pi transport", () => {
