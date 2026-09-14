@@ -103,6 +103,20 @@ ravi storage cleanup --tier <routine|weekly> [--execute] [--json]
   `{success:false, op, error:{code, message, retryable, suggestedAction, acceptedValues?|suggestions?}}`.
 - `op` MUST be `storage cleanup`.
 
+## Test seams (fixtures only)
+
+The destructive path MUST be exercisable against a controlled fixture without ever
+pointing at real host state. The command MUST honor, **only** when
+`RAVI_STORAGE_FIXTURE_MODE=1`:
+
+- `RAVI_STORAGE_FIXTURE_TMP_ROOTS` — a `:`-separated list replacing the temp roots;
+- `RAVI_STORAGE_FIXTURE_RECEIPT_DIR` — replacement for the receipt directory;
+- `RAVI_STORAGE_FIXTURE_ALLOWLIST` — optional replacement of the tmp name allowlist.
+
+When `RAVI_STORAGE_FIXTURE_MODE` is unset or not `1`, all three MUST be ignored so
+production can never be redirected by environment. Tests and the out-of-candidate
+checker MUST rely on these seams; no test may delete outside its fixture.
+
 ## Policy
 
 - The policy MUST be compiled from source-controlled constants and MUST be the

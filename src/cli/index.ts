@@ -125,6 +125,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "skills",
   "slack",
   "specs",
+  "storage",
   "stickers",
   "sync",
   "tag-rules",

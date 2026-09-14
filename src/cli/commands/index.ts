@@ -91,6 +91,7 @@ export * from "./skills.js";
 export * from "./slack.js";
 export * from "./specs.js";
 export * from "./stickers.js";
+export * from "./storage.js";
 export * from "./sync.js";
 export * from "./tag-rules.js";
 export * from "./tags.js";
