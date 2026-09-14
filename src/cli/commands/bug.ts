@@ -14,6 +14,7 @@ import {
   type BugReportStatusResult,
   type BugReportSubmitResult,
 } from "../../bug-report/client.js";
+import type { BugReportFollowResult } from "../../bug-report/follow.js";
 import { BUG_REPORT_COLLECTION_PROMPT } from "../../bug-report/prompt.js";
 import {
   BUG_REPORT_SCHEMA_ID,
@@ -63,7 +64,7 @@ ON ERROR
   AUTH_REQUIRED (exit 1) → ravi login   (dry-run never needs this)
 
 PIPELINE
-  hit a bug → ask user → ravi bug report (collect) → sanitize → --execute → status/list
+  hit a bug → ask user → ravi bug report (collect) → sanitize → --execute → auto-follow (subscribe + per-bug trigger) → status/list
 
 SEE ALSO
   ravi feedback send — lightweight inbox, not this dossier
@@ -76,6 +77,7 @@ FONTES
   .ravi/specs/cli/bug-report/SPEC.md
   src/cli/commands/bug.ts
   src/bug-report/client.ts
+  src/bug-report/follow.ts
 `;
 
 const BUG_STATUS_HELP = `
@@ -240,6 +242,18 @@ declareCommandReturns(BugCommands, {
     bug: jsonObjectSchema,
     id: z.string(),
     url: z.string(),
+    follow: z
+      .object({
+        ok: z.boolean(),
+        subscribed: z.boolean(),
+        triggerId: z.string().optional(),
+        reused: z.boolean().optional(),
+        topic: z.string(),
+        filter: z.string(),
+        session: z.literal("main"),
+        warning: z.string().optional(),
+      })
+      .optional(),
   }),
   status: z.object({
     success: z.literal(true),
@@ -343,6 +357,19 @@ function printPayload(payload: unknown, asJson: boolean | undefined, printHuman:
 function printBugSubmitResult(result: BugReportSubmitResult): void {
   console.log(`Bug reported: ${result.id}`);
   console.log(`Tracking: ${result.url}`);
+  printBugFollowResult(result.follow);
+}
+
+function printBugFollowResult(follow: BugReportFollowResult | undefined): void {
+  if (!follow) return;
+  if (follow.ok && follow.triggerId) {
+    console.log(
+      `Following: trigger ${follow.triggerId} on ${follow.topic} (${follow.reused ? "reused" : "created"}, this bug only)`,
+    );
+    return;
+  }
+  const warning = follow.warning ?? "auto-follow did not finish";
+  console.log(`Warning: bug was filed, but auto-follow failed: ${warning}`);
 }
 
 function printBugStatusResult(result: BugReportStatusResult): void {

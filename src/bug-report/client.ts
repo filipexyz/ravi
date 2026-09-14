@@ -2,15 +2,24 @@ import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import {
+  BUG_STATUS_WATCH_TOPIC,
+  type BugFollowTriggerDeps,
+  type BugReportFollowResult,
+  bugFollowFilter,
+  bugReportSubscribeApiPath,
+  ensureBugFollowTrigger,
+} from "./follow.js";
 import { type BugReportDossier, requireCompleteBugReportDossier } from "./schema.js";
 
 export const BUG_REPORT_API_PATH = "/api/cli/bugs";
+export { bugReportSubscribeApiPath } from "./follow.js";
 
 export interface BugReportClientOptions {
   console?: string;
 }
 
-export interface BugReportClientDeps {
+export interface BugReportClientDeps extends BugFollowTriggerDeps {
   client?: ConsoleApiClient;
   readCredentials?: typeof readCloudCredentials;
   writeCredentials?: typeof writeCloudCredentials;
@@ -28,6 +37,7 @@ export interface BugReportSubmitResult {
   bug: Record<string, unknown>;
   id: string;
   url: string;
+  follow?: BugReportFollowResult;
 }
 
 export interface BugReportStatusResult {
@@ -75,6 +85,24 @@ export class RaviBugReportClient {
     }
   }
 
+  async subscribe(
+    accessToken: string,
+    id: string,
+    body: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> {
+    const bugId = requireBugId(id);
+    try {
+      return await this.client.requestJson<Record<string, unknown>>(
+        "POST",
+        bugReportSubscribeApiPath(bugId),
+        body,
+        accessToken,
+      );
+    } catch (error) {
+      throw normalizeBugReportError(error);
+    }
+  }
+
   async list(
     accessToken: string,
     options: { limit?: number; offset?: number } = {},
@@ -98,14 +126,77 @@ export async function submitBugReport(
   deps: BugReportClientDeps = {},
 ): Promise<BugReportSubmitResult> {
   const auth = await createAuthenticatedBugReportContext(options.console, deps);
-  const bug = await new RaviBugReportClient(auth.client).submit(auth.accessToken, options);
+  const api = new RaviBugReportClient(auth.client);
+  const bug = await api.submit(auth.accessToken, options);
   const id = bugIdFromPayload(bug) ?? "submitted";
+  const url = trackingUrl(auth.consoleUrl, bug, id);
+  const follow = await followSubmittedBugReport(
+    {
+      accessToken: auth.accessToken,
+      api,
+      installationId: auth.installationId,
+      bugId: id,
+    },
+    deps,
+  );
   return {
     success: true,
     consoleUrl: auth.consoleUrl,
     bug,
     id,
-    url: trackingUrl(auth.consoleUrl, bug, id),
+    url,
+    follow,
+  };
+}
+
+/**
+ * Post-create hook: subscribe this installation to the bug and arm a
+ * per-bugId trigger. Failures are returned as `follow.warning` and MUST NOT
+ * fail the create that already succeeded.
+ */
+export async function followSubmittedBugReport(
+  input: {
+    accessToken: string;
+    api: RaviBugReportClient;
+    installationId: string;
+    bugId: string;
+  },
+  deps: BugFollowTriggerDeps = {},
+): Promise<BugReportFollowResult> {
+  const filter = bugFollowFilter(input.bugId);
+  const topic = BUG_STATUS_WATCH_TOPIC;
+  const warnings: string[] = [];
+  let subscribed = false;
+  let triggerId: string | undefined;
+  let reused = false;
+
+  try {
+    await input.api.subscribe(input.accessToken, input.bugId, {
+      installationId: input.installationId,
+    });
+    subscribed = true;
+  } catch (error) {
+    warnings.push(`Console subscribe failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const ensured = await ensureBugFollowTrigger(input.bugId, deps);
+    triggerId = ensured.trigger.id;
+    reused = ensured.reused;
+  } catch (error) {
+    warnings.push(`Follow trigger failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const warning = warnings.length > 0 ? warnings.join(" ") : undefined;
+  return {
+    ok: subscribed && Boolean(triggerId),
+    subscribed,
+    ...(triggerId ? { triggerId } : {}),
+    reused,
+    topic,
+    filter,
+    session: "main",
+    ...(warning ? { warning } : {}),
   };
 }
 
@@ -155,6 +246,7 @@ async function createAuthenticatedBugReportContext(consoleUrl: string | undefine
     accessToken: auth.credentials.accessToken,
     client,
     consoleUrl: auth.credentials.consoleUrl,
+    installationId: auth.credentials.installationId,
   };
 }
 

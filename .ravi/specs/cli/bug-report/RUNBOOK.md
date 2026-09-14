@@ -23,11 +23,19 @@
    that `runBugCommand` still rethrows `ContractError`.
 7. Do not "fix" a missing Console route by posting to `/api/cli/feedback`.
    Keep `/api/cli/bugs` stable and wait for the sibling Console PR.
+8. `--execute` succeeded but printed `Warning: ... auto-follow failed`:
+   the bug exists on Console. Check `POST /api/cli/bugs/<id>/subscribe`
+   (sibling Console PR) and that `ravi triggers list` can write. Re-run
+   follow is not a separate CLI yet — `ravi triggers add` with topic
+   `ravi.watch.console.bug.status` and filter
+   `data.payload.bugId == "<id>" || data.bugId == "<id>"` recovers the
+   local trigger. Other bugIds must not match that filter.
 
 ## Validation
 
 ```bash
 bun test src/cli/commands/bug.test.ts
+bun test src/bug-report/follow.test.ts
 bun test src/prompt-builder.test.ts
 ```
 
@@ -38,6 +46,7 @@ require `ravi login` and a Console that implements `/api/cli/bugs`):
 ravi bug report --json                                 # expect exit 3 + plan + collection prompt
 ravi bug report --severity bogus --json                # expect PAYLOAD_INVALID, exit 2
 ravi bug report --dossier-json '{"schemaVersion":"ravi.bug_report/v1","title":"x","summary":"y","severity":"low"}' --execute --json
+# expect follow.ok, follow.filter scoped to that id, follow.topic ravi.watch.console.bug.status
 ravi bug status <id> --json
 ravi bug list --json --limit 20
 ```

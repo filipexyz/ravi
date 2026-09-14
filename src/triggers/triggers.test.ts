@@ -55,6 +55,18 @@ describe("triggers native automation support", () => {
     expect(fields).toContain("stashedQueueSize");
   });
 
+  it("catalogs Console bug-status watch events with a per-bugId filter", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.watch.console.bug.status");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("watch");
+    expect(entry?.id).toBe("watch.console.bug.status");
+    expect(fields).toContain("payload.bugId");
+    expect(entry?.filters?.some((filter) => filter.includes("data.payload.bugId"))).toBe(true);
+    expect(entry?.filters?.some((filter) => filter.includes("data.bugId"))).toBe(true);
+    expect(entry?.examples.some((example) => example.includes("ravi.watch.console.bug.status"))).toBe(true);
+  });
+
   it("persists shell trigger command fields and clears them for agent triggers", () => {
     const trigger = dbCreateTrigger({
       name: "shell-ticket-flow",

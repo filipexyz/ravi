@@ -1872,6 +1872,16 @@ export type BugReportInput = {
 export type BugReportReturn = {
   bug: Record<string, unknown>;
   consoleUrl: string;
+  follow?: {
+    filter: string;
+    ok: boolean;
+    reused?: boolean;
+    session: "main";
+    subscribed: boolean;
+    topic: string;
+    triggerId?: string;
+    warning?: string;
+  };
   id: string;
   success: true;
   url: string;

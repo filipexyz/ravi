@@ -683,6 +683,36 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     notes: ["For local email, listen to ravi.inbox.mail.received instead."],
   },
   {
+    id: "watch.console.bug.status",
+    category: "watch",
+    pattern: "ravi.watch.console.bug.status",
+    title: "Followed Console bug status",
+    description: "Normalized watch event after Console delivers watch.console.bug.status to subscribers of that bugId.",
+    payload:
+      "{ version, eventId, watchId, connector, placement, eventType, subject, source, payload: { bugId, title, status, consoleUrl }, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "eventType", type: "string", required: true, description: "Always bug.status." },
+        { path: "connector", type: "string", required: true, description: "Always console." },
+        { path: "payload.bugId", type: "string", required: true, description: "Followed Console bug id." },
+        { path: "payload.title", type: "string", description: "Bug title." },
+        { path: "payload.status", type: "string", description: "New Console bug status." },
+        { path: "payload.consoleUrl", type: "string", description: "Tracking URL on Console." },
+        { path: "bugId", type: "string", description: "Flattened bug id when Console puts it on the event root." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Follow bug" --topic "ravi.watch.console.bug.status" --filter \'data.payload.bugId == "<bugId>" || data.bugId == "<bugId>"\' --session main --cooldown 30s --message "..."',
+    ],
+    filters: ['data.payload.bugId == "<bugId>"', 'data.bugId == "<bugId>"'],
+    notes: [
+      "Console push delivery eventType is watch.console.bug.status. Local NATS after the delivery bridge is ravi.watch.console.bug.status.",
+      "Subscribe with POST /api/cli/bugs/:id/subscribe (installation identity in the body) so only this CLI installation receives that bugId.",
+      "Always filter by this bugId. Do not create a broad all-my-bugs trigger.",
+    ],
+  },
+  {
     id: "watch.event",
     category: "watch",
     pattern: "ravi.watch.*.*",

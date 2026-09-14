@@ -32,6 +32,15 @@ those refs are hints for triage, not a scope gate.
 inbox. Bugs need reproduction, environment, and redaction — a different
 schema and a different Console API.
 
+After `--execute` succeeds, the same session should hear when Console
+changes that bug's status. Console push-delivers
+`watch.console.bug.status` only to installations that subscribed to that
+bugId. The CLI therefore calls `POST /api/cli/bugs/:id/subscribe` and
+arms a `ravi.watch.console.bug.status` trigger filtered to that id.
+A shared "all my bugs" trigger would wake this session for bugs filed
+elsewhere; the per-bug filter is the isolation boundary. Subscribe or
+trigger failure is a warning: the dossier already left the machine.
+
 The always-on session prompt is a small paragraph, not a second skill: when
 the session actually hits a product/runtime bug, ask once; if the user says
 yes, run `ravi bug report`. Spam and unsolicited `--execute` would make the

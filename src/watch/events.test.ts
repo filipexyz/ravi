@@ -54,6 +54,30 @@ describe("watch events", () => {
   it("keeps watch subject generation stable", () => {
     expect(eventSubject("npm", "package.version_published")).toBe("ravi.watch.npm.package.version_published");
   });
+
+  it("maps Console bug-status delivery onto ravi.watch.console.bug.status", () => {
+    const inbox = makeInboxPayload({
+      eventType: "watch.console.bug.status",
+      payload: {
+        bugId: "11111111-1111-4111-8111-111111111111",
+        title: "CLI crash",
+        status: "triaged",
+        consoleUrl: "https://console.example/bugs/11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    const event = watchEventFromInboxPayload(inbox);
+
+    expect(event).toMatchObject({
+      connector: "console",
+      eventType: "bug.status",
+      subject: "ravi.watch.console.bug.status",
+      payload: {
+        bugId: "11111111-1111-4111-8111-111111111111",
+        status: "triaged",
+      },
+    });
+  });
 });
 
 function makeInboxPayload(overrides: Partial<InboxNatsPayload> = {}): InboxNatsPayload {

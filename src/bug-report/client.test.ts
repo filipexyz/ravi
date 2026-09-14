@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { asUuid, toConsoleBugCreateBody } from "./client.js";
+import { asUuid, bugReportSubscribeApiPath, toConsoleBugCreateBody } from "./client.js";
 import { BUG_REPORT_SCHEMA_ID, type BugReportDossier } from "./schema.js";
 
 const ORG_UUID = "11111111-1111-4111-8111-111111111111";
@@ -57,6 +57,12 @@ describe("toConsoleBugCreateBody", () => {
       organizationRef: ORG_UUID,
       projectRef: PROJECT_UUID,
     });
+  });
+});
+
+describe("bugReportSubscribeApiPath", () => {
+  it("keeps the Console follow contract on /api/cli/bugs/:id/subscribe", () => {
+    expect(bugReportSubscribeApiPath("bug_1")).toBe("/api/cli/bugs/bug_1/subscribe");
   });
 });
 
