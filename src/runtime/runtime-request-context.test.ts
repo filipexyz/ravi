@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbGetContext, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
+import { dbCreateAgent, dbGetContext, dbListContexts, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession, resetSession } from "../router/sessions.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeContext } from "./context-registry.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
@@ -596,6 +597,113 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
+  it("keeps the published first-turn context key live when the same turn activates", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "list agents");
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+    const toolSpawnEnv = { ...runtimeEnv };
+    const publishedKey = runtimeEnv.RAVI_CONTEXT_KEY;
+    const publishedContextId = runtimeContext.contextId;
+
+    expect(publishedKey).toBe(runtimeContext.contextKey);
+    expect(resolveRuntimeContext(publishedKey, { touch: false })?.contextId).toBe(publishedContextId);
+
+    const activated = refreshRuntimeRequestContextForTurn({
+      runtimeContext,
+      toolContext,
+      runtimeEnv,
+      raviEnv,
+      rotateContext: false,
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(activated.contextId).toBe(publishedContextId);
+    expect(activated.contextKey).toBe(publishedKey);
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(raviEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(toolSpawnEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(dbGetContext(publishedContextId)?.revokedAt).toBeUndefined();
+    expect(resolveRuntimeContext(toolSpawnEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(publishedContextId);
+    expect(
+      dbListContexts({ sessionKey, kind: "turn-runtime", includeInactive: true }).filter(
+        (context) => !context.revokedAt,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("updates first-turn actor fields in place without rotating the published key", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const initialPrompt = promptForContact("luis", "read");
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: initialPrompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: initialPrompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+    const toolSpawnEnv = { ...runtimeEnv };
+    const publishedKey = runtimeEnv.RAVI_CONTEXT_KEY;
+    const nextPrompt = promptForContact("ana", "run");
+
+    refreshRuntimeRequestContextForTurn({
+      runtimeContext,
+      toolContext,
+      runtimeEnv,
+      raviEnv,
+      rotateContext: false,
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: nextPrompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: nextPrompt.source,
+    });
+
+    expect(runtimeContext.contextKey).toBe(publishedKey);
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(toolSpawnEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(runtimeEnv.RAVI_CONTACT_ID).toBe("ana");
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "contact:ana",
+      actorDisplayName: "Ana",
+    });
+    expect(resolveRuntimeContext(toolSpawnEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(
+      runtimeContext.contextId,
+    );
+    expect(dbGetContext(runtimeContext.contextId)?.revokedAt).toBeUndefined();
   });
 
   it("does not require admin-tagged contact authority for agent identity group turns", () => {

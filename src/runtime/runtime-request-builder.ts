@@ -554,6 +554,7 @@ async function buildRuntimeStartRequestInternal(
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
+  let turnRuntimeContextActivated = false;
   const reserveModelBrokerAttemptForTurn = async (
     turnId: string,
     planned?: ClaimedRuntimeModelBrokerPlan,
@@ -841,6 +842,8 @@ async function buildRuntimeStartRequestInternal(
         runtimeContext,
         toolContext,
         runtimeEnv,
+        raviEnv,
+        rotateContext: turnRuntimeContextActivated,
         dbSessionKey,
         sessionName,
         sessionCwd,
@@ -852,6 +855,7 @@ async function buildRuntimeStartRequestInternal(
         resolvedSource: turnSource,
         approvalSource,
       });
+      turnRuntimeContextActivated = true;
     },
     traceTurnStart,
   });
