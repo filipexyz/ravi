@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { dbCreateAgent, dbListContexts } from "../router/router-db.js";
+import { dbListContexts } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { resolveRuntimeContext } from "./context-registry.js";
@@ -112,7 +112,6 @@ describe("runtime request first-turn context key", () => {
 
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-request-context-key-");
-    dbCreateAgent({ id: AGENT_ID, cwd: stateDir });
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir);
   });
 
