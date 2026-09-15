@@ -16,6 +16,16 @@ audio payloads TEACH this command to live agents. If any of those strings drop
 That is why the builders in `sessions.ts` and the `sendCommand` fields are part
 of this spec's applies_to surface.
 
+A second live-agent trap is Omni auth divergence. Ravi's HTTP client uses
+`resolveOmniConnection()` (env, then the top-level `apiKey` in
+`~/.omni/config.json`). The spawned `omni` binary prefers
+`servers.list.<active>.apiKey`. When those keys diverge, text/media download
+keeps working and `ravi media send --execute` fails with an opaque
+`MEDIA_SEND_FAILED`. The send path must therefore project the runtime
+connection onto an isolated `OMNI_CONFIG_DIR`, and a remaining 401 must
+surface as `OMNI_AUTH_FAILED` with a config-divergence action — not a generic
+"Remote command failed."
+
 There is no dedicated `media` skill today — a registered gap. The sessions
 action hints are currently the only prompt-level teaching surface, which makes
 their correctness load-bearing.
