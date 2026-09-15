@@ -134,7 +134,7 @@ export function resolveStoragePolicy(tier: StorageTier, env: NodeJS.ProcessEnv =
       tmpRoots: splitList(env.RAVI_STORAGE_FIXTURE_TMP_ROOTS),
       tmpNameAllowlist,
       protectedPaths: [],
-      codexSessionsDir: null,
+      codexSessionsDir: env.RAVI_STORAGE_FIXTURE_CODEX_DIR?.trim() || null,
       tasksDir: null,
       omniDataDir: null,
       receiptDir: env.RAVI_STORAGE_FIXTURE_RECEIPT_DIR?.trim() || join(stateDir, "storage", "receipts"),

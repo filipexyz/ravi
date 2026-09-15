@@ -14,7 +14,14 @@
 
 import { lstatSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeSync, rmSync } from "node:fs";
 import { basename, join, sep } from "node:path";
-import { isContainedIn, measureBytes, scanStorageAreas, type StorageEntry } from "./eligibility.js";
+import {
+  isContainedIn,
+  measureBytes,
+  parseCodexSessionId,
+  scanStorageAreas,
+  type CodexProbe,
+  type StorageEntry,
+} from "./eligibility.js";
 import { resolveStoragePolicy, tmpNameMatchesAllowlist, type StoragePolicy, type StorageTier } from "./policy.js";
 import {
   newStorageReceiptId,
@@ -36,6 +43,8 @@ export interface StorageCleanupOptions {
   execute?: boolean;
   env?: NodeJS.ProcessEnv;
   now?: number;
+  /** Codex liveness probe; the default preserves every Codex artifact. */
+  codexProbe?: CodexProbe;
 }
 
 export interface StorageCleanupResult {
@@ -113,7 +122,9 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function canRemove(entry: StorageEntry, policy: StoragePolicy): string | null {
+const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
+
+function canRemove(entry: StorageEntry, policy: StoragePolicy, probe?: CodexProbe): string | null {
   let st;
   try {
     st = lstatSync(entry.path);
@@ -121,10 +132,22 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy): string | null {
     return "entry disappeared before removal";
   }
   if (st.isSymbolicLink()) return "symlink not followed";
-  if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
   if (isProtectedPath(entry.path, policy)) return "protected path";
-  if (!isContainedIn(entry.path, allowlistRootFor(policy, entry.path))) return "real path escapes allowlist root";
-  return null;
+  if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
+  if (entry.area === "tmp-ravi") {
+    if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
+    return null;
+  }
+  if (entry.area === "codex-inactive") {
+    if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
+    if (probe?.processRunning()) return "a live codex process is running";
+    const sessionId = parseCodexSessionId(entry.path);
+    if (!sessionId) return "session metadata unreadable (fail-closed)";
+    const liveness = probe?.sessionLiveness(sessionId) ?? "unknown";
+    if (liveness !== "not-live") return `session liveness is ${liveness}`;
+    return null;
+  }
+  return "area removal is not wired";
 }
 
 function isProtectedPath(target: string, policy: StoragePolicy): boolean {
@@ -132,14 +155,6 @@ function isProtectedPath(target: string, policy: StoragePolicy): boolean {
     const prefix = root.endsWith(sep) ? root : root + sep;
     return target === root || target.startsWith(prefix);
   });
-}
-
-function allowlistRootFor(policy: StoragePolicy, target: string): string {
-  for (const root of policy.tmpRoots) {
-    const prefix = root.endsWith(sep) ? root : root + sep;
-    if (target === root || target.startsWith(prefix)) return root;
-  }
-  return policy.tmpRoots[0] ?? target;
 }
 
 export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanupResult {
@@ -156,7 +171,7 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
   let freedBytes = 0;
 
   try {
-    const scans = scanStorageAreas(policy, now);
+    const scans = scanStorageAreas(policy, now, options.codexProbe);
     const entries = scans.flatMap((scan) => scan.entries);
     const limitations = scans.flatMap((scan) => scan.limitations);
     const candidates = entries.filter((entry) => entry.decision === "candidate");
@@ -178,7 +193,7 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
 
     if (execute) {
       for (const entry of candidates) {
-        const blocked = canRemove(entry, policy);
+        const blocked = canRemove(entry, policy, options.codexProbe);
         if (blocked) {
           errors.push(`preserved ${entry.path}: ${blocked}`);
           areaOf(entry).preserved += 1;

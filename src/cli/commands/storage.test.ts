@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StorageLockedError, runStorageCleanup } from "../../storage/cleanup.js";
+import type { CodexProbe } from "../../storage/eligibility.js";
 import { computeStoragePolicyHash, tmpNameMatchesAllowlist } from "../../storage/policy.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,28 +29,44 @@ const AGE_30D_MS = 30 * ONE_DAY_MS;
 
 const fixtures: string[] = [];
 
-function makeFixture(): { root: string; tmpRoot: string; receiptDir: string; outside: string; env: NodeJS.ProcessEnv } {
+function makeFixture(options: { codex?: boolean } = {}): {
+  root: string;
+  tmpRoot: string;
+  receiptDir: string;
+  outside: string;
+  codexDir: string;
+  env: NodeJS.ProcessEnv;
+} {
   const root = mkdtempSync(join(tmpdir(), "storage-test-"));
   fixtures.push(root);
   const tmpRoot = join(root, "tmp");
   const receiptDir = join(root, "receipts");
   const outside = join(root, "outside");
+  const codexDir = join(root, "codex-sessions");
   mkdirSync(tmpRoot, { recursive: true });
   mkdirSync(receiptDir, { recursive: true });
   mkdirSync(outside, { recursive: true });
-  return {
-    root,
-    tmpRoot,
-    receiptDir,
-    outside,
-    env: {
-      ...process.env,
-      RAVI_HOST_CLI_GATEWAY: "0",
-      RAVI_STORAGE_FIXTURE_MODE: "1",
-      RAVI_STORAGE_FIXTURE_TMP_ROOTS: tmpRoot,
-      RAVI_STORAGE_FIXTURE_RECEIPT_DIR: receiptDir,
-    },
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    RAVI_HOST_CLI_GATEWAY: "0",
+    RAVI_STORAGE_FIXTURE_MODE: "1",
+    RAVI_STORAGE_FIXTURE_TMP_ROOTS: tmpRoot,
+    RAVI_STORAGE_FIXTURE_RECEIPT_DIR: receiptDir,
   };
+  if (options.codex) {
+    mkdirSync(codexDir, { recursive: true });
+    env.RAVI_STORAGE_FIXTURE_CODEX_DIR = codexDir;
+  }
+  return { root, tmpRoot, receiptDir, outside, codexDir, env };
+}
+
+function writeRollout(dir: string, name: string, sessionId: string, ageMs: number): string {
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, name);
+  writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { session_id: sessionId } })}\n`);
+  const stamp = new Date(Date.now() - ageMs);
+  utimesSync(file, stamp, stamp);
+  return file;
 }
 
 function makeDir(path: string, ageMs?: number): void {
@@ -176,5 +193,77 @@ describe("storage cleanup CLI usage", () => {
     expect(result.status).toBe(0);
     const payload = JSON.parse(result.stdout.trim().split("\n").pop()!);
     expect(payload.dryRun).toBe(true);
+  });
+});
+
+const NOT_LIVE: CodexProbe = { processRunning: () => false, sessionLiveness: () => "not-live" };
+const LIVE: CodexProbe = { processRunning: () => false, sessionLiveness: () => "live" };
+const UNKNOWN: CodexProbe = { processRunning: () => false, sessionLiveness: () => "unknown" };
+const RUNNING: CodexProbe = { processRunning: () => true, sessionLiveness: () => "not-live" };
+
+describe("storage cleanup codex-inactive", () => {
+  it("removes an aged rollout only when liveness proves not-live", () => {
+    const fx = makeFixture({ codex: true });
+    const file = writeRollout(fx.codexDir, "rollout-2026-01-01T00-00-00-fixed.jsonl", "codex-1", AGE_30D_MS);
+
+    const dry = runStorageCleanup({ tier: "routine", env: fx.env, codexProbe: NOT_LIVE });
+    expect(dry.areas["codex-inactive"]?.candidates).toBe(1);
+
+    const executed = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
+    expect(existsSync(file)).toBe(false);
+    expect(executed.errors).toEqual([]);
+  });
+
+  it("preserves a rollout referenced by a live Ravi session", () => {
+    const fx = makeFixture({ codex: true });
+    const file = writeRollout(fx.codexDir, "rollout-live.jsonl", "codex-live", AGE_30D_MS);
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: LIVE });
+    expect(existsSync(file)).toBe(true);
+    expect(result.areas["codex-inactive"]?.candidates).toBe(0);
+  });
+
+  it("preserves a rollout when liveness is unknown and records the limitation", () => {
+    const fx = makeFixture({ codex: true });
+    const file = writeRollout(fx.codexDir, "rollout-unknown.jsonl", "codex-unknown", AGE_30D_MS);
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: UNKNOWN });
+    expect(existsSync(file)).toBe(true);
+    expect(result.limitations.join(" ")).toContain("liveness");
+  });
+
+  it("preserves every rollout while a codex process is running", () => {
+    const fx = makeFixture({ codex: true });
+    const file = writeRollout(fx.codexDir, "rollout-process.jsonl", "codex-process", AGE_30D_MS);
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: RUNNING });
+    expect(existsSync(file)).toBe(true);
+    expect(result.preserved).toContain(file);
+  });
+
+  it("preserves young and metadata-less rollouts", () => {
+    const fx = makeFixture({ codex: true });
+    const young = writeRollout(fx.codexDir, "rollout-young.jsonl", "codex-young", 1000);
+    const bad = join(fx.codexDir, "rollout-bad.jsonl");
+    writeFileSync(bad, `${JSON.stringify({ type: "not_meta" })}\n`);
+    utimesSync(bad, new Date(Date.now() - AGE_30D_MS), new Date(Date.now() - AGE_30D_MS));
+
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
+    expect(existsSync(young)).toBe(true);
+    expect(existsSync(bad)).toBe(true);
+    expect(result.areas["codex-inactive"]?.candidates).toBe(0);
+  });
+
+  it("re-verifies liveness at removal time and preserves on a late live answer", () => {
+    const fx = makeFixture({ codex: true });
+    const file = writeRollout(fx.codexDir, "rollout-race.jsonl", "codex-race", AGE_30D_MS);
+    let scans = 0;
+    const flaky: CodexProbe = {
+      processRunning: () => false,
+      sessionLiveness: () => {
+        scans += 1;
+        return scans === 1 ? "not-live" : "live";
+      },
+    };
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: flaky });
+    expect(existsSync(file)).toBe(true);
+    expect(result.errors.join(" ")).toContain("liveness");
   });
 });

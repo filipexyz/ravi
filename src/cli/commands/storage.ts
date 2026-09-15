@@ -17,6 +17,7 @@ import { z } from "zod";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { StorageLockedError, runStorageCleanup, type StorageCleanupResult } from "../../storage/cleanup.js";
+import { createRaviCodexProbe } from "../../storage/codex-liveness.js";
 import { STORAGE_TIERS } from "../../storage/policy.js";
 
 const OP = "storage cleanup";
@@ -92,7 +93,7 @@ export class StorageCommands {
 
     let result: StorageCleanupResult;
     try {
-      result = runStorageCleanup({ tier, execute: execute === true });
+      result = runStorageCleanup({ tier, execute: execute === true, codexProbe: createRaviCodexProbe() });
     } catch (error) {
       if (error instanceof StorageLockedError) {
         contractFail(OP, "STORAGE_LOCKED", "Another storage cleanup run is in progress.", {

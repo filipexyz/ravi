@@ -6,13 +6,25 @@
  * follow symlinks), containment inside the allowlist root, not protected, and
  * age above the tier threshold.
  *
- * Slice 1 implements `tmp-ravi` end-to-end. The Codex/Omni/task areas are
- * scanned and reported but deliberately preserved: the positive "inactive /
- * unreferenced" proof and the canonical Task/Git lifecycle removal land in the
- * next slice. Until then they are limitations, never silent deletions.
+ * `tmp-ravi` is implemented end-to-end. `codex-inactive` requires a positive
+ * inactivity proof: no live Codex process, age above the threshold, readable
+ * `session_meta`, and a Ravi-session liveness answer of "not-live". Any
+ * "unknown" liveness answer preserves the artifact. `omni-orphan` and
+ * `tasks-terminal` remain preserved until their canonical hold/lifecycle
+ * surfaces are wired (next slice); their limitations are always recorded.
  */
 
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, type Dirent } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  openSync,
+  closeSync,
+  readSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  type Dirent,
+} from "node:fs";
 import { join, sep } from "node:path";
 import { tmpNameMatchesAllowlist, type StoragePolicy } from "./policy.js";
 
@@ -21,6 +33,8 @@ export type StorageDecision = "candidate" | "preserved";
 
 export interface StorageEntry {
   area: StorageArea;
+  /** The allowlist root this entry was found under (containment boundary). */
+  root: string;
   path: string;
   bytes: number;
   decision: StorageDecision;
@@ -33,8 +47,22 @@ export interface AreaScan {
   limitations: string[];
 }
 
+/** Tri-state liveness: unknown is never treated as inactive. */
+export type CodexSessionLiveness = "live" | "not-live" | "unknown";
+
+export interface CodexProbe {
+  processRunning(): boolean;
+  sessionLiveness(sessionId: string): CodexSessionLiveness;
+}
+
+const DEFAULT_CODEX_PROBE: CodexProbe = {
+  processRunning: () => codexProcessRunning(),
+  sessionLiveness: () => "unknown",
+};
+
 const SIZE_CAP_BYTES = 8 * 1024 * 1024 * 1024;
 const SIZE_CAP_ENTRIES = 200_000;
+const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
 
 /** Bounded recursive size; never follows a symlink. */
 export function measureBytes(target: string): number {
@@ -87,12 +115,12 @@ function isProtected(target: string, policy: StoragePolicy): boolean {
   });
 }
 
-function preserved(area: StorageArea, path: string, bytes: number, reason: string): StorageEntry {
-  return { area, path, bytes, decision: "preserved", reason };
+function preserved(area: StorageArea, root: string, path: string, bytes: number, reason: string): StorageEntry {
+  return { area, root, path, bytes, decision: "preserved", reason };
 }
 
-function candidate(area: StorageArea, path: string, bytes: number, reason: string): StorageEntry {
-  return { area, path, bytes, decision: "candidate", reason };
+function candidate(area: StorageArea, root: string, path: string, bytes: number, reason: string): StorageEntry {
+  return { area, root, path, bytes, decision: "candidate", reason };
 }
 
 export function scanTmpArea(policy: StoragePolicy, now: number): AreaScan {
@@ -123,29 +151,29 @@ export function scanTmpArea(policy: StoragePolicy, now: number): AreaScan {
       }
       const bytes = measureBytes(full);
       if (st.isSymbolicLink()) {
-        entries.push(preserved("tmp-ravi", full, bytes, "symlink not followed"));
+        entries.push(preserved("tmp-ravi", root, full, bytes, "symlink not followed"));
         continue;
       }
       if (isProtected(full, policy)) {
-        entries.push(preserved("tmp-ravi", full, bytes, "protected path"));
+        entries.push(preserved("tmp-ravi", root, full, bytes, "protected path"));
         continue;
       }
       if (!isContainedIn(full, root)) {
-        entries.push(preserved("tmp-ravi", full, bytes, "real path escapes the allowlist root"));
+        entries.push(preserved("tmp-ravi", root, full, bytes, "real path escapes the allowlist root"));
         continue;
       }
       const age = now - st.mtimeMs;
       if (age < policy.tmpMaxAgeMs) {
-        entries.push(preserved("tmp-ravi", full, bytes, `younger than the ${policy.tmpMaxAgeMs}ms threshold`));
+        entries.push(preserved("tmp-ravi", root, full, bytes, `younger than the ${policy.tmpMaxAgeMs}ms threshold`));
         continue;
       }
-      entries.push(candidate("tmp-ravi", full, bytes, "tmp allowlist match and age above threshold"));
+      entries.push(candidate("tmp-ravi", root, full, bytes, "tmp allowlist match and age above threshold"));
     }
   }
   return { area: "tmp-ravi", entries, limitations };
 }
 
-function codexProcessRunning(): boolean {
+export function codexProcessRunning(): boolean {
   let pids: string[] = [];
   try {
     pids = readdirSync("/proc").filter((name) => /^[0-9]+$/.test(name));
@@ -161,6 +189,46 @@ function codexProcessRunning(): boolean {
     }
   }
   return false;
+}
+
+const MAX_META_BYTES = 4 * 1024 * 1024;
+const READ_CHUNK_BYTES = 64 * 1024;
+
+/** Read the first line of a Codex rollout and return its session id, if any. */
+export function parseCodexSessionId(file: string): string | null {
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, "r");
+    const chunks: Buffer[] = [];
+    const buffer = Buffer.alloc(READ_CHUNK_BYTES);
+    let offset = 0;
+    let newlineAt = -1;
+    while (offset < MAX_META_BYTES) {
+      const read = readSync(fd, buffer, 0, buffer.length, offset);
+      if (read <= 0) break;
+      const chunk = buffer.subarray(0, read);
+      const newline = chunk.indexOf(0x0a);
+      if (newline >= 0) {
+        chunks.push(Buffer.from(chunk.subarray(0, newline)));
+        newlineAt = offset + newline;
+        break;
+      }
+      chunks.push(Buffer.from(chunk));
+      offset += read;
+    }
+    if (newlineAt < 0) return null;
+    const firstLine = Buffer.concat(chunks).toString("utf8");
+    const parsed = JSON.parse(firstLine) as {
+      type?: string;
+      payload?: { session_id?: string; id?: string };
+    };
+    if (parsed.type !== "session_meta") return null;
+    return parsed.payload?.session_id ?? parsed.payload?.id ?? null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }
 
 function walkFiles(root: string, out: string[]): void {
@@ -184,21 +252,21 @@ function walkFiles(root: string, out: string[]): void {
   }
 }
 
-export function scanCodexArea(policy: StoragePolicy, now: number): AreaScan {
+export function scanCodexArea(policy: StoragePolicy, now: number, probe: CodexProbe = DEFAULT_CODEX_PROBE): AreaScan {
   const limitations: string[] = [];
   const entries: StorageEntry[] = [];
-  if (!policy.codexSessionsDir) return { area: "codex-inactive", entries, limitations };
-  if (!existsSync(policy.codexSessionsDir)) {
+  const root = policy.codexSessionsDir;
+  if (!root) return { area: "codex-inactive", entries, limitations };
+  if (!existsSync(root)) {
     return { area: "codex-inactive", entries, limitations: ["codex-inactive: sessions directory not present"] };
   }
-  const live = codexProcessRunning();
-  limitations.push(
-    "codex-inactive: positive inactive proof (active Ravi session/agent reference) is not wired in slice 1; all artifacts are preserved",
-  );
+
+  const liveProcess = probe.processRunning();
+  let unprovenLiveness = 0;
   const files: string[] = [];
-  walkFiles(policy.codexSessionsDir, files);
+  walkFiles(root, files);
   for (const file of files) {
-    if (!/rollout-.*\.jsonl$/.test(file)) continue;
+    if (!CODEX_ROLLOUT.test(file.split(sep).pop() ?? "")) continue;
     let st;
     try {
       st = lstatSync(file);
@@ -206,16 +274,40 @@ export function scanCodexArea(policy: StoragePolicy, now: number): AreaScan {
       continue;
     }
     const bytes = st.isFile() ? st.size : 0;
-    if (live) {
-      entries.push(preserved("codex-inactive", file, bytes, "a live codex process is running"));
+    if (liveProcess) {
+      entries.push(preserved("codex-inactive", root, file, bytes, "a live codex process is running"));
       continue;
     }
     const age = now - st.mtimeMs;
     if (age < policy.codexMaxAgeMs) {
-      entries.push(preserved("codex-inactive", file, bytes, `younger than the ${policy.codexMaxAgeMs}ms threshold`));
+      entries.push(
+        preserved("codex-inactive", root, file, bytes, `younger than the ${policy.codexMaxAgeMs}ms threshold`),
+      );
       continue;
     }
-    entries.push(preserved("codex-inactive", file, bytes, "inactive proof unavailable (slice 1 fail-closed)"));
+    const sessionId = parseCodexSessionId(file);
+    if (!sessionId) {
+      entries.push(preserved("codex-inactive", root, file, bytes, "session metadata unreadable (fail-closed)"));
+      continue;
+    }
+    const liveness = probe.sessionLiveness(sessionId);
+    if (liveness === "live") {
+      entries.push(preserved("codex-inactive", root, file, bytes, "referenced by a live Ravi session"));
+      continue;
+    }
+    if (liveness === "unknown") {
+      unprovenLiveness += 1;
+      entries.push(
+        preserved("codex-inactive", root, file, bytes, "session liveness could not be proven (fail-closed)"),
+      );
+      continue;
+    }
+    entries.push(candidate("codex-inactive", root, file, bytes, "no live process/reference, aged, readable metadata"));
+  }
+  if (unprovenLiveness > 0) {
+    limitations.push(
+      `codex-inactive: ${unprovenLiveness} artifact(s) preserved because Ravi session liveness was unavailable`,
+    );
   }
   return { area: "codex-inactive", entries, limitations };
 }
@@ -242,8 +334,8 @@ export function scanTasksArea(_policy: StoragePolicy): AreaScan {
   };
 }
 
-export function scanStorageAreas(policy: StoragePolicy, now: number): AreaScan[] {
+export function scanStorageAreas(policy: StoragePolicy, now: number, probe?: CodexProbe): AreaScan[] {
   return policy.tier === "routine"
-    ? [scanTmpArea(policy, now), scanCodexArea(policy, now)]
+    ? [scanTmpArea(policy, now), scanCodexArea(policy, now, probe)]
     : [scanOmniArea(policy), scanTasksArea(policy)];
 }

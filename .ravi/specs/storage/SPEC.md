@@ -111,9 +111,10 @@ pointing at real host state. The command MUST honor, **only** when
 
 - `RAVI_STORAGE_FIXTURE_TMP_ROOTS` — a `:`-separated list replacing the temp roots;
 - `RAVI_STORAGE_FIXTURE_RECEIPT_DIR` — replacement for the receipt directory;
-- `RAVI_STORAGE_FIXTURE_ALLOWLIST` — optional replacement of the tmp name allowlist.
+- `RAVI_STORAGE_FIXTURE_ALLOWLIST` — optional replacement of the tmp name allowlist;
+- `RAVI_STORAGE_FIXTURE_CODEX_DIR` — replacement for the Codex sessions directory (the area is disabled when unset).
 
-When `RAVI_STORAGE_FIXTURE_MODE` is unset or not `1`, all three MUST be ignored so
+When `RAVI_STORAGE_FIXTURE_MODE` is unset or not `1`, all of them MUST be ignored so
 production can never be redirected by environment. Tests and the out-of-candidate
 checker MUST rely on these seams; no test may delete outside its fixture.
 
