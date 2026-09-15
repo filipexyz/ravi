@@ -217,10 +217,11 @@ Ravi MUST materialize a Pi extension and spawn RPC with `--extension <path>`. Th
 
 - emits `ctx.ui.notify("ravi.permission.hooks.ready", "info")` on `session_start` so the host can prove the bridge is live;
 - listens for `tool_call` (blocking, before execution) and `tool_result` (observational after);
-- asks the host with `ctx.ui.confirm("ravi.permission.request", <json>)`;
-- blocks the tool unless the host confirms.
+- asks the host with `ctx.ui.input("ravi.permission.request", <json>)` so the UI response can carry a structured allow/deny decision and the host sub-reason (`confirm()` only returns boolean and would hide the reason);
+- serializes overlapping `tool_call` permission dialogs;
+- blocks the tool with the host sub-reason unless the decision is an explicit allow.
 
-Pi continues after a failed `--extension` load. That is why the handshake is required: fail-closed host answers do not help if `tool_call` never registered. The adapter MUST NOT send `prompt` until the handshake is observed (or a matching `extension_error` / pre-handshake `tool_execution_start` fails the session). The RPC adapter MUST answer `extension_ui_request` on stdin with `extension_ui_response` without waiting for a command `response`. Map Pi names (`bash`, `read`, `write`, `edit`) onto Ravi REBAC names (`Bash`, `Read`, `Write`, `Edit`). A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. Authorization throws become deny. Unrelated extension dialogs MUST be cancelled.
+Pi continues after a failed `--extension` load. That is why the handshake is required: fail-closed host answers do not help if `tool_call` never registered. The adapter MUST NOT send `prompt` until the handshake is observed (or a matching `extension_error` / pre-handshake `tool_execution_start` fails the session). The RPC adapter MUST answer `extension_ui_request` on stdin with `extension_ui_response` without waiting for a command `response`. Permission answers MUST include the host decision value so the extension can surface capability, bash-policy, skill, bridge, or fence reasons on the tool_call block message. Map Pi names (`bash`, `read`, `write`, `edit`) onto Ravi REBAC names (`Bash`, `Read`, `Write`, `Edit`). A shell call MUST pass both `canUseTool("Bash")` and `authorizeCommandExecution`. Authorization throws become deny. Unrelated extension dialogs MUST be cancelled.
 
 This is not a split policy: Pi-native tools still execute inside Pi, but every call is authorized by Ravi before execution. After REBAC `canUseTool` (and Bash `authorizeCommandExecution`), the same authorize path applies the per-agent skill allowlist to Skill-tool calls, `ravi skills show`, and Read/Edit of `skills/<name>/SKILL.md`. Catalog filtering in the system prompt is advertisement only and MUST NOT be treated as the security barrier.
 

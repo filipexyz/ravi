@@ -17,6 +17,13 @@ export const PI_PERMISSION_HOOKS_READY_MESSAGE = "ravi.permission.hooks.ready";
 export const PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE =
   "Pi permission extension did not confirm ravi-host hooks are live. Refusing to run an ungoverned Pi session.";
 export const DEFAULT_PI_PERMISSION_HOOKS_READY_TIMEOUT_MS = 5_000;
+/** Last-resort fallback only. Prefer the host/capability/bash/skill/bridge sub-reason. */
+export const PI_PERMISSION_OPAQUE_DENY_REASON = "Denied by Ravi tool permission policy.";
+export const PI_PERMISSION_DECISION_VERSION = 1;
+export const PI_PERMISSION_ALLOW_TOKEN = "allow";
+export const PI_PERMISSION_MISSING_DECISION_REASON = "Pi permission UI returned no host decision.";
+export const PI_PERMISSION_UNREADABLE_DECISION_REASON = "Pi permission UI returned an unreadable host decision.";
+export const PI_PERMISSION_UI_FAILED_REASON = "Pi permission UI request failed.";
 
 export class PiPermissionBridgeError extends Error {
   readonly failureKind = "transport" as const;
@@ -33,9 +40,56 @@ export const PI_RAVI_PERMISSION_EXTENSION_SOURCE = `/**
  * Pi RPC events are observational. This extension registers the in-process
  * tool_call gate (Pi's beforeToolCall equivalent) and asks the Ravi host
  * over the RPC extension UI protocol before any built-in tool executes.
+ *
+ * Pi's confirm() only returns boolean, so a deny would collapse to a fixed
+ * string. input() returns the host decision value and keeps the sub-reason.
+ * Overlapping tool_call hooks are serialized so a single-outstanding-dialog
+ * UI cannot cancel a sibling as an unexplained deny.
  */
 const TITLE = ${JSON.stringify(PI_PERMISSION_UI_TITLE)};
 const READY = ${JSON.stringify(PI_PERMISSION_HOOKS_READY_MESSAGE)};
+const OPAQUE = ${JSON.stringify(PI_PERMISSION_OPAQUE_DENY_REASON)};
+const ALLOW = ${JSON.stringify(PI_PERMISSION_ALLOW_TOKEN)};
+const MISSING = ${JSON.stringify(PI_PERMISSION_MISSING_DECISION_REASON)};
+const UNREADABLE = ${JSON.stringify(PI_PERMISSION_UNREADABLE_DECISION_REASON)};
+const FAILED = ${JSON.stringify(PI_PERMISSION_UI_FAILED_REASON)};
+
+function parseDecision(value) {
+  if (value === true || value === ALLOW) return { allowed: true };
+  if (value === false || value == null || value === "") {
+    return { allowed: false, reason: MISSING };
+  }
+  if (typeof value !== "string") {
+    return { allowed: false, reason: UNREADABLE };
+  }
+  const trimmed = value.trim();
+  if (trimmed === ALLOW) return { allowed: true };
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && typeof parsed.allowed === "boolean") {
+      if (parsed.allowed) return { allowed: true };
+      const reason = typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : OPAQUE;
+      return { allowed: false, reason };
+    }
+  } catch {
+    // Fall through to deny: / raw-string handling.
+  }
+  if (trimmed.startsWith("deny:")) {
+    return { allowed: false, reason: trimmed.slice(5).trim() || OPAQUE };
+  }
+  return { allowed: false, reason: trimmed };
+}
+
+let permissionGate = Promise.resolve();
+
+function withPermissionGate(work) {
+  const previous = permissionGate;
+  let release = () => {};
+  permissionGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  return previous.then(work).finally(release);
+}
 
 export default function (pi) {
   pi.on("session_start", (_event, ctx) => {
@@ -52,16 +106,24 @@ export default function (pi) {
       toolCallId: event.toolCallId,
       input: event.input ?? {},
     });
-    let confirmed = false;
-    try {
-      confirmed = (await ctx.ui.confirm(TITLE, payload)) === true;
-    } catch {
-      confirmed = false;
-    }
-    if (!confirmed) {
-      return { block: true, reason: "Denied by Ravi tool permission policy." };
-    }
-    return undefined;
+    return withPermissionGate(async () => {
+      let decision;
+      try {
+        if (!ctx.ui?.input) {
+          throw new Error("Pi permission bridge UI input is unavailable");
+        }
+        decision = parseDecision(await ctx.ui.input(TITLE, payload));
+      } catch (error) {
+        decision = {
+          allowed: false,
+          reason: error instanceof Error && error.message ? error.message : FAILED,
+        };
+      }
+      if (!decision.allowed) {
+        return { block: true, reason: decision.reason || OPAQUE };
+      }
+      return undefined;
+    });
   });
 
   // Observational afterToolCall equivalent. Authorization happens in tool_call.
@@ -83,6 +145,47 @@ export interface PiToolPermissionHandlers {
 export interface PiToolPermissionDecision {
   allowed: boolean;
   reason?: string;
+}
+
+export function formatPiPermissionUiDecisionValue(decision: PiToolPermissionDecision): string {
+  if (decision.allowed) {
+    return JSON.stringify({ v: PI_PERMISSION_DECISION_VERSION, allowed: true });
+  }
+  return JSON.stringify({
+    v: PI_PERMISSION_DECISION_VERSION,
+    allowed: false,
+    reason: decision.reason?.trim() || PI_PERMISSION_OPAQUE_DENY_REASON,
+  });
+}
+
+export function parsePiPermissionUiDecisionValue(value: unknown): PiToolPermissionDecision {
+  if (value === true || value === PI_PERMISSION_ALLOW_TOKEN) {
+    return { allowed: true };
+  }
+  if (value === false || value == null || value === "") {
+    return { allowed: false, reason: PI_PERMISSION_MISSING_DECISION_REASON };
+  }
+  if (typeof value !== "string") {
+    return { allowed: false, reason: PI_PERMISSION_UNREADABLE_DECISION_REASON };
+  }
+  const trimmed = value.trim();
+  if (trimmed === PI_PERMISSION_ALLOW_TOKEN) {
+    return { allowed: true };
+  }
+  const parsed = parseJsonRecord(trimmed);
+  if (parsed && typeof parsed.allowed === "boolean") {
+    if (parsed.allowed) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason: firstString(parsed.reason) ?? PI_PERMISSION_OPAQUE_DENY_REASON,
+    };
+  }
+  if (trimmed.startsWith("deny:")) {
+    return { allowed: false, reason: trimmed.slice("deny:".length).trim() || PI_PERMISSION_OPAQUE_DENY_REASON };
+  }
+  return { allowed: false, reason: trimmed };
 }
 
 export type PiExtensionUiKind = "permission" | "dialog" | "fire-and-forget" | "unknown";
@@ -183,7 +286,7 @@ export function isPiPermissionBridgeError(error: unknown): error is PiPermission
 export function parsePiPermissionUiRequest(event: Record<string, unknown>): PiExtensionUiRequest {
   const method = firstString(event.method)?.toLowerCase();
   const title = firstString(event.title);
-  const message = firstString(event.message);
+  const message = firstString(event.message, event.placeholder, event.prefill);
   const id = firstString(event.id);
   const payload = extractPiPermissionPayload(title, message, event);
 
@@ -294,23 +397,26 @@ export async function resolvePiExtensionUiResponse(
   }
 
   const decision = await authorizePiToolCall(request.toolName ?? "tool", request.toolInput ?? {}, handlers, event);
-  return buildPiPermissionUiResponse(request.id, request.method, decision.allowed);
+  return buildPiPermissionUiResponse(request.id, request.method, decision);
 }
 
 export function buildPiPermissionUiResponse(
   id: string,
   method: string | undefined,
-  allowed: boolean,
+  decision: boolean | PiToolPermissionDecision,
 ): Record<string, unknown> {
+  const normalized: PiToolPermissionDecision = typeof decision === "boolean" ? { allowed: decision } : decision;
+  const value = formatPiPermissionUiDecisionValue(normalized);
   if (method === "select") {
-    return { type: "extension_ui_response", id, value: allowed ? "Allow" : "Block" };
+    return { type: "extension_ui_response", id, value: normalized.allowed ? "Allow" : value };
   }
-  if (method === "input" || method === "editor") {
-    return allowed
-      ? { type: "extension_ui_response", id, value: "allow" }
-      : { type: "extension_ui_response", id, cancelled: true };
+  if (method === "confirm") {
+    // Legacy confirm() can only return boolean. Keep confirmed for old
+    // extensions and still attach value so a newer extension/parser can read
+    // the host sub-reason if the response object is forwarded.
+    return { type: "extension_ui_response", id, confirmed: normalized.allowed === true, value };
   }
-  return { type: "extension_ui_response", id, confirmed: allowed };
+  return { type: "extension_ui_response", id, value };
 }
 
 export function createPiApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {

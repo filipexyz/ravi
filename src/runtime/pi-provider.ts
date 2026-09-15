@@ -410,6 +410,35 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
   let closed = true;
   let intentionalClose = false;
   let closeFailure: Error | null = null;
+  let stdinWrites: Promise<void> = Promise.resolve();
+
+  const writeStdin = (line: string): Promise<void> => {
+    if (!child || closed) {
+      return Promise.reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
+    }
+    const currentChild = child;
+    const next = stdinWrites.then(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          if (currentChild !== child || closed) {
+            reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
+            return;
+          }
+          currentChild.stdin.write(line, (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        }),
+    );
+    stdinWrites = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
 
   const failPending = (error: unknown) => {
     for (const request of pending.values()) {
@@ -462,6 +491,7 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
       closeFailure = null;
       closed = false;
       intentionalClose = false;
+      stdinWrites = Promise.resolve();
       child = spawn(command, args, {
         cwd: input.cwd,
         env: buildPiRpcSpawnEnv(input),
@@ -515,10 +545,7 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
           reject(new Error(`Timeout waiting for Pi RPC response to ${commandBody.type}`));
         }, responseTimeoutMs);
         pending.set(id, { resolve, reject, timeout });
-        child!.stdin.write(`${JSON.stringify(commandWithId)}\n`, (error) => {
-          if (!error) {
-            return;
-          }
+        writeStdin(`${JSON.stringify(commandWithId)}\n`).catch((error) => {
           pending.delete(id);
           clearTimeout(timeout);
           reject(error);
@@ -526,18 +553,7 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
       });
     },
     writeMessage(message) {
-      if (!child || closed) {
-        return Promise.reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
-      }
-      return new Promise<void>((resolve, reject) => {
-        child!.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      return writeStdin(`${JSON.stringify(message)}\n`);
     },
     async close() {
       stopStdoutReader?.();
@@ -815,7 +831,7 @@ async function* runPiTurns(
             break;
           }
           if (event.type === "extension_ui_request") {
-            await answerPiExtensionUiRequest(transport, event, input);
+            await answerPiExtensionUiRequest(state.transport ?? transport, event, input);
           }
           if (event.type === "agent_start" || event.type === "turn_start") {
             context.lifecycleStarted = true;

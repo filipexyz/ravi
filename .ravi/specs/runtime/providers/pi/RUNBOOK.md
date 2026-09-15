@@ -17,7 +17,7 @@
 5. If resuming, validate `sessionFile` and cwd before `switch_session`.
 6. Wait for `extension_ui_request` notify `ravi.permission.hooks.ready` before sending any `prompt`. If it never arrives, or a tool starts first, fail the turn (`failureKind=transport`) and do not run an ungoverned ravi-host session.
 7. Emit synthetic `thread.started` metadata from `get_state` when available.
-8. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Cancel any other dialog. Do not wait for a command `response` on those writes.
+8. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Return a structured decision value (not only `confirmed: false`) so the extension can show the host sub-reason. Cancel any other dialog. Do not wait for a command `response` on those writes.
 
 ## Run A Prompt
 
