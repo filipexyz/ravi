@@ -1,31 +1,46 @@
 import { runWithContext } from "../cli/context.js";
 import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import {
-  updateRuntimeProviderState,
-  updateSessionContext,
-  updateSessionDisplayName,
-  updateSessionSource,
-} from "../router/index.js";
+import { updateSessionContext, updateSessionDisplayName, updateSessionSource } from "../router/index.js";
+import { dbGetSetting } from "../router/router-db.js";
 import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
+import { createModelBroker } from "./model-broker-registry.js";
+import {
+  abandonClaimedRuntimeModelBrokerPlan,
+  buildRuntimeModelBrokerPlanIdentity,
+  claimRuntimeModelBrokerPlan,
+  planRuntimeModelBrokerRoute,
+  type ClaimedRuntimeModelBrokerPlan,
+} from "./model-broker-planning.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  reportRuntimeModelBrokerAttempt,
+  resolveRequiredRuntimeModelBrokerSelection,
+} from "./model-broker.js";
+import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
+  resolveRuntimeToolEffectFence,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import type { ChannelContext, RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeSessionStartLane } from "./session-pool.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { resolveRuntimeSession } from "./session-resolver.js";
+import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
+import { isClaudeModelAlias, resolvePreferredRuntimeModel } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 
@@ -36,6 +51,9 @@ export interface PendingRuntimeSessionStart {
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
   cancelled?: boolean;
+  queuedAt?: number;
+  lane?: RuntimeSessionStartLane;
+  timeout?: ReturnType<typeof setTimeout>;
 }
 
 export interface StartRuntimeSessionOptions {
@@ -48,6 +66,8 @@ export interface StartRuntimeSessionOptions {
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
+  onToolBarrierReleased?(sessionName: string): void | Promise<void>;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
@@ -56,15 +76,7 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
   }
 
   if (prompt.context?.senderId) {
-    const channelCtx: ChannelContext = {
-      channelId: prompt.context.channelId,
-      channelName: prompt.context.channelName,
-      isGroup: prompt.context.isGroup,
-      groupName: prompt.context.groupName,
-      groupId: prompt.context.groupId,
-      groupMembers: prompt.context.groupMembers,
-    };
-    updateSessionContext(sessionKey, JSON.stringify(channelCtx));
+    updateSessionContext(sessionKey, prompt.context);
     if (prompt.context.groupName) {
       updateSessionDisplayName(sessionKey, prompt.context.groupName);
     }
@@ -82,15 +94,56 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
+    onToolBarrierReleased,
+    crashRecovery,
   } = options;
   const runId = createSessionTraceRunId();
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
-  const resolvedSession = resolveRuntimeSession({
-    sessionName,
-    prompt,
-    defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
-  });
+  const sessionIdentity = resolveRuntimeSessionIdentity({ sessionName, prompt });
+  if (!sessionIdentity) return;
+  let modelBrokerPlanClaim: ClaimedRuntimeModelBrokerPlan | undefined;
+  if (prompt._modelBrokerTurnId) {
+    const selection = resolveRequiredRuntimeModelBrokerSelection(
+      sessionIdentity.agent,
+      dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+    );
+    const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+    if (!selection || !runtimeId) throw new Error("The model-broker preflight identity is no longer valid.");
+    const planIdentity = buildRuntimeModelBrokerPlanIdentity({
+      selection,
+      runtimeId,
+      agentId: sessionIdentity.agent.id,
+      sessionKey: sessionIdentity.dbSessionKey,
+      turnId: prompt._modelBrokerTurnId,
+    });
+    modelBrokerPlanClaim = claimRuntimeModelBrokerPlan(planIdentity);
+    if (!modelBrokerPlanClaim) {
+      await planRuntimeModelBrokerRoute({
+        agent: sessionIdentity.agent,
+        sessionKey: sessionIdentity.dbSessionKey,
+        turnId: prompt._modelBrokerTurnId,
+        globalRequiredSetting: dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+      });
+      modelBrokerPlanClaim = claimRuntimeModelBrokerPlan(planIdentity);
+    }
+    if (!modelBrokerPlanClaim) throw new Error("Could not claim the model-broker route plan.");
+  }
+  let resolvedSession;
+  try {
+    resolvedSession = resolveRuntimeSession({
+      sessionName,
+      prompt,
+      defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+      identity: sessionIdentity,
+      ...(modelBrokerPlanClaim ? { runtimeProviderIdOverride: modelBrokerPlanClaim.plan.lease.runtimeProvider } : {}),
+    });
+  } catch (error) {
+    if (modelBrokerPlanClaim) {
+      await abandonClaimedRuntimeModelBrokerPlan(modelBrokerPlanClaim, "provider_resolution_failed");
+    }
+    throw error;
+  }
   if (!resolvedSession) {
     return;
   }
@@ -123,14 +176,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
   updateRuntimeSessionMetadata(dbSessionKey, prompt);
   if (!resumeStashedMessages) {
-    saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined, {
-      agentId: agent.id,
-      channel: resolvedSource?.channel ?? prompt.context?.channelId,
-      accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
-      chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
-      sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
-      commands: prompt.commands,
-    });
+    saveMessage(
+      sessionName,
+      "user",
+      resolvePersistedUserText(prompt),
+      canResumeStoredSession ? storedProviderSessionId : undefined,
+      {
+        agentId: agent.id,
+        channel: resolvedSource?.channel ?? prompt.context?.channelId,
+        accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
+        chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
+      },
+    );
   }
 
   const runtimeResolution = resolveRuntimeForPrompt({
@@ -140,7 +199,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     agent,
     configModel,
   });
-  const model = runtimeResolution.options.model ?? configModel;
+  const selectedModel = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
+  const model =
+    runtimeProviderId !== "claude" && isClaudeModelAlias(selectedModel)
+      ? resolvePreferredRuntimeModel(runtimeProviderId, selectedModel)
+      : selectedModel;
+  if (model !== selectedModel) {
+    log.info("Remapped runtime model to provider catalog", {
+      sessionName,
+      provider: runtimeProviderId,
+      requestedModel: selectedModel,
+      model,
+      modelSource: runtimeResolution.sources.model,
+    });
+  }
   try {
     const observation = ensureObserverBindingsForSession({
       sessionName,
@@ -172,6 +244,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   }
   const abortController = new AbortController();
   let runtimeCredentialAttempt: Awaited<ReturnType<typeof buildRuntimeStartRequest>>["runtimeCredentialAttempt"];
+  let modelBrokerPlanHandedToBuilder = false;
 
   const streamingSession: RuntimeHostStreamingSession = {
     agentId: agent.id,
@@ -187,6 +260,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     currentThinking: runtimeResolution.options.thinking,
     currentTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId),
     toolRunning: false,
+    toolResultDeliveryPending: false,
     lastActivity: Date.now(),
     done: false,
     interrupted: false,
@@ -197,6 +271,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     pendingAbort: false,
     agentMode: agent.mode,
     traceRunId: runId,
+    toolEffectFence: resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode),
   };
   streamingSessions.set(sessionName, streamingSession);
   updateRuntimeLiveState(sessionName, {
@@ -262,6 +337,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       resuming: !!resumableProviderSessionId,
     });
 
+    modelBrokerPlanHandedToBuilder = true;
     const builtRuntimeRequest = await buildRuntimeStartRequest({
       runId,
       sessionName,
@@ -283,6 +359,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       streamingSession,
       stashedMessages,
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+      crashRecovery,
+      modelBrokerPlanClaim,
     });
     runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
     const { runtimeRequest, toolContext } = builtRuntimeRequest;
@@ -291,19 +369,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
-    updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
-      ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
-      ...(canResumeStoredSession && storedRuntimeSessionParams
-        ? { runtimeSessionParams: storedRuntimeSessionParams }
-        : {}),
-      ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
-        ? {
-            runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
-          }
-        : {}),
-    });
-    session.runtimeProvider = runtimeProviderId;
-    if (persistedRuntimeProviderSessionId) {
+    // Do not stamp last-used `runtimeProvider` until a successful authenticated
+    // turn. A failed Claude `/login` stub used to overwrite Codex here.
+    if (canResumeStoredSession && persistedRuntimeProviderSessionId) {
       session.runtimeSessionParams = storedRuntimeSessionParams;
       session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
       session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
@@ -332,6 +400,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         safeEmit,
         drainPendingStarts,
         restartStashedSession,
+        onToolBarrierReleased,
+        crashRecovery,
       }),
     ).catch((err) => {
       const isAbort = err instanceof Error && /abort/i.test(err.message);
@@ -342,11 +412,13 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       }
     });
   } catch (err) {
+    if (modelBrokerPlanClaim && !modelBrokerPlanHandedToBuilder) {
+      await abandonClaimedRuntimeModelBrokerPlan(modelBrokerPlanClaim, "runtime_preparation_failed").catch(
+        () => undefined,
+      );
+    }
     const errorMessage = err instanceof Error ? err.message : String(err);
-    completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
-      status: "abandoned",
-      metadata: { phase: "runtime.start", error: errorMessage },
-    });
+    await abandonRuntimeStartAttempt(runtimeCredentialAttempt, errorMessage);
 
     log.error("Failed to start streaming session", {
       sessionName,
@@ -407,5 +479,43 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         _v: 2,
       });
     }
+  }
+}
+
+async function abandonRuntimeStartAttempt(
+  binding: RuntimeCredentialAttemptBinding | undefined,
+  errorMessage: string,
+): Promise<void> {
+  if (binding?.authMethod !== "model-broker") {
+    completeRuntimeCredentialAttempt(binding?.attemptId, {
+      status: "abandoned",
+      metadata: { phase: "runtime.start", error: errorMessage },
+    });
+    return;
+  }
+  if (
+    !binding.attemptId ||
+    !binding.modelBrokerId ||
+    !binding.modelBrokerLeaseId ||
+    !binding.modelBrokerRuntimeId ||
+    !binding.modelBrokerSessionKey ||
+    !binding.modelBrokerTurnId
+  ) {
+    return;
+  }
+  try {
+    await reportRuntimeModelBrokerAttempt(createModelBroker(binding.modelBrokerId), {
+      attemptId: binding.attemptId,
+      turnId: binding.modelBrokerTurnId,
+      leaseId: binding.modelBrokerLeaseId,
+      runtimeId: binding.modelBrokerRuntimeId,
+      sessionKey: binding.modelBrokerSessionKey,
+      outcome: "abandoned",
+      effectState: "none",
+      failureKind: "runtime_start_failed",
+    });
+    binding.modelBrokerAttemptTerminal = true;
+  } catch (error) {
+    log.warn("Failed to abandon model-broker attempt after runtime start failure", { error });
   }
 }

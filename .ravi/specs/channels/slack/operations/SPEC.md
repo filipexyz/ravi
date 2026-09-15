@@ -76,6 +76,11 @@ Ravi MUST NOT present Slack `usergroups.*` as "sections". User groups are not eq
 
 ## Boundary
 
+This feature owns direct Slack workspace/operator commands under `ravi slack`
+and their dry-run contract. Context-bound message actions discovered through a
+runtime session are owned by `channels/slack/chat-actions`; invoking those
+commands is already an explicit execution request.
+
 The Slack Web API client owns low-level HTTP calls and Slack response normalization.
 
 The CLI/tool layer owns:

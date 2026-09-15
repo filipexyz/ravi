@@ -3,8 +3,10 @@
  */
 
 import "reflect-metadata";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -12,7 +14,9 @@ import {
   declareCommandReturns,
   pagedItemsReturnSchema,
   sessionGoalReturnSchema,
+  sessionRecapReturnSchema,
 } from "./operational-return-schemas.js";
+import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -31,6 +35,7 @@ import {
 import {
   listSessions,
   getSessionsByAgent,
+  getSession,
   deleteSession,
   resetSession,
   resolveSession,
@@ -47,44 +52,72 @@ import {
   extendSession,
   makeSessionPermanent,
   attachChatToSession,
+  describeSessionChatAssociation,
   detachChatFromSession,
   getSessionTurnUsageSummary,
   listSessionSubscriptions,
-  setSessionChatSpeechMode,
   SessionAttachConflictError,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
-import { loadConfig } from "../../utils/config.js";
-import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
+import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
+import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import { toPersistedChannelContext } from "../../channels/context.js";
 import {
-  createRuntimeProvider,
-  DEFAULT_RUNTIME_PROVIDER_ID,
-  listRegisteredRuntimeProviderIds,
-} from "../../runtime/provider-registry.js";
-import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
-import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
+  CHAT_ACTION_DESCRIPTORS,
+  resolveChatActionAvailability,
+  unavailableChatActionWithoutSurface,
+  type ChannelChatActionContent,
+  type ChatActionAvailability,
+  type ChatActionId,
+  type ChatActionSurface,
+} from "../../channels/chat-actions.js";
+import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
+import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import {
+  createSlackThreadLifecycle,
+  findSlackThreadLifecycleByChildSession,
+} from "../../channels/slack/thread-lifecycle-store.js";
+import {
+  closeSlackThread,
+  slackThreadParentSessionKey,
+  splitSlackThreadPlatformChatId,
+} from "../../channels/slack/thread-lifecycle.js";
+import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
   dbFindAgentChatMessageByRef,
+  dbFindChat,
   dbFindChatByRef,
+  dbGetAgentChatActionCounts,
   dbGetChat,
-  dbGetSessionChatBinding,
   dbGetMessageMeta,
   dbListAgentChatMessagesPage,
   dbListContexts,
   dbListMessageMetaByChatId,
+  dbUpsertChat,
   type ChatMessageRecord,
   type ChatMessageWithSortKey,
   type ContextRecord,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
+import { RUNTIME_EFFORT_LEVELS, formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
+import { getSessionsSendRuntimeMismatchWarning, inspectCliRuntimeTarget } from "../runtime-target.js";
 import {
-  DEFAULT_RUNTIME_EFFORT,
-  RUNTIME_EFFORT_LEVELS,
-  formatRuntimeEffortLevels,
-  parseRuntimeEffort,
-} from "../../runtime/effort.js";
+  buildSessionSendPrompt,
+  isCliWaitDestination,
+  omitSkillVisibilityFromSessionJson,
+  resolveCliSessionBootstrapEffort,
+  snapshotTranscriptCursor,
+  waitForThisTurnAssistantText,
+} from "../session-cli-surface.js";
+import {
+  createSessionSendWaitState,
+  isSessionSendWaitTerminal,
+  noteSessionSendWaitRuntimeEvent,
+} from "../session-send-wait.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { publicRuntimeFailureDetail } from "../../runtime/public-failure.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -104,18 +137,8 @@ import {
 } from "../../whatsapp-overlay/model.js";
 import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
-import {
-  accountSessionGoalUsage,
-  blockSessionGoal,
-  clearSessionGoal,
-  completeSessionGoal,
-  createSessionGoal,
-  getSessionGoal,
-  pauseActiveSessionGoal,
-  replaceSessionGoal,
-  resumeSessionGoal,
-  type SessionGoal,
-} from "../../runtime/session-goals.js";
+import { getSessionGoal, type SessionGoal } from "../../runtime/session-goals.js";
+import type { RuntimeControlRequest, RuntimeControlResult } from "../../runtime/types.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -152,11 +175,6 @@ const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
 const MESSAGE_DELETE_TIMEOUT_MS = 15000;
 const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
 const MESSAGE_EDIT_TIMEOUT_MS = 15000;
-const CONFIG_DB_META = {
-  source: "config-db",
-  freshness: "persisted",
-  via: "router-config",
-} as const;
 const SESSION_DB_META = {
   source: "session-db",
   freshness: "persisted",
@@ -184,11 +202,20 @@ const NEXT_COMMANDS_META = {
   via: "session-inspect",
 } as const;
 const runtimeEffortReturnSchema = z.enum(RUNTIME_EFFORT_LEVELS);
-const sessionEffortSourceReturnSchema = z.enum(["session_override", "agent_default", "runtime_default"]);
+const sessionEffortSourceReturnSchema = z.enum([
+  "session_override",
+  "agent_default",
+  "global_default",
+  "runtime_default",
+]);
 const sessionRuntimeOptionsReturnSchema = z.object({
-  model: z.object({
+  provider: z.object({
     value: z.string(),
     source: z.string(),
+  }),
+  model: z.object({
+    value: z.string().nullable(),
+    source: z.string().nullable(),
   }),
   effort: z.object({
     value: runtimeEffortReturnSchema,
@@ -205,10 +232,12 @@ const sessionMutationSnapshotReturnSchema = z.object({
   label: z.string(),
   agentId: z.string(),
   effectiveProvider: z.string(),
-  effectiveModel: z.string(),
-  modelSource: z.string(),
+  providerSource: z.string(),
+  effectiveModel: z.string().nullable(),
+  modelSource: z.string().nullable(),
   modelPresetId: z.string().nullable(),
   modelPresetVersion: z.number().nullable(),
+  modelError: z.string().nullable(),
   modelOverride: z.string().optional(),
   effortOverride: runtimeEffortReturnSchema.optional(),
   ephemeral: z.boolean(),
@@ -236,6 +265,7 @@ const sessionSetProviderReturnSchema = z.object({
   after: sessionMutationSnapshotReturnSchema.nullable(),
   runtimeProviderOverride: z.string().nullable(),
   effectiveProvider: z.string(),
+  providerSource: z.string(),
   appliesOn: z.literal("next-turn-runtime-restart"),
 });
 const sessionCommandTargetReturnSchema = z
@@ -302,13 +332,71 @@ const sessionReadMessageReturnSchema = z
   })
   .passthrough();
 const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
+const sessionCreateThreadReturnSchema = z
+  .object({
+    status: z.literal("queued"),
+    queued: z.literal(true),
+    actionId: z.literal("thread.create"),
+    executionMode: z.literal("durable"),
+    requestId: z.string(),
+    idempotencyKey: z.string(),
+    publishedNow: z.boolean(),
+    publishPending: z.boolean(),
+    nextAttemptAt: z.number().optional(),
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    initiatorSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    slack: z.object({
+      accountId: z.string(),
+      instanceId: z.string(),
+      channelId: z.string(),
+      canonicalChatId: z.string(),
+    }),
+    child: z.object({
+      status: z.literal("pending_root_delivery"),
+      modelOverride: z.string().nullable(),
+    }),
+  })
+  .strict();
+const sessionCloseThreadReturnSchema = z
+  .object({
+    status: z.literal("closed"),
+    actionId: z.literal("thread.close"),
+    closed: z.literal(true),
+    changed: z.boolean(),
+    requestId: z.string(),
+    closeSequence: z.number().int().nonnegative(),
+    parentReturn: z.object({
+      requested: z.boolean(),
+      delivered: z.boolean(),
+      pending: z.boolean(),
+    }),
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string(),
+    }),
+    childSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    slack: z.object({
+      channelId: z.string(),
+      threadTs: z.string().nullable(),
+    }),
+  })
+  .strict();
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
 function shouldReturnStructuredResult(asJson?: boolean): boolean {
-  return asJson === true || getContext()?.suppressCliOutput === true;
+  return asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
 }
 
 function returnStructuredResult<T>(payload: T, asJson?: boolean): T {
@@ -324,10 +412,6 @@ export function buildSessionDetachCommand(sessionRef: string, chatId: string): s
   return `ravi sessions detach ${sessionRef} --chat ${chatId}`;
 }
 
-export function buildSessionUnmuteCommand(sessionRef: string, chatId: string): string {
-  return `ravi sessions unmute ${sessionRef} --chat ${chatId}`;
-}
-
 export function buildCurrentSessionActionsCommand(): string {
   return "ravi sessions actions --json";
 }
@@ -337,11 +421,11 @@ export function buildSessionActionsCommand(sessionRef: string): string {
 }
 
 export function buildCurrentSessionDeleteMessageCommand(messageRef: string): string {
-  return `ravi sessions delete-message ${messageRef}`;
+  return `ravi sessions delete-message ${messageRef} --execute`;
 }
 
 export function buildSessionDeleteMessageCommand(sessionRef: string, messageRef: string): string {
-  return `ravi sessions delete-message ${sessionRef} ${messageRef}`;
+  return `ravi sessions delete-message ${sessionRef} ${messageRef} --execute`;
 }
 
 function quoteCliArg(value: string): string {
@@ -349,11 +433,11 @@ function quoteCliArg(value: string): string {
 }
 
 export function buildCurrentSessionEditMessageCommand(messageRef: string, text = "<new-text>"): string {
-  return `ravi sessions edit-message ${messageRef} ${quoteCliArg(text)}`;
+  return `ravi sessions edit-message ${messageRef} ${quoteCliArg(text)} --execute`;
 }
 
 export function buildSessionEditMessageCommand(sessionRef: string, messageRef: string, text = "<new-text>"): string {
-  return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)}`;
+  return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)} --execute`;
 }
 
 export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", emoji = "<emoji>"): string {
@@ -361,15 +445,29 @@ export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", 
 }
 
 export function buildCurrentSessionStickerSendCommand(stickerId = "<sticker-id>"): string {
-  return `ravi stickers send ${stickerId}`;
+  return `ravi stickers send ${stickerId} --execute`;
 }
 
 export function buildCurrentSessionMediaSendCommand(filePath = "<file-path>"): string {
-  return `ravi media send ${quoteCliArg(filePath)}`;
+  return `ravi media send ${quoteCliArg(filePath)} --execute`;
 }
 
 export function buildCurrentSessionReadCommand(): string {
   return "ravi sessions read --json";
+}
+
+export function buildCurrentSessionRecapCommand(): string {
+  return "ravi sessions recap --json";
+}
+
+export function buildCurrentSessionCreateThreadCommand(message = "<initial-message>", model = "<model>"): string {
+  return `ravi sessions create-thread ${quoteCliArg(message)} --model ${model}`;
+}
+
+export function buildCurrentSessionCloseThreadCommand(result?: string): string {
+  return result === undefined
+    ? "ravi sessions close-thread"
+    : `ravi sessions close-thread --return ${quoteCliArg(result)}`;
 }
 
 export function buildSessionActionsPromptHint(): string {
@@ -381,7 +479,9 @@ export function buildSessionActionsPromptHint(): string {
     `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
     `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
-    "For reactions, stickers, media, and transcript reads, follow the command-specific `usage.tools` constraints.",
+    `To create a Slack work branch, run \`${buildCurrentSessionCreateThreadCommand()}\`; omit \`--model\` to inherit the normal model.`,
+    `Inside a Slack thread, close silently with \`${buildCurrentSessionCloseThreadCommand()}\` or return a result with \`${buildCurrentSessionCloseThreadCommand("<result>")}\`.`,
+    "For reactions, stickers, media, transcript reads, and recaps, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
   ].join("\n");
 }
@@ -401,7 +501,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Prefer the canonical item id when available.",
       ],
       promptHint:
-        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id>`.",
+        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id> --execute` (without --execute it is a dry-run, exit 3).",
     },
     editMessage: {
       id: "message.edit",
@@ -417,7 +517,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Do not expose internal message IDs to users unless debugging requires it.",
       ],
       promptHint:
-        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto" --execute` (without --execute it is a dry-run, exit 3).',
     },
     reactMessage: {
       id: "message.react",
@@ -446,7 +546,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Respect each sticker's description, avoid guidance, channel allowlist, and agent allowlist.",
       ],
       promptHint:
-        "Use `ravi stickers send <sticker-id>` after choosing an enabled catalog sticker for the current conversation.",
+        "Use `ravi stickers send <sticker-id> --execute` after choosing an enabled catalog sticker for the current conversation (without --execute it is a dry-run, exit 3).",
     },
     sendMedia: {
       id: "media.send",
@@ -461,7 +561,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "When not running from the desired chat context, pass an explicit `--account` and `--to` target after confirming it.",
       ],
       promptHint:
-        'Use `ravi media send "<file-path>"` to send an existing local file; add `--caption "..."` when useful.',
+        'Use `ravi media send "<file-path>" --execute` to send an existing local file; add `--caption "..."` when useful (without --execute it is a dry-run, exit 3).',
     },
     readSession: {
       id: "session.read",
@@ -473,6 +573,47 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Do not expose raw internal transcript details unless needed.",
       ],
       promptHint: "Use `ravi sessions read --json` to inspect recent session context.",
+    },
+    recapSession: {
+      id: "session.recap",
+      tool: "ravi sessions recap",
+      command: buildCurrentSessionRecapCommand(),
+      useWhen: "Pull a bounded session recap instead of dumping the transcript or reading MEMORY.md.",
+      constraints: [
+        "Use `--json` for the structured recap object.",
+        "Recap is computed on read and does not invent missing summary, pinned, or decision fields.",
+        "A chat attach is not permission to recap another session.",
+      ],
+      promptHint: "Use `ravi sessions recap --json` for a bounded projection of this session.",
+    },
+    createThread: {
+      id: "thread.create",
+      tool: "ravi sessions create-thread",
+      command: buildCurrentSessionCreateThreadCommand(),
+      messageSource: "The initial Slack root message and first instruction for the new child session.",
+      modelSource: "Optional runtime model id for the child; omit it to inherit normal model resolution.",
+      useWhen: "Branch work into a new native Slack thread and begin it immediately.",
+      constraints: [
+        "Use only when thread.create is available on a Slack surface.",
+        "The initial message is posted visibly as a new Slack channel root.",
+        "Slack threads are siblings; calling this inside a thread does not nest it.",
+      ],
+      promptHint:
+        'Use `ravi sessions create-thread "<initial-message>" --model <model>`; omit `--model` when the child should inherit the normal model.',
+    },
+    closeThread: {
+      id: "thread.close",
+      tool: "ravi sessions close-thread",
+      command: buildCurrentSessionCloseThreadCommand(),
+      resultSource: "Optional concise completion result for the parent session.",
+      useWhen: "Mark the current Slack thread work as complete.",
+      constraints: [
+        "Use only from the Slack thread child session being closed.",
+        "Omitting --return closes silently to the parent.",
+        "Use --return exactly when the parent should receive and process a completion result.",
+      ],
+      promptHint:
+        'Use `ravi sessions close-thread` for silent completion or `ravi sessions close-thread --return "<result>"` to notify the parent once.',
     },
   };
 }
@@ -501,9 +642,146 @@ function sessionActionChatIds(session: SessionEntry): string[] {
   for (const subscription of listSessionSubscriptions(session.sessionKey)) {
     ids.add(subscription.chatId);
   }
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (binding?.chatId) ids.add(binding.chatId);
   return Array.from(ids);
+}
+
+function formatSessionChatAssociationHuman(state: {
+  attached: boolean;
+  defaultOutput: boolean;
+  subscriptions: Array<{ chatId: string; role: string; defaultOutput: boolean }>;
+  legacy: { status: string };
+}): void {
+  console.log(`Attached: ${state.attached ? "yes" : "no"}`);
+  const defaultOutput = state.subscriptions.find((subscription) => subscription.defaultOutput);
+  console.log(`Default output: ${defaultOutput?.chatId ?? "none"}`);
+  if (state.subscriptions.length === 0) {
+    console.log("Active subscriptions: none");
+  } else {
+    console.log("Active subscriptions:");
+    for (const subscription of state.subscriptions) {
+      const marker = subscription.defaultOutput ? " default-output" : "";
+      console.log(`  - ${subscription.chatId} [${subscription.role}]${marker}`);
+    }
+  }
+  console.log(`Legacy bindings: ${state.legacy.status}`);
+}
+
+async function queueSlackChatAction(
+  session: SessionEntry,
+  message: ChatMessageRecord,
+  content: ChannelChatActionContent,
+): Promise<Record<string, unknown>> {
+  const job = buildChannelChatActionJob({
+    sessionName: sessionActionRef(session),
+    target: {
+      channel: "slack",
+      accountId: message.instanceId,
+      instanceId: message.instanceId,
+      chatId: message.rawChatId,
+      canonicalChatId: message.chatId,
+    },
+    content,
+  });
+  const published = await publishChannelOutboundJobDurably(job);
+  return {
+    status: "queued",
+    queued: true,
+    executionMode: "durable",
+    requestId: job.request.requestId,
+    idempotencyKey: job.request.idempotencyKey,
+    publishedNow: published.ok && published.publishedNow,
+    publishPending: !published.ok,
+    ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+  };
+}
+
+function resolveSlackThreadCreationTarget(session: SessionEntry): {
+  parentSession: SessionEntry;
+  accountId: string;
+  instanceId: string;
+  platformChatId: string;
+  rootCanonicalChatId: string;
+} {
+  const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
+  const parentSession = parentSessionKey === session.sessionKey ? session : getSession(parentSessionKey);
+  if (!parentSession) {
+    throw new Error(`Slack channel parent session not found: ${parentSessionKey}`);
+  }
+  if (parentSession.agentId !== session.agentId) {
+    throw new Error("Slack thread creation cannot cross agent ownership boundaries");
+  }
+
+  const context = getContext();
+  const contextBelongsToSession =
+    context?.sessionKey === session.sessionKey ||
+    (context?.sessionName !== undefined && context.sessionName === session.name);
+  const contextSource =
+    contextBelongsToSession && context?.source?.channel.toLowerCase() === "slack" ? context.source : undefined;
+
+  let instanceId = contextSource?.instanceId?.trim();
+  let accountId = contextSource?.accountId?.trim();
+  let platformChatId = contextSource?.chatId?.trim();
+  let selectedChat = contextSource?.canonicalChatId ? dbGetChat(contextSource.canonicalChatId) : null;
+
+  if (!selectedChat || selectedChat.channel.toLowerCase() !== "slack") {
+    const subscriptions = listSessionSubscriptions(session.sessionKey);
+    const outputChatId = subscriptions.find((subscription) => subscription.outputAttachedAt !== undefined)?.chatId;
+    const candidateIds = [
+      outputChatId,
+      ...sessionActionChatIds(session),
+      ...sessionActionChatIds(parentSession),
+    ].filter((value): value is string => Boolean(value));
+    selectedChat =
+      candidateIds.map((chatId) => dbGetChat(chatId)).find((chat) => chat?.channel.toLowerCase() === "slack") ?? null;
+  }
+
+  if (selectedChat?.channel.toLowerCase() === "slack") {
+    instanceId ||= selectedChat.instanceId;
+    const threadIdentity = splitSlackThreadPlatformChatId(selectedChat.platformChatId);
+    platformChatId ||= threadIdentity?.platformChatId ?? selectedChat.platformChatId;
+  }
+
+  if (platformChatId?.includes("#")) {
+    platformChatId = splitSlackThreadPlatformChatId(platformChatId)?.platformChatId;
+  }
+  instanceId ||= accountId;
+  accountId ||= parentSession.lastAccountId?.trim() || instanceId;
+  if (!platformChatId || !instanceId || !accountId) {
+    throw new Error("No executable Slack channel surface was found for this session");
+  }
+
+  const rootChat =
+    (selectedChat?.channel.toLowerCase() === "slack" &&
+    selectedChat.instanceId === instanceId &&
+    selectedChat.platformChatId === platformChatId
+      ? selectedChat
+      : dbFindChat({
+          channel: "slack",
+          instanceId,
+          platformChatId,
+        })) ??
+    dbUpsertChat({
+      channel: "slack",
+      instanceId,
+      platformChatId,
+      chatType: platformChatId.startsWith("D") ? "dm" : "channel",
+      title: platformChatId,
+      rawProvenance: {
+        source: "ravi.sessions.create-thread",
+        parentSessionKey: parentSession.sessionKey,
+      },
+    });
+  if (!slackCredentialConfigured(loadRouterConfig(), instanceId)) {
+    throw new Error("The Slack channel has no enabled brokered credential connection");
+  }
+
+  return {
+    parentSession,
+    accountId,
+    instanceId,
+    platformChatId,
+    rootCanonicalChatId: rootChat.id,
+  };
 }
 
 function serializeSessionActionChat(chatId: string | undefined): Record<string, unknown> | null {
@@ -555,16 +833,147 @@ export function serializeSessionActionMessage(
   };
 }
 
-function hasSessionActionChatSurface(
-  session: SessionEntry,
-  subscriptions: Array<Record<string, unknown>>,
-  chatIds: string[],
-): boolean {
+function buildSessionActionSurfaces(session: SessionEntry, chatIds: string[]): ChatActionSurface[] {
+  const config = loadRouterConfig();
+  const stickers = listStickers();
+  const threadLifecycle = findSlackThreadLifecycleByChildSession(session.sessionKey);
+  return chatIds.flatMap((chatId) => {
+    const chat = dbGetChat(chatId);
+    if (!chat) return [];
+    const counts = dbGetAgentChatActionCounts({
+      agentId: session.agentId,
+      chatId: chat.id,
+      originSessionKey: session.sessionKey,
+    });
+    const eligibleStickerCount = stickers.filter(
+      (sticker) =>
+        sticker.enabled &&
+        stickerAllowedOnChannel(sticker, chat.channel) &&
+        stickerAllowedForAgent(sticker, session.agentId),
+    ).length;
+    return [
+      {
+        id: chat.id,
+        channel: chat.channel,
+        instanceId: chat.instanceId,
+        platformChatId: chat.platformChatId,
+        chatType: chat.chatType,
+        ...(chat.chatType === "thread" ? { threadLifecycleStatus: threadLifecycle?.status ?? "open" } : {}),
+        ...(chat.channel.toLowerCase() === "slack"
+          ? { credentialConfigured: slackCredentialConfigured(config, chat.instanceId) }
+          : {}),
+        ...counts,
+        eligibleStickerCount,
+      },
+    ];
+  });
+}
+
+function slackCredentialConfigured(config: ReturnType<typeof loadRouterConfig>, instanceId: string): boolean {
+  const aliases = new Set<string>([instanceId.trim().toLowerCase()]);
+  const mappedAccount = config.instanceToAccount[instanceId];
+  if (mappedAccount) aliases.add(mappedAccount.trim().toLowerCase());
+  const configuredInstanceId = config.instances[instanceId]?.instanceId;
+  if (configuredInstanceId) aliases.add(configuredInstanceId.trim().toLowerCase());
+
+  return Object.values(config.channels ?? {}).some((channel) => {
+    if (channel.enabled === false || channel.provider.toLowerCase() !== "slack") return false;
+    if (!channel.credentialConnection?.trim()) return false;
+    return [channel.name, channel.credentialConnection].some((value) => aliases.has(value.trim().toLowerCase()));
+  });
+}
+
+function aggregateChatActionAvailability(
+  actionId: ChatActionId,
+  availabilityBySurface: ChatActionAvailability[],
+): ChatActionAvailability {
+  if (availabilityBySurface.length === 0) return unavailableChatActionWithoutSurface(actionId);
   return (
-    chatIds.length > 0 ||
-    subscriptions.length > 0 ||
-    Boolean(session.channel || session.lastChannel || session.lastTo || session.accountId)
+    availabilityBySurface.find((availability) => availability.status === "available") ??
+    availabilityBySurface.find((availability) => availability.status === "planned") ??
+    availabilityBySurface[0]!
   );
+}
+
+function serializeChatActionAvailability(availability: ChatActionAvailability): Record<string, unknown> {
+  return {
+    surfaceId: availability.surfaceId,
+    status: availability.status,
+    ...(availability.executionMode ? { executionMode: availability.executionMode } : {}),
+    ...(availability.requiredScopes ? { requiredScopes: availability.requiredScopes } : {}),
+    ...(availability.scopeVerification ? { scopeVerification: availability.scopeVerification } : {}),
+    ...(availability.unavailableReason
+      ? {
+          unavailableReasonCode: availability.unavailableReason.code,
+          unavailableReason: availability.unavailableReason.message,
+        }
+      : {}),
+  };
+}
+
+function sessionActionToolFields(
+  actionId: ChatActionId,
+  toolHints: ReturnType<typeof buildSessionActionToolHints>,
+): Record<string, unknown> {
+  if (actionId === "message.delete") {
+    return {
+      command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+      promptHint: toolHints.deleteMessage.promptHint,
+      idSource: toolHints.deleteMessage.idSource,
+      constraints: toolHints.deleteMessage.constraints,
+    };
+  }
+  if (actionId === "message.edit") {
+    return {
+      command: buildCurrentSessionEditMessageCommand("<message-id>"),
+      promptHint: toolHints.editMessage.promptHint,
+      idSource: toolHints.editMessage.idSource,
+      constraints: toolHints.editMessage.constraints,
+    };
+  }
+  if (actionId === "message.react") {
+    return {
+      command: buildCurrentSessionReactionCommand(),
+      promptHint: toolHints.reactMessage.promptHint,
+      idSource: toolHints.reactMessage.idSource,
+      constraints: toolHints.reactMessage.constraints,
+    };
+  }
+  if (actionId === "sticker.send") {
+    return {
+      command: buildCurrentSessionStickerSendCommand(),
+      promptHint: toolHints.sendSticker.promptHint,
+      idSource: toolHints.sendSticker.idSource,
+      constraints: toolHints.sendSticker.constraints,
+    };
+  }
+  if (actionId === "media.send") {
+    return {
+      command: buildCurrentSessionMediaSendCommand(),
+      promptHint: toolHints.sendMedia.promptHint,
+      fileSource: toolHints.sendMedia.fileSource,
+      constraints: toolHints.sendMedia.constraints,
+    };
+  }
+  if (actionId === "thread.create") {
+    return {
+      command: buildCurrentSessionCreateThreadCommand(),
+      promptHint: toolHints.createThread.promptHint,
+      messageSource: toolHints.createThread.messageSource,
+      modelSource: toolHints.createThread.modelSource,
+      constraints: toolHints.createThread.constraints,
+    };
+  }
+  if (actionId === "thread.close") {
+    return {
+      command: buildCurrentSessionCloseThreadCommand(),
+      returnCommand: buildCurrentSessionCloseThreadCommand("<result>"),
+      promptHint: toolHints.closeThread.promptHint,
+      resultSource: toolHints.closeThread.resultSource,
+      constraints: toolHints.closeThread.constraints,
+    };
+  }
+  return {};
 }
 
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
@@ -577,7 +986,6 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     return {
       chatId: subscription.chatId,
       role: subscription.role,
-      speechMode: subscription.speechMode,
       defaultOutput: Boolean(subscription.outputAttachedAt),
       chat: chat
         ? {
@@ -594,16 +1002,26 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
   const recentOwnMessages = dbListAgentChatMessagesPage({
     agentId: session.agentId,
     chatIds,
+    originSessionKey: session.sessionKey,
     limit,
     order: "desc",
   });
-  const hasChatSurface = hasSessionActionChatSurface(session, subscriptions, chatIds);
-  const channelActionStatus = hasChatSurface ? "available" : "unavailable";
-  const channelActionUnavailableReason = hasChatSurface
-    ? null
-    : "No current, attached, or recent chat surface was found for this session.";
+  const surfaces = buildSessionActionSurfaces(session, chatIds);
+  const actionAvailability = new Map(
+    CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
+      const availabilityBySurface = surfaces.map((surface) => resolveChatActionAvailability(surface, descriptor.id));
+      return [
+        descriptor.id,
+        {
+          aggregate: aggregateChatActionAvailability(descriptor.id, availabilityBySurface),
+          availabilityBySurface,
+        },
+      ] as const;
+    }),
+  );
 
   return {
+    schemaVersion: 1,
     session: {
       ref,
       sessionKey: session.sessionKey,
@@ -613,6 +1031,9 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     surfaces: {
       chatIds,
       subscriptions,
+      effectiveSurfaceId:
+        subscriptions.find((subscription) => subscription.defaultOutput === true)?.chatId ?? chatIds[0] ?? null,
+      items: surfaces,
     },
     promptHint,
     usage: {
@@ -622,54 +1043,29 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       tools: toolHints,
     },
     actions: [
-      {
-        id: "message.delete",
-        status: "available",
-        description: "Delete one of this session agent's own channel messages.",
-        command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
-        promptHint: toolHints.deleteMessage.promptHint,
-        idSource: toolHints.deleteMessage.idSource,
-        constraints: toolHints.deleteMessage.constraints,
-      },
-      {
-        id: "message.edit",
-        status: "available",
-        description: "Edit one of this session agent's own text channel messages.",
-        command: buildCurrentSessionEditMessageCommand("<message-id>"),
-        promptHint: toolHints.editMessage.promptHint,
-        idSource: toolHints.editMessage.idSource,
-        constraints: toolHints.editMessage.constraints,
-      },
-      {
-        id: "message.react",
-        status: channelActionStatus,
-        description: "React to a channel message when the channel supports reactions.",
-        command: buildCurrentSessionReactionCommand(),
-        promptHint: toolHints.reactMessage.promptHint,
-        idSource: toolHints.reactMessage.idSource,
-        constraints: toolHints.reactMessage.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
-      {
-        id: "sticker.send",
-        status: channelActionStatus,
-        description: "Send a sticker when the channel supports stickers.",
-        command: buildCurrentSessionStickerSendCommand(),
-        promptHint: toolHints.sendSticker.promptHint,
-        idSource: toolHints.sendSticker.idSource,
-        constraints: toolHints.sendSticker.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
-      {
-        id: "media.send",
-        status: channelActionStatus,
-        description: "Send a local image, video, audio, or document through the current chat context.",
-        command: buildCurrentSessionMediaSendCommand(),
-        promptHint: toolHints.sendMedia.promptHint,
-        fileSource: toolHints.sendMedia.fileSource,
-        constraints: toolHints.sendMedia.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
+      ...CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
+        const resolved = actionAvailability.get(descriptor.id)!;
+        const aggregate = resolved.aggregate;
+        const threadToolIsRunnable =
+          (descriptor.id !== "thread.create" && descriptor.id !== "thread.close") || aggregate.status === "available";
+        return {
+          id: descriptor.id,
+          status: aggregate.status,
+          description: descriptor.description,
+          targetKind: descriptor.targetKind,
+          ...(threadToolIsRunnable ? sessionActionToolFields(descriptor.id, toolHints) : {}),
+          ...(aggregate.executionMode ? { executionMode: aggregate.executionMode } : {}),
+          ...(aggregate.requiredScopes ? { requiredScopes: aggregate.requiredScopes } : {}),
+          ...(aggregate.scopeVerification ? { scopeVerification: aggregate.scopeVerification } : {}),
+          ...(aggregate.unavailableReason
+            ? {
+                unavailableReasonCode: aggregate.unavailableReason.code,
+                unavailableReason: aggregate.unavailableReason.message,
+              }
+            : {}),
+          availabilityBySurface: resolved.availabilityBySurface.map(serializeChatActionAvailability),
+        };
+      }),
       {
         id: "session.read",
         status: "available",
@@ -679,9 +1075,12 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
         constraints: toolHints.readSession.constraints,
       },
       {
-        id: "message.reply",
-        status: "planned",
-        description: "Native quoted reply command is not implemented yet.",
+        id: "session.recap",
+        status: "available",
+        description: "Compute a bounded recap of this session.",
+        command: buildCurrentSessionRecapCommand(),
+        promptHint: toolHints.recapSession.promptHint,
+        constraints: toolHints.recapSession.constraints,
       },
     ],
     recentOwnMessages: {
@@ -696,6 +1095,8 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       "Use recentOwnMessages.items[].commands.delete to remove an accidental message you sent.",
       "Use recentOwnMessages.items[].commands.edit to edit an accidental message you sent.",
       "message.delete and message.edit are scoped to messages sent by this session's agent.",
+      "thread.create posts a visible Slack root and starts its child fork immediately.",
+      "thread.close is silent to the parent unless --return is supplied.",
     ],
   };
 }
@@ -755,10 +1156,12 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
     label: session.name ?? session.sessionKey,
     runtimeId,
     effectiveProvider: effective.effectiveProvider,
+    providerSource: effective.providerSource,
     effectiveModel: effective.effectiveModel,
     modelSource: effective.modelSource,
     modelPresetId: effective.modelPresetId,
     modelPresetVersion: effective.modelPresetVersion,
+    modelError: effective.modelError,
     // Legacy alias. This is a lifetime accumulator, not the live context size.
     tokenTotal: lifetimeTotal,
     lifetimeTokens: {
@@ -793,6 +1196,25 @@ function buildSessionMutationJson(
   };
 }
 
+function toIsoTimestamp(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
+  }
+  // SQLite datetime('now') is UTC without a timezone suffix.
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const withZone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
+  const date = new Date(withZone);
+  return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
+}
+
 function normalizeChatDbMessage(message: Message): NormalizedTranscriptMessage {
   const source =
     message.agent_id || message.channel || message.account_id || message.chat_id || message.source_message_id
@@ -804,10 +1226,13 @@ function normalizeChatDbMessage(message: Message): NormalizedTranscriptMessage {
           sourceMessageId: message.source_message_id ?? null,
         }
       : undefined;
+  const createdAt = toIsoTimestamp(message.created_at);
   return {
     role: message.role,
     text: message.content,
-    time: message.created_at ? new Date(message.created_at).toLocaleTimeString() : "",
+    time: createdAt,
+    id: message.id,
+    ...(createdAt ? { createdAt } : {}),
     ...(source ? { source } : {}),
   };
 }
@@ -823,6 +1248,127 @@ function printNormalizedMessages(messages: NormalizedTranscriptMessage[]): void 
 function parseReadMessageCount(countStr: string | undefined): number {
   const count = Number.parseInt(countStr ?? "20", 10);
   return Number.isFinite(count) && count > 0 ? count : 20;
+}
+
+type SessionReadTranscript = {
+  messages: NormalizedTranscriptMessage[];
+  totalMessages: number;
+  transcript: {
+    available: boolean;
+    source?: string;
+    reason?: string;
+    sessionName?: string;
+    chatId?: string;
+    chatIdVariants?: string[];
+    agentId?: string;
+    providerSessionId?: string;
+    path?: string;
+    runtimeProvider?: string | null;
+  };
+};
+
+function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): SessionReadTranscript {
+  const sessionLabel = session.name ?? session.sessionKey;
+  const chatHistory = getRecentHistory(sessionLabel, maxMessages);
+  if (chatHistory.length > 0) {
+    const messages = chatHistory.map(normalizeChatDbMessage);
+    return {
+      messages,
+      totalMessages: countHistory(sessionLabel),
+      transcript: {
+        available: true,
+        source: "chat-db",
+        sessionName: sessionLabel,
+      },
+    };
+  }
+
+  const chatIdVariants = resolveSessionChatIdVariants(session);
+  const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
+  if (chatDbByChat.length > 0) {
+    const messages = chatDbByChat.map(normalizeChatDbMessage);
+    return {
+      messages,
+      totalMessages: countHistoryByChatIds(chatIdVariants, session.agentId),
+      transcript: {
+        available: true,
+        source: "chat-db-chat-id",
+        chatId: resolveSessionChatId(session),
+        chatIdVariants,
+        agentId: session.agentId,
+      },
+    };
+  }
+
+  const messageMetadata = readMessageMetadataFallback(session, maxMessages);
+  if (messageMetadata.length > 0) {
+    return {
+      messages: messageMetadata,
+      totalMessages: messageMetadata.length,
+      transcript: {
+        available: true,
+        source: "message-metadata",
+        chatId: resolveSessionChatId(session),
+        chatIdVariants,
+      },
+    };
+  }
+
+  const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
+  if (!providerSessionId) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: {
+        available: false,
+        reason: "No runtime session",
+      },
+    };
+  }
+
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const agent = loadRouterConfig().agents[session.agentId];
+  const transcript = locateRuntimeTranscript({
+    runtimeProvider: session.runtimeProvider,
+    providerSessionId,
+    agentCwd: session.agentCwd,
+    remote: agent?.remote,
+  });
+
+  if (!transcript.path) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: {
+        available: false,
+        reason: transcript.reason ?? "Transcript not found",
+        providerSessionId,
+      },
+    };
+  }
+
+  const raw = readFileSync(transcript.path, "utf-8");
+  const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
+  const recent = messages.slice(-maxMessages);
+  return {
+    messages: recent,
+    totalMessages: messages.length,
+    transcript: {
+      available: true,
+      source: "provider-transcript",
+      path: transcript.path,
+      providerSessionId,
+      runtimeProvider: session.runtimeProvider ?? null,
+    },
+  };
+}
+
+function loadSessionGoalSafe(sessionKey: string): ReturnType<typeof getSessionGoal> {
+  try {
+    return getSessionGoal(sessionKey);
+  } catch {
+    return null;
+  }
 }
 
 function extractExternalMessageId(value: string | null | undefined): string | null {
@@ -923,10 +1469,12 @@ function readMessageMetadataFallback(session: SessionEntry, limit: number): Norm
           ? `[${meta.mediaType} message${meta.mediaPath ? `: ${meta.mediaPath}` : ""}]`
           : "";
       if (!text) return null;
+      const createdAt = toIsoTimestamp(meta.createdAt);
       return {
         role: "user" as const,
         text,
-        time: meta.createdAt ? new Date(meta.createdAt).toLocaleTimeString() : "",
+        time: createdAt,
+        ...(createdAt ? { createdAt } : {}),
       };
     })
     .filter((message): message is NormalizedTranscriptMessage => message !== null);
@@ -988,91 +1536,49 @@ function buildRelatedContextJson(context: ContextRecord): Record<string, unknown
 
 interface EffectiveSessionModel {
   effectiveProvider: string;
-  effectiveModel: string;
-  modelSource: "session_override" | "agent_preset" | "agent_default" | "global_default";
+  providerSource: string;
+  effectiveModel: string | null;
+  modelSource: string | null;
   modelPresetId: string | null;
   modelPresetVersion: number | null;
+  modelError: string | null;
 }
 
 function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: string | null): EffectiveSessionModel {
   const routerConfig = loadRouterConfig();
-  const runtimeConfig = loadConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-  const agentEffective = agent
-    ? resolveEffectiveAgentModel(agent, runtimeConfig.model)
-    : {
-        effectiveProvider: DEFAULT_RUNTIME_PROVIDER_ID,
-        effectiveModel: runtimeConfig.model,
-        modelSource: "global_default" as const,
-        modelPresetId: null,
-        modelPresetVersion: null,
-      };
-
-  const providerOverride = session.runtimeProviderOverride?.trim() || undefined;
-  const effectiveProvider = providerOverride ?? agentEffective.effectiveProvider;
-
-  // Session model override wins over the agent-level selection.
-  if (modelOverride) {
-    return {
-      effectiveProvider,
-      effectiveModel: modelOverride,
-      modelSource: "session_override",
-      modelPresetId: agentEffective.modelPresetId,
-      modelPresetVersion: agentEffective.modelPresetVersion,
-    };
-  }
-
-  if (providerOverride && providerOverride !== agentEffective.effectiveProvider) {
-    return {
-      effectiveProvider: providerOverride,
-      effectiveModel: getDefaultModelForProvider(providerOverride),
-      modelSource: "session_override",
-      modelPresetId: agentEffective.modelPresetId,
-      modelPresetVersion: agentEffective.modelPresetVersion,
-    };
-  }
-
+  const candidate = modelOverride === null ? { ...session, modelOverride: undefined } : { ...session, modelOverride };
+  const resolved = resolveEffectiveSessionRuntime({ session: candidate, agent });
   return {
-    effectiveProvider,
-    effectiveModel: agentEffective.effectiveModel ?? runtimeConfig.model,
-    modelSource: agentEffective.modelSource ?? "global_default",
-    modelPresetId: agentEffective.modelPresetId,
-    modelPresetVersion: agentEffective.modelPresetVersion,
+    effectiveProvider: resolved.provider.value,
+    providerSource: resolved.provider.source,
+    effectiveModel: resolved.model.value,
+    modelSource: resolved.model.source,
+    modelPresetId: resolved.model.presetId,
+    modelPresetVersion: resolved.model.presetVersion,
+    modelError: resolved.model.error,
   };
 }
 
 function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
-  const candidate = modelOverride === null ? { ...session, modelOverride: undefined } : { ...session, modelOverride };
-  return resolveSessionRuntimeOptions(candidate).model.value;
+  return resolveEffectiveSessionSelection(session, modelOverride).effectiveModel ?? "";
 }
 
-type SessionRuntimeOptionSource =
-  | "session_override"
-  | "agent_preset"
-  | "agent_default"
-  | "global_default"
-  | "runtime_default"
-  | null;
-
 function resolveSessionRuntimeOptions(session: SessionEntry): {
-  model: { value: string; source: SessionRuntimeOptionSource };
-  effort: { value: NonNullable<SessionEntry["effortOverride"]>; source: SessionRuntimeOptionSource };
-  thinking: { value: SessionEntry["thinkingLevel"] | null; source: SessionRuntimeOptionSource };
+  provider: { value: string; source: string };
+  model: { value: string | null; source: string | null };
+  effort: { value: NonNullable<SessionEntry["effortOverride"]>; source: string };
+  thinking: { value: SessionEntry["thinkingLevel"] | null; source: string | null };
 } {
   const routerConfig = loadRouterConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-  const modelSelection = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
-  const model = { value: modelSelection.effectiveModel, source: modelSelection.modelSource };
-  const effort =
-    session.effortOverride !== undefined
-      ? { value: session.effortOverride, source: "session_override" as const }
-      : agent?.effort
-        ? { value: agent.effort, source: "agent_default" as const }
-        : { value: DEFAULT_RUNTIME_EFFORT, source: "runtime_default" as const };
-  const thinking = session.thinkingLevel
-    ? { value: session.thinkingLevel, source: "session_override" as const }
-    : { value: null, source: null };
-  return { model, effort, thinking };
+  const resolved = resolveEffectiveSessionRuntime({ session, agent });
+  return {
+    provider: resolved.provider,
+    model: { value: resolved.model.value, source: resolved.model.source },
+    effort: resolved.effort,
+    thinking: resolved.thinking,
+  };
 }
 
 function resolveEffectiveSessionEffort(
@@ -1080,14 +1586,14 @@ function resolveEffectiveSessionEffort(
   effortOverride: SessionEntry["effortOverride"] | null,
 ): {
   effort: NonNullable<SessionEntry["effortOverride"]>;
-  source: "session_override" | "agent_default" | "runtime_default";
+  source: "session_override" | "agent_default" | "global_default" | "runtime_default";
 } {
   const candidate =
     effortOverride === null ? { ...session, effortOverride: undefined } : { ...session, effortOverride };
   const resolved = resolveSessionRuntimeOptions(candidate).effort;
   return {
     effort: resolved.value,
-    source: resolved.source as "session_override" | "agent_default" | "runtime_default",
+    source: resolved.source as "session_override" | "agent_default" | "global_default" | "runtime_default",
   };
 }
 
@@ -2101,6 +2607,20 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
   }
 }
 
+// ============================================================
+// Manual v2 contract helpers. Exit taxonomy: 1 not-found/provider ·
+// 2 usage · 3 policy (write brake / dry-run). SESSION_NOT_FOUND carries no
+// suggestions on purpose: scope isolation cloaks unauthorized sessions as
+// not-found, and suggesting real session names would defeat that cloak.
+// ============================================================
+
+function failSessionNotFound(op: string, ref: string, asJson?: boolean): never {
+  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
+    asJson,
+    details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+  });
+}
+
 @Group({
   name: "sessions",
   description: "Manage agent sessions",
@@ -2144,6 +2664,8 @@ export class SessionCommands {
       description: "Number of matching sessions to skip (default: 0)",
     })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -2162,6 +2684,7 @@ export class SessionCommands {
     const page = paginateCliItems(sessions, { limit, offset });
     const pageSessions = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "sessions", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -2186,8 +2709,14 @@ export class SessionCommands {
         live: Boolean(includeLive),
         tag: tagSlug?.trim() || null,
       },
-      items: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
-      sessions: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      items: pickFields(
+        pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+        fields,
+      ),
+      sessions: pickFields(
+        pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+        fields,
+      ),
     };
 
     if (asJson) {
@@ -2268,15 +2797,13 @@ export class SessionCommands {
       if (match) s = match;
     }
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions info", nameOrKey, asJson);
     }
 
     // Scope: only accessible sessions
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions info", nameOrKey, asJson);
     }
 
     const config = loadRouterConfig();
@@ -2290,6 +2817,7 @@ export class SessionCommands {
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
     const turnUsage = getSessionTurnUsageSummary(s.sessionKey);
     const runtimeOptions = resolveSessionRuntimeOptions(s);
+    const effective = resolveEffectiveSessionSelection(s, s.modelOverride ?? null);
 
     if (asJson) {
       const adapters = relatedAdapters.map((adapter) => {
@@ -2324,9 +2852,21 @@ export class SessionCommands {
     printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, {
       labelWidth: 14,
     });
-    printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
-    printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
-    printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField(
+      "Provider",
+      `${runtimeOptions.provider.value} (${runtimeOptions.provider.source})`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
+    );
+    printInspectionField(
+      "Model",
+      runtimeOptions.model.value
+        ? `${runtimeOptions.model.value} (${runtimeOptions.model.source})`
+        : `(unresolved${effective.modelError ? `: ${effective.modelError}` : ""})`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
+    );
+    printInspectionField("Override", s.modelOverride ?? "(none)", SESSION_DB_META, { labelWidth: 14 });
     printInspectionField(
       "Effort",
       `${runtimeOptions.effort.value} (${runtimeOptions.effort.source})`,
@@ -2463,15 +3003,15 @@ export class SessionCommands {
 
   @Command({
     name: "goal",
-    description: "Inspect or mutate persisted session goal state",
+    description: "Control the runtime native goal and refresh its confirmed session snapshot",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "goal",
-    risk: "low",
+    risk: "medium",
   })
-  goal(
+  async goal(
     @Arg("action", {
       description: "get|set|create|pause|resume|block|complete|clear|account",
     })
@@ -2498,12 +3038,12 @@ export class SessionCommands {
     })
     projectId?: string,
     @Option({ flags: "--tokens <n>", description: "Token delta for account" })
-    tokenDeltaStr?: string,
+    _tokenDeltaStr?: string,
     @Option({
       flags: "--seconds <n>",
       description: "Elapsed seconds delta for account",
     })
-    secondsStr?: string,
+    _secondsStr?: string,
     @Option({
       flags: "--reason <text>",
       description: "Concrete reason for blocking",
@@ -2526,87 +3066,81 @@ export class SessionCommands {
       }
     }
 
-    let goal: SessionGoal | null = null;
-    let changed = false;
     const budget = parseIntegerOption(budgetStr, "budget", { positive: true });
-
+    let request: RuntimeControlRequest;
     switch (normalizedAction) {
       case "get":
-        goal = getSessionGoal(session.sessionKey);
-        break;
-      case "set":
-        if (!objective?.trim()) {
-          fail("Goal objective is required for action: set");
-          return;
-        }
-        goal = replaceSessionGoal({
-          sessionKey: session.sessionKey,
-          objective,
-          tokenBudget: budget,
-          taskId,
-          projectId,
-        });
-        changed = true;
-        break;
-      case "create":
-        if (!objective?.trim()) {
-          fail("Goal objective is required for action: create");
-          return;
-        }
-        goal = createSessionGoal({
-          sessionKey: session.sessionKey,
-          objective,
-          tokenBudget: budget,
-          taskId,
-          projectId,
-        });
-        changed = Boolean(goal);
-        break;
-      case "pause":
-        goal = pauseActiveSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
-        goal = goal ?? getSessionGoal(session.sessionKey);
-        break;
-      case "resume":
-        goal = resumeSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
-        break;
-      case "block": {
-        if (!reason?.trim()) {
-          fail("Blocked reason is required for action: block (use --reason)");
-          return;
-        }
-        goal = blockSessionGoal(session.sessionKey, reason);
-        changed = goal?.status === "blocked";
-        goal = goal ?? getSessionGoal(session.sessionKey);
-        break;
-      }
-      case "complete":
-        goal = completeSessionGoal(session.sessionKey);
-        changed = Boolean(goal);
+        request = { operation: "goal.get" };
         break;
       case "clear":
-        changed = clearSessionGoal(session.sessionKey);
-        goal = null;
+        request = { operation: "goal.clear" };
         break;
-      case "account": {
-        const tokenDelta = parseIntegerOption(tokenDeltaStr, "tokens") ?? 0;
-        const timeDeltaSeconds = parseIntegerOption(secondsStr, "seconds") ?? 0;
-        const result = accountSessionGoalUsage({
-          sessionKey: session.sessionKey,
-          tokenDelta,
-          timeDeltaSeconds,
-        });
-        goal = result.goal;
-        changed = result.kind === "updated";
+      case "set":
+      case "create":
+        if (!objective?.trim()) {
+          fail(`Goal objective is required for action: ${normalizedAction}`);
+          return;
+        }
+        request = {
+          operation: "goal.set",
+          goal: {
+            objective: objective.trim(),
+            status: "active",
+            ...(budget !== undefined ? { tokenBudget: budget } : {}),
+            ...(normalizedAction === "create" ? { createOnly: true } : {}),
+          },
+        };
         break;
-      }
+      case "pause":
+      case "resume":
+      case "block":
+      case "complete":
+        if (normalizedAction === "block" && !reason?.trim()) {
+          fail("Blocked reason is required for action: block");
+          return;
+        }
+        request = {
+          operation: "goal.set",
+          goal: {
+            status:
+              normalizedAction === "pause"
+                ? "paused"
+                : normalizedAction === "resume"
+                  ? "active"
+                  : normalizedAction === "block"
+                    ? "blocked"
+                    : "complete",
+          },
+        };
+        break;
+      case "account":
+        fail("Goal usage is owned by the runtime; use goal get to refresh the confirmed accounting.");
+        return;
       default:
-        fail(
-          `Unknown goal action: ${action}. Use get, set, create, pause, resume, block, complete, clear, or account.`,
-        );
+        fail(`Unknown goal action: ${action}. Use get, set, create, pause, resume, block, complete, or clear.`);
         return;
     }
+    const reply = await requestReply<{ result?: RuntimeControlResult; error?: string }>(
+      "ravi.session.runtime.control",
+      {
+        sessionName: session.name,
+        sessionKey: session.sessionKey,
+        request,
+        goalMetadata: {
+          ...((normalizedAction === "set" || normalizedAction === "create") && taskId ? { taskId } : {}),
+          ...((normalizedAction === "set" || normalizedAction === "create") && projectId ? { projectId } : {}),
+          ...(normalizedAction === "block" ? { blockedReason: reason?.trim() } : {}),
+        },
+      },
+      30_000,
+    );
+    const result = reply.result;
+    if (!result?.ok || result.goal === undefined) {
+      fail(result?.error ?? reply.error ?? "Runtime did not confirm the goal operation");
+      return;
+    }
+    const goal = getSessionGoal(session.sessionKey);
+    const changed = result.data?.changed === true;
 
     const payload = {
       action: normalizedAction,
@@ -2810,7 +3344,7 @@ export class SessionCommands {
   setProvider(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("provider", {
-      description: "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+      description: "Runtime provider id (codex, claude, pi, grok) or 'clear' to remove override",
     })
     provider: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -2873,6 +3407,7 @@ export class SessionCommands {
       const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
         runtimeProviderOverride: providerOverride,
         effectiveProvider: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).effectiveProvider,
+        providerSource: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).providerSource,
         appliesOn: "next-turn-runtime-restart",
       });
       printJson(payload);
@@ -3100,23 +3635,33 @@ export class SessionCommands {
     resource: "sessions",
     action: "reset",
     risk: "medium",
+    requiresConfirmation: true,
   })
   async reset(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually reset the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions reset", nameOrKey, asJson);
     }
 
     // Scope: only own session can be modified
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions reset", nameOrKey, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the session context is irrecoverable after
+      // a reset, so dry-run by default and exit 3 before any state change.
+      contractDryRun("sessions reset", { session: s.name ?? s.sessionKey, sessionKey: s.sessionKey }, { asJson });
     }
 
     const cliInvocation = buildCliInvocationMetadata({
@@ -3185,23 +3730,33 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async delete(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions delete", nameOrKey, asJson);
     }
 
     // Scope: only own session can be modified
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions delete", nameOrKey, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deletion is permanent, so dry-run by
+      // default and exit 3 before any state change.
+      contractDryRun("sessions delete", { session: s.name ?? s.sessionKey, sessionKey: s.sessionKey }, { asJson });
     }
 
     const cliInvocation = buildCliInvocationMetadata({
@@ -3270,6 +3825,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "prune",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async prune(
     @Option({
@@ -3508,10 +4064,10 @@ export class SessionCommands {
 
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "extend",
-    risk: "low",
+    risk: "medium",
   })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3572,10 +4128,10 @@ export class SessionCommands {
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "keep",
-    risk: "low",
+    risk: "medium",
   })
   keep(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3648,7 +4204,7 @@ export class SessionCommands {
     interactive?: boolean,
     @Option({
       flags: "-w, --wait",
-      description: "Wait for response (chat mode)",
+      description: "Wait for this turn's reply (CLI transcript or delivered chat)",
     })
     wait?: boolean,
     @Option({
@@ -3705,10 +4261,20 @@ export class SessionCommands {
     immediate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--raw",
+      description: "Send the prompt without [System] Inform wrapping",
+    })
+    raw?: boolean,
+    @Option({
+      flags: "--effort <level>",
+      description: `Runtime effort: ${formatRuntimeEffortLevels()}`,
+    })
+    effort?: string,
   ) {
     const structuredResult = shouldReturnStructuredResult(asJson);
     let createdSession = false;
-    const session = this.resolveTarget(nameOrKey, agentId, {
+    let session = this.resolveTarget(nameOrKey, agentId, {
       silent: structuredResult,
       onCreated: () => {
         createdSession = true;
@@ -3754,10 +4320,40 @@ export class SessionCommands {
       return this.interactiveMode(sessionName, session, channel, to);
     }
 
-    const origin = getContext()?.sessionKey ?? "unknown";
+    const callerSessionKey = getContext()?.sessionKey;
+    const origin = callerSessionKey ?? "unknown";
     const { source, context } = this.resolveSource(session, channel, to);
+    const cliDestination =
+      !callerSessionKey &&
+      isCliWaitDestination({
+        channelOverride: channel,
+        toOverride: to,
+        source,
+        hasOutputAttachment: listSessionSubscriptions(session.sessionKey).some(
+          (subscription) => subscription.outputAttachedAt !== undefined,
+        ),
+      });
+    const explicitEffort = effort === undefined ? undefined : parseRuntimeEffort(effort);
+    const bootstrapEffort = resolveCliSessionBootstrapEffort({
+      createdSession,
+      cliDestination,
+      explicitEffort,
+    });
+    if (bootstrapEffort) {
+      updateSessionEffortOverride(session.sessionKey, bootstrapEffort);
+      session =
+        resolveSession(session.sessionKey) ??
+        ({
+          ...session,
+          effortOverride: bootstrapEffort,
+        } as SessionEntry);
+    }
     const deliveryJson = buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context);
-    let fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
+    let fullPrompt = buildSessionSendPrompt({
+      prompt,
+      raw,
+      callerSessionKey,
+    });
     let preparedThread: PreparedThreadHandoff | undefined;
     let promptPayload: Record<string, unknown> | undefined;
 
@@ -3792,6 +4388,10 @@ export class SessionCommands {
     }
 
     if (wait) {
+      const runtimeMismatch = getSessionsSendRuntimeMismatchWarning(inspectCliRuntimeTarget());
+      if (runtimeMismatch && !structuredResult) {
+        console.warn(runtimeMismatch);
+      }
       if (structuredResult) {
         let responseText = "";
         let chars = 0;
@@ -3807,6 +4407,7 @@ export class SessionCommands {
             {
               silent: true,
               promptPayload,
+              cliDestination,
               onResponse: (chunk) => {
                 responseText += chunk;
               },
@@ -3834,7 +4435,9 @@ export class SessionCommands {
           response: {
             length: chars,
             text: responseText,
+            source: cliDestination ? "transcript" : "delivered",
           },
+          ...(runtimeMismatch ? { runtimeMismatch } : {}),
         };
         return returnStructuredResult(payload, asJson);
       }
@@ -3854,6 +4457,7 @@ export class SessionCommands {
           delivery.source,
           {
             promptPayload,
+            cliDestination,
           },
         );
         if (preparedThread) {
@@ -3871,6 +4475,7 @@ export class SessionCommands {
     } else {
       try {
         await this.emitToSession(
+          "send",
           sessionName,
           fullPrompt,
           session,
@@ -3879,6 +4484,7 @@ export class SessionCommands {
           deliveryBarrier,
           delivery.source,
           promptPayload,
+          cliDestination,
         );
         if (preparedThread) {
           preparedThread = {
@@ -3912,10 +4518,10 @@ export class SessionCommands {
     description: "Ask a question to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "ask",
-    risk: "low",
+    risk: "high",
   })
   async ask(
     @Arg("target", { description: "Target session name" }) target: string,
@@ -3963,7 +4569,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "ask",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "ask",
@@ -3984,10 +4599,10 @@ export class SessionCommands {
     description: "Answer a question from another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "answer",
-    risk: "low",
+    risk: "high",
   })
   async answer(
     @Arg("target", { description: "Target session name (the one that asked)" })
@@ -4036,7 +4651,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "answer",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "answer",
@@ -4101,7 +4725,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "execute",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "execute",
@@ -4121,10 +4754,10 @@ export class SessionCommands {
     description: "Send an informational message to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "inform",
-    risk: "low",
+    risk: "high",
   })
   async inform(
     @Arg("target", { description: "Target session name" }) target: string,
@@ -4165,7 +4798,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "inform",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "inform",
@@ -4213,6 +4855,11 @@ export class SessionCommands {
       description: "Return metadata for a single message (transcription, mediaType) using session history as fallback",
     })
     messageId?: string,
+    @Option({
+      flags: "--visibility",
+      description: "Include the skill catalog from runtimeSessionParams.skillVisibility",
+    })
+    includeVisibility?: boolean,
   ) {
     const structuredResult = shouldReturnStructuredResult(asJson);
     const target = nameOrKey?.trim() || resolveCurrentSessionRef();
@@ -4236,152 +4883,122 @@ export class SessionCommands {
 
     const maxMessages = parseReadMessageCount(countStr);
     const sessionLabel = session.name ?? target;
-    const chatHistory = getRecentHistory(sessionLabel, maxMessages);
-    if (chatHistory.length > 0) {
-      const messages = chatHistory.map(normalizeChatDbMessage);
-      const totalMessages = countHistory(sessionLabel);
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "chat-db",
-            sessionName: sessionLabel,
-          },
-          messages,
-          totalMessages,
-          count: messages.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} messages\n`);
-      printNormalizedMessages(messages);
-      return;
-    }
-
-    const chatIdVariants = resolveSessionChatIdVariants(session);
-    const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
-    if (chatDbByChat.length > 0) {
-      const messages = chatDbByChat.map(normalizeChatDbMessage);
-      const totalMessages = countHistoryByChatIds(chatIdVariants, session.agentId);
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "chat-db-chat-id",
-            chatId: resolveSessionChatId(session),
-            chatIdVariants,
-            agentId: session.agentId,
-          },
-          messages,
-          totalMessages,
-          count: messages.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} same-chat messages\n`);
-      printNormalizedMessages(messages);
-      return;
-    }
-
-    const messageMetadata = readMessageMetadataFallback(session, maxMessages);
-    if (messageMetadata.length > 0) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: true,
-            source: "message-metadata",
-            chatId: resolveSessionChatId(session),
-            chatIdVariants,
-          },
-          messages: messageMetadata,
-          totalMessages: messageMetadata.length,
-          count: messageMetadata.length,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-
-      console.log(`\n💬 ${sessionLabel} — last ${messageMetadata.length} message metadata entries\n`);
-      printNormalizedMessages(messageMetadata);
-      return;
-    }
-
-    const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
-    if (!providerSessionId) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: false,
-            reason: "No runtime session",
-          },
-          messages: [],
-          totalMessages: 0,
-          count: 0,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-      console.log("⚠️  No runtime session — no history available");
-      return;
-    }
-
-    const { readFileSync } = require("node:fs");
-    const agent = loadRouterConfig().agents[session.agentId];
-    const transcript = locateRuntimeTranscript({
-      runtimeProvider: session.runtimeProvider,
-      providerSessionId,
-      agentCwd: session.agentCwd,
-      remote: agent?.remote,
-    });
-
-    if (!transcript.path) {
-      if (structuredResult) {
-        const payload = {
-          session: buildSessionJson(session),
-          transcript: {
-            available: false,
-            reason: transcript.reason ?? "Transcript not found",
-            providerSessionId,
-          },
-          messages: [],
-          totalMessages: 0,
-          count: 0,
-        };
-        return returnStructuredResult(payload, asJson);
-      }
-      console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
-      return;
-    }
-
-    const raw = readFileSync(transcript.path, "utf-8") as string;
-    const _lines = raw.trim().split("\n").filter(Boolean);
-
-    const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
-
-    const recent = messages.slice(-maxMessages);
+    const loaded = loadSessionReadTranscript(session, maxMessages);
     if (structuredResult) {
+      const sessionJson = buildSessionJson(session);
       const payload = {
-        session: buildSessionJson(session),
-        transcript: {
-          available: true,
-          source: "provider-transcript",
-          path: transcript.path,
-          providerSessionId,
-          runtimeProvider: session.runtimeProvider ?? null,
-        },
-        messages: recent,
-        totalMessages: messages.length,
-        count: recent.length,
+        session: includeVisibility ? sessionJson : omitSkillVisibilityFromSessionJson(sessionJson),
+        transcript: loaded.transcript,
+        messages: loaded.messages,
+        totalMessages: loaded.totalMessages,
+        count: loaded.messages.length,
       };
       return returnStructuredResult(payload, asJson);
     }
 
-    console.log(`\n💬 ${sessionLabel} — last ${recent.length} of ${messages.length} provider transcript messages\n`);
-    printNormalizedMessages(recent);
+    if (!loaded.transcript.available) {
+      const reason = loaded.transcript.reason ?? "No history available";
+      console.log(reason === "No runtime session" ? "⚠️  No runtime session — no history available" : `⚠️  ${reason}`);
+      return;
+    }
+
+    const source = loaded.transcript.source;
+    const suffix =
+      source === "chat-db-chat-id"
+        ? " same-chat messages"
+        : source === "message-metadata"
+          ? " message metadata entries"
+          : source === "provider-transcript"
+            ? " provider transcript messages"
+            : " messages";
+    if (source === "message-metadata") {
+      console.log(`\n💬 ${sessionLabel} — last ${loaded.messages.length}${suffix}\n`);
+    } else {
+      console.log(`\n💬 ${sessionLabel} — last ${loaded.messages.length} of ${loaded.totalMessages}${suffix}\n`);
+    }
+    printNormalizedMessages(loaded.messages);
+  }
+
+  @Command({
+    name: "recap",
+    description: "Compute a bounded recap of a session (identity, goal, recent tail)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "recap",
+    risk: "low",
+  })
+  recap(
+    @Arg("nameOrKey", {
+      description: "Optional session name/key override (defaults to current session)",
+      required: false,
+    })
+    nameOrKey?: string,
+    @Option({
+      flags: "-n, --count <count>",
+      description: "Recent user/assistant messages to include (default: 8, max: 40)",
+    })
+    countStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const structuredResult = shouldReturnStructuredResult(asJson);
+    const target = nameOrKey?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions recap --json inside a session, or ravi sessions recap <name> --json outside one.",
+      );
+      return;
+    }
+
+    const session = this.resolveRecapTarget(target, asJson);
+    if (!session) return;
+
+    const tailLimit = parseSessionRecapTailCount(countStr);
+    const loaded = loadSessionReadTranscript(session, tailLimit);
+    const recap = buildSessionRecap({
+      session,
+      goal: loadSessionGoalSafe(session.sessionKey),
+      tailLimit,
+      history: {
+        available: loaded.transcript.available,
+        ...(loaded.transcript.source ? { source: loaded.transcript.source } : {}),
+        ...(loaded.transcript.reason ? { reason: loaded.transcript.reason } : {}),
+        totalMessages: loaded.totalMessages,
+        messages: loaded.messages.map((message) => ({
+          role: message.role,
+          text: message.text,
+          time: message.time,
+        })),
+      },
+    });
+
+    if (structuredResult) {
+      return returnStructuredResult(recap, asJson);
+    }
+
+    console.log(formatSessionRecap(recap));
+    return recap;
+  }
+
+  private resolveRecapTarget(nameOrKey: string, asJson?: boolean): SessionEntry | null {
+    let session = resolveSession(nameOrKey);
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+
+    if (!session) {
+      failSessionNotFound("sessions recap", nameOrKey, asJson);
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey)) {
+      failSessionNotFound("sessions recap", nameOrKey, asJson);
+    }
+
+    return session;
   }
 
   private readMessageMeta(session: SessionEntry, requestedMessageId: string): unknown {
@@ -4842,23 +5459,14 @@ export class SessionCommands {
 
     if (channelOverride && toOverride) {
       source = { channel: channelOverride, accountId: "", chatId: toOverride };
-    } else if (session.lastChannel && session.lastTo) {
-      // Derive threadId from session key (lastTo doesn't carry it)
-      const derived = deriveSourceFromSessionKey(session.sessionKey);
-      source = {
-        channel: session.lastChannel,
-        accountId: session.lastAccountId ?? "",
-        chatId: session.lastTo,
-        ...(derived?.threadId ? { threadId: derived.threadId } : {}),
-      };
-    } else {
-      const derived = deriveSourceFromSessionKey(session.sessionKey);
-      if (derived) source = derived;
     }
+    // Session-relay without --channel/--to is not inbound chat. Leftover
+    // lastChannel/lastTo and session-key derivation must not become
+    // prompt.source / currentSource / emit target.
 
     if (session.lastContext) {
       try {
-        context = JSON.parse(session.lastContext) as ChannelContext;
+        context = toPersistedChannelContext(JSON.parse(session.lastContext) as ChannelContext);
       } catch {
         /* ignore */
       }
@@ -4908,9 +5516,10 @@ export class SessionCommands {
   }
 
   /**
-   * Fire-and-forget emit to a session (for ask/answer/execute/inform).
+   * Fire-and-forget emit to a session.
    */
   private async emitToSession(
+    action: SessionRelayAction,
     sessionName: string,
     prompt: string,
     session: SessionEntry,
@@ -4919,6 +5528,7 @@ export class SessionCommands {
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
     deliveryBarrierSource: DeliveryBarrierSource = "default",
     promptPayload?: Record<string, unknown>,
+    cliDestination = false,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
@@ -4933,6 +5543,8 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(promptPayload ?? {}),
+      ...(cliDestination ? { _cliDestination: true } : {}),
+      _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
     } as Record<string, unknown>);
   }
 
@@ -4951,11 +5563,13 @@ export class SessionCommands {
       silent?: boolean;
       onResponse?: (chunk: string) => void;
       promptPayload?: Record<string, unknown>;
+      cliDestination?: boolean;
     } = {},
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
     let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
+    const transcriptCursor = snapshotTranscriptCursor(getRecentHistory(sessionName, 1));
 
     const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
     const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
@@ -4987,9 +5601,14 @@ export class SessionCommands {
 
       (async () => {
         try {
+          let waitState = createSessionSendWaitState();
           for await (const event of runtimeStream) {
             const data = event.data as Record<string, unknown>;
             const type = data.type;
+            waitState = noteSessionSendWaitRuntimeEvent(waitState, type);
+            if (!isSessionSendWaitTerminal(waitState, type)) {
+              continue;
+            }
             if (type === "turn.complete") {
               settle({ kind: "complete" });
               break;
@@ -5037,6 +5656,9 @@ export class SessionCommands {
             break;
           }
           if (data.response) {
+            if (options.cliDestination) {
+              continue;
+            }
             if (!options.silent) {
               process.stdout.write(data.response);
             }
@@ -5059,6 +5681,8 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(options.promptPayload ?? {}),
+      ...(options.cliDestination ? { _cliDestination: true } : {}),
+      _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
     } as Record<string, unknown>);
 
     const completionState = await completion;
@@ -5071,6 +5695,21 @@ export class SessionCommands {
     }
     if (completionState.kind === "timeout") {
       throw new Error(formatWaitTimeoutError(sessionName));
+    }
+
+    if (options.cliDestination) {
+      const transcriptText = await waitForThisTurnAssistantText({
+        afterId: transcriptCursor,
+        readMessages: () => getRecentHistory(sessionName, 50),
+      });
+      if (transcriptText !== null) {
+        if (!options.silent && transcriptText) {
+          process.stdout.write(transcriptText);
+        }
+        options.onResponse?.(transcriptText);
+        return transcriptText.length;
+      }
+      return 0;
     }
 
     return responseLength;
@@ -5211,12 +5850,13 @@ export class SessionCommands {
       });
       const sessionRef = session.name ?? session.sessionKey;
       const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
+      const state = describeSessionChatAssociation(session.sessionKey, chat.id, session.name);
       if (asJson) {
         printJson({
-          attached: result.created,
+          ...state,
+          created: result.created,
           outputAttached: result.outputAttached,
           subscription: result.subscription,
-          session: { name: session.name, sessionKey: session.sessionKey },
           chat: {
             id: chat.id,
             title: chat.title,
@@ -5231,7 +5871,7 @@ export class SessionCommands {
       }
       const verb = result.created ? "Attached" : "Already attached";
       console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
-      console.log(`Output target: ${chat.id}`);
+      formatSessionChatAssociationHuman(state);
       console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
@@ -5285,130 +5925,18 @@ export class SessionCommands {
       fail(`Chat not found: ${chatRef}`);
       return;
     }
-    const result = detachChatFromSession(session.sessionKey, chat.id);
+    const result = detachChatFromSession(session.sessionKey, chat.id, session.name);
     if (asJson) {
-      printJson({
-        detached: result.detached,
-        outputDetached: result.outputDetached,
-        sessionKey: session.sessionKey,
-        chatId: chat.id,
-      });
+      printJson(result);
       return;
     }
     if (result.detached) {
-      const suffix = result.outputDetached ? " and cleared it as output target" : "";
+      const suffix = result.outputDetached ? " and cleared it as default output" : "";
       console.log(`Detached chat ${chat.id} from session ${session.name ?? session.sessionKey}${suffix}`);
-    } else if (result.outputDetached) {
-      console.log(
-        `Cleared chat ${chat.id} as output target for ${session.name ?? session.sessionKey}; primary input remains attached`,
-      );
     } else {
       console.log(`Chat ${chat.id} is not currently attached to ${session.name ?? session.sessionKey}`);
     }
-  }
-
-  @Command({
-    name: "mute",
-    description: "Keep a subscribed chat as listen-only for a session",
-  })
-  @CommandAccess({
-    kind: "mutate",
-    resource: "sessions",
-    action: "mute",
-    risk: "medium",
-  })
-  mute(
-    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({
-      flags: "--chat <id>",
-      description: "Canonical chat id (or platform/normalized id)",
-    })
-    chatRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" })
-    asJson?: boolean,
-  ) {
-    const session = resolveSession(nameOrKey);
-    if (!session) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
-    }
-    if (!chatRef?.trim()) {
-      fail("--chat is required");
-      return;
-    }
-    const chat = resolveAttachChat(chatRef);
-    if (!chat) {
-      fail(`Chat not found: ${chatRef}`);
-      return;
-    }
-    const subscription = setSessionChatSpeechMode({
-      sessionKey: session.sessionKey,
-      chatId: chat.id,
-      speechMode: "muted",
-      reason: "cli-mute",
-    });
-    if (asJson) {
-      printJson({
-        sessionKey: session.sessionKey,
-        chatId: chat.id,
-        speechMode: subscription.speechMode,
-        subscription,
-      });
-      return;
-    }
-    console.log(`Muted chat ${chat.id} for session ${session.name ?? session.sessionKey}; inbound remains subscribed`);
-  }
-
-  @Command({
-    name: "unmute",
-    description: "Allow a subscribed chat to receive session responses",
-  })
-  @CommandAccess({
-    kind: "mutate",
-    resource: "sessions",
-    action: "unmute",
-    risk: "medium",
-  })
-  unmute(
-    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({
-      flags: "--chat <id>",
-      description: "Canonical chat id (or platform/normalized id)",
-    })
-    chatRef?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" })
-    asJson?: boolean,
-  ) {
-    const session = resolveSession(nameOrKey);
-    if (!session) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
-    }
-    if (!chatRef?.trim()) {
-      fail("--chat is required");
-      return;
-    }
-    const chat = resolveAttachChat(chatRef);
-    if (!chat) {
-      fail(`Chat not found: ${chatRef}`);
-      return;
-    }
-    const subscription = setSessionChatSpeechMode({
-      sessionKey: session.sessionKey,
-      chatId: chat.id,
-      speechMode: "speak",
-      reason: "cli-unmute",
-    });
-    if (asJson) {
-      printJson({
-        sessionKey: session.sessionKey,
-        chatId: chat.id,
-        speechMode: subscription.speechMode,
-        subscription,
-      });
-      return;
-    }
-    console.log(`Unmuted chat ${chat.id} for session ${session.name ?? session.sessionKey}`);
+    formatSessionChatAssociationHuman(result);
   }
 
   @Command({
@@ -5457,7 +5985,7 @@ export class SessionCommands {
     console.log(`Actions for ${sessionActionRef(session)}:`);
     const actions = payload.actions as Array<Record<string, unknown>>;
     for (const action of actions) {
-      const status = action.status === "available" ? "available" : "planned";
+      const status = typeof action.status === "string" ? action.status : "unknown";
       const command = typeof action.command === "string" ? ` — ${action.command}` : "";
       console.log(`  ${action.id}: ${status}${command}`);
     }
@@ -5486,6 +6014,204 @@ export class SessionCommands {
   }
 
   @Command({
+    name: "create-thread",
+    description: "Create a native Slack thread and start a child session in it",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "create-thread",
+    risk: "medium",
+  })
+  async createThread(
+    @Arg("message", {
+      description: "Initial Slack message and first instruction for the child session",
+    })
+    message: string,
+    @Option({
+      flags: "--model <model>",
+      description: "Optional model override for the child session",
+    })
+    model?: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit initiating session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const initialMessage = message.trim();
+    if (!initialMessage) {
+      fail("Initial thread message is required");
+      return;
+    }
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions create-thread <message> inside a session, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+
+    const creationTarget = resolveSlackThreadCreationTarget(session);
+    const requestId = `slack-thread:${randomUUID()}`;
+    const normalizedModel = model?.trim() || undefined;
+    createSlackThreadLifecycle({
+      requestId,
+      parentSessionKey: creationTarget.parentSession.sessionKey,
+      parentSessionName: sessionActionRef(creationTarget.parentSession),
+      initiatorSessionKey: session.sessionKey,
+      initiatorSessionName: sessionActionRef(session),
+      accountId: creationTarget.accountId,
+      instanceId: creationTarget.instanceId,
+      platformChatId: creationTarget.platformChatId,
+      rootCanonicalChatId: creationTarget.rootCanonicalChatId,
+      initialPrompt: initialMessage,
+      modelOverride: normalizedModel,
+    });
+    const job = buildChannelChatActionJob({
+      sessionName: sessionActionRef(creationTarget.parentSession),
+      requestId,
+      target: {
+        channel: "slack",
+        accountId: creationTarget.accountId,
+        instanceId: creationTarget.instanceId,
+        chatId: creationTarget.platformChatId,
+        canonicalChatId: creationTarget.rootCanonicalChatId,
+      },
+      content: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: initialMessage,
+      },
+    });
+    const published = await publishChannelOutboundJobDurably(job);
+    const payload = {
+      status: "queued",
+      queued: true,
+      actionId: "thread.create",
+      executionMode: "durable",
+      requestId,
+      idempotencyKey: job.request.idempotencyKey,
+      publishedNow: published.ok && published.publishedNow,
+      publishPending: !published.ok,
+      ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+      parentSession: {
+        sessionKey: creationTarget.parentSession.sessionKey,
+        sessionName: creationTarget.parentSession.name ?? null,
+      },
+      initiatorSession: {
+        sessionKey: session.sessionKey,
+        sessionName: session.name ?? null,
+      },
+      slack: {
+        accountId: creationTarget.accountId,
+        instanceId: creationTarget.instanceId,
+        channelId: creationTarget.platformChatId,
+        canonicalChatId: creationTarget.rootCanonicalChatId,
+      },
+      child: {
+        status: "pending_root_delivery",
+        modelOverride: normalizedModel ?? null,
+      },
+    };
+    if (asJson) printJson(payload);
+    else console.log(`Queued Slack thread creation in ${creationTarget.platformChatId}`);
+    return payload;
+  }
+
+  @Command({
+    name: "close-thread",
+    description: "Close the current Slack thread session, optionally returning a result to its parent",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "close-thread",
+    risk: "medium",
+  })
+  async closeThread(
+    @Option({
+      flags: "--return <result>",
+      description: "Completion result to deliver once to the parent session",
+    })
+    returnResult?: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit Slack thread session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions close-thread inside a Slack thread, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+    if (slackThreadParentSessionKey(session.sessionKey) === session.sessionKey) {
+      fail("thread.close is available only inside a Slack thread child session");
+      return;
+    }
+    const normalizedReturn = returnResult?.trim() || undefined;
+    const result = await closeSlackThread(session, normalizedReturn);
+    const payload = {
+      status: result.record.status,
+      actionId: "thread.close",
+      closed: true,
+      changed: result.changed,
+      requestId: result.record.requestId,
+      closeSequence: result.record.closeSequence,
+      parentReturn: {
+        requested: result.record.parentReturnRequested,
+        delivered: result.parentReturnDelivered || result.record.parentNotifiedAt !== undefined,
+        pending:
+          result.record.parentReturnRequested &&
+          !result.parentReturnDelivered &&
+          result.record.parentNotifiedAt === undefined,
+      },
+      parentSession: {
+        sessionKey: result.record.parentSessionKey,
+        sessionName: result.record.parentSessionName,
+      },
+      childSession: {
+        sessionKey: result.record.childSessionKey ?? session.sessionKey,
+        sessionName: result.record.childSessionName ?? session.name ?? null,
+      },
+      slack: {
+        channelId: result.record.platformChatId,
+        threadTs: result.record.providerThreadId ?? null,
+      },
+    };
+    if (asJson) printJson(payload);
+    else {
+      console.log(
+        result.changed
+          ? `Closed Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)}`
+          : `Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)} was already closed`,
+      );
+    }
+    return payload;
+  }
+
+  @Command({
     name: "delete-message",
     description: "Delete one of this session agent's own channel messages",
   })
@@ -5494,6 +6220,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete-message",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async deleteMessage(
     @Arg("sessionOrMessage", {
@@ -5507,13 +6234,18 @@ export class SessionCommands {
     messageRef?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const inferredSession = !messageRef?.trim();
     const target = messageRef?.trim() ? sessionOrMessage.trim() : resolveCurrentSessionRef();
     const ref = messageRef?.trim() || sessionOrMessage.trim();
     if (!target) {
       fail(
-        "No current session context found. Use ravi sessions delete-message <message-id> inside a session, or ravi sessions delete-message <session> <message-id> outside one.",
+        "No current session context found. Use ravi sessions delete-message <message-id> --execute inside a session, or ravi sessions delete-message <session> <message-id> --execute outside one.",
       );
       return;
     }
@@ -5528,18 +6260,69 @@ export class SessionCommands {
     const scopeCtx = getScopeContext();
     const sessionRef = sessionActionRef(session);
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
-      fail(`Session not found: ${target}`);
-      return;
+      failSessionNotFound("sessions delete-message", target, asJson);
     }
 
     const message = dbFindAgentChatMessageByRef({
       agentId: session.agentId,
       messageRef: ref,
       chatIds: sessionActionChatIds(session),
+      originSessionKey: session.sessionKey,
     });
     if (!message) {
-      fail(`Message not found or is not an own message for session: ${ref}`);
-      return;
+      contractFail(
+        "sessions delete-message",
+        "MESSAGE_NOT_FOUND",
+        `Message not found or is not an own message for session: ${ref}`,
+        {
+          asJson,
+          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+        },
+      );
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the provider deletion is irreversible, so
+      // dry-run by default and exit 3 before any queue/provider call.
+      contractDryRun(
+        "sessions delete-message",
+        {
+          session: sessionRef,
+          messageId: message.id,
+          providerMessageId: message.providerMessageId ?? null,
+          channel: message.channel,
+        },
+        { asJson },
+      );
+    }
+
+    if (message.channel.toLowerCase() === "slack") {
+      const queued = await queueSlackChatAction(session, message, {
+        type: "chat_action",
+        actionId: "message.delete",
+        canonicalMessageId: message.id,
+        providerMessageId: message.providerMessageId,
+      });
+      const payload = {
+        deleted: false,
+        ...queued,
+        session: {
+          ref: sessionRef,
+          sessionKey: session.sessionKey,
+          sessionName: session.name ?? null,
+          agentId: session.agentId,
+        },
+        message: serializeSessionActionMessage(session, message),
+        hints: {
+          actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Queued deletion of message ${message.providerMessageId} for session ${sessionRef}`);
+      return payload;
     }
 
     const reply = await requestReply<{
@@ -5600,10 +6383,11 @@ export class SessionCommands {
     description: "Edit one of this session agent's own text channel messages",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "edit-message",
-    risk: "low",
+    risk: "high",
+    requiresConfirmation: true,
   })
   async editMessage(
     @Arg("sessionOrMessage", {
@@ -5624,6 +6408,11 @@ export class SessionCommands {
     textOption?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually edit the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const explicitText = textOption !== undefined;
     const inferredSession = !textArg?.trim() && (!explicitText || !messageOrText?.trim());
@@ -5633,7 +6422,7 @@ export class SessionCommands {
 
     if (!target) {
       fail(
-        'No current session context found. Use ravi sessions edit-message <message-id> "new text" inside a session, or ravi sessions edit-message <session> <message-id> "new text" outside one.',
+        'No current session context found. Use ravi sessions edit-message <message-id> "new text" --execute inside a session, or ravi sessions edit-message <session> <message-id> "new text" --execute outside one.',
       );
       return;
     }
@@ -5652,18 +6441,72 @@ export class SessionCommands {
     const scopeCtx = getScopeContext();
     const sessionRef = sessionActionRef(session);
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
-      fail(`Session not found: ${target}`);
-      return;
+      failSessionNotFound("sessions edit-message", target, asJson);
     }
 
     const message = dbFindAgentChatMessageByRef({
       agentId: session.agentId,
       messageRef: ref,
       chatIds: sessionActionChatIds(session),
+      originSessionKey: session.sessionKey,
     });
     if (!message) {
-      fail(`Message not found or is not an own message for session: ${ref}`);
-      return;
+      contractFail(
+        "sessions edit-message",
+        "MESSAGE_NOT_FOUND",
+        `Message not found or is not an own message for session: ${ref}`,
+        {
+          asJson,
+          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+        },
+      );
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): rewriting a delivered message is a live
+      // channel mutation, so dry-run by default and exit 3 before any call.
+      contractDryRun(
+        "sessions edit-message",
+        {
+          session: sessionRef,
+          messageId: message.id,
+          providerMessageIdPresent: Boolean(message.providerMessageId),
+          channel: message.channel,
+          newTextChars: nextText.length,
+        },
+        { asJson },
+      );
+    }
+
+    if (message.channel.toLowerCase() === "slack") {
+      const queued = await queueSlackChatAction(session, message, {
+        type: "chat_action",
+        actionId: "message.edit",
+        canonicalMessageId: message.id,
+        providerMessageId: message.providerMessageId,
+        text: nextText,
+      });
+      const payload = {
+        edited: false,
+        ...queued,
+        session: {
+          ref: sessionRef,
+          sessionKey: session.sessionKey,
+          sessionName: session.name ?? null,
+          agentId: session.agentId,
+        },
+        message: serializeSessionActionMessage(session, message),
+        pendingText: nextText,
+        hints: {
+          actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Queued edit of message ${message.providerMessageId} for session ${sessionRef}`);
+      return payload;
     }
 
     const reply = await requestReply<{
@@ -5776,7 +6619,7 @@ export class SessionCommands {
       const title = chat?.title ?? "(no title)";
       const channel = chat?.channel ?? "?";
       const outputMarker = sub.outputAttachedAt ? " output" : "";
-      console.log(`  [${sub.role}${outputMarker} speech=${sub.speechMode}] ${sub.chatId} — ${title} (${channel})`);
+      console.log(`  [${sub.role}${outputMarker}] ${sub.chatId} — ${title} (${channel})`);
     }
   }
 }
@@ -5786,6 +6629,8 @@ declareCommandReturns(SessionCommands, {
   answer: commandEnvelopeReturnSchema,
   ask: commandEnvelopeReturnSchema,
   attach: commandEnvelopeReturnSchema,
+  closeThread: sessionCloseThreadReturnSchema,
+  createThread: sessionCreateThreadReturnSchema,
   delete: commandEnvelopeReturnSchema,
   deleteMessage: commandEnvelopeReturnSchema,
   detach: commandEnvelopeReturnSchema,
@@ -5797,9 +6642,9 @@ declareCommandReturns(SessionCommands, {
   inform: commandEnvelopeReturnSchema,
   keep: commandEnvelopeReturnSchema,
   list: pagedItemsReturnSchema,
-  mute: commandEnvelopeReturnSchema,
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,
+  recap: sessionRecapReturnSchema,
   rename: commandEnvelopeReturnSchema,
   reset: commandEnvelopeReturnSchema,
   send: sessionSendReturnSchema,
@@ -5811,7 +6656,6 @@ declareCommandReturns(SessionCommands, {
   setTtl: commandEnvelopeReturnSchema,
   subscriptions: commandEnvelopeReturnSchema,
   trace: commandEnvelopeReturnSchema,
-  unmute: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
 
@@ -5825,6 +6669,8 @@ export interface NormalizedTranscriptMessage {
   role: "user" | "assistant";
   text: string;
   time: string;
+  id?: number;
+  createdAt?: string;
   source?: {
     agentId: string | null;
     channel: string | null;
@@ -5870,7 +6716,8 @@ function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessa
         messages.push({
           role: "user",
           text: content.trim(),
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       } else if (entry.type === "assistant" && entry.message?.content) {
         const parts = entry.message.content as Array<{
@@ -5886,7 +6733,8 @@ function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessa
         messages.push({
           role: "assistant",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       }
     } catch {
@@ -5923,13 +6771,15 @@ function extractCodexTranscriptMessages(raw: string): NormalizedTranscriptMessag
         messages.push({
           role: "user",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       } else if (payloadType === "agent_message") {
         messages.push({
           role: "assistant",
           text,
-          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          time: toIsoTimestamp(entry.timestamp),
+          ...(entry.timestamp ? { createdAt: toIsoTimestamp(entry.timestamp) } : {}),
         });
       }
     } catch {

@@ -29,9 +29,10 @@ Expected:
 - the generated barrel includes the new command file;
 - no unrelated command exports changed.
 
-## SDK-Facing Command Drift
+## Static Command Compatibility Drift
 
-When a first-party CLI App command is exposed to SDK/gateway:
+When the underlying first-party static Ravi command is also exposed to
+SDK/gateway:
 
 ```bash
 bun run sdk:generate
@@ -43,22 +44,38 @@ Expected:
 - generated SDK files are current;
 - command return types are explicit when `@Returns(zod)` is present;
 - process/stream/interactive commands are excluded with `@CliOnly()`.
+- the app manifest still maps the operation to `cli`, and generic App callers
+  still use App Router authorization.
 
 ## Context-Key Launch Smoke
 
 For an external CLI App launched by Ravi:
 
 ```bash
-key="$(ravi context issue my-app --allow view:system:events --ttl 5m --json | jq -r '.context.key')"
-RAVI_CONTEXT_KEY="$key" ravi context whoami --json
-RAVI_CONTEXT_KEY="$key" ravi context check view system events --json
+ravi my-app inspect --json
+ravi context list --json
+ravi context info <child-context-id> --json
 ```
 
 Expected:
 
-- `whoami` resolves a context id;
-- check output is structured JSON;
-- raw context key is not printed by the app.
+- a fresh child context exists with `issuedFor` equivalent to `app:my-app`;
+- its capabilities are no broader than manifest `context.allow`;
+- lineage points to the caller context;
+- the app process received the child key, not the parent key;
+- legacy Ravi identity env vars were not synthesized;
+- unrelated parent credentials and secrets were not inherited;
+- the command ran with `shell: false` from a bounded app/package root;
+- raw context keys are absent from app output and audit.
+
+## Ravi Call Smoke
+
+For an app operation that calls a public Ravi command:
+
+- the app resolves identity through `ravi context whoami`;
+- `ravi context check` or `authorize` evaluates the child context;
+- the downstream `ravi ...` command succeeds only within the child ceiling;
+- an undeclared Ravi capability fails without executing the protected action.
 
 ## Agent-First Output Smoke
 
@@ -74,3 +91,6 @@ Expected:
 - includes stable semantic fields;
 - error cases return clear messages;
 - list commands include page/pagination metadata and are bounded by default.
+
+Also verify that omitting `--json` uses normal human CLI output and does not
+change routing, authorization, or child-context behavior.

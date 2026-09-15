@@ -18,13 +18,26 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
+import {
+  CONTRACT_EXIT_USAGE,
+  ContractError,
+  contractFail,
+  contractFailureOutcome,
+  installRootUsageContract,
+  installUsageContract,
+  renderContractError,
+  sqliteCapacityToContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
-import { runUpdate } from "./commands/update.js";
+import { maybeRunManagedRuntimeRebindFromEnv } from "../managed-runtime-rebind.js";
+import { runUpdate, type RaviUpdateOptions } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
-import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
+import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
+import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
@@ -54,6 +67,73 @@ program.showSuggestionAfterError();
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
+
+// Manual v2 contract, installed per migrated domain group: commander usage
+// errors (unknown flag, missing required argument) exit 2 with the error
+// envelope instead of plain text with exit 1. Unlisted groups keep commander's
+// default behavior until they are migrated.
+const AGENT_CONTRACT_DOMAINS = [
+  "agents",
+  "artifacts",
+  "audio",
+  "bridges",
+  "bug",
+  "calendars",
+  "channels",
+  "chats",
+  "cloud",
+  "commands",
+  "connectors",
+  "contacts",
+  "context",
+  "costs",
+  "credentials",
+  "crm",
+  "cron",
+  "devin",
+  "feedback",
+  "gmail",
+  "heartbeat",
+  "hooks",
+  "image",
+  "inbox",
+  "insights",
+  "instances",
+  "mail",
+  "media",
+  "meetings",
+  "metrics",
+  "observers",
+  "pages",
+  "projects",
+  "prox",
+  "react",
+  "routes",
+  "rules",
+  "runtime",
+  "self",
+  "sessions",
+  "settings",
+  "skill-gates",
+  "skills",
+  "slack",
+  "specs",
+  "stickers",
+  "sync",
+  "tag-rules",
+  "tags",
+  "tasks",
+  "threads",
+  "transcribe",
+  "triggers",
+  "video",
+  "watch",
+  "whatsapp",
+  "work-objects",
+  "workflows",
+  "yt",
+];
+for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
 // Top-level commands (not via decorator groups)
 program
@@ -100,17 +180,20 @@ program
 
 program
   .command("update")
-  .description("Update Ravi CLI to the configured npm channel")
+  .description("Update Ravi CLI to an exact release or configured npm channel")
+  .option("--version <version>", "Install one exact Ravi release")
+  .option("--expected-integrity <sri>", "Require the npm sha512 SRI for an exact release")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
   .option("--no-restart", "Do not restart managed Ravi processes after updating")
-  .action(async (options: { next?: boolean; stable?: boolean; restart?: boolean }) => {
+  .option("--json", "Print a machine-readable result")
+  .action(async (options: RaviUpdateOptions) => {
     await runWithCliAudit(
       {
         group: "_root",
         name: "update",
         tool: "root_update",
-        input: options,
+        input: { ...options },
         closeLazyConnection: true,
       },
       () => runUpdate(options),
@@ -188,18 +271,28 @@ program
 program
   .command("tui")
   .description("Open the terminal UI for a session")
-  .argument("[session]", "Session name or key", "main")
-  .action(async (session: string) => {
+  .argument("[session]", "Session name or key")
+  .action(async (session?: string) => {
+    const sessionName = session?.trim();
+    if (!sessionName) {
+      contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Pass a session name: ravi tui <session>",
+          usage: "ravi tui <session>",
+        },
+      });
+    }
     await runWithCliAudit(
       {
         group: "_root",
         name: "tui",
         tool: "root_tui",
-        input: { session },
+        input: { session: sessionName },
         closeLazyConnection: true,
       },
       async () => {
-        await spawnDirectTui(session, projectRoot);
+        await spawnDirectTui(requireTuiSessionName(sessionName), projectRoot);
       },
     );
   });
@@ -238,15 +331,49 @@ program
     );
   });
 
-// Parse and execute
-maybeSuggestKnownRootCommand(process.argv.slice(2), program);
+// Parse and execute. Root parser failures use the same exit-2 contract as
+// migrated domain nodes, including unknown command suggestions.
+installRootUsageContract(program);
 
-void bootstrapCli().catch((error: unknown) => {
-  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+void bootstrapCli().catch(async (error: unknown) => {
+  if (error instanceof ContractError) {
+    // Contract helpers render once and throw. Audit the semantic outcome before
+    // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
+    if (!wasContractErrorAudited(error)) {
+      const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
+      await emitCliAuditEvent({
+        group,
+        name: operationParts.join("_") || "root",
+        tool: error.op.replace(/\s+/g, "_"),
+        outcome: contractFailureOutcome(error),
+        exitCode: error.exitCode,
+        errorCode: error.code,
+        status: "completed",
+        closeLazyConnection: true,
+      });
+    }
+    process.exitCode = error.exitCode;
+    return;
+  }
+  const contractError =
+    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap");
+  renderContractError(contractError, process.argv.includes("--json"));
+  await emitCliAuditEvent({
+    group: "cli",
+    name: "bootstrap",
+    tool: "cli_bootstrap",
+    outcome: contractFailureOutcome(contractError),
+    exitCode: contractError.exitCode,
+    errorCode: contractError.code,
+    status: "completed",
+    closeLazyConnection: true,
+  });
+  process.exitCode = contractError.exitCode;
 });
 
 async function bootstrapCli(): Promise<void> {
+  if (await maybeRunManagedRuntimeRebindFromEnv()) return;
+
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
     staticRootCommands: rootCommandNames(program),
   });
@@ -254,35 +381,7 @@ async function bootstrapCli(): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  program.parse();
-}
-
-function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
-  const requested = args[0];
-  if (!requested || requested.startsWith("-")) return;
-
-  const known = rootCommandNames(command);
-  if (known.has(requested)) return;
-
-  const suggestion = resolveKnownRootCommandSuggestion(requested, known);
-  if (!suggestion) return;
-
-  const suggestedArgs = [suggestion, ...args.slice(1)];
-  console.error(`Unknown command: ravi ${requested}`);
-  console.error(`Did you mean: ravi ${suggestedArgs.join(" ")}?`);
-  process.exit(1);
-}
-
-function resolveKnownRootCommandSuggestion(requested: string, known: Set<string>): string | undefined {
-  const explicit: Record<string, string> = {
-    task: "tasks",
-  };
-  const explicitSuggestion = explicit[requested];
-  if (explicitSuggestion && known.has(explicitSuggestion)) return explicitSuggestion;
-
-  const plural = `${requested}s`;
-  if (known.has(plural)) return plural;
-  return undefined;
+  await program.parseAsync();
 }
 
 function rootCommandNames(command: Command): Set<string> {

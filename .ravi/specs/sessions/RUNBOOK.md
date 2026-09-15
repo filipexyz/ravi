@@ -7,7 +7,9 @@
 2. `ravi sessions info <session> --json` — inspect one session, including
    `effectiveProvider`, `effectiveModel`, `modelSource`, `modelPresetId`, and
    `modelPresetVersion`.
-3. `ravi sessions actions --json` — canonical conversational action surface.
+3. `ravi sessions recap <session> --json` — bounded computed recap (identity,
+   goal if present, empty structured fields, recent user/assistant tail).
+4. `ravi sessions actions --json` — canonical conversational action surface.
 
 ## Lifecycle
 
@@ -15,6 +17,9 @@
   never `session_key`.
 - Reset: clears provider continuity state but preserves attach subscriptions.
 - Delete: cascades to delete the session's subscriptions.
+- Attach/detach: `session_chat_subscriptions` is the only ledger. After
+  `ravi sessions detach`, a leftover `session_chat_bindings` row MUST NOT
+  exist or come back on the next process start.
 
 ## Diagnosing Effective Model
 
@@ -28,6 +33,9 @@
 
 ## Output Delivery
 
-Prefer the current source chat when its subscription is `speak`; otherwise
-resolve to the default output attachment when it is `speak`. If neither is
-speak-enabled, the response MUST NOT emit externally.
+An inbound turn returns to its attached source chat or thread. The default
+output attachment is used only for a turn with no inbound source. An
+unattached inbound source MUST fail closed instead of falling back elsewhere.
+Operator / HTTP `sessions.send` without `--channel`/`--to` MUST NOT emit to
+leftover `lastChannel` or the default attachment; read the assistant row
+from `sessions.read`.

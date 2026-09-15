@@ -72,3 +72,22 @@ Expected:
 - Generated operation MUST be marked review-required.
 - Permission suggestion SHOULD be present when possible.
 - Operation MUST NOT be silently treated as safe read-only.
+
+### Child Context Guard
+
+- Generated manifest MUST contain `context.allow`.
+- `context.allow` MUST default to empty when exact Ravi capabilities are not
+  explicitly self-described.
+- Importing operations that directly call `ravi <group>` SHOULD infer only
+  `execute:group:<group>`.
+- Suggested capabilities MUST be marked review-required.
+- Import MUST NOT generate implicit inheritance or a wildcard parent context.
+
+### Single Executor Guard
+
+- Imported domain operations MUST use `interface: "cli"`.
+- SDK, tool, stream, UI, and automation metadata MUST NOT become alternate
+  operation executors.
+- An imported `ravi <app-id> ...` implementation MUST fail when it resolves
+  through the dynamic App Router and MAY pass only when `<app-id>` is a
+  registered static command.

@@ -77,4 +77,29 @@ describe("audit context provenance", () => {
       effectiveCapabilityCount: 0,
     });
   });
+
+  it("redacts token-shaped values before provenance reaches audit", () => {
+    const provenance = buildAuditContextProvenance({
+      contextId: "ctx_safe",
+      sessionName: "prefix rctx_private_context suffix",
+      metadata: {
+        actorDisplayName: "Bearer private.access.token",
+        surfacePrincipal: "sk-abcdefghijklmnop",
+      },
+      source: {
+        channel: "slack",
+        accountId: "rctx_private_account",
+        chatId: "chat_safe",
+      },
+    });
+
+    expect(provenance).toMatchObject({
+      contextId: "ctx_safe",
+      sessionName: "prefix [REDACTED:rctx] suffix",
+      actorDisplayName: "Bearer [REDACTED]",
+      surfacePrincipal: "[REDACTED:token]",
+      source: { channel: "slack", accountId: "[REDACTED:rctx]", chatId: "chat_safe" },
+    });
+    expect(JSON.stringify(provenance)).not.toContain("private");
+  });
 });

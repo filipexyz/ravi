@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
-import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { buildCodexDisabledSkillConfig, createCodexRuntimeProvider } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
@@ -12,6 +12,9 @@ type TransportRequest = {
   model?: string;
   effort?: string;
   prompt: string;
+  clientMessageId?: string;
+  replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
@@ -63,6 +66,25 @@ function makePromptGenerator(messages: string[]): RuntimeStartRequest["prompt"] 
         parent_tool_use_id: null,
       };
     }
+  })();
+}
+
+function makeReplayPromptGenerator(
+  content: string,
+  clientMessageId: string,
+  replay = true,
+  terminalReplayAllowed?: boolean,
+): RuntimeStartRequest["prompt"] {
+  return (async function* () {
+    yield {
+      type: "user" as const,
+      message: { role: "user" as const, content },
+      session_id: "",
+      parent_tool_use_id: null,
+      clientMessageId,
+      replay,
+      terminalReplayAllowed,
+    };
   })();
 }
 
@@ -136,7 +158,7 @@ describe("createCodexRuntimeProvider", () => {
     expect(synced).toEqual([{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }]);
   });
 
-  it("materializes the global Codex native tool hook in ~/.codex/hooks.json", () => {
+  it("materializes the global Codex bash hook in ~/.codex/hooks.json", () => {
     const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
     const originalHome = process.env.HOME;
     process.env.HOME = home;
@@ -156,18 +178,71 @@ describe("createCodexRuntimeProvider", () => {
       const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
       const raviHookGroup = preToolUse.find(
         (group: any) =>
-          typeof group?.matcher === "string" &&
-          group.matcher.includes("Bash") &&
-          group.matcher.includes("shell") &&
-          group.matcher.includes("Read") &&
+          group?.matcher === "^(Bash|shell)$" &&
           Array.isArray(group?.hooks) &&
-          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex native tool permission gate"),
+          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
       );
 
       expect(raviHookGroup).toBeDefined();
       expect(raviHookGroup.hooks[0]?.command).toContain("context");
-      expect(raviHookGroup.hooks[0]?.command).toContain("codex-tool-hook");
+      expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(raviHookGroup.hooks[0]?.command).not.toContain("codex-tool-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+  });
+
+  it("replaces a stale codex-tool-hook group instead of leaving it beside the bash hook", () => {
+    const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+
+    try {
+      const hooksPath = join(home, ".codex", "hooks.json");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(
+        hooksPath,
+        JSON.stringify(
+          {
+            hooks: {
+              PreToolUse: [
+                {
+                  matcher: "^(Read|Bash|shell|exec_command|view_image)$",
+                  hooks: [
+                    {
+                      type: "command",
+                      command: "ravi context codex-tool-hook",
+                      statusMessage: "ravi codex native tool permission gate",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const provider = createCodexRuntimeProvider();
+      provider.prepareSession?.({
+        agentId: "main",
+        cwd: "/tmp/ravi-codex",
+        plugins: [],
+      });
+
+      const payload = JSON.parse(readFileSync(hooksPath, "utf8"));
+      const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
+      expect(preToolUse).toHaveLength(1);
+      expect(preToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+      expect(preToolUse[0]?.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(preToolUse[0]?.hooks[0]?.command).not.toContain("codex-tool-hook");
+      expect(preToolUse[0]?.hooks[0]?.statusMessage).toBe("ravi codex bash permission gate");
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
@@ -312,6 +387,367 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
   });
 
+  it("binds the turn from the turn/start response and forwards the stable client message id", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-response-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    send({ id: message.id, result: { thread: { id: "thread_response" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify(message.params) + "\\n");
+    send({ id: message.id, result: { turn: { id: "turn_response", status: "inProgress", items: [] } } });
+    send({
+      method: "turn/completed",
+      params: { threadId: "thread_response", turn: { id: "turn_response", status: "completed", items: [] } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        prompt: makeReplayPromptGenerator("run once", "ravi:delivery-1", false),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const request = JSON.parse(readFileSync(requestsPath, "utf8").trim());
+
+    expect(request.clientUserMessageId).toBe("ravi:delivery-1");
+    expect(findEventsByType(events, "turn.started")).toEqual([
+      expect.objectContaining({ turn: expect.objectContaining({ id: "turn_response" }) }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_response" }),
+    ]);
+  });
+
+  it("reconciles an already completed replay without submitting the prompt again", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-completed-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_existing",
+          turns: [{
+            id: "turn_existing",
+            status: "completed",
+            items: [
+              { id: "user_existing", type: "userMessage", clientId: "ravi:delivery-2", content: [{ type: "text", text: "recover me" }] },
+              { id: "agent_existing", type: "agentMessage", text: "already completed" },
+            ],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_existing",
+        prompt: makeReplayPromptGenerator("recover me", "ravi:delivery-2"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "assistant.message")).toEqual([
+      expect.objectContaining({ text: "already completed" }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_existing" }),
+    ]);
+  });
+
+  it("reattaches to an accepted in-progress replay instead of duplicating turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-active-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_active",
+          turns: [{
+            id: "turn_active",
+            status: "inProgress",
+            items: [{ id: "user_active", type: "userMessage", clientId: "ravi:delivery-active", content: [{ type: "text", text: "still running" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    send({ method: "item/completed", params: { threadId: "thread_active", turnId: "turn_active", item: { id: "agent_active", type: "agentMessage", text: "finished after reconnect" } } });
+    send({ method: "turn/completed", params: { threadId: "thread_active", turn: { id: "turn_active", status: "completed", items: [] } } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_active",
+        prompt: makeReplayPromptGenerator("still running", "ravi:delivery-active"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "assistant.message")).toEqual([
+      expect.objectContaining({ text: "finished after reconnect" }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_active" }),
+    ]);
+  });
+
+  it("forks before an interrupted replay and preserves the prior thread history", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-interrupted-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_source",
+          turns: [{
+            id: "turn_interrupted",
+            status: "interrupted",
+            items: [{ id: "user_interrupted", type: "userMessage", clientId: "ravi:delivery-3", content: [{ type: "text", text: "retry safely" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "thread/fork") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_recovered", turns: [] }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { turn: { id: "turn_recovered", status: "inProgress", items: [] } } });
+    send({ method: "turn/completed", params: { threadId: "thread_recovered", turn: { id: "turn_recovered", status: "completed", items: [] } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_source",
+        prompt: makeReplayPromptGenerator("retry safely", "ravi:delivery-3"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume", "thread/fork", "turn/start"]);
+    expect(requests[1]?.params).toMatchObject({
+      threadId: "thread_source",
+      beforeTurnId: "turn_interrupted",
+    });
+    expect(requests[2]?.params).toMatchObject({
+      threadId: "thread_recovered",
+      clientUserMessageId: "ravi:delivery-3",
+    });
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_recovered" }),
+    ]);
+  });
+
+  it("reconciles an unsafe interrupted turn without forking or resubmitting it", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-suppressed-terminal-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_source",
+          turns: [{
+            id: "turn_interrupted",
+            status: "interrupted",
+            items: [{ id: "user_interrupted", type: "userMessage", clientId: "ravi:delivery-unsafe", content: [{ type: "text", text: "do not retry" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_source",
+        prompt: makeReplayPromptGenerator("do not retry", "ravi:delivery-unsafe", true, false),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+  });
+
   it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-resume-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -400,6 +836,156 @@ rl.on("line", (line) => {
         (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
       ),
     ).toBe(true);
+  });
+
+  it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-notifications-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let threadStartCount = 0;
+let acceptedTurnCount = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    threadStartCount += 1;
+    const threadId = threadStartCount === 1 ? "thread_main" : "thread_recovered";
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: threadId }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    if (message.params.threadId === "thread_child") {
+      send({
+        id: message.id,
+        error: { code: -32600, message: "direct app-server input is not allowed for multi-agent v2 sub-agents" },
+      });
+      return;
+    }
+
+    acceptedTurnCount += 1;
+    const threadId = message.params.threadId;
+    const turnId = \`turn_\${acceptedTurnCount}\`;
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId, turn: { id: turnId, status: "inProgress" } },
+    });
+
+    if (acceptedTurnCount === 1) {
+      send({
+        jsonrpc: "2.0",
+        method: "thread/started",
+        params: { thread: { id: "thread_child", title: "Explorer" } },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "turn/started",
+        params: { threadId: "thread_child", turn: { id: "turn_child", status: "inProgress" } },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId: "thread_child",
+          turnId: "turn_child",
+          tokenUsage: { last: { inputTokens: 999, cachedInputTokens: 999, outputTokens: 999 } },
+        },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "item/agentMessage/delta",
+        params: { threadId: "thread_child", turnId: "turn_child", itemId: "message_child", delta: "child" },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "item/completed",
+        params: {
+          threadId: "thread_child",
+          turnId: "turn_child",
+          item: { id: "message_child", type: "agentMessage", text: "child", status: "completed" },
+        },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "turn/completed",
+        params: { threadId: "thread_child", turn: { id: "turn_child", status: "completed" } },
+      });
+    }
+
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        threadId,
+        turnId,
+        item: {
+          id: \`message_\${acceptedTurnCount}\`,
+          type: "agentMessage",
+          text: \`root_\${acceptedTurnCount}\`,
+          status: "completed",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId,
+        turnId,
+        tokenUsage: { last: { inputTokens: acceptedTurnCount, cachedInputTokens: 0, outputTokens: 1 } },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId, turn: { id: turnId, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["first", "second"], { cwd }));
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const turnStarts = requests.filter((request) => request.method === "turn/start");
+    const completions = findEventsByType(events, "turn.complete");
+    const assistantMessages = findEventsByType(events, "assistant.message");
+
+    expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(1);
+    expect(turnStarts.map((request) => request.params.threadId)).toEqual(["thread_main", "thread_main"]);
+    expect(completions.map((event) => event.providerSessionId)).toEqual(["thread_main", "thread_main"]);
+    expect(assistantMessages.map((event) => event.text)).toEqual(["root_1", "root_2"]);
+    expect(completions[0]?.usage.inputTokens).toBe(1);
+    expect(
+      findEventsByType(events, "provider.raw").some(
+        (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
+      ),
+    ).toBe(false);
   });
 
   it("forks an app-server thread before the first turn when forkSession is requested", async () => {
@@ -516,8 +1102,8 @@ rl.on("line", (line) => {
   }
   if (message.id && message.method === "turn/start") {
     send({ id: message.id, result: {} });
-    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "inProgress" } } });
-    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "completed" } } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: message.params.threadId, turn: { id: "turn_effort", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: "turn_effort", status: "completed" } } });
   }
 });
 `,
@@ -711,6 +1297,27 @@ process.on("SIGTERM", () => {
     ).toEqual(["rctx_first", "rctx_second"]);
   });
 
+  it("classifies a clean exit without a terminal event as a recoverable transport failure", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {})(),
+        result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["retry me"]));
+
+    const events = await collectEvents(session.events);
+
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({
+        error: "Codex CLI exited without a terminal event (code 0)",
+        recoverable: true,
+        failureKind: "transport",
+      }),
+    ]);
+  });
+
   it("maps CLI completion events and composes prompts with system instructions", async () => {
     const { calls, transport } = createMockTransport([
       () => ({
@@ -744,6 +1351,7 @@ process.on("SIGTERM", () => {
     const completions = findEventsByType(events, "turn.complete");
 
     expect(session.concurrentInputStrategy).toBe("interrupt");
+    expect(session.ambiguousTurnRecoveryStrategy).toBe("reconcile_by_client_message_id");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.model).toBeUndefined();
     expect(calls[0]?.resume).toBe("thread_prev");
@@ -843,28 +1451,28 @@ process.on("SIGTERM", () => {
     expect(calls[0]?.effort).toBe("xhigh");
   });
 
-  it.each([
-    "max",
-    "ultra",
-  ] as const)("propagates the %s effort to the mocked exec transport without renaming the model", async (effort) => {
-    const { calls, transport } = createMockTransport([
-      () => ({
-        events: (async function* () {
-          yield { type: "thread.started", thread_id: `thread_${effort}` };
-          yield { type: "turn.started" };
-          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
-        })(),
-      }),
-    ]);
+  it.each(["max", "ultra"] as const)(
+    "propagates the %s effort to the mocked exec transport without renaming the model",
+    async (effort) => {
+      const { calls, transport } = createMockTransport([
+        () => ({
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: `thread_${effort}` };
+            yield { type: "turn.started" };
+            yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+          })(),
+        }),
+      ]);
 
-    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
-    const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
+      const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+      const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
 
-    await collectEvents(session.events);
+      await collectEvents(session.events);
 
-    expect(calls[0]?.effort).toBe(effort);
-    expect(calls[0]?.model).toBe("gpt-5.6-sol");
-  });
+      expect(calls[0]?.effort).toBe(effort);
+      expect(calls[0]?.model).toBe("gpt-5.6-sol");
+    },
+  );
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
@@ -1107,6 +1715,128 @@ process.on("SIGTERM", () => {
     const skillVisibility = completion?.session?.params?.skillVisibility as any;
     expect(skillVisibility.loadedSkills).toEqual([]);
     expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
+  });
+
+  it("filters the synchronized catalog with the resolved agent allowlist", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_filtered_skills" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-user-skills-tiny"],
+    });
+
+    provider.prepareSession?.({
+      agentId: "agent-a",
+      cwd: "/tmp/ravi-codex-filtered",
+      plugins: [],
+    });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd: "/tmp/ravi-codex-filtered",
+        allowedSkills: ["events"],
+      }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-events");
+    expect(calls[0]?.systemPromptAppend).not.toContain("ravi-user-skills-tiny");
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["ravi-system-events"]);
+  });
+
+  it("builds native Codex disable entries for every skill outside the allowlist", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-filter");
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "ravi-system-events", path: join(cwd, "skills", "ravi-system-events", "SKILL.md") },
+              { name: "tiny", path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md") },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["events"],
+    );
+
+    expect(config).toEqual([{ path: join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md"), enabled: false }]);
+  });
+
+  it("enables one native alias per logical skill and keeps an available baseline fallback", () => {
+    const cwd = join(tmpdir(), "ravi-codex-native-aliases");
+    const userSessions = join(cwd, "skills", "ravi-user-skills-sessions", "SKILL.md");
+    const systemSessions = join(cwd, "skills", "ravi-system-sessions", "SKILL.md");
+    const userSkillCreator = join(cwd, "skills", "ravi-user-skills-skill-creator", "SKILL.md");
+
+    const config = buildCodexDisabledSkillConfig(
+      {
+        data: [
+          {
+            cwd,
+            skills: [
+              { name: "sessions", path: userSessions },
+              { name: "sessions", path: systemSessions },
+              { name: "skill-creator", path: userSkillCreator },
+            ],
+          },
+        ],
+      },
+      cwd,
+      ["sessions", "ravi-system-sessions", "skill-creator", "ravi-system-skill-creator"],
+    );
+
+    expect(config).toEqual([{ path: userSessions, enabled: false }]);
+  });
+
+  it("fails closed when Codex cannot return its native skill inventory", () => {
+    expect(() => buildCodexDisabledSkillConfig({ data: [] }, "/tmp/missing", ["events"])).toThrow(
+      "Codex skill inventory is unavailable",
+    );
+  });
+
+  it("omits the advertised skill-name catalog on CLI-only Codex starts", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_cli_catalog" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-system-agents-manager"],
+    });
+
+    provider.prepareSession?.({
+      agentId: "main",
+      cwd: "/tmp/ravi-codex",
+      plugins: [{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }],
+    });
+
+    const session = provider.startSession(
+      makeStartRequest(["hello"], { omitAdvertisedSkillCatalog: true, effort: "high" }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.systemPromptAppend).not.toContain("Ravi synchronized these Codex skills for this session:");
+    expect(calls[0]?.systemPromptAppend).not.toContain("- ravi-system-events");
+    expect(calls[0]?.systemPromptAppend).not.toContain("- ravi-system-agents-manager");
+    expect(calls[0]?.effort).toBe("high");
   });
 
   it("marks Codex skills loaded from app-server instruction sources", async () => {
@@ -1375,6 +2105,11 @@ const send = (message) => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && message.method === "initialize") {
+    const optOut = message.params?.capabilities?.optOutNotificationMethods ?? [];
+    if (optOut.includes("item/commandExecution/outputDelta")) {
+      send({ id: message.id, error: { code: -32602, message: "command progress was disabled" } });
+      return;
+    }
     send({ id: message.id, result: {} });
     return;
   }
@@ -1440,6 +2175,16 @@ rl.on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
+      method: "item/commandExecution/outputDelta",
+      params: {
+        threadId: "thread_app",
+        turnId: "turn_app",
+        itemId: "cmd_app",
+        delta: "private command output",
+      },
+    });
+    send({
+      jsonrpc: "2.0",
       method: "item/completed",
       params: {
         item: {
@@ -1468,6 +2213,7 @@ rl.on("line", (line) => {
           type: "agentMessage",
           text: "done",
           status: "completed",
+          phase: "commentary",
           parentItemId: "turn_app",
         },
       },
@@ -1497,6 +2243,7 @@ rl.on("line", (line) => {
     const itemStarted = findEventsByType(events, "item.started");
     const commandStarted = itemStarted.find((event) => event.item?.type === "command_execution");
     const toolStarted = findEventsByType(events, "tool.started");
+    const toolProgress = findEventsByType(events, "tool.progress");
     const assistantMessages = findEventsByType(events, "assistant.message");
     const completions = findEventsByType(events, "turn.complete");
     const statuses = findEventsByType(events, "status").map((event) => event.status);
@@ -1516,7 +2263,18 @@ rl.on("line", (line) => {
       name: "shell",
       input: { command: "pwd" },
     });
+    expect(toolProgress).toHaveLength(1);
+    expect(toolProgress[0]).toMatchObject({
+      type: "tool.progress",
+      toolUseId: "cmd_app",
+      metadata: {
+        nativeEvent: "item/commandExecution/outputDelta",
+        item: { id: "cmd_app" },
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("private command output");
     expect(assistantMessages[0]?.text).toBe("done");
+    expect(assistantMessages[0]?.metadata?.item?.phase).toBe("commentary");
     expect(completions[0]?.usage).toEqual({
       inputTokens: 2,
       outputTokens: 3,
@@ -1908,6 +2666,8 @@ rl.on("line", (line) => {
       id: "cmd_req",
       method: "item/commandExecution/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         command: "pwd",
         item: {
           id: "cmd_approval",
@@ -1923,6 +2683,8 @@ rl.on("line", (line) => {
       id: "file_req",
       method: "item/fileChange/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         item: {
           id: "file_approval",
           type: "fileChange",
@@ -1937,6 +2699,8 @@ rl.on("line", (line) => {
       id: "perm_req",
       method: "item/permissions/requestApproval",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         permissions: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
       },
     });
@@ -1945,6 +2709,8 @@ rl.on("line", (line) => {
       id: "input_req",
       method: "item/tool/requestUserInput",
       params: {
+        threadId: "thread_approval",
+        turnId: "turn_approval",
         questions: [
           {
             id: "choice",
@@ -2033,8 +2799,11 @@ const finishIfReady = () => {
       item: {
         id: "dyn_tool_1",
         type: "dynamicToolCall",
-        tool: "tools_list",
-        arguments: { verbose: true },
+        tool: "tools_invoke",
+        arguments: {
+          name: "contacts_list",
+          args: { verbose: true },
+        },
         success: toolResponse.success,
         contentItems: toolResponse.contentItems,
         status: "completed",
@@ -2065,11 +2834,11 @@ const finishIfReady = () => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && !message.method) {
-    if (message.id === "tool_req") {
-      if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
-      if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
-      if (message.result?.content_items) throw new Error("tool response must not use content_items");
-    }
+    if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
+    if (typeof message.id !== "number") throw new Error("numeric tool request ids must remain numeric");
+    if (message.id !== 77) throw new Error("tool response must preserve the original numeric request id");
+    if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
+    if (message.result?.content_items) throw new Error("tool response must not use content_items");
     toolResponse = message.result;
     finishIfReady();
     return;
@@ -2098,14 +2867,17 @@ rl.on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
-      id: "tool_req",
+      id: 77,
       method: "item/tool/call",
       params: {
         callId: "dyn_tool_1",
         threadId: "thread_tool",
         turnId: "turn_tool",
-        tool: "tools_list",
-        arguments: { verbose: true },
+        tool: "tools_invoke",
+        arguments: {
+          name: "contacts_list",
+          args: { verbose: true },
+        },
       },
     });
   }
@@ -2131,12 +2903,15 @@ rl.on("line", (line) => {
 
     expect(toolStarted[0]?.toolUse).toEqual({
       id: "dyn_tool_1",
-      name: "tools_list",
-      input: { verbose: true },
+      name: "contacts_list",
+      input: {
+        name: "contacts_list",
+        args: { verbose: true },
+      },
     });
     expect(toolStarted[0]?.metadata?.item?.type).toBe("dynamic_tool_call");
     expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_1");
-    expect(toolCompleted[0]?.toolName).toBe("tools_list");
+    expect(toolCompleted[0]?.toolName).toBe("contacts_list");
     expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }]);
     expect(toolCompleted[0]?.isError).toBe(true);
     expect(response).toEqual({
@@ -2557,5 +3332,132 @@ rl.on("line", (line) => {
     expect(failures).toHaveLength(1);
     expect(failures[0]?.error).toContain("bad model");
     expect(failures[0]?.recoverable).toBe(true);
+  });
+});
+
+describe("Codex automatic goal continuation", () => {
+  for (const ending of [
+    "complete",
+    "paused",
+    "blocked",
+    "budgetLimited",
+    "usageLimited",
+    "cleared",
+    "interrupted",
+    "failed",
+  ] as const) {
+    it(`keeps successor events attached until the goal is ${ending}`, async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-goal-"));
+      const command = join(cwd, "fake-codex-app-server.mjs");
+      const requestsPath = join(cwd, "requests.jsonl");
+      writeFileSync(
+        command,
+        `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const event = (method, params) => send({method, params: {threadId:"thread_goal", ...params}});
+const goal = (status) => event("thread/goal/updated", {turnId:"turn_first",goal:{objective:"Fixture goal",status,tokenBudget:null,tokensUsed:12,timeUsedSeconds:3,createdAt:1,updatedAt:2}});
+createInterface({input:process.stdin}).on("line", (line) => {
+ const m = JSON.parse(line);
+ if (m.method === "initialize") send({id:m.id,result:{}});
+ if (m.method === "thread/start") send({id:m.id,result:{thread:{id:"thread_goal"}}});
+ if (m.method !== "turn/start") return;
+ appendFileSync(${JSON.stringify(requestsPath)}, m.method + "\\n");
+ send({id:m.id,result:{turn:{id:"turn_first",status:"inProgress",items:[]}}});
+ goal("active");
+ event("thread/tokenUsage/updated", {turnId:"turn_first",tokenUsage:{last:{inputTokens:10,outputTokens:2,cachedInputTokens:3}}});
+ event("turn/completed", {turn:{id:"turn_first",status:"completed",items:[]}});
+ // Delayed successor: a completed physical turn must not close the consumer.
+ setTimeout(() => {
+   event("turn/started", {threadId:"thread_child",turn:{id:"child_turn",status:"inProgress",items:[]}});
+   event("item/completed", {threadId:"thread_child",turnId:"child_turn",item:{id:"child_message",type:"agentMessage",text:"must not leak"}});
+   event("turn/started", {turn:{id:"turn_next",status:"inProgress",items:[]}});
+   // Late predecessor notifications must not complete or contaminate the successor.
+   event("turn/completed", {turn:{id:"turn_first",status:"completed",items:[]}});
+   event("item/completed", {turnId:"turn_next",item:{id:"tool_next",type:"commandExecution",command:"echo ok",status:"completed",aggregatedOutput:"ok",exitCode:0}});
+   event("item/completed", {turnId:"turn_next",item:{id:"message_next",type:"agentMessage",text:"successor received"}});
+   event("thread/tokenUsage/updated", {turnId:"turn_next",tokenUsage:{last:{inputTokens:20,outputTokens:4,cachedInputTokens:5}}});
+   const ending = ${JSON.stringify(ending)};
+   if (ending === "complete") goal("complete");
+   event("turn/completed", {turn:{id:"turn_next",status:ending === "interrupted" ? "interrupted" : ending === "failed" ? "failed" : "completed",items:[],error:{message:"fixture failure"}}});
+   // A paused goal between physical turns releases the logical delivery too.
+   if (!["complete", "interrupted", "failed"].includes(ending)) setTimeout(() => ending === "cleared" ? event("thread/goal/cleared", {}) : goal(ending), 25);
+ }, 30);
+});
+`,
+      );
+      chmodSync(command, 0o755);
+      const session = createCodexRuntimeProvider({ command }).startSession(makeStartRequest(["work"], { cwd }));
+      const events = await collectEvents(session.events);
+      expect(readFileSync(requestsPath, "utf8").trim().split("\n")).toEqual(["turn/start"]);
+      expect(findEventsByType(events, "turn.started").map((event) => event.turn.id)).toEqual([
+        "turn_first",
+        "turn_next",
+      ]);
+      expect(findEventsByType(events, "tool.completed")).toHaveLength(1);
+      expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["successor received"]);
+      const terminals = events.filter((event) =>
+        ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.type),
+      );
+      expect(terminals).toHaveLength(1);
+      expect(terminals[0]?.type).toBe(
+        ending === "failed" ? "turn.failed" : ending === "interrupted" ? "turn.interrupted" : "turn.complete",
+      );
+      if (ending !== "interrupted" && ending !== "failed") {
+        expect(findEventsByType(events, "turn.complete")[0]?.usage).toMatchObject({
+          inputTokens: 30,
+          outputTokens: 6,
+          cacheReadTokens: 8,
+        });
+      }
+    });
+  }
+
+  it("binds resumed goal notifications to the accepted input turn before consuming them", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-goal-resume-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import {createInterface} from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const event = (method, params) => send({method,params:{threadId:"thread_resumed",...params}});
+createInterface({input:process.stdin}).on("line", line => {
+ const m = JSON.parse(line);
+ if(m.method === "initialize") send({id:m.id,result:{}});
+ if(m.method === "thread/resume") {
+   send({id:m.id,result:{thread:{id:"thread_resumed",turns:[]}}});
+   event("turn/started",{turn:{id:"resume_auto",status:"inProgress",items:[]}});
+ }
+ if(m.method === "thread/goal/get") send({id:m.id,result:{goal:{objective:"Fixture goal",status:"active",tokenBudget:null,tokensUsed:12,timeUsedSeconds:3,createdAt:1,updatedAt:2}}});
+ if(m.method === "turn/start") {
+   event("turn/completed",{turn:{id:"resume_auto",status:"interrupted",items:[]}});
+   send({id:m.id,result:{turn:{id:"accepted",status:"inProgress",items:[]}}});
+   event("turn/completed",{turn:{id:"accepted",status:"completed",items:[]}});
+   setTimeout(() => {
+     event("turn/started",{turn:{id:"successor",status:"inProgress",items:[]}});
+     event("item/completed",{turnId:"successor",item:{id:"answer",type:"agentMessage",text:"resumed goal continued"}});
+     event("thread/goal/updated",{goal:{objective:"Fixture goal",status:"complete",tokenBudget:null,tokensUsed:24,timeUsedSeconds:6,createdAt:1,updatedAt:3}});
+     event("turn/completed",{turn:{id:"successor",status:"completed",items:[]}});
+   },30);
+ }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const session = createCodexRuntimeProvider({ command }).startSession(
+      makeStartRequest(["continue"], {
+        cwd,
+        resume: "thread_resumed",
+      }),
+    );
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.started").map((event) => event.turn.id)).toEqual(["accepted", "successor"]);
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual([
+      "resumed goal continued",
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
   });
 });

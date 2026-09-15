@@ -1,0 +1,53 @@
+# Grok Build Provider Checks
+
+## Contract Tests
+
+- Provider id is `grok`.
+- Capability matrix includes every required structured field.
+- Restricted agents are accepted because `tools.permissionMode` is `ravi-host`.
+- A session without a given tool grant cannot use that tool (spawn deny + ACP reject).
+- A session with a narrow grant can use only those tools (spawn allow + ACP allow).
+- `startSession` starts a fake ACP client and returns a valid runtime handle.
+- `interrupt()` sends `session/cancel` and emits `turn.interrupted`.
+- Resume uses `session/load` with the stored ACP `sessionId` and matching cwd.
+- Spawn args include `agent stdio`, `--no-auto-update`, `--no-alt-screen`, `--permission-mode default`, `--no-subagents` unless Agent/Task is granted, `--tools` with internal IDs, and `--deny` for ungranted classes. They MUST NOT include `--always-approve` or class-wide `--allow Bash` / `--allow Read` for a mere tool grant.
+- Empty grants still emit `--no-subagents` and `--disallowed-tools` covering `todo_write` and `Agent`.
+- Unknown ACP tools fail closed. Incoming `session/request_permission` is answered over the fake transport. Authorize throws become reject/cancelled.
+- Command override reads `RAVI_GROK_COMMAND`.
+- `xhigh|max|ultra` map to native `--effort high`.
+- `prepareSession` wires `approveRuntimeRequest` from Ravi host services.
+
+## Event Mapping Tests
+
+- Handshake `sessionId` maps to `thread.started`.
+- Accepted prompt maps to `turn.started`.
+- `agent_message_chunk` maps to `text.delta`.
+- Token-like chunks of one utterance coalesce into one `assistant.message`.
+- Distinct completed utterances (`primeiro?`+`Olá`, `A1_LIVESTR_X`+`A2_LIVESTR_X`, or text then `tool_call`) MUST emit separate `assistant.message` events mid-turn, not one empty-joined blob at `turn.complete`.
+- A mid-turn utterance then `tool_call` then a second utterance MUST emit both `assistant.message` events and then exactly one `turn.complete`.
+- `agent_thought_chunk` does not leak hidden reasoning as assistant output.
+- `tool_call` maps to `tool.started`.
+- `tool_call_update` completed/failed maps to `tool.completed`.
+- `session/prompt` `end_turn` maps to `turn.complete` exactly once when the turn has no open tools and either issued no tools or produced post-tool assistant text.
+- `session/prompt` `cancelled` without a local abort and without tools maps to `turn.complete`.
+- `session/prompt` `cancelled` or host interrupt with no tools and no `ok=true` maps to `turn.interrupted`.
+- `session/prompt` rejection maps to `turn.failed`.
+- ACP event stream end after a mid utterance and tool, before `session/prompt` settles, MUST emit recoverable `turn.failed` instead of hanging or completing.
+- Tools then `handle_prompt.done` / `end_turn` / `cancelled` with zero post-tool assistant text MUST NOT emit `turn.complete`. Open tools fail immediately; closed tools get one continuation `session/prompt`, then visible `turn.failed` if the model still does not reply.
+- The 15:52-shaped timeline (announce, Read completed, Bash started without `exec_done` / without a matching terminal, then prompt end) MUST emit `turn.failed` with a user-visible explanation and MUST NOT emit `turn.complete`.
+
+## Negative Tests
+
+- ACP process exits before terminal event.
+- ACP stdout emits malformed JSON.
+- ACP `session/prompt` fails before acceptance.
+- Thought-only turn still emits exactly one terminal event.
+- Resume is requested but the agent does not advertise `loadSession`.
+- Incoming ACP methods other than `session/request_permission` are rejected.
+
+## E2E Smoke
+
+- Text-only prompt completes and saves provider session state. Manual only; not CI.
+- Tool-using prompt emits tool start/end and then completes. Manual only; not CI.
+- Interrupt during text streaming ends as interrupted, not failed. Manual only; not CI.
+- Restart/resume uses Grok session state only when cwd matches. Manual only; not CI.

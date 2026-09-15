@@ -6,10 +6,21 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, commandTargetSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
 import { parseDurationMs } from "../../cron/schedule.js";
+import { DEFAULT_RUNTIME_EFFORT, formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
+import {
+  HARDCODED_RUNTIME_MODEL,
+  RUNTIME_DEFAULT_EFFORT_SETTING,
+  RUNTIME_DEFAULT_MODEL_ENV,
+  RUNTIME_DEFAULT_MODEL_SETTING,
+  RUNTIME_DEFAULT_PROVIDER_SETTING,
+} from "../../runtime/runtime-defaults.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -76,6 +87,39 @@ function isValidTimezone(tz: string): boolean {
 }
 
 const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: string) => void }> = {
+  [RUNTIME_DEFAULT_PROVIDER_SETTING]: {
+    description: "Stored global runtime provider default for the next unshadowed turn",
+    validate: (value: string) => {
+      const normalized = value.trim();
+      if (!listRegisteredRuntimeProviderIds().includes(normalized)) {
+        throw new Error(`Invalid provider. Must be one of: ${listRegisteredRuntimeProviderIds().join(", ")}`);
+      }
+    },
+  },
+  [RUNTIME_DEFAULT_MODEL_SETTING]: {
+    description: "Stored global runtime model default. Env RAVI_MODEL is fallback only when this is unset",
+    validate: (value: string) => {
+      const provider = dbGetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING) ?? DEFAULT_RUNTIME_PROVIDER_ID;
+      const result = validateRuntimeModelSelector(provider, value);
+      if (!result.ok) {
+        throw new Error(result.error ?? `Invalid model: ${value}`);
+      }
+    },
+  },
+  [RUNTIME_DEFAULT_EFFORT_SETTING]: {
+    description: "Stored global runtime effort default for the next unshadowed turn",
+    validate: (value: string) => {
+      parseRuntimeEffort(value);
+    },
+  },
+  "runtime.model_broker.required": {
+    description: "Require every active agent to resolve inference through its selected model broker",
+    validate: (value: string) => {
+      if (value !== "true" && value !== "false") {
+        throw new Error("Invalid value. Must be one of: true, false");
+      }
+    },
+  },
   defaultAgent: {
     description: "Default agent when no route matches",
     validate: (value: string) => {
@@ -199,6 +243,10 @@ function knownSettingDefault(key: string): string | null {
   if (key === "image.mode") return "fast";
   if (key === "tasks.sessionTtl") return "1d";
   if (key === "tasks.sessionTtl.knowledgeEngineer") return "5m";
+  if (key === RUNTIME_DEFAULT_PROVIDER_SETTING) return DEFAULT_RUNTIME_PROVIDER_ID;
+  if (key === RUNTIME_DEFAULT_MODEL_SETTING)
+    return process.env[RUNTIME_DEFAULT_MODEL_ENV]?.trim() || HARDCODED_RUNTIME_MODEL;
+  if (key === RUNTIME_DEFAULT_EFFORT_SETTING) return DEFAULT_RUNTIME_EFFORT;
   return null;
 }
 
@@ -215,6 +263,26 @@ function serializeSetting(key: string, value: string | null) {
     defaultValue: value === null ? knownSettingDefault(key) : null,
     hint: legacy ? legacyAccountSettingHint(key) : null,
   };
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Exit taxonomy: 1 not-found · 2 usage · 3 policy (write brake).
+// ============================================================
+
+/** Real candidate keys for NOT_FOUND suggestions: known settings + keys actually set. */
+function settingKeyCandidates(): string[] {
+  return [...Object.keys(KNOWN_SETTINGS), ...Object.keys(dbListSettings())];
+}
+
+function failSettingNotFound(op: string, key: string, asJson?: boolean): never {
+  contractFail(op, "SETTING_NOT_FOUND", `Setting not found: ${key}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the setting key (see suggestions) or run `ravi settings list`",
+      suggestions: suggestSimilar(key, settingKeyCandidates()),
+    },
+  });
 }
 
 function buildSettingsListPayload(showLegacy: boolean) {
@@ -251,6 +319,8 @@ export class SettingsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching settings to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const basePayload = buildSettingsListPayload(showLegacy);
     const settingItems = [
@@ -260,6 +330,7 @@ export class SettingsCommands {
     ];
     const page = paginateCliItems(settingItems, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "settings", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -271,7 +342,7 @@ export class SettingsCommands {
       ...basePayload,
       total: page.total,
       pagination,
-      items: page.items,
+      items: pickFields(page.items, fields),
     };
 
     if (asJson) {
@@ -308,6 +379,10 @@ export class SettingsCommands {
   ) {
     const value = dbGetSetting(key);
     const legacy = isLegacyAccountSetting(key);
+    if (value === null && !legacy && !KNOWN_SETTINGS[key]) {
+      // Not a known setting, not set, not a legacy account.* row: contract not-found.
+      failSettingNotFound("settings get", key, asJson);
+    }
     const payload = { setting: serializeSetting(key, value) };
 
     if (asJson) {
@@ -322,6 +397,17 @@ export class SettingsCommands {
           console.log("  Default: main");
         } else if (key === "defaultDmScope") {
           console.log("  Default: per-peer");
+        } else if (key === RUNTIME_DEFAULT_PROVIDER_SETTING) {
+          console.log(`  Fallback: ${DEFAULT_RUNTIME_PROVIDER_ID} (hardcoded)`);
+        } else if (key === RUNTIME_DEFAULT_MODEL_SETTING) {
+          const envModel = process.env[RUNTIME_DEFAULT_MODEL_ENV]?.trim();
+          console.log(
+            envModel
+              ? `  Fallback: ${envModel} (env ${RUNTIME_DEFAULT_MODEL_ENV})`
+              : `  Fallback: ${HARDCODED_RUNTIME_MODEL} (hardcoded; env ${RUNTIME_DEFAULT_MODEL_ENV} unset)`,
+          );
+        } else if (key === RUNTIME_DEFAULT_EFFORT_SETTING) {
+          console.log(`  Fallback: ${DEFAULT_RUNTIME_EFFORT} (hardcoded; ${formatRuntimeEffortLevels()})`);
         }
       }
     } else if (legacy) {
@@ -334,7 +420,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "set", description: "Set a setting value" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium", redactions: ["value"] })
   @Returns(settingsMutationReturnSchema)
   set(
     @Arg("key", { description: "Setting key" }) key: string,
@@ -384,14 +470,43 @@ export class SettingsCommands {
     }
   }
 
-  @Command({ name: "delete", description: "Delete a setting" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "delete", risk: "destructive" })
+  @Command({ name: "delete", description: "Delete a setting (dry-run by default; requires --execute)" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "settings",
+    action: "delete",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(settingsMutationReturnSchema)
   delete(
     @Arg("key", { description: "Setting key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the setting; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const legacy = isLegacyAccountSetting(key);
+    const currentValue = dbGetSetting(key);
+    // Not-found fires BEFORE the brake (exit 1, never 3).
+    if (currentValue === null) {
+      failSettingNotFound("settings delete", key, asJson);
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): destructive delete is dry-run by default, exit 3.
+      contractDryRun(
+        "settings delete",
+        {
+          key,
+          valuePresent: currentValue !== null,
+          legacy,
+          known: Boolean(KNOWN_SETTINGS[key]),
+        },
+        { asJson },
+      );
+    }
     const deleted = dbDeleteSetting(key);
     const payload = {
       status: deleted ? ("deleted" as const) : ("not_found" as const),

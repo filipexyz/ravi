@@ -1,8 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RulesCommands } from "./rules.js";
+
+afterAll(() => mock.restore());
+const actualCliContextModule = await import("../context.js");
+
+mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const { RulesCommands } = await import("./rules.js");
+const { ContractError } = await import("../agent-contract.js");
 
 const tempRoots: string[] = [];
 const originalHome = process.env.HOME;
@@ -121,5 +137,75 @@ describe("RulesCommands", () => {
       expect.objectContaining({ provider: "agents", scope: "project", exists: false }),
       expect.objectContaining({ provider: "agents", scope: "user", exists: false }),
     ]);
+  });
+});
+
+// Manual v2 contract: `rules import` keeps its NATIVE brake — dry-run without
+// `--write`, skip-existing without `--force` — declared as the `--execute`
+// equivalent for this domain. There is no per-rule lookup op, so no
+// RULE_NOT_FOUND surface exists; the contract error surface is the provider
+// filter (usage error, exit 2).
+describe("rules agent-first contract", () => {
+  it("emits USAGE_ERROR envelope with accepted values on invalid provider (exit 2, sources)", async () => {
+    const cwd = makeTempRoot("ravi-rules-workspace-");
+    const commands = new RulesCommands();
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() => commands.sources("clade", cwd, false, true));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(2);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("rules sources");
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.acceptedValues).toEqual(["all", "claude", "agents"]);
+    expect(envelope.error.suggestions).toContain("claude");
+  });
+
+  it("emits USAGE_ERROR envelope on invalid provider for import (exit 2, before any filesystem work)", async () => {
+    const cwd = makeTempRoot("ravi-rules-workspace-");
+    const commands = new RulesCommands();
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() => commands.importRules("agentz", cwd, false, true, false, true));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(2);
+    expect((thrown as InstanceType<typeof ContractError>).envelope().op).toBe("rules import");
+    expect(existsSync(join(cwd, ".ravi", "rules", "imported"))).toBe(false);
+  });
+
+  it("keeps the native import brake: --force without --write still writes nothing", async () => {
+    const cwd = makeTempRoot("ravi-rules-workspace-");
+    mkdirSync(join(cwd, ".claude", "rules"), { recursive: true });
+    writeFileSync(join(cwd, ".claude", "rules", "testing.md"), "Run focused tests.\n");
+
+    const commands = new RulesCommands();
+    const result = (await captureConsole(() => commands.importRules("claude", cwd, false, false, true, true)))
+      .result as { write: boolean };
+
+    expect(result.write).toBe(false);
+    expect(existsSync(join(cwd, ".ravi", "rules", "imported"))).toBe(false);
+  });
+
+  it("supports --fields compact mode on rules sources", async () => {
+    const cwd = makeTempRoot("ravi-rules-workspace-");
+    const commands = new RulesCommands();
+    const result = (await captureConsole(() => commands.sources("agents", cwd, true, true, "provider,exists")))
+      .result as { sources: Array<Record<string, unknown>> };
+
+    expect(result.sources.length).toBeGreaterThan(0);
+    for (const source of result.sources) {
+      expect(Object.keys(source).sort()).toEqual(["exists", "provider"]);
+    }
   });
 });

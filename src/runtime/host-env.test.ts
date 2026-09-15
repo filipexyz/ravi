@@ -50,4 +50,33 @@ describe("runtime host env", () => {
     expect(env.RAVI_TASK_ID).toBeUndefined();
     expect(env.PROVIDER_FLAG).toBe("1");
   });
+
+  it("removes every known upstream credential in model-broker mode even when hooks exist", () => {
+    const env = buildRuntimeEnv(
+      {
+        RAVI_IDENTITYD_CAPABILITY_FD: "3",
+        RAVI_IDENTITYD_RUNTIME_SOCKET: "/run/ravi/identityd-runtime.sock",
+        RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD: "true",
+        RAVI_MODEL_BROKER_REQUIRED: "true",
+        OPENAI_API_KEY: "secret-openai",
+        ANTHROPIC_AUTH_TOKEN: "secret-anthropic",
+        OPENROUTER_API_KEY: "secret-openrouter",
+        AWS_SECRET_ACCESS_KEY: "secret-aws",
+        PATH: "/usr/bin",
+      },
+      { RAVI_CONTEXT_KEY: "runtime-context" },
+      { RAVI_MODEL_BROKER_ACTIVE: "1" },
+      capabilities,
+      true,
+    );
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.RAVI_IDENTITYD_CAPABILITY_FD).toBeUndefined();
+    expect(env.RAVI_IDENTITYD_RUNTIME_SOCKET).toBeUndefined();
+    expect(env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD).toBeUndefined();
+    expect(env.RAVI_MODEL_BROKER_REQUIRED).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(env.RAVI_MODEL_BROKER_ACTIVE).toBe("1");
+  });
 });

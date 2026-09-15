@@ -94,6 +94,15 @@ function makeHealthyDeps() {
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
     listRegisteredRuntimeProviderIds: () => ["codex", "claude"] as any,
+    inspectExecutionPlane: () =>
+      ({
+        plane: "host",
+        runtimeContext: false,
+        hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: true, cliGatewaySocket: false },
+        markers: [],
+        daemonIsolationLikely: false,
+        sourceTree: true,
+      }) as any,
     getConfiguredPermissionProviders: () => [{ id: "operator-control" }, { id: "context-capabilities" }] as any,
     getConfiguredCapabilityMaterializers: () =>
       [
@@ -209,6 +218,86 @@ describe("inspectDoctor", () => {
     expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
   });
 
+  it("fails and rewrites a stale codex-tool-hook command", () => {
+    const deps = makeHealthyDeps();
+    const hooksPath = join(deps.homeDir(), ".codex", "hooks.json");
+    writeFileSync(
+      hooksPath,
+      JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "^(Bash|shell)$",
+                hooks: [
+                  {
+                    type: "command",
+                    command: "ravi context codex-tool-hook",
+                    statusMessage: "ravi codex native tool permission gate",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "codex.bash-hook");
+    const finding = report.findings.find((item) => item.id === "codex.bash-hook");
+    expect(check?.status).toBe("fail");
+    expect(check?.data?.staleCommand).toBe(true);
+    expect(finding?.summary).toContain("codex-tool-hook");
+    expect(finding?.summary).toContain("codex-bash-hook");
+
+    const rewritten = JSON.parse(readFileSync(hooksPath, "utf8"));
+    expect(rewritten.hooks.PreToolUse).toHaveLength(1);
+    expect(rewritten.hooks.PreToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+    expect(rewritten.hooks.PreToolUse[0]?.hooks[0]?.command).toContain("codex-bash-hook");
+    expect(rewritten.hooks.PreToolUse[0]?.hooks[0]?.command).not.toContain("codex-tool-hook");
+  });
+
+  it("fails and repairs an invalid PreToolUse matcher", () => {
+    const deps = makeHealthyDeps();
+    const hooksPath = join(deps.homeDir(), ".codex", "hooks.json");
+    writeFileSync(
+      hooksPath,
+      JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "^(Bash|shell|exec_command|view_image)$",
+                hooks: [
+                  {
+                    type: "command",
+                    command: "ravi context codex-bash-hook",
+                    statusMessage: "ravi codex bash permission gate",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "codex.bash-hook");
+    const finding = report.findings.find((item) => item.id === "codex.bash-hook");
+    expect(check?.status).toBe("fail");
+    expect(check?.data?.matcherOk).toBe(false);
+    expect(finding?.summary).toContain("^(Bash|shell)$");
+
+    const rewritten = JSON.parse(readFileSync(hooksPath, "utf8"));
+    expect(rewritten.hooks.PreToolUse[0]?.matcher).toBe("^(Bash|shell)$");
+  });
+
   it("passes the disk/temp pressure check when free space is healthy", () => {
     const deps = makeHealthyDeps();
     const report = inspectDoctor(deps);
@@ -320,6 +409,15 @@ describe("inspectDoctor", () => {
               },
             ]
           : [],
+      inspectExecutionPlane: () =>
+        ({
+          plane: "host",
+          runtimeContext: false,
+          hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: false, cliGatewaySocket: false },
+          markers: [],
+          daemonIsolationLikely: false,
+          sourceTree: false,
+        }) as any,
       checkAppManifests: () => [] as any,
       discoverAppManifests: () => [] as any,
       getRegistry: () => ({ commands: [] }) as any,
@@ -567,6 +665,83 @@ describe("inspectDoctor", () => {
     const cronCheck = report.checks.find((check) => check.id === "cron.targets");
     expect(cronCheck).toBeDefined();
     expect(cronCheck!.status).toBe("pass");
+  });
+
+  it("does not fail restricted providers for unused built-in pi", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      listRegisteredRuntimeProviderIds: () => ["codex", "claude", "pi"] as any,
+      dbListAgents: () => [{ id: "main", cwd: "/agents/main", provider: "codex" }] as any,
+      getRuntimeCompatibilityIssues: (provider) =>
+        provider === "pi"
+          ? [
+              {
+                code: "restricted_tool_access_unsupported",
+                message:
+                  "Runtime provider 'pi' requires full tool and executable access because Ravi permission hooks are unsupported",
+              },
+            ]
+          : [],
+    });
+
+    expect(report.checks.find((check) => check.id === "runtime.providers")?.status).toBe("pass");
+    expect(JSON.stringify(report.checks.find((check) => check.id === "runtime.providers"))).not.toContain("pi");
+  });
+
+  it("does not treat a sandboxed daemon probe as host-offline", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      inspectCliRuntimeTarget: () => ({
+        ...deps.inspectCliRuntimeTarget(),
+        daemon: { online: false, execPath: null, cwd: null, matchesCli: null },
+      }),
+      inspectExecutionPlane: () =>
+        ({
+          plane: "provider-sandbox",
+          runtimeContext: true,
+          hostEvidence: { stateDir: true, sqliteDb: true, cloudCredentials: true, cliGatewaySocket: true },
+          markers: ["codex-sandbox", "runtime-context-key"],
+          daemonIsolationLikely: true,
+          sourceTree: false,
+        }) as any,
+    });
+
+    const daemon = report.checks.find((check) => check.id === "runtime.daemon");
+    const isolation = report.checks.find((check) => check.id === "runtime.isolation");
+    expect(daemon?.status).toBe("skip");
+    expect(daemon?.severity).toBe("warn");
+    expect(daemon?.data).toMatchObject({ isolated: true, plane: "provider-sandbox" });
+    expect(isolation?.status).toBe("pass");
+    expect(isolation?.severity).toBe("warn");
+    expect(JSON.stringify(isolation)).not.toContain("pi");
+  });
+
+  it("skips provider-runtime source checks outside a Ravi source tree", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      cwd: () => "/agents/main",
+      exists: (path: string) => path === deps.getRaviStateDir() || path === deps.getRaviDbPath(),
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.provider_runtime_boundaries")?.status).toBe("skip");
+  });
+
+  it("fails provider-runtime boundaries only inside a Ravi source tree", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      cwd: () => "/repo",
+      exists: (path: string) =>
+        path === "/repo/src/cli/commands/doctor.ts" ||
+        path === "/repo/src/cli/commands/pages.ts" ||
+        path === deps.getRaviStateDir() ||
+        path === deps.getRaviDbPath(),
+    });
+
+    expect(report.checks.find((check) => check.id === "permissions.provider_runtime_boundaries")?.status).toBe("fail");
   });
 });
 

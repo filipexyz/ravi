@@ -53,7 +53,7 @@ describe("project fixtures smoke", () => {
   });
 
   it("seeds canonical project fixtures and surfaces project -> workflow -> task across the CLI", () => {
-    const seeded = JSON.parse(runCli(["projects", "fixtures", "seed", "--json"]).stdout) as {
+    const seeded = JSON.parse(runCli(["projects", "fixtures", "seed", "--json", "--execute"]).stdout) as {
       total: number;
       fixtures: Array<{
         projectSlug: string;

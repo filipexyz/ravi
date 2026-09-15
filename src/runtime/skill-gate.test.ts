@@ -4,6 +4,12 @@ import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
 import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
+import { dbUpdateAgent } from "../router/router-db.js";
+import {
+  flushPermissionAuditEvents,
+  listPermissionDenials,
+  setPermissionAuditPublisherForTest,
+} from "../permissions/denials.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -18,6 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setPermissionAuditPublisherForTest();
   if (previousCodexHome === undefined) {
     delete process.env.CODEX_HOME;
   } else {
@@ -156,13 +163,145 @@ describe("evaluateSkillGate", () => {
       ruleId: "apps",
     });
     expect(runtimeSkillGateForCommand("bin/ravi context codex-bash-hook")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("bin/ravi context codex-tool-hook")).toBeUndefined();
     expect(runtimeSkillGateForCommand('echo "ravi tasks list"')).toBeUndefined();
   });
 });
 
+describe("ravi skills show resource authorization", () => {
+  it("blocks a non-granted skill at the host boundary and permits a granted skill", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-show-authorization",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-show-authorization",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-show-authorization",
+      toolContext: {},
+    });
+
+    const denied = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-denied-skill --json",
+      input: {},
+    });
+    const allowed = await services.authorizeCommandExecution({
+      command: "ravi skills show ravi-user-skills-allowed-skill --json",
+      input: {},
+    });
+
+    expect(denied.approved).toBe(false);
+    expect(denied.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(allowed.approved).toBe(true);
+  });
+
+  it("blocks an unauthorized skill at authorizeToolUse for Read and Skill tools", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-tool-authorization",
+      runtimeProvider: "pi",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-tool-authorization",
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Read", source: "test" },
+        { permission: "use", objectType: "tool", objectId: "Skill", source: "test" },
+      ],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-tool-authorization",
+      toolContext: {},
+    });
+
+    const deniedRead = await services.authorizeToolUse({
+      toolName: "Read",
+      input: { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" },
+    });
+    const deniedSkill = await services.authorizeToolUse({
+      toolName: "Skill",
+      input: { skill: "ravi-system-whatsapp-manager" },
+    });
+    const allowedRead = await services.authorizeToolUse({
+      toolName: "Read",
+      input: { path: "README.md" },
+    });
+    const allowedSkill = await services.authorizeToolUse({
+      toolName: "Skill",
+      input: { name: "allowed-skill" },
+    });
+
+    expect(deniedRead.approved).toBe(false);
+    expect(deniedRead.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(deniedSkill.approved).toBe(false);
+    expect(deniedSkill.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(allowedRead.approved).toBe(true);
+    expect(allowedSkill.approved).toBe(true);
+  });
+});
+
 describe("runtime host skill-gate enforcement", () => {
+  it("never persists or publishes the full command denied by native runtime policy", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const auditEvents: Array<Record<string, unknown>> = [];
+    setPermissionAuditPublisherForTest(async (_topic, data) => {
+      auditEvents.push(data);
+    });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-test",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-gate-test",
+      toolContext: {},
+    });
+    const command = 'bash -c "printf SENTINEL_SECRET_7M4Q"';
+
+    try {
+      const decision = await services.authorizeCommandExecution({ command, input: {} });
+      await flushPermissionAuditEvents();
+
+      expect(decision.approved).toBe(false);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })[0]?.command).toBe(
+        `[REDACTED:content length=${command.length}]`,
+      );
+      expect(auditEvents[0]?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(JSON.stringify(auditEvents)).not.toContain("SENTINEL_SECRET_7M4Q");
+    } finally {
+      setPermissionAuditPublisherForTest();
+    }
+  });
+
+  // Dynamic tool dispatch lazily initializes the complete command registry.
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
     writeCodexSkill("ravi-system-image");
+    // System skills are visible through provider-owned group capabilities. The
+    // tool-local context permission below authorizes execution but must not
+    // accidentally become the agent's persisted skill allowlist.
+    dbUpdateAgent("main", {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:image_generate"] } },
+    });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -205,7 +344,7 @@ describe("runtime host skill-gate enforcement", () => {
     const persisted = getSession("agent:main:main")?.runtimeSessionParams
       ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
     expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
-  });
+  }, 20_000);
 
   it("checks Bash permission before delivering a required skill", async () => {
     writeCodexSkill("ravi-system-daemon-manager");

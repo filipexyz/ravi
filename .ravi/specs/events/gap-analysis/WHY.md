@@ -7,7 +7,7 @@ Ravi's event bus (NATS) is the primary observability and automation surface. The
 Several lifecycle-heavy domains perform significant mutations without emitting any canonical event:
 
 - **Triggers, cron, heartbeat** emit only generic `refresh` signals — no payload, no lifecycle distinction.
-- **Session attach/mute/unmute/detach** mutations have no event at all, despite being referenced in the `sessions/attach` spec as requiring trace events.
+- **Session attach/detach** mutations have no event at all, despite being referenced in the `sessions/attach` spec as requiring trace events.
 - **Permission grants/revocations** are invisible — only denials are audited (`ravi.audit.denied`).
 - **Route, instance, and agent config changes** emit only `ravi.config.changed` (empty payload), making operational debugging rely on log inspection.
 

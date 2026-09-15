@@ -56,6 +56,7 @@ export function buildCliOffsetPagination(args: {
   offset: number;
   returned: number;
   total: number;
+  fields?: string;
   options?: ReadonlyArray<string | number | false | null | undefined>;
 }): OffsetPagination {
   return buildOffsetPagination({
@@ -71,6 +72,8 @@ export function buildCliOffsetPagination(args: {
         args.limit,
         "--offset",
         nextOffset,
+        "--fields",
+        args.fields?.trim() || null,
         ...(args.options ?? []),
       ]),
   });

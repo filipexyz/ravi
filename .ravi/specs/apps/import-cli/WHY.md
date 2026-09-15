@@ -23,6 +23,11 @@ explicit review for product, risk, storage, events, and UI decisions.
 - Generate conservative operation candidates and review notes.
 - Keep `ravi.app.json` as the app contract even when it is generated.
 - Keep dynamic apps out of static SDK method generation by default.
+- Import every executable operation through the source CLI; other caller
+  surfaces use the generic App Router.
+- Default child `context.allow` to empty because CLI metadata is not authority;
+  infer only an exact `execute:group:<group>` when the generated operation
+  directly calls `ravi <group>`, and keep that inference review-required.
 - Allow `scaffold --from-cli` as an alias, but make `apps/import-cli` the
   normative behavior.
 
@@ -38,3 +43,5 @@ explicit review for product, risk, storage, events, and UI decisions.
   This recreates the raw CLI instead of making an app.
 - Generate static Ravi command files for imported apps.
   That makes runtime app installation build-time again.
+- Generate SDK/tool/stream executors from source metadata.
+  That turns one imported CLI into multiple drifting implementations.

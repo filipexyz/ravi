@@ -1,0 +1,13 @@
+{
+  "binding": {
+    "agentId": "agent-a",
+    "channelInstanceId": "channel-instance-a",
+    "chatId": "chat-a",
+    "messageId": "message-a",
+    "sessionId": "session-a",
+    "turnId": "turn-a"
+  },
+  "protocol": "ravi.channel.runtime-events",
+  "requestId": "readback-a",
+  "schemaVersion": 1
+}

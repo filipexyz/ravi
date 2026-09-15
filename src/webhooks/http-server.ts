@@ -15,6 +15,7 @@ import {
 } from "../prox/calls/agora.js";
 import { handleToolBridgeRequest } from "../prox/calls/tool-bridge.js";
 import { handlePostCallWebhook, normalizeCallWebhookPayload, type CallWebhookPayload } from "../prox/calls/webhook.js";
+import { raviHttpServeOptions } from "../sdk/gateway/http-serve.js";
 import {
   API_PREFIX,
   createGatewayHandlerContext,
@@ -22,6 +23,7 @@ import {
   type GatewayConfig,
   type GatewayHandlerContext,
 } from "../sdk/gateway/index.js";
+import { DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS, DEFAULT_KEEPALIVE_MS } from "../sdk/gateway/streaming/sse.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("webhooks:http");
@@ -46,7 +48,12 @@ interface ServeLike {
 }
 
 declare const Bun: {
-  serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): ServeLike;
+  serve(options: {
+    hostname: string;
+    port: number;
+    idleTimeout?: number;
+    fetch(request: Request): Response | Promise<Response>;
+  }): ServeLike;
 };
 
 export interface WebhookHttpServerConfig {
@@ -351,11 +358,13 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
   const gatewayCtx: GatewayHandlerContext | null =
     config.gateway === null ? null : createGatewayHandlerContext(config.gateway ?? {});
 
-  const server = Bun.serve({
-    hostname: config.host,
-    port: config.port,
-    fetch: (request) => handleRequest(request, config, gatewayCtx),
-  }) as ServeLike;
+  const server = Bun.serve(
+    raviHttpServeOptions({
+      hostname: config.host,
+      port: config.port,
+      fetch: (request) => handleRequest(request, config, gatewayCtx),
+    }),
+  ) as ServeLike;
 
   const url = `http://${config.host}:${server.port}`;
   log.info("Webhook HTTP server started", {
@@ -371,6 +380,8 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
     sdkGatewayMounted: Boolean(gatewayCtx),
     sdkGatewayCommandCount: gatewayCtx?.table.byPath.size ?? 0,
     sdkGatewayRegistryHash: gatewayCtx?.table.registryHash ?? null,
+    idleTimeoutSeconds: DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS,
+    sseKeepaliveMs: DEFAULT_KEEPALIVE_MS,
   });
 
   return {

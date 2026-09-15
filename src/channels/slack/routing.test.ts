@@ -97,6 +97,7 @@ describe("Slack routing policy", () => {
     expect(isSlackMessageEventStructurallyEligible({ type: "message", channel: " ", ts: "1.0" })).toBe(false);
     expect(isSlackMessageEventStructurallyEligible({ type: "message", channel: "C1", ts: " " })).toBe(false);
     expect(isSlackMessageEventStructurallyEligible({ type: "message", channel: "C1", ts: "1.0" })).toBe(true);
+    expect(isSlackMessageEventStructurallyEligible({ type: "app_mention", channel: "C1", ts: "1.0" })).toBe(true);
   });
 
   it("ignores the local bot by either bot_id or user id", () => {

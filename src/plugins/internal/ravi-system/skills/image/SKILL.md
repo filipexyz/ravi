@@ -12,24 +12,42 @@ description: |
 
 ## TL;DR
 
+Em sessão com chat de origem, a imagem será entregue automaticamente e essa entrega exige confirmação:
+
 ```bash
-ravi image generate "<prompt>"
+ravi image generate "<prompt>" --execute
 ```
 
+Fora de um chat, sem `--send`, a geração e a persistência interna rodam diretamente: `ravi image generate "<prompt>"`.
+
 Comportamento padrão:
-- **Async**: retorna na hora um `artifact_id`, geração roda em background
+- **Freio de entrega**: `--execute` só é exigido quando haverá auto-send para o chat de origem ou `--send` explícito
+- **Async**: retorna na hora um `artifact_id`; a geração roda em background
 - **Auto-send**: se a sessão tem chat de origem, a imagem é enviada lá automaticamente quando completar
 - **Lifecycle events**: a sessão é notificada de completed/failed sem precisar de polling
 - **Provider/modelo**: `openai` + `gpt-image-2` (configurável por instância)
 
 NÃO faça polling. NÃO use `--sync`. NÃO use `--send` se há chat de origem. Os eventos chegam sozinhos.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
+
+Taxonomia de saída: `0` sucesso · `1` erro de execução (ex.: provider não configurado) · `2` erro de uso · `3` bloqueio por confirmação — não é falha: nenhum provider, artifact, worker ou sender foi acionado; o envelope traz `dryRun:true` e o plano de entrega resolvido.
+
+Onde o freio existe: `image generate` exige `--execute` somente quando o contexto tem chat de origem ou quando `--send` solicita entrega externa. Sem entrega, a geração roda direto. `image atlas split` também roda direto; apenas `atlas split --send` exige `--execute`. Custo sem estimativa e limite configurado não cria confirmação isoladamente.
+
+Checklist antes de responder sobre imagens:
+
+- Tratei exit 3 como bloqueio de entrega, e não como falha da geração?
+- Usei `--execute` somente quando o contexto ou `--send` realmente entregará a imagem?
+
 ## Comandos
 
 | Comando | Uso |
 |---|---|
-| `ravi image generate "prompt"` | Comando principal — gera 1 imagem |
-| `ravi image atlas split <atlas>` | Corta atlas/contact sheet em N crops |
+| `ravi image generate "prompt"` | Gera 1 imagem; em chat com auto-send, acrescente `--execute` |
+| `ravi image atlas split <atlas>` | Corta atlas/contact sheet em N crops localmente; `--send` requer `--execute` |
 
 ## Casos de uso
 
@@ -57,7 +75,7 @@ ravi image generate "atlas 3x2 grid, 6 product variants, no gutter, no margin, p
 ravi image atlas split /path/to/atlas.png \
   --cols 3 --rows 2 \
   --names red,blue,green,yellow,black,white \
-  --send
+  --send --execute
 ```
 
 `--mode raw` é o default e corta exato; use `--mode trim` apenas se o atlas saiu com gutter.
@@ -87,6 +105,7 @@ ravi image atlas split /path/to/atlas.png \
 | `--model <model>` | Override do modelo do provider |
 | `--sync` | **Só** quando o script local precisa do path do arquivo |
 | `--send` | Forçar envio quando contexto não tem chat origem |
+| `--execute` | Confirmar entrega por auto-send ou `--send`; desnecessário sem entrega |
 | `-o <dir>` | Salvar em diretório específico (default `/tmp`) |
 | `--compression <0-100>` | jpeg/webp output compression |
 

@@ -37,6 +37,12 @@ ravi artifacts create --kind image --path /tmp/example.png --json
 Expected:
 - returned artifact has `kind=image`
 
+## Pages boundary
+
+Hosting HTML is `ravi pages ship` (skill `pages`). The artifacts skill and
+this ledger MUST NOT teach `create` + `publish` choreography or treat
+`artifacts publish` as the Pages happy path.
+
 ## Async Regression
 
 ```bash

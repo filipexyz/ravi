@@ -6,10 +6,10 @@
  */
 
 import type { Statement } from "bun:sqlite";
+import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
 import {
   dbCreateSessionChatSubscription,
-  dbClearSessionOutputAttachment,
   dbDetachSessionChatSubscription,
   dbFindActiveSubscriptionByChat,
   dbGetChat,
@@ -17,7 +17,6 @@ import {
   dbGetInstanceByInstanceId,
   dbListSessionChatSubscriptions,
   dbRenameRouteSessionName,
-  dbSetSessionChatSpeechMode,
   dbSetSessionOutputAttachment,
   getDb,
   getDbChanges,
@@ -26,7 +25,6 @@ import {
   type AttachedByType,
   type CreateSessionChatSubscriptionInput,
   type SessionChatSubscriptionRecord,
-  type SubscriptionSpeechMode,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
@@ -156,6 +154,7 @@ interface SessionStatements {
   listAll: Statement;
   updateAgent: Statement;
   updateSource: Statement;
+  updateThreadId: Statement;
   updateDisplayName: Statement;
   updateContext: Statement;
   updateModelOverride: Statement;
@@ -297,6 +296,7 @@ function getStatements(): SessionStatements {
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
     ),
+    updateThreadId: db.prepare("UPDATE sessions SET last_thread_id = ?, updated_at = ? WHERE session_key = ?"),
     updateDisplayName: db.prepare("UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"),
     updateContext: db.prepare("UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"),
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
@@ -740,6 +740,11 @@ export function updateSessionSource(
   s.updateSource.run(source.channel ?? null, source.accountId ?? null, source.chatId ?? null, Date.now(), sessionKey);
 }
 
+export function updateSessionThreadId(sessionKey: string, threadId: string | null): void {
+  const s = getStatements();
+  s.updateThreadId.run(threadId, Date.now(), sessionKey);
+}
+
 export function updateSessionDisplayName(sessionKey: string, displayName: string): void {
   const s = getStatements();
   s.updateDisplayName.run(displayName, Date.now(), sessionKey);
@@ -748,9 +753,9 @@ export function updateSessionDisplayName(sessionKey: string, displayName: string
 /**
  * Update session's channel context (stable group/channel metadata as JSON)
  */
-export function updateSessionContext(sessionKey: string, contextJson: string): void {
+export function updateSessionContext(sessionKey: string, context: ChannelContext): void {
   const s = getStatements();
-  s.updateContext.run(contextJson, Date.now(), sessionKey);
+  s.updateContext.run(JSON.stringify(toPersistedChannelContext(context)), Date.now(), sessionKey);
 }
 
 /**
@@ -970,6 +975,21 @@ export function getExpiringSessions(withinMs: number): SessionEntry[] {
 }
 
 /**
+ * Mark an ephemeral session expired immediately so the next cleanup tick
+ * deletes it. Used by the task-aware reaper after a one-shot abort.
+ */
+export function expireEphemeralSession(sessionKey: string): boolean {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare("UPDATE sessions SET ephemeral = 1, expires_at = ?, updated_at = ? WHERE session_key = ?").run(
+    now,
+    now,
+    sessionKey,
+  );
+  return getDbChanges() > 0;
+}
+
+/**
  * Get ephemeral sessions that have already expired.
  */
 export function getExpiredSessions(): SessionEntry[] {
@@ -1075,7 +1095,7 @@ export class SessionAttachInstanceMismatchError extends Error {
  * no per-account binding) are treated as instance-agnostic and the
  * check is a no-op.
  */
-function isChatOnSameInstanceAsSession(
+function checkChatSessionInstanceCompatibility(
   chatId: string,
   sessionKey: string,
 ): { ok: true } | { ok: false; chatInstance: string; sessionInstance: string } {
@@ -1104,7 +1124,7 @@ function canonicalAttachChannel(value: string | null | undefined): string | null
  * Throwing wrapper for attach write paths.
  */
 function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): void {
-  const check = isChatOnSameInstanceAsSession(chatId, sessionKey);
+  const check = checkChatSessionInstanceCompatibility(chatId, sessionKey);
   if (!check.ok) {
     throw new SessionAttachInstanceMismatchError(chatId, check.chatInstance, check.sessionInstance);
   }
@@ -1115,8 +1135,8 @@ function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): v
  * applying the subscription would jump instances, so the caller can fall
  * back to the route-derived sessionKey instead of crossing the boundary.
  */
-export function subscriptionAllowsCrossInstance(chatId: string, sessionKey: string): boolean {
-  return isChatOnSameInstanceAsSession(chatId, sessionKey).ok;
+export function isChatCompatibleWithSession(chatId: string, sessionKey: string): boolean {
+  return checkChatSessionInstanceCompatibility(chatId, sessionKey).ok;
 }
 
 export interface AttachChatToSessionInput {
@@ -1128,14 +1148,61 @@ export interface AttachChatToSessionInput {
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
   setOutputTarget?: boolean;
-  speechMode?: SubscriptionSpeechMode;
-  speechReason?: string | null;
 }
 
 export interface AttachChatToSessionResult {
   subscription: SessionChatSubscriptionRecord;
   created: boolean;
   outputAttached: boolean;
+}
+
+export interface SessionChatAssociationSubscriptionState {
+  chatId: string;
+  role: SessionChatSubscriptionRecord["role"];
+  defaultOutput: boolean;
+  detached: boolean;
+}
+
+export interface SessionChatAssociationState {
+  session: { name?: string; sessionKey: string };
+  chatId: string;
+  attached: boolean;
+  defaultOutput: boolean;
+  subscriptions: SessionChatAssociationSubscriptionState[];
+  legacy: { table: "session_chat_bindings"; status: "none" | "removed" };
+}
+
+export interface DetachChatFromSessionResult extends SessionChatAssociationState {
+  detached: boolean;
+  outputDetached: boolean;
+}
+
+export function describeSessionChatAssociation(
+  sessionKey: string,
+  chatId: string,
+  sessionName?: string | null,
+): SessionChatAssociationState {
+  const active = dbListSessionChatSubscriptions(sessionKey);
+  const requested = active.find((subscription) => subscription.chatId === chatId);
+  return {
+    session: {
+      ...(sessionName ? { name: sessionName } : {}),
+      sessionKey,
+    },
+    chatId,
+    attached: Boolean(requested),
+    defaultOutput: requested?.outputAttachedAt !== undefined,
+    subscriptions: active.map((subscription) => ({
+      chatId: subscription.chatId,
+      role: subscription.role,
+      defaultOutput: subscription.outputAttachedAt !== undefined,
+      detached: false,
+    })),
+    legacy: {
+      table: "session_chat_bindings",
+      status: "none",
+    },
+  };
 }
 
 /**
@@ -1164,19 +1231,6 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
       const subscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return { subscription, created: false, outputAttached: true };
     }
-    if (input.speechMode && input.speechMode !== ownActive.speechMode) {
-      const subscription = dbSetSessionChatSpeechMode(
-        input.sessionKey,
-        input.chatId,
-        input.speechMode,
-        input.speechReason ?? input.attachedReason ?? "attach-speech-update",
-      );
-      return {
-        subscription,
-        created: false,
-        outputAttached: subscription.outputAttachedAt !== undefined,
-      };
-    }
     return { subscription: ownActive, created: false, outputAttached: false };
   }
 
@@ -1189,12 +1243,7 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   }
   try {
     const setOutputTarget = input.setOutputTarget ?? true;
-    const speechMode = input.speechMode ?? (setOutputTarget || input.role === "primary" ? "speak" : "muted");
-    const subscription = dbCreateSessionChatSubscription({
-      ...(input as CreateSessionChatSubscriptionInput),
-      speechMode,
-      speechReason: input.speechReason ?? input.attachedReason ?? null,
-    });
+    const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
     if (setOutputTarget) {
       const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return {
@@ -1224,38 +1273,27 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   }
 }
 
-export function setSessionChatSpeechMode(input: {
-  sessionKey: string;
-  chatId: string;
-  speechMode: SubscriptionSpeechMode;
-  reason?: string | null;
-}): SessionChatSubscriptionRecord {
-  return dbSetSessionChatSpeechMode(input.sessionKey, input.chatId, input.speechMode, input.reason ?? null);
-}
-
-/**
- * Detach a chat from a session. Prevents removing the last active primary
- * subscription (which would orphan the session).
- */
+/** Detach a chat from a session, including the final active subscription. */
 export function detachChatFromSession(
   sessionKey: string,
   chatId: string,
-): { detached: boolean; outputDetached: boolean } {
+  sessionName?: string | null,
+): DetachChatFromSessionResult {
   const active = dbListSessionChatSubscriptions(sessionKey);
   const target = active.find((s) => s.chatId === chatId);
-  if (!target) return { detached: false, outputDetached: false };
-
-  const remainingPrimaries = active.filter((s) => s.role === "primary" && s.chatId !== chatId).length;
-  if (target.role === "primary" && remainingPrimaries === 0) {
+  if (!target) {
     return {
       detached: false,
-      outputDetached: dbClearSessionOutputAttachment(sessionKey, chatId),
+      outputDetached: false,
+      ...describeSessionChatAssociation(sessionKey, chatId, sessionName),
     };
   }
 
+  const detached = dbDetachSessionChatSubscription(sessionKey, chatId);
   return {
-    detached: dbDetachSessionChatSubscription(sessionKey, chatId),
+    detached,
     outputDetached: target.outputAttachedAt !== undefined,
+    ...describeSessionChatAssociation(sessionKey, chatId, sessionName),
   };
 }
 

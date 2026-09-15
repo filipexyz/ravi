@@ -1,7 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
-import { resolvePlatformIdentity, type PlatformIdentity } from "../../contacts.js";
+import {
+  ensureContactFromInbound,
+  resolvePlatformIdentity,
+  saveAccountPending,
+  type PlatformIdentity,
+} from "../../contacts.js";
 import { publish } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
@@ -11,10 +16,9 @@ import {
   getSession,
   listSessionSubscriptions,
   matchRoute,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "../../router/index.js";
 import {
-  dbBindSessionToChat,
   dbListChatParticipants,
   dbUpsertChat,
   dbUpsertChatMessage,
@@ -27,6 +31,9 @@ import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
 import { MAX_AUDIO_BYTES, MAX_MEDIA_BYTES, saveToAgentAttachments } from "../../utils/media.js";
 import type {
+  NativeChatActionDelivery,
+  NativeChatActionDeliveryRequest,
+  NativeChatActionDeliveryResult,
   NativePresenceDelivery,
   NativePresenceDeliveryRequest,
   NativePresenceDeliveryResult,
@@ -34,8 +41,15 @@ import type {
   NativeTextDeliveryRequest,
   NativeTextDeliveryResult,
 } from "../native/types.js";
+import {
+  CHANNEL_BACKEND_PROTOCOL,
+  CHANNEL_BACKEND_SCHEMA_VERSION,
+  acceptResolvedChannelIngress,
+  type ChannelContent,
+} from "../backend.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import { SlackGatewayModeService } from "./gateway-mode.js";
 import {
   buildSlackInstanceProvenance,
   resolveScopedSlackIdentity,
@@ -46,6 +60,17 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import {
+  acceptSlackInboundEnvelope,
+  claimSlackInboundEnvelope,
+  listPendingSlackInboundEnvelopes,
+  markSlackInboundEnvelopeProcessed,
+  pruneProcessedSlackInboundEnvelopes,
+  releaseSlackInboundEnvelopeClaim,
+  SLACK_INBOUND_ENVELOPE_RETENTION_MS,
+  type SlackInboundEnvelopeRecord,
+} from "./inbound-inbox.js";
+import { registerSlackThreadInboundLifecycle } from "./thread-lifecycle.js";
 import {
   cleanSlackId,
   envelopeEvent,
@@ -74,11 +99,19 @@ const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
+const DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS = 5_000;
+const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
+const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
 type WebSocketFactory = (url: string) => NodeWebSocket;
 type SocketTimer = ReturnType<typeof setTimeout>;
+
+interface SlackUserProfile {
+  readonly displayName: string | null;
+  readonly avatarUrl: string | null;
+}
 
 export type SlackSocketModeState = "stopped" | "connecting" | "connected" | "reconnecting";
 
@@ -91,7 +124,9 @@ export type SlackSocketModeReason =
   | "heartbeat_timeout"
   | "socket_error"
   | "socket_closed"
-  | "slack_disconnect";
+  | "slack_disconnect"
+  | "polling_gateway"
+  | "gateway_unavailable";
 
 export interface SlackSocketModeStatus {
   readonly state: SlackSocketModeState;
@@ -153,6 +188,7 @@ export interface SlackSocketModeServiceOptions {
   readonly authTestTimeoutMs?: number;
   /** Clock injection for bounded auth.test retry tests. */
   readonly now?: () => number;
+  readonly transcribeAudio?: typeof transcribeAudio;
 }
 
 export interface SlackNativeRuntime {
@@ -161,8 +197,9 @@ export interface SlackNativeRuntime {
   readonly instanceId: string;
   readonly connection: string;
   readonly delivery: NativeTextDelivery;
+  readonly actions: NativeChatActionDelivery;
   readonly presence: NativePresenceDelivery;
-  readonly socketMode: SlackSocketModeService;
+  readonly socketMode: SlackSocketModeService | SlackGatewayModeService;
 }
 
 export interface SlackTargetScope {
@@ -245,6 +282,93 @@ export class SlackTextDelivery implements NativeTextDelivery {
       raw: result.raw,
     };
   }
+}
+
+export class SlackChatActionDelivery implements NativeChatActionDelivery {
+  readonly channelId = "slack";
+
+  constructor(
+    private readonly webClient: SlackWebApiClient,
+    private readonly scope?: SlackTargetScope,
+  ) {}
+
+  supports(target: MessageTarget): boolean {
+    return supportsSlackTarget(target, this.scope);
+  }
+
+  async executeChatAction(request: NativeChatActionDeliveryRequest): Promise<NativeChatActionDeliveryResult> {
+    const { action, target } = request;
+    if (action.actionId === "thread.create") {
+      const result = await this.webClient.postMessage({
+        channel: target.chatId,
+        text: action.text,
+        clientMsgId: slackClientMessageId(request.idempotencyKey),
+      });
+      return {
+        provider: "slack",
+        messageId: result.messageId,
+        platformMessageId: result.ts,
+        providerTimestamp: slackTsToMs(result.ts),
+        raw: result.raw,
+      };
+    }
+
+    if (action.actionId === "message.edit") {
+      const result = await this.webClient.updateMessage({
+        channel: target.chatId,
+        ts: action.providerMessageId,
+        text: action.text,
+      });
+      return {
+        provider: "slack",
+        messageId: result.messageId,
+        platformMessageId: result.ts,
+        providerTimestamp: slackTsToMs(result.ts),
+        raw: result.raw,
+      };
+    }
+
+    if (action.actionId === "message.delete") {
+      const raw = await this.webClient.deleteMessage({
+        channel: target.chatId,
+        ts: action.providerMessageId,
+      });
+      return {
+        provider: "slack",
+        messageId: action.providerMessageId,
+        platformMessageId: action.providerMessageId,
+        providerTimestamp: slackTsToMs(action.providerMessageId),
+        raw,
+      };
+    }
+
+    const name = normalizeSlackReactionName(action.emoji);
+    const raw =
+      action.operation === "remove"
+        ? await this.webClient.removeReaction({
+            channel: target.chatId,
+            timestamp: action.providerMessageId,
+            name,
+          })
+        : await this.webClient.addReaction({
+            channel: target.chatId,
+            timestamp: action.providerMessageId,
+            name,
+          });
+    return {
+      provider: "slack",
+      messageId: action.providerMessageId,
+      platformMessageId: action.providerMessageId,
+      providerTimestamp: slackTsToMs(action.providerMessageId),
+      raw,
+    };
+  }
+}
+
+function normalizeSlackReactionName(value: string): string {
+  const normalized = value.trim().replace(/^:+|:+$/g, "");
+  if (!normalized) throw new Error("Slack reaction emoji is required");
+  return normalized;
 }
 
 /** Stable UUID token for Slack's client_msg_id duplicate-suppression support. */
@@ -471,6 +595,7 @@ export class SlackSocketModeService {
   private readonly authTestTimeoutMs: number;
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
+  private readonly userProfiles = new Map<string, SlackUserProfile | null>();
   private localBotIdentity: SlackLocalBotIdentity | null = null;
   private localBotIdentityInFlight: Promise<SlackLocalBotIdentity | null> | null = null;
   private nextLocalBotIdentityAttemptAt = 0;
@@ -486,6 +611,9 @@ export class SlackSocketModeService {
   private connectedAt: number | undefined;
   private lastPongAt: number | undefined;
   private reconnectCount = 0;
+  private inboundReconcileTimer: ReturnType<typeof setInterval> | null = null;
+  private reconcilingInbound = false;
+  private lastInboundPruneAt = 0;
 
   constructor(private readonly options: SlackSocketModeServiceOptions) {
     this.routingPolicy = normalizeSlackRoutingPolicy({
@@ -529,11 +657,16 @@ export class SlackSocketModeService {
     this.connectedAt = undefined;
     this.reconnectCount = 0;
     this.setLifecycle("connecting", "opening_socket");
+    this.startInboundReconciler();
     this.loopPromise = this.runLoop();
   }
 
   async stop(): Promise<void> {
     this.running = false;
+    if (this.inboundReconcileTimer) {
+      clearInterval(this.inboundReconcileTimer);
+      this.inboundReconcileTimer = null;
+    }
     this.interruptConnectionOpen?.();
     this.interruptConnectionOpen = null;
     this.interruptReconnectDelay?.();
@@ -563,6 +696,25 @@ export class SlackSocketModeService {
     ack: (envelopeId: string) => Promise<void> | void = async () => {},
   ): Promise<"duplicate" | "ignored" | "processed"> {
     const envelopeId = cleanSlackId(envelope.envelope_id);
+    const messageEvent = envelopeEvent(envelope);
+    if (envelopeId && messageEvent && isSlackMessageEventStructurallyEligible(messageEvent)) {
+      const accepted = acceptSlackInboundEnvelope({
+        scopeId: this.inboundScopeId(),
+        envelopeId,
+        envelope: durableSlackEnvelope(envelope),
+        acceptedAt: this.now(),
+      });
+      await ack(envelopeId);
+      if (accepted.status === "conflict") {
+        log.warn("Conflicting Slack Socket Mode envelope ignored", {
+          envelopeId,
+          accountId: this.options.accountId,
+        });
+        return "duplicate";
+      }
+      return this.processDurableInboundEnvelope(accepted.record);
+    }
+
     if (envelopeId) {
       await ack(envelopeId);
       if (this.seenEnvelopeIds.has(envelopeId)) {
@@ -589,6 +741,131 @@ export class SlackSocketModeService {
 
     await this.routeMessage(normalized);
     return "processed";
+  }
+
+  async resumePendingInboundEnvelopes(): Promise<{
+    scanned: number;
+    processed: number;
+    busy: number;
+    failed: number;
+  }> {
+    const pending = listPendingSlackInboundEnvelopes({
+      scopeId: this.inboundScopeId(),
+      now: this.now(),
+    });
+    const result = {
+      scanned: pending.length,
+      processed: 0,
+      busy: 0,
+      failed: 0,
+    };
+    for (const record of pending) {
+      try {
+        const disposition = await this.processDurableInboundEnvelope(record);
+        if (disposition === "duplicate") {
+          result.busy += 1;
+        } else {
+          result.processed += 1;
+        }
+      } catch (error) {
+        result.failed += 1;
+        log.warn("Pending Slack inbound envelope retry failed", {
+          envelopeId: record.envelopeId,
+          accountId: this.options.accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return result;
+  }
+
+  private async processDurableInboundEnvelope(
+    record: SlackInboundEnvelopeRecord,
+  ): Promise<"duplicate" | "ignored" | "processed"> {
+    const claimId = randomUUID();
+    const claim = claimSlackInboundEnvelope({
+      scopeId: record.scopeId,
+      envelopeId: record.envelopeId,
+      claimId,
+      claimedAt: this.now(),
+    });
+    if (claim.status !== "acquired") return "duplicate";
+    try {
+      const normalized = await this.normalizeEnvelope(claim.record.envelope);
+      if (!normalized) {
+        markSlackInboundEnvelopeProcessed({
+          scopeId: record.scopeId,
+          envelopeId: record.envelopeId,
+          claimId,
+          processedAt: this.now(),
+        });
+        return "ignored";
+      }
+      await this.routeMessage(normalized);
+      markSlackInboundEnvelopeProcessed({
+        scopeId: record.scopeId,
+        envelopeId: record.envelopeId,
+        claimId,
+        processedAt: this.now(),
+      });
+      return "processed";
+    } catch (error) {
+      try {
+        releaseSlackInboundEnvelopeClaim({
+          scopeId: record.scopeId,
+          envelopeId: record.envelopeId,
+          claimId,
+          releasedAt: this.now(),
+        });
+      } catch (releaseError) {
+        log.error("Slack inbound envelope claim release failed", {
+          envelopeId: record.envelopeId,
+          accountId: this.options.accountId,
+          error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+        });
+      }
+      throw error;
+    }
+  }
+
+  private inboundScopeId(): string {
+    return this.options.instanceId ?? this.options.accountId;
+  }
+
+  private startInboundReconciler(): void {
+    if (this.inboundReconcileTimer) return;
+    const reconcile = () => {
+      if (this.reconcilingInbound) return;
+      this.reconcilingInbound = true;
+      const now = this.now();
+      if (now - this.lastInboundPruneAt >= DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS) {
+        try {
+          pruneProcessedSlackInboundEnvelopes({
+            scopeId: this.inboundScopeId(),
+            olderThan: Math.max(0, now - SLACK_INBOUND_ENVELOPE_RETENTION_MS),
+          });
+          this.lastInboundPruneAt = now;
+        } catch (error) {
+          log.warn("Slack inbound envelope retention cleanup failed", {
+            accountId: this.options.accountId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      void this.resumePendingInboundEnvelopes()
+        .catch((error) => {
+          log.warn("Slack inbound envelope reconciliation failed", {
+            accountId: this.options.accountId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => {
+          this.reconcilingInbound = false;
+        });
+    };
+    reconcile();
+    this.inboundReconcileTimer = setInterval(reconcile, DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS);
+    this.inboundReconcileTimer.unref?.();
   }
 
   private async runLoop(): Promise<void> {
@@ -1054,6 +1331,83 @@ export class SlackSocketModeService {
     });
   }
 
+  private async slackUserProfile(userId: string): Promise<SlackUserProfile | null> {
+    const cached = this.userProfiles.get(userId);
+    if (cached !== undefined) return cached;
+    const usersInfo = (this.webClient as Partial<SlackWebApiClient>).usersInfo;
+    if (typeof usersInfo !== "function") return null;
+    try {
+      const response = await usersInfo.call(this.webClient, userId);
+      const user = recordField(response, "user");
+      const profile = recordField(user, "profile");
+      const resolved = {
+        displayName:
+          stringField(profile, "display_name_normalized") ??
+          stringField(profile, "display_name") ??
+          stringField(profile, "real_name_normalized") ??
+          stringField(profile, "real_name") ??
+          stringField(user, "real_name") ??
+          stringField(user, "name") ??
+          null,
+        avatarUrl:
+          stringField(profile, "image_192") ??
+          stringField(profile, "image_72") ??
+          stringField(profile, "image_48") ??
+          null,
+      } satisfies SlackUserProfile;
+      if (this.userProfiles.size >= 1_000) {
+        const oldest = this.userProfiles.keys().next().value;
+        if (oldest) this.userProfiles.delete(oldest);
+      }
+      this.userProfiles.set(userId, resolved);
+      return resolved;
+    } catch (error) {
+      log.warn("Slack user profile could not be resolved", {
+        accountId: this.options.accountId,
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  private async holdSlackSenderForReview(input: {
+    message: SlackNormalizedMessage;
+    accountId: string;
+    instanceId: string;
+    intakeMode: "off" | "discovered" | "pending";
+    isGroup: boolean;
+  }): Promise<void> {
+    const profile = input.isGroup ? null : await this.slackUserProfile(input.message.userId);
+    if (!input.isGroup) {
+      ensureContactFromInbound({
+        channel: "slack",
+        instanceId: input.instanceId,
+        platformSenderId: input.message.userId,
+        contactIdentity: input.message.userId,
+        displayName: profile?.displayName ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
+        profileData: {
+          source: "slack.event",
+          accountId: input.accountId,
+          teamId: input.message.teamId,
+          channelId: input.message.channelId,
+        },
+        chatId: input.message.channelId,
+        chatType: "dm",
+        sourceEventId: input.message.eventId ?? input.message.envelopeId ?? null,
+        providerMessageId: input.message.ts,
+        intakeMode: input.intakeMode,
+        source: "slack.event",
+      });
+    }
+    saveAccountPending(input.accountId, input.isGroup ? input.message.channelId : input.message.userId, {
+      name: profile?.displayName ?? null,
+      chatId: input.message.channelId,
+      isGroup: input.isGroup,
+    });
+  }
+
   private async routeMessage(message: SlackNormalizedMessage): Promise<void> {
     const routerConfig = this.getRouterConfig();
     const peerKind = slackPeerKindForChannelType(message.channelType);
@@ -1063,6 +1417,10 @@ export class SlackSocketModeService {
     const receivedInstanceId = this.options.instanceId ?? this.options.accountId;
     const instanceAliases = resolveSlackInstanceAliases(routerConfig, receivedInstanceId);
     const instanceId = instanceAliases.canonical;
+    const instanceConfig =
+      instanceAliases.scopedAliases.map((alias) => routerConfig.instances?.[alias]).find(Boolean) ??
+      routerConfig.instances?.[routeAccountId];
+    const routePeerId = isGroup ? message.channelId : (message.slackUserId ?? message.userId);
     const canonicalChat = dbUpsertChat({
       channel: "slack",
       instanceId,
@@ -1083,7 +1441,7 @@ export class SlackSocketModeService {
       seenAt: message.eventTimeMs,
     });
     let matched = matchRoute(routerConfig, {
-      phone: message.channelId,
+      phone: routePeerId,
       channel: "slack",
       accountId: routeAccountId,
       isGroup,
@@ -1093,29 +1451,33 @@ export class SlackSocketModeService {
     });
 
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
-    if (existingSubscription && (!matched || existingSubscription.sessionKey !== matched.sessionKey)) {
+    let trustedSubscription = false;
+    if (existingSubscription) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
-      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
-      if (!sameInstance) {
+      const compatibleSession = isChatCompatibleWithSession(canonicalChat.id, existingSubscription.sessionKey);
+      if (!compatibleSession) {
         log.warn("Slack subscription override would jump instances - ignoring subscription, using route resolution", {
           chatId: canonicalChat.id,
           subscriptionSessionKey: existingSubscription.sessionKey,
           routeSessionKey: matched?.sessionKey,
         });
       } else if (ownerSession && ownerAgent) {
-        log.info("Slack inbound rerouted by session subscription", {
-          chatId: canonicalChat.id,
-          fromSessionKey: matched?.sessionKey,
-          toSessionKey: existingSubscription.sessionKey,
-        });
-        matched = {
-          agentId: ownerSession.agentId,
-          agent: ownerAgent,
-          sessionKey: existingSubscription.sessionKey,
-          dmScope: matched?.dmScope ?? ownerAgent.dmScope ?? routerConfig.defaultDmScope,
-          route: matched?.route,
-        } satisfies MatchedRoute;
+        if (!matched || existingSubscription.sessionKey !== matched.sessionKey) {
+          log.info("Slack inbound rerouted by session subscription", {
+            chatId: canonicalChat.id,
+            fromSessionKey: matched?.sessionKey,
+            toSessionKey: existingSubscription.sessionKey,
+          });
+          matched = {
+            agentId: ownerSession.agentId,
+            agent: ownerAgent,
+            sessionKey: existingSubscription.sessionKey,
+            dmScope: matched?.dmScope ?? ownerAgent.dmScope ?? routerConfig.defaultDmScope,
+            route: matched?.route,
+          } satisfies MatchedRoute;
+        }
+        trustedSubscription = true;
       } else {
         log.warn("Slack subscription points to a missing session or agent - falling back to route resolution", {
           chatId: canonicalChat.id,
@@ -1125,6 +1487,40 @@ export class SlackSocketModeService {
         });
       }
     }
+
+    const explicitRoute = trustedSubscription || Boolean(matched?.route && matched.route.pattern !== "*");
+    const routePolicy = matched?.route?.policy;
+    const inboundPolicy = isGroup
+      ? (routePolicy ?? instanceConfig?.groupPolicy ?? "open")
+      : (routePolicy ?? instanceConfig?.dmPolicy ?? "open");
+    const needsReview =
+      !matched ||
+      (!explicitRoute && ((isGroup && inboundPolicy === "allowlist") || (!isGroup && inboundPolicy === "pairing")));
+    if (needsReview) {
+      await this.holdSlackSenderForReview({
+        message,
+        accountId: routeAccountId,
+        instanceId,
+        intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+        isGroup,
+      });
+      log.info("Slack inbound held for owner review", {
+        accountId: routeAccountId,
+        channelId: message.channelId,
+        userId: message.userId,
+        reviewKind: isGroup ? "chat" : "contact",
+      });
+      return;
+    }
+    if (!explicitRoute && inboundPolicy === "closed") {
+      log.info("Slack inbound rejected by closed instance policy", {
+        accountId: routeAccountId,
+        channelId: message.channelId,
+        userId: message.userId,
+      });
+      return;
+    }
+
     if (!matched) {
       log.info("Slack inbound skipped: no route matched", {
         accountId: routeAccountId,
@@ -1135,7 +1531,7 @@ export class SlackSocketModeService {
     }
 
     const resolved = commitMatchedRoute(matched, {
-      phone: message.channelId,
+      phone: routePeerId,
       isGroup,
       groupId: isGroup ? message.channelId : undefined,
       peerKind,
@@ -1143,15 +1539,33 @@ export class SlackSocketModeService {
     });
     const sessionName = resolved.sessionName ?? resolved.sessionKey;
 
-    dbBindSessionToChat({
-      sessionKey: resolved.sessionKey,
-      chatId: canonicalChat.id,
-      agentId: resolved.agent.id,
-      routeId: null,
-      bindingReason: "slack_socket_mode",
-      seenAt: message.eventTimeMs,
-    });
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
+    let createdEventOwnedByProgrammaticLifecycle = false;
+    if (routeThreadId) {
+      const childSession = getSession(resolved.sessionKey);
+      if (childSession) {
+        try {
+          const lifecycle = registerSlackThreadInboundLifecycle({
+            childSession,
+            accountId: this.options.accountId,
+            instanceId,
+            platformChatId: message.channelId,
+            threadCanonicalChatId: canonicalChat.id,
+            providerThreadId: routeThreadId,
+            seenAt: message.eventTimeMs,
+          });
+          createdEventOwnedByProgrammaticLifecycle =
+            lifecycle.source === "action" && (lifecycle.status === "root_delivered" || lifecycle.status === "starting");
+        } catch (error) {
+          log.warn("Failed to register Slack thread lifecycle", {
+            channelId: message.channelId,
+            threadTs: routeThreadId,
+            sessionKey: resolved.sessionKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     const actorIdentity = resolveSlackActorIdentity({
       chatId: canonicalChat.id,
       instanceAliases,
@@ -1160,7 +1574,7 @@ export class SlackSocketModeService {
       senderKind: message.senderKind,
     });
     const processedFiles = await this.processFiles(message, resolved.agent.cwd);
-    dbUpsertChatMessage({
+    const canonicalMessage = dbUpsertChatMessage({
       chatId: canonicalChat.id,
       channel: "slack",
       instanceId,
@@ -1215,7 +1629,7 @@ export class SlackSocketModeService {
       },
       seenAt: message.eventTimeMs,
     });
-    if (routeThreadId && resolved.createdSession) {
+    if (routeThreadId && resolved.createdSession && !createdEventOwnedByProgrammaticLifecycle) {
       await this.publishSlackThreadCreatedEvent({
         message,
         resolved,
@@ -1245,14 +1659,6 @@ export class SlackSocketModeService {
           ...slackTeamProvenance(message),
           channelId: message.channelId,
         },
-        seenAt: message.eventTimeMs,
-      });
-      dbBindSessionToChat({
-        sessionKey: resolved.sessionKey,
-        chatId: rootChat.id,
-        agentId: resolved.agent.id,
-        routeId: null,
-        bindingReason: "slack_socket_mode:chat_and_thread",
         seenAt: message.eventTimeMs,
       });
       syncSlackSessionSubscription(resolved.sessionKey, rootChat.id, { forceInput: true });
@@ -1289,13 +1695,55 @@ export class SlackSocketModeService {
       ...actorIdentity,
     };
 
-    await this.publishPrompt(sessionName, {
-      prompt: formatSlackPrompt(message, processedFiles),
-      source,
-      context,
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
+    const backendIdentity = slackBackendIngressIdentity({
+      instanceId,
+      agentId: resolved.agent.id,
+      message,
+      actorIdentity,
     });
+    const ingress = await acceptResolvedChannelIngress(
+      {
+        request: {
+          protocol: CHANNEL_BACKEND_PROTOCOL,
+          schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+          requestId: backendIdentity.requestId,
+          idempotencyKey: backendIdentity.idempotencyKey,
+          localActorId: backendIdentity.localActorId,
+          channelInstanceId: instanceId,
+          agentId: resolved.agent.id,
+          external: {
+            channelKind: "slack",
+            connectionId: this.options.accountId,
+            conversationId: slackBackendConversationId(message),
+            senderId: message.userId,
+            messageId: message.ts,
+          },
+          content: slackBackendContent(message, processedFiles),
+          receivedAt: new Date(message.eventTimeMs).toISOString(),
+        },
+        canonical: {
+          chatId: canonicalChat.id,
+          messageId: canonicalMessage.canonicalMessageId,
+        },
+        session: {
+          key: resolved.sessionKey,
+          name: sessionName,
+        },
+        prompt: {
+          prompt: formatSlackPrompt(message, processedFiles),
+          source: { ...source },
+          context: { ...context },
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        },
+      },
+      {
+        publishPrompt: this.publishPrompt,
+      },
+    );
+    if (ingress.disposition === "rejected") {
+      throw new Error(`slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`);
+    }
   }
 
   private async publishSlackThreadCreatedEvent(input: {
@@ -1365,22 +1813,32 @@ export class SlackSocketModeService {
     index: number,
     agentCwd: string,
   ): Promise<ProcessedSlackFile> {
-    const downloadUrl = file.privateDownloadUrl ?? file.privateUrl;
-    if (!downloadUrl) return file;
+    const hydrated = await this.hydrateFileMetadata(file);
+    const resolvedFile = hydrated.file;
+    const downloadUrl = slackFileDownloadUrl(resolvedFile);
+    if (!downloadUrl) {
+      const downloadError = hydrated.error ?? "Slack file metadata did not include a private download URL";
+      log.warn("Slack file metadata unavailable", {
+        fileId: resolvedFile.id,
+        fileAccess: resolvedFile.fileAccess,
+        error: downloadError,
+      });
+      return { ...resolvedFile, downloadError };
+    }
 
-    const isAudio = isSlackAudioFile(file);
+    const isAudio = isSlackAudioFile(resolvedFile);
     const maxBytes = isAudio ? MAX_AUDIO_BYTES : MAX_MEDIA_BYTES;
     try {
       const download = await this.webClient.downloadFile({ url: downloadUrl, maxBytes });
-      const mimeType = file.mimeType ?? download.contentType ?? "application/octet-stream";
-      const messageId = `${message.ts}-${file.id || index}`;
+      const mimeType = resolvedFile.mimeType ?? download.contentType ?? "application/octet-stream";
+      const messageId = `${message.ts}-${resolvedFile.id || index}`;
       const localPath = await saveToAgentAttachments(download.buffer, agentCwd, messageId, mimeType);
-      if (!isAudio) return { ...file, mimeType, localPath };
+      if (!isAudio) return { ...resolvedFile, mimeType, localPath };
 
       try {
-        const transcription = await transcribeAudio(download.buffer, mimeType);
+        const transcription = await (this.options.transcribeAudio ?? transcribeAudio)(download.buffer, mimeType);
         return {
-          ...file,
+          ...resolvedFile,
           mimeType,
           localPath,
           transcript: transcription.text,
@@ -1389,12 +1847,12 @@ export class SlackSocketModeService {
         };
       } catch (error) {
         log.warn("Slack audio transcription failed", {
-          fileId: file.id,
+          fileId: resolvedFile.id,
           mimeType,
           error: error instanceof Error ? error.message : String(error),
         });
         return {
-          ...file,
+          ...resolvedFile,
           mimeType,
           localPath,
           transcriptionError: error instanceof Error ? error.message : String(error),
@@ -1402,16 +1860,54 @@ export class SlackSocketModeService {
       }
     } catch (error) {
       log.warn("Slack file download failed", {
-        fileId: file.id,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
+        fileId: resolvedFile.id,
+        mimeType: resolvedFile.mimeType,
+        sizeBytes: resolvedFile.sizeBytes,
         error: error instanceof Error ? error.message : String(error),
       });
       return {
-        ...file,
+        ...resolvedFile,
         downloadError: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private async hydrateFileMetadata(
+    file: SlackNormalizedFile,
+  ): Promise<{ readonly file: SlackNormalizedFile; readonly error?: string }> {
+    if (slackFileDownloadUrl(file)) return { file };
+    if (!file.id || file.id.startsWith("file-")) {
+      return { file, error: "Slack file metadata is missing a stable file ID" };
+    }
+
+    const filesInfo = (this.webClient as Partial<SlackWebApiClient>).filesInfo;
+    if (typeof filesInfo !== "function") {
+      return { file, error: "Slack Web API client cannot hydrate file metadata" };
+    }
+
+    let hydrated = file;
+    let lastError = "Slack files.info returned no private download URL";
+    for (const [attempt, delayMs] of SLACK_FILE_INFO_RETRY_DELAYS_MS.entries()) {
+      if (delayMs > 0) await delay(delayMs);
+      try {
+        const response = await filesInfo.call(this.webClient, { file: file.id });
+        const resolved = normalizeSlackFile(response.file, 0);
+        if (resolved) hydrated = { ...hydrated, ...resolved, id: file.id };
+        if (slackFileDownloadUrl(hydrated)) {
+          log.info("Slack file metadata hydrated", {
+            fileId: file.id,
+            fileAccess: file.fileAccess,
+            attempts: attempt + 1,
+          });
+          return { file: hydrated };
+        }
+        lastError = "Slack files.info returned no private download URL";
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return { file: hydrated, error: lastError };
   }
 }
 
@@ -1810,28 +2306,12 @@ function syncSlackSessionSubscription(
       existingSubscription?.outputAttachedAt !== undefined ||
       (!existingSubscription && role === "primary") ||
       (!hasOutputTarget && role === "primary");
-    const shouldEnableSpeech = setOutputTarget || (!existingSubscription && role === "primary");
-
     attachChatToSession({
       sessionKey,
       chatId,
       role,
       attachedByType: "system",
       attachedReason: "slack-socket-mode",
-      speechMode: existingSubscription
-        ? shouldEnableSpeech
-          ? "speak"
-          : undefined
-        : role === "primary"
-          ? "speak"
-          : "muted",
-      speechReason: existingSubscription
-        ? shouldEnableSpeech
-          ? "primary-slack-socket-mode"
-          : undefined
-        : role === "primary"
-          ? "primary-slack-socket-mode"
-          : "listen-only-slack-socket-mode",
       setOutputTarget,
     });
   } catch (error) {
@@ -1877,8 +2357,11 @@ export async function createSlackNativeRuntimeFromEnv(
   const webClient = new SlackWebApiClient({
     appToken: credentials.appToken,
     botToken: credentials.botToken,
+    apiBaseUrl: credentials.apiBaseUrl,
+    fileProxyUrl: credentials.fileProxyUrl,
+    defaultHeaders: credentials.requestHeaders,
   });
-  const socketMode = new SlackSocketModeService({
+  const processor = new SlackSocketModeService({
     appToken: credentials.appToken,
     botToken: credentials.botToken,
     accountId: credentials.accountId,
@@ -1887,7 +2370,16 @@ export async function createSlackNativeRuntimeFromEnv(
     routingPolicy,
     webClient,
   });
+  const socketMode = credentials.gateway
+    ? new SlackGatewayModeService({
+        claimUrl: credentials.gateway.claimUrl,
+        completionBaseUrl: credentials.gateway.completionBaseUrl,
+        requestHeaders: credentials.gateway.requestHeaders,
+        processor,
+      })
+    : processor;
   const delivery = new SlackTextDelivery(webClient, routingPolicy, scope);
+  const actions = new SlackChatActionDelivery(webClient, scope);
   const reactionPresence = new SlackReactionPresence(
     webClient,
     {
@@ -1924,6 +2416,7 @@ export async function createSlackNativeRuntimeFromEnv(
     instanceId: credentials.instanceId,
     connection: credentials.connection,
     delivery,
+    actions,
     presence,
     socketMode,
   };
@@ -2007,8 +2500,107 @@ function formatSlackPrompt(message: SlackNormalizedMessage, files: readonly Proc
   return `[${parts.join(" ")}]\n<@${message.userId}>: ${formatSlackMessageBody(message, files)}`;
 }
 
+function slackBackendIngressIdentity(input: {
+  instanceId: string;
+  agentId: string;
+  message: SlackNormalizedMessage;
+  actorIdentity: SlackActorIdentity;
+}): {
+  requestId: string;
+  idempotencyKey: string;
+  localActorId: string;
+} {
+  const messageIdentity = slackBackendDigest([input.instanceId, input.message.channelId, input.message.ts]);
+  const requestIdentity = slackBackendDigest([
+    messageIdentity,
+    input.message.eventId ?? "",
+    input.message.envelopeId ?? "",
+  ]);
+  const actorIdentity = slackBackendDigest([
+    input.instanceId,
+    input.actorIdentity.actorType,
+    input.actorIdentity.contactId ??
+      input.actorIdentity.actorAgentId ??
+      input.actorIdentity.normalizedSenderId ??
+      input.message.userId,
+    input.agentId,
+  ]);
+  return {
+    requestId: `slack_request_${requestIdentity}`,
+    idempotencyKey: `slack_ingress_${messageIdentity}`,
+    localActorId: `slack_actor_${actorIdentity}`,
+  };
+}
+
+export function encodeSlackBackendConversationId(message: SlackNormalizedMessage): string {
+  return message.thread.outboundThreadTs
+    ? `${message.channelId}~${message.thread.outboundThreadTs}`
+    : message.channelId;
+}
+
+export function decodeSlackBackendConversationId(conversationId: string): {
+  channelId: string;
+  threadTs?: string;
+} {
+  const separator = conversationId.indexOf("~");
+  if (separator === -1) return { channelId: conversationId };
+  const channelId = conversationId.slice(0, separator);
+  const threadTs = conversationId.slice(separator + 1);
+  if (!channelId || !threadTs || threadTs.includes("~")) {
+    throw new Error("invalid_slack_backend_conversation");
+  }
+  return { channelId, threadTs };
+}
+
+function slackBackendConversationId(message: SlackNormalizedMessage): string {
+  return encodeSlackBackendConversationId(message);
+}
+
+function slackBackendContent(message: SlackNormalizedMessage, files: readonly ProcessedSlackFile[]): ChannelContent {
+  const content: ChannelContent = [];
+  const text = message.text.trim();
+  if (text) content.push({ type: "text", text });
+  for (const file of files) {
+    const name = fileDisplayName(file);
+    const mediaType = file.mimeType?.match(/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/)
+      ? file.mimeType
+      : undefined;
+    content.push({
+      type: "artifact",
+      artifactId: `slack_file_${slackBackendDigest([file.id])}`,
+      ...(name && Buffer.byteLength(name, "utf8") <= 256 ? { name } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(file.sizeBytes !== undefined && Number.isSafeInteger(file.sizeBytes) && file.sizeBytes >= 0
+        ? { sizeBytes: file.sizeBytes }
+        : {}),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "[message]" });
+  return content;
+}
+
+function slackBackendDigest(parts: readonly string[]): string {
+  return createHash("sha256").update(parts.join("\u001f"), "utf8").digest("hex").slice(0, 32);
+}
+
+function durableSlackEnvelope(envelope: SlackSocketEnvelope): SlackSocketEnvelope {
+  return JSON.parse(
+    JSON.stringify(envelope, (key, value) => {
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey === "token" || normalizedKey === "response_url" || normalizedKey === "response_urls") {
+        return undefined;
+      }
+      return value;
+    }),
+  ) as SlackSocketEnvelope;
+}
+
 function positiveDuration(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeSlackFiles(value: unknown): SlackNormalizedFile[] {
@@ -2024,6 +2616,8 @@ function normalizeSlackFile(value: unknown, index: number): SlackNormalizedFile 
   const id = firstString(record.id) ?? `file-${index}`;
   return {
     id,
+    ...(firstString(record.mode) ? { mode: firstString(record.mode) } : {}),
+    ...(firstString(record.file_access) ? { fileAccess: firstString(record.file_access) } : {}),
     ...(firstString(record.name) ? { name: firstString(record.name) } : {}),
     ...(firstString(record.title) ? { title: firstString(record.title) } : {}),
     ...(firstString(record.mimetype) ? { mimeType: firstString(record.mimetype) } : {}),
@@ -2070,6 +2664,8 @@ function buildSlackMessageContent(
 function publicSlackFileMetadata(file: ProcessedSlackFile): Record<string, unknown> {
   return {
     id: file.id,
+    mode: file.mode ?? null,
+    fileAccess: file.fileAccess ?? null,
     name: file.name ?? null,
     title: file.title ?? null,
     mimeType: file.mimeType ?? null,
@@ -2080,6 +2676,8 @@ function publicSlackFileMetadata(file: ProcessedSlackFile): Record<string, unkno
     transcript: file.transcript ?? null,
     transcriptionProvider: file.transcriptionProvider ?? null,
     transcriptionModel: file.transcriptionModel ?? null,
+    downloadError: file.downloadError ?? null,
+    transcriptionError: file.transcriptionError ?? null,
   };
 }
 
@@ -2132,4 +2730,8 @@ function isSlackAudioFile(file: Pick<SlackNormalizedFile, "mimeType" | "fileType
       fileType === "wav" ||
       fileType === "webm",
   );
+}
+
+function slackFileDownloadUrl(file: SlackNormalizedFile): string | undefined {
+  return file.privateDownloadUrl ?? file.privateUrl;
 }

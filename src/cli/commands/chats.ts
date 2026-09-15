@@ -1,8 +1,10 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import {
   inspectChatReadingList,
@@ -16,7 +18,9 @@ import {
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
+  dbCreateCanonicalActorMessage,
   dbCreateChatReadingList,
+  dbEnsureActorAgentChat,
   dbFindChatByRef,
   dbFindChatReadingList,
   dbGetChat,
@@ -74,6 +78,17 @@ const chatReadingListPublicReturnSchema = chatReadingListReturnSchema.omit({
 });
 
 const READING_LIST_ID_PATTERN_SOURCE = "^crl_[0-9a-f]{24}$";
+const CHAT_ID_PATTERN_SOURCE = "^chat_[0-9a-f]{24}$";
+const OPAQUE_ID_PATTERN_SOURCE = "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$";
+const opaqueIdArgSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(new RegExp(OPAQUE_ID_PATTERN_SOURCE), "Must be an opaque URL-safe identifier");
+const chatIdArgSchema = z
+  .string()
+  .regex(new RegExp(CHAT_ID_PATTERN_SOURCE), "Chat id must use the canonical chat_<24 hex> form");
+const messageContentArgSchema = z.string().min(1).max(1_000_000);
 const readingListIdArgSchema = z
   .string()
   .regex(new RegExp(READING_LIST_ID_PATTERN_SOURCE), "Reading-list id must use the canonical crl_<24 hex> form");
@@ -142,6 +157,114 @@ const chatReadingListPreviewReturnSchema = z.object({
     diff: chatReadingListMembershipDiffSchema.nullable(),
   }),
 });
+
+const chatReturnSchema = z
+  .object({
+    id: z.string(),
+    channel: z.string(),
+    instanceId: z.string(),
+    actorId: z.string().optional(),
+    agentId: z.string().optional(),
+    chatType: z.enum(["dm", "group", "room", "thread", "channel", "unknown"]),
+    title: z.string().optional(),
+    avatarUrl: z.string().optional(),
+    metadata: jsonObjectSchema.optional(),
+    firstSeenAt: z.number(),
+    lastSeenAt: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    platformChatId: z.string().optional(),
+    normalizedChatId: z.string().optional(),
+    rawProvenance: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const chatMessageReturnSchema = z
+  .object({
+    id: z.string(),
+    chatId: z.string(),
+    clientMessageId: z.string().optional(),
+    actorType: z.string(),
+    actorId: z.string().optional(),
+    contactId: z.string().optional(),
+    agentId: z.string().optional(),
+    platformIdentityId: z.string().optional(),
+    messageType: z.string().optional(),
+    content: jsonObjectSchema.optional(),
+    revision: z.number().int().positive().optional(),
+    state: z.string().optional(),
+    providerTimestamp: z.number().optional(),
+    ingestedAt: z.number(),
+    sortKey: z.string(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    channel: z.string().optional(),
+    instanceId: z.string().optional(),
+    providerMessageId: z.string().optional(),
+    rawChatId: z.string().optional(),
+    rawSenderId: z.string().optional(),
+    normalizedSenderId: z.string().optional(),
+    rawProvenance: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const chatListItemReturnSchema = z
+  .object({
+    chat: chatReturnSchema,
+    messageCount: z.number(),
+    participantCount: z.number(),
+    lastMessage: chatMessageReturnSchema.nullable(),
+  })
+  .strict();
+
+export const chatsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    items: z.array(chatListItemReturnSchema),
+    chats: z.array(chatListItemReturnSchema),
+  })
+  .strict();
+
+export const chatsReadReturnSchema = z
+  .object({
+    chat: chatReturnSchema,
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    messages: z.array(chatMessageReturnSchema),
+  })
+  .strict();
+
+const ensuredChatReturnSchema = chatReturnSchema.extend({
+  actorId: z.string(),
+  agentId: z.string(),
+});
+
+const canonicalActorMessageReturnSchema = chatMessageReturnSchema.extend({
+  clientMessageId: z.string(),
+  actorType: z.literal("actor"),
+  actorId: z.string(),
+  content: jsonObjectSchema,
+  revision: z.literal(1),
+  state: z.literal("created"),
+});
+
+export const chatsEnsureReturnSchema = z
+  .object({
+    disposition: z.enum(["created", "existing"]),
+    clientRequestId: z.string(),
+    chat: ensuredChatReturnSchema,
+  })
+  .strict();
+
+export const chatsMessageCreateReturnSchema = z
+  .object({
+    disposition: z.enum(["created", "duplicate"]),
+    clientMessageId: z.string(),
+    messageId: z.string(),
+    message: canonicalActorMessageReturnSchema,
+  })
+  .strict();
 
 function summarizeCurrent(current: ChatReadingListInspectionResult["current"]) {
   return { total: current.total, selector: current.selector, preserved: current.preserved };
@@ -215,11 +338,69 @@ function currentAgentOwner(): { type: string; id: string } | null {
   return ctx?.agentId ? { type: "agent", id: ctx.agentId } : null;
 }
 
-function resolveReadingList(listRef: string, owner?: string): ChatReadingListRecord {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SCOPE NOTE: chats and reading lists are admin-scoped and fully enumerable
+// through `chats list` / `chats lists list`, so suggestions built from those
+// same local listings never reveal anything the caller could not already
+// list. Reading-list candidates honor the same optional `--owner` filter the
+// listing accepts. Contacts, however, enforce contactScope inside their own
+// domain; chats cannot cheaply reproduce that filter here, so
+// CONTACT_NOT_FOUND omits suggestions and points to the scoped listing.
+// ============================================================
+
+interface ContractCallSite {
+  op: string;
+  asJson?: boolean;
+}
+
+function failChatNotFound(op: string, chatRef: string, asJson?: boolean): never {
+  const candidates = dbListChats({ limit: 40 }).items.flatMap((item) => [
+    item.chat.id,
+    item.chat.title,
+    item.chat.normalizedChatId,
+  ]);
+  contractFail(op, "CHAT_NOT_FOUND", `Chat not found: ${chatRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the chat ref (see suggestions; list with: ravi chats list --json)",
+      suggestions: suggestSimilar(chatRef, candidates),
+    },
+  });
+}
+
+function failReadingListNotFound(
+  op: string,
+  listRef: string,
+  asJson?: boolean,
+  owner?: { type: string; id: string },
+): never {
+  // Same owner filter `chats lists list --owner` applies, so an owner-scoped
+  // miss only suggests lists from that owner.
+  const candidates = dbListChatReadingLists({
+    ownerType: owner?.type,
+    ownerId: owner?.id,
+    limit: 50,
+  }).items.flatMap((list) => [list.id, list.name]);
+  const ownerSuffix = owner ? ` (${owner.type}:${owner.id})` : "";
+  contractFail(op, "READING_LIST_NOT_FOUND", `Reading list not found: ${listRef}${ownerSuffix}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the list ref (see suggestions; list with: ravi chats lists list --json)",
+      suggestions: suggestSimilar(listRef, candidates),
+    },
+  });
+}
+
+function resolveReadingList(listRef: string, owner: string | undefined, site: ContractCallSite): ChatReadingListRecord {
   const parsedOwner = owner ? parseScopedRef(owner, defaultOwner()) : undefined;
   if (parsedOwner) {
     const list = dbFindChatReadingList({ ref: listRef, ownerType: parsedOwner.type, ownerId: parsedOwner.id });
-    if (!list) fail(`Reading list not found: ${listRef} (${parsedOwner.type}:${parsedOwner.id})`);
+    if (!list) failReadingListNotFound(site.op, listRef, site.asJson, parsedOwner);
     return list;
   }
 
@@ -231,14 +412,22 @@ function resolveReadingList(listRef: string, owner?: string): ChatReadingListRec
 
   try {
     const list = dbFindChatReadingList({ ref: listRef });
-    if (!list) fail(`Reading list not found: ${listRef}`);
+    if (!list) failReadingListNotFound(site.op, listRef, site.asJson);
     return list;
   } catch (err) {
+    // The not-found branch above throws a ContractError in agent context; the
+    // catch exists for dbFindChatReadingList's own errors (e.g. ambiguous
+    // refs), so the envelope must pass through untouched.
+    if (err instanceof ContractError) throw err;
     fail(err instanceof Error ? err.message : String(err));
   }
 }
 
-function resolveReadingListById(listId: string, owner?: string): ChatReadingListRecord {
+function resolveReadingListById(
+  listId: string,
+  owner: string | undefined,
+  site: ContractCallSite,
+): ChatReadingListRecord {
   const parsed = readingListIdArgSchema.safeParse(listId.trim());
   if (!parsed.success) {
     fail(
@@ -252,8 +441,7 @@ function resolveReadingListById(listId: string, owner?: string): ChatReadingList
     ownerId: parsedOwner?.id,
   });
   if (!list) {
-    const ownerSuffix = parsedOwner ? ` (${parsedOwner.type}:${parsedOwner.id})` : "";
-    fail(`Reading list not found: ${parsed.data}${ownerSuffix}`);
+    failReadingListNotFound(site.op, parsed.data, site.asJson, parsedOwner);
   }
   return list;
 }
@@ -264,15 +452,24 @@ function resolveInstanceId(instance?: string): string | undefined {
   return dbGetInstance(raw)?.instanceId ?? raw;
 }
 
-function resolveContactId(contactRef?: string): string | undefined {
+function resolveContactId(contactRef: string | undefined, site: ContractCallSite): string | undefined {
   const raw = contactRef?.trim();
   if (!raw) return undefined;
   const contact = getContact(raw);
-  if (!contact) fail(`Contact not found: ${raw}`);
+  if (!contact) {
+    contractFail(site.op, "CONTACT_NOT_FOUND", `Contact not found: ${raw}`, {
+      asJson: site.asJson,
+      details: { suggestedAction: "List visible contacts with: ravi contacts list --json" },
+    });
+  }
   return contact.id;
 }
 
-function resolveChatId(ref: string, input: { instance?: string; channel?: string; type?: string } = {}): string {
+function resolveChatId(
+  ref: string,
+  input: { instance?: string; channel?: string; type?: string },
+  site: ContractCallSite,
+): string {
   const direct = dbGetChat(ref.trim());
   if (direct) return direct.id;
   const chat = dbFindChatByRef({
@@ -281,7 +478,7 @@ function resolveChatId(ref: string, input: { instance?: string; channel?: string
     channel: input.channel,
     chatType: input.type as never,
   });
-  if (!chat) fail(`Chat not found: ${ref}`);
+  if (!chat) failChatNotFound(site.op, ref, site.asJson);
   return chat.id;
 }
 
@@ -307,6 +504,7 @@ function formatTime(ts?: number): string {
 }
 
 function actorLabel(message: ChatMessageWithSortKey): string {
+  if (message.actorId) return `actor:${message.actorId}`;
   if (message.contactId) return `contact:${message.contactId}`;
   if (message.agentId) return `agent:${message.agentId}`;
   if (message.normalizedSenderId) return message.normalizedSenderId;
@@ -324,6 +522,8 @@ function serializeChat(chat: ChatRecord, includeRaw?: boolean): Record<string, u
     id: chat.id,
     channel: chat.channel,
     instanceId: chat.instanceId,
+    actorId: chat.actorId,
+    agentId: chat.agentId,
     chatType: chat.chatType,
     title: chat.title,
     avatarUrl: chat.avatarUrl,
@@ -345,12 +545,16 @@ function serializeMessage(message: ChatMessageWithSortKey, includeRaw?: boolean)
   const base: Record<string, unknown> = {
     id: message.id,
     chatId: message.chatId,
+    clientMessageId: message.clientMessageId,
     actorType: message.actorType,
+    actorId: message.actorId,
     contactId: message.contactId,
     agentId: message.agentId,
     platformIdentityId: message.platformIdentityId,
     messageType: message.messageType,
     content: message.content,
+    revision: message.revision,
+    state: message.state,
     providerTimestamp: message.providerTimestamp,
     ingestedAt: message.ingestedAt,
     sortKey: message.sortKey,
@@ -416,6 +620,44 @@ function serializeReadingDelta(delta: ChatReadingDelta, includeRaw?: boolean): R
 })
 export class ChatsCommands {
   @Scope("admin")
+  @Command({
+    name: "ensure",
+    description: "Ensure one canonical direct chat between an actor and an agent",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agent",
+    action: "ensure-chat",
+    risk: "medium",
+    resourceId: "agentId",
+    requireConcreteResource: true,
+    resourceIdPattern: OPAQUE_ID_PATTERN_SOURCE,
+    input: ["actorId", "agentId", "clientRequestId"],
+  })
+  ensure(
+    @Arg("actorId", { description: "Canonical actor id", schema: opaqueIdArgSchema }) actorId: string,
+    @Arg("agentId", { description: "Target agent id", schema: opaqueIdArgSchema }) agentId: string,
+    @Arg("clientRequestId", { description: "Caller-owned request id", schema: opaqueIdArgSchema })
+    clientRequestId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = dbEnsureActorAgentChat({ actorId, agentId, clientRequestId });
+    const payload = {
+      disposition: result.created ? ("created" as const) : ("existing" as const),
+      clientRequestId: result.clientRequestId,
+      chat: serializeChat(result.chat),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `${result.created ? "Created" : "Found"} chat ${result.chat.id} for actor ${actorId} and agent ${agentId}.`,
+    );
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "list", aliases: ["recent"], description: "List recent canonical chats" })
   @CommandAccess({ kind: "read", resource: "chats", action: "list", risk: "low" })
   list(
@@ -431,19 +673,22 @@ export class ChatsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const instanceId = resolveInstanceId(instance);
     const page = dbListChats({
       instanceId,
       channel,
       chatType: type as never,
-      contactId: resolveContactId(contact),
+      contactId: resolveContactId(contact, { op: "chats list", asJson }),
       agentId: agent,
       query,
       limit,
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -465,7 +710,10 @@ export class ChatsCommands {
         includeRaw ? "--include-raw" : undefined,
       ],
     });
-    const items = page.items.map((item) => serializeChatListItem(item, includeRaw));
+    const items = pickFields(
+      page.items.map((item) => serializeChatListItem(item, includeRaw)),
+      fields,
+    );
     const payload = { total: page.total, pagination, items, chats: items };
     if (asJson) {
       printJson(payload);
@@ -489,7 +737,7 @@ export class ChatsCommands {
   }
 
   @Scope("admin")
-  @Command({ name: "read", aliases: ["messages"], description: "Read messages from one chat" })
+  @Command({ name: "read", description: "Read messages from one chat" })
   @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
   read(
     @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -503,9 +751,9 @@ export class ChatsCommands {
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
   ) {
-    const chatId = resolveChatId(chatRef, { instance, channel, type });
+    const chatId = resolveChatId(chatRef, { instance, channel, type }, { op: "chats read", asJson });
     const chat = dbGetChat(chatId);
-    if (!chat) fail(`Chat not found: ${chatRef}`);
+    if (!chat) failChatNotFound("chats read", chatRef, asJson);
     const page = dbListChatMessagesPage({
       chatId,
       limit,
@@ -546,6 +794,28 @@ export class ChatsCommands {
     for (const message of page.items) renderMessage(message);
     if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
     return payload;
+  }
+
+  @CliOnly()
+  @Scope("admin")
+  @Command({
+    name: "messages",
+    description: "Read messages from one chat (compatibility command; prefer chats read)",
+  })
+  @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
+  messages(
+    @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
+    @Option({ flags: "--instance <name-or-id>", description: "Resolve chat within an instance" }) instance?: string,
+    @Option({ flags: "--channel <channel>", description: "Resolve chat within a channel" }) channel?: string,
+    @Option({ flags: "--type <type>", description: "Resolve chat type: dm|group|thread|room" }) type?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching messages to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--order <asc|desc>", description: "Message order (default: asc)" }) order?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
+    includeRaw?: boolean,
+  ) {
+    return this.read(chatRef, instance, channel, type, limit, offset, order, asJson, includeRaw);
   }
 
   @Scope("admin")
@@ -607,6 +877,57 @@ export class ChatsCommands {
 }
 
 @Group({
+  name: "chats.messages",
+  description: "Create canonical chat messages",
+})
+export class ChatMessageCommands {
+  @Scope("admin")
+  @Command({
+    name: "create",
+    description: "Create one idempotent actor-authored message in a canonical chat",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "chat",
+    action: "create-message",
+    risk: "medium",
+    resourceId: "chatId",
+    requireConcreteResource: true,
+    resourceIdPattern: CHAT_ID_PATTERN_SOURCE,
+    input: ["chatId", "actorId", "clientMessageId", "content"],
+    redactions: ["content"],
+  })
+  create(
+    @Arg("chatId", { description: "Canonical chat id", schema: chatIdArgSchema }) chatId: string,
+    @Arg("actorId", { description: "Canonical actor id", schema: opaqueIdArgSchema }) actorId: string,
+    @Arg("clientMessageId", { description: "Caller-owned message id", schema: opaqueIdArgSchema })
+    clientMessageId: string,
+    @Arg("content", { description: "Message text", schema: messageContentArgSchema }) content: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = dbCreateCanonicalActorMessage({
+      chatId,
+      actorId,
+      clientMessageId,
+      content: { type: "text", text: content },
+      messageType: "text",
+    });
+    const payload = {
+      disposition: result.created ? ("created" as const) : ("duplicate" as const),
+      clientMessageId: result.clientMessageId,
+      messageId: result.canonicalMessageId,
+      message: serializeMessage(result.message),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`${result.created ? "Created" : "Found"} message ${result.canonicalMessageId} in chat ${chatId}.`);
+    return payload;
+  }
+}
+
+@Group({
   name: "chats.lists",
   description: "Manage chat reading lists and cursors",
 })
@@ -620,6 +941,8 @@ export class ChatReadingListCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching lists to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const parsedOwner = owner ? parseScopedRef(owner, defaultOwner()) : undefined;
     const page = dbListChatReadingLists({
@@ -630,6 +953,7 @@ export class ChatReadingListCommands {
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "lists", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -637,7 +961,8 @@ export class ChatReadingListCommands {
       total: page.total,
       options: ["--owner", owner, includeArchived ? "--include-archived" : undefined],
     });
-    const payload = { total: page.total, pagination, lists: page.items, items: page.items };
+    const listRows = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, lists: listRows, items: listRows };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -698,7 +1023,7 @@ FONTES
     owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingListById(listId, owner);
+    const list = resolveReadingListById(listId, owner, { op: "chats lists show", asJson });
     const inspection = inspectChatReadingList(list);
     const publicResult = publicInspection(inspection);
     const payload = { list: publicResult.list, validation: publicResult.validation, current: publicResult.current };
@@ -767,7 +1092,7 @@ FONTES
     owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingListById(listId, owner);
+    const list = resolveReadingListById(listId, owner, { op: "chats lists preview", asJson });
     const preview = previewChatReadingListMembers(list);
     const payload = { list: publicReadingList(list), preview: publicPreview(preview) };
     if (asJson) {
@@ -835,8 +1160,8 @@ FONTES
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
-    const chatId = resolveChatId(chatRef, { instance, channel });
+    const list = resolveReadingList(listRef, owner, { op: "chats lists add", asJson });
+    const chatId = resolveChatId(chatRef, { instance, channel }, { op: "chats lists add", asJson });
     const member = dbAddChatToReadingList({ listId: list.id, chatId, reason, priority });
     const chat = dbGetChat(chatId);
     const payload = { list, member, chat: chat ? serializeChat(chat, includeRaw) : null };
@@ -850,7 +1175,7 @@ FONTES
 
   @Scope("admin")
   @Command({ name: "remove", description: "Remove a chat from a reading list without deleting cursor history" })
-  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "medium" })
   remove(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -859,8 +1184,8 @@ FONTES
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
   ) {
-    const list = resolveReadingList(listRef, owner);
-    const chatId = resolveChatId(chatRef, { instance, channel });
+    const list = resolveReadingList(listRef, owner, { op: "chats lists remove", asJson });
+    const chatId = resolveChatId(chatRef, { instance, channel }, { op: "chats lists remove", asJson });
     const removed = dbRemoveChatFromReadingList({ listId: list.id, chatId });
     const payload = { list, chatId, removed };
     if (asJson) {
@@ -886,8 +1211,10 @@ FONTES
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
-    const list = resolveReadingList(listRef, owner);
+    const list = resolveReadingList(listRef, owner, { op: "chats lists members", asJson });
     const parsedReader = parseScopedRef(reader, defaultReader());
     const page = dbListChatReadingListMembers({
       listId: list.id,
@@ -897,6 +1224,7 @@ FONTES
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "lists", "members", listRef],
       limit: page.limit,
       offset: page.offset,
@@ -904,7 +1232,10 @@ FONTES
       total: page.total,
       options: ["--reader", reader, "--owner", owner, includeRaw ? "--include-raw" : undefined],
     });
-    const items = page.items.map((item) => serializeReadingListMemberItem(item, includeRaw));
+    const items = pickFields(
+      page.items.map((item) => serializeReadingListMemberItem(item, includeRaw)),
+      fields,
+    );
     const payload = { list, reader: parsedReader, total: page.total, pagination, members: items, items };
     if (asJson) {
       printJson(payload);
@@ -960,7 +1291,7 @@ FONTES
     owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingListById(listId, owner);
+    const list = resolveReadingListById(listId, owner, { op: "chats lists recompute", asJson });
     const recompute = recomputeChatReadingListMembers(list);
     const payload = { list: publicReadingList(recompute.list), recompute: publicRecompute(recompute) };
     if (asJson) {
@@ -975,7 +1306,7 @@ FONTES
 
   @Scope("admin")
   @Command({ name: "delta", description: "Read what changed in a chat since this list reader cursor" })
-  @CommandAccess({ kind: "read", resource: "chats.lists", action: "delta", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "delta", risk: "low" })
   delta(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -991,8 +1322,8 @@ FONTES
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
-    const chatId = resolveChatId(chatRef, { instance, channel });
+    const list = resolveReadingList(listRef, owner, { op: "chats lists delta", asJson });
+    const chatId = resolveChatId(chatRef, { instance, channel }, { op: "chats lists delta", asJson });
     const parsedReader = parseScopedRef(reader, defaultReader());
     const delta = dbGetChatReadingDelta({
       listId: list.id,
@@ -1047,8 +1378,8 @@ FONTES
     @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
     includeRaw?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
-    const chatId = resolveChatId(chatRef, { instance, channel });
+    const list = resolveReadingList(listRef, owner, { op: "chats lists mark-read", asJson });
+    const chatId = resolveChatId(chatRef, { instance, channel }, { op: "chats lists mark-read", asJson });
     const parsedReader = parseScopedRef(reader, defaultReader());
     const cursor = dbMarkChatReadingCursor({
       listId: list.id,
@@ -1071,8 +1402,13 @@ FONTES
 
 declareCommandReturns(ChatsCommands, {
   backfillProviderTimestamps: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  read: commandEnvelopeReturnSchema,
+  ensure: chatsEnsureReturnSchema,
+  list: chatsListReturnSchema,
+  read: chatsReadReturnSchema,
+});
+
+declareCommandReturns(ChatMessageCommands, {
+  create: chatsMessageCreateReturnSchema,
 });
 
 declareCommandReturns(ChatReadingListCommands, {

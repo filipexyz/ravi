@@ -1,12 +1,10 @@
+import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
-import { RUNTIME_BUILTIN_TOOL_HOOK_NAMES } from "../cli/tool-registry.js";
 import { logger } from "../utils/logger.js";
+import { ensureCodexBashHookConfig } from "./codex-hooks.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -18,7 +16,11 @@ import {
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
-import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
+import {
+  buildCodexSkillVisibilitySnapshot,
+  filterSkillNamesByAllowlist,
+  markLoadedFromInstructionSources,
+} from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
   RuntimeApprovalHandler,
@@ -58,14 +60,12 @@ import type {
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
-const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_TOOL_HOOK_STATUS = "ravi codex native tool permission gate";
-const RAVI_CODEX_TOOL_HOOK_MATCHER = buildCodexNativeToolHookMatcher();
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
 const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
@@ -83,6 +83,9 @@ const CODEX_SHELL_ENV_INCLUDE_ONLY = [
   "LC_*",
 ];
 const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
+  "goal.get",
+  "goal.set",
+  "goal.clear",
   "thread.list",
   "thread.read",
   "thread.rollback",
@@ -119,9 +122,13 @@ interface CodexCliTurnRequest {
   model?: string;
   effort?: string;
   prompt: string;
+  clientMessageId?: string;
+  replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
+  allowedSkills?: string[];
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
   handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
@@ -141,6 +148,7 @@ interface CodexCliTurnHandle {
 }
 
 interface CodexCliTransport {
+  initializeControl?(input: CodexCliTurnRequest): Promise<void>;
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
@@ -173,6 +181,8 @@ interface ToolCompletedEvent {
 type PendingRequest = {
   resolve(value: Record<string, unknown>): void;
   reject(error: unknown): void;
+  timeout?: ReturnType<typeof setTimeout>;
+  onResponse?(value: Record<string, unknown>): void;
 };
 
 interface AppServerApprovalTurn {
@@ -187,7 +197,6 @@ interface PendingDynamicToolResult {
 
 interface CodexSkillVisibilityByCwd {
   syncedSkillNames: string[];
-  snapshot: RuntimeSkillVisibilitySnapshot;
 }
 
 export interface CreateCodexRuntimeProviderOptions {
@@ -242,6 +251,10 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           availability: "codex-skills",
           loadedState: "instruction-sources",
         },
+        modelBroker: {
+          protocols: ["openai-responses"],
+          principalIsolation: "none",
+        },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -255,18 +268,43 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      ensureGlobalCodexBashHookConfig();
-      const syncedSkills = syncSkills(input.plugins ?? []);
+      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
+      ensureCodexBashHookConfig(materialized?.configDir);
+      const syncedSkills = materialized
+        ? syncCodexSkills(input.plugins ?? [], {
+            codexSkillsDir: join(materialized.configDir, "skills"),
+            manifestPath: join(materialized.configDir, ".ravi-skills-manifest.json"),
+          })
+        : syncSkills(input.plugins ?? []);
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
-      skillVisibilityByCwd.set(input.cwd, {
-        syncedSkillNames,
-        snapshot: buildCodexSkillVisibilitySnapshot(syncedSkillNames),
-      });
-      return input.hostServices
-        ? {
-            startRequest: createCodexRuntimeStartRequest(input.hostServices),
-          }
-        : {};
+      skillVisibilityByCwd.set(input.cwd, { syncedSkillNames });
+      return {
+        ...(materialized ? { env: materialized.env } : {}),
+        ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
+      };
+    },
+    async controlSession(input, request) {
+      const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
+      try {
+        if (!transport.initializeControl || !transport.control)
+          throw new Error("Stored-session control is unavailable");
+        await transport.initializeControl({
+          cwd: input.cwd,
+          env: {
+            ...process.env,
+            ...input.env,
+            ...(typeof input.sessionParams?.codexHome === "string"
+              ? { CODEX_HOME: input.sessionParams.codexHome }
+              : {}),
+          },
+          resume: input.sessionId,
+          prompt: "",
+          systemPromptAppend: "",
+        });
+        return await transport.control({ ...request, threadId: input.sessionId });
+      } finally {
+        await transport.close?.();
+      }
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
@@ -281,20 +319,18 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         activeTurn: null,
         interrupted: false,
       };
-      const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
+      const allSyncedSkillNames = skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [];
+      const syncedSkillNames = input.allowedSkills?.length
+        ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
+        : allSyncedSkillNames;
+      const skillVisibility = buildCodexSkillVisibilitySnapshot(syncedSkillNames);
 
       return {
         provider: "codex",
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
         concurrentInputStrategy: "interrupt",
         skillVisibility,
-        events: normalizeCodexEvents(
-          input,
-          transport,
-          defaultModel,
-          state,
-          skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
-          closeTransport,
-        ),
+        events: normalizeCodexEvents(input, transport, defaultModel, state, syncedSkillNames, closeTransport),
         interrupt: async () => {
           if (!state.activeTurn) {
             return;
@@ -332,6 +368,41 @@ function createCodexRuntimeStartRequest(
   return {
     approveRuntimeRequest: createCodexApprovalHandler(hostServices),
   };
+}
+
+export function buildCodexDisabledSkillConfig(
+  inventory: unknown,
+  cwd: string,
+  allowedSkills: readonly string[],
+): Array<{ path: string; enabled: false }> {
+  const root = asRecord(inventory);
+  const rows = Array.isArray(root?.data) ? root.data : [];
+  const targetCwd = resolve(cwd);
+  const row = rows
+    .map(asRecord)
+    .find((candidate) => typeof candidate?.cwd === "string" && resolve(candidate.cwd) === targetCwd);
+  if (!row || !Array.isArray(row.skills)) {
+    throw new Error("Codex skill inventory is unavailable for allowlist enforcement.");
+  }
+
+  const entries = row.skills.map((entry) => {
+    const skill = asRecord(entry);
+    const path = firstString(skill?.path);
+    const name = firstString(skill?.name);
+    if (!path || !name) {
+      throw new Error("Codex skill inventory contains an invalid entry.");
+    }
+    return { path, identity: basename(dirname(path)) };
+  });
+  const selectedNames = new Set(
+    filterSkillNamesByAllowlist(
+      entries.map((entry) => entry.identity),
+      allowedSkills,
+    ),
+  );
+  return entries.flatMap((entry) =>
+    selectedNames.has(entry.identity) ? [] : [{ path: entry.path, enabled: false as const }],
+  );
 }
 
 function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {
@@ -555,7 +626,11 @@ async function* normalizeCodexEvents(
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
   let forkFromSessionId = input.forkSession ? previousSessionId : undefined;
   const outerAbortSignal = input.abortController.signal;
-  const systemPromptAppend = await buildCodexSystemPromptAppend(input.cwd, input.systemPromptAppend, syncedSkillNames);
+  const systemPromptAppend = await buildCodexSystemPromptAppend(
+    input.cwd,
+    input.systemPromptAppend,
+    input.omitAdvertisedSkillCatalog ? [] : syncedSkillNames,
+  );
   const effort = toCodexRuntimeEffort(input.effort);
 
   try {
@@ -575,9 +650,13 @@ async function* normalizeCodexEvents(
         model: resolveCodexModelArg(input.model, defaultModel),
         effort,
         prompt: promptText,
+        clientMessageId: promptMessage.clientMessageId,
+        replay: promptMessage.replay,
+        terminalReplayAllowed: promptMessage.terminalReplayAllowed,
         resume: previousSessionId,
         forkFrom: forkFromSessionId,
         systemPromptAppend,
+        allowedSkills: input.allowedSkills,
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
@@ -605,7 +684,7 @@ async function* normalizeCodexEvents(
             threadId: turnSessionId,
             turnId: activeTurnId,
           });
-          if (event.type !== "agent_message.delta") {
+          if (event.type !== "agent_message.delta" && event.type !== "tool.progress") {
             yield { type: "provider.raw", rawEvent, metadata };
           }
 
@@ -614,12 +693,29 @@ async function* normalizeCodexEvents(
             yield { type: "status", status, rawEvent, metadata };
           }
 
+          if (event.type === "thread.goal.updated") {
+            yield { type: "goal.updated", goal: normalizeCodexGoal(event.goal), metadata };
+            continue;
+          }
+
           if (event.type === "agent_message.delta") {
             const delta = firstString(event.delta);
             if (delta) {
               yield {
                 type: "text.delta",
                 text: delta,
+                metadata,
+              };
+            }
+            continue;
+          }
+
+          if (event.type === "tool.progress") {
+            const toolUseId = firstString(event.tool_use_id, event.toolUseId, event.item_id, event.itemId);
+            if (toolUseId) {
+              yield {
+                type: "tool.progress",
+                toolUseId,
                 metadata,
               };
             }
@@ -793,7 +889,7 @@ async function* normalizeCodexEvents(
             const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
-              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility),
+              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility, input.env?.CODEX_HOME),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -836,6 +932,7 @@ async function* normalizeCodexEvents(
         }
 
         const stderrMessage = result.stderr.trim();
+        const missingTerminalEvent = !lastErrorMessage && !stderrMessage;
         const metadata = buildCodexEventMetadata(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
@@ -845,6 +942,7 @@ async function* normalizeCodexEvents(
             lastErrorMessage ??
             (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
           recoverable: true,
+          failureKind: missingTerminalEvent ? "transport" : undefined,
           metadata,
         });
         if (terminal) {
@@ -897,15 +995,22 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
     settled: boolean;
     interruptRequested: boolean;
+    interruptPromise?: Promise<void>;
+    turnStartedEmitted: boolean;
+    goalContinuation?: CodexCliEvent;
+    completedNativeTurnIds: Set<string>;
+    chainUsage?: CodexCliUsage;
   };
 
   let child: ReturnType<typeof spawn> | null = null;
   let transport: CodexTransport | null = null;
   let closed = true;
+  let metadataControlOnly = false;
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
   let currentInstructionSources: string[] = [];
+  let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
@@ -913,8 +1018,37 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let bootstrapPromise: Promise<void> | null = null;
   let activeTurn: AppServerTurnState | null = null;
   let activeSpawnEnvSignature: string | null = null;
+  let activeHookConfigSignature: string | null = null;
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
+  let resumedThreadResponse: Record<string, unknown> | null = null;
+  let bufferingThreadNotifications = false;
+  const bufferedThreadNotifications: CodexJsonRpcMessage[] = [];
+
+  // The app-server broadcasts notifications for the top-level turn and every
+  // multi-agent child over the same connection. Child events must never mutate
+  // or complete the canonical Ravi turn that owns provider session continuity.
+  const notificationThreadId = (params: Record<string, unknown>): string | undefined =>
+    firstString(params.threadId, params.thread_id);
+
+  const notificationTurnId = (params: Record<string, unknown>): string | undefined =>
+    firstString(params.turnId, params.turn_id, asRecord(params.turn)?.id);
+
+  const notificationMatchesActiveTurn = (turn: AppServerTurnState, params: Record<string, unknown>): boolean => {
+    const eventThreadId = notificationThreadId(params);
+    const activeThreadId = turn.threadId ?? currentThreadId;
+    if (eventThreadId && activeThreadId && eventThreadId !== activeThreadId) {
+      return false;
+    }
+
+    const eventTurnId = notificationTurnId(params);
+    if (eventTurnId && turn.completedNativeTurnIds.has(eventTurnId)) return false;
+    if (eventTurnId && turn.turnId && eventTurnId !== turn.turnId) {
+      return false;
+    }
+
+    return true;
+  };
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -954,12 +1088,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const rejectPendingRequests = (error: Error) => {
     for (const pending of pendingRequests.values()) {
+      if (pending.timeout) {
+        clearTimeout(pending.timeout);
+      }
       pending.reject(error);
     }
     pendingRequests.clear();
   };
 
-  const handleChildTermination = (exitCode: number | null, signal: NodeJS.Signals | null, error?: Error) => {
+  const handleChildTermination = (
+    expectedTransport: CodexTransport,
+    exitCode: number | null,
+    signal: NodeJS.Signals | null,
+    error?: Error,
+  ) => {
+    // A planned env refresh replaces the process and transport. Late close or
+    // websocket callbacks from the retired generation must not tear down or
+    // fail the turn already owned by its replacement.
+    if (transport !== expectedTransport) {
+      return;
+    }
     if (closed && child === null && transport === null) {
       // Already cleaned up — guard against duplicate close/error events from
       // both the child process and the websocket layer.
@@ -991,12 +1139,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     child = null;
     activeSpawnEnvSignature = null;
+    activeHookConfigSignature = null;
   };
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
-    if (shouldMaterializeCodexHookForCommand(command)) {
-      ensureGlobalCodexBashHookConfig();
-    }
+    const hookResult = shouldMaterializeCodexHookForCommand(command)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      : null;
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
     // diagnosing silent hangs in the JSON-RPC layer.
@@ -1012,6 +1161,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
+        if (transport !== newTransport || intentionalChildRestart) {
+          return;
+        }
         try {
           const parsed = JSON.parse(line) as CodexJsonRpcMessage;
           routeAppServerMessage(parsed);
@@ -1023,6 +1175,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
       },
       onTransportError: (error) => {
+        if (transport !== newTransport || intentionalChildRestart) {
+          return;
+        }
         if (activeTurn) {
           settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
         }
@@ -1033,19 +1188,21 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     transport = newTransport;
     child = newTransport.child;
     activeSpawnEnvSignature = buildCodexAppServerEnvSignature(input.env);
+    activeHookConfigSignature = hookResult?.signature ?? null;
     closed = false;
     nextRequestId = 1;
     pendingRequests = new Map();
+    bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
     clearForcedKillTimer();
 
     log.info("codex spawn", { pid: newTransport.child.pid, transport: newTransport.kind });
 
     newTransport.child.on("error", (error) => {
-      handleChildTermination(1, null, error);
+      handleChildTermination(newTransport, 1, null, error);
     });
 
     newTransport.child.on("close", (exitCode, signal) => {
-      handleChildTermination(exitCode, signal);
+      handleChildTermination(newTransport, exitCode, signal);
     });
 
     // For WebSocket transport, we must wait for the listener to be ready
@@ -1053,7 +1210,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     try {
       await newTransport.ready;
     } catch (error) {
-      handleChildTermination(1, null, error instanceof Error ? error : new Error(String(error)));
+      handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   };
@@ -1065,18 +1222,43 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     await transport.send(JSON.stringify(message));
   }
 
-  function sendRequest(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  function sendRequest(
+    method: string,
+    params: Record<string, unknown>,
+    options: { timeoutMs?: number; onResponse?(value: Record<string, unknown>): void } = {},
+  ): Promise<Record<string, unknown>> {
     const id = String(nextRequestId++);
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      pendingRequests.set(id, { resolve, reject });
+      const pending: PendingRequest = { resolve, reject, onResponse: options.onResponse };
+      if (options.timeoutMs !== undefined) {
+        pending.timeout = setTimeout(() => {
+          if (pendingRequests.get(id) !== pending) {
+            return;
+          }
+          pendingRequests.delete(id);
+          reject(new Error(`Codex app-server request timed out: ${method}`));
+        }, options.timeoutMs);
+        pending.timeout.unref?.();
+      }
+      pendingRequests.set(id, pending);
       void writeJsonRpc({ jsonrpc: "2.0", id, method, params }).catch((error) => {
-        pendingRequests.delete(id);
+        const current = pendingRequests.get(id);
+        if (current === pending) {
+          pendingRequests.delete(id);
+          if (pending.timeout) {
+            clearTimeout(pending.timeout);
+          }
+        }
         reject(error);
       });
     });
   }
 
-  async function handleServerRequest(id: string, method: string, params: Record<string, unknown>): Promise<void> {
+  async function handleServerRequest(
+    id: string | number,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<void> {
     if (isCodexApprovalRequestMethod(method)) {
       const request = buildRuntimeApprovalRequest(method, params, activeTurn, currentThreadId);
       activeTurn?.queue.push(buildApprovalTraceEvent("approval.requested", request));
@@ -1119,7 +1301,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
-  async function handleDynamicToolCall(id: string, params: Record<string, unknown>): Promise<void> {
+  async function handleDynamicToolCall(id: string | number, params: Record<string, unknown>): Promise<void> {
     const request = buildRuntimeDynamicToolCallRequest(params, activeTurn, currentThreadId);
     activeTurn?.queue.push(buildDynamicToolTraceEvent("item.started", request));
 
@@ -1164,29 +1346,39 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     if (turn.settled || !turn.turnId) {
       return;
     }
+    if (turn.interruptPromise) {
+      return turn.interruptPromise;
+    }
 
     const threadId = turn.threadId ?? currentThreadId;
     if (!threadId) {
       return;
     }
 
-    try {
-      await sendRequest("turn/interrupt", {
-        threadId,
-        turnId: turn.turnId,
-      });
-    } catch {
-      if (!child || closed) {
-        return;
-      }
-      signalCodexTransportProcess(child, "SIGINT");
-      forcedKillTimer = setTimeout(() => {
-        if (!closed && child) {
-          signalCodexTransportProcess(child, "SIGKILL");
+    turn.interruptPromise = (async () => {
+      try {
+        await sendRequest(
+          "turn/interrupt",
+          {
+            threadId,
+            turnId: turn.turnId,
+          },
+          { timeoutMs: INTERRUPT_GRACE_MS },
+        );
+      } catch {
+        if (!child || closed) {
+          return;
         }
-      }, INTERRUPT_GRACE_MS);
-      forcedKillTimer.unref?.();
-    }
+        signalCodexTransportProcess(child, "SIGINT");
+        forcedKillTimer = setTimeout(() => {
+          if (!closed && child) {
+            signalCodexTransportProcess(child, "SIGKILL");
+          }
+        }, INTERRUPT_GRACE_MS);
+        forcedKillTimer.unref?.();
+      }
+    })();
+    return turn.interruptPromise;
   };
 
   const buildRuntimeControlState = (): RuntimeControlState => ({
@@ -1257,6 +1449,55 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   const handleRuntimeControl = async (request: RuntimeControlRequest): Promise<RuntimeControlResult> => {
     try {
       switch (request.operation) {
+        case "goal.get":
+        case "goal.set":
+        case "goal.clear": {
+          const threadId = resolveControlThreadId(request);
+          const activates =
+            request.operation === "goal.set" &&
+            (request.goal?.status === "active" || (!!request.goal?.objective && request.goal.status === undefined));
+          if (activates && !metadataControlOnly && (!activeTurn || activeTurn.settled)) {
+            return {
+              ...buildRuntimeControlError(request, new Error("Goal activation requires a managed runtime wake")),
+              data: { execution: "requires_managed_wake" },
+            };
+          }
+          if (request.operation === "goal.set" && request.goal?.createOnly) {
+            const existing = await sendRequest("thread/goal/get", { threadId });
+            if (!("goal" in existing)) throw new Error("Codex did not confirm the stored goal");
+            if (existing.goal)
+              return {
+                ...buildRuntimeControlSuccess(request, { changed: false }),
+                goal: normalizeCodexGoal(existing.goal),
+              };
+          }
+          const update = request.goal;
+          if (request.operation === "goal.set" && !update) throw new Error("goal.set requires a goal update");
+          const data = await sendRequest(
+            request.operation === "goal.get"
+              ? "thread/goal/get"
+              : request.operation === "goal.clear"
+                ? "thread/goal/clear"
+                : "thread/goal/set",
+            {
+              threadId,
+              ...(request.operation === "goal.set"
+                ? {
+                    ...(update?.objective !== undefined ? { objective: update.objective } : {}),
+                    ...(update?.status !== undefined ? { status: codexGoalStatus(update.status) } : {}),
+                    ...(update?.tokenBudget !== undefined ? { tokenBudget: update.tokenBudget } : {}),
+                  }
+                : {}),
+            },
+          );
+          if (request.operation !== "goal.clear" && !("goal" in data))
+            throw new Error("Codex did not confirm the goal operation");
+          const goal = request.operation === "goal.clear" ? null : normalizeCodexGoal(data.goal);
+          if (request.operation === "goal.set" && !goal) throw new Error("Codex did not confirm the goal update");
+          currentGoalStatus = goal ? codexGoalStatus(goal.status) : undefined;
+          return { ...buildRuntimeControlSuccess(request, { changed: request.operation !== "goal.get" }), goal };
+        }
+
         case "thread.list": {
           const data = await sendRequest("thread/list", {
             cursor: request.cursor ?? null,
@@ -1367,11 +1608,33 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   };
 
-  function routeAppServerMessage(message: CodexJsonRpcMessage): void {
+  const emitTurnStarted = (turn: AppServerTurnState, rawTurn: Record<string, unknown>, threadId?: string): void => {
+    turn.threadId = firstString(threadId, turn.threadId, currentThreadId);
+    turn.turnId = firstString(rawTurn.id, turn.turnId);
+    if (turn.turnStartedEmitted || !turn.turnId) {
+      return;
+    }
+    turn.turnStartedEmitted = true;
+    turn.goalContinuation = undefined;
+    turn.queue.push({
+      type: "turn.started",
+      source: "codex.app-server",
+      thread_id: turn.threadId,
+      turn_id: turn.turnId,
+      turn: normalizeAppServerTurn(rawTurn),
+    });
+    if (turn.interruptRequested) {
+      void requestTurnInterrupt(turn);
+    }
+  };
+
+  function routeAppServerMessage(message: CodexJsonRpcMessage, skipNotificationBuffer = false): void {
     if (typeof message.id === "string" || typeof message.id === "number") {
-      const requestId = String(message.id);
       if (typeof message.method === "string") {
-        void handleServerRequest(requestId, message.method, asRecord(message.params) ?? {}).catch((error) => {
+        // JSON-RPC request ids are type-sensitive in the Codex app-server
+        // callback registry. Preserve the original string/number representation
+        // when replying to a server-initiated request.
+        void handleServerRequest(message.id, message.method, asRecord(message.params) ?? {}).catch((error) => {
           if (activeTurn) {
             settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
@@ -1379,13 +1642,23 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         return;
       }
 
+      const requestId = String(message.id);
       const pending = pendingRequests.get(requestId);
       if (pending) {
         pendingRequests.delete(requestId);
+        if (pending.timeout) {
+          clearTimeout(pending.timeout);
+        }
         if (message.error) {
           pending.reject(new Error(extractJsonRpcError(message.error) ?? "Codex app-server request failed"));
         } else {
-          pending.resolve(asRecord(message.result) ?? {});
+          const result = asRecord(message.result) ?? {};
+          try {
+            pending.onResponse?.(result);
+            pending.resolve(result);
+          } catch (error) {
+            pending.reject(error);
+          }
         }
       }
       return;
@@ -1396,12 +1669,36 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     if (!method) {
       return;
     }
+    if (!skipNotificationBuffer && (bootstrapPromise || bufferingThreadNotifications)) {
+      bufferedThreadNotifications.push(message);
+      return;
+    }
 
     const turn = activeTurn;
 
     switch (method) {
-      case "error": {
+      case "thread/goal/updated":
+      case "thread/goal/cleared": {
+        // Goals are thread-scoped. Their turnId may refer to the predecessor,
+        // so do not apply the active-turn filter to goal state notifications.
+        if (notificationThreadId(params) !== (turn?.threadId ?? currentThreadId)) break;
+        currentGoalStatus = method === "thread/goal/cleared" ? undefined : firstString(asRecord(params.goal)?.status);
         if (turn) {
+          turn.queue.push({
+            type: "thread.goal.updated",
+            thread_id: turn.threadId,
+            goal: method === "thread/goal/cleared" ? null : params.goal,
+            goal_status: currentGoalStatus,
+          });
+          if (currentGoalStatus !== "active" && turn.goalContinuation) {
+            turn.queue.push(turn.goalContinuation);
+            settleTurn(turn);
+          }
+        }
+        break;
+      }
+      case "error": {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.queue.push({
             type: "error",
             message: extractAppServerErrorMessage(params) ?? "Codex app-server error",
@@ -1413,6 +1710,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         const thread = normalizeAppServerThread(params.thread);
         const threadId = thread?.id;
         if (threadId) {
+          const activeThreadId = turn?.threadId ?? currentThreadId;
+          if (activeThreadId && threadId !== activeThreadId) {
+            break;
+          }
           currentThreadId = threadId;
           if (turn) {
             turn.threadId = threadId;
@@ -1430,41 +1731,34 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "turn/started": {
-        if (turn) {
-          const startedTurn = normalizeAppServerTurn(params.turn);
-          turn.threadId = firstString(params.threadId, turn.threadId, currentThreadId);
-          turn.turnId = firstString(startedTurn?.id, turn.turnId);
-          turn.queue.push({
-            type: "turn.started",
-            source: "codex.app-server",
-            thread_id: turn.threadId,
-            turn_id: turn.turnId,
-            turn: startedTurn,
-          });
-          if (turn.interruptRequested) {
-            void requestTurnInterrupt(turn);
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
+          const startedTurn = asRecord(params.turn);
+          if (startedTurn) {
+            emitTurnStarted(turn, startedTurn, firstString(params.threadId));
           }
         }
         break;
       }
       case "item/started": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const item = normalizeAppServerItem(params.item);
           if (item) {
+            const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+            const turnId = firstString(notificationTurnId(params), turn.turnId);
             if (item.type === "context_compaction") {
               turn.queue.push({
                 type: "thread.compaction.started",
                 source: "codex.app-server",
-                thread_id: turn.threadId ?? currentThreadId,
-                turn_id: turn.turnId,
+                thread_id: threadId,
+                turn_id: turnId,
                 item,
               });
             }
             turn.queue.push({
               type: "item.started",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: threadId,
+              turn_id: turnId,
               item,
             });
           }
@@ -1472,22 +1766,24 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/completed": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const item = applyPendingDynamicToolResult(normalizeAppServerItem(params.item), pendingDynamicToolResults);
           if (item) {
+            const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+            const turnId = firstString(notificationTurnId(params), turn.turnId);
             turn.queue.push({
               type: "item.completed",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: threadId,
+              turn_id: turnId,
               item,
             });
             if (item.type === "context_compaction") {
               turn.queue.push({
                 type: "thread.compacted",
                 source: "codex.app-server",
-                thread_id: turn.threadId ?? currentThreadId,
-                turn_id: turn.turnId,
+                thread_id: threadId,
+                turn_id: turnId,
                 item,
               });
             }
@@ -1496,14 +1792,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/agentMessage/delta": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const delta = firstString(params.delta);
           if (delta) {
             turn.queue.push({
               type: "agent_message.delta",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: firstString(notificationThreadId(params), turn.threadId, currentThreadId),
+              turn_id: firstString(notificationTurnId(params), turn.turnId),
               delta,
               item_id: firstString(params.itemId),
             });
@@ -1511,57 +1807,100 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
         break;
       }
+      case "item/commandExecution/outputDelta":
+      case "item/commandExecution/terminalInteraction":
+      case "item/mcpToolCall/progress": {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
+          const toolUseId = firstString(params.itemId);
+          if (toolUseId) {
+            // Output and progress content can be large or sensitive. The host
+            // only needs an identity-scoped liveness signal.
+            turn.queue.push({
+              type: "tool.progress",
+              native_event: method,
+              source: "codex.app-server",
+              thread_id: firstString(notificationThreadId(params), turn.threadId, currentThreadId),
+              turn_id: firstString(notificationTurnId(params), turn.turnId),
+              item_id: toolUseId,
+              tool_use_id: toolUseId,
+            });
+          }
+        }
+        break;
+      }
       case "thread/tokenUsage/updated": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.lastUsage = extractAppServerUsage(params.tokenUsage);
         }
         break;
       }
       case "thread/compacted": {
-        if (turn) {
-          const threadId = firstString(params.threadId, params.thread_id, turn.threadId, currentThreadId);
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
+          const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
           turn.queue.push({
             type: "thread.compacted",
             source: "codex.app-server",
             thread_id: threadId,
-            turn_id: turn.turnId,
+            turn_id: firstString(notificationTurnId(params), turn.turnId),
           });
         }
         break;
       }
       case "turn/completed": {
-        if (!turn) {
+        if (!turn || !notificationMatchesActiveTurn(turn, params)) {
           break;
         }
 
         const completedTurn = asRecord(params.turn);
+        const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+        const turnId = firstString(notificationTurnId(params), turn.turnId);
         const status = typeof completedTurn?.status === "string" ? completedTurn.status : "completed";
         if (status === "completed") {
-          turn.queue.push({
+          const usage: CodexCliUsage = {
+            input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.lastUsage?.input_tokens),
+            output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.lastUsage?.output_tokens),
+            cached_input_tokens:
+              toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.lastUsage?.cached_input_tokens),
+          };
+          const terminal: CodexCliEvent = {
             type: "turn.completed",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
-            usage: turn.lastUsage ?? {},
+            usage,
             model: resolvedModel,
             model_provider: resolvedModelProvider,
             instruction_sources: currentInstructionSources,
-          });
+          };
+          if (currentGoalStatus === "active" && !turn.interruptRequested) {
+            // Codex owns automatic goal continuation. Keep the logical Ravi
+            // delivery active across physical turns; never inject a new prompt.
+            turn.queue.push({ ...terminal, type: "turn.goal_continuation" });
+            turn.goalContinuation = terminal;
+            if (turnId) turn.completedNativeTurnIds.add(turnId);
+            turn.chainUsage = usage;
+            turn.lastUsage = undefined;
+            turn.turnId = undefined;
+            turn.turnStartedEmitted = false;
+            pendingDynamicToolResults.clear();
+            break;
+          }
+          turn.queue.push(terminal);
         } else if (status === "interrupted") {
           turn.queue.push({
             type: "turn.interrupted",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
           });
         } else {
           turn.queue.push({
             type: "turn.failed",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
           });
@@ -1575,12 +1914,25 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
+  const flushBufferedThreadNotifications = (): void => {
+    const notifications = bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+    for (const notification of notifications) {
+      routeAppServerMessage(notification, true);
+    }
+  };
+
   async function bootstrapThread(
     input: CodexCliTurnRequest,
     resumeThreadId: string | null,
     forkThreadId: string | null = null,
+    forkBeforeTurnId: string | null = null,
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
+    const config: Record<string, unknown> = { model_reasoning_effort: effort };
+    if (input.allowedSkills?.length) {
+      const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
+      config["skills.config"] = buildCodexDisabledSkillConfig(inventory, input.cwd, input.allowedSkills);
+    }
     if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.
       currentThreadId = undefined;
@@ -1589,6 +1941,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const threadResponse = forkThreadId
       ? await sendRequest("thread/fork", {
           threadId: forkThreadId,
+          beforeTurnId: forkBeforeTurnId,
           path: null,
           model: null,
           modelProvider: null,
@@ -1597,7 +1950,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           approvalPolicy: "never",
           approvalsReviewer: null,
           sandbox: CODEX_APP_SERVER_SANDBOX,
-          config: { model_reasoning_effort: effort },
+          config,
           baseInstructions: null,
           developerInstructions: null,
           ephemeral: false,
@@ -1611,7 +1964,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
             dynamicTools: null,
@@ -1624,7 +1977,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: input.cwd,
             approvalPolicy: "never",
             sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: { model_reasoning_effort: effort },
+            config,
             serviceName: null,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -1635,6 +1988,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             persistExtendedHistory: false,
           });
 
+    currentGoalStatus = undefined;
+    resumedThreadResponse = resumeThreadId && !forkThreadId ? threadResponse : null;
+
     const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
     if (forkThreadId && !nextThreadId) {
       throw new Error("Codex app-server did not return a forked thread id");
@@ -1644,18 +2000,43 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       forkThreadId ? undefined : currentThreadId,
       forkThreadId ? undefined : (resumeThreadId ?? undefined),
     );
+    if (resumeThreadId && currentThreadId) {
+      // A persisted goal need not emit an update on resume. Older servers may
+      // not implement goal/get; bound this optional capability probe.
+      try {
+        const response = await sendRequest("thread/goal/get", { threadId: currentThreadId }, { timeoutMs: 1_000 });
+        currentGoalStatus = firstString(asRecord(response.goal)?.status);
+        activeTurn?.queue.push({
+          type: "thread.goal.updated",
+          thread_id: currentThreadId,
+          goal: response.goal ?? null,
+        });
+      } catch {
+        currentGoalStatus = undefined;
+      }
+    }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
-  async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
+  async function ensureClient(input: CodexCliTurnRequest, controlOnly = false): Promise<void> {
+    metadataControlOnly = controlOnly;
+    const hookResult = shouldMaterializeCodexHookForCommand(command)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      : null;
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
-    if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
-      log.info("codex env changed; respawning app-server", {
-        pid: child.pid,
-        envKeys: listCodexAppServerEnvSignatureKeys(input.env),
-      });
+    const hookChanged =
+      hookResult !== null && activeHookConfigSignature !== null && hookResult.signature !== activeHookConfigSignature;
+    if (!closed && child && !bootstrapPromise && (activeSpawnEnvSignature !== nextEnvSignature || hookChanged)) {
+      log.info(
+        hookChanged ? "codex hooks changed; respawning app-server" : "codex env changed; respawning app-server",
+        {
+          pid: child.pid,
+          envKeys: listCodexAppServerEnvSignatureKeys(input.env),
+          hookChanged,
+        },
+      );
       intentionalChildRestart = true;
       try {
         await close();
@@ -1695,7 +2076,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
-        await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
+        if (controlOnly) currentThreadId = input.resume;
+        else await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
       } finally {
         bootstrapPromise = null;
       }
@@ -1736,6 +2118,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   return {
+    initializeControl: (input) => ensureClient(input, true),
     control: handleRuntimeControl,
     startTurn(input) {
       if (activeTurn && !activeTurn.settled) {
@@ -1755,36 +2138,140 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
         interruptRequested: false,
+        turnStartedEmitted: false,
+        completedNativeTurnIds: new Set(),
       };
       activeTurn = turn;
 
       void (async () => {
         try {
           await ensureClient(input);
+          const replayedTurn = findCodexReplayedTurn(resumedThreadResponse, input);
+          resumedThreadResponse = null;
+
+          if (replayedTurn) {
+            const replayedThreadId = currentThreadId ?? input.resume;
+            turn.queue.push({
+              type: "turn.reconciled",
+              source: "codex.app-server",
+              thread_id: replayedThreadId,
+              turn_id: replayedTurn.id,
+              status: replayedTurn.status,
+              client_message_id: input.clientMessageId,
+            });
+
+            if (replayedTurn.status === "inProgress") {
+              emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+              flushBufferedThreadNotifications();
+              return;
+            }
+
+            if (replayedTurn.status === "completed") {
+              emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+              for (const item of Array.isArray(replayedTurn.raw.items) ? replayedTurn.raw.items : []) {
+                routeAppServerMessage({
+                  jsonrpc: "2.0",
+                  method: "item/completed",
+                  params: {
+                    threadId: replayedThreadId,
+                    turnId: replayedTurn.id,
+                    item,
+                  },
+                });
+              }
+              routeAppServerMessage({
+                jsonrpc: "2.0",
+                method: "turn/completed",
+                params: {
+                  threadId: replayedThreadId,
+                  turn: replayedTurn.raw,
+                },
+              });
+              flushBufferedThreadNotifications();
+              return;
+            }
+
+            if (replayedTurn.status === "interrupted" || replayedTurn.status === "failed") {
+              if (!replayedThreadId) {
+                throw new Error("Codex replay recovery requires the resumed thread id");
+              }
+              if (input.terminalReplayAllowed === false) {
+                bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+                bufferingThreadNotifications = false;
+                emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+                turn.queue.push({
+                  type: "turn.interrupted",
+                  source: "codex.app-server",
+                  thread_id: replayedThreadId,
+                  turn_id: replayedTurn.id,
+                  turn: normalizeAppServerTurn(replayedTurn.raw),
+                  recovery_disposition: "terminal_replay_suppressed",
+                  provider_terminal_status: replayedTurn.status,
+                });
+                settleTurn(turn);
+                return;
+              }
+              bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+              bufferingThreadNotifications = true;
+              try {
+                await bootstrapThread(input, null, replayedThreadId, replayedTurn.id);
+              } finally {
+                bufferingThreadNotifications = false;
+                bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+              }
+              turn.threadId = currentThreadId;
+              turn.turnId = undefined;
+              turn.turnStartedEmitted = false;
+              turn.queue.push({
+                type: "thread.replay_forked",
+                source: "codex.app-server",
+                source_thread_id: replayedThreadId,
+                excluded_turn_id: replayedTurn.id,
+                thread_id: currentThreadId,
+              });
+            }
+          }
+
+          // Resume may emit an automatic goal turn before turn/start accepts
+          // this input. Bind the response first, then filter buffered events.
+          bufferingThreadNotifications = true;
+
           const requestTurnStart = async () => {
             turn.threadId = currentThreadId ?? input.resume;
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
-            await sendRequest("turn/start", {
-              threadId: turn.threadId,
-              input: [
-                {
-                  type: "text",
-                  text: input.prompt,
-                  text_elements: [],
+            await sendRequest(
+              "turn/start",
+              {
+                threadId: turn.threadId,
+                clientUserMessageId: input.clientMessageId ?? null,
+                input: [
+                  {
+                    type: "text",
+                    text: input.prompt,
+                    text_elements: [],
+                  },
+                ],
+                cwd: null,
+                approvalPolicy: null,
+                sandboxPolicy: null,
+                model: null,
+                effort: input.effort ?? null,
+                summary: null,
+                personality: null,
+                outputSchema: null,
+                collaborationMode: null,
+              },
+              {
+                onResponse: (response) => {
+                  const responseTurn = asRecord(response.turn);
+                  if (responseTurn) {
+                    emitTurnStarted(turn, responseTurn, turn.threadId);
+                  }
                 },
-              ],
-              cwd: null,
-              approvalPolicy: null,
-              sandboxPolicy: null,
-              model: null,
-              effort: input.effort ?? null,
-              summary: null,
-              personality: null,
-              outputSchema: null,
-              collaborationMode: null,
-            });
+              },
+            );
           };
 
           try {
@@ -1810,7 +2297,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             });
             await requestTurnStart();
           }
+          bufferingThreadNotifications = false;
+          flushBufferedThreadNotifications();
         } catch (error) {
+          bufferingThreadNotifications = false;
+          bufferedThreadNotifications.splice(0);
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             signalCodexTransportProcess(child, "SIGKILL");
@@ -2212,6 +2703,7 @@ function buildCodexSessionState(
   sessionId: string | undefined,
   cwd: string,
   skillVisibility: RuntimeSkillVisibilitySnapshot,
+  codexHome?: string,
 ): RuntimeSessionState | undefined {
   if (!sessionId) {
     return undefined;
@@ -2222,6 +2714,7 @@ function buildCodexSessionState(
       sessionId,
       cwd,
       skillVisibility,
+      ...(codexHome ? { codexHome } : {}),
     },
     displayId: sessionId,
   };
@@ -2302,7 +2795,7 @@ function buildCodexEventMetadata(
   return {
     provider: "codex",
     source: firstString(event.source) ?? "codex",
-    nativeEvent: typeof event.type === "string" ? event.type : undefined,
+    nativeEvent: firstString(event.native_event, event.nativeEvent, event.type),
     ...(thread ? { thread } : {}),
     ...(turn ? { turn } : {}),
     ...(item ? { item } : {}),
@@ -2356,6 +2849,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
   const id = firstString(record.item_id, record.itemId, source.id);
   const type = nested || (!record.item_id && !record.itemId) ? firstString(source.type) : undefined;
   const status = firstString(source.status);
+  const phase = firstString(source.phase);
   const parentId = firstString(
     source.parent_id,
     source.parentId,
@@ -2365,7 +2859,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
     record.parentItemId,
   );
 
-  if (!id && !type && !status && !parentId) {
+  if (!id && !type && !status && !parentId && !phase) {
     return undefined;
   }
 
@@ -2374,6 +2868,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
     ...(type ? { type } : {}),
     ...(status ? { status } : {}),
     ...(parentId ? { parentId } : {}),
+    ...(phase ? { phase } : {}),
   };
 }
 
@@ -2398,7 +2893,7 @@ function extractCliToolStarted(item: unknown): RuntimeToolUse | null {
   }
 
   const toolName =
-    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
+    record.type === "dynamic_tool_call" ? dynamicToolDisplayName(record) : normalizeCliToolName(record.type);
   const toolUseId = firstString(record.id);
   if (!toolUseId) {
     return null;
@@ -2419,7 +2914,7 @@ function extractCliToolCompleted(item: unknown): ToolCompletedEvent | null {
 
   const toolUseId = firstString(record.id);
   const toolName =
-    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
+    record.type === "dynamic_tool_call" ? dynamicToolDisplayName(record) : normalizeCliToolName(record.type);
   const status = typeof record.status === "string" ? record.status : "completed";
 
   const result: ToolCompletedEvent = {
@@ -2454,6 +2949,15 @@ function normalizeCliToolName(type: string): string {
     return "shell";
   }
   return type;
+}
+
+function dynamicToolDisplayName(item: Record<string, unknown>): string {
+  const wrapperName = firstString(item.tool) ?? "dynamic_tool_call";
+  if (wrapperName !== "tools_invoke") {
+    return wrapperName;
+  }
+  const input = asRecord(item.arguments);
+  return firstString(input?.name) ?? wrapperName;
 }
 
 function extractCliToolInput(item: Record<string, unknown>): unknown {
@@ -2531,6 +3035,77 @@ function normalizeAppServerTurn(value: unknown): RuntimeTurnMetadata | undefined
     ...(id ? { id } : {}),
     ...(status ? { status } : {}),
   };
+}
+
+interface CodexReplayedTurn {
+  id: string;
+  status: string;
+  raw: Record<string, unknown>;
+}
+
+function findCodexReplayedTurn(
+  threadResponse: Record<string, unknown> | null,
+  input: Pick<CodexCliTurnRequest, "clientMessageId" | "prompt" | "replay">,
+): CodexReplayedTurn | null {
+  if (!input.replay || !threadResponse) {
+    return null;
+  }
+
+  const thread = asRecord(threadResponse.thread);
+  const turns = Array.isArray(thread?.turns)
+    ? thread.turns.filter((value): value is Record<string, unknown> => Boolean(asRecord(value)))
+    : [];
+  const toReplayTurn = (turn: Record<string, unknown> | undefined): CodexReplayedTurn | null => {
+    const id = firstString(turn?.id);
+    const status = firstString(turn?.status);
+    return turn && id && status ? { id, status, raw: turn } : null;
+  };
+
+  if (input.clientMessageId) {
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index];
+      if (turn && readCodexTurnClientMessageId(turn) === input.clientMessageId) {
+        return toReplayTurn(turn);
+      }
+    }
+  }
+
+  // Compatibility for a turn accepted before Ravi started sending a client id.
+  // Limit this to the newest turn and an exact prompt match so a legitimate
+  // repeated user message cannot reconcile against an older completion.
+  const latest = turns.at(-1);
+  if (latest && !readCodexTurnClientMessageId(latest) && readCodexTurnPrompt(latest) === input.prompt.trim()) {
+    return toReplayTurn(latest);
+  }
+
+  return null;
+}
+
+function readCodexTurnClientMessageId(turn: Record<string, unknown>): string | undefined {
+  for (const item of Array.isArray(turn.items) ? turn.items : []) {
+    const record = asRecord(item);
+    if (record?.type === "userMessage" || record?.type === "user_message") {
+      return firstString(record.clientId, record.client_id);
+    }
+  }
+  return undefined;
+}
+
+function readCodexTurnPrompt(turn: Record<string, unknown>): string | undefined {
+  for (const item of Array.isArray(turn.items) ? turn.items : []) {
+    const record = asRecord(item);
+    if (record?.type !== "userMessage" && record?.type !== "user_message") {
+      continue;
+    }
+    const text = (Array.isArray(record.content) ? record.content : [])
+      .map((content) => firstString(asRecord(content)?.text))
+      .filter((value): value is string => Boolean(value))
+      .join("\n");
+    if (text) {
+      return text.trim();
+    }
+  }
+  return undefined;
 }
 
 function normalizeAppServerItem(value: unknown): Record<string, unknown> | null {
@@ -2787,16 +3362,18 @@ function buildRuntimeApprovalRequest(
   currentThreadId: string | undefined,
 ): RuntimeApprovalRequest {
   const item = normalizeAppServerItem(params.item) ?? asRecord(params.item) ?? undefined;
+  const threadId = firstString(params.threadId, params.thread_id, turn?.threadId, currentThreadId);
+  const turnId = firstString(params.turnId, params.turn_id, turn?.turnId);
   const metadataEvent = {
     type: method,
     source: "codex.app-server",
-    thread_id: turn?.threadId ?? currentThreadId,
-    turn_id: turn?.turnId,
+    thread_id: threadId,
+    turn_id: turnId,
     ...(item ? { item } : {}),
   };
   const metadata = buildCodexEventMetadata(metadataEvent, {
-    threadId: turn?.threadId ?? currentThreadId,
-    turnId: turn?.turnId,
+    threadId,
+    turnId,
   });
 
   if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
@@ -3088,128 +3665,9 @@ function extractAppServerErrorMessage(params: Record<string, unknown>): string |
   return extractJsonRpcError(params.error);
 }
 
-function ensureGlobalCodexBashHookConfig(): void {
-  const hooksPath = getGlobalCodexHooksPath();
-  mkdirSync(getGlobalCodexConfigDir(), { recursive: true });
-
-  const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath));
-  const nextJson = JSON.stringify(nextConfig, null, 2) + "\n";
-  const currentJson = existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : null;
-  if (currentJson !== nextJson) {
-    writeFileSync(hooksPath, nextJson, "utf8");
-  }
-}
-
-function getGlobalCodexHooksPath(): string {
-  return join(getGlobalCodexConfigDir(), "hooks.json");
-}
-
-function getGlobalCodexConfigDir(): string {
-  return join(process.env.HOME ?? homedir(), ".codex");
-}
-
-function readCodexHooksConfig(path: string): Record<string, unknown> {
-  if (!existsSync(path)) {
-    return { hooks: {} };
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return asRecord(parsed) ?? { hooks: {} };
-  } catch {
-    return { hooks: {} };
-  }
-}
-
-function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string, unknown> {
-  const hooks = asRecord(config.hooks) ?? {};
-  const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
-  const raviGroup = {
-    matcher: RAVI_CODEX_TOOL_HOOK_MATCHER,
-    hooks: [
-      {
-        type: "command",
-        command: buildRaviCodexHookCommand(),
-        statusMessage: RAVI_CODEX_TOOL_HOOK_STATUS,
-      },
-    ],
-  };
-
-  const nextPreToolUse = preToolUse.filter((group) => !isRaviCodexHookGroup(group));
-  nextPreToolUse.push(raviGroup);
-
-  return {
-    ...config,
-    hooks: {
-      ...hooks,
-      PreToolUse: nextPreToolUse,
-    },
-  };
-}
-
-function isRaviCodexHookGroup(value: unknown): boolean {
-  const group = asRecord(value);
-  if (!group) {
-    return false;
-  }
-
-  const handlers = Array.isArray(group.hooks) ? group.hooks : [];
-  return handlers.some((handler) => {
-    const entry = asRecord(handler);
-    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS || entry?.statusMessage === RAVI_CODEX_TOOL_HOOK_STATUS;
-  });
-}
-
-function buildCodexNativeToolHookMatcher(): string {
-  return `^(${RUNTIME_BUILTIN_TOOL_HOOK_NAMES.map(escapeRegex).join("|")})$`;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function shouldMaterializeCodexHookForCommand(command: string): boolean {
   const commandName = basename(command);
   return commandName === "codex" || commandName === "codex.exe";
-}
-
-function buildRaviCodexHookCommand(): string {
-  const configuredRaviBin = process.env.RAVI_BIN?.trim();
-  if (configuredRaviBin) {
-    return [configuredRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
-  }
-
-  const bundlePath = process.argv[1];
-  if (isRunnableRaviCliEntrypoint(bundlePath)) {
-    return [process.execPath, bundlePath, "context", "codex-tool-hook"].map(shellEscape).join(" ");
-  }
-
-  const sourceRaviBin = resolveSourceRaviBinPath();
-  if (sourceRaviBin) {
-    return [sourceRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
-  }
-
-  return ["ravi", "context", "codex-tool-hook"].map(shellEscape).join(" ");
-}
-
-function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {
-  if (!entrypoint || !existsSync(entrypoint)) {
-    return false;
-  }
-  if (/\.test\.[cm]?[jt]sx?$/.test(entrypoint)) {
-    return false;
-  }
-  return entrypoint.endsWith("/dist/bundle/index.js") || entrypoint.endsWith("/src/cli/index.ts");
-}
-
-function resolveSourceRaviBinPath(): string | null {
-  try {
-    const modulePath = fileURLToPath(import.meta.url);
-    const candidate = join(dirname(dirname(dirname(modulePath))), "bin", "ravi");
-    return existsSync(candidate) ? candidate : null;
-  } catch {
-    return null;
-  }
 }
 
 function buildCodexAppServerEnvSignature(env: NodeJS.ProcessEnv): string {
@@ -3235,13 +3693,6 @@ function listCodexAppServerEnvSignatureKeys(env: NodeJS.ProcessEnv): string[] {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function shellEscape(value: string): string {
-  if (value.length === 0) {
-    return "''";
-  }
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
 const CODEX_APP_SERVER_OPTOUT_METHODS = [
   "codex/event/agent_message",
   "codex/event/agent_message_content_delta",
@@ -3260,7 +3711,6 @@ const CODEX_APP_SERVER_OPTOUT_METHODS = [
   "codex/event/task_started",
   "codex/event/token_count",
   "codex/event/user_message",
-  "item/commandExecution/outputDelta",
   "item/plan/delta",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",
@@ -3300,4 +3750,29 @@ function isAbortLikeError(error: unknown): boolean {
     return true;
   }
   return /abort|terminated/i.test(error.message);
+}
+
+function codexGoalStatus(status: RuntimeGoalStatus): string {
+  return status === "budget_limited" ? "budgetLimited" : status === "usage_limited" ? "usageLimited" : status;
+}
+
+function normalizeCodexGoal(value: unknown): RuntimeGoal | null {
+  const goal = asRecord(value);
+  if (!goal) return null;
+  const status =
+    goal.status === "budgetLimited" ? "budget_limited" : goal.status === "usageLimited" ? "usage_limited" : goal.status;
+  if (
+    typeof goal.objective !== "string" ||
+    !["active", "paused", "blocked", "budget_limited", "usage_limited", "complete"].includes(String(status))
+  )
+    throw new Error("Invalid Codex goal response");
+  return {
+    objective: goal.objective,
+    status: status as RuntimeGoalStatus,
+    tokenBudget: typeof goal.tokenBudget === "number" ? goal.tokenBudget : null,
+    tokensUsed: toNumber(goal.tokensUsed),
+    timeUsedSeconds: toNumber(goal.timeUsedSeconds),
+    createdAt: toNumber(goal.createdAt) * 1000,
+    updatedAt: toNumber(goal.updatedAt) * 1000,
+  };
 }

@@ -38,6 +38,8 @@ normative: true
   by default instead of replaying unbounded historical `session_events`.
 - Cursor metadata records skipped historical ranges when the exporter advances
   past old local-only history.
+- A disabled, unlinked, or stale export cursor does not block local trace TTL
+  pruning after the configured retention window.
 - The sync runner can enqueue and upload multiple bounded trace batches per tick
   so interleaved sessions catch up fast enough for current Console visibility.
 - Automatic trace export is disabled by default because the daemon sync runner

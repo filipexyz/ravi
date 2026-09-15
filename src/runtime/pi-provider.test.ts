@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildPiManagedRuntimeEnvSignature,
+  buildPiRpcProcessArgs,
+  buildPiRpcSpawnEnv,
   createPiRuntimeProvider,
   type PiRpcCommand,
   type PiRpcEvent,
@@ -10,25 +13,37 @@ import {
   type PiRpcStartInput,
   type PiRpcTransport,
 } from "./pi-provider.js";
-import type { RuntimeEvent, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import {
+  createPiPermissionHooksReadyEvent,
+  formatPiPermissionUiDecisionValue,
+  PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+  PI_PERMISSION_UI_TITLE,
+} from "./pi-tool-permissions.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
   end(): void;
   fail(error: unknown): void;
+  drain(): T[];
 }
 
 class FakePiRpcTransport implements PiRpcTransport {
   readonly events: TestQueue<PiRpcEvent> = createTestQueue<PiRpcEvent>();
   readonly starts: PiRpcStartInput[] = [];
   readonly commands: PiRpcCommand[] = [];
+  readonly writes: Record<string, unknown>[] = [];
 
   responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
+  emitPermissionHandshake = true;
   closed = false;
   closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
-    this.starts.push(input);
+    this.starts.push({ ...input, env: { ...input.env } });
+    if (this.emitPermissionHandshake) {
+      this.pushEvent(createPiPermissionHooksReadyEvent(`hooks-ready-${this.starts.length}`) as PiRpcEvent);
+    }
   }
 
   async send(command: PiRpcCommand): Promise<PiRpcResponse> {
@@ -40,9 +55,17 @@ class FakePiRpcTransport implements PiRpcTransport {
     return defaultResponse(command);
   }
 
+  async writeMessage(message: Record<string, unknown>): Promise<void> {
+    this.writes.push(message);
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.closeCalls++;
+  }
+
+  drainPendingEvents(): PiRpcEvent[] {
+    return this.events.drain();
   }
 
   pushEvent(event: PiRpcEvent): void {
@@ -55,6 +78,130 @@ class FakePiRpcTransport implements PiRpcTransport {
 }
 
 describe("Pi runtime provider", () => {
+  it("never reintroduces daemon secrets into the subprocess spawn envelope", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "daemon-secret-must-not-leak";
+    try {
+      const env = buildPiRpcSpawnEnv({
+        env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime", OPENAI_API_KEY: "must-not-reach-tools" },
+      });
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env).toEqual({ PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime" });
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
+  });
+
+  it("treats rotated RAVI_CONTEXT_KEY as a managed Pi spawn-env change", () => {
+    const first = buildPiRpcSpawnEnv({
+      env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_first", RAVI_TASK_ID: "task_stale" },
+    });
+    const second = buildPiRpcSpawnEnv({
+      env: { PATH: "/other", RAVI_CONTEXT_KEY: "rctx_second" },
+    });
+    const sameKey = buildPiRpcSpawnEnv({
+      env: { PATH: "/other", RAVI_CONTEXT_KEY: "rctx_first", RAVI_TASK_ID: "task_stale" },
+    });
+
+    expect(buildPiManagedRuntimeEnvSignature(first)).not.toBe(buildPiManagedRuntimeEnvSignature(second));
+    expect(buildPiManagedRuntimeEnvSignature(first)).toBe(buildPiManagedRuntimeEnvSignature(sameKey));
+  });
+
+  it("refreshes Ravi authority env between turns by respawning Pi when the context key rotates", async () => {
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_first",
+      RAVI_TASK_ID: "task_stale",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      transport.responseFor = (command) => {
+        if (command.type === "get_state") {
+          return piResponse(command, { sessionFile: "/tmp/pi-session.jsonl" });
+        }
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      return transport;
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+        createStartRequest("first", {
+          env,
+          prompt: (async function* () {
+            yield promptMessage("first");
+            env.RAVI_CONTEXT_KEY = "rctx_second";
+            delete env.RAVI_TASK_ID;
+            yield promptMessage("second");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transports).toHaveLength(2);
+    expect(transports[0]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_first");
+    expect(transports[0]?.starts[0]?.env.RAVI_TASK_ID).toBe("task_stale");
+    expect(transports[1]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(transports[1]?.starts[0]?.env.RAVI_TASK_ID).toBeUndefined();
+    expect(transports[0]?.closed).toBe(true);
+    expect(transports[1]?.commands).toContainEqual(
+      expect.objectContaining({ type: "switch_session", sessionPath: "/tmp/pi-session.jsonl" }),
+    );
+  });
+
+  it("reuses the Pi RPC process when managed Ravi env is unchanged between turns", async () => {
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_same",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      transport.responseFor = (command) => {
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      return transport;
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+        createStartRequest("first", { env, prompt: twoPrompts("first", "second") }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transports).toHaveLength(1);
+    expect(transports[0]?.starts).toHaveLength(1);
+    expect(transports[0]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_same");
+    expect(transports[0]?.commands.filter((command) => command.type === "prompt")).toEqual([
+      expect.objectContaining({ type: "prompt", message: "first" }),
+      expect.objectContaining({ type: "prompt", message: "second" }),
+    ]);
+  });
+
+  it("rejects upstream credentials before starting a proxied Pi transport", () => {
+    const transport = new FakePiRpcTransport();
+    expect(() =>
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("blocked", {
+          modelBroker: modelBrokerBinding(),
+          env: { OPENAI_API_KEY: "must-not-reach-pi" },
+        }),
+      ),
+    ).toThrow(/refuses upstream credential environment variable OPENAI_API_KEY/);
+    expect(transport.starts).toHaveLength(0);
+  });
   it("advertises an explicit subprocess RPC capability matrix", () => {
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
@@ -71,13 +218,459 @@ describe("Pi runtime provider", () => {
         requiresCwdMatch: true,
       },
       tools: {
-        permissionMode: "provider-native",
+        permissionMode: "ravi-host",
         supportsParallelCalls: false,
       },
+      supportsToolHooks: true,
       terminalEvents: {
         guarantee: "adapter",
       },
     });
+  });
+
+  it("loads the Ravi permission extension on the Pi RPC process", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    await collectRuntimeEvents(createPiRuntimeProvider({ transport }).startSession(createStartRequest("hooks")).events);
+
+    const extensionPath = transport.starts[0]?.extensionPath;
+    expect(extensionPath).toMatch(/ravi-permission-extension\.js$/);
+    expect(buildPiRpcProcessArgs(transport.starts[0]!)).toEqual(
+      expect.arrayContaining(["--mode", "rpc", "--extension", extensionPath]),
+    );
+  });
+
+  it("denies a restricted Pi tool over the extension UI bridge and allows it when granted", async () => {
+    const deniedTransport = new FakePiRpcTransport();
+    deniedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-deny",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({ toolName: "bash", input: { command: "curl evil.test" } }),
+    });
+    deniedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: deniedTransport }).startSession(
+        createStartRequest("nega", {
+          canUseTool: async () => ({ behavior: "deny", reason: "Bash permission denied." }),
+        }),
+      ).events,
+    );
+    expect(deniedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-deny",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({ allowed: false, reason: "Bash permission denied." }),
+      },
+    ]);
+
+    const allowedTransport = new FakePiRpcTransport();
+    allowedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-allow",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({ toolName: "read", input: { path: "README.md" } }),
+    });
+    allowedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: allowedTransport }).startSession(
+        createStartRequest("permite", {
+          canUseTool: async (toolName) => ({
+            behavior: toolName === "Read" ? "allow" : "deny",
+            reason: `${toolName} permission denied.`,
+          }),
+        }),
+      ).events,
+    );
+    expect(allowedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-allow",
+        confirmed: true,
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
+  });
+
+  it("answers queued parallel permission UI requests with matching ids and host reasons", async () => {
+    const transport = new FakePiRpcTransport();
+    let releaseDeny!: () => void;
+    const denyStarted = new Promise<void>((resolve) => {
+      releaseDeny = resolve;
+    });
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-parallel-deny",
+      method: "input",
+      title: PI_PERMISSION_UI_TITLE,
+      placeholder: JSON.stringify({ toolName: "bash", input: { command: "curl evil.test" } }),
+    });
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-parallel-allow",
+      method: "input",
+      title: PI_PERMISSION_UI_TITLE,
+      placeholder: JSON.stringify({ toolName: "read", input: { path: "README.md" } }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("misto")] });
+
+    const eventsPromise = collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("paralelo", {
+          canUseTool: async (toolName) => {
+            if (toolName === "Bash") {
+              await new Promise<void>((resolve) => {
+                releaseDeny();
+                setTimeout(resolve, 20);
+              });
+              return { behavior: "deny", reason: "Bash permission denied." };
+            }
+            return { behavior: "allow" };
+          },
+        }),
+      ).events,
+    );
+
+    await denyStarted;
+    await eventsPromise;
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-parallel-deny",
+        value: formatPiPermissionUiDecisionValue({ allowed: false, reason: "Bash permission denied." }),
+      },
+      {
+        type: "extension_ui_response",
+        id: "ui-parallel-allow",
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
+  });
+
+  it("denies unauthorized skill reads over the permission extension and allows a granted skill", async () => {
+    const deniedTransport = new FakePiRpcTransport();
+    deniedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-skill-deny",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" },
+      }),
+    });
+    deniedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: deniedTransport }).startSession(
+        createStartRequest("skill deny", {
+          canUseTool: async () => ({ behavior: "allow" }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        }),
+      ).events,
+    );
+    expect(deniedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-skill-deny",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({
+          allowed: false,
+          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+        }),
+      },
+    ]);
+
+    const allowedTransport = new FakePiRpcTransport();
+    allowedTransport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-skill-allow",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: "/workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md" },
+      }),
+    });
+    allowedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: allowedTransport }).startSession(
+        createStartRequest("skill allow", {
+          canUseTool: async () => ({ behavior: "allow" }),
+          allowedSkills: ["ravi-dev-app-creator"],
+        }),
+      ).events,
+    );
+    expect(allowedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-skill-allow",
+        confirmed: true,
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
+  });
+
+  it("fails closed when the permission extension handshake never arrives", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.emitPermissionHandshake = false;
+    transport.pushEvent({
+      type: "tool_execution_start",
+      toolName: "bash",
+      toolCallId: "ungoverned-1",
+      input: { command: "curl evil.test" },
+    });
+    transport.pushEvent({
+      type: "tool_execution_end",
+      toolCallId: "ungoverned-1",
+      toolName: "bash",
+      result: "ok",
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ungoverned")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("ungoverned"),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      recoverable: true,
+      error: "Pi tool started before permission hooks were confirmed live. Refusing ungoverned ravi-host execution.",
+    });
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+    expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
+      tools: { permissionMode: "ravi-host" },
+      supportsToolHooks: true,
+    });
+  });
+
+  it("fails closed when the transport cannot answer extension UI permission requests", async () => {
+    const transport = new FakePiRpcTransport();
+    Object.defineProperty(transport, "writeMessage", { value: undefined });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("sem ui"),
+      ).events,
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "turn.failed",
+        failureKind: "transport",
+        error: "Pi RPC transport cannot answer extension UI permission requests",
+      }),
+    ]);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+  });
+
+  it("fails closed when the permission extension never proves it is live", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.emitPermissionHandshake = false;
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("silent load failure")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport, permissionHooksReadyTimeoutMs: 50 }).startSession(
+        createStartRequest("ainda sem hooks"),
+      ).events,
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "turn.failed",
+        failureKind: "transport",
+        recoverable: true,
+        error: PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+      }),
+    ]);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+  });
+
+  it("fails closed after transport restart if the permission handshake is missing", async () => {
+    const deadTransport = new FakePiRpcTransport();
+    deadTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        throw new Error("Pi RPC transport is not connected");
+      }
+      return defaultResponse(command);
+    };
+
+    const ungovernedTransport = new FakePiRpcTransport();
+    ungovernedTransport.emitPermissionHandshake = false;
+    ungovernedTransport.pushEvent({
+      type: "tool_execution_start",
+      toolName: "bash",
+      toolCallId: "restart-ungoverned",
+      input: { command: "curl evil.test" },
+    });
+    ungovernedTransport.pushEvent({ type: "agent_end", messages: [assistantMessage("ungoverned")] });
+
+    const transports = [deadTransport, ungovernedTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? ungovernedTransport,
+        permissionHooksReadyTimeoutMs: 50,
+      }).startSession(createStartRequest("continua")).events,
+    );
+
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(0);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      error: "Pi tool started before permission hooks were confirmed live. Refusing ungoverned ravi-host execution.",
+    });
+    expect(ungovernedTransport.commands.filter((command) => command.type === "prompt")).toHaveLength(0);
+  });
+
+  it("wires prepareSession command approvals through Ravi host services", async () => {
+    const hostServices: RuntimeHostServices = {
+      authorizeCapability: async () => ({ allowed: true, inherited: false }),
+      authorizeCommandExecution: async (request) => ({
+        approved: request.command === "git status",
+        reason: request.command === "git status" ? undefined : "blocked",
+      }),
+      authorizeToolUse: async () => ({ approved: true }),
+      requestUserInput: async () => ({ approved: true, answers: {} }),
+      listDynamicTools: () => [],
+      executeDynamicTool: async () => ({ success: true, contentItems: [] }),
+    };
+    const prepared = await createPiRuntimeProvider().prepareSession?.({
+      agentId: "pi-probe",
+      cwd: "/tmp",
+      hostServices,
+    });
+    const approve = prepared?.startRequest?.approveRuntimeRequest;
+    expect(approve).toBeTypeOf("function");
+    await expect(
+      approve!({
+        kind: "command_execution",
+        toolName: "Bash",
+        input: { command: "git status" },
+      }),
+    ).resolves.toEqual({ approved: true });
+    await expect(
+      approve!({
+        kind: "command_execution",
+        toolName: "Bash",
+        input: { command: "rm -rf /" },
+      }),
+    ).resolves.toEqual({ approved: false, reason: "blocked" });
+  });
+
+  it("indexes allowed Ravi plugin skills in the Pi system prompt without claiming they were loaded", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pi-skills-"));
+    const pluginPath = join(root, "ravi-dev");
+    const skillPath = join(pluginPath, "skills", "app-creator");
+    mkdirSync(skillPath, { recursive: true });
+    writeFileSync(
+      join(skillPath, "SKILL.md"),
+      [
+        "---",
+        "name: app-creator",
+        "description: Build Ravi Apps from API or CLI contracts.",
+        "---",
+        "",
+        "# App Creator",
+      ].join("\n"),
+    );
+
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("crie um app", {
+        plugins: [{ type: "local", path: pluginPath }],
+        allowedSkills: ["ravi-dev-app-creator"],
+      }),
+    );
+
+    expect(handle.skillVisibility).toMatchObject({
+      loadedSkills: [],
+      skills: [
+        {
+          id: "app-creator",
+          provider: "pi",
+          state: "advertised",
+          confidence: "declared",
+          source: "plugin:ravi-dev/app-creator",
+        },
+      ],
+    });
+
+    await collectRuntimeEvents(handle.events);
+
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi skills show <skill-name> --json");
+    expect(transport.starts[0]?.systemPromptAppend).toContain("availability only");
+  });
+
+  it("filters the Pi catalog to the agent allowlist and still denies a hidden skill at tool time", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pi-skills-filter-"));
+    const writeSkill = (plugin: string, name: string) => {
+      const skillPath = join(root, plugin, "skills", name);
+      mkdirSync(skillPath, { recursive: true });
+      writeFileSync(
+        join(skillPath, "SKILL.md"),
+        ["---", `name: ${name}`, `description: ${name} skill.`, "---", "", `# ${name}`].join("\n"),
+      );
+      return join(root, plugin);
+    };
+    const appCreatorPlugin = writeSkill("ravi-dev", "app-creator");
+    const whatsappPlugin = writeSkill("ravi-system", "whatsapp-manager");
+
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-hidden-skill",
+      method: "confirm",
+      title: PI_PERMISSION_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "read",
+        input: { path: join(whatsappPlugin, "skills", "whatsapp-manager", "SKILL.md") },
+      }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("negado")] });
+
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("use a skill", {
+        plugins: [
+          { type: "local", path: appCreatorPlugin },
+          { type: "local", path: whatsappPlugin },
+        ],
+        canUseTool: async () => ({ behavior: "allow" }),
+        allowedSkills: ["ravi-dev-app-creator"],
+      }),
+    );
+
+    expect(handle.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["app-creator"]);
+    expect(handle.skillVisibility?.skills.map((skill) => skill.id)).not.toContain("whatsapp-manager");
+
+    await collectRuntimeEvents(handle.events);
+
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
+    expect(transport.starts[0]?.systemPromptAppend).not.toContain("whatsapp-manager");
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-hidden-skill",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({
+          allowed: false,
+          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+        }),
+      },
+    ]);
   });
 
   it("closes the Pi RPC transport idempotently", async () => {
@@ -474,7 +1067,160 @@ describe("Pi runtime provider", () => {
 
     const promptCount = transport.commands.filter((command) => command.type === "prompt").length;
     expect(promptCount).toBe(6); // initial + 5 backoff retries
-    expect(events.at(-1)).toMatchObject({ type: "turn.failed" });
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      failureKind: "transport",
+      recoverable: true,
+    });
+  });
+
+  it("does not treat leftover agent_end after interrupt as the next turn's complete", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+      toolResults: [],
+    });
+    transport.pushEvent({
+      type: "agent_end",
+      messages: [],
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt" && command.message === "depois") {
+        transport.pushEvent({ type: "agent_start" });
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("segundo turno")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") }),
+      ).events,
+    );
+
+    const terminals = events.filter(
+      (event) => event.type === "turn.complete" || event.type === "turn.failed" || event.type === "turn.interrupted",
+    );
+    expect(terminals.map((event) => event.type)).toEqual(["turn.interrupted", "turn.complete"]);
+    expect(terminals[1]).toMatchObject({
+      type: "turn.complete",
+      usage: {
+        outputTokens: 4,
+      },
+    });
+    expect(transport.commands.filter((command) => command.type === "prompt")).toEqual([
+      expect.objectContaining({ type: "prompt", message: "aborta" }),
+      expect.objectContaining({ type: "prompt", message: "depois" }),
+    ]);
+  });
+
+  it("recovers a stuck Pi runtime after interrupt so the next prompt is accepted", async () => {
+    const stuckTransport = new FakePiRpcTransport();
+    let aborted = false;
+    stuckTransport.responseFor = (command) => {
+      if (command.type === "abort") {
+        aborted = true;
+      }
+      if (command.type === "get_state") {
+        return piResponse(command, {
+          isStreaming: aborted,
+          isProcessing: aborted,
+          sessionFile: "/tmp/pi-session.jsonl",
+        });
+      }
+      return defaultResponse(command);
+    };
+    stuckTransport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+    });
+
+    const liveTransport = new FakePiRpcTransport();
+    liveTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        liveTransport.pushEvent({ type: "agent_start" });
+        liveTransport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("recuperado")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const transports = [stuckTransport, liveTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? liveTransport,
+      }).startSession(createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") })).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.complete",
+      usage: {
+        outputTokens: 4,
+      },
+    });
+    expect(stuckTransport.closed).toBe(true);
+    expect(liveTransport.starts).toHaveLength(1);
+    expect(liveTransport.commands).toContainEqual(expect.objectContaining({ type: "prompt", message: "depois" }));
+    expect(stuckTransport.commands.filter((command) => command.type === "abort").length).toBeGreaterThan(0);
+  });
+
+  it("restarts a Pi transport that stays busy after interrupt instead of looping fake-completes", async () => {
+    const stuckTransport = new FakePiRpcTransport();
+    stuckTransport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        return piResponse(command, { isStreaming: true, isProcessing: true });
+      }
+      if (command.type === "prompt") {
+        if (command.message === "depois") {
+          return {
+            id: command.id,
+            type: "response",
+            command: "prompt",
+            success: false,
+            error:
+              "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+          };
+        }
+        return defaultResponse(command);
+      }
+      return defaultResponse(command);
+    };
+    stuckTransport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted", errorMessage: "aborted by user" }),
+    });
+
+    const liveTransport = new FakePiRpcTransport();
+    liveTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        liveTransport.pushEvent({ type: "agent_start" });
+        liveTransport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("respawned")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const transports = [stuckTransport, liveTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? liveTransport,
+      }).startSession(createStartRequest("aborta", { prompt: twoPrompts("aborta", "depois") })).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.failed")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.complete" });
+    expect(stuckTransport.closed).toBe(true);
+    expect(liveTransport.starts.length).toBeGreaterThanOrEqual(1);
   });
 
   it("restarts a dead Pi RPC transport before sending a prompt", async () => {
@@ -525,8 +1271,34 @@ function createStartRequest(text: string, overrides: Partial<RuntimeStartRequest
   };
 }
 
-async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
-  yield {
+function modelBrokerBinding(): NonNullable<RuntimeStartRequest["modelBroker"]> {
+  return {
+    version: 1,
+    brokerId: "hub",
+    leaseId: "grant_pi_test",
+    attemptId: "attempt_pi_test",
+    turnId: "turn_pi_test",
+    runtimeId: "runtime_test",
+    runtimeProvider: "pi",
+    model: "openai/gpt-5.5",
+    routeRevision: "route_test",
+    compatibilityRevision: "compat_test",
+    expiresAt: Date.now() + 60_000,
+    transport: {
+      scheme: "local-http-forwarder-v1",
+      protocol: "openai-completions",
+      origin: "http://127.0.0.1:43123",
+      path: "/v1/chat/completions",
+      publicHeaders: { "x-public-route": "binding_test" },
+    },
+    profileRef: "profile_test",
+    selectionCompatibilityKey: "selection_test",
+    principalIsolation: "cgroup",
+  };
+}
+
+function promptMessage(text: string): RuntimePromptMessage {
+  return {
     type: "user",
     message: {
       role: "user",
@@ -535,6 +1307,15 @@ async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
     session_id: "session",
     parent_tool_use_id: null,
   };
+}
+
+async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
+  yield promptMessage(text);
+}
+
+async function* twoPrompts(first: string, second: string): AsyncGenerator<RuntimePromptMessage> {
+  yield promptMessage(first);
+  yield promptMessage(second);
 }
 
 async function collectRuntimeEvents(events: AsyncIterable<RuntimeEvent>): Promise<RuntimeEvent[]> {
@@ -618,6 +1399,9 @@ function createTestQueue<T>(): TestQueue<T> {
       while (waiters.length > 0) {
         waiters.shift()!.reject(error);
       }
+    },
+    drain() {
+      return values.splice(0, values.length);
     },
     [Symbol.asyncIterator]() {
       return {

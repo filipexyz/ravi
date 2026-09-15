@@ -1,17 +1,14 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-
-let currentJsm: PromptJsm;
-
-const {
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
   resetSessionPromptInfrastructureCacheForTests,
-} = await import("./session-stream.js");
+  resolveSessionPromptPublishOptions,
+} from "./session-stream.js";
+import { publishSessionPromptPublication } from "./session-prompt-publication.js";
 
-afterAll(() => {
-  mock.restore();
-});
+let currentJsm: PromptJsm;
 
 beforeEach(() => {
   resetSessionPromptInfrastructureCacheForTests();
@@ -76,8 +73,15 @@ describe("session prompt JetStream infrastructure", () => {
     await ensureSessionPromptInfrastructure(currentJsm as never);
     await ensureSessionPromptInfrastructure(currentJsm as never);
 
-    expect(streamInfo).toHaveBeenCalledTimes(1);
+    expect(streamInfo).toHaveBeenCalledTimes(2);
     expect(consumerInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps a stable prompt message id to JetStream deduplication options", () => {
+    expect(resolveSessionPromptPublishOptions({ messageId: "channel_ingress_a" })).toEqual({
+      msgID: "channel_ingress_a",
+    });
+    expect(resolveSessionPromptPublishOptions({})).toBeUndefined();
   });
 
   it("force revalidates cached infrastructure for health checks and recovery", async () => {
@@ -91,7 +95,7 @@ describe("session prompt JetStream infrastructure", () => {
     await ensureSessionPromptInfrastructure(currentJsm as never);
     await ensureSessionPromptInfrastructure(currentJsm as never, { force: true });
 
-    expect(streamInfo).toHaveBeenCalledTimes(2);
+    expect(streamInfo).toHaveBeenCalledTimes(4);
     expect(consumerInfo).toHaveBeenCalledTimes(2);
   });
 
@@ -139,6 +143,100 @@ describe("session prompt JetStream infrastructure", () => {
 
     expect(consumerAdd).toHaveBeenCalledTimes(1);
     expect(consumerInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("recreates a stale consumer when its sequence is ahead of the stream", async () => {
+    const consumerDelete = mock(async () => true);
+    const consumerAdd = mock(async () => ({}));
+    currentJsm = makePromptJsm({
+      streams: {
+        info: mock(async () => ({ state: { last_seq: 16 } })),
+      },
+      consumers: {
+        info: mock(async () => ({ ack_floor: { stream_seq: 3_276 }, delivered: { stream_seq: 3_276 } })),
+        delete: consumerDelete,
+        add: consumerAdd,
+      },
+    });
+
+    await ensureSessionConsumer(currentJsm as never);
+
+    expect(consumerDelete).toHaveBeenCalledWith("SESSION_PROMPTS", "ravi-prompts");
+    expect(consumerAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces a sourced prompt to the runtime after its durable publish", async () => {
+    const publishGate = deferred<void>();
+    const callOrder: string[] = [];
+    const runtimeEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const publishedTraces: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const errors: unknown[] = [];
+    const source = {
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "slack-main",
+      chatId: "C123",
+      sourceMessageId: "1784824412.623669",
+    };
+    const publish = publishSessionPromptPublication({
+      sessionName: "ravi-slack-channel",
+      payload: {
+        prompt: "deixa eu testar",
+        source,
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+      },
+      publishDurably: async () => {
+        callOrder.push("prompt:start");
+        await publishGate.promise;
+        callOrder.push("prompt:durable");
+      },
+      emitRuntimeEvent: async (topic, payload) => {
+        callOrder.push("runtime");
+        runtimeEvents.push({ topic, payload });
+      },
+      recordPublishedTrace: (input) => {
+        publishedTraces.push(input);
+      },
+      onRuntimeEventError: (error) => {
+        errors.push(error);
+      },
+      onTraceError: (error) => {
+        errors.push(error);
+      },
+    });
+    await waitUntil(() => callOrder.includes("prompt:start"));
+
+    expect(callOrder).toEqual(["prompt:start"]);
+
+    publishGate.resolve();
+    await publish;
+
+    expect(callOrder).toEqual(["prompt:start", "prompt:durable", "runtime"]);
+    expect(runtimeEvents).toEqual([
+      {
+        topic: "ravi.session.ravi-slack-channel.runtime",
+        payload: expect.objectContaining({
+          type: "prompt.published",
+          sessionName: "ravi-slack-channel",
+          _source: source,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        }),
+      },
+    ]);
+    expect(publishedTraces).toEqual([
+      {
+        sessionName: "ravi-slack-channel",
+        payload: expect.objectContaining({
+          prompt: "deixa eu testar",
+          source,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        }),
+      },
+    ]);
+    expect(errors).toEqual([]);
   });
 });
 

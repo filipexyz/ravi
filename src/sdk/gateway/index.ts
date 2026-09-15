@@ -4,13 +4,27 @@
 
 export { startGateway, GATEWAY_VERSION, createGatewayHandlerContext, handleGatewayRequest } from "./server.js";
 export type { GatewayConfig, GatewayHandle, GatewayHandlerContext } from "./server.js";
+export {
+  CORS_ALLOW_METHODS,
+  CORS_REQUIRED_HEADERS,
+  corsHeaders,
+  isAllowedOrigin,
+  withCorsHeaders,
+} from "./cors.js";
 export type { GatewayAuthConfig, ResolvedAuth, AuthFailureReason } from "./auth.js";
 export { dispatch } from "./dispatcher.js";
 export type { DispatchOptions, DispatchResult, AuditEvent } from "./dispatcher.js";
 export { commandUrlPath, buildRouteTable, buildMetaPayload, API_PREFIX } from "./route-table.js";
 export type { RouteTable, RegistryMetaPayload } from "./route-table.js";
 export { defaultStreamChannels } from "./streaming/channels.js";
-export { createSseResponse, createSseReadableStream, encodeSseEvent } from "./streaming/sse.js";
+export { raviHttpServeOptions } from "./http-serve.js";
+export {
+  createSseResponse,
+  createSseReadableStream,
+  encodeSseEvent,
+  DEFAULT_KEEPALIVE_MS,
+  DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS,
+} from "./streaming/sse.js";
 export type {
   StreamAuditEvent,
   StreamChannel,

@@ -67,6 +67,8 @@ export interface SlackEventPayload {
 
 export interface SlackFilePayload {
   readonly id?: string;
+  readonly mode?: string;
+  readonly file_access?: string;
   readonly name?: string;
   readonly title?: string;
   readonly mimetype?: string;
@@ -80,6 +82,8 @@ export interface SlackFilePayload {
 
 export interface SlackNormalizedFile {
   readonly id: string;
+  readonly mode?: string;
+  readonly fileAccess?: string;
   readonly name?: string;
   readonly title?: string;
   readonly mimeType?: string;

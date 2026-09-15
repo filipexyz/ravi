@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { enforceRaviAppRunResult, throwRaviAppContractError } from "../../apps/error-contract.js";
 import {
   buildAppsGuide,
   checkAppManifests,
@@ -23,6 +24,11 @@ import {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function failAppsCommand(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof RaviAppError) throwRaviAppContractError(op, error, asJson);
+  fail(error instanceof Error ? error.message : String(error));
 }
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -46,7 +52,7 @@ const appPermissionProviderSchemaSummarySchema = z.object({
 const appPermissionProviderSchema = z.object({
   id: z.string(),
   version: z.string(),
-  interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+  interface: z.enum(["builtin", "cli"]),
   operation: z.string(),
   decisionSchema: appPermissionProviderSchemaSummarySchema,
   requestSchema: appPermissionProviderSchemaSummarySchema,
@@ -121,9 +127,16 @@ const appsCheckReturnSchema = z.object({
 });
 
 const appScaffoldFileSchema = z.object({
-  kind: z.enum(["manifest", "spec", "skill"]),
+  kind: z.enum(["cli", "manifest", "spec", "skill"]),
   path: z.string(),
-  action: z.enum(["planned", "created", "overwritten"]),
+  action: z.enum(["planned", "created", "overwritten", "preserved"]),
+});
+
+const appBuilderGuidanceSchema = z.object({
+  skill: z.string(),
+  command: z.string(),
+  spec: z.string(),
+  reviewChecklist: z.array(z.string()),
 });
 
 const appsScaffoldReturnSchema = z.object({
@@ -133,12 +146,14 @@ const appsScaffoldReturnSchema = z.object({
   command: z.string(),
   dryRun: z.boolean(),
   force: z.boolean(),
+  cliPath: z.string().nullable(),
   manifestPath: z.string(),
   specPath: z.string().nullable(),
   skillPath: z.string().nullable(),
   skill: z.string().nullable(),
   files: z.array(appScaffoldFileSchema),
   manifest: z.record(z.string(), jsonValueSchema),
+  builder: appBuilderGuidanceSchema,
   nextCommands: z.array(z.string()),
 });
 
@@ -195,6 +210,7 @@ const appsGuideReturnSchema = z.object({
     group: z.string(),
     skill: z.string(),
   }),
+  builder: appBuilderGuidanceSchema,
   prompts: z.array(appGuidePromptSchema),
   nextCommands: z.array(z.string()),
 });
@@ -204,35 +220,62 @@ const appsRunReturnSchema = z.object({
   appId: z.string().nullable(),
   operation: z.string().nullable(),
   operationId: z.string().nullable(),
-  interface: z.enum(["builtin", "cli", "sdk", "tool", "stream"]).nullable(),
+  interface: z.enum(["builtin", "cli"]).nullable(),
   mutating: z.boolean(),
-  status: z.enum(["completed", "failed"]),
+  status: z.enum(["completed", "blocked", "failed"]),
   durationMs: z.number(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  errorCode: z.string().optional(),
+  dryRun: z.literal(true).optional(),
+  plan: z
+    .object({
+      appId: z.string(),
+      operationId: z.string(),
+      interface: z.enum(["builtin", "cli"]),
+      mutating: z.literal(true),
+      argumentCount: z.number(),
+    })
+    .optional(),
   command: z.string().optional(),
   handler: z.string().optional(),
   channel: z.string().optional(),
   exitCode: z.number().nullable().optional(),
   stdout: z.string().optional(),
   stderr: z.string().optional(),
+  callerContextId: z.string().optional(),
+  childContextId: z.string().optional(),
   permissionProvider: z
     .object({
       providerId: z.string(),
       providerVersion: z.string(),
       providerOperationId: z.string(),
-      interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+      interface: z.enum(["builtin", "cli"]),
       requestId: z.string(),
       decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
       reasonCode: z.string().nullable(),
       reason: z.string().optional(),
+      reasonPresent: z.boolean().optional(),
       durationMs: z.number(),
       cache: z.object({
         hit: z.boolean(),
         ttlSec: z.number().optional(),
       }),
-      grantSuggestion: jsonValueSchema.optional(),
-      audit: jsonValueSchema.optional(),
+      grantSuggestion: z
+        .object({
+          subject: z.object({ type: z.string(), id: z.string() }),
+          relation: z.string(),
+          object: z.object({ type: z.string(), id: z.string() }),
+          ttlSec: z.number().optional(),
+          reasonPresent: z.boolean().optional(),
+        })
+        .optional(),
+      audit: z
+        .object({
+          policyVersion: z.string().optional(),
+          evidenceCount: z.number(),
+        })
+        .optional(),
       error: z.string().optional(),
     })
     .optional(),
@@ -347,7 +390,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps list", error, asJson);
     }
   }
 
@@ -384,12 +427,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps show", error, asJson);
     }
   }
 
@@ -411,7 +449,7 @@ export class AppsCommands {
 
       if (asJson) {
         printJson(payload);
-        if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
         return payload;
       }
 
@@ -433,37 +471,41 @@ export class AppsCommands {
         console.log(`warnings for ${result.id}:`);
         for (const warning of result.warnings) console.log(`  - ${warning}`);
       }
-      if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+      if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps check", error, asJson);
     }
   }
 
   @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
-  @CommandAccess({ kind: "mutate", resource: "apps", action: "run", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "apps",
+    action: "run",
+    risk: "high",
+    redactions: ["args"],
+    requiresConfirmation: true,
+  })
   @Returns(appsRunReturnSchema)
   async run(
     @Arg("id", { description: "App id" }) id: string,
     @Arg("operation", { required: false, description: "Operation name. Defaults to app help." }) operation?: string,
     @Arg("args", { required: false, variadic: true, description: "Operation arguments" }) rest?: string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Execute a mutating app operation" }) execute?: boolean,
   ) {
-    const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
+    const wantsJson = asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
     const result = await runAppOperation({
       appId: id,
       operation,
       args: rest ?? [],
       json: wantsJson,
+      execute: execute === true,
     });
 
+    enforceRaviAppRunResult(result, wantsJson);
     printAppRunResult(result, { json: wantsJson });
-    if (!result.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
     return result;
   }
 
@@ -474,10 +516,14 @@ export class AppsCommands {
     @Arg("id", { description: "Stable app id, e.g. music or music/player" }) id: string,
     @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
     @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
-    @Option({ flags: "--command <command>", description: "Canonical CLI command (default: ravi <id>)" })
+    @Option({ flags: "--command <command>", description: "Implementation CLI command (default: generated bun cli.ts)" })
     command?: string,
     @Option({ flags: "--dry-run", description: "Print planned files without writing" }) dryRun?: boolean,
-    @Option({ flags: "--force", description: "Overwrite existing scaffold files" }) force?: boolean,
+    @Option({
+      flags: "--force",
+      description: "Overwrite scaffold contracts while preserving an existing implementation CLI",
+    })
+    force?: boolean,
     @Option({ flags: "--skip-ui", description: "Do not include interfaces.ui in the manifest" }) skipUi?: boolean,
     @Option({ flags: "--skip-skill", description: "Do not create a skill skeleton" }) skipSkill?: boolean,
     @Option({ flags: "--skip-spec", description: "Do not create an app spec skeleton" }) skipSpec?: boolean,
@@ -505,16 +551,14 @@ export class AppsCommands {
       for (const file of payload.files) {
         console.log(`- ${file.action} ${file.kind}: ${file.path}`);
       }
+      console.log(`\nBuilder: ${payload.builder.command}`);
+      console.log("Review checklist:");
+      for (const item of payload.builder.reviewChecklist) console.log(`- ${item}`);
       console.log("\nNext commands:");
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps scaffold", error, asJson);
     }
   }
 
@@ -547,12 +591,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps delete", error, asJson);
     }
   }
 
@@ -602,11 +641,14 @@ export class AppsCommands {
       for (const warning of payload.warnings) console.log(`warning: ${warning}`);
       for (const item of payload.reviewRequired) console.log(`review: ${item}`);
       for (const file of payload.files) console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      console.log(`\nBuilder: ${payload.builder.command}`);
+      console.log("Review checklist:");
+      for (const item of payload.builder.reviewChecklist) console.log(`- ${item}`);
       console.log("\nNext commands:");
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps import-cli", error, asJson);
     }
   }
 
@@ -646,6 +688,7 @@ export class AppsCommands {
       console.log("Ravi Apps guide");
       console.log(`skill: ${payload.skill}`);
       console.log(`skill gate: ${payload.skillGate.group} -> ${payload.skillGate.skill}`);
+      console.log(`builder: ${payload.builder.command}`);
       if (payload.app) {
         console.log(`app: ${payload.app.id} (${payload.app.interfaceNames.join(", ") || "no interfaces"})`);
       }
@@ -656,7 +699,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps prompts", error, asJson);
     }
   }
 }

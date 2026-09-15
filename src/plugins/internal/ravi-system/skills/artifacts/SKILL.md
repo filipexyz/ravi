@@ -14,6 +14,43 @@ description: |
 
 Ele registra o arquivo bruto, metadata, métricas, lineage e relações com sessão/task/canal para que um artifact possa ser auditado, encontrado e reutilizado depois.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `ARTIFACT_NOT_FOUND`, `ARTIFACT_VERSION_NOT_FOUND`). O envelope traz `suggestions` com artifacts reais parecidos (ids/títulos do ledger local) ou `suggestedAction` apontando a listagem certa — consulte antes de concluir "não existe".
+- `2` erro de uso (flag\argumento inválido): corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi enviado/exposto; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje (ops que expõem conteúdo externamente):
+
+- `artifacts publish` e `artifacts release activate` — dry-run por default; nada sobe para o Console sem `--execute`.
+
+Exemplos freados (repita com `--execute` após revisar o `plan`):
+
+```bash
+ravi artifacts publish ./site --project proj --site demo --route / --visibility public --json           # exit 3 (plano)
+ravi artifacts publish ./site --project proj --site demo --route / --visibility public --json --execute # publica
+ravi artifacts release activate art_xxx --release rel_xxx --json --execute
+```
+
+Escritas SEM freio (gravam na hora — o freio é você conferir o alvo antes):
+
+- `artifacts create`, `update`, `attach`, `event`, `snapshot`
+- `artifacts archive` e `artifacts restore` (par reversível: archive é soft-delete consultável com `--include-deleted`; restore recupera de versão imutável e registra nova versão)
+
+Compact mode: `artifacts list` aceita `--fields a,b,c` (ex.: `--fields id,kind`) — use em varredura para não arrastar o objeto inteiro.
+
+Checklist antes de responder sobre artifacts:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions`/`suggestedAction` do envelope antes de declarar not-found?
+
+Hospedar HTML → skill `pages` (`ravi skills show pages`). Este ledger não é o happy path de Pages.
+
 ## Criar Artifact
 
 ```bash
@@ -116,26 +153,6 @@ ravi artifacts archive art_xxx
 ```
 
 Archive é soft-delete: o artifact sai da listagem padrão, mas continua consultável com `--include-deleted`.
-
-## Publicar Conteúdo em Ravi Pages
-
-Para subir HTML/site no Ravi Pages, use `ravi pages publish`. `ravi pages`
-cria/edita o site, mas não sobe bytes sem o publish.
-
-Fluxo canônico para diretório local:
-
-```bash
-ravi pages create <project-ref> <site-slug> --visibility public
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
-```
-
-Se já existe artifact local:
-
-```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
-```
-
-O upload de conteúdo do Pages é `ravi pages publish`.
 
 ## Integração Atual
 

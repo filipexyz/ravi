@@ -1,7 +1,22 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { BridgesCommands } from "./bridges.js";
+
+// Manual v2 contract: hasContext() true makes the contract helpers throw
+// ContractError instead of process.exit, which is what tests need.
+const actualContext = await import("../context.js");
+mock.module("../context.js", () => ({
+  ...actualContext,
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const { BridgesCommands } = await import("./bridges.js");
+const { ContractError } = await import("../agent-contract.js");
+
+afterAll(() => mock.restore());
 
 describe("bridges CLI commands", () => {
   it("lists Ravi MCP bridges with agent-friendly pagination metadata", async () => {
@@ -117,6 +132,102 @@ describe("bridges CLI commands", () => {
     });
   });
 });
+
+// Manual v2 agent-first contract: write brake on the destructive revoke,
+// `--fields` compact mode, and ContractError passing through the legacy
+// CloudAuthError funnel untouched.
+describe("bridges contract", () => {
+  it("revoke without --yes/--execute is a dry-run: exit 3 and NO Console call", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return { revoked: true, bridgeId: "bridge_1" };
+    });
+    const command = new BridgesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.revoke("bridge_1", undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({ bridgeId: "bridge_1", revokesClientTokens: true });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("revoke with --execute performs the Console call", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return { revoked: true, bridgeId: "bridge_1" };
+    });
+    const command = new BridgesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.revoke("bridge_1", undefined, undefined, true, true));
+
+    expect(calls).toEqual(["/api/cli/mcp/bridges/bridge_1/revoke"]);
+    expect(JSON.parse(output)).toMatchObject({ revoked: true, bridgeId: "bridge_1" });
+  });
+
+  it("list --fields narrows each bridge to the requested fields", async () => {
+    const client = makeClient(async () => ({
+      bridges: [
+        { id: "bridge_1", name: "Claude Desktop", status: "active", calls24h: 3 },
+        { id: "bridge_2", name: "Cursor", status: "active", calls24h: 0 },
+      ],
+    }));
+    const command = new BridgesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.list("demo", undefined, undefined, undefined, true, "id,status"),
+    );
+    const payload = JSON.parse(output);
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "status"]);
+    }
+  });
+
+  it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
+    const boom = new ContractError("bridges list", "SOME_CONTRACT_CODE", "boom", 1, {});
+    const command = new BridgesCommands({
+      client: makeClient(async () => ({ bridges: [] })),
+      readCredentials: () => {
+        throw boom;
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await captureConsole(() => command.list("demo", undefined, undefined, undefined, true));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBe(boom);
+    expect((caught as InstanceType<typeof ContractError>).exitCode).toBe(1);
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  try {
+    await captureConsole(async () => await run());
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

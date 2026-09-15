@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
   addContactTag,
+  allowContact,
   archiveCrmPipelineStage,
   backfillInboundContacts,
   buildMentionedContactPromptContexts,
@@ -88,6 +89,30 @@ afterEach(async () => {
 });
 
 describe("contacts identity graph schema", () => {
+  it("prefers an exact Slack identity over a legacy phone-normalized shadow contact", () => {
+    upsertContact("021", "Legacy shadow", "blocked", "manual");
+    const inbound = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformSenderId: "U0BAA2B1LTS",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+
+    expect(inbound.contact).toMatchObject({
+      phone: "U0BAA2B1LTS",
+      status: "pending",
+    });
+
+    allowContact(inbound.contact!.phone);
+
+    expect(getContact(inbound.contact!.id)?.status).toBe("allowed");
+    expect(getContact("U0BAA2B1LTS")?.status).toBe("allowed");
+    expect(getContact("021")?.status).toBe("blocked");
+    expect(getAllContacts()).toHaveLength(2);
+  });
+
   it("writes canonical contacts, policies, and platform identities directly", () => {
     upsertContact("5511999999999", "Alice", "allowed", "manual");
     const contact = getContact("5511999999999");

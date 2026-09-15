@@ -38,4 +38,6 @@ ravi daemon logs --tail 200
 - **Duplicate resume event for same restart epoch**: idempotency bug.
 - **Resume event delivered but output goes to wrong chat**: output-target/session attach bug, not restart fan-out.
 - **Resume event delivered but pending user message lost**: runtime/session-continuity bug.
+- **Resume opened Claude after Codex was last-used**: provider selection ignored `session.runtimeProvider` or the restart snapshot. Check `resumeDecision.requestedRuntimeProvider` and `_daemonRestartResume.runtimeProvider`.
+- **`Not logged in · Please run /login` on `main`**: login stub was treated as assistant transcript. It MUST be `turn.failed` / auth error and MUST NOT persist.
 

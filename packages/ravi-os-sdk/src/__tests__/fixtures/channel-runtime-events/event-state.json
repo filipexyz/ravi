@@ -1,0 +1,24 @@
+{
+  "correlation": {
+    "binding": {
+      "agentId": "agent-a",
+      "channelInstanceId": "channel-instance-a",
+      "chatId": "chat-a",
+      "messageId": "message-a",
+      "sessionId": "session-a",
+      "turnId": "turn-a"
+    },
+    "causationId": "request-a",
+    "correlationId": "correlation-a",
+    "ingressRequestId": "request-a"
+  },
+  "eventId": "event-state",
+  "kind": "turn.state_changed",
+  "occurredAt": "2026-07-24T18:00:01.000Z",
+  "payload": {
+    "state": "running"
+  },
+  "protocol": "ravi.channel.runtime-events",
+  "schemaVersion": 1,
+  "sequence": 1
+}

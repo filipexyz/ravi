@@ -1,5 +1,6 @@
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createGrokRuntimeProvider } from "./grok-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
 import type {
   RuntimeCompatibilityIssue,
@@ -16,10 +17,11 @@ export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "codex";
 const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
   ["claude", createClaudeRuntimeProvider],
   ["codex", createCodexRuntimeProvider],
+  ["grok", createGrokRuntimeProvider],
   ["pi", createPiRuntimeProvider],
 ]);
 
-const builtInRuntimeProviderIds = new Set<RuntimeProviderId>(["claude", "codex", "pi"]);
+const builtInRuntimeProviderIds = new Set<RuntimeProviderId>(["claude", "codex", "grok", "pi"]);
 
 export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
   runtimeProviderFactories.set(providerId, factory);

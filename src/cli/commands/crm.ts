@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   changedEntityReturnSchema,
@@ -73,6 +74,56 @@ import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permis
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+function failPipelineNotFound(op: string, pipelineRef: string, asJson?: boolean): never {
+  const candidates = listCrmPipelines({ includeArchived: true }).flatMap((pipeline) => [pipeline.id, pipeline.name]);
+  contractFail(op, "PIPELINE_NOT_FOUND", `CRM pipeline not found: ${pipelineRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the pipeline id/name (see suggestions for similar pipelines)",
+      suggestions: suggestSimilar(pipelineRef, candidates),
+    },
+  });
+}
+
+function failOpportunityNotFound(op: string, opportunityId: string, asJson?: boolean): never {
+  const candidates = listCrmOpportunityBoard({}).flatMap((opportunity) => [
+    String(opportunity.opportunityId ?? ""),
+    String(opportunity.title ?? ""),
+  ]);
+  contractFail(op, "OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${opportunityId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the opportunity id (crm_opp_*) or title (see suggestions)",
+      suggestions: suggestSimilar(opportunityId, candidates),
+    },
+  });
+}
+
+function failCrmContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
+  contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the contact id or identity with: ravi crm contacts --json",
+    },
+  });
+}
+
+function failCrmTaskNotFound(op: string, taskId: string, asJson?: boolean): never {
+  contractFail(op, "CRM_TASK_NOT_FOUND", `CRM task not found: ${taskId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the CRM task id with: ravi crm task list --json",
+    },
+  });
 }
 
 // ============================================================
@@ -445,9 +496,9 @@ function canReadCrmContact(contactRef: string): boolean {
   );
 }
 
-function assertCanReadCrmContact(contactRef: string): void {
+function assertCanReadCrmContact(op: string, contactRef: string, asJson?: boolean): void {
   if (canReadCrmContact(contactRef)) return;
-  fail(`Contact not found: ${contactRef}`);
+  failCrmContactNotFound(op, contactRef, asJson);
 }
 
 function canReadCrmContactRecord(
@@ -502,9 +553,10 @@ function filterCrmRecordsByContact<T extends object>(records: T[]): T[] {
 }
 
 function showCrmContactProfile(contactRef: string, asJson?: boolean) {
-  assertCanReadCrmContact(contactRef);
+  const op = "crm contact show";
+  assertCanReadCrmContact(op, contactRef, asJson);
   const profile = getCrmContactProfile(contactRef);
-  if (!profile) fail(`Contact not found: ${contactRef}`);
+  if (!profile) failCrmContactNotFound(op, contactRef, asJson);
   const payload = { target: contactRef, crm: profile };
   if (asJson) {
     printJson(payload);
@@ -792,7 +844,7 @@ function showCrmAccount(accountRef: string, asJson?: boolean) {
 
 function showCrmOpportunity(opportunityId: string, asJson?: boolean) {
   const opportunity = getCrmOpportunity(opportunityId);
-  if (!opportunity) fail(`CRM opportunity not found: ${opportunityId}`);
+  if (!opportunity) failOpportunityNotFound("crm opportunity show", opportunityId, asJson);
   const payload = { target: opportunityId, opportunity };
   if (asJson) {
     printJson(payload);
@@ -827,9 +879,11 @@ export class ACrmCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching actions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ownerFilter = parseOwner(owner);
-    if (contact) assertCanReadCrmContact(contact);
+    if (contact) assertCanReadCrmContact("crm next", contact, asJson);
     const page = listCrmNextActions({
       ...ownerFilter,
       contactRef: contact,
@@ -844,6 +898,7 @@ export class ACrmCommands {
       readableContactIds: listReadableCrmContactIds(),
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "next"],
       limit: page.limit,
       offset: page.offset,
@@ -867,7 +922,8 @@ export class ACrmCommands {
         dueAfter,
       ],
     });
-    const payload = { total: page.total, pagination, items: page.items, actions: page.items };
+    const items = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items, actions: items };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -925,6 +981,8 @@ export class ACrmCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ownerFilter = parseOwner(owner);
     const page = listCrmContactCards({
@@ -935,6 +993,7 @@ export class ACrmCommands {
       readableContactIds: listReadableCrmContactIds(),
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "contacts"],
       limit: page.limit,
       offset: page.offset,
@@ -942,7 +1001,8 @@ export class ACrmCommands {
       total: page.total,
       options: ["--status", lifecycle, "--owner", owner],
     });
-    const payload = { total: page.total, pagination, items: page.items, contacts: page.items };
+    const contactItems = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: contactItems, contacts: contactItems };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -970,12 +1030,14 @@ export class ACrmCommands {
     @Option({ flags: "--pipeline <pipeline>", description: "Filter by CRM pipeline ID or name" }) pipeline?: string,
     @Option({ flags: "--include-empty-stages", description: "Include configured stages with no opportunities" })
     includeEmptyStages?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each opportunity" })
+    fields?: string,
   ) {
-    const board = filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline }));
+    const board = pickFields(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), fields);
     const stages = includeEmptyStages
       ? listCrmOpportunityBoardStages(pipeline).map((stage) => ({
           ...stage,
-          opportunities: filterCrmRecordsByContact(stage.opportunities),
+          opportunities: pickFields(filterCrmRecordsByContact(stage.opportunities), fields),
         }))
       : undefined;
     const payload = stages
@@ -1023,10 +1085,13 @@ export class CrmPipelineCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching pipelines to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(pipelines, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "pipeline", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -1034,7 +1099,8 @@ export class CrmPipelineCommands {
       total: page.total,
       options: ["--entity-type", entityType, ...(includeArchived ? ["--include-archived"] : [])],
     });
-    const payload = { total: page.total, pagination, items: page.items, pipelines: page.items };
+    const pipelineItems = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: pipelineItems, pipelines: pipelineItems };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1061,7 +1127,7 @@ export class CrmPipelineCommands {
     explain?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline show", pipelineRef, asJson);
     const payload = pipeline;
     if (asJson) {
       printJson(payload);
@@ -1118,7 +1184,7 @@ export class CrmPipelineCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline review", pipelineRef, asJson);
     const report = reviewPipelineMetadata(
       {
         id: pipeline.pipeline.id,
@@ -1127,6 +1193,25 @@ export class CrmPipelineCommands {
       },
       { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
     );
+    if (report.highSeverityGaps > 0) {
+      contractFail(
+        "crm pipeline review",
+        "PIPELINE_REVIEW_FAILED",
+        `Pipeline review found ${report.highSeverityGaps} high-severity gap(s).`,
+        {
+          asJson,
+          details: {
+            pipelineId: report.pipelineId,
+            totalGaps: report.totalGaps,
+            highSeverityGaps: report.highSeverityGaps,
+            gaps: report.fields
+              .filter((field) => field.present !== "present")
+              .map(({ group, field, present, suggestion }) => ({ group, field, present, suggestion })),
+            suggestedAction: `Complete the missing pipeline metadata, then run: ravi crm pipeline review ${report.pipelineId} --json`,
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(report);
       return report;
@@ -1144,9 +1229,6 @@ export class CrmPipelineCommands {
         if (f.suggestion) console.log(`    → ${f.suggestion}`);
       }
       console.log("");
-    }
-    if (report.highSeverityGaps > 0) {
-      process.exitCode = 1;
     }
     return report;
   }
@@ -1184,7 +1266,7 @@ export class CrmPipelineCommands {
     }
     if (!pipelineRef) fail("pipeline argument required (or pass --schema-json)");
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline validate", pipelineRef, asJson);
     const result = validatePipelineMetadata(pipeline.pipeline.metadata ?? {}, {
       runtimeStageKeys: pipeline.stages.map((s) => s.key),
     });
@@ -1194,9 +1276,24 @@ export class CrmPipelineCommands {
       errors: result.errors,
       warnings: result.warnings,
     };
+    if (!result.ok) {
+      contractFail(
+        "crm pipeline validate",
+        "PIPELINE_VALIDATION_FAILED",
+        `Pipeline metadata validation failed with ${result.errors.length} error(s).`,
+        {
+          asJson,
+          details: {
+            pipelineId: pipeline.pipeline.id,
+            errors: result.errors,
+            warnings: result.warnings,
+            suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(payload);
-      if (!result.ok) process.exitCode = 1;
       return payload;
     }
     console.log(`\nValidate: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
@@ -1216,14 +1313,13 @@ export class CrmPipelineCommands {
     if (result.ok && result.warnings.length === 0) {
       console.log("\nNo issues found.");
     }
-    if (!result.ok) process.exitCode = 1;
     return payload;
   }
 
   @Scope("writeContacts")
   @Command({
     name: "create",
-    description: "Create a CRM pipeline (with optional declarative metadata)",
+    description: "Create a CRM pipeline",
     helpAfter: PIPELINE_CREATE_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "create", risk: "medium" })
@@ -2116,7 +2212,27 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated opportunity creation" })
     idempotencyKey?: string,
   ) {
-    const opportunity = createCrmOpportunity({
+    if (value !== undefined && value !== "-" && value !== "null" && !Number.isFinite(Number(value))) {
+      contractFail("crm opportunity create", "USAGE_ERROR", `--value must be a number (got: ${value})`, {
+        asJson,
+        exitCode: 2,
+        details: {
+          suggestedAction: "Pass the opportunity value in integer cents, e.g. --value 500000",
+          acceptedFlags: [
+            "--account",
+            "--contact",
+            "--pipeline",
+            "--stage",
+            "--value",
+            "--currency",
+            "--owner",
+            "--json",
+            "--idempotency-key",
+          ],
+        },
+      });
+    }
+    const createInput = {
       title,
       accountId,
       contactRef,
@@ -2126,6 +2242,9 @@ export class CrmOpportunityCommands {
       currency,
       ...parseOwner(owner),
       idempotencyKey,
+    };
+    const opportunity = createCrmOpportunity({
+      ...createInput,
       source: "cli",
       actorType: "user",
     });
@@ -2140,7 +2259,7 @@ export class CrmOpportunityCommands {
 
   @Scope("writeContacts")
   @Command({ name: "move", description: "Move an opportunity to another stage" })
-  @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "move", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "move", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   move(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -2240,7 +2359,7 @@ export class CrmFactCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching facts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (contactRef) assertCanReadCrmContact(contactRef);
+    if (contactRef) assertCanReadCrmContact("crm fact list", contactRef, asJson);
     const page = listCrmFacts({
       entityType,
       entityId,
@@ -2294,7 +2413,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "propose", description: "Propose or confirm a CRM fact" })
-  @CommandAccess({ kind: "read", resource: "crm.fact", action: "propose", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.fact", action: "propose", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   propose(
     @Arg("entityType", { description: "CRM entity type" }) entityType: string,
@@ -2335,7 +2454,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "confirm", description: "Confirm a CRM fact" })
-  @CommandAccess({ kind: "read", resource: "crm.fact", action: "confirm", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.fact", action: "confirm", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   confirm(
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
@@ -2384,8 +2503,10 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const task = getCrmTask(taskId);
-    if (!task) fail(`CRM task not found: ${taskId}`);
-    if (task.contactId && !canReadCrmContact(task.contactId)) fail(`CRM task not found: ${taskId}`);
+    if (!task) failCrmTaskNotFound("crm task show", taskId, asJson);
+    if (task.contactId && !canReadCrmContact(task.contactId)) {
+      failCrmTaskNotFound("crm task show", taskId, asJson);
+    }
     const payload = { target: taskId, task: formatCrmTaskForJson(task) };
     if (asJson) {
       printJson(payload);
@@ -2491,7 +2612,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "snooze", description: "Snooze a CRM task to a new due_at" })
-  @CommandAccess({ kind: "read", resource: "crm.task", action: "snooze", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.task", action: "snooze", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   snooze(
     @Arg("task", { description: "CRM task ID" }) taskId: string,
@@ -2536,7 +2657,7 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    if (contact) assertCanReadCrmContact(contact);
+    if (contact) assertCanReadCrmContact("crm task list", contact, asJson);
     const page = listCrmTasks({
       ...ownerFilter,
       contactRef: contact,

@@ -22,11 +22,40 @@ normative: true
 
 ## Intent
 
-Define the native, parallel Phase 1 migration of the legacy `sde yt` surface to a Ravi App. The app exposes official YouTube Data API v3 and YouTube Analytics API v2 resources while preserving the SDE implementation as an untouched fallback. Real credential onboarding and authenticated live proof are deliberately outside Phase 1.
+Define the native, parallel Phase 1 migration of the legacy `sde yt` surface
+to a Ravi App. The public app route is `ravi youtube`; the implementation CLI
+bound by the manifest is the registered static command `ravi yt`. The app
+exposes official YouTube Data API v3 and YouTube Analytics API v2 resources
+while preserving the SDE implementation as an untouched fallback. Real
+credential onboarding and authenticated live proof are deliberately outside
+Phase 1.
 
 ## Invariants
 
-- The app MUST use the native app ID `youtube` and the decorated CLI group `ravi yt` (alias `ravi youtube`).
+- The app MUST use the native app ID `youtube`.
+- `interfaces.cli.command` MUST identify `ravi yt` as the real, registered
+  static implementation CLI.
+- `ravi youtube <operation>` MUST be the canonical App Router route.
+  `ravi apps run youtube <operation>` MUST remain the explicit router fallback.
+- Direct `ravi yt <command>` is an implementation/debug and local-operator
+  compatibility surface. It is not a second App executor, and runtime app
+  callers MUST use the App Router.
+- Every CLI-backed manifest operation MUST invoke `ravi yt ...`; it MUST NOT
+  invoke `ravi youtube ...` and recursively re-enter the App Router.
+- UI, SDK, runtime tools, and automations MUST invoke declared `youtube.*`
+  operations through the generic App Router. Generated decorator SDK metadata
+  for `ravi yt` MAY remain for compatibility but MUST NOT define a separate app
+  implementation.
+- The manifest MUST declare `context.allow` with the reviewed child-context
+  ceiling required by the implementation CLI. For the current static command
+  boundary this MUST be `execute:group:yt`; it MUST NOT use inheritance or a
+  wildcard.
+- Manifest `permissions` gate the caller and operation. `context.allow` only
+  bounds the child CLI and MUST NOT be treated as an app permission grant.
+- In runtime context the App Router MUST launch `ravi yt` with a fresh child
+  context named `app:youtube`, bounded by the parent and the manifest ceiling.
+  It MUST NOT forward the parent context key or synthesize agent/session
+  identity environment variables.
 - The native client MUST call only official Google endpoints under `https://www.googleapis.com/youtube/v3` and `https://youtubeanalytics.googleapis.com/v2`.
 - The native client MUST NOT execute `sde`, import SDE modules, read SDE credential/token files, or alter the legacy SDE code or runtime.
 - Phase 1 MUST NOT implement OAuth consent/callback/token refresh, use a real token, or perform an authenticated live request.
@@ -47,6 +76,8 @@ Define the native, parallel Phase 1 migration of the legacy `sde yt` surface to 
 
 - `bun test src/apps/youtube src/cli/commands/youtube.test.ts`
 - `bun src/cli/index.ts apps check youtube --json`
+- `bun src/cli/index.ts youtube health --json`
+- `bun src/cli/index.ts apps run youtube health --json`
 - `bun src/cli/index.ts yt health --json`
 - `bun src/cli/index.ts yt info --json` with an isolated empty `RAVI_STATE_DIR` MUST fail before network access.
 - `bun run gen:commands && bun run sdk:generate && bun run sdk:check`
@@ -60,3 +91,8 @@ Define the native, parallel Phase 1 migration of the legacy `sde yt` surface to 
 - Treating captions as generic read can understate the required `youtube.force-ssl`/`youtubepartner` authorization.
 - Adding revenue metrics would introduce a financial permission class and the `yt-analytics-monetary.readonly` scope, which Phase 1 explicitly excludes.
 - Running mutation commands for validation would create public or irreversible effects; only fake-fetch tests are valid in Phase 1.
+- Treating `ravi yt` and `ravi youtube` as interchangeable public app routes
+  bypasses the App Router on the static path and obscures which authorization
+  boundary ran.
+- Declaring `ravi youtube` as an operation command recursively re-enters the
+  dynamic alias instead of launching the implementation CLI.

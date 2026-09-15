@@ -2,7 +2,9 @@
 
 ## Checks
 
-- A canonical chat MUST be able to bind to more than one Ravi agent session.
+- A canonical chat MUST belong to at most one active session. Multiple
+  sessions MAY have historical/detached rows, but only one active
+  `session_chat_subscription` may own the chat.
 - Chat participants MUST be stored at chat scope; session participants MUST NOT
   overwrite the canonical chat membership list.
 - A group, room, or thread MUST NOT be represented as a person contact.

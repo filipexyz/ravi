@@ -9,7 +9,7 @@
 - Web API client para `canvases.access.set`.
 - Web API client para `canvases.access.delete`.
 - Web API client para `canvases.delete`.
-- CLI dry-run/execute para operacoes de Canvas.
+- CLI com dry-run/execute para operacoes de risco e remocao de acesso imediata.
 - Validacao local de combinacoes invalidas de edit/access.
 - Header JSON com `charset=utf-8`.
 - Showcase repetivel em Canvas.

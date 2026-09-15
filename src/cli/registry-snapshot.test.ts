@@ -12,7 +12,7 @@ import {
   getCommandAccessMetadata,
   getReturnsMetadata,
 } from "./decorators.js";
-import { buildRegistry } from "./registry-snapshot.js";
+import { buildRegistry, omitRenderingFlags } from "./registry-snapshot.js";
 import {
   inferRaviCommandSkillGate,
   inferRaviToolSkillGate,
@@ -155,6 +155,26 @@ describe("buildRegistry", () => {
     expect(optionNames).toContain("items");
   });
 
+  it("omits rendering flags from a remote body while keeping other fields", () => {
+    expect(
+      omitRenderingFlags({
+        file: "/tmp/img.png",
+        caption: "hello",
+        execute: true,
+        json: true,
+        asJson: true,
+        pretty: true,
+        noColor: true,
+        quiet: true,
+        verbose: true,
+      }),
+    ).toEqual({
+      file: "/tmp/img.png",
+      caption: "hello",
+      execute: true,
+    });
+  });
+
   it("captures @Returns schema on the command entry", () => {
     const reg = buildRegistry([DemoCommands]);
     const helloCmd = reg.commands.find((c) => c.fullName === "demo.hello")!;
@@ -236,6 +256,16 @@ describe("buildRegistry", () => {
       skill: "ravi-system-tasks",
       source: "inferred",
     });
+    expect(inferRaviCommandSkillGate("ravi pages ship --title Demo --body '<p>x</p>' --json")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
+    expect(inferRaviCommandSkillGate("ravi pages password set demo --execute")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
     expect(inferRaviCommandSkillGate('echo "ravi tasks list"', { executables: ["echo"] })).toBeUndefined();
   });
 
@@ -259,6 +289,16 @@ describe("buildRegistry", () => {
     expect(inferRaviToolSkillGate("apps_list")).toMatchObject({
       skill: "ravi-system-apps",
       source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("pages_ship")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
+    });
+    expect(inferRaviToolSkillGate("pages_password_set")).toMatchObject({
+      skill: "ravi-system-pages",
+      source: "inferred",
+      ruleId: "pages",
     });
     expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();
   });

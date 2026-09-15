@@ -18,6 +18,57 @@ Use esta skill quando o usuario pedir para entrar numa call, gravar Meet,
 testar live mode, analisar um artifact de reuniao, publicar `meet.md`, ou
 debugar o fluxo de meeting provider.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`,
+falha sai em envelope
+`{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saida:
+
+- `0` sucesso.
+- `1` erro de execucao (ex.: `MEETING_PROFILE_NOT_FOUND` em `meetings profiles
+  show` e em `meetings join --profile`). O envelope traz `suggestions` do
+  catalogo local de profiles — consulte antes de concluir "nao existe".
+- `2` erro de uso (flag/argumento invalido).
+- `3` freio de escrita — nao usado neste dominio hoje; o equivalente aqui e o
+  `--dry-run` do `join` (abaixo).
+
+Equivalente de freio no `join` (flag `--dry-run` PRE-EXISTENTE, nao renomeada
+para `--execute`): valida a invocacao do provider, imprime args/env e NAO entra
+em reuniao nenhuma. Use antes de qualquer join novo/arriscado:
+
+```bash
+# 1. Inspecao (nao entra na call)
+ravi meetings join --provider google-meet --url https://meet.google.com/abc-defg-hij --dry-run --json
+
+# 2. Join real, apos revisar
+ravi meetings join --provider google-meet --url https://meet.google.com/abc-defg-hij --json
+```
+
+O default do `join` e a acao real porque entrar na call e o proprio proposito
+da op e ela e visivel/interruptivel (o bot aparece como participante e pode ser
+removido) — nao e uma escrita externa irreversivel.
+
+Sem freio (declaradas, com racional):
+
+- `meetings login` — fluxo interativo humano no browser: o humano no browser E
+  a confirmacao; um gate quebraria o fluxo.
+- `meetings finalize` — registra artifact LOCAL de um run ja concluido; sem
+  efeito externo.
+- `meetings profiles init` — scaffold local de configuracao, reversivel
+  (precedente: tasks `profiles init`).
+
+Compact mode: `meetings profiles list` aceita `--fields a,b,c` (ex.:
+`--fields id,label`).
+
+Checklist antes de responder sobre meetings:
+
+- Usei `--dry-run --json` antes de um join novo/arriscado?
+- Consultei `suggestions` do envelope antes de declarar profile inexistente?
+- Tratei o retorno do join assincrono via `ravi artifacts events <id>` em vez
+  de reexecutar em loop?
+
 ## Regras Principais
 
 - Nao grave reuniao escondido. O bot deve entrar como participante visivel.

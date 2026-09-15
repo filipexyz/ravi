@@ -536,6 +536,64 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     filters: ['data.status == "ready"', 'data.agentId == "main"'],
   },
   {
+    id: "inbox.system.runtime_recovery_exhausted",
+    category: "inbox",
+    pattern: "ravi.inbox.system.runtime_recovery_exhausted",
+    title: "Runtime recovery exhausted",
+    description: "Automatic runtime recovery stopped and created an urgent local inbox item.",
+    payload:
+      "{ version, eventType, inboxItemId, sourceDomain, sourceType, sourceId, dedupeKey, severity, sessionName, agentId?, provider?, reason, restartAttempts, stashedQueueSize, occurredAt, createdAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        {
+          path: "eventType",
+          type: "string",
+          required: true,
+          description: "Always inbox.system.runtime_recovery_exhausted.",
+        },
+        { path: "inboxItemId", type: ["string", "null"], description: "Urgent local inbox item id." },
+        { path: "sourceDomain", type: "string", required: true, description: "Always system." },
+        {
+          path: "sourceType",
+          type: "string",
+          required: true,
+          description: "Always runtime_recovery_exhausted.",
+        },
+        { path: "sourceId", type: "string", required: true, description: "Privacy-safe recovery episode id." },
+        { path: "dedupeKey", type: "string", required: true, description: "Stable recovery episode dedupe key." },
+        { path: "severity", type: "string", required: true, description: "Always critical." },
+        { path: "sessionName", type: "string", required: true, description: "Session requiring operator attention." },
+        { path: "agentId", type: "string", description: "Agent associated with the session." },
+        { path: "provider", type: "string", description: "Runtime provider used by the failed session." },
+        { path: "reason", type: "string", required: true, description: "Normalized recovery reason." },
+        {
+          path: "restartAttempts",
+          type: "number",
+          required: true,
+          description: "Automatic restart attempts consumed by the recovery episode.",
+        },
+        {
+          path: "stashedQueueSize",
+          type: "number",
+          required: true,
+          description: "Messages retained for an explicit retry.",
+        },
+        { path: "occurredAt", type: "string", required: true, description: "ISO occurrence timestamp." },
+        { path: "createdAt", type: "string", required: true, description: "ISO event creation timestamp." },
+      ],
+    },
+    messageTemplate: {
+      id: "runtime-recovery-exhausted-default",
+      description: "Default operator notification for exhausted runtime recovery.",
+      template:
+        "[ravi runtime] session {{data.sessionName}} exhausted automatic recovery after {{data.restartAttempts}} attempts. Inspect it with: ravi sessions trace {{data.sessionName}}",
+      variables: ["data.sessionName", "data.restartAttempts"],
+    },
+    examples: ['ravi triggers add "Runtime recovery alert" --topic "ravi.inbox.system.runtime_recovery_exhausted"'],
+  },
+  {
     id: "inbox.mail.received",
     category: "inbox",
     pattern: "ravi.inbox.mail.received",
@@ -623,6 +681,36 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     },
     examples: ['ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."'],
     notes: ["For local email, listen to ravi.inbox.mail.received instead."],
+  },
+  {
+    id: "watch.console.bug.status",
+    category: "watch",
+    pattern: "ravi.watch.console.bug.status",
+    title: "Followed Console bug status",
+    description: "Normalized watch event after Console delivers watch.console.bug.status to subscribers of that bugId.",
+    payload:
+      "{ version, eventId, watchId, connector, placement, eventType, subject, source, payload: { bugId, title, status, consoleUrl }, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "eventType", type: "string", required: true, description: "Always bug.status." },
+        { path: "connector", type: "string", required: true, description: "Always console." },
+        { path: "payload.bugId", type: "string", required: true, description: "Followed Console bug id." },
+        { path: "payload.title", type: "string", description: "Bug title." },
+        { path: "payload.status", type: "string", description: "New Console bug status." },
+        { path: "payload.consoleUrl", type: "string", description: "Tracking URL on Console." },
+        { path: "bugId", type: "string", description: "Flattened bug id when Console puts it on the event root." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Follow bug" --topic "ravi.watch.console.bug.status" --filter \'data.payload.bugId == "<bugId>" || data.bugId == "<bugId>"\' --session main --cooldown 30s --message "..."',
+    ],
+    filters: ['data.payload.bugId == "<bugId>"', 'data.bugId == "<bugId>"'],
+    notes: [
+      "Console push delivery eventType is watch.console.bug.status. Local NATS after the delivery bridge is ravi.watch.console.bug.status.",
+      "Subscribe with POST /api/cli/bugs/:id/subscribe (installation identity in the body) so only this CLI installation receives that bugId.",
+      "Always filter by this bugId. Do not create a broad all-my-bugs trigger.",
+    ],
   },
   {
     id: "watch.event",

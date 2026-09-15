@@ -15,10 +15,11 @@
  */
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
-import { getNats, ensureConnected } from "../nats.js";
+import { getNats, ensureConnected, nats } from "../nats.js";
 import { inferDeliveryBarrier, requireDeliveryBarrier, type DeliveryBarrierSource } from "../delivery-barriers.js";
 import { recordPromptPublishedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
+import { publishSessionPromptPublication } from "./session-prompt-publication.js";
 
 const log = logger.child("session-stream");
 const sc = StringCodec();
@@ -35,6 +36,18 @@ let sessionPromptInfrastructureReady = false;
 
 export interface EnsureSessionPromptInfrastructureOptions {
   force?: boolean;
+}
+
+export interface PublishSessionPromptOptions {
+  /** Stable JetStream message id used to collapse publication retries. */
+  messageId?: string;
+}
+
+/** @internal */
+export function resolveSessionPromptPublishOptions(
+  options: PublishSessionPromptOptions,
+): { msgID: string } | undefined {
+  return options.messageId ? { msgID: options.messageId } : undefined;
 }
 
 export function getConsumerName(): string {
@@ -134,11 +147,22 @@ export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void
   await ensureLegacyConsumersCleaned(jsm);
 
   try {
-    await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
-    log.debug("Session consumer already exists", { consumerName: CONSUMER_NAME });
-    return;
-  } catch {
-    // Consumer doesn't exist — create it
+    const consumerInfo = await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
+    const streamInfo = await jsm.streams.info(SESSION_STREAM);
+    if (isStaleSessionConsumer(consumerInfo, streamInfo)) {
+      log.warn("Deleting stale session prompt consumer", {
+        consumerName: CONSUMER_NAME,
+        consumerStreamSeq: maxConsumerStreamSeq(consumerInfo),
+        streamLastSeq: streamLastSeq(streamInfo),
+      });
+      await jsm.consumers.delete(SESSION_STREAM, CONSUMER_NAME);
+    } else {
+      log.debug("Session consumer already exists", { consumerName: CONSUMER_NAME });
+      return;
+    }
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    // Consumer doesn't exist — create it.
   }
 
   try {
@@ -209,10 +233,16 @@ async function ensureSessionPromptInfrastructureOnce(existingJsm?: JetStreamMana
  * Publish a session prompt to the JetStream work queue.
  * Replaces: nats.emit(`ravi.session.${sessionName}.prompt`, payload)
  */
-export async function publishSessionPrompt(sessionName: string, payload: Record<string, unknown>): Promise<void> {
+export async function publishSessionPrompt(
+  sessionName: string,
+  payload: Record<string, unknown>,
+  options: PublishSessionPromptOptions = {},
+): Promise<void> {
   const nc = await ensureConnected();
   await ensureSessionPromptInfrastructure();
   const js = nc.jetstream();
+  const publishPrompt = (subject: string, encodedPayload: Uint8Array) =>
+    js.publish(subject, encodedPayload, resolveSessionPromptPublishOptions(options));
   const explicitDeliveryBarrier = typeof payload.deliveryBarrier === "string" ? payload.deliveryBarrier : undefined;
   const hasExplicitBarrier = Boolean(explicitDeliveryBarrier?.trim());
   const deliveryBarrier = hasExplicitBarrier
@@ -229,25 +259,39 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
     deliveryBarrier,
     deliveryBarrierSource,
   };
-  try {
-    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
-  } catch (error) {
-    if (!isPromptPublishInfrastructureError(error)) {
-      throw error;
-    }
-    sessionPromptInfrastructureReady = false;
-    log.warn("SESSION_PROMPTS publish failed after cached infrastructure; revalidating once", {
-      sessionName,
-      error,
-    });
-    await ensureSessionPromptInfrastructure(undefined, { force: true });
-    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
-  }
-  try {
-    recordPromptPublishedTrace({ sessionName, payload: enrichedPayload });
-  } catch (error) {
-    log.warn("Failed to record prompt published trace", { sessionName, error });
-  }
+  const subject = `ravi.session.${sessionName}.prompt`;
+  const encodedPayload = sc.encode(JSON.stringify(enrichedPayload));
+  await publishSessionPromptPublication({
+    sessionName,
+    payload: enrichedPayload,
+    publishDurably: async () => {
+      try {
+        await publishPrompt(subject, encodedPayload);
+      } catch (error) {
+        if (!isPromptPublishInfrastructureError(error)) {
+          throw error;
+        }
+        sessionPromptInfrastructureReady = false;
+        log.warn("SESSION_PROMPTS publish failed after cached infrastructure; revalidating once", {
+          sessionName,
+          error,
+        });
+        await ensureSessionPromptInfrastructure(undefined, { force: true });
+        await publishPrompt(subject, encodedPayload);
+      }
+    },
+    emitRuntimeEvent: (topic, eventPayload) => nats.emit(topic, eventPayload),
+    recordPublishedTrace: recordPromptPublishedTrace,
+    onRuntimeEventError: (error) => {
+      log.warn("Failed to emit prompt published runtime event", {
+        sessionName,
+        error,
+      });
+    },
+    onTraceError: (error) => {
+      log.warn("Failed to record prompt published trace", { sessionName, error });
+    },
+  });
 }
 
 function isDeliveryBarrierSource(value: string): value is DeliveryBarrierSource {
@@ -275,6 +319,34 @@ async function ensureConsumerExistsAfterRace(jsm: JetStreamManager, originalErro
 function isNotFoundError(err: unknown): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   return message.includes("not found") || message.includes("deleted");
+}
+
+function isStaleSessionConsumer(consumerInfo: unknown, streamInfo: unknown): boolean {
+  const consumerSeq = maxConsumerStreamSeq(consumerInfo);
+  const lastSeq = streamLastSeq(streamInfo);
+  return consumerSeq > 0 && lastSeq >= 0 && consumerSeq > lastSeq;
+}
+
+function maxConsumerStreamSeq(info: unknown): number {
+  const record = info as {
+    ack_floor?: { stream_seq?: unknown };
+    delivered?: { stream_seq?: unknown };
+  };
+  return Math.max(toNumber(record.ack_floor?.stream_seq), toNumber(record.delivered?.stream_seq));
+}
+
+function streamLastSeq(info: unknown): number {
+  const record = info as { state?: { last_seq?: unknown } };
+  return toNumber(record.state?.last_seq, -1);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
 function isPromptPublishInfrastructureError(err: unknown): boolean {

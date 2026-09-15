@@ -7,6 +7,7 @@
 
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { nats } from "../../nats.js";
@@ -43,11 +44,40 @@ function emitConfigChanged(): void {
   nats.emit("ravi.config.changed", {}).catch(() => {});
 }
 
-function runPresetMutation<T>(action: () => T): T {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy. Presets keep their local
+// opt-in `--dry-run` preview as the documented write-preview equivalent.
+// ============================================================
+
+function failPresetNotFound(op: string, presetId: string, asJson?: boolean): never {
+  const candidates = listRuntimeModelPresets({ limit: 40 }).items.map((preset) => preset.id);
+  contractFail(op, "PRESET_NOT_FOUND", `Model preset not found: ${presetId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the preset id (see suggestions; list with: ravi runtime presets list --json)",
+      suggestions: suggestSimilar(presetId, candidates),
+    },
+  });
+}
+
+/**
+ * The preset store raises `RuntimeModelPresetError` for every guarded failure;
+ * only the not-found case maps to the contract envelope. Referenced-preset
+ * blocks, invalid ids/models and other guards keep the legacy `fail()` path
+ * with the store's own `nextCommand` hint.
+ */
+function runPresetOp<T>(op: string, presetId: string, asJson: boolean | undefined, action: () => T): T {
   try {
     return action();
   } catch (err) {
+    if (err instanceof ContractError) throw err;
     if (err instanceof RuntimeModelPresetError) {
+      if (/^Model preset not found: /.test(err.message)) {
+        failPresetNotFound(op, presetId, asJson);
+      }
       fail(err.nextCommand ? `${err.message}\nNext: ${err.nextCommand}` : err.message);
     }
     fail(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -87,11 +117,14 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of presets to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     if (enabledOnly && disabledOnly) fail("--enabled and --disabled are mutually exclusive.");
     const enabled = enabledOnly ? true : disabledOnly ? false : undefined;
     const page = listRuntimeModelPresets({ provider: provider?.trim() || undefined, enabled, limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "runtime", "presets", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -99,14 +132,15 @@ export class RuntimeModelPresetCommands {
       total: page.total,
       options: ["--provider", provider, enabledOnly ? "--enabled" : null, disabledOnly ? "--disabled" : null],
     });
+    const serialized = page.items.map(serializePreset);
     const payload = {
       total: page.total,
       pagination,
-      presets: page.items.map(serializePreset),
+      presets: pickFields(serialized, fields),
     };
     printPayload(payload, asJson, () => {
       console.log(`\nRuntime model presets (${page.items.length} returned of ${page.total}):\n`);
-      for (const preset of payload.presets) {
+      for (const preset of serialized) {
         console.log(
           `  ${preset.id}  ${preset.provider}/${preset.model}  v${preset.version}${preset.enabled ? "" : " (disabled)"}`,
         );
@@ -130,7 +164,7 @@ export class RuntimeModelPresetCommands {
     @Arg("id", { description: "Preset id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const preset = runPresetMutation(() => requireRuntimeModelPreset(id));
+    const preset = runPresetOp("runtime presets show", id, asJson, () => requireRuntimeModelPreset(id));
     const payload = {
       preset: serializePreset(preset),
       referencingAgentsTotal: countAgentsReferencingPreset(preset.id),
@@ -164,7 +198,7 @@ export class RuntimeModelPresetCommands {
   ) {
     if (!provider?.trim()) fail("--provider is required.");
     if (!model?.trim()) fail("--model is required.");
-    const preset = runPresetMutation(() =>
+    const preset = runPresetOp("runtime presets create", id, asJson, () =>
       createRuntimeModelPreset({
         id,
         provider: provider!.trim(),
@@ -202,8 +236,10 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     if (field !== "model") fail(`Invalid field: ${field}. Only 'model' can be set (provider is immutable).`);
-    const before = runPresetMutation(() => requireRuntimeModelPreset(id));
-    const preset = runPresetMutation(() => setRuntimeModelPresetModel(id, value, { dryRun }));
+    const before = runPresetOp("runtime presets set", id, asJson, () => requireRuntimeModelPreset(id));
+    const preset = runPresetOp("runtime presets set", id, asJson, () =>
+      setRuntimeModelPresetModel(id, value, { dryRun }),
+    );
     const changed = preset.version !== before.version || preset.model !== before.model;
     if (!dryRun && changed) emitConfigChanged();
     const payload = {
@@ -233,7 +269,9 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of agents to skip (default: 0)" }) offset?: string,
   ) {
-    const impact = runPresetMutation(() => getRuntimeModelPresetImpact(id, { limit, offset }));
+    const impact = runPresetOp("runtime presets impact", id, asJson, () =>
+      getRuntimeModelPresetImpact(id, { limit, offset }),
+    );
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "runtime", "presets", "impact", impact.presetId],
       limit: impact.limit,
@@ -274,8 +312,10 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--dry-run", description: "Preview without persisting or bumping the version" }) dryRun = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const before = runPresetMutation(() => requireRuntimeModelPreset(id));
-    const preset = runPresetMutation(() => setRuntimeModelPresetEnabled(id, true, { dryRun }));
+    const before = runPresetOp("runtime presets enable", id, asJson, () => requireRuntimeModelPreset(id));
+    const preset = runPresetOp("runtime presets enable", id, asJson, () =>
+      setRuntimeModelPresetEnabled(id, true, { dryRun }),
+    );
     const changed = preset.version !== before.version || preset.enabled !== before.enabled;
     if (!dryRun && changed) emitConfigChanged();
     const payload = { action: "enable" as const, changed, dryRun, preset: serializePreset(preset) };
@@ -303,8 +343,10 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--dry-run", description: "Preview without persisting or bumping the version" }) dryRun = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const before = runPresetMutation(() => requireRuntimeModelPreset(id));
-    const preset = runPresetMutation(() => setRuntimeModelPresetEnabled(id, false, { dryRun }));
+    const before = runPresetOp("runtime presets disable", id, asJson, () => requireRuntimeModelPreset(id));
+    const preset = runPresetOp("runtime presets disable", id, asJson, () =>
+      setRuntimeModelPresetEnabled(id, false, { dryRun }),
+    );
     const changed = preset.version !== before.version || preset.enabled !== before.enabled;
     if (!dryRun && changed) emitConfigChanged();
     const payload = { action: "disable" as const, changed, dryRun, preset: serializePreset(preset) };
@@ -332,7 +374,7 @@ export class RuntimeModelPresetCommands {
     @Option({ flags: "--dry-run", description: "Preview without persisting" }) dryRun = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const preset = runPresetMutation(() => deleteRuntimeModelPreset(id, { dryRun }));
+    const preset = runPresetOp("runtime presets delete", id, asJson, () => deleteRuntimeModelPreset(id, { dryRun }));
     if (!dryRun) emitConfigChanged();
     const payload = { action: "delete" as const, changed: !dryRun, dryRun, preset: serializePreset(preset) };
     printPayload(payload, asJson, () =>

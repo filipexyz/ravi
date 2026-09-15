@@ -1,24 +1,32 @@
 import { homedir } from "node:os";
+import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
-import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
+import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
+  recordTerminalTurnTrace,
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
+  resolveRuntimeToolEffectFence,
   type RuntimeHostStreamingSession,
   type RuntimeMessageTarget,
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import { isObserverRuntimeSessionName } from "./session-pool.js";
 import {
   isRuntimeCredentialSessionCompatible,
   resolveRuntimeCredentialAttemptBinding,
@@ -37,9 +45,46 @@ import {
   refreshRuntimeRequestContextForTurn,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
+import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  MODEL_BROKER_MIN_LEASE_REMAINING_MS,
+  assertRuntimeModelBrokerCapability,
+  buildRuntimeModelBrokerAttemptBinding,
+  buildRuntimeModelBrokerBinding,
+  isRuntimeModelBrokerPhysicalBindingCompatible,
+  resolveRequiredRuntimeModelBrokerSelection,
+  reportRuntimeModelBrokerAttempt,
+  serializeRuntimeModelBrokerBinding,
+  type RuntimeModelBrokerBinding,
+} from "./model-broker.js";
+import { createModelBroker } from "./model-broker-registry.js";
+import {
+  abandonClaimedRuntimeModelBrokerPlan,
+  buildRuntimeModelBrokerPlanIdentity,
+  claimRuntimeModelBrokerPlan,
+  type ClaimedRuntimeModelBrokerPlan,
+} from "./model-broker-planning.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
-import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
+import type {
+  RuntimeApprovalResult,
+  RuntimeCapabilities,
+  RuntimeHostServices,
+  RuntimeProviderId,
+  RuntimeStartRequest,
+  SessionRuntimeProvider,
+} from "./types.js";
+
+const CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON =
+  "Runtime action approval denied because durable turn ownership changed before authorization completed.";
+
+class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
+  constructor() {
+    super(CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON);
+    this.name = "RuntimeCrashRecoveryApprovalOwnershipChangedError";
+  }
+}
 
 export interface RuntimeStartRequestBuildOptions {
   runId: string;
@@ -62,6 +107,8 @@ export interface RuntimeStartRequestBuildOptions {
   streamingSession: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   defaultRuntimeProviderId: RuntimeProviderId;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
+  modelBrokerPlanClaim?: ClaimedRuntimeModelBrokerPlan;
 }
 
 export interface RuntimeStartRequestBuildResult {
@@ -70,10 +117,147 @@ export interface RuntimeStartRequestBuildResult {
   runtimeCredentialAttempt?: RuntimeCredentialAttemptBinding;
 }
 
+export function installCrashRecoveryApprovalFences(options: {
+  hostServices: RuntimeHostServices;
+  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
+}): void {
+  const { hostServices, streamingSession, crashRecovery } = options;
+  const authorizeCapability = hostServices.authorizeCapability.bind(hostServices);
+  const authorizeCommandExecution = hostServices.authorizeCommandExecution.bind(hostServices);
+  const authorizeToolUse = hostServices.authorizeToolUse.bind(hostServices);
+  const requestUserInput = hostServices.requestUserInput.bind(hostServices);
+
+  const denyOwnershipChanged = (): RuntimeApprovalResult => ({
+    approved: false,
+    reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
+  });
+
+  const denyCapabilityOwnershipChanged = () => ({
+    allowed: false,
+    inherited: false,
+    reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
+  });
+
+  const createBeforeExternalApprovalFence = (attemptId: string) => () => {
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
+    }
+    crashRecovery.markTurnAttemptSafety({ attemptId, materializedOutput: true });
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
+    }
+  };
+
+  const authorizeWithFence = async (
+    authorize: (beforeExternalApproval: () => void) => Promise<RuntimeApprovalResult>,
+  ): Promise<RuntimeApprovalResult> => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyOwnershipChanged();
+    }
+    let result: RuntimeApprovalResult;
+    try {
+      result = await authorize(createBeforeExternalApprovalFence(attemptId));
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyOwnershipChanged();
+      }
+      throw error;
+    }
+
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    if (!result.approved) return result;
+
+    // This is the last host-owned boundary before an approved command or tool
+    // can produce an external effect. The marker must be durable before allow.
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    // Approval is itself the final host boundary before a side effect. Keep the
+    // volatile retry guard aligned with the durable safety marker even when an
+    // adapter never emits a later tool.started event.
+    streamingSession.currentTurnToolStarted = true;
+    return result;
+  };
+
+  const authorizeCapabilityWithFence: RuntimeHostServices["authorizeCapability"] = async (request) => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyCapabilityOwnershipChanged();
+    }
+
+    let result: Awaited<ReturnType<RuntimeHostServices["authorizeCapability"]>>;
+    try {
+      result = await authorizeCapability({
+        ...request,
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+      });
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyCapabilityOwnershipChanged();
+      }
+      throw error;
+    }
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyCapabilityOwnershipChanged();
+    }
+    return result;
+  };
+
+  const requestUserInputWithFence: RuntimeHostServices["requestUserInput"] = async (request) => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyOwnershipChanged();
+    }
+
+    let result: RuntimeApprovalResult;
+    try {
+      result = await requestUserInput({
+        ...request,
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+      });
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyOwnershipChanged();
+      }
+      throw error;
+    }
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    return result;
+  };
+
+  // Provider bootstrap closures (notably Codex approveRuntimeRequest) capture
+  // this object by reference. Mutating the same object keeps adapters unaware
+  // of the ledger while fencing capability, tool, command, and user-input boundaries.
+  hostServices.authorizeCapability = authorizeCapabilityWithFence;
+  hostServices.authorizeCommandExecution = (request) =>
+    authorizeWithFence((beforeExternalApproval) => authorizeCommandExecution({ ...request, beforeExternalApproval }));
+  hostServices.authorizeToolUse = (request) =>
+    authorizeWithFence((beforeExternalApproval) => authorizeToolUse({ ...request, beforeExternalApproval }));
+  hostServices.requestUserInput = requestUserInputWithFence;
+}
+
 export function resolveRuntimePromptSource(
   prompt: RuntimeLaunchPrompt,
   session: SessionEntry,
 ): RuntimeMessageTarget | undefined {
+  if (isSessionRelayTurn(prompt)) {
+    // Session-relay operator/HTTP/app send is a session destination.
+    // Leftover lastChannel/lastTo and the origin chat binding are not inbound.
+    const explicit = prompt.source;
+    if (!explicit || isLeftoverLastChannelSource(explicit, session)) {
+      return undefined;
+    }
+    const resolved = enrichSourceFromSessionChatBinding(explicit, session);
+    return resolved.channel === "tui" ? undefined : resolved;
+  }
+
   let resolvedSource = prompt.source;
   if (resolvedSource) {
     resolvedSource = enrichSourceFromSessionChatBinding(resolvedSource, session);
@@ -92,6 +276,18 @@ export function resolveRuntimePromptSource(
   return resolvedSource?.channel === "tui" ? undefined : resolvedSource;
 }
 
+function isLeftoverLastChannelSource(
+  source: Pick<RuntimeMessageTarget, "channel" | "chatId">,
+  session: SessionEntry,
+): boolean {
+  const channel = source.channel?.trim();
+  const chatId = source.chatId?.trim();
+  const lastChannel = session.lastChannel?.trim();
+  const lastTo = session.lastTo?.trim();
+  if (!channel || !chatId || !lastChannel || !lastTo) return false;
+  return runtimeChannelsMatch(channel, lastChannel) && runtimeChatIdsOverlap(chatId, lastTo);
+}
+
 function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
   const separator = platformChatId.indexOf("#");
   if (separator === -1) return { chatId: platformChatId };
@@ -101,9 +297,9 @@ function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; t
 }
 
 function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMessageTarget | undefined {
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (!binding) return undefined;
-  const chat = dbGetChat(binding.chatId);
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  if (!chatId) return undefined;
+  const chat = dbGetChat(chatId);
   if (!chat) return undefined;
   const accountId = configStore.resolveAccountName(chat.instanceId) ?? session.lastAccountId ?? chat.instanceId;
   if (!accountId) return undefined;
@@ -119,9 +315,9 @@ function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMess
 
 function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, session: SessionEntry): RuntimeMessageTarget {
   if (source.canonicalChatId) return source;
-  const binding = dbGetSessionChatBinding(session.sessionKey);
-  if (!binding) return source;
-  const chat = dbGetChat(binding.chatId);
+  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
+  if (!chatId) return source;
+  const chat = dbGetChat(chatId);
   if (!chat || !isSourceForChat(source, chat)) return source;
   return {
     ...source,
@@ -131,22 +327,30 @@ function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, sessio
 }
 
 function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnType<typeof dbGetChat>>): boolean {
-  if (source.channel && source.channel !== chat.channel) return false;
-  const sourceChatId = source.chatId?.trim();
-  if (!sourceChatId) return false;
-  const platformTarget = splitCanonicalPlatformChat(chat.platformChatId);
-  const candidates = new Set(
-    [chat.id, chat.platformChatId, chat.normalizedChatId, platformTarget.chatId].filter((value): value is string =>
-      Boolean(value?.trim()),
-    ),
-  );
-  if (!candidates.has(sourceChatId)) return false;
-  if (source.threadId && platformTarget.threadId && source.threadId !== platformTarget.threadId) return false;
-  return true;
+  return sourceMatchesChat(source, chat);
 }
 
 export async function buildRuntimeStartRequest(
   options: RuntimeStartRequestBuildOptions,
+): Promise<RuntimeStartRequestBuildResult> {
+  const lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt } = {};
+  try {
+    return await buildRuntimeStartRequestInternal(options, lifecycle);
+  } catch (error) {
+    if (options.modelBrokerPlanClaim) {
+      await abandonClaimedRuntimeModelBrokerPlan(options.modelBrokerPlanClaim, "runtime_request_build_failed").catch(
+        () => undefined,
+      );
+    } else if (lifecycle.pendingModelBroker) {
+      await reportAbandonedModelBrokerBinding(lifecycle.pendingModelBroker, options.dbSessionKey);
+    }
+    throw error;
+  }
+}
+
+async function buildRuntimeStartRequestInternal(
+  options: RuntimeStartRequestBuildOptions,
+  lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt },
 ): Promise<RuntimeStartRequestBuildResult> {
   const {
     runId,
@@ -169,7 +373,11 @@ export async function buildRuntimeStartRequest(
     streamingSession,
     stashedMessages,
     defaultRuntimeProviderId,
+    crashRecovery,
   } = options;
+  const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
+  streamingSession.toolEffectFence = toolEffectFence;
+  const preflightModel = options.modelBrokerPlanClaim?.plan.lease.model ?? model;
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -178,13 +386,86 @@ export async function buildRuntimeStartRequest(
     agent,
     prompt,
     runtimeProviderId,
-    model,
+    model: preflightModel,
     runtimeResolution,
     resolvedSource,
     approvalSource,
   });
 
-  const { hostServices, providerBootstrap, runtimePlugins } = await prepareRuntimeProviderBootstrap({
+  const modelBrokerSelection =
+    options.modelBrokerPlanClaim?.plan.selection ??
+    resolveRequiredRuntimeModelBrokerSelection(agent, dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined);
+  const initialModelBrokerTurnId =
+    options.modelBrokerPlanClaim?.plan.lease.turnId ?? (modelBrokerSelection ? createSessionTraceTurnId() : undefined);
+  const upstreamProvider = resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model);
+  const modelBrokerLease =
+    options.modelBrokerPlanClaim?.plan.lease ??
+    (modelBrokerSelection
+      ? await (async () => {
+          assertRuntimeModelBrokerCapability(runtimeCapabilities, runtimeProviderId);
+          const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+          if (!runtimeId) {
+            throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+          }
+          return createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+            profileRef: modelBrokerSelection.profileRef,
+            runtimeId,
+            agentId: agent.id,
+            sessionKey: dbSessionKey,
+            turnId: initialModelBrokerTurnId!,
+          });
+        })()
+      : undefined);
+  if (modelBrokerLease) {
+    lifecycle.pendingModelBroker = {
+      brokerId: modelBrokerLease.brokerId,
+      attemptId: modelBrokerLease.attemptId,
+      turnId: modelBrokerLease.turnId,
+      leaseId: modelBrokerLease.leaseId,
+      runtimeId: modelBrokerLease.runtimeId,
+      sessionKey: dbSessionKey,
+    };
+  }
+  const modelBroker = modelBrokerSelection
+    ? buildRuntimeModelBrokerBinding({
+        selection: modelBrokerSelection,
+        lease: modelBrokerLease!,
+        runtimeCapabilities,
+        expectedRuntimeProvider: runtimeProviderId,
+      })
+    : undefined;
+  const effectiveModel = modelBroker?.model ?? model;
+  const credentialResolution = modelBroker
+    ? {
+        attemptBinding: buildRuntimeModelBrokerAttemptBinding(modelBroker, dbSessionKey),
+        selected: null,
+        candidates: [],
+        rejected: [],
+        managedPoolConfigured: true,
+      }
+    : await resolveRuntimeCredentialAttemptBinding({
+        runtimeProvider: runtimeProviderId,
+        upstreamProvider,
+        model,
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        sessionName,
+        runId,
+      });
+  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
+    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  }
+  if (credentialResolution.attemptBinding) {
+    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
+      credentialResolution.attemptBinding,
+    );
+  }
+  if (modelBroker) {
+    assertModelBrokerAttemptBinding(credentialResolution.attemptBinding);
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
+  }
+
+  const preparedBootstrap = await prepareRuntimeProviderBootstrap({
     runtimeProvider,
     runtimeCapabilities,
     agent,
@@ -195,34 +476,27 @@ export async function buildRuntimeStartRequest(
     toolContext,
     context: runtimeContext,
     session,
+    ...(modelBroker ? { modelBroker } : {}),
   });
-  const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
-    runtimeProvider: runtimeProviderId,
-    upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
-    model,
-    agentId: agent.id,
-    sessionKey: dbSessionKey,
-    sessionName,
-    runId,
-  });
-  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
-    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
-  }
-  if (credentialResolution.attemptBinding) {
-    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
-      credentialResolution.attemptBinding,
-    );
-  }
+  const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
+  installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
     buildRuntimeCredentialProfileEnv(runtimeProviderId, credentialResolution.attemptBinding ?? undefined),
     credentialResolution.attemptBinding?.resolvedEnv,
   );
+  const baselineRuntimeEnv = buildRuntimeRequestEnv({
+    raviEnv,
+    runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(modelBroker),
+  });
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(modelBroker),
   });
+  let activeProviderEnvKeys = resolveRuntimeProviderEnvKeys(providerEnv, raviEnv, runtimeEnv);
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
     const result = await hostServices.authorizeToolUse({ toolName, input });
     if (!result.approved) {
@@ -237,8 +511,15 @@ export async function buildRuntimeStartRequest(
     };
   };
 
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const allowedSkills =
+    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
+      ? resolvedAllowedSkills.allowlist
+      : undefined;
+  const canResumeSkillSession = isStoredSkillVisibilityCompatible(storedRuntimeSessionParams, allowedSkills);
   const canResumeCredentialSession =
     canResumeStoredSession &&
+    canResumeSkillSession &&
     isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
@@ -256,6 +537,8 @@ export async function buildRuntimeStartRequest(
     sessionCwd,
     resolvedSource,
     approvalSource,
+    streamingSession,
+    crashRecovery,
   });
   const { text: systemPromptAppend, sections: systemPromptSections } = await buildRuntimeSystemPrompt({
     agent,
@@ -268,17 +551,134 @@ export async function buildRuntimeStartRequest(
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
-  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
-  const allowedSkills =
-    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
-      ? resolvedAllowedSkills.allowlist
-      : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
-  const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+  let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
+  let pendingModelBrokerTurnId = initialModelBrokerTurnId;
+  let turnRuntimeContextActivated = false;
+  const reserveModelBrokerAttemptForTurn = async (
+    turnId: string,
+    planned?: ClaimedRuntimeModelBrokerPlan,
+  ): Promise<void> => {
+    if (!modelBroker || !modelBrokerSelection) return;
+    if (
+      initialModelBrokerAttemptAvailable &&
+      pendingModelBrokerTurnId === turnId &&
+      modelBroker.expiresAt - Date.now() >= MODEL_BROKER_MIN_LEASE_REMAINING_MS
+    ) {
+      initialModelBrokerAttemptAvailable = false;
+      pendingModelBrokerTurnId = undefined;
+      return;
+    }
+
+    const lease =
+      planned?.plan.lease ??
+      (await createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+        profileRef: modelBrokerSelection.profileRef,
+        runtimeId: modelBroker.runtimeId,
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        turnId,
+      }));
+    const candidate = buildRuntimeModelBrokerBinding({
+      selection: modelBrokerSelection,
+      lease,
+      runtimeCapabilities,
+      expectedRuntimeProvider: runtimeProviderId,
+    });
+    if (!isRuntimeModelBrokerPhysicalBindingCompatible(modelBroker, candidate)) {
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker route changed and requires a fresh physical runtime session.");
+    }
+
+    if (initialModelBrokerAttemptAvailable) {
+      await reportRuntimeModelBrokerAttempt(createModelBroker(modelBroker.brokerId), {
+        attemptId: modelBroker.attemptId,
+        turnId: modelBroker.turnId,
+        leaseId: modelBroker.leaseId,
+        runtimeId: modelBroker.runtimeId,
+        sessionKey: dbSessionKey,
+        outcome: "abandoned",
+        effectState: "none",
+      });
+    }
+    const activeCredential = credentialResolution.attemptBinding;
+    if (!activeCredential) {
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker turn has no reserved attempt binding.");
+    }
+    const candidateCredential = buildRuntimeModelBrokerAttemptBinding(candidate, dbSessionKey);
+    let rotatedBootstrap;
+    try {
+      rotatedBootstrap = await runtimeProvider.prepareSession?.({
+        agentId: agent.id,
+        cwd: sessionCwd,
+        ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+        hostServices,
+        modelBroker: candidate,
+      });
+    } catch (error) {
+      if (planned) {
+        await abandonClaimedRuntimeModelBrokerPlan(planned, "provider_reconfiguration_failed").catch(() => undefined);
+      } else {
+        await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      }
+      throw error;
+    }
+    const nextProviderEnv = mergeProviderCredentialEnv(
+      rotatedBootstrap?.env,
+      buildRuntimeCredentialProfileEnv(runtimeProviderId, candidateCredential),
+      candidateCredential.resolvedEnv,
+    );
+    const nextResolvedRuntimeEnv = buildRuntimeRequestEnv({
+      raviEnv,
+      ...(nextProviderEnv ? { providerEnv: nextProviderEnv } : {}),
+      runtimeCapabilities,
+      forceSanitizeSecrets: true,
+    });
+    activeProviderEnvKeys = rotateRuntimeProviderEnvironment({
+      runtimeEnv,
+      baselineRuntimeEnv,
+      raviEnv,
+      activeProviderEnvKeys,
+      nextProviderEnv,
+      nextResolvedRuntimeEnv,
+    });
+    Object.assign(modelBroker, candidate);
+    Object.assign(activeCredential, candidateCredential, {
+      modelBrokerAttemptTerminal: false,
+    });
+    (toolContext as Record<string, unknown>).runtimeCredential =
+      serializeRuntimeCredentialAttemptBinding(activeCredential);
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
+    initialModelBrokerAttemptAvailable = false;
+    pendingModelBrokerTurnId = undefined;
+  };
+  const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+    const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
+    let planned: ClaimedRuntimeModelBrokerPlan | undefined;
+    if (turnPrompt?._modelBrokerTurnId && modelBrokerSelection) {
+      const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+      if (!runtimeId) throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+      planned = claimRuntimeModelBrokerPlan(
+        buildRuntimeModelBrokerPlanIdentity({
+          selection: modelBrokerSelection,
+          runtimeId,
+          agentId: agent.id,
+          sessionKey: dbSessionKey,
+          turnId: turnPrompt._modelBrokerTurnId,
+        }),
+      );
+    }
+    const turnId =
+      pendingModelBrokerTurnId ??
+      planned?.plan.lease.turnId ??
+      turnPrompt?._modelBrokerTurnId ??
+      createSessionTraceTurnId();
+    await reserveModelBrokerAttemptForTurn(turnId, planned);
     const firstMessage = input.deliverableMessages[0];
-    const turnId = createSessionTraceTurnId();
+    const currentModel = modelBroker?.model ?? streamingSession.currentModel;
     const runtimeCredential = credentialResolution.attemptBinding;
-    if (runtimeCredential && !runtimeCredential.attemptId) {
+    if (runtimeCredential && runtimeCredential.authMethod !== "model-broker" && !runtimeCredential.attemptId) {
       runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
         credentialId: runtimeCredential.credentialId,
         sessionKey: dbSessionKey,
@@ -287,20 +687,20 @@ export async function buildRuntimeStartRequest(
         turnId,
         runtimeProvider: runtimeCredential.runtimeProvider,
         upstreamProvider: runtimeCredential.upstreamProvider,
-        model,
+        model: modelBroker?.model ?? currentModel,
         metadata: { reason: "turn" },
       });
     }
     bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
     markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
-    return recordAdapterRequestTrace({
+    const traceTurn = recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
       agentId: agent.id,
       runId,
       turnId,
       provider: runtimeProviderId,
-      model,
+      model: currentModel,
       effort: runtimeResolution.options.effort ?? null,
       thinking: runtimeResolution.options.thinking ?? null,
       modelSource: runtimeResolution.sources.model,
@@ -318,7 +718,7 @@ export async function buildRuntimeStartRequest(
         (canResumeCredentialSession ? storedProviderSessionId : null) ??
         null,
       contextId: runtimeContext.contextId,
-      source: streamingSession.currentSource ?? resolvedSource ?? null,
+      source: streamingSession.currentSource ?? null,
       deliveryBarrier: firstMessage?.deliveryBarrier ?? null,
       deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
       taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
@@ -335,17 +735,105 @@ export async function buildRuntimeStartRequest(
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
       turnProvenance: streamingSession.currentTurnProvenance ?? null,
     });
+    if (!traceTurn) {
+      throw new Error(`Failed to persist the adapter request for runtime turn ${turnId}`);
+    }
+
+    const turnProvenance =
+      streamingSession.currentTurnProvenance ?? classifyTurnProvenance({ source: streamingSession.currentSource });
+    const pendingIds = input.deliverableMessages
+      .map((message) => message.pendingId)
+      .filter((id): id is string => Boolean(id));
+    let attempt: ReturnType<RuntimeCrashRecoveryCoordinator["startTurnAttempt"]>;
+    try {
+      attempt = crashRecovery.startTurnAttempt(
+        {
+          turnId: traceTurn.turnId,
+          runId,
+          sessionKey: dbSessionKey,
+          sessionName,
+          agentId: agent.id,
+          provider: runtimeProviderId,
+          model: currentModel,
+          startedAt: traceTurn.startedAt,
+          requestBlobSha256: traceTurn.requestBlobSha256,
+          userPromptSha256: traceTurn.userPromptSha256,
+          systemPromptSha256: traceTurn.systemPromptSha256,
+          originKind: turnProvenance.origin,
+          source: streamingSession.currentSource ?? null,
+          turnProvenance,
+          taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
+          deliveryBarrier: firstMessage?.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER,
+          pendingIds,
+          metadata: {
+            deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
+            queuedMessageCount: input.deliverableMessages.length,
+            toolEffectFence,
+          },
+        },
+        {
+          onOwnershipLost: () => {
+            // The coordinator already cleared ownership. Detach the stale
+            // session binding before abort handlers inspect or terminalize it.
+            streamingSession.currentCrashRecoveryAttemptId = undefined;
+            streamingSession.internalAbortReason = "crash_recovery_ownership_lost";
+            if (!streamingSession.abortController.signal.aborted) {
+              streamingSession.abortController.abort();
+            }
+          },
+        },
+      );
+    } catch (error) {
+      const completedAt = Math.max(Date.now(), traceTurn.startedAt);
+      recordTerminalTurnTrace({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        turnId: traceTurn.turnId,
+        provider: runtimeProviderId,
+        model: currentModel,
+        status: "failed",
+        eventType: "turn.failed",
+        abortReason: "durable_attempt_persistence_failed",
+        error: error instanceof Error ? error.message : String(error),
+        startedAt: traceTurn.startedAt,
+        completedAt,
+        payloadJson: {
+          phase: "runtime.durable_attempt_preparation",
+          providerDelivered: false,
+        },
+      });
+      throw error;
+    }
+    return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
     stashedMessages,
     beforeTurnStart: (input) => {
-      const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
-      const turnSource = turnPrompt.source ?? resolvedSource;
-      if (turnSource) {
-        streamingSession.currentSource = turnSource;
+      const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
+      const turnPrompt = queuedTurnPrompt ?? prompt;
+      const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
+      streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
+      const replyResolution = resolveSessionOutputTargetPreserving({
+        sessionKey: dbSessionKey,
+        fallback: streamingSession.currentSource,
+        // CLI-only turns stay on the waiting CLI. Other session-relay continues
+        // rebind the existing primary/default output so replies reach the chat.
+        allowDefaultOutput: !turnPrompt._cliDestination,
+        previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
+      });
+      streamingSession.suppressChatEmit =
+        Boolean(turnPrompt._cliDestination) ||
+        Boolean(turnPrompt._observation) ||
+        isObserverRuntimeSessionName(sessionName);
+      streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
+      if (replyResolution.target) {
+        streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
       }
+      streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,
@@ -354,25 +842,28 @@ export async function buildRuntimeStartRequest(
         runtimeContext,
         toolContext,
         runtimeEnv,
+        raviEnv,
+        rotateContext: turnRuntimeContextActivated,
         dbSessionKey,
         sessionName,
         sessionCwd,
         agent,
         prompt: turnPrompt,
         runtimeProviderId,
-        model,
+        model: effectiveModel,
         runtimeResolution,
         resolvedSource: turnSource,
         approvalSource,
       });
+      turnRuntimeContextActivated = true;
     },
     traceTurnStart,
   });
 
-  return {
+  const result = {
     runtimeRequest: {
       prompt: messageGenerator,
-      model,
+      model: effectiveModel,
       ...(runtimeResolution.options.effort ? { effort: runtimeResolution.options.effort } : {}),
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
@@ -399,22 +890,49 @@ export async function buildRuntimeStartRequest(
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
+      ...(modelBroker ? { modelBroker } : {}),
     },
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+  lifecycle.pendingModelBroker = undefined;
+  return result;
 }
 
-function resolveRuntimeTurnPrompt(
-  deliverableMessages: RuntimeUserMessage[],
-  fallback: RuntimeLaunchPrompt,
-): RuntimeLaunchPrompt {
+async function reportAbandonedModelBrokerBinding(
+  binding: RuntimeModelBrokerBinding | PendingModelBrokerAttempt,
+  sessionKey?: string,
+): Promise<void> {
+  const resolvedSessionKey = sessionKey ?? ("sessionKey" in binding ? binding.sessionKey : undefined);
+  if (!resolvedSessionKey) return;
+  await reportRuntimeModelBrokerAttempt(createModelBroker(binding.brokerId), {
+    attemptId: binding.attemptId,
+    turnId: binding.turnId,
+    leaseId: binding.leaseId,
+    runtimeId: binding.runtimeId,
+    sessionKey: resolvedSessionKey,
+    outcome: "abandoned",
+    effectState: "none",
+  }).catch(() => undefined);
+}
+
+interface PendingModelBrokerAttempt {
+  brokerId: string;
+  attemptId: string;
+  turnId: string;
+  leaseId: string;
+  runtimeId: string;
+  sessionKey: string;
+}
+
+function findRuntimeTurnPrompt(deliverableMessages: RuntimeUserMessage[]): RuntimeLaunchPrompt | undefined {
   for (let index = deliverableMessages.length - 1; index >= 0; index--) {
     const launchPrompt = deliverableMessages[index]?.launchPrompt;
     if (launchPrompt) return launchPrompt;
   }
-  return fallback;
+  return undefined;
 }
 
 function mergeProviderCredentialEnv(
@@ -425,6 +943,43 @@ function mergeProviderCredentialEnv(
   return {
     ...Object.assign({}, ...present),
   };
+}
+
+export function rotateRuntimeProviderEnvironment(options: {
+  runtimeEnv: Record<string, string>;
+  baselineRuntimeEnv: Record<string, string>;
+  raviEnv: Record<string, string>;
+  activeProviderEnvKeys: ReadonlySet<string>;
+  nextProviderEnv: Record<string, string> | undefined;
+  nextResolvedRuntimeEnv: Record<string, string>;
+}): Set<string> {
+  const nextProviderEnvKeys = resolveRuntimeProviderEnvKeys(
+    options.nextProviderEnv,
+    options.raviEnv,
+    options.nextResolvedRuntimeEnv,
+  );
+  for (const key of options.activeProviderEnvKeys) {
+    if (nextProviderEnvKeys.has(key)) continue;
+    const baselineValue = options.baselineRuntimeEnv[key];
+    if (baselineValue === undefined) delete options.runtimeEnv[key];
+    else options.runtimeEnv[key] = baselineValue;
+  }
+  for (const key of nextProviderEnvKeys) {
+    options.runtimeEnv[key] = options.nextResolvedRuntimeEnv[key]!;
+  }
+  return nextProviderEnvKeys;
+}
+
+function resolveRuntimeProviderEnvKeys(
+  providerEnv: Record<string, string> | undefined,
+  raviEnv: Record<string, string>,
+  resolvedRuntimeEnv: Record<string, string>,
+): Set<string> {
+  return new Set(
+    Object.keys(providerEnv ?? {}).filter(
+      (key) => key !== "RAVI_BIN" && !(key in raviEnv) && resolvedRuntimeEnv[key] !== undefined,
+    ),
+  );
 }
 
 export function resolveRuntimeCredentialUpstreamProvider(
@@ -467,6 +1022,20 @@ function buildRuntimeCredentialProfileEnv(
     return { CLAUDE_CONFIG_DIR: profilePath };
   }
   return undefined;
+}
+
+function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
+  if (
+    !binding ||
+    binding.authMethod !== "model-broker" ||
+    binding.authProfileRef !== undefined ||
+    Object.keys(binding.resolvedEnv).length > 0 ||
+    binding.bindings.length > 0 ||
+    binding.sensitiveEnvKeys.length > 0 ||
+    binding.remoteForwardEnvKeys.length > 0
+  ) {
+    throw new Error("Refusing a model-broker attempt that contains local credential material.");
+  }
 }
 
 function expandHomePath(value: string): string {

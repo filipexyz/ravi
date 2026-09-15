@@ -1,9 +1,26 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { YouTubeClient } from "../../apps/youtube/client.js";
+import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { jsonPrimitiveSchema } from "../return-schemas.js";
+
+/**
+ * VIDEO_NOT_FOUND envelope (Manual v2): there is no cheap local cache of the
+ * channel's videos (listing is an external Data API call), so the envelope
+ * carries a `suggestedAction` pointing at the listing/search ops instead of
+ * `suggestions`.
+ */
+function failYouTubeVideoNotFound(op: string, videoId: string, asJson?: boolean): never {
+  contractFail(op, "VIDEO_NOT_FOUND", `YouTube video not found: ${videoId}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "List channel uploads with `ravi yt videos --json` or search with `ravi yt search <query> --json` to find the correct video ID",
+    },
+  });
+}
 
 const successSchema = z.literal(true);
 const pageTokenSchema = z.string().optional();
@@ -387,11 +404,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each video" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).listVideos({ maxResults: integer(limit, 10, 1, 50), pageToken: page })),
-    }));
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).listVideos({
+        maxResults: integer(limit, 10, 1, 50),
+        pageToken: page,
+      });
+      return { success: true as const, ...result, videos: pickFields(result.videos, fields) };
+    });
   }
 
   @Command({
@@ -414,7 +436,7 @@ export class YouTubeCommands {
   ) {
     return this.execute(asJson, async () => {
       const video = await this.client(connection).getVideo(id);
-      if (!video) fail(`YouTube video not found: ${id}. Recheck the ID with \`ravi yt videos --json\`.`);
+      if (!video) failYouTubeVideoNotFound("yt video", id, asJson);
       return { success: true as const, video };
     });
   }
@@ -444,14 +466,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each video" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).searchVideos(query, {
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).searchVideos(query, {
         maxResults: integer(limit, 10, 1, 50),
         pageToken: page,
-      })),
-    }));
+      });
+      return { success: true as const, ...result, videos: pickFields(result.videos, fields) };
+    });
   }
 
   @Command({
@@ -503,14 +527,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each comment" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).listComments(videoId, {
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).listComments(videoId, {
         maxResults: integer(limit, 20, 1, 100),
         pageToken: page,
-      })),
-    }));
+      });
+      return { success: true as const, ...result, comments: pickFields(result.comments, fields) };
+    });
   }
 
   @Command({
@@ -538,14 +564,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each comment" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).listUnansweredComments(videoId, {
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).listUnansweredComments(videoId, {
         maxResults: integer(limit, 50, 1, 100),
         pageToken: page,
-      })),
-    }));
+      });
+      return { success: true as const, ...result, comments: pickFields(result.comments, fields) };
+    });
   }
 
   @Command({
@@ -553,8 +581,11 @@ export class YouTubeCommands {
     description: "Publish a reply to a top-level YouTube comment",
     helpAfter: mutationHelp(
       "Publish one externally visible reply after a human approves the exact text.",
-      "Never use for testing or bulk replies; there is no dry-run and retries duplicate replies.",
-      ['ravi yt reply <commentId> "Texto aprovado" --json'],
+      "Never use for testing or bulk replies; blind retries duplicate public replies.",
+      [
+        'ravi yt reply <commentId> "Texto aprovado" --json',
+        'ravi yt reply <commentId> "Texto aprovado" --execute --json',
+      ],
       "YouTube Data API v3 comments.insert; requires youtube.force-ssl.",
       "PUBLIC WRITE: show commentId and the exact reply text, then obtain explicit confirmation.",
     ),
@@ -576,7 +607,22 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually publish the reply; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): a comment reply is a REAL, externally
+      // visible write on YouTube, so dry-run by default and exit 3 before any
+      // provider call.
+      contractDryRun(
+        "yt reply",
+        { commentId, textChars: text.length, connection: connection ?? "default" },
+        { asJson },
+      );
+    }
     return this.execute(asJson, () => this.client(connection).replyToComment(commentId, text));
   }
 
@@ -604,11 +650,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each playlist" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).listPlaylists({ maxResults: integer(limit, 25, 1, 50), pageToken: page })),
-    }));
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).listPlaylists({
+        maxResults: integer(limit, 25, 1, 50),
+        pageToken: page,
+      });
+      return { success: true as const, ...result, playlists: pickFields(result.playlists, fields) };
+    });
   }
 
   @Command({
@@ -639,14 +690,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each video" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).getPlaylistVideos(playlistId, {
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).getPlaylistVideos(playlistId, {
         maxResults: integer(limit, 25, 1, 50),
         pageToken: page,
-      })),
-    }));
+      });
+      return { success: true as const, ...result, videos: pickFields(result.videos, fields) };
+    });
   }
 
   @Command({
@@ -673,14 +726,16 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each subscription" })
+    fields?: string,
   ) {
-    return this.execute(asJson, async () => ({
-      success: true as const,
-      ...(await this.client(connection).listSubscriptions({
+    return this.execute(asJson, async () => {
+      const result = await this.client(connection).listSubscriptions({
         maxResults: integer(limit, 25, 1, 50),
         pageToken: page,
-      })),
-    }));
+      });
+      return { success: true as const, ...result, subscriptions: pickFields(result.subscriptions, fields) };
+    });
   }
 
   @Command({
@@ -1020,10 +1075,10 @@ export class YouTubeCommands {
     description: "Update selected metadata on an owned YouTube video",
     helpAfter: mutationHelp(
       "Update only explicitly supplied fields after reviewing the current video.",
-      "Never use as a test; this changes provider state and has no dry-run.",
+      "Never run with --execute as a test; this changes public provider state.",
       [
         'ravi yt video-update <videoId> --title "Approved title" --json',
-        "ravi yt video-update <videoId> --privacy private --json",
+        "ravi yt video-update <videoId> --privacy private --execute --json",
       ],
       "YouTube Data API v3 videos.list then videos.update.",
       "EXTERNAL WRITE: show video ID, current metadata and every proposed field, then obtain explicit confirmation.",
@@ -1036,6 +1091,7 @@ export class YouTubeCommands {
     risk: "high",
     requiresConfirmation: true,
     input: ["id", "title", "description", "tags", "category", "privacy", "connection"],
+    redactions: ["title", "description", "tags"],
   })
   @Returns(videoUpdateReturnSchema)
   async videoUpdate(
@@ -1053,7 +1109,30 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually update the video metadata; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): metadata changes are immediately visible
+      // on the public video, so dry-run by default and exit 3 before any
+      // provider call.
+      contractDryRun(
+        "yt video-update",
+        {
+          id,
+          titleChars: title?.length ?? 0,
+          descriptionChars: description?.length ?? 0,
+          tagCount: csv(tags)?.length ?? 0,
+          categoryId: categoryId ?? null,
+          privacyStatus: privacyStatus ?? null,
+          connection: connection ?? "default",
+        },
+        { asJson },
+      );
+    }
     return this.execute(asJson, () =>
       this.client(connection).updateVideo(id, {
         title,
@@ -1071,7 +1150,7 @@ export class YouTubeCommands {
     helpAfter: mutationHelp(
       "Delete only after independently reading the video title and obtaining literal approval.",
       "To hide a video reversibly, use `video-update --privacy private` instead.",
-      ["ravi yt video <videoId> --json", "ravi yt video-delete <videoId> --json"],
+      ["ravi yt video <videoId> --json", "ravi yt video-delete <videoId> --execute --json"],
       "YouTube Data API v3 videos.delete.",
       "IRREVERSIBLE: show video ID and title, then obtain explicit confirmation that permanent deletion is intended.",
     ),
@@ -1090,7 +1169,17 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the video permanently; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deletion is IRREVERSIBLE on the provider,
+      // so dry-run by default and exit 3 before any provider call.
+      contractDryRun("yt video-delete", { id, connection: connection ?? "default", irreversible: true }, { asJson });
+    }
     return this.execute(asJson, () => this.client(connection).deleteVideo(id));
   }
 
@@ -1100,7 +1189,10 @@ export class YouTubeCommands {
     helpAfter: mutationHelp(
       "Create one playlist after checking existing names and approving title/privacy.",
       "Never retry blindly; duplicate calls create duplicate playlists.",
-      ['ravi yt playlist-create "Approved playlist" --privacy private --json'],
+      [
+        'ravi yt playlist-create "Approved playlist" --privacy private --json',
+        'ravi yt playlist-create "Approved playlist" --privacy private --execute --json',
+      ],
       "YouTube Data API v3 playlists.insert.",
       "EXTERNAL WRITE: show title, description and privacy, then obtain explicit confirmation.",
     ),
@@ -1112,6 +1204,7 @@ export class YouTubeCommands {
     risk: "high",
     requiresConfirmation: true,
     input: ["title", "description", "privacy", "connection"],
+    redactions: ["title", "description"],
   })
   @Returns(playlistCreateReturnSchema)
   async playlistCreate(
@@ -1127,7 +1220,28 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the playlist; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): braked by principle — an external,
+      // non-idempotent provider write (blind retries create duplicate
+      // playlists, possibly public), so dry-run by default and exit 3 before
+      // any provider call.
+      contractDryRun(
+        "yt playlist-create",
+        {
+          titleChars: title.length,
+          descriptionChars: description?.length ?? 0,
+          privacyStatus: privacyStatus ?? "private",
+          connection: connection ?? "default",
+        },
+        { asJson },
+      );
+    }
     return this.execute(asJson, () => this.client(connection).createPlaylist(title, { description, privacyStatus }));
   }
 
@@ -1137,7 +1251,7 @@ export class YouTubeCommands {
     helpAfter: mutationHelp(
       "Delete only after independently listing the playlist and obtaining literal approval.",
       "To remove one item, use `playlist-remove`; this command deletes the whole playlist.",
-      ["ravi yt playlists --json", "ravi yt playlist-delete <playlistId> --json"],
+      ["ravi yt playlists --json", "ravi yt playlist-delete <playlistId> --execute --json"],
       "YouTube Data API v3 playlists.delete.",
       "IRREVERSIBLE: show playlist ID and title, then obtain explicit confirmation.",
     ),
@@ -1156,7 +1270,21 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the playlist permanently; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): playlist deletion is IRREVERSIBLE on the
+      // provider, so dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "yt playlist-delete",
+        { playlistId, connection: connection ?? "default", irreversible: true },
+        { asJson },
+      );
+    }
     return this.execute(asJson, () => this.client(connection).deletePlaylist(playlistId));
   }
 
@@ -1166,7 +1294,10 @@ export class YouTubeCommands {
     helpAfter: mutationHelp(
       "Add one reviewed video to one reviewed playlist.",
       "Never retry blindly; duplicate calls can create duplicate playlist items.",
-      ["ravi yt playlist-add <playlistId> <videoId> --json"],
+      [
+        "ravi yt playlist-add <playlistId> <videoId> --json",
+        "ravi yt playlist-add <playlistId> <videoId> --execute --json",
+      ],
       "YouTube Data API v3 playlistItems.insert.",
       "EXTERNAL WRITE: show playlist ID and video ID/title, then obtain explicit confirmation.",
     ),
@@ -1186,7 +1317,19 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually add the video to the playlist; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): braked by principle — an external,
+      // non-idempotent provider write (blind retries duplicate playlist items
+      // and the change is visible on shared/public playlists), so dry-run by
+      // default and exit 3 before any provider call.
+      contractDryRun("yt playlist-add", { playlistId, videoId, connection: connection ?? "default" }, { asJson });
+    }
     return this.execute(asJson, () => this.client(connection).addToPlaylist(playlistId, videoId));
   }
 
@@ -1196,7 +1339,7 @@ export class YouTubeCommands {
     helpAfter: mutationHelp(
       "Remove one reviewed playlist item using playlistItemId from `ravi yt playlist`.",
       "Never pass videoId; a video can appear more than once with distinct item IDs.",
-      ["ravi yt playlist <playlistId> --json", "ravi yt playlist-remove <playlistItemId> --json"],
+      ["ravi yt playlist <playlistId> --json", "ravi yt playlist-remove <playlistItemId> --execute --json"],
       "YouTube Data API v3 playlistItems.delete.",
       "DESTRUCTIVE CURATION CHANGE: show playlistItemId and video title, then obtain explicit confirmation.",
     ),
@@ -1216,7 +1359,17 @@ export class YouTubeCommands {
     @Option({ flags: "--connection <id>", description: "Credential connection (default: default)" })
     connection?: string,
     @Option({ flags: "--json", description: "Print the stable JSON response" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the playlist item; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): destructive curation change on the
+      // provider, so dry-run by default and exit 3 before any provider call.
+      contractDryRun("yt playlist-remove", { playlistItemId, connection: connection ?? "default" }, { asJson });
+    }
     return this.execute(asJson, () => this.client(connection).removeFromPlaylist(playlistItemId));
   }
 
@@ -1231,6 +1384,10 @@ export class YouTubeCommands {
       console.log(JSON.stringify(payload, null, 2));
       return payload;
     } catch (error) {
+      // Manual v2 contract: contractFail already emitted its envelope and
+      // carries the exit taxonomy — never let the legacy provider-error funnel
+      // swallow it into a generic exit-1 message.
+      if (error instanceof ContractError) throw error;
       return fail(youtubeError(error));
     }
   }
@@ -1300,7 +1457,7 @@ FONTES ADICIONAIS (consultadas em 2026-07-13)
 function mutationHelp(use: string, doNotUse: string, examples: string[], source: string, confirmation: string): string {
   return `${readHelp(use, doNotUse, examples, source)}
 REGRAS HARD
-  No dry-run is available. Never execute for validation, never retry blindly, and always re-read state before mutation.
+  Write brake (Manual v2): without --execute this is a dry-run — exit 3, the plan is printed and NOTHING reaches the provider. Review the plan, then re-run with --execute. Never retry writes blindly and always re-read state before mutation.
 
 HITL OBRIGATÓRIO
   ${confirmation}

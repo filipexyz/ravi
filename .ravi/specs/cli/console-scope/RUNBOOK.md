@@ -12,6 +12,18 @@ owners:
 
 # Runbook
 
+## Agent-First Contract Notes (`ravi cloud scope`)
+
+`set`/`clear` write immediately (declared unbraked, reversible pair). A
+`PAYLOAD_INVALID` scope command (for example two targets at once) exits `2`
+under the global taxonomy; only `WRITE_REQUIRES_EXECUTE` exits `3`. If a scope
+command ever exits 5 as `SERVER_UNAVAILABLE` while the underlying error was a
+`ContractError`, the rethrow guard in `runCloudScopeCommand` regressed.
+
+```bash
+bun test src/cli/commands/cloud-scope.test.ts
+```
+
 ## Inspect Current Cloud Auth
 
 ```bash

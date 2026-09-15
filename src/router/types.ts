@@ -249,7 +249,7 @@ export interface SessionEntry {
   lastTo?: string;
   lastAccountId?: string;
   lastThreadId?: string;
-  lastContext?: string; // JSON-serialized MessageContext
+  lastContext?: string; // JSON-serialized ChannelContext
 
   // Overrides
   thinkingLevel?: "off" | "normal" | "verbose";

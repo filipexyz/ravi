@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey } from "./resolver.js";
+import { parseSessionKey } from "./session-key.js";
 import type { RouterConfig, RouteConfig, AgentConfig } from "./types.js";
 
 // ============================================================================
@@ -33,12 +34,19 @@ const agentSupport: AgentConfig = {
   dmScope: "per-peer",
 };
 
+const agentJohn: AgentConfig = {
+  id: "john",
+  cwd: "/tmp/john",
+  dmScope: "per-peer",
+};
+
 function makeConfig(routes: RouteConfig[], overrides: Partial<RouterConfig> = {}): RouterConfig {
   return {
     agents: {
       main: agentMain,
       vendas: agentVendas,
       support: agentSupport,
+      john: agentJohn,
     },
     routes,
     defaultAgent: "main",
@@ -99,6 +107,12 @@ describe("matchPattern", () => {
   it("group: exact pattern match", () => {
     expect(matchPattern("group:123456789", "group:123456789")).toBe(true);
     expect(matchPattern("group:123456789", "group:000000000")).toBe(false);
+  });
+
+  it("bare digits and lid: do not match each other", () => {
+    expect(matchPattern("224420715061374", "lid:224420715061374")).toBe(false);
+    expect(matchPattern("lid:224420715061374", "224420715061374")).toBe(false);
+    expect(matchPattern("lid:224420715061374", "lid:224420715061374")).toBe(true);
   });
 });
 
@@ -286,6 +300,69 @@ describe("matchRoute — route.policy passthrough", () => {
 // matchRoute — accountId scoping
 // ============================================================================
 
+describe("matchRoute — WhatsApp LID identity", () => {
+  it("matches lid: inbound to an exact lid: route instead of * / default", () => {
+    const config = makeConfig(
+      [
+        { pattern: "lid:224420715061374", accountId: "main", agent: "john", priority: 10 },
+        { pattern: "*", accountId: "main", agent: "main", priority: 0 },
+      ],
+      { accountAgents: { main: "main" } },
+    );
+
+    const result = matchRoute(config, {
+      phone: "lid:224420715061374",
+      accountId: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result?.agentId).toBe("john");
+    expect(result?.route?.pattern).toBe("lid:224420715061374");
+  });
+
+  it("does not match bare digits against a lid: route", () => {
+    const config = makeConfig(
+      [
+        { pattern: "lid:224420715061374", accountId: "main", agent: "john", priority: 10 },
+        { pattern: "*", accountId: "main", agent: "main", priority: 0 },
+      ],
+      { accountAgents: { main: "main" } },
+    );
+
+    const result = matchRoute(config, {
+      phone: "224420715061374",
+      accountId: "main",
+      channel: "whatsapp",
+    });
+
+    expect(result?.agentId).toBe("main");
+    expect(result?.route?.pattern).toBe("*");
+  });
+
+  it("still matches group: and glob routes", () => {
+    const config = makeConfig([
+      { pattern: "group:120363424772797713", accountId: "main", agent: "vendas", priority: 10 },
+      { pattern: "5511*", accountId: "main", agent: "support", priority: 5 },
+    ]);
+
+    expect(
+      matchRoute(config, {
+        phone: "120363424772797713@g.us",
+        accountId: "main",
+        isGroup: true,
+        groupId: "120363424772797713",
+      })?.agentId,
+    ).toBe("vendas");
+
+    expect(
+      matchRoute(config, {
+        phone: "5511999999999",
+        accountId: "main",
+      })?.agentId,
+    ).toBe("support");
+  });
+});
+
 describe("matchRoute — accountId scoping", () => {
   it("uses accountAgent mapping when no route matches", () => {
     const config = makeConfig([], {
@@ -384,5 +461,17 @@ describe("resolveCommittedSessionKey", () => {
         forcedRouteSessionName: "ravi-hil",
       }),
     ).toBe("agent:main:dm:5511999999999");
+  });
+});
+
+describe("parseSessionKey — LID peer ids", () => {
+  it("keeps lid:X intact on per-peer DM keys", () => {
+    const parsed = parseSessionKey("agent:john:dm:lid:224420715061374");
+    expect(parsed).toMatchObject({
+      agentId: "john",
+      peerKind: "dm",
+      peerId: "lid:224420715061374",
+      dmScope: "per-peer",
+    });
   });
 });

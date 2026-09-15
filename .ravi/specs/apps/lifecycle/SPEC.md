@@ -50,6 +50,8 @@ gateway, and OpenAPI surfaces.
     scaffold-owned paths.
 - Delete MUST NOT remove runtime storage, artifacts, events, credentials,
   migrations, implementation files, or anything not clearly scaffold-owned.
+- The default generated `src/apps/<id>/cli.ts` becomes implementation-owned as
+  soon as scaffold returns and MUST be preserved by delete.
 - Delete MUST NOT execute app code, health checks, storage migrations, runtime
   commands, or credential access.
 - Delete MUST support `--dry-run` to report planned actions without writing.
@@ -60,6 +62,11 @@ gateway, and OpenAPI surfaces.
 
 - `ravi apps scaffold <app-id>` without `--force` MUST return a typed
   `already_exists` error when scaffold target files already exist.
+- The generated `cli.ts` participates in scaffold collision detection even
+  though delete preserves it as implementation-owned content.
+- With `--force`, scaffold MUST preserve an existing generated `cli.ts` and
+  report its action as `preserved`; it MAY overwrite the manifest, spec, and
+  generated skill contracts.
 - The `already_exists` error MUST include bounded evidence (paths that exist)
   and suggested next steps.
 

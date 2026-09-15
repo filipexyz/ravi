@@ -31,6 +31,7 @@ export {
   matchRoute,
   resolveRoute,
   commitMatchedRoute,
+  generateThreadForkSessionName,
   expandHome,
   getAgentCwd,
 } from "./resolver.js";
@@ -96,7 +97,7 @@ export {
   getDefaultDmScope,
   getAnnounceCompaction,
   getAccountForAgent,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   // Schema (for validation)
   DmScopeSchema,
   // Database management
@@ -155,7 +156,9 @@ export {
   updateTokens,
   updateSessionName,
   updateSessionSource,
+  updateSessionThreadId,
   updateSessionContext,
+  updateSessionModelOverride,
   updateSessionDisplayName,
   updateSessionHeartbeat,
   isNameTaken,
@@ -168,6 +171,7 @@ export {
   makeSessionPermanent,
   getExpiringSessions,
   getExpiredSessions,
+  expireEphemeralSession,
   // sessions/attach
   attachChatToSession,
   detachChatFromSession,
@@ -175,5 +179,5 @@ export {
   findSessionByAttachedChat,
   SessionAttachConflictError,
   SessionAttachInstanceMismatchError,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "./sessions.js";

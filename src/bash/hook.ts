@@ -38,7 +38,7 @@ function buildBashDeniedAuditEvent(
   agentId: string;
   denied: string;
   reason: string;
-  detail?: string;
+  detail?: { commandChars: number };
   context?: AuditContextProvenance;
 } | null {
   if (decision.allowed || !decision.denialType) {
@@ -46,7 +46,7 @@ function buildBashDeniedAuditEvent(
   }
 
   const resolvedAgentId = agentId ?? "unknown";
-  const detail = command.slice(0, 200);
+  const detail = { commandChars: command.length };
   const provenance = buildAuditContextProvenance(ctx);
   const contextFields = provenance ? { context: provenance } : {};
 
@@ -218,6 +218,13 @@ function canWithBashContext(
   objectType: string,
   objectId: string,
 ): boolean {
+  // Resolved agent-identity / delegated turns use the live executor ceiling so
+  // `ravi agents permissions` expansions and reductions apply on the next
+  // PreToolUse check without requiring a session reset. Unresolved actors and
+  // observation-narrowed turns stay bound to the issued snapshot.
+  if (canUseLiveExecutorCeiling(ctx)) {
+    return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
+  }
   if (hasContextCapabilities(ctx)) {
     if (canWithCapabilityContext(ctx, permission, objectType, objectId)) {
       return true;
@@ -239,6 +246,24 @@ function canWithBashContext(
 function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metadata">): boolean {
   if (ctx.kind === "turn-runtime" || ctx.kind === "invocation-runtime") return true;
   return ctx.metadata?.authorityMode === "delegated" || ctx.metadata?.authorityMode === "agent-identity";
+}
+
+function canUseLiveExecutorCeiling(ctx: BashPermissionContext): boolean {
+  if (!ctx.agentId) return false;
+  if (!isDelegatedBashContext(ctx)) return false;
+  if (isUnresolvedAgentIdentityActor(ctx)) return false;
+  if (hasTurnCapabilityNarrowing(ctx)) return false;
+  return true;
+}
+
+function isUnresolvedAgentIdentityActor(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  return ctx.metadata?.actorResolution === "missing_contact";
+}
+
+function hasTurnCapabilityNarrowing(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  const count = ctx.metadata?.turnCapabilityCount;
+  if (typeof count === "number" && count > 0) return true;
+  return Array.isArray(ctx.metadata?.turnCapabilities) && ctx.metadata.turnCapabilities.length > 0;
 }
 
 function isMaterializedAgentSuperadmin(ctx: Pick<BashPermissionContext, "agentId">): boolean {
@@ -264,10 +289,6 @@ function checkExecutablePermissionsForContext(
   command: string,
   ctx: BashPermissionContext,
 ): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
-  if (canWithBashContext(ctx, "execute", "executable", "*")) {
-    return { allowed: true };
-  }
-
   const patternCheck = checkDangerousPatterns(command);
   if (!patternCheck.safe) {
     return { allowed: false, reason: patternCheck.reason };
@@ -284,9 +305,26 @@ function checkExecutablePermissionsForContext(
   for (const exec of parsed.executables) {
     if (UNCONDITIONAL_BLOCKS.has(exec)) {
       blocked.push(exec);
-      continue;
     }
+  }
 
+  if (blocked.length > 0) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot execute: ${blocked.join(", ")}`,
+      deniedCapabilities: blocked.map((executable) => ({
+        relation: "execute",
+        objectType: "executable",
+        objectId: executable,
+      })),
+    };
+  }
+
+  if (canWithBashContext(ctx, "execute", "executable", "*")) {
+    return { allowed: true };
+  }
+
+  for (const exec of parsed.executables) {
     if (BUILTIN_EXECUTABLES.has(exec)) continue;
 
     if (!canWithBashContext(ctx, "execute", "executable", exec)) {
@@ -395,7 +433,7 @@ function recordAndEmitBashPermissionDenial(
       objectType: denied.objectType,
       objectId: denied.objectId,
       reason: decision.reason,
-      command,
+      command: `[REDACTED:content length=${command.length}]`,
       detail: provenance ? { context: provenance } : undefined,
       audit,
     });
@@ -478,7 +516,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "env_spoofing") {
       log.warn("Env spoofing blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -488,7 +526,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "executable") {
       log.warn("Executable blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -498,7 +536,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "session_scope") {
       log.warn("Scope check blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -507,7 +545,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
     }
 
     log.debug("Bash command allowed", {
-      command: command.slice(0, 100),
+      commandChars: command.length,
       raviTool: decision.toolName,
     });
 

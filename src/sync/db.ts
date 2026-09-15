@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getDb } from "../router/router-db.js";
+import { existsSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { sanitizeSyncError, sanitizeSyncPayload } from "./redaction.js";
 import type {
@@ -435,12 +437,35 @@ export function setSyncCursor(
 }
 
 export function getSyncStatusSummary(): SyncStatusSummary {
-  const db = getDb();
+  return readSyncStatusSummary(getDb());
+}
+
+/** Read the dry-run summary without creating or migrating the shared Ravi database. */
+export function getSyncStatusSummaryReadOnly(): SyncStatusSummary {
+  const dbPath = getRaviDbPath();
+  if (!existsSync(dbPath)) return emptySyncStatusSummary();
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    return readSyncStatusSummary(db);
+  } catch (error) {
+    if (error instanceof Error && /no such table: sync_(?:outbox|inbox|cursors)/i.test(error.message)) {
+      return emptySyncStatusSummary();
+    }
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
+function readSyncStatusSummary(db: Database): SyncStatusSummary {
   const outbox = countStatuses<SyncOutboxStatus>(
     ["pending", "leased", "sent", "acked", "failed", "dead"],
     "sync_outbox",
+    db,
   );
-  const inbox = countStatuses<SyncInboxStatus>(["pending", "applied", "skipped", "failed", "dead"], "sync_inbox");
+  const inbox = countStatuses<SyncInboxStatus>(["pending", "applied", "skipped", "failed", "dead"], "sync_inbox", db);
   const cursors = (db.prepare("SELECT * FROM sync_cursors ORDER BY domain, cursor_key").all() as SyncCursorRow[]).map(
     rowToCursor,
   );
@@ -459,6 +484,15 @@ export function getSyncStatusSummary(): SyncStatusSummary {
     inbox,
     cursors,
     lastError: lastOutboxError?.code ?? lastInboxError?.code ?? null,
+  };
+}
+
+function emptySyncStatusSummary(): SyncStatusSummary {
+  return {
+    outbox: { pending: 0, leased: 0, sent: 0, acked: 0, failed: 0, dead: 0 },
+    inbox: { pending: 0, applied: 0, skipped: 0, failed: 0, dead: 0 },
+    cursors: [],
+    lastError: null,
   };
 }
 
@@ -496,13 +530,44 @@ export function inspectSyncRecord(
   return null;
 }
 
+/** Inspect sync state without creating or migrating the shared Ravi database. */
+export function inspectSyncRecordReadOnly(
+  id: string,
+): { kind: "outbox"; record: SyncOutboxRecord } | { kind: "inbox"; record: SyncInboxRecord } | null {
+  const dbPath = getRaviDbPath();
+  if (!existsSync(dbPath)) return null;
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    const outbox = getOutboxByIdFromDb(db, id);
+    if (outbox) return { kind: "outbox", record: outbox };
+    const inbox = getInboxByIdFromDb(db, id);
+    if (inbox) return { kind: "inbox", record: inbox };
+    return null;
+  } catch (error) {
+    if (error instanceof Error && /no such table: sync_(?:outbox|inbox)/i.test(error.message)) return null;
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
 export function getOutboxById(id: string): SyncOutboxRecord | null {
-  const row = getDb().prepare("SELECT * FROM sync_outbox WHERE id = ?").get(id) as SyncOutboxRow | undefined;
+  return getOutboxByIdFromDb(getDb(), id);
+}
+
+function getOutboxByIdFromDb(db: Database, id: string): SyncOutboxRecord | null {
+  const row = db.prepare("SELECT * FROM sync_outbox WHERE id = ?").get(id) as SyncOutboxRow | undefined;
   return row ? rowToOutbox(row) : null;
 }
 
 export function getInboxById(id: string): SyncInboxRecord | null {
-  const row = getDb().prepare("SELECT * FROM sync_inbox WHERE id = ?").get(id) as SyncInboxRow | undefined;
+  return getInboxByIdFromDb(getDb(), id);
+}
+
+function getInboxByIdFromDb(db: Database, id: string): SyncInboxRecord | null {
+  const row = db.prepare("SELECT * FROM sync_inbox WHERE id = ?").get(id) as SyncInboxRow | undefined;
   return row ? rowToInbox(row) : null;
 }
 
@@ -625,9 +690,9 @@ function rowToCursor(row: SyncCursorRow): SyncCursorRecord {
   };
 }
 
-function countStatuses<T extends string>(statuses: readonly T[], table: string): Record<T, number> {
+function countStatuses<T extends string>(statuses: readonly T[], table: string, db: Database): Record<T, number> {
   const out = Object.fromEntries(statuses.map((status) => [status, 0])) as Record<T, number>;
-  const rows = getDb().prepare(`SELECT status, COUNT(*) AS count FROM ${table} GROUP BY status`).all() as Array<{
+  const rows = db.prepare(`SELECT status, COUNT(*) AS count FROM ${table} GROUP BY status`).all() as Array<{
     status: T;
     count: number;
   }>;

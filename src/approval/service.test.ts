@@ -4,6 +4,7 @@ import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext } from ".
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "./service.js";
@@ -18,6 +19,7 @@ let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let externalOrder: string[] = [];
 let stateDir: string | null = null;
 const createdContextIds = new Set<string>();
 
@@ -29,16 +31,19 @@ describe("approval service", () => {
     emitted = [];
     auditEvents = [];
     deliveredRequests = [];
+    externalOrder = [];
     setPermissionAuditPublisherForTest(async (topic, data) => {
       auditEvents.push({ topic, data });
     });
     setApprovalServiceDependenciesForTest({
       requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
+        externalOrder.push("outbound.deliver");
         deliveredRequests.push({ topic, data });
         return requestReplyResult as T;
       }) satisfies ApprovalServiceDependencies["requestReply"],
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
+          externalOrder.push(topic);
           emitted.push({ topic, data });
         },
         subscribe: ((...args: unknown[]) => {
@@ -82,6 +87,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "context",
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
     });
 
     expect(result).toMatchObject({
@@ -90,6 +96,7 @@ describe("approval service", () => {
       inherited: true,
     });
     expect(emitted).toHaveLength(0);
+    expect(externalOrder).toEqual([]);
   });
 
   it("requests approval through metadata.approvalSource and persists the granted capability", async () => {
@@ -123,6 +130,7 @@ describe("approval service", () => {
       objectType: "group",
       objectId: "daemon",
       timeoutMs: 20,
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
     });
 
     expect(result).toMatchObject({
@@ -149,6 +157,38 @@ describe("approval service", () => {
     expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
     expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
+    const approvalResponse = emitted.find((entry) => entry.topic === "ravi.approval.response");
+    expect(typeof approvalResponse?.data._emitId).toBe("string");
+    expect(String(approvalResponse?.data._emitId ?? "").length).toBeGreaterThan(0);
+    expect(externalOrder).toEqual([
+      "before-external-approval",
+      "ravi.approval.request",
+      "outbound.deliver",
+      "ravi.approval.response",
+    ]);
+  });
+
+  it("publishes approval.response once per messageId even when reaction traffic retries", async () => {
+    const first = await emitApprovalResponseOnce({
+      type: "permission",
+      sessionName: "demo-agent",
+      agentId: "demo-agent",
+      approved: true,
+      messageId: "msg_approval_1",
+    });
+    const second = await emitApprovalResponseOnce({
+      type: "permission",
+      sessionName: "demo-agent",
+      agentId: "demo-agent",
+      approved: true,
+      messageId: "msg_approval_1",
+    });
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(emitted.filter((entry) => entry.topic === "ravi.approval.response")).toHaveLength(1);
+    expect(emitted[0]?.data._emitId).toBeTruthy();
+    expect(emitted[0]?.data.messageId).toBe("msg_approval_1");
   });
 
   it("fails closed when no approval source is available", async () => {
@@ -171,6 +211,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
     });
 
     expect(result).toMatchObject({
@@ -180,6 +221,7 @@ describe("approval service", () => {
       reason: "No approval source available.",
     });
     expect(emitted).toHaveLength(0);
+    expect(externalOrder).toEqual([]);
     expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
       expect.objectContaining({
         agentId: "dev",
@@ -191,6 +233,43 @@ describe("approval service", () => {
         objectId: "daemon",
       }),
     );
+  });
+
+  it("stops before external approval emission when its boundary fence fails", async () => {
+    const context = dbCreateContext({
+      contextId: "ctx_boundary_failure",
+      contextKey: "rctx_boundary_failure",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    await expect(
+      authorizeRuntimeContext({
+        context,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+        beforeExternalApproval: () => {
+          externalOrder.push("before-external-approval");
+          throw new Error("durable output marker unavailable");
+        },
+      }),
+    ).rejects.toThrow("durable output marker unavailable");
+
+    expect(externalOrder).toEqual(["before-external-approval"]);
+    expect(emitted).toEqual([]);
+    expect(deliveredRequests).toEqual([]);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
   });
 
   it("publishes audit denied events for runtime context denials", async () => {
@@ -225,9 +304,9 @@ describe("approval service", () => {
           type: "scope",
           agentId: "dev",
           denied: "group:daemon",
-          reason: "No approval source available.",
+          reason: "[REDACTED:content length=29]",
           denialId: expect.any(Number),
-          dedupeKey: "audit.denied:scope:dev:group:daemon:No approval source available.",
+          dedupeKey: "audit.denied:scope:dev:group:daemon:[REDACTED:content length=29]",
           context: expect.objectContaining({
             contextId: "ctx_audit_denied",
             sessionName: "dev-main",

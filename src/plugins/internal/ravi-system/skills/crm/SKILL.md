@@ -14,7 +14,9 @@ description: |
 Voce opera o CRM nativo do Ravi. O CRM e a camada de relacionamento acima de
 `contacts`; ele nao substitui identidade, policy, chats, sessoes ou mensagens.
 
-Use esta skill para transformar contexto em estado CRM util, auditavel e seguro.
+A sintaxe voce descobre no proprio CLI (`ravi crm --help`, `ravi crm <grupo> --help`,
+`ravi crm <grupo> <op> --help`). Esta skill cobre o que o `--help` nao ensina: quando
+usar cada operacao, as regras do funil e as armadilhas do dominio.
 
 ## Modelo Mental
 
@@ -29,38 +31,45 @@ Use esta skill para transformar contexto em estado CRM util, auditavel e seguro.
 
 Nunca confunda policy status com lifecycle CRM.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em
+envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saida:
+
+- `0` sucesso.
+- `1` erro de execucao ou not-found. O envelope traz `suggestions` com entidades reais
+  parecidas — consulte antes de concluir "nao existe".
+- `2` erro de uso (flag/arg invalido). O envelope traz `acceptedFlags`: corrija a
+  chamada, nao insista na mesma sintaxe.
+- `3` bloqueio de confirmacao do contrato global. Esse exit nao ocorre nas operacoes
+  CRM atuais.
+
+`crm pipeline create`, `crm opportunity create` e `crm opportunity move` executam
+imediatamente sem `--execute`. **Todas as escritas CRM gravam na hora**, sem dry-run:
+`crm contact set`, `crm account create`, `crm account link-contact`,
+`crm opportunity link-contact`, `crm pipeline set`, `crm task create|done|cancel|snooze`,
+`crm fact propose|confirm|reject`. Nessas o freio e voce: confira o alvo antes de rodar.
+
+**Compact mode:** `crm next`, `crm contacts`, `crm board` e `crm pipeline list` aceitam
+`--fields a,b,c`. Use em varredura para nao arrastar o card inteiro.
+
+**Help por operacao:** `ravi crm pipeline help <op>` (idem `task` e `fact`). Nos grupos
+`contact` e `opportunity` o `help <op>` falha porque o grupo tem argumento posicional
+proprio — nesses use `ravi crm contact set --help`, `ravi crm opportunity create --help`.
+
 ## Primeiro Leia
 
-Antes de escrever, colete a visao atual:
-
-```bash
-ravi crm contact <contact-or-identity> --json
-ravi contacts profile <contact-or-identity> --json
-ravi contacts timeline <contact-or-identity> --limit 20 --json
-ravi contacts messages <contact-or-identity> --limit 20 --json
-ravi contacts activity <contact-or-identity> --limit 20 --json
-ravi crm fact list --contact <contact-or-identity> --json
-ravi crm next --contact <contact-or-identity> --json
-```
-
-Use `--json` quando for tomar decisao programatica.
-
-Se estiver no repo `ravi.bot`, prefira o wrapper local:
-
-```bash
-bin/ravi crm contact <contact-or-identity> --json
-```
+Antes de escrever, colete a visao atual do alvo: `crm contact`, `contacts profile`,
+`contacts timeline`, `contacts messages`, `contacts activity`, `crm fact list --contact`
+e `crm next --contact`. No repo `ravi.bot`, prefira o wrapper local `bin/ravi`: o CLI so
+e confiavel apontando para o mesmo runtime/DB do daemon vivo.
 
 ## Resolva O Alvo
 
-Antes de qualquer write, garanta que o alvo e o contato canonico certo.
-
-```bash
-ravi contacts info <contact-or-identity> --json
-ravi contacts duplicates --json
-```
-
-Regras:
+Antes de qualquer write, garanta que o alvo e o contato canonico certo
+(`contacts info`, `contacts duplicates`).
 
 - Nao use display name como prova de identidade.
 - Se o contato nao resolver, pare e reporte que o alvo nao foi encontrado.
@@ -68,7 +77,7 @@ Regras:
   ser confirmada ou os contatos serem mergeados.
 - Nunca escreva CRM em grupo/chat/thread como se fosse pessoa ou conta.
 
-## Regra de Escrita
+## Regra De Escrita
 
 Escolha entre campo forte e fact:
 
@@ -80,242 +89,91 @@ Escolha entre campo forte e fact:
 - Nao derive identidade por display name. Use contato canonico ou identity resolvida.
 - Nao modele grupo/chat como contato, conta ou pessoa.
 
-Campos fortes atuais de contato:
-
-```text
-lifecycle
-relationship-health
-priority
-score
-health-score
-owner
-primary-account
-primary-opportunity
-lead-source
-persona
-buying-role
-last-meaningful-interaction-at
-next-action-at
-next-action-summary
-next-task
-metadata
-```
-
-Exemplos:
-
-```bash
-ravi crm contact set <contact> priority high --source agent:crm --json
-ravi crm contact set <contact> persona founder --source agent:crm --json
-ravi crm contact set <contact> buying-role decision_maker --source agent:crm --json
-ravi crm contact set <contact> metadata '{"interests":["crm","agents"]}' --source agent:crm --json
-```
+Campos fortes aceitos por `crm contact set <contact> <campo> <valor>`: `lifecycle`,
+`relationship-health`, `priority`, `score`, `health-score`, `owner`, `primary-account`,
+`primary-opportunity`, `lead-source`, `persona`, `buying-role`,
+`last-meaningful-interaction-at`, `next-action-at`, `next-action-summary`, `next-task`,
+`metadata`. Valor `-` limpa campo anulavel.
 
 ## Facts
 
-Use facts para memoria revisavel e evidenciada.
+Use facts para memoria revisavel e evidenciada. Chaves boas:
 
-```bash
-ravi crm fact propose contact <contact> profile.buying_role '{"role":"decision_maker"}' \
-  --contact <contact> \
-  --confidence 0.7 \
-  --idempotency-key <stable-key> \
-  --json
+`profile.persona` · `profile.buying_role` · `profile.preference` · `relationship.context` ·
+`opportunity.need` · `account.context` · `risk.objection` · `followup.commitment`
 
-ravi crm fact propose contact <contact> profile.buying_role '{"role":"decision_maker"}' \
-  --contact <contact> \
-  --status confirmed \
-  --confidence 1 \
-  --idempotency-key <stable-key> \
-  --json
-
-ravi crm fact list --contact <contact> --status proposed --json
-ravi crm fact confirm <fact-id> --json
-ravi crm fact reject <fact-id> --json
-```
-
-Boas chaves de fact:
-
-- `profile.persona`
-- `profile.buying_role`
-- `profile.preference`
-- `relationship.context`
-- `opportunity.need`
-- `account.context`
-- `risk.objection`
-- `followup.commitment`
-
-Use `status=confirmed` so quando a confirmacao ja estiver clara no pedido ou na
-fonte. Caso contrario, deixe `proposed`.
+Use `--status confirmed` so quando a confirmacao ja estiver clara no pedido ou na fonte;
+caso contrario deixe `proposed`. Fact confirmado NAO propaga para campo forte — aplique o
+campo forte separadamente quando essa for a decisao correta.
 
 ## Idempotencia
 
-Toda criacao repetivel deve usar `--idempotency-key`.
-
-Formato recomendado:
+Toda criacao repetivel deve usar `--idempotency-key` (`crm task create`,
+`crm opportunity create`, `crm account create`, `crm fact propose`). Formato:
 
 ```text
 <agent>:<entity>:<operation>:<source-id-or-date>
 ```
 
-Exemplos:
-
-```bash
-ravi crm task create "Follow up sobre proposta" \
-  --contact <contact> \
-  --priority high \
-  --due <due-at-iso-with-timezone> \
-  --owner agent:main \
-  --idempotency-key crm-agent:<contact>:followup:<stable-date-or-source-id> \
-  --json
-```
-
-```bash
-ravi crm opportunity create "Piloto CRM" \
-  --account <account-id> \
-  --contact <contact> \
-  --stage qualified \
-  --value 500000 \
-  --currency BRL \
-  --owner agent:main \
-  --idempotency-key crm-agent:<contact>:opportunity:piloto-crm \
-  --json
-```
-
-## Contas e Oportunidades
-
-Criar conta:
-
-```bash
-ravi crm account create "Acme" \
-  --domain acme.com \
-  --owner team:sales \
-  --idempotency-key crm-agent:account:acme.com \
-  --json
-```
-
-Vincular contato a conta:
-
-```bash
-ravi crm account link-contact <account-id> <contact> --role sponsor --primary --json
-```
-
-Criar oportunidade:
-
-```bash
-ravi crm opportunity create "Piloto Ravi" \
-  --account <account-id> \
-  --contact <contact> \
-  --stage qualified \
-  --value 250000 \
-  --currency BRL \
-  --owner agent:main \
-  --idempotency-key crm-agent:<contact>:opp:piloto-ravi \
-  --json
-```
-
-Vincular stakeholders:
-
-```bash
-ravi crm opportunity link-contact <opportunity-id> <contact> --role champion --primary --json
-ravi crm opportunity contacts <opportunity-id> --json
-```
-
-Mover oportunidade:
-
-```bash
-ravi crm opportunity move <opportunity-id> proposal --json
-```
+Ex.: `crm-agent:<contact>:followup:2026-05-22`. Sem chave estavel, reprocessamento
+duplica registro — o CRM nao faz dedupe semantico de conta/oportunidade.
 
 ## Next Actions
 
-Proxima acao boa e concreta: tem dono, alvo, prioridade e quando possivel data.
-
-```bash
-ravi crm task create "Enviar resumo e proximos passos" \
-  --contact <contact> \
-  --opportunity <opportunity-id> \
-  --priority urgent \
-  --due <due-at-iso-with-timezone> \
-  --owner agent:main \
-  --idempotency-key crm-agent:<contact>:next-action:summary:<stable-date-or-source-id> \
-  --json
-
-ravi crm next --owner agent:main --json
-ravi crm task done <task-id> --json
-```
+Proxima acao boa e concreta: tem dono (`--owner agent:main`), alvo (`--contact` e/ou
+`--opportunity`), prioridade e, quando possivel, `--due` em ISO com timezone. Toda task
+exige pelo menos um alvo (contact, account, opportunity, chat ou session). Feche com
+`crm task done`; leia a fila com `crm next --owner`.
 
 ## Scheduled Commitments + Daily Digest
 
-Quando o cliente promete algo com data ("vou comprar sexta", "te aviso semana que vem"), o agent que esta conversando cria uma `crm_tasks` com `task_type=commitment` e `due_at` no momento prometido. Todo dia 1 cron varredor lista o que vence e entrega o digest.
+Quando o cliente promete algo com data ("vou comprar sexta", "te aviso semana que vem"),
+o agent que esta conversando cria uma `crm_tasks` com `--task-type commitment` e `--due`
+no momento prometido. Todo dia 1 cron varredor lista o que vence e entrega o digest.
 
 ### Padrao arquitetural
 
-**1 cron varredor + N rows em `crm_tasks`**. Nunca 1 cron por cliente. O agent que ja tem o contexto da conversa cria a task direto via CLI. O cron diario chama `ravi crm next --due-today` (ou equivalente) e ja entrega o resultado.
+**1 cron varredor + N rows em `crm_tasks`.** Nunca 1 cron por cliente. O agent que ja tem
+o contexto da conversa cria a task direto via CLI. O digest e UM cron de shell, sem task
+profile envolvido:
+
+```bash
+ravi cron add commitment-digest-morning --cron "0 8 * * *" \
+  --shell "ravi crm next --due-today --owner agent:main --json"
+```
 
 ### Quando o agent cria commitment
 
-Use `task_type=commitment` com:
-
-- `due_at` na timezone do operador, normalizado (sem ambiguidade entre "sexta" 2026-05-22 ou 2026-05-29)
-- `evidence_json` com `[{ message_id, quote, extracted_phrase, extracted_date_iso }]`
-- `confidence` proporcional a clareza do enunciado
-- `idempotency_key` = hash de `(contact_id, due_at_normalizado, phrase_fingerprint)` para tolerar reprocessamento sem duplicar
-- `metadata_json.commitment_kind` opcional: `purchase | follow_up_request | callback | revisit`
-
-```bash
-ravi crm task create "Compra prometida — kraft 60g" \
-  --contact 5511987340036 \
-  --task-type commitment \
-  --priority high \
-  --due 2026-05-22T09:00-03:00 \
-  --owner agent:main \
-  --confidence 0.9 \
-  --evidence '[{"message_id":"cm_...","quote":"vou comprar sexta","extracted_date_iso":"2026-05-22"}]' \
-  --metadata '{"commitment_kind":"purchase"}' \
-  --idempotency-key commitment:<contact_id>:2026-05-22:kraft-60g \
-  --json
-```
+- `--due` na timezone do operador, normalizado (sem ambiguidade entre "sexta"
+  2026-05-22 ou 2026-05-29). O CLI recusa `commitment` sem `--due`.
+- `--evidence` com `[{ message_id, quote, extracted_phrase, extracted_date_iso }]`.
+- `--confidence` proporcional a clareza do enunciado.
+- `--idempotency-key` = hash de `(contact_id, due_at_normalizado, phrase_fingerprint)`,
+  para tolerar reprocessamento sem duplicar.
+- `--metadata` com `commitment_kind` opcional: `purchase | follow_up_request | callback | revisit`.
 
 ### Quando o cliente muda de ideia
 
-Sempre atualize a row existente via `idempotency_key`, NUNCA cria nova:
+Sempre atualize a row existente (mesma idempotency key), NUNCA crie nova:
 
-- **Cancela**: `ravi crm task cancel <id>` -> status=canceled.
-- **Reagenda**: `ravi crm task snooze <id> --until <novo-due-at>` -> push do due_at antigo pra metadata.history.
-- **Confirma**: `ravi crm task done <id>` -> status=done; se houve venda, opcionalmente cria/atualiza `crm_opportunities` ganha.
+- **Cancela**: `crm task cancel <id>` -> status `canceled`.
+- **Reagenda**: `crm task snooze <id> --until <novo-due>` -> status `snoozed` e o due_at
+  antigo vai para `metadata.history`. Task ja `done`/`canceled` nao aceita snooze.
+- **Confirma**: `crm task done <id>` -> status `done`; se houve venda, opcionalmente
+  cria/atualiza a oportunidade ganha.
 
-Cada mutacao emite `crm_events` correspondente — a timeline reconstroi o arco da negociacao.
-
-### Daily digest
-
-Cron unico chama o comando CLI que ja consulta o estado:
-
-```bash
-ravi cron add commitment-digest-morning "0 8 * * *" \
-  --command "ravi crm next --due-today --owner agent:main --json" \
-  --account main
-```
-
-Saida do `ravi crm next --due-today` ja agrupa por owner e expoe as tarefas que vencem hoje. O cron entrega isso via o canal configurado (default: WhatsApp DM pro operador).
-
-Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar tarefas com `metadata_json.last_digested_at` recente.
-
-### Inspecao e debug
-
-```bash
-ravi crm next --owner agent:main --task-type commitment --due-before 2026-05-23 --json
-ravi crm task list --status scheduled --task-type commitment --json
-ravi crm task show <task-id> --json
-```
+Cada mutacao emite `crm_events` correspondente — a timeline reconstroi o arco da
+negociacao. Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar tarefas com
+`metadata.last_digested_at` recente.
 
 ### Regras de ouro
 
 - Commitment E sempre uma row em `crm_tasks`. Nao e cron, nao e trigger, nao e fact.
 - Cancelamento/reschedule MUST atualizar a row existente, nao criar nova.
 - Digest E read-only — observa, nao muta status.
-- Sem due_at concreto, nao vira commitment. Promessa vaga ("te aviso quando puder") e `task_type=follow_up` com status=waiting, sem digest.
+- Sem due concreto nao vira commitment. Promessa vaga ("te aviso quando puder") fica
+  como `follow_up` (default) sem `--due`, e por isso nunca entra no digest.
 - O agent que conversa e quem cria. Sem observer separado.
-- O cron e UM comando CLI, sem task profile envolvido.
 
 ## Fluxo Recomendado Para Agente
 
@@ -331,13 +189,16 @@ ravi crm task show <task-id> --json
 
 ## Limites Atuais
 
-- A sintaxe CLI e aninhada: use `ravi crm fact list`, nao `ravi crm.fact list`.
-- Ja existem `crm contact set`, create/link/move/done e facts.
-- Ainda nao ha `crm account set`, `crm opportunity set` ou `crm task set` generico.
-- Facts confirmados nao atualizam automaticamente todos os campos fortes; aplique o campo forte separadamente quando essa for a decisao correta.
-- O CRM nao faz dedupe semantico perfeito de conta/oportunidade. Use idempotency key e pesquise antes de criar.
+- Nao ha `crm account set`, `crm opportunity set` nem `crm task set` generico: o que nao
+  tem comando proprio nao se edita por aqui.
+- Nao existe delete de oportunidade — criar a oportunidade errada e irreversivel.
+  Confira o alvo antes de criar e use `--idempotency-key` para evitar duplicacoes.
+- `crm task create` nao aceita status: toda task nasce `open` com prioridade `normal`.
+- Campo desconhecido em `crm contact set` ainda falha em texto puro (exit 1), fora do
+  envelope; a mensagem lista os campos aceitos.
 - Atividades CRM sao eventos curados; nao despeje toda mensagem bruta como atividade.
-- Mutacoes precisam de permissao `write_contacts`. Se receber permission denied, reporte a falta de permissao em vez de contornar.
+- Mutacoes precisam da permissao `write_contacts`. Se receber permission denied, reporte
+  a falta de permissao em vez de contornar.
 
 ## Checklist Antes De Responder
 
@@ -345,7 +206,8 @@ ravi crm task show <task-id> --json
 - Chequei ambiguidade/duplicatas antes de escrever?
 - Diferenciei policy status de lifecycle CRM?
 - Usei `--json` nas leituras que guiaram writes?
+- Confirmei o alvo e nao acrescentei `--execute` aos comandos CRM?
+- Consultei `suggestions` do envelope antes de declarar not-found?
 - Usei idempotency key em criacoes/propostas repetiveis?
 - Provei ou propus facts conforme a confianca?
 - Criei next action somente se ela for acionavel?
-- Evitei escrever em conta/oportunidade/task campos que ainda nao tem comando `set`?

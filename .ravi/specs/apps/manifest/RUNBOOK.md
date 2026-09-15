@@ -9,13 +9,13 @@ Use this flow when adding or diagnosing a Ravi App manifest.
 1. Confirm the app solves a real operational problem, not just a command idea.
 2. Choose a stable app id and check for collisions.
 3. Declare `schema`, `id`, `name`, `version`, and `description`.
-4. Declare at least one interface: CLI, SDK, stream, tool, or UI.
-5. Declare top-level operations for UI snapshots, UI actions, SDK calls, agent
-   automations, or stream control when they exist.
-6. Declare required, optional, and mutating permissions.
-7. Declare storage, artifacts, events, and skills when they exist.
-8. Add safe health checks. For CLI-backed checks, prefer `--json`.
-9. Validate the manifest without executing app code.
+4. Declare the real app CLI under `interfaces.cli.command`.
+5. Declare top-level operations as `cli` or router-owned `builtin`.
+6. Declare required, optional, and mutating caller permissions.
+7. Declare the child-context ceiling under `context.allow`.
+8. Declare optional UI, storage, artifacts, events, and skills when useful.
+9. Add safe health checks. For machine checks, prefer `--json`.
+10. Validate the manifest without executing app code.
 
 ## Discovery Debugging
 
@@ -32,10 +32,12 @@ Use this flow when adding or diagnosing a Ravi App manifest.
 1. Read `permissions.required` and `permissions.mutating`.
 2. Confirm the caller has those capabilities through Ravi permission/context
    checks.
-3. For CLI-backed apps, confirm the launcher passes `RAVI_CONTEXT_KEY`.
-4. Confirm the app resolves identity through the context CLI, not ambient
+3. Confirm `context.allow` contains only the Ravi capabilities the CLI needs.
+4. Confirm the launcher issues and passes a fresh child `RAVI_CONTEXT_KEY`.
+5. Confirm the parent key and legacy Ravi identity env vars are absent.
+6. Confirm the app resolves identity through the context CLI, not ambient
    session env vars.
-5. Confirm the execution path still authorizes at runtime even if the manifest
+7. Confirm the execution path still authorizes at runtime even if the manifest
    preflight passed.
 
 ## Health Debugging

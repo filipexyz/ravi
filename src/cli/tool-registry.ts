@@ -10,32 +10,196 @@ export interface RuntimeBuiltinToolDefinition {
   capability: string;
   nativeName: string;
   groups: string[];
+  description: string;
+  operation: "read" | "mutate" | "execute" | "ask";
+  risk: "low" | "medium" | "high" | "destructive";
 }
 
 export const RUNTIME_BUILTIN_TOOLS: RuntimeBuiltinToolDefinition[] = [
-  { capability: "fs.read", nativeName: "Read", groups: ["read-only"] },
-  { capability: "fs.edit", nativeName: "Edit", groups: ["write"] },
-  { capability: "fs.write", nativeName: "Write", groups: ["write"] },
-  { capability: "fs.glob", nativeName: "Glob", groups: ["read-only"] },
-  { capability: "fs.grep", nativeName: "Grep", groups: ["read-only"] },
-  { capability: "fs.notebook.edit", nativeName: "NotebookEdit", groups: ["write"] },
-  { capability: "exec.shell", nativeName: "Bash", groups: ["execute"] },
-  { capability: "agent.task.start", nativeName: "Task", groups: ["execute"] },
-  { capability: "agent.task.output", nativeName: "TaskOutput", groups: ["execute"] },
-  { capability: "agent.task.stop", nativeName: "TaskStop", groups: ["execute"] },
-  { capability: "web.fetch", nativeName: "WebFetch", groups: ["read-only"] },
-  { capability: "web.search", nativeName: "WebSearch", groups: ["read-only"] },
-  { capability: "plan.enter", nativeName: "EnterPlanMode", groups: ["plan"] },
-  { capability: "plan.exit", nativeName: "ExitPlanMode", groups: ["plan"] },
-  { capability: "user.ask", nativeName: "AskUserQuestion", groups: ["plan"] },
-  { capability: "plan.todo.write", nativeName: "TodoWrite", groups: ["plan"] },
-  { capability: "team.create", nativeName: "TeamCreate", groups: ["teams"] },
-  { capability: "team.delete", nativeName: "TeamDelete", groups: ["teams"] },
-  { capability: "team.message.send", nativeName: "SendMessage", groups: ["teams"] },
-  { capability: "tool.search", nativeName: "ToolSearch", groups: ["read-only"] },
-  { capability: "workspace.enter", nativeName: "EnterWorktree", groups: ["navigate"] },
-  { capability: "skill.invoke", nativeName: "Skill", groups: ["navigate"] },
-  { capability: "lsp.query", nativeName: "LSP", groups: ["read-only"] },
+  {
+    capability: "fs.read",
+    nativeName: "Read",
+    groups: ["read-only"],
+    description: "Read a local file",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "fs.edit",
+    nativeName: "Edit",
+    groups: ["write"],
+    description: "Edit a local file",
+    operation: "mutate",
+    risk: "medium",
+  },
+  {
+    capability: "fs.write",
+    nativeName: "Write",
+    groups: ["write"],
+    description: "Write a local file",
+    operation: "mutate",
+    risk: "medium",
+  },
+  {
+    capability: "fs.glob",
+    nativeName: "Glob",
+    groups: ["read-only"],
+    description: "Find local files by pattern",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "fs.grep",
+    nativeName: "Grep",
+    groups: ["read-only"],
+    description: "Search local file contents",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "fs.notebook.edit",
+    nativeName: "NotebookEdit",
+    groups: ["write"],
+    description: "Edit a notebook",
+    operation: "mutate",
+    risk: "medium",
+  },
+  {
+    capability: "exec.shell",
+    nativeName: "Bash",
+    groups: ["execute"],
+    description: "Run a local shell command",
+    operation: "execute",
+    risk: "high",
+  },
+  {
+    capability: "agent.task.start",
+    nativeName: "Task",
+    groups: ["execute"],
+    description: "Start a delegated task",
+    operation: "execute",
+    risk: "medium",
+  },
+  {
+    capability: "agent.task.output",
+    nativeName: "TaskOutput",
+    groups: ["execute"],
+    description: "Read delegated task output",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "agent.task.stop",
+    nativeName: "TaskStop",
+    groups: ["execute"],
+    description: "Stop a delegated task",
+    operation: "execute",
+    risk: "medium",
+  },
+  {
+    capability: "web.fetch",
+    nativeName: "WebFetch",
+    groups: ["read-only"],
+    description: "Fetch a web resource",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "web.search",
+    nativeName: "WebSearch",
+    groups: ["read-only"],
+    description: "Search the web",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "plan.enter",
+    nativeName: "EnterPlanMode",
+    groups: ["plan"],
+    description: "Enter planning mode",
+    operation: "mutate",
+    risk: "low",
+  },
+  {
+    capability: "plan.exit",
+    nativeName: "ExitPlanMode",
+    groups: ["plan"],
+    description: "Leave planning mode",
+    operation: "mutate",
+    risk: "low",
+  },
+  {
+    capability: "user.ask",
+    nativeName: "AskUserQuestion",
+    groups: ["plan"],
+    description: "Ask the user for input",
+    operation: "ask",
+    risk: "low",
+  },
+  {
+    capability: "plan.todo.write",
+    nativeName: "TodoWrite",
+    groups: ["plan"],
+    description: "Update the task plan",
+    operation: "mutate",
+    risk: "low",
+  },
+  {
+    capability: "team.create",
+    nativeName: "TeamCreate",
+    groups: ["teams"],
+    description: "Create an agent team",
+    operation: "execute",
+    risk: "medium",
+  },
+  {
+    capability: "team.delete",
+    nativeName: "TeamDelete",
+    groups: ["teams"],
+    description: "Remove an agent team",
+    operation: "mutate",
+    risk: "high",
+  },
+  {
+    capability: "team.message.send",
+    nativeName: "SendMessage",
+    groups: ["teams"],
+    description: "Send a message to an agent",
+    operation: "execute",
+    risk: "low",
+  },
+  {
+    capability: "tool.search",
+    nativeName: "ToolSearch",
+    groups: ["read-only"],
+    description: "Search available tools",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "workspace.enter",
+    nativeName: "EnterWorktree",
+    groups: ["navigate"],
+    description: "Enter a workspace",
+    operation: "mutate",
+    risk: "low",
+  },
+  {
+    capability: "skill.invoke",
+    nativeName: "Skill",
+    groups: ["navigate"],
+    description: "Load a runtime skill",
+    operation: "read",
+    risk: "low",
+  },
+  {
+    capability: "lsp.query",
+    nativeName: "LSP",
+    groups: ["read-only"],
+    description: "Query the language server",
+    operation: "read",
+    risk: "low",
+  },
 ];
 
 export const SDK_TOOLS = RUNTIME_BUILTIN_TOOLS.map((tool) => tool.nativeName);
@@ -107,6 +271,11 @@ export function normalizeRuntimeBuiltinToolName(toolName: string): string | null
 export function getBuiltinToolCapability(toolName: string): string | undefined {
   const nativeName = normalizeRuntimeBuiltinToolName(toolName) ?? toolName;
   return BUILTIN_TOOL_BY_NATIVE_NAME.get(nativeName)?.capability;
+}
+
+export function getRuntimeBuiltinToolDefinition(toolName: string): RuntimeBuiltinToolDefinition | undefined {
+  const nativeName = normalizeRuntimeBuiltinToolName(toolName) ?? toolName;
+  return BUILTIN_TOOL_BY_NATIVE_NAME.get(nativeName);
 }
 
 export function getBuiltinToolNativeName(capability: string): string | undefined {

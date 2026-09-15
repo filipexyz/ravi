@@ -12,7 +12,7 @@
  * Exits 0 on pass, 1 on failure with structured output.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { runQualityGate } from "./quality-gate.js";
 
 function getChangedFiles(): string[] {
@@ -27,7 +27,9 @@ function getChangedFiles(): string[] {
   // Fall back to git diff against merge-base
   const base = process.env.GITHUB_BASE_REF || "main";
   try {
-    const output = execSync(`git diff --name-only --diff-filter=ACMR origin/${base}...HEAD`, { encoding: "utf8" });
+    const output = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMR", `origin/${base}...HEAD`], {
+      encoding: "utf8",
+    });
     return output
       .split("\n")
       .map((f) => f.trim())

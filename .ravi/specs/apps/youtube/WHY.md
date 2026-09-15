@@ -16,6 +16,30 @@ Official sources:
 
 The client is native rather than an SDE wrapper because the official REST contract is clear and bounded. It accepts an access-token envelope from the Ravi credential broker but does not implement token acquisition or refresh in Phase 1. This lets the structure, command contract, permissions and failure behavior be tested without a real credential.
 
+## App Integration Contract
+
+The manifest deliberately separates the public app name from its implementation
+command:
+
+- `ravi youtube ...` enters the generic App Router, applies app visibility and
+  caller authorization, issues the child context, and resolves a declared
+  operation;
+- `ravi yt ...` is the registered static CLI that implements those operations;
+- `ravi apps run youtube ...` is the explicit fallback and diagnostic entrypoint.
+
+This preserves the existing decorated CLI and its generated SDK metadata
+without making the SDK, UI, or tool surfaces independent executors. They are
+clients of the same App Router operation.
+
+The two permission declarations also have different jobs. Operation
+`permissions` decide whether the caller may use or execute the YouTube app.
+`context.allow` caps what the launched `ravi yt` process may do inside Ravi.
+For the current implementation, `execute:group:yt` is the complete child
+ceiling; expanding it requires an explicit manifest and security review.
+
+`--json` remains an output option on `ravi yt`. It is useful to the router,
+agents, and automation, but it is not a protocol between the app and Ravi.
+
 ## Legacy Gaps Corrected
 
 - `sde yt videos` uses `search.list` for the upload feed. The native app follows Google's implementation guidance and reads the channel uploads playlist, reducing quota cost and preserving pagination.
@@ -65,3 +89,8 @@ Financial operations: none. Revenue and ad-performance reports are intentionally
 - **Credential import from SDE:** rejected because Phase 1 forbids real token use and legacy secret access.
 - **Database/cache:** rejected because all outputs are provider-owned data or deterministic derivations; persistence adds no lineage needed for Phase 1.
 - **NATS events:** rejected because no new cross-system lifecycle is introduced.
+- **Publish `ravi yt` as a second app path:** rejected because it bypasses the
+  generic App Router and creates two authorization stories for one app.
+- **Use SDK or tool operations as executors:** rejected because those surfaces
+  can call the generic App Router and do not need another business
+  implementation.

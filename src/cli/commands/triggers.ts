@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -38,6 +39,32 @@ import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Trigger ids are public through `triggers list`, so TRIGGER_NOT_FOUND enriches
+ * the envelope with real similar ids/names. Candidates keep the same REBAC
+ * visibility filter as `triggers list`, so scope isolation stays intact.
+ */
+function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
+  const scopeCtx = getScopeContext();
+  const candidates = dbListTriggers()
+    .filter((trigger) => canAccessResource(scopeCtx, trigger.agentId))
+    .flatMap((trigger) => [trigger.id, trigger.name]);
+  contractFail(op, "TRIGGER_NOT_FOUND", `Trigger not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the trigger id (see suggestions; list with: ravi triggers list --json)",
+      suggestions: suggestSimilar(id, candidates),
+    },
+  });
 }
 
 function serializeTrigger(trigger: Trigger) {
@@ -184,6 +211,8 @@ export class TriggersCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical trigger tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching triggers to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     let triggers = dbListTriggers();
 
@@ -197,6 +226,7 @@ export class TriggersCommands {
     const page = paginateCliItems(triggers, { limit, offset });
     const pageTriggers = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "triggers", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -205,12 +235,14 @@ export class TriggersCommands {
       options: ["--tag", tagFilter],
     });
 
+    // Compact mode (Manual v2 7.9): --fields narrows each serialized item.
+    const serializedTriggers = pickFields(pageTriggers.map(serializeTrigger), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageTriggers.map(serializeTrigger),
-      triggers: pageTriggers.map(serializeTrigger),
+      items: serializedTriggers,
+      triggers: serializedTriggers,
     };
 
     if (asJson) {
@@ -248,9 +280,9 @@ export class TriggersCommands {
         console.log(`    ${pagination.nextCommand}`);
       }
       console.log("\nUsage:");
-      console.log("  ravi triggers show <id>     # Show trigger details");
-      console.log("  ravi triggers test <id>     # Test trigger with fake event");
-      console.log("  ravi triggers rm <id>       # Delete trigger");
+      console.log("  ravi triggers show <id>           # Show trigger details");
+      console.log("  ravi triggers test <id>           # Test trigger with fake event");
+      console.log("  ravi triggers rm <id> --execute   # Delete trigger (dry-run without --execute)");
     }
     return payload;
   }
@@ -264,7 +296,7 @@ export class TriggersCommands {
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers show", id, asJson);
     }
 
     const payload = { trigger: serializeTrigger(trigger) };
@@ -519,7 +551,7 @@ export class TriggersCommands {
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers enable", id, asJson);
     }
 
     try {
@@ -551,7 +583,7 @@ export class TriggersCommands {
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers disable", id, asJson);
     }
 
     try {
@@ -589,7 +621,7 @@ export class TriggersCommands {
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers set", id, asJson);
     }
 
     try {
@@ -768,16 +800,41 @@ export class TriggersCommands {
     }
   }
 
+  // Test execution uses fake event data (`_test: true`) to preview a trigger,
+  // but dispatch can still activate agent or shell execution.
+  // It therefore requires --execute before emitting to the runtime.
   @Command({ name: "test", description: "Test trigger with fake event data" })
-  @CommandAccess({ kind: "read", resource: "triggers", action: "test", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "triggers",
+    action: "test",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually emit the synthetic trigger event; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers test", id, asJson);
+    }
+
+    if (execute !== true) {
+      contractDryRun(
+        "triggers test",
+        {
+          triggerId: id,
+          executionType: trigger.executionType ?? "agent",
+        },
+        { asJson },
+      );
     }
 
     if (!asJson) {
@@ -810,15 +867,41 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "triggers",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the trigger; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      fail(`Trigger not found: ${id}`);
+      failTriggerNotFound("triggers rm", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deleting a trigger is destructive (topic
+      // subscription and config are gone), so dry-run by default and exit 3
+      // before any state change.
+      contractDryRun(
+        "triggers rm",
+        {
+          triggerId: id,
+          executionType: trigger.executionType ?? "agent",
+          enabled: trigger.enabled,
+        },
+        { asJson },
+      );
     }
 
     try {

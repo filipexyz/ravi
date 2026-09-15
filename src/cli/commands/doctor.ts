@@ -25,7 +25,23 @@ import {
   materializeSubjectCapabilities,
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
-import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import {
+  inspectExecutionPlane,
+  looksLikeRaviSourceTree,
+  type ExecutionPlaneSnapshot,
+} from "../../isolation/execution-plane.js";
+import {
+  ensureCodexBashHookConfig,
+  inspectCodexHookConfig,
+  RAVI_CODEX_BASH_HOOK_COMMAND,
+  RAVI_CODEX_BASH_HOOK_MATCHER,
+  RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND,
+} from "../../runtime/codex-hooks.js";
+import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  getRuntimeCompatibilityIssues,
+  listRegisteredRuntimeProviderIds,
+} from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import {
   dbGetAgent,
@@ -190,6 +206,12 @@ type DoctorDeps = {
     },
   ) => RuntimeCompatibilityIssue[];
   listRegisteredRuntimeProviderIds: typeof listRegisteredRuntimeProviderIds;
+  inspectExecutionPlane: (input?: {
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    stateDir?: string;
+    exists?: (path: string) => boolean;
+  }) => ExecutionPlaneSnapshot;
   getConfiguredPermissionProviders: typeof getConfiguredPermissionProviders;
   getConfiguredCapabilityMaterializers: typeof getConfiguredCapabilityMaterializers;
   authorizePermission: typeof authorizePermission;
@@ -242,6 +264,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
+  inspectExecutionPlane,
   getConfiguredPermissionProviders,
   getConfiguredCapabilityMaterializers,
   authorizePermission,
@@ -415,7 +438,8 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   const insightsDbPath = join(stateDir, "insights.db");
   const codexHooksPath = join(deps.homeDir(), ".codex", "hooks.json");
 
-  addCheck(checks, () => buildDaemonCheck(runtimeTarget));
+  addCheck(checks, () => buildDaemonCheck(runtimeTarget, deps));
+  addCheck(checks, () => buildIsolationCheck(deps));
   addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
   addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
@@ -750,7 +774,7 @@ function inferDomain(id: string): string {
   return "runtime";
 }
 
-function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
+function buildDaemonCheck(summary: CliRuntimeTargetSummary, deps: DoctorDeps): LegacyDoctorCheck {
   if (summary.daemon.online) {
     return {
       id: "runtime.daemon",
@@ -766,6 +790,29 @@ function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
     };
   }
 
+  const isolation = inspectIsolation(deps);
+  if (isolation.daemonIsolationLikely) {
+    return {
+      id: "runtime.daemon",
+      title: "Live daemon",
+      status: "skip",
+      severity: "warn",
+      summary: "live daemon is not visible from this provider sandbox; host state is present",
+      details: [
+        `execution plane: ${isolation.plane}`,
+        `host sqlite: ${isolation.hostEvidence.sqliteDb ? "present" : "missing"}`,
+        `cli bundle: ${summary.cliBundlePath ?? "-"}`,
+      ],
+      fixHint: "inspect the daemon from a host terminal, not from the provider sandbox",
+      data: {
+        online: false,
+        isolated: true,
+        plane: isolation.plane,
+        cliBundle: summary.cliBundlePath,
+      },
+    };
+  }
+
   return {
     id: "runtime.daemon",
     title: "Live daemon",
@@ -776,6 +823,68 @@ function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
     data: {
       online: false,
       cliBundle: summary.cliBundlePath,
+    },
+  };
+}
+
+function inspectIsolation(deps: DoctorDeps): ExecutionPlaneSnapshot {
+  return deps.inspectExecutionPlane({
+    cwd: deps.cwd(),
+    stateDir: deps.getRaviStateDir(),
+    exists: deps.exists,
+  });
+}
+
+function buildIsolationCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const isolation = inspectIsolation(deps);
+  const details = [
+    `execution plane: ${isolation.plane}`,
+    `runtime context: ${isolation.runtimeContext ? "yes" : "no"}`,
+    `source tree: ${isolation.sourceTree ? "yes" : "no"}`,
+    `host state dir: ${isolation.hostEvidence.stateDir ? "present" : "missing"}`,
+    `host sqlite: ${isolation.hostEvidence.sqliteDb ? "present" : "missing"}`,
+    `host credentials: ${isolation.hostEvidence.cloudCredentials ? "present" : "missing"}`,
+    `host cli gateway socket: ${isolation.hostEvidence.cliGatewaySocket ? "present" : "missing"}`,
+    ...(isolation.markers.length > 0 ? [`markers: ${isolation.markers.join(", ")}`] : []),
+  ];
+
+  if (isolation.plane === "provider-sandbox") {
+    return {
+      id: "runtime.isolation",
+      domain: "runtime",
+      title: "Execution plane",
+      status: "ok",
+      severity: "warn",
+      summary: "this CLI is running inside a provider sandbox; host Pages/daemon probes may be unreachable",
+      details,
+      fixHint:
+        "use the host CLI or the host unix-socket CLI gateway for Pages publish/read; do not treat unused providers as the cause",
+      data: {
+        plane: isolation.plane,
+        runtimeContext: isolation.runtimeContext,
+        hostEvidence: isolation.hostEvidence,
+        markers: isolation.markers,
+        daemonIsolationLikely: isolation.daemonIsolationLikely,
+        sourceTree: isolation.sourceTree,
+        stateDirPresent: isolation.hostEvidence.stateDir,
+      },
+    };
+  }
+
+  return {
+    id: "runtime.isolation",
+    domain: "runtime",
+    title: "Execution plane",
+    status: "ok",
+    summary: "this CLI is running on the host execution plane",
+    details,
+    data: {
+      plane: isolation.plane,
+      runtimeContext: isolation.runtimeContext,
+      hostEvidence: isolation.hostEvidence,
+      markers: isolation.markers,
+      daemonIsolationLikely: isolation.daemonIsolationLikely,
+      sourceTree: isolation.sourceTree,
     },
   };
 }
@@ -2194,6 +2303,20 @@ function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDocto
 }
 
 function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  if (!looksLikeRaviSourceTree(deps.cwd(), deps.exists)) {
+    return {
+      id: "permissions.provider_runtime_boundaries",
+      domain: "permissions",
+      title: "Permission provider runtime boundaries",
+      status: "skip",
+      severity: "info",
+      summary: "cwd is not a Ravi source tree; skipped provider-runtime source check",
+      details: ["agent or sandbox cwd is not the Ravi repository"],
+      fixHint: "run this check from the Ravi source checkout, not from an agent workspace",
+      data: { skipped: true, reason: "not_source_tree" },
+    };
+  }
+
   const providerRuntimePath = join(deps.cwd(), "src", "permissions", "provider-runtime.ts");
   const enginePath = join(deps.cwd(), "src", "permissions", "engine.ts");
   const providerRuntimeSource = deps.exists(providerRuntimePath) ? deps.readFile(providerRuntimePath) : "";
@@ -2434,7 +2557,7 @@ function buildUnexpectedFailureCheck(id: string, title: string, error: unknown):
 }
 
 function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const providers = deps.listRegisteredRuntimeProviderIds();
+  const providers = providersUsedByRegisteredAgents(deps);
   const results = providers.map((provider) => ({
     provider,
     issues: deps.getRuntimeCompatibilityIssues(provider, { toolAccessMode: "restricted" }),
@@ -2446,14 +2569,15 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
       id: "runtime.providers",
       title: "Restricted provider compatibility",
       status: "fail",
-      summary: `${failing.length} runtime providers do not support restricted tool access`,
+      summary: `${failing.length} used runtime providers do not support restricted tool access`,
       details: failing.flatMap((entry) => entry.issues.map((issue) => `${entry.provider}: ${issue.message}`)),
-      fixHint: "bring provider capabilities back in sync before relying on restricted sessions",
+      fixHint: "bring the providers used by registered agents back in sync before relying on restricted sessions",
       data: {
         failing: failing.map((entry) => ({
           provider: entry.provider,
           issues: entry.issues.map((issue) => issue.code),
         })),
+        checked: providers,
       },
     };
   }
@@ -2462,12 +2586,33 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
     id: "runtime.providers",
     title: "Restricted provider compatibility",
     status: "ok",
-    summary: "registered runtime providers support restricted tool access",
+    summary: "runtime providers used by registered agents support restricted tool access",
     details: results.map((entry) => `${entry.provider}: restricted tool access supported`),
     data: {
       providers: results.map((entry) => entry.provider),
     },
   };
+}
+
+function providersUsedByRegisteredAgents(deps: DoctorDeps): RuntimeProviderId[] {
+  const registered = deps.listRegisteredRuntimeProviderIds();
+  const used = new Set<string>();
+  try {
+    const agents = deps.dbListAgents();
+    if (agents.length === 0) {
+      used.add(DEFAULT_RUNTIME_PROVIDER_ID);
+    }
+    for (const agent of agents) {
+      const provider =
+        typeof agent.provider === "string" && agent.provider.trim()
+          ? agent.provider.trim()
+          : DEFAULT_RUNTIME_PROVIDER_ID;
+      used.add(provider);
+    }
+  } catch {
+    used.add(DEFAULT_RUNTIME_PROVIDER_ID);
+  }
+  return registered.filter((id) => used.has(id));
 }
 
 const CRON_TARGET_STATUS: Record<CronTargetState, LegacyDoctorCheckStatus> = {
@@ -2579,44 +2724,86 @@ function buildCronTargetsCheck(deps: DoctorDeps): LegacyDoctorCheck {
 }
 
 function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): LegacyDoctorCheck {
-  if (!deps.exists(hooksPath)) {
+  const raw = deps.exists(hooksPath) ? safeReadDoctorFile(hooksPath, deps) : null;
+  const before = inspectCodexHookConfig(raw, hooksPath);
+  let repaired = false;
+  let after = before;
+
+  if (!before.ok) {
+    try {
+      const result = ensureCodexBashHookConfig(dirname(hooksPath));
+      repaired = result.changed;
+      after = inspectCodexHookConfig(deps.exists(hooksPath) ? safeReadDoctorFile(hooksPath, deps) : null, hooksPath);
+    } catch (error) {
+      return {
+        id: "codex.bash-hook",
+        title: "Global Codex bash hook",
+        status: "fail",
+        summary: before.reasons[0] ?? "failed to inspect or rewrite ~/.codex/hooks.json",
+        details: [hooksPath, ...before.reasons, error instanceof Error ? error.message : String(error)],
+        fixHint: buildCodexHookFixHint(before),
+        data: {
+          path: hooksPath,
+          exists: before.exists,
+          valid: false,
+          matcherOk: before.matcherOk,
+          staleCommand: before.staleCommand,
+          preferredCommand: before.preferredCommand,
+          repaired: false,
+          reasons: before.reasons,
+        },
+      };
+    }
+  }
+
+  if (!after.ok) {
     return {
       id: "codex.bash-hook",
       title: "Global Codex bash hook",
       status: "fail",
-      summary: "global Codex hooks file is missing",
-      details: [hooksPath],
-      fixHint: "materialize ~/.codex/hooks.json through the Codex provider or restart the daemon",
-      data: { path: hooksPath, exists: false, valid: false },
+      summary: after.reasons[0] ?? "global Codex hooks file exists but Ravi bash governance is missing",
+      details: [hooksPath, ...after.reasons],
+      fixHint: buildCodexHookFixHint(after),
+      data: {
+        path: hooksPath,
+        exists: after.exists,
+        valid: false,
+        matcherOk: after.matcherOk,
+        staleCommand: after.staleCommand,
+        preferredCommand: after.preferredCommand,
+        repaired,
+        reasons: after.reasons,
+      },
     };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(deps.readFile(hooksPath));
-  } catch (error) {
+  if (before.staleCommand || !before.matcherOk || before.staleStatus) {
     return {
       id: "codex.bash-hook",
       title: "Global Codex bash hook",
       status: "fail",
-      summary: "global Codex hooks file is not valid JSON",
-      details: [hooksPath, error instanceof Error ? error.message : String(error)],
-      fixHint: "rewrite ~/.codex/hooks.json with the Ravi bash hook group",
-      data: { path: hooksPath, exists: true, valid: false },
-    };
-  }
-
-  const valid = hasRaviCodexBashHook(parsed);
-  if (!valid) {
-    return {
-      id: "codex.bash-hook",
-      title: "Global Codex bash hook",
-      status: "fail",
-      summary: "global Codex hooks file exists but Ravi bash governance is missing",
-      details: [hooksPath],
+      summary: before.staleCommand
+        ? `stale PreToolUse command \`${RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND}\` was rewritten to \`${RAVI_CODEX_BASH_HOOK_COMMAND}\``
+        : !before.matcherOk
+          ? `invalid PreToolUse matcher was rewritten to \`${RAVI_CODEX_BASH_HOOK_MATCHER}\``
+          : "legacy Ravi Codex hook group was rewritten to the bash-only matcher",
+      details: [
+        hooksPath,
+        ...before.reasons,
+        repaired ? "rewrote ~/.codex/hooks.json" : "hooks file already matched after reread",
+      ],
       fixHint:
-        "rewrite ~/.codex/hooks.json so `PreToolUse` for `^(Bash|shell)$` points at `ravi context codex-bash-hook`",
-      data: { path: hooksPath, exists: true, valid: false },
+        "respawn the live Codex app-server without wiping session history so it reloads hooks.json; stale `codex-tool-hook` invocations are now accepted as an alias",
+      data: {
+        path: hooksPath,
+        exists: true,
+        valid: true,
+        matcherOk: before.matcherOk,
+        staleCommand: before.staleCommand,
+        preferredCommand: before.preferredCommand,
+        repaired,
+        reasons: before.reasons,
+      },
     };
   }
 
@@ -2626,47 +2813,34 @@ function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): LegacyDoctorC
     status: "ok",
     summary: "Ravi Codex bash governance is present in ~/.codex/hooks.json",
     details: [hooksPath],
-    data: { path: hooksPath, exists: true, valid: true },
+    data: {
+      path: hooksPath,
+      exists: true,
+      valid: true,
+      matcherOk: true,
+      staleCommand: false,
+      preferredCommand: true,
+      repaired: false,
+    },
   };
 }
 
-function hasRaviCodexBashHook(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
+function safeReadDoctorFile(path: string, deps: DoctorDeps): string | null {
+  try {
+    return deps.readFile(path);
+  } catch {
+    return null;
   }
+}
 
-  const hooks = (value as Record<string, unknown>).hooks;
-  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
-    return false;
+function buildCodexHookFixHint(inspection: { staleCommand: boolean; matcherOk: boolean }): string {
+  if (inspection.staleCommand) {
+    return `rewrite ~/.codex/hooks.json so PreToolUse uses \`ravi context ${RAVI_CODEX_BASH_HOOK_COMMAND}\` instead of \`${RAVI_CODEX_LEGACY_TOOL_HOOK_COMMAND}\``;
   }
-
-  const preToolUse = (hooks as Record<string, unknown>).PreToolUse;
-  if (!Array.isArray(preToolUse)) {
-    return false;
+  if (!inspection.matcherOk) {
+    return `rewrite ~/.codex/hooks.json so PreToolUse matcher is exactly \`${RAVI_CODEX_BASH_HOOK_MATCHER}\``;
   }
-
-  return preToolUse.some((group) => {
-    if (!group || typeof group !== "object" || Array.isArray(group)) {
-      return false;
-    }
-    const matcher = (group as Record<string, unknown>).matcher;
-    const handlers = (group as Record<string, unknown>).hooks;
-    if (matcher !== "^(Bash|shell)$" || !Array.isArray(handlers)) {
-      return false;
-    }
-    return handlers.some((handler) => {
-      if (!handler || typeof handler !== "object" || Array.isArray(handler)) {
-        return false;
-      }
-      const record = handler as Record<string, unknown>;
-      return (
-        record.type === "command" &&
-        record.statusMessage === "ravi codex bash permission gate" &&
-        typeof record.command === "string" &&
-        record.command.includes("codex-bash-hook")
-      );
-    });
-  });
+  return `rewrite ~/.codex/hooks.json so \`PreToolUse\` for \`${RAVI_CODEX_BASH_HOOK_MATCHER}\` points at \`ravi context ${RAVI_CODEX_BASH_HOOK_COMMAND}\``;
 }
 
 function printDoctorReport(report: DoctorReport, options: { full?: boolean } = {}): void {

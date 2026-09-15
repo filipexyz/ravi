@@ -37,6 +37,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => mockCliContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -152,6 +155,7 @@ mock.module("../../cron/index.js", () => ({
 }));
 
 const { CronCommands } = await import("./cron.js");
+const { ContractError } = await import("../agent-contract.js");
 
 async function captureJson(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
   const lines: string[] = [];
@@ -328,7 +332,8 @@ describe("CronCommands --json", () => {
   });
 
   it("returns trigger dispatch metadata for run --json", async () => {
-    const payload = await captureJson(() => new CronCommands().run("cron-1", true));
+    // --execute required: without it, `cron run` is a dry-run (exit 3).
+    const payload = await captureJson(() => new CronCommands().run("cron-1", true, true));
 
     expect(payload).toMatchObject({
       status: "triggered",
@@ -342,7 +347,8 @@ describe("CronCommands --json", () => {
   });
 
   it("returns deleted cron job data for rm --json", async () => {
-    const payload = await captureJson(() => new CronCommands().rm("cron-1", true));
+    // --execute required: without it, `cron rm` is a dry-run (exit 3).
+    const payload = await captureJson(() => new CronCommands().rm("cron-1", true, true));
 
     expect(payload).toMatchObject({
       status: "deleted",
@@ -615,5 +621,208 @@ describe("CronCommands agent-scoped listing", () => {
     if (pagination.nextCommand) {
       expect(pagination.nextCommand).toContain("--all-agents");
     }
+  });
+});
+
+describe("cron agent-first contract", () => {
+  beforeEach(() => {
+    emitMock.mockClear();
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    mockCliContext = undefined;
+    cronJobs = [];
+    cronJob = {
+      id: "cron-1",
+      name: "SENTINEL_CRON_NAME_8K2R",
+      enabled: true,
+      schedule: { type: "every", every: 1_800_000 },
+      executionType: "agent",
+      message: "PRIVATE_CRON_MESSAGE_8K2R",
+      sessionTarget: "main",
+      deleteAfterRun: false,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  });
+
+  it("blocks cron rm without --execute (dry-run, exit 3, no delete)", async () => {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().rm("cron-1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("cron rm");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect(envelope.error.plan).toEqual({
+      jobId: "cron-1",
+      executionType: "agent",
+      scheduleType: "every",
+      enabled: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_CRON_NAME_8K2R");
+    expect(cronJob).not.toBeNull();
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks cron run without --execute (dry-run, exit 3, no trigger emitted)", async () => {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().run("cron-1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("cron run");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan).toEqual({
+      jobId: "cron-1",
+      executionType: "agent",
+      scheduleType: "every",
+      messageChars: "PRIVATE_CRON_MESSAGE_8K2R".length,
+      agentId: "main",
+      sessionTarget: "main",
+    });
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_CRON_NAME_8K2R");
+    expect(JSON.stringify(plan)).not.toContain("PRIVATE_CRON_MESSAGE_8K2R");
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("cron run dry-run never exposes a shell command", async () => {
+    const sentinel = "SENTINEL_CRON_SHELL_COMMAND_DO_NOT_LEAK";
+    cronJob = {
+      id: "cron-shell",
+      name: "Shell job",
+      enabled: true,
+      schedule: { type: "every", every: 60_000 },
+      executionType: "shell",
+      shellCommand: sentinel,
+      message: "",
+      sessionTarget: "main",
+      deleteAfterRun: false,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().run("cron-shell", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const plan = (thrown as InstanceType<typeof ContractError>).details.plan as Record<string, unknown>;
+    expect(plan).toEqual({
+      jobId: "cron-shell",
+      executionType: "shell",
+      scheduleType: "every",
+      shellCommandPresent: true,
+      shellCommandChars: sentinel.length,
+    });
+    expect(JSON.stringify(plan)).not.toContain(sentinel);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("performs the write with --execute (rm deletes, run emits the trigger)", async () => {
+    await captureJson(() => new CronCommands().run("cron-1", true, true));
+    expect(emitMock).toHaveBeenCalledWith("ravi.cron.trigger", { jobId: "cron-1" });
+
+    emitMock.mockClear();
+    await captureJson(() => new CronCommands().rm("cron-1", true, true));
+    expect(cronJob).toBeNull();
+    expect(emitMock).toHaveBeenCalledWith("ravi.cron.refresh", {});
+  });
+
+  it("emits CRON_JOB_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    cronJob = null;
+    cronJobs = [
+      {
+        id: "cron-report",
+        name: "Daily Report",
+        enabled: true,
+        schedule: { type: "every", every: 1_800_000 },
+        executionType: "agent",
+        agentId: "main",
+        message: "report",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "cron-etl",
+        name: "Nightly ETL",
+        enabled: true,
+        schedule: { type: "every", every: 3_600_000 },
+        executionType: "shell",
+        shellCommand: "echo ok",
+        message: "",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      new CronCommands().show("cron-reprot", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("cron show");
+    expect(envelope.error.code).toBe("CRON_JOB_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("cron-report");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("supports --fields compact mode on cron list", async () => {
+    const payload = await captureJson(async () =>
+      new CronCommands().list(true, undefined, undefined, undefined, undefined, undefined, "id,name"),
+    );
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(Object.keys(items[0]).sort()).toEqual(["id", "name"]);
+    const jobs = payload.jobs as Array<Record<string, unknown>>;
+    expect(Object.keys(jobs[0]).sort()).toEqual(["id", "name"]);
   });
 });

@@ -2,6 +2,7 @@
  * Builds the system prompt appendix for agents
  */
 
+import { BUG_REPORT_SESSION_PROMPT } from "./bug-report/prompt.js";
 import type { ChannelContext } from "./runtime/message-types.js";
 import { renderChannelCapabilities, supportsChannelCapability } from "./channels/capabilities.js";
 
@@ -108,45 +109,12 @@ function systemCommandsText(): string {
  * See .ravi/specs/sessions/attach/SPEC.md
  */
 function sessionAttachText(): string {
-  return `Sessões podem participar de múltiplos chats ao mesmo tempo. Cada chat atachado alimenta o mesmo histórico da sessão, mas cada superfície tem um estado de fala:
+  return `A session can be attached to multiple chats, and all attached chats share the same history.
 
-- \`speech=speak\` — a sessão pode emitir resposta externa nesse chat.
-- \`speech=muted\` — a sessão escuta esse chat em modo listen-only; inbound entra no histórico, mas uma resposta normal sai pelo chat default com fala habilitada.
-
-**Quando usar:**
-- "Fazer esta sessão participar e responder em um chat específico" → \`attach\`
-- "Escutar um chat sem falar nele" → \`mute\`
-- "Permitir fala em um chat já inscrito" → \`unmute\`
-- "Parar participação externa em um chat" → \`detach\`
-- "Listar/inspecionar wiring e fala" → \`subscriptions\`
-
-**Comandos:**
-
-- \`ravi sessions attach <session> --chat <chat-id> [--reason "..."]\` — inscreve o chat no mesmo histórico, habilita fala nele e o seleciona como default output.
-- \`ravi sessions mute <session> --chat <chat-id>\` — mantém a inscrição como listen-only; inbound continua entrando, mas respostas normais não saem nesse chat.
-- \`ravi sessions unmute <session> --chat <chat-id>\` — habilita fala em um chat já inscrito. Use internamente antes da resposta final se o header indicar que o \`source_chat\` está muted e a resposta precisa sair ali.
-- \`ravi sessions detach <session> --chat <chat-id>\` — remove a inscrição quando possível; se for o primary único, o input fica, mas a resposta externa para. **Detach é durável** até novo attach explícito.
-- \`ravi sessions subscriptions <session>\` — lista chats inscritos, qual é default output e o \`speech\` de cada um.
-
-**Resposta em múltiplas superfícies:**
-
-- Cada inbound traz um header interno com \`source_chat\`, \`source_speech\`, default output e subscriptions.
-- Se \`source_speech=speak\`, uma resposta normal pode sair no chat de origem.
-- Se \`source_speech=muted\`, uma resposta normal sai pelo default output. Se for necessário responder publicamente no chat de origem, rode \`ravi sessions unmute <session> --chat <source_chat>\` antes da resposta final.
-- Não explique mute, unmute, attach, subscriptions, routing ou output mechanics para usuários; trate isso como controle interno transparente.
-
-**${SILENT_TOKEN} vs \`mute\` vs \`detach\`** (complementares, não substitutos):
-
-- \`${SILENT_TOKEN}\` = **one-shot**, esse turn específico não fala. Próxima inbound, agent volta a responder normalmente. Use quando "li, mas não tenho nada a dizer agora".
-- \`mute\` = **estado durável listen-only**, a sessão continua escutando o chat, mas não fala nele até \`unmute\`.
-- \`detach\` = **estado durável de remoção**, a sessão deixa de participar daquele chat quando possível.
-
-**Anti-patterns:**
-
-- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete\` da sessão antiga) primeiro.
-- ❌ Tentar redirecionar output com \`focus\` — focus não existe; use \`attach\` para escolher o chat que recebe as respostas da sessão.
-- ❌ Externalizar para o usuário que você está mutando, desmutando ou roteando uma resposta.
-- ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
+- A normal reply returns to the chat or thread that supplied the current turn.
+- \`ravi sessions attach <session> --chat <chat-id>\` adds a chat and selects it as the default for turns with no inbound chat.
+- \`ravi sessions detach <session> --chat <chat-id>\` removes a chat; \`ravi sessions subscriptions <session>\` lists them.
+- Use an explicit channel command to intentionally send somewhere else. Use \`${SILENT_TOKEN}\` to suppress only the current reply.`;
 }
 
 function sessionActionsText(sessionName?: string): string {
@@ -159,9 +127,9 @@ Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\
 
 O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
 
-Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.
+Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id> --execute\` (sem \`--execute\` é dry-run, exit 3).
 
-Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto"\`.
+Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto" --execute\` (sem \`--execute\` é dry-run, exit 3).
 
 Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo uma saída acidental. Não exponha IDs internos ao usuário a menos que isso seja útil para depuração.`;
 }
@@ -257,12 +225,16 @@ export function buildRuntimeInfo(agentId: string, ctx: ChannelContext, sessionNa
 
 function sessionBoundaryText(sessionName?: string): string {
   const sessionRef = sessionName ? `current session (${sessionName})` : "current session";
+  const currentRecap = "ravi sessions recap --json";
+  const otherRecap = "ravi sessions recap <nameOrKey> --json";
   return [
     `Treat the ${sessionRef} as the only conversational context for this reply.`,
     `DMs, groups, channels, and threads are separate contexts even when the same people participate.`,
-    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read --json\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
-    `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
-    `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
+    `If local context looks incomplete, use same-session history tools such as \`${currentRecap}\`, \`ravi sessions read --json\`, or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
+    `To recap another session you are allowed to see, run \`${otherRecap}\`. That requires \`access session:<id>\`; unauthorized or hidden sessions appear missing (\`SESSION_NOT_FOUND\`). A chat attach is not permission to recap.`,
+    `Never recover missing context by dumping another DM, group, or chat, reading \`MEMORY.md\`, or using unrelated filesystem notes.`,
+    `Do not expect a recap to be injected into this prompt; call the recap command when you need it.`,
+    `If same-session durable history is unavailable and you cannot recap an authorized session, ask the user for the missing context instead of guessing.`,
   ].join("\n");
 }
 
@@ -377,8 +349,9 @@ Sugira isso especialmente quando o assunto tiver:
 
 Formato preferido:
 - "Isso parece um fio próprio. Quer que eu crie um agent/grupo dedicado para <tema>?"
-- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent>\`.
-- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent\`.
+- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent> --execute\`.
+- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent --execute\`.
+- Sem \`--execute\`, \`group create\` é dry-run (exit 3): mostra o plano e não cria nada.
 - Se o usuário pedir diretamente para criar, aja sem rediscutir.
 
 Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
@@ -433,6 +406,7 @@ export function buildSystemPromptSections(
   // multi-input primitive is discoverable. See sessions/attach spec.
   add("session.attach", "Session Attach", sessionAttachText(), 25);
   add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
+  add("bug.report", "Bug Reports", BUG_REPORT_SESSION_PROMPT, 31);
   if (!isSentinel) {
     add("automation.background_followups", "Background Followup Automation", backgroundFollowupAutomationText(), 32);
   }
@@ -445,9 +419,9 @@ export function buildSystemPromptSections(
       `You are a sentinel agent — you observe messages silently and never auto-reply.
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
 
-- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID\` — send a WhatsApp message
-- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages from a contact
-- \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID\` — send read receipt (blue ticks)
+- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID --execute\` — send a WhatsApp message (without \`--execute\` it is a dry-run, exit 3)
+- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages locally; this command never sends a receipt
+- \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute\` — send a confirmed read receipt (blue ticks; without \`--execute\` it is a dry-run, exit 3)
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
 Your text output is NOT sent to the channel. Use these tools to send explicitly.`,

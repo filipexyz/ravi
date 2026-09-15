@@ -21,6 +21,7 @@ ravi apps import-cli "<cli>" --id <app-id> --dry-run --json
 - commands missing `--json`;
 - mutating/destructive commands marked for review;
 - suggested permissions;
+- proposed child `context.allow` and why each capability is needed;
 - suggested storage/events/UI placeholders;
 - planned files.
 
@@ -42,6 +43,9 @@ ravi apps show <app-id> --json
 - collapse low-level commands into daily operations;
 - remove debug-only commands from top-level operations;
 - add or correct permissions;
+- keep `context.allow` empty or least-privilege; an inferred
+  `execute:group:<group>` is acceptable only while an imported operation
+  directly calls that public Ravi group; never accept inferred inheritance;
 - add events/storage/UI only where they have operational value;
 - update the generated skill so agents use declared operations only.
 
@@ -54,6 +58,8 @@ Ask:
 - Which operations mutate external state?
 - Which operations need confirmation, `--dry-run`, or stronger permission?
 - Which outputs are machine-readable JSON?
+- Which public `ravi ...` commands must the CLI call, and which exact child
+  capabilities do those commands require?
 - Which operation results should emit events?
 - Which state belongs in app storage versus upstream systems?
 - Which UI views would make the operation materially easier?
@@ -67,5 +73,6 @@ If import is weak, add a self-description command to the source CLI:
 ```
 
 The payload should describe command groups, args, options, JSON support,
-mutation risk, examples, schemas, and safe health checks. Re-run import after
-the CLI publishes that metadata.
+mutation risk, examples, schemas, safe health checks, and exact Ravi capability
+requirements when applicable. Re-run import after the CLI publishes that
+metadata.

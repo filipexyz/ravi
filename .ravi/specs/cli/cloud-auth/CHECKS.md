@@ -7,6 +7,12 @@
 - JSON output does not print access tokens or refresh tokens.
 - File credential fallback is written with current-user-only permissions.
 - `ravi logout` deletes local credentials.
+- `ravi login --help` exposes `--console <url>` with
+  `https://console.ravi.bot` as the default.
+- `ravi login --help` does not expose `--endpoint`.
+- Root help does not expose a product-specific identity-linking command.
+- No remote-login discovery, post-login provider, or remote installation
+  credential module is present in the root auth implementation.
 
 ## Login Smoke
 
@@ -18,6 +24,9 @@ ravi whoami --json
 Expected:
 
 - auth completes through browser/device flow;
+- the printed Verification URL and JSON `auth.authorizationUrl` /
+  `auth.verificationUriComplete` include `?user_code=<issued-code>`;
+- the bare `/cli/authorize` URL is never presented as the link to open;
 - `whoami` returns user, organization, installation, scopes, and expiry;
 - no raw token appears in stdout/stderr.
 

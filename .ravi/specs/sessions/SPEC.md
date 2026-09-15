@@ -8,6 +8,7 @@ capabilities:
   - actions
   - visibility
   - provider-runtime
+  - recap
 tags:
   - sessions
   - runtime
@@ -18,7 +19,9 @@ applies_to:
   - src/router/resolver.ts
   - src/omni/consumer.ts
   - src/runtime/host-event-loop.ts
+  - src/runtime/runtime-request-builder.ts
   - src/cli/commands/sessions.ts
+  - src/sessions/recap.ts
   - src/prompt-builder.ts
 owners:
   - ravi-dev
@@ -37,7 +40,8 @@ This domain is the semantic owner above:
 - transport surfaces (channels, chats — see `channels/chats`);
 - provider runtime state (resume/fork/replay — see `runtime/session-continuity`);
 - visibility into live token/skill state (see `runtime/session-visibility`);
-- portable subject context (see `threads`).
+- portable subject context (see `threads`);
+- a computed session recap (see `sessions/recap`).
 
 Those capabilities all *reference* a session, but they MUST NOT redefine what a session is.
 
@@ -50,7 +54,8 @@ Sessions own:
 - which chats can dispatch input into the session (attach);
 - which chat receives the session's external output (attach);
 - last-source provenance for trace/correlation;
-- session lifecycle: create, rename, reset, delete, ephemeral TTL.
+- session lifecycle: create, rename, reset, delete, ephemeral TTL;
+- the session recap projection (computed on read; see `sessions/recap`).
 
 Sessions do NOT own:
 
@@ -58,13 +63,14 @@ Sessions do NOT own:
 - chat membership of humans (owned by `channels/chats` and `chat_participants`);
 - provider session state (owned by `runtime/session-continuity`);
 - thread/subject context (owned by `threads`);
+- Knowledge threads or agent-cwd `MEMORY.md` (recap is a session projection, not semantic memory);
 - identity resolution (owned by `contacts/identity-graph`).
 
 ## Definitions
 
 - `session`: runtime container for one agent. Identified by a stable `session_key`. Has a canonical `session_name` for human reference.
-- `session_chat_binding`: pre-existing one-to-one record stating "this session belongs to chat X" (see `channels/chats`). It records the *primary* / *origin* chat.
-- `session_chat_subscription`: record stating "chat X is wired to session S". Introduced by `sessions/attach`. One session MAY have many. One active subscription MAY be marked as the output attachment.
+- `session_chat_subscription`: record stating "chat X is wired to session S". One session MAY have many. One active subscription MAY be marked as the output attachment. This is the sole attach/output ledger.
+- `session_chat_binding`: retired 1:1 compatibility table. Existing databases MAY still contain it until the one-time migrate/drop. Runtime MUST NOT read, write, or recreate it.
 - `session_participant`: runtime participation projection (see `contacts/identity-graph`). It is not a permission and not an attach record.
 - `session_key`: durable composite identifier (see `src/router/session-key.ts`). MUST remain stable for the session's lifetime.
 
@@ -72,19 +78,28 @@ Sessions do NOT own:
 
 - A session MUST always belong to exactly one agent.
 - A session MUST have a stable `session_key`. Renaming the canonical `session_name` MUST NOT rewrite `session_key`.
-- A session MAY have one or more attached chats (see `sessions/attach`). Each active subscription has an independent speech mode: `speak` or `muted`. The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
-- A session MUST have at most one default attached output chat. Output delivery MUST prefer the current source chat when its subscription has `speech=speak`; otherwise it MUST resolve to the default output attachment when that subscription has `speech=speak`. The inbound source chat MUST NOT be used as an implicit output fallback when it is not an active speak-enabled subscription.
-- If a response has neither a speak-enabled source subscription nor a speak-enabled default output attachment, it MUST NOT emit externally.
+- A session MAY have one or more attached chats (see `sessions/attach`). Active attachments and the default output live only on `session_chat_subscriptions`.
+- A physical provider turn MUST keep one immutable reply surface. Different chats and threads MUST be serialized into separate turns.
+- An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
+- An unattached inbound source or a source-less turn without a default output MUST NOT emit externally.
+- A visible assistant utterance MUST persist as exactly one immutable chat.db row. Persist MUST NOT empty-join prior assistant history into a new row (`primeiro?Olá`). Multi-message turns MAY write several rows. Each completed utterance MUST INSERT before the `assistant.message` runtime SSE and MUST NOT wait for `turn.complete`. Replay of already-stored assistant text MUST NOT INSERT again.
+- Operator / HTTP / app `sessions.send` (session-relay, no `--channel`/`--to`, no real inbound chat) is a session destination for emit. Leftover `lastChannel`/`lastTo` MUST NOT become `prompt.source` / `currentSource`. The default output attachment MUST NOT be the emit target. Chat emit stays fail-closed. Persist + `sessions.read` remain the sink.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
+- Operator CLI-only `sessions send` (no `--channel`/`--to`) sends the raw user text. `[System] Inform:` is reserved for agent-to-agent / in-context sends. `--raw` is the escape hatch.
+- CLI-only `sessions send -w` waits for this turn's assistant transcript after `turn.complete`. Chat-attached `-w` still means delivered. Attach remains fail-closed for chat emit.
+- Every accepted `sessions.send` (operator / HTTP / app) MUST end with a terminal runtime signal: `turn.complete`, `turn.failed`, or `turn.interrupted`. A mid-turn `assistant.message` MAY persist before that terminal. After a mid-turn utterance and a completed tool, provider silence MUST still emit `turn.failed` or `turn.interrupted` — the session MUST NOT remain with only the mid row and no terminal. Overlapping sends while a turn is in flight MUST queue behind the live handle (`after_response`, the sessions.send default) and MUST NOT start a second physical provider turn or Hub route preflight. Clients that poll recover from `sessions info --json` `turnUsage.lastTurn` (`status` + `completedAt`).
+- Default `sessions read --json` is session + messages. The advertised skill catalog stays on `sessions visibility` or `sessions read --visibility`.
+- Bare `ravi tui` MUST require a session name (usage error). It MUST NOT default to `main`.
+- CLI-only session bootstrap MUST NOT inherit hardcoded `DEFAULT_RUNTIME_EFFORT = xhigh`. `sessions send --effort` sets an explicit override. The Ravi system prompt remains large.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
 - `ravi sessions set-effort <session> <level>` MUST persist an effort override using `none|minimal|low|medium|high|xhigh|max|ultra`; `clear` MUST remove only the session override.
 - Session effort is separate from thinking. `ravi sessions set-thinking` MUST NOT accept effort values such as `max` or `ultra`, and `ravi sessions set-effort` MUST NOT mutate `thinking_level`.
 - `ravi sessions list --json`, `ravi sessions info --json`, and runtime trace payloads SHOULD expose both effective runtime value and source where available.
 - Deletion of a session MUST cascade to delete its subscriptions.
 - Session visibility is authorization-bearing. Runtime principals MUST only
-  list, inspect, read, trace, or mutate sessions they own or have explicit
+  list, inspect, read, recap, trace, or mutate sessions they own or have explicit
   grants for.
-- `access session:<id>` authorizes session discovery/read/trace beyond the
+- `access session:<id>` authorizes session discovery/read/recap/trace beyond the
   current own session.
 - `modify session:<id>` authorizes session mutation beyond the current own
   session.
@@ -95,6 +110,10 @@ Sessions do NOT own:
 ## Session Actions
 
 `ravi sessions actions --json` is the canonical conversational action surface for a runtime session.
+
+The detailed discovery, ownership and per-surface availability contract lives
+in `sessions/actions`. Cross-channel action semantics live in
+`channels/chat-actions`.
 
 It MUST expose:
 
@@ -111,7 +130,8 @@ The action catalog MUST include existing executable conversational/channel comma
 - `message.react` via `ravi react send`;
 - `sticker.send` via `ravi stickers send`;
 - `media.send` via `ravi media send`;
-- `session.read` via `ravi sessions read --json`.
+- `session.read` via `ravi sessions read --json`;
+- `session.recap` via `ravi sessions recap --json`.
 
 Actions that are conceptually useful but do not have an implemented command MUST be listed as `planned`, not documented as executable.
 
@@ -121,24 +141,35 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 
 - `bun test src/router/sessions.test.ts src/router/sessions.rename.test.ts src/router/commit-matched-route.test.ts`
 - `bun test src/cli/commands/sessions.test.ts src/prompt-builder.test.ts`
-- Scope tests SHOULD cover `sessions list/info/read/trace` filtering through
+- Scope tests SHOULD cover `sessions list/info/read/recap/trace` filtering through
   `access session:<id>` and mutation through `modify session:<id>`.
+- `bun test src/sessions/recap.test.ts`
 
 ## Known Failure Modes
 
 - Confusing `session_key` identity with `session_name` (display) — leads to broken routing when a session is renamed.
-- Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
+- Reintroducing `session_chat_bindings` as a second attach ledger — detach can appear to succeed and then resurrect on the next CLI bootstrap.
 - Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
-- Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
+- Mutating the active turn source when a later chat message arrives — causes cross-channel routing leaks.
 - Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
 - Marking a not-yet-implemented action as available instead of `planned`.
+- Widening an empty chat scope to every message authored by the session's agent.
 - Letting threads, observers, or knowledge collapse into the session concept.
+- Treating agent-cwd `MEMORY.md` or Knowledge threads as a session recap.
+- Session Boundary telling agents they can never recover context from another
+  session — that blocks authorized `sessions recap <nameOrKey>`.
 
 ## Effective Model And Presets
 
 Session JSON (`sessions list/info`) exposes the resolved `effectiveProvider`,
-`effectiveModel`, `modelSource` (`session_override` | `agent_preset` |
-`agent_default` | `global_default`), `modelPresetId`, and `modelPresetVersion`.
-A session `modelOverride` continues to win over the agent-level selection and is
-reported as `session_override`, shadowing any agent preset. Applying a preset
-MUST NOT mutate session state. See `runtime/model-presets`.
+`providerSource` (`launch_override` | `observation_override` |
+`session_override` | `last_used` | `restart_snapshot` | `agent_preset` |
+`agent_default` | `global_default` | `runtime_default`), `effectiveModel`,
+`modelSource` (`session_override` |
+`agent_preset` | `agent_default` | `global_default` | `env_fallback` |
+`runtime_default`), `modelPresetId`, `modelPresetVersion`, and `modelError`.
+Display MUST match launch and MUST NOT invent a model when only a provider
+override is set. A session `modelOverride` continues to win over the
+agent-level selection and is reported as `session_override`, shadowing any
+agent preset. Applying a preset MUST NOT mutate session state. See
+`runtime/model-presets` and `runtime/defaults`.

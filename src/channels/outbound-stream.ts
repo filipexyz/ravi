@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
+import type { ChannelChatActionContent } from "./chat-actions.js";
 
 const log = logger.child("channels:outbound-stream");
 const sc = StringCodec();
@@ -42,11 +44,15 @@ export interface ChannelOutboundRequest {
     emitId: string;
     responseVersion?: number;
     runtimePid?: number;
+    responsePhase?: string;
+    canonicalMessageId?: string;
   };
-  content: {
-    type: "text";
-    text: string;
-  };
+  content:
+    | {
+        type: "text";
+        text: string;
+      }
+    | ChannelChatActionContent;
   idempotencyKey: string;
   policyHints?: Record<string, unknown>;
   target: MessageTarget;
@@ -66,6 +72,19 @@ export interface ChannelOutboundJob {
     message: string;
     retryable: boolean;
   };
+}
+
+export interface ChannelTextOutboundJobInput {
+  requestId: string;
+  sessionName: string;
+  emitId: string;
+  idempotencyKey: string;
+  target: MessageTarget;
+  text: string;
+  responsePhase?: string;
+  canonicalMessageId?: string;
+  metadata?: ResponseMessage["metadata"];
+  now?: number;
 }
 
 export type BuildChannelOutboundJobResult =
@@ -284,6 +303,7 @@ export function buildChannelOutboundJobFromResponse(
             typeof (response as { _v?: unknown })._v === "number" ? (response as { _v: number })._v : undefined,
           runtimePid:
             typeof (response as { _pid?: unknown })._pid === "number" ? (response as { _pid: number })._pid : undefined,
+          responsePhase: response.metadata?.item?.phase,
         },
         content: {
           type: "text",
@@ -293,6 +313,97 @@ export function buildChannelOutboundJobFromResponse(
         target,
         ...(response.metadata && typeof response.metadata === "object" ? { metadata: response.metadata } : {}),
       },
+    },
+  };
+}
+
+export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput): ChannelOutboundJob {
+  const requestId = input.requestId.trim();
+  const sessionName = input.sessionName.trim();
+  const emitId = input.emitId.trim();
+  const idempotencyKey = input.idempotencyKey.trim();
+  const canonicalMessageId = input.canonicalMessageId?.trim();
+  if (!requestId) throw new Error("requestId is required");
+  if (!sessionName) throw new Error("sessionName is required");
+  if (!emitId) throw new Error("emitId is required");
+  if (!idempotencyKey) throw new Error("idempotencyKey is required");
+  if (!input.text.trim()) throw new Error("text is required");
+
+  const now = input.now ?? Date.now();
+  const channelId = input.target.channel.trim().toLowerCase() || "unknown";
+  return {
+    jobId: requestId,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    request: {
+      requestId,
+      channelId,
+      ...(input.target.instanceId ? { instanceId: input.target.instanceId } : {}),
+      accountId: input.target.accountId,
+      targetChatId: input.target.chatId,
+      ...(input.target.threadId ? { targetThreadId: input.target.threadId } : {}),
+      origin: {
+        sessionName,
+        emitId,
+        ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
+        ...(canonicalMessageId ? { canonicalMessageId } : {}),
+      },
+      content: {
+        type: "text",
+        text: input.text,
+      },
+      idempotencyKey,
+      target: input.target,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    },
+  };
+}
+
+export function buildChannelChatActionJob(input: {
+  sessionName: string;
+  target: MessageTarget;
+  content: ChannelChatActionContent;
+  requestId?: string;
+  now?: number;
+}): ChannelOutboundJob {
+  const sessionName = input.sessionName.trim();
+  if (!sessionName) throw new Error("sessionName is required");
+  const now = input.now ?? Date.now();
+  const requestId = input.requestId?.trim() || `chat-action:${randomUUID()}`;
+  const channelId = input.target.channel.trim().toLowerCase() || "unknown";
+  const actionTarget = "providerMessageId" in input.content ? input.content.providerMessageId : input.content.actionId;
+  const idempotencyKey = [
+    requestId,
+    channelId,
+    input.target.accountId,
+    input.target.chatId,
+    input.content.actionId,
+    actionTarget,
+  ].join(":");
+
+  return {
+    jobId: requestId,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    request: {
+      requestId,
+      channelId,
+      ...(input.target.instanceId ? { instanceId: input.target.instanceId } : {}),
+      accountId: input.target.accountId,
+      targetChatId: input.target.chatId,
+      ...(input.target.threadId ? { targetThreadId: input.target.threadId } : {}),
+      origin: {
+        sessionName,
+        emitId: requestId,
+        responsePhase: "chat_action",
+      },
+      content: input.content,
+      idempotencyKey,
+      target: input.target,
     },
   };
 }

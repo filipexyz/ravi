@@ -13,14 +13,22 @@ normative: false
 
 - `ravi apps scaffold <id> --dry-run --json` must return planned file paths
   and actions without creating files.
-- `ravi apps scaffold <id> --json` must create manifest, spec, and skill files.
+- `ravi apps scaffold <id> --json` must create a runnable CLI, manifest, spec,
+  and skill files.
 - Duplicate scaffold without `--force` must return typed `already_exists` error.
 
 ## Manifest Checks
 
 - Every scaffolded app must have `src/apps/<id>/ravi.app.json`.
-- Manifest must contain `id`, `name`, and valid permission declarations.
+- Default scaffolds must have `src/apps/<id>/cli.ts`, and
+  `ravi <id> list --json` must execute it through the App Router.
+- Manifest must contain `id`, `name`, `interfaces.cli`, `context.allow`, and
+  valid permission declarations.
 - `ravi apps show <id> --json` must return the parsed manifest.
+- App operations must use `interface: "cli"` except router-owned allowlisted
+  builtins.
+- SDK, tool, stream, UI, and automation clients must route through the generic
+  App Router instead of declaring independent operation executors.
 
 ## Lifecycle Checks
 
@@ -37,21 +45,29 @@ normative: false
 - App mutation requires `execute app:<app-id>`.
 - Apps not visible to the current principal must not appear in catalogs or
   SDK discovery.
+- Runtime dispatch must issue a fresh child context bounded by
+  `manifest.context.allow`.
+- The child process must receive the child key and must not receive the parent
+  `RAVI_CONTEXT_KEY` or synthesized Ravi identity env vars.
+- Failure to issue the requested child capabilities must fail before spawning
+  the app CLI.
 
-## SDK Checks
+## CLI Contract Checks
 
-- `bun run sdk:generate` and `bun run sdk:check` must pass after app changes.
-- `ravi sdk returns validate --json` must report zero issues.
+- App invocation must preserve argv, stdout, stderr, and exit status.
+- The launcher must spawn executable plus argv with `shell: false`; shell-like
+  input must remain literal data.
+- The child cwd must be bounded to the app/package root, and the environment
+  must exclude unrelated parent credentials and secrets.
+- `--json` must return structured output when declared, but must not be required
+  as an App-to-Ravi transport.
+- App calls to Ravi must use public `ravi ...` commands under the child context.
 
 ## Suggested Commands
 
 ```bash
 bun test src/cli/commands/apps.test.ts
 bun test src/apps/service.test.ts src/apps/router.test.ts src/apps/permissions.test.ts
-bun test src/sdk/gateway/dispatcher.test.ts
-bun run gen:commands
-bun run sdk:generate
-bun run sdk:check
 bun run typecheck
 bun run build
 ```

@@ -7,6 +7,8 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 const actualNatsModule = await import("../../nats.js");
 const actualCliContextModule = await import("../context.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
+const actualCredentialsStoreModule = await import("../../runtime/credentials-store.js");
+type CredentialsFileShape = import("../../runtime/credentials-store.js").CredentialsFile;
 
 let publishedAuditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let resolvedContext:
@@ -147,6 +149,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -247,7 +252,20 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-const { ContextCommands } = await import("./context.js");
+let credentialsFileMock: CredentialsFileShape | null = null;
+let writtenCredentialsFiles: Array<{ file: CredentialsFileShape; path: string }> = [];
+
+mock.module("../../runtime/credentials-store.js", () => ({
+  ...actualCredentialsStoreModule,
+  getCredentialsPath: () => "/tmp/ravi-test-credentials.json",
+  readCredentialsFile: () => credentialsFileMock,
+  writeCredentialsFile: (file: CredentialsFileShape, path: string) => {
+    writtenCredentialsFiles.push({ file, path });
+  },
+}));
+
+const { ContextCommands, ContextCredentialsCommands } = await import("./context.js");
+const { ContractError } = await import("../agent-contract.js");
 const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
 function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
@@ -927,9 +945,9 @@ describe("ContextCommands", () => {
             type: "executable",
             agentId: "codex",
             denied: "node",
-            reason: "Permission denied: agent:codex cannot execute: node",
-            dedupeKey: "audit.denied:executable:codex:node:Permission denied: agent:codex cannot execute: node",
-            detail: "node -v",
+            reason: "[REDACTED:content length=51]",
+            dedupeKey: "audit.denied:executable:codex:node:[REDACTED:content length=51]",
+            detail: { commandChars: 7 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -942,6 +960,7 @@ describe("ContextCommands", () => {
         },
       ]);
       expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("rctx_codex");
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("node -v");
     });
 
     it("publishes env spoofing audit events", () => {
@@ -964,8 +983,9 @@ describe("ContextCommands", () => {
             type: "env_spoofing",
             agentId: "codex",
             denied: "RAVI_* override",
-            reason: "Cannot override RAVI environment variables",
-            detail: "RAVI_AGENT_ID=main ravi sessions list",
+            reason: "[REDACTED:content length=42]",
+            dedupeKey: "audit.denied:env_spoofing:codex:RAVI_* override:[REDACTED:content length=42]",
+            detail: { commandChars: 37 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -977,6 +997,7 @@ describe("ContextCommands", () => {
           }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("RAVI_AGENT_ID=main");
     });
 
     it("publishes session scope audit events", () => {
@@ -999,8 +1020,9 @@ describe("ContextCommands", () => {
             type: "session_scope",
             agentId: "codex",
             denied: "main",
-            reason: "Permission denied: agent:codex cannot access session:main",
-            detail: "ravi sessions send main 'hello'",
+            reason: "[REDACTED:content length=57]",
+            dedupeKey: "audit.denied:session_scope:codex:main:[REDACTED:content length=57]",
+            detail: { commandChars: 31 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -1012,6 +1034,7 @@ describe("ContextCommands", () => {
           }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("'hello'");
     });
   });
 
@@ -1084,5 +1107,219 @@ describe("ContextCommands", () => {
       const parsed = contextIssueReturnSchema.safeParse(payload);
       expect(parsed.success).toBe(true);
     });
+  });
+
+  describe("agent-first contract", () => {
+    function captureContractCall(fn: () => unknown): { logs: string[]; result: unknown; thrown: unknown } {
+      const originalLog = console.log;
+      const originalError = console.error;
+      const logs: string[] = [];
+      console.log = (value?: unknown) => {
+        logs.push(String(value));
+      };
+      console.error = () => {};
+      let result: unknown;
+      let thrown: unknown;
+      try {
+        result = fn();
+      } catch (error) {
+        thrown = error;
+      } finally {
+        console.log = originalLog;
+        console.error = originalError;
+      }
+      return { logs, result, thrown };
+    }
+
+    it("emits CONTEXT_NOT_FOUND envelope with id suggestions on info --json (exit 1, no rctx keys)", () => {
+      const command = new ContextCommands();
+      const { thrown } = captureContractCall(() => command.info("ctx_nope", true));
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(1);
+      const envelope = contractError.envelope();
+      expect(envelope.success).toBe(false);
+      expect(envelope.op).toBe("context info");
+      expect(envelope.error.code).toBe("CONTEXT_NOT_FOUND");
+      expect(envelope.error.suggestions).toContain("ctx_123");
+      // Anti-leak: only context IDs — the stored rctx_* keys never enter the envelope.
+      expect(JSON.stringify(envelope)).not.toContain("rctx_");
+    });
+
+    it("emits CONTEXT_NOT_FOUND on lineage of an unknown context (exit 1)", () => {
+      const command = new ContextCommands();
+      const { thrown } = captureContractCall(() => command.lineage("ctx_ghost", true));
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.envelope().op).toBe("context lineage");
+      expect(contractError.envelope().error.code).toBe("CONTEXT_NOT_FOUND");
+    });
+
+    it("revokes an active context immediately without --execute because it reduces authority", () => {
+      revokedContext = {
+        ...(fetchedContext ?? resolvedContext!),
+        revokedAt: 5000,
+      };
+
+      const command = new ContextCommands();
+      const { logs, result, thrown } = captureContractCall(() => command.revoke("ctx_123", false, undefined, true));
+      const expectedPayload = {
+        context: {
+          contextId: "ctx_123",
+          status: "revoked",
+          revokedAt: 5000,
+        },
+        cascaded: [],
+        revokedAt: 5000,
+      };
+
+      expect(thrown).toBeUndefined();
+      expect(revokedCalls).toEqual([{ contextId: "ctx_123", options: { cascade: true, reason: undefined } }]);
+      expect(result).toMatchObject(expectedPayload);
+      expect(JSON.parse(logs[0] ?? "{}")).toMatchObject(expectedPayload);
+    });
+
+    it("emits CONTEXT_NOT_FOUND on revoke of an unknown context before any mutation", () => {
+      fetchedContext = undefined;
+      const command = new ContextCommands();
+      const { thrown } = captureContractCall(() => command.revoke("ctx_ghost", false, undefined, true));
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.envelope().error.code).toBe("CONTEXT_NOT_FOUND");
+      expect(revokedCalls).toEqual([]);
+    });
+
+    it("supports --fields compact mode on context list", () => {
+      const command = new ContextCommands();
+      const { logs } = captureContractCall(() =>
+        command.list(undefined, undefined, undefined, false, true, undefined, undefined, "contextId,kind"),
+      );
+      const payload = JSON.parse(logs[0] ?? "{}");
+      expect(payload.items.length).toBeGreaterThan(0);
+      for (const item of payload.items) {
+        expect(Object.keys(item).sort()).toEqual(["contextId", "kind"]);
+      }
+    });
+  });
+});
+
+describe("ContextCredentialsCommands agent-first contract", () => {
+  const storedKey = "rctx_stored_key_12345";
+
+  beforeEach(() => {
+    credentialsFileMock = {
+      version: 1,
+      default: storedKey,
+      contexts: {
+        [storedKey]: {
+          context_id: "ctx_stored_1",
+          agent_id: "dev",
+          label: "laptop",
+          kind: "cli-runtime",
+          issued_at: 1000,
+          expires_at: null,
+        },
+      },
+    };
+    writtenCredentialsFiles = [];
+  });
+
+  afterEach(() => {
+    credentialsFileMock = null;
+    writtenCredentialsFiles = [];
+  });
+
+  function captureContractCall(fn: () => unknown): { logs: string[]; thrown: unknown } {
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      logs.push(String(value));
+    };
+    let thrown: unknown;
+    try {
+      fn();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    return { logs, thrown };
+  }
+
+  it("minimizes credentials remove to identifiers and presence flags", () => {
+    credentialsFileMock!.contexts[storedKey]!.label = "PRIVATE_MESSAGE_8K2R";
+    const command = new ContextCredentialsCommands();
+    const { thrown } = captureContractCall(() => command.remove(storedKey, true, undefined));
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("context credentials remove");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.plan).toEqual({
+      credentialsPathPresent: true,
+      contextKeyPresent: true,
+      contextId: "ctx_stored_1",
+      agentId: "dev",
+      labelPresent: true,
+      kind: "cli-runtime",
+      wasDefault: true,
+    });
+    // Anti-leak proof: the plan carries only key presence; neither full nor
+    // masked key material appears anywhere in the envelope.
+    expect(JSON.stringify(envelope)).not.toContain(storedKey);
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(envelope)).not.toContain("/tmp/ravi-test-credentials.json");
+    expect(writtenCredentialsFiles).toEqual([]);
+  });
+
+  it("removes the stored entry with --execute", () => {
+    const command = new ContextCredentialsCommands();
+    const { logs } = captureContractCall(() => command.remove(storedKey, true, true));
+    const payload = JSON.parse(logs[0] ?? "{}");
+    expect(payload.removed).toBe(storedKey);
+    expect(payload.default).toBeNull();
+    expect(writtenCredentialsFiles).toHaveLength(1);
+    expect(Object.keys(writtenCredentialsFiles[0].file.contexts)).toHaveLength(0);
+  });
+
+  it("emits CREDENTIAL_NOT_FOUND with id/label suggestions and no stored keys (exit 1)", () => {
+    const command = new ContextCredentialsCommands();
+    const { thrown } = captureContractCall(() => command.remove("rctx_unknown_key_999", true, true));
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("context credentials remove");
+    expect(envelope.error.code).toBe("CREDENTIAL_NOT_FOUND");
+    for (const suggestion of envelope.error.suggestions as string[]) {
+      expect(["ctx_stored_1", "laptop"]).toContain(suggestion);
+    }
+    // Anti-leak proof: neither the stored key nor the full queried key appears.
+    const serialized = JSON.stringify(envelope);
+    expect(serialized).not.toContain(storedKey);
+    expect(serialized).not.toContain("rctx_unknown_key_999");
+    expect(writtenCredentialsFiles).toEqual([]);
+  });
+
+  it("emits CREDENTIAL_NOT_FOUND on set-default of an unknown key (exit 1)", () => {
+    const command = new ContextCredentialsCommands();
+    const { thrown } = captureContractCall(() => command.setDefault("rctx_unknown_key_999", true));
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().op).toBe("context credentials set-default");
+    expect(contractError.envelope().error.code).toBe("CREDENTIAL_NOT_FOUND");
+    expect(writtenCredentialsFiles).toEqual([]);
+  });
+
+  it("supports --fields compact mode on credentials list", () => {
+    const command = new ContextCredentialsCommands();
+    const { logs } = captureContractCall(() => command.list(true, undefined, undefined, "contextId,label"));
+    const payload = JSON.parse(logs[0] ?? "{}");
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["contextId", "label"]);
   });
 });

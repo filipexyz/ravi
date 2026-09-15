@@ -105,6 +105,15 @@ describe("model catalog", () => {
     expect(getDefaultModelForProvider("custom-provider")).toBe("default");
     expect(resolvePreferredRuntimeModel("custom-provider", "custom-model")).toBe("custom-model");
   });
+
+  test("does not pass Claude aliases to Grok from env fallback", () => {
+    expect(listRuntimeModels("grok").map((model) => model.id)).toEqual(["grok-4"]);
+    expect(getDefaultModelForProvider("grok")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "opus")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "sonnet")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "claude-opus-4-6")).toBe("grok-4");
+    expect(resolvePreferredRuntimeModel("grok", "grok-4")).toBe("grok-4");
+  });
 });
 
 describe("agent model preset resolution", () => {
@@ -150,5 +159,15 @@ describe("agent model preset resolution", () => {
     const direct = resolveEffectiveAgentModel({ model: "opus" }, "haiku", { lookupPreset: lookupPreset(null) });
     expect(direct.modelSource).toBe("agent_default");
     expect(direct.effectiveModel).toBe("opus");
+  });
+
+  test("does not swallow an unusable preset into the global or env default", () => {
+    const effective = resolveEffectiveAgentModel({ modelPresetId: "fast-sonnet" }, "haiku", {
+      lookupPreset: lookupPreset(fakePreset({ enabled: false })),
+      globalDefaultSource: "env_fallback",
+    });
+    expect(effective.effectiveModel).toBeNull();
+    expect(effective.modelSource).toBeNull();
+    expect(effective.error).toContain("disabled");
   });
 });

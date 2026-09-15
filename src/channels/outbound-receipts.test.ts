@@ -9,6 +9,7 @@ import {
   getChannelOutboundReceipt,
   markChannelOutboundReceiptComplete,
   markChannelOutboundReceiptPersisted,
+  markChannelOutboundReceiptTerminalError,
   markChannelOutboundReceiptTraceRecorded,
   pruneExpiredChannelOutboundReceipts,
   recordChannelOutboundReceiptError,
@@ -231,6 +232,27 @@ describe("channel outbound receipt ledger", () => {
       canonicalMessageId: "cm_123",
       platformMessageId: "1713000000.000100",
     });
+  });
+
+  it("terminalizes a permanent post-send error without claiming canonical persistence", () => {
+    claim({ owner: "runner-1", now: 90 });
+    sent({ owner: "runner-1", sentAt: 100 });
+
+    expect(
+      markChannelOutboundReceiptTerminalError(
+        "idem-1",
+        "canonical_persist",
+        "Canonical outbound message not found",
+        120,
+      ),
+    ).toMatchObject({
+      state: "complete",
+      completedAt: 120,
+      lastErrorPhase: "canonical_persist",
+      lastErrorMessage: "Canonical outbound message not found",
+      lastErrorAt: 120,
+    });
+    expect(getChannelOutboundReceipt("idem-1")?.persistedAt).toBeUndefined();
   });
 
   it("prunes every stale state at the 14-day cutoff without deleting recent or active receipts", () => {

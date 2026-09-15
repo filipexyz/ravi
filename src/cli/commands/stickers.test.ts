@@ -29,6 +29,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => runtimeContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -43,6 +46,9 @@ mock.module("../../nats.js", () => ({
 }));
 
 const { StickerCommands } = await import("./stickers.js");
+const { ContractError } = await import("../agent-contract.js");
+
+type ContractErrorInstance = InstanceType<typeof ContractError>;
 
 let stateDir: string | null = null;
 let previousStateDir: string | undefined;
@@ -83,12 +89,12 @@ afterEach(() => {
   stateDir = null;
 });
 
-function seedSticker(id = "wave") {
+function seedSticker(id = "wave", label = "Wave") {
   const mediaPath = join(stateDir!, `${id}.webp`);
   writeFileSync(mediaPath, "webp");
   return addSticker({
     id,
-    label: "Wave",
+    label,
     description: "Use for a friendly hello.",
     channels: ["whatsapp"],
     agents: [],
@@ -133,7 +139,7 @@ describe("StickerCommands", () => {
     const { output: showOutput } = await captureConsole(() => commands.show("thumbs_up", true));
     expect(JSON.parse(showOutput).sticker.id).toBe("thumbs_up");
 
-    const { output: removeOutput } = await captureConsole(() => commands.remove("thumbs_up", true));
+    const { output: removeOutput } = await captureConsole(() => commands.remove("thumbs_up", true, true));
     expect(JSON.parse(removeOutput)).toEqual({
       success: true,
       action: "remove",
@@ -145,7 +151,7 @@ describe("StickerCommands", () => {
     const sticker = seedSticker();
 
     const { output, result } = await captureConsole(() =>
-      new StickerCommands().send("wave", undefined, undefined, undefined, undefined, true),
+      new StickerCommands().send("wave", undefined, undefined, undefined, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -188,9 +194,171 @@ describe("StickerCommands", () => {
       chatId: "!room",
     };
 
+    // Capability validation runs BEFORE the write brake: no --execute needed to
+    // observe the rejection, and nothing is emitted.
     await expect(new StickerCommands().send("wave", undefined, undefined, undefined, undefined, true)).rejects.toThrow(
       "Stickers are not supported on channel",
     );
     expect(emittedEvents).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stickers — agent-first contract (write brake, not-found envelope, --fields)
+// ---------------------------------------------------------------------------
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractErrorInstance> {
+  let caught: unknown;
+  await captureConsole(async () => {
+    try {
+      await run();
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractErrorInstance;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+describe("stickers contract", () => {
+  it("send without --execute is a dry-run: exit 3 and NO NATS emit", async () => {
+    const label = "PRIVATE_LABEL_8K2R";
+    const chatId = "PRIVATE_CHAT_8K2R";
+    seedSticker("wave", label);
+    runtimeContext.source.chatId = chatId;
+
+    const error = await expectContractError(
+      () => new StickerCommands().send("wave", undefined, undefined, undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toEqual({
+      sticker: { id: "wave", labelPresent: true },
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatIdPresent: true,
+        threadIdPresent: false,
+      },
+      fileName: "[REDACTED:content length=9]",
+      mimeType: "image/webp",
+    });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(label);
+    expect(serializedPlan).not.toContain(chatId);
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("send on an unknown sticker exits 1 with STICKER_NOT_FOUND and catalog suggestions", async () => {
+    seedSticker();
+
+    const error = await expectContractError(
+      () => new StickerCommands().send("wav", undefined, undefined, undefined, undefined, true, true),
+      "STICKER_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestions).toContain("wave");
+    expect(error.details.suggestedAction).toContain("ravi stickers list");
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("does not expose the local media path when sticker media is missing", async () => {
+    const privatePath = join(stateDir!, "PRIVATE_CUSTOMER_STICKER_8K2R.webp");
+    writeFileSync(privatePath, "webp");
+    addSticker({
+      id: "missing-media",
+      label: "Missing media",
+      description: "Missing file fixture.",
+      channels: ["whatsapp"],
+      agents: [],
+      media: { kind: "file", path: privatePath },
+      enabled: true,
+    });
+    rmSync(privatePath);
+
+    const error = await expectContractError(
+      () => new StickerCommands().send("missing-media", undefined, undefined, undefined, undefined, true, true),
+      "STICKER_MEDIA_NOT_FOUND",
+      1,
+    );
+
+    expect(error.message).toBe("Sticker media file is unavailable.");
+    expect(error.details).toMatchObject({
+      mediaPathPresent: true,
+      suggestedAction: "Re-add the sticker media and retry the command",
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain(privatePath);
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_CUSTOMER_STICKER_8K2R");
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("show on an unknown sticker exits 1 with STICKER_NOT_FOUND", async () => {
+    seedSticker();
+
+    const error = await expectContractError(() => new StickerCommands().show("waev", true), "STICKER_NOT_FOUND", 1);
+
+    expect(error.details.suggestions).toContain("wave");
+  });
+
+  it("remove without --execute is a dry-run: exit 3 and the sticker stays in the catalog", async () => {
+    const label = "PRIVATE_LABEL_8K2R";
+    const sticker = seedSticker("wave", label);
+    const commands = new StickerCommands();
+
+    const error = await expectContractError(
+      () => commands.remove("wave", true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      stickerId: "wave",
+      labelPresent: true,
+      media: { kind: "file", name: "wave.webp" },
+      enabled: true,
+    });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(label);
+    expect(serializedPlan).not.toContain(sticker.media.path);
+    const { output } = await captureConsole(() => commands.show("wave", true));
+    expect(JSON.parse(output).sticker.id).toBe("wave");
+  });
+
+  it("remove on an unknown sticker exits 1 with STICKER_NOT_FOUND before the brake", async () => {
+    seedSticker();
+
+    const error = await expectContractError(
+      () => new StickerCommands().remove("wav", true, undefined),
+      "STICKER_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestions).toContain("wave");
+  });
+
+  it("list --fields narrows each item to the requested fields", async () => {
+    seedSticker("wave");
+    seedSticker("thumbs");
+
+    const { result } = await captureConsole(() => new StickerCommands().list(true, undefined, undefined, "id,enabled"));
+
+    const payload = result as { items: Array<Record<string, unknown>>; stickers: Array<Record<string, unknown>> };
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items) {
+      expect(Object.keys(item).sort()).toEqual(["enabled", "id"]);
+    }
+    for (const item of payload.stickers) {
+      expect(Object.keys(item).sort()).toEqual(["enabled", "id"]);
+    }
   });
 });

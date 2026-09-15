@@ -1,6 +1,19 @@
 import type { StreamEvent } from "./types.js";
 
+/**
+ * SSE comment keepalive (`: ping`). Kept at 15s so we do not hammer idle
+ * `/_stream/*` clients. Must stay below {@link DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS}:
+ * Bun.serve defaults to 10s idleTimeout, which killed canary Wire/session SSE
+ * every ~10s (including idle-before-send) before the first ping.
+ */
 export const DEFAULT_KEEPALIVE_MS = 15_000;
+
+/**
+ * `Bun.serve({ idleTimeout })` in seconds. Bun's default is 10s.
+ * Choice: raise idleTimeout to ping + 15s margin instead of lowering ping.
+ * Production listener is `src/webhooks/http-server.ts` on RAVI_HTTP_PORT (:7777).
+ */
+export const DEFAULT_HTTP_IDLE_TIMEOUT_SECONDS = 30;
 export const DEFAULT_MAX_QUEUE = 256;
 
 const encoder = new TextEncoder();

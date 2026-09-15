@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -477,6 +478,7 @@ interface TaskListNextCommandInput {
   archiveMode: TaskArchiveMode;
   updatedSince?: number;
   updatedUntil?: number;
+  fields?: string;
 }
 
 function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
@@ -514,6 +516,7 @@ function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
   if (typeof input.updatedSince === "number") args.push("--since", String(input.updatedSince));
   if (typeof input.updatedUntil === "number") args.push("--until", String(input.updatedUntil));
   if (typeof input.updatedSince !== "number" && typeof input.updatedUntil !== "number") args.push("--all-time");
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -794,7 +797,7 @@ function printNextSteps(task: TaskRecord): void {
       console.log("  2. refine the profile process/artifacts before dispatch");
     }
     console.log("  3. review with the task owner");
-    console.log(`  4. dispatch only after that: ravi tasks dispatch ${task.id} --agent <agent>`);
+    console.log(`  4. dispatch only after that: ravi tasks dispatch ${task.id} --agent <agent> --execute`);
     return;
   }
 
@@ -954,6 +957,40 @@ function printTaskEventsSince(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+function failTaskNotFound(op: string, taskId: string, asJson?: boolean): never {
+  const candidates = listTasks({ limit: 40 }).flatMap((task) => [task.id, task.title]);
+  contractFail(op, "TASK_NOT_FOUND", `Task not found: ${taskId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the task id (see suggestions for similar tasks)",
+      suggestions: suggestSimilar(taskId, candidates),
+    },
+  });
+}
+
+/** getTaskDetails throws on unknown ids; map that (and a null task) to the contract envelope. */
+type TaskDetailsWithTask = ReturnType<typeof getTaskDetails> & {
+  task: NonNullable<ReturnType<typeof getTaskDetails>["task"]>;
+};
+
+function getTaskDetailsForContract(op: string, taskId: string, asJson?: boolean): TaskDetailsWithTask {
+  try {
+    const details = getTaskDetails(taskId);
+    if (details.task) return details as TaskDetailsWithTask;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/task not found/i.test(message)) throw error;
+  }
+  failTaskNotFound(op, taskId, asJson);
 }
 
 @Group({
@@ -1171,6 +1208,8 @@ export class TaskCommands {
     until?: string,
     @Option({ flags: "--all-time", description: "Disable the default 1d updated_at window" }) allTime?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical task tag" }) tagSlug?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ctx = getContext();
     const archiveMode = resolveArchiveListMode(archived, all);
@@ -1248,6 +1287,7 @@ export class TaskCommands {
           archiveMode,
           updatedSince,
           updatedUntil,
+          fields,
         })
       : null;
     const surfacedTasks = tasks.map((task) => {
@@ -1276,6 +1316,7 @@ export class TaskCommands {
       unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
       launchPlan: item.dependencySurface.launchPlan,
     }));
+    const projectedTasks = pickFields(payloadTasks, fields);
     const payload = {
       total: tasks.length,
       archiveMode,
@@ -1305,8 +1346,8 @@ export class TaskCommands {
         archiveMode,
         mine: Boolean(mine),
       },
-      items: payloadTasks,
-      tasks: payloadTasks,
+      items: projectedTasks,
+      tasks: projectedTasks,
     };
 
     if (asJson) {
@@ -1402,10 +1443,7 @@ export class TaskCommands {
     })
     last?: string,
   ) {
-    const details = getTaskDetails(taskId);
-    if (!details.task) {
-      fail(`Task not found: ${taskId}`);
-    }
+    const details = getTaskDetailsForContract("tasks show", taskId, asJson);
     const taskArtifacts = buildTaskArtifactSummary(details.task, details.activeAssignment);
     const dependencySurface = getTaskDependencySurface(details.task, details.activeAssignment);
     const historyLimit = parseLastLimit(last, DEFAULT_TASK_SHOW_LAST);
@@ -1733,7 +1771,7 @@ export class TaskCommands {
     name: "dispatch",
     description: "Dispatch a task now, or arm a launch plan if dependencies still gate start",
   })
-  @CommandAccess({ kind: "mutate", resource: "tasks", action: "dispatch", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "dispatch", risk: "high", requiresConfirmation: true })
   @Returns(taskDispatchReturnSchema)
   async dispatch(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
@@ -1759,6 +1797,11 @@ export class TaskCommands {
         "Attribute the dispatch to a specific session (overrides RAVI_TASK_ACTOR; useful when a UI dispatches on behalf of a session)",
     })
     actorSessionName?: string,
+    @Option({
+      flags: "--execute",
+      description: "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     if (!agentId?.trim()) {
       fail("--agent is required");
@@ -1770,9 +1813,26 @@ export class TaskCommands {
       fail(error instanceof Error ? error.message : String(error));
     }
 
-    const details = getTaskDetails(taskId);
-    if (!details.task) {
-      fail(`Task not found: ${taskId}`);
+    const details = getTaskDetailsForContract("tasks dispatch", taskId, asJson);
+
+    const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any dispatch.
+      contractDryRun(
+        "tasks dispatch",
+        {
+          taskId,
+          agentId: normalizedAgentId,
+          sessionName: resolvedSessionName,
+          checkpointPresent: Boolean(checkpoint?.trim()),
+          reportTo: reportToSessionName ?? null,
+          reportEventsPresent: Boolean(reportEvents?.trim()),
+          model: model ?? null,
+          effort: effort ?? null,
+          thinking: thinking ?? null,
+        },
+        { asJson },
+      );
     }
 
     const actor = resolveDispatchActor(actorSessionName);
@@ -1781,7 +1841,7 @@ export class TaskCommands {
     const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const result = await queueOrDispatchTask(taskId, {
       agentId: normalizedAgentId,
-      sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task),
+      sessionName: resolvedSessionName,
       assignedBy: actor.actor,
       ...(actor.agentId ? { assignedByAgentId: actor.agentId } : {}),
       ...(actor.sessionName ? { assignedBySessionName: actor.sessionName } : {}),

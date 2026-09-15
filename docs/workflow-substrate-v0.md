@@ -345,16 +345,21 @@ ravi workflows.specs show <spec-id>
 ### Runs
 
 ```bash
-ravi workflows.runs start <spec-id> [--run-id <id>]
+ravi workflows.runs start <spec-id> [--run-id <id>] --execute
 ravi workflows.runs list
 ravi workflows.runs show <run-id>
 ravi workflows.runs release <run-id> <node-key>
 ravi workflows.runs skip <run-id> <node-key>
 ravi workflows.runs cancel <run-id> <node-key>
-ravi workflows.runs archive-node <run-id> <node-key>
+ravi workflows.runs archive-node <run-id> <node-key> --execute
 ravi workflows.runs task-attach <run-id> <node-key> <task-id>
 ravi workflows.runs task-create <run-id> <node-key> --title "..." --instructions "..."
 ```
+
+`start` e `archive-node` são freados (write brake do contrato agent-first):
+sem `--execute` a chamada é dry-run — imprime o plano e sai com exit 3 sem
+gravar nada. `cancel` não é freado de propósito: é a parada de emergência de um
+node vivo.
 
 ## Não objetivos deste corte
 

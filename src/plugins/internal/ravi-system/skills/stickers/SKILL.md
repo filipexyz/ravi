@@ -19,6 +19,27 @@ Stickers são uma surface separada de resposta no Ravi:
 
 Use stickers com parcimônia. Se o sticker for a resposta inteira, envie o sticker e depois responda exatamente `@@SILENT@@`, sem texto adicional.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução — `STICKER_NOT_FOUND` traz `suggestions` com ids/labels reais do catálogo local; `STICKER_MEDIA_NOT_FOUND` indica arquivo de mídia sumido; canal sem capability falha aqui também.
+- `2` erro de uso (flag/argumento inválido).
+- `3` freio de escrita — não é erro: nada foi enviado/removido; o envelope traz `dryRun:true` e `plan` (sticker, alvo, filename). Revise e repita com `--execute`.
+
+Onde o freio existe: `stickers send` (chega num chat vivo, não dá pra desfazer) e `stickers remove` (deleta entrada do catálogo, sem undo) são dry-run por default e exigem `--execute`. `stickers add` grava na hora, sem freio (config local reversível com `remove`). `list`/`show` são leitura.
+
+Compact mode: `stickers list` aceita `--fields a,b,c` (ex.: `--fields id,enabled`).
+
+Checklist antes de responder sobre stickers:
+
+- Tratei exit 3 como freio (revisei sticker e alvo no `plan`) e não como falha?
+- Consultei `suggestions` do envelope (ou `ravi stickers list --json`) antes de declarar not-found?
+- A validação de canal falhou? Então o canal não suporta stickers — não insista.
+
 ## Capability Gate
 
 Stickers só existem para canais com capability explícita. O suporte inicial de envio é WhatsApp.
@@ -82,22 +103,28 @@ ravi stickers list --json
 ravi stickers show wave --json
 ```
 
-Remover:
+Remover (freado — sem `--execute` é dry-run, exit 3):
 
 ```bash
-ravi stickers remove wave --json
+ravi stickers remove wave --json --execute
 ```
 
-Enviar no chat WhatsApp atual:
+Enviar no chat WhatsApp atual (freado — sem `--execute` é dry-run, exit 3):
 
 ```bash
-ravi stickers send wave --json
+ravi stickers send wave --json --execute
 ```
 
 Enviar com alvo explícito:
 
 ```bash
-ravi stickers send wave --channel whatsapp --account main --to "5511999999999@s.whatsapp.net" --json
+ravi stickers send wave --channel whatsapp --account main --to "5511999999999@s.whatsapp.net" --json --execute
+```
+
+Listagem compacta:
+
+```bash
+ravi stickers list --json --fields id,enabled
 ```
 
 ## Envio

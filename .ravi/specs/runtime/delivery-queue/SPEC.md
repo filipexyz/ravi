@@ -47,6 +47,8 @@ It exists so external session events, notifications, observer messages, and cros
 - **Task-completion lane**: prompt atoms that wait until the session is no longer inside an active task. This is represented by `after_task`.
 - **Steer lane**: prompt atoms that may enter the active conversation after startup/compaction/tool barriers clear. This is represented by `after_tool` and exposed to operators as `steer`.
 - **Immediate lane**: prompt atoms that may interrupt the active turn as soon as Ravi considers it safe. This is represented by `immediate_interrupt` and is a stronger escape hatch than `steer`.
+- **Logical delivery id**: a stable client-generated id shared by every attempt to deliver the same provider turn.
+- **Ambiguous delivery outcome**: Ravi handed a request to the provider but did not observe enough native state to know whether that turn is absent, running, or terminal.
 
 ## Barrier Values
 
@@ -90,6 +92,23 @@ CLI commands MAY expose these as `--barrier followup`, `--barrier steer`, `--ste
 
 Immediate delivery is a request, not permission to break safety. The runtime MUST still avoid interrupting startup, compaction, and unsafe tool execution.
 
+## Reply Surface Identity
+
+A source-less CLI resume uses its bound reply target as the active interrupt
+surface unless chat output is suppressed.
+
+When one prompt lacks a canonical chat id, matching channel, account, transport
+chat id and thread MUST identify the same interrupt surface. Conflicting
+explicit instance ids or canonical chat ids MUST remain separate. Known channel
+and account aliases resolve to the same transport identity. A scheduled
+followup with transport-only identity MUST NOT block later human steering
+from that same chat. This comparison MUST NOT merge authority envelopes or
+promote the scheduled prompt into the steer lane.
+
+An intentional interrupt that supersedes the current turn MUST NOT be
+classified as an unexpected provider stop after completed tools or emit a
+public recovery error. Queued successors remain eligible for delivery.
+
 ## Queue Semantics
 
 Each session owns its pending prompt queue. The queue MUST preserve the original prompt atom payload, source, context, delivery barrier, task barrier metadata, enqueue timestamp, and pending id.
@@ -103,6 +122,35 @@ Within the same barrier lane, delivery SHOULD be FIFO.
 `after_response` and `after_task` prompt atoms MUST NOT request provider interruption while the session is generating text. They may wake an idle session after the current turn becomes terminal.
 
 `after_tool` and `immediate_interrupt` prompt atoms MAY request interruption only through the session dispatcher's interrupt path, with trace events that explain the source, barrier, and safety state.
+
+When a running tool's result has crossed its provider callback boundary, the
+dispatcher MUST immediately re-evaluate queued `after_tool` and
+`immediate_interrupt` atoms. The callback write is an atomic safety barrier:
+even the immediate lane MUST wait for its delivery acknowledgement. Releasing a
+tool barrier MUST NOT depend on another inbound message arriving.
+
+The runtime MAY fold the leading run of compatible human channel steer atoms
+into one physical successor turn. Compatibility requires the same channel
+backend session and target, reply surface and thread, human actor identity,
+runtime selection, approval route, and barrier. Replay attempts, Ravi Commands,
+task-gated atoms, and internal producer envelopes MUST remain isolated. Folded
+text MUST preserve chronological order, the newest atom MUST own the successor
+envelope, and the older channel bindings MUST reach a terminal interrupted
+state. An incompatible actor, channel, thread, authority, or barrier ends the
+run and retains FIFO ownership.
+
+When a later prompt atom intentionally interrupts an active provider turn, the
+atoms already yielded to that turn MUST be dequeued before the next provider
+turn. The interrupting atom MUST become the next eligible work according to its
+lane and FIFO order. The yielded atoms remain in durable conversation history;
+they are removed only from retry ownership so the superseded turn is not
+replayed ahead of the user's new direction.
+
+An unexpected provider or runtime interruption with no interrupting prompt MUST
+keep the yielded atoms eligible for recovery replay. Those atoms MUST retain one
+logical delivery id and MUST be isolated from later fresh atoms until the
+provider adapter reconciles the ambiguous outcome. An intentional provider or
+model restart is not an ambiguous replay and MAY retain normal batching.
 
 ## Producer Contract
 
@@ -178,6 +226,9 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Human channel input MAY interrupt after safe barriers because it represents live user intent.
 - Provider adapters MUST NOT implement their own delivery queue. Queueing and interruption are runtime responsibilities.
 - A queued prompt atom MUST survive provider interruption and daemon restart according to `runtime/session-continuity`.
+- A prompt-driven interruption MUST release the interrupting atom next instead of replaying the superseded turn first.
+- An unexpected provider interruption MUST retain the active turn for provider reconciliation only when the live provider handle advertises that strategy. Otherwise the active turn MAY be replayed as a fresh delivery only when durable safety evidence authorizes it and MUST be excluded when unsafe.
+- Ambiguous recovery MUST reuse the active turn's logical delivery id and MUST NOT fold later fresh prompt atoms into that replay.
 - A provider turn interrupted by a later prompt MUST still produce exactly one terminal event according to `runtime`.
 - Assistant messages MUST be persisted only for non-interrupted terminal turns.
 - Queue classification MUST be deterministic for the same payload and explicit options.
@@ -192,6 +243,12 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - `sessions answer` enters the follow-up lane by default, unless the call explicitly opts into immediate or belongs to a traced synchronous unblock flow.
 - Operational execute/heartbeat/trigger prompts do not interrupt active task work by default.
 - Human channel messages can still interrupt after safe tool barriers.
+- Human channel messages queued during a tool are reconsidered as soon as its result is delivered to the provider, without requiring another inbound message.
+- A compatible burst from the same human, channel, and thread is delivered as one chronological steering input using the newest envelope.
+- Bursts are never folded across actors, channels, threads, authority envelopes, Ravi Commands, or replay ownership.
+- A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
+- A provider interruption without a newer prompt reconciles the active prompt atom when the provider advertises support; otherwise it retries the atom only when generic replay remains durably safe.
+- Ambiguous recovery reuses one logical delivery id; intentional restarts create a new delivery id and preserve normal batching.
 - Equal-lane queued events are delivered FIFO.
 - Trace explains whether a prompt was queued, released, batched, blocked, bypassed, or used to interrupt.
 - Tests cover active text generation, tool-running, unsafe tool-running, active task, idle session, daemon restart, and explicit immediate delivery.

@@ -279,10 +279,70 @@ describe("runCoverageGate", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts canonical chat schema coverage for router persistence changes", () => {
+    const result = runCoverageGate(["src/router/router-db.ts", "src/router/chat-schema.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/router/"]);
+  });
+
+  it("accepts crash recovery store coverage across router persistence and runtime changes", () => {
+    const result = runCoverageGate([
+      "src/router/router-db.ts",
+      "src/runtime/crash-recovery-store.ts",
+      "src/runtime/crash-recovery-store.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/router/", "src/runtime/"]);
+  });
+
+  it("accepts channel backend coverage across channel, router, and runtime changes", () => {
+    const result = runCoverageGate([
+      "src/channels/backend.ts",
+      "src/router/router-db.ts",
+      "src/runtime/message-types.ts",
+      "src/channels/backend.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/channels/", "src/router/", "src/runtime/"]);
+  });
+
+  it("accepts channel runtime event coverage across channel and router persistence changes", () => {
+    const result = runCoverageGate([
+      "src/channels/runtime-events.ts",
+      "src/router/router-db.ts",
+      "src/channels/runtime-events.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/channels/", "src/router/"]);
+  });
+
+  it("accepts channel runtime event coverage for host projection policy changes", () => {
+    const result = runCoverageGate(["src/runtime/host-event-loop.ts", "src/channels/runtime-events.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("accepts the focused outbound consumer regression for channel delivery changes", () => {
+    const result = runCoverageGate(["src/channels/outbound-consumer.ts", "src/channels/outbound-consumer.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/channels/"]);
+  });
+
   it("requires a focused native channel test in the diff", () => {
     const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);
     const healthCovered = runCoverageGate(["src/channels/health.ts", "src/channels/health.test.ts"]);
+    const mediaCovered = runCoverageGate(["src/channels/slack/media.ts", "src/channels/slack/media.test.ts"]);
+    const sessionPromptCovered = runCoverageGate([
+      "src/channels/session-prompt.ts",
+      "src/channels/session-prompt.test.ts",
+    ]);
 
     expect(missing.ok).toBe(false);
     expect(missing.triggeredPrefixes).toEqual(["src/channels/", "src/channels/slack/socket-mode.ts"]);
@@ -290,6 +350,10 @@ describe("runCoverageGate", () => {
     expect(covered.ok).toBe(true);
     expect(covered.triggeredPrefixes).toEqual(["src/channels/", "src/channels/slack/socket-mode.ts"]);
     expect(healthCovered.ok).toBe(true);
+    expect(mediaCovered.ok).toBe(true);
+    expect(mediaCovered.triggeredPrefixes).toEqual(["src/channels/"]);
+    expect(sessionPromptCovered.ok).toBe(true);
+    expect(sessionPromptCovered.triggeredPrefixes).toEqual(["src/channels/"]);
   });
 
   it("passes when the session stream focused test is in the diff", () => {
@@ -327,6 +391,62 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the Codex provider focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/codex-provider.ts", "src/runtime/codex-provider.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the Grok provider focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/grok-provider.ts", "src/runtime/grok-provider.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the Pi provider focused tests are in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      [
+        "src/runtime/pi-provider.ts",
+        "src/runtime/pi-tool-permissions.ts",
+        "src/runtime/pi-provider.test.ts",
+        "src/runtime/pi-tool-permissions.test.ts",
+      ],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the Ravi env file focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/ravi-env-file.ts", "src/runtime/ravi-env-file.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the provider device-login focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      ["src/runtime/provider-device-login.ts", "src/runtime/provider-device-login.test.ts"],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("accepts approval service focused tests for approval service changes", () => {
     const cwd = makeWorkspace();
 
@@ -355,6 +475,23 @@ describe("runCoverageGate", () => {
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(
+      runCoverageGate(
+        ["src/runtime/runtime-request-builder.ts", "src/runtime/runtime-request-builder.context-key.test.ts"],
+        cwd,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("accepts last-used provider and restart-resume focused tests for runtime changes", () => {
+    expect(runCoverageGate(["src/runtime/session-resolver.ts", "src/runtime/session-resolver.test.ts"]).ok).toBe(true);
+    expect(runCoverageGate(["src/runtime/runtime-selection.ts", "src/runtime/runtime-selection.test.ts"]).ok).toBe(
+      true,
+    );
+    expect(
+      runCoverageGate(["src/runtime/daemon-restart-resume.ts", "src/runtime/daemon-restart-resume.test.ts"]).ok,
+    ).toBe(true);
+    expect(runCoverageGate(["src/runtime/host-event-loop.ts", "src/runtime/session-trace.test.ts"]).ok).toBe(true);
   });
 
   it("fails for runtime change without focused test", () => {
@@ -394,6 +531,16 @@ describe("runCoverageGate", () => {
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/devin/"]);
+  });
+
+  it("requires the Apps router contract test for Apps runtime changes", () => {
+    const uncovered = runCoverageGate(["src/apps/router.ts"]);
+    const covered = runCoverageGate(["src/apps/router.ts", "src/apps/router.test.ts"]);
+
+    expect(uncovered.ok).toBe(false);
+    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/"]);
+    expect(uncovered.errors[0]!.message).toContain("src/apps/router.test.ts");
+    expect(covered.ok).toBe(true);
   });
 });
 

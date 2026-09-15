@@ -1,5 +1,6 @@
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 
 /** Canonical cause of a runtime turn. Kept separate from actor authority and reply surface. */
 export type TurnOrigin =
@@ -117,6 +118,7 @@ function originFromAutomationId(automationId: string | undefined): TurnOrigin {
  */
 export function classifyTurnProvenance(input: TurnProvenanceInput = {}): TurnProvenance {
   const prompt = input.prompt ?? undefined;
+  const turnOrigin = resolveRuntimeTurnOrigin(prompt?._turnOrigin);
   const promptSource = prompt?.source;
   const promptContext = prompt?.context;
   const source: TurnProvenanceSource = {
@@ -126,6 +128,13 @@ export function classifyTurnProvenance(input: TurnProvenanceInput = {}): TurnPro
       input.source?.identityProvenance ?? promptContext?.identityProvenance ?? promptSource?.identityProvenance,
     suppressPresence: input.source?.suppressPresence ?? promptSource?.suppressPresence,
   };
+
+  if (turnOrigin) {
+    const reason = `prompt._turnOrigin:${turnOrigin.producer}:${turnOrigin.action}`;
+    return turnOrigin.principal.type === "agent"
+      ? result("agent", reason)
+      : result("system", reason, turnOrigin.principal.id);
+  }
 
   if (prompt?._observation) {
     return result("observer", "prompt._observation", `observer:${prompt._observation.bindingId}`);

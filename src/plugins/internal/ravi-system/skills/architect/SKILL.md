@@ -149,8 +149,8 @@ Cria uma ponte conversacional dedicada entre Ravi e um contato específico. Úti
 4. (opcional) bootstrap-prompt: sessions send <session_name> "<prompt p/ agent>" -a <agent_id> --to <phone> --channel whatsapp
    - cria a sessão E carrega o agent com contexto
    - NÃO entrega texto pro contato (só prompta o agent)
-5. (opcional) bootstrap-outbound: whatsapp dm send <phone> "<texto pro contato>" --account <instance>
-   - entrega texto direto no DM do contato
+5. (opcional) bootstrap-outbound: whatsapp dm send <phone> "<texto pro contato>" --account <instance> --execute
+   - entrega texto direto no DM do contato (sem --execute é dry-run exit 3)
    - SEPARADO do prompt do agent; faça os dois se quer abrir o canal com mensagem
 ```
 
@@ -159,9 +159,9 @@ Cria uma ponte conversacional dedicada entre Ravi e um contato específico. Úti
 **Inverso**:
 
 ```
-1. sessions delete <session_name> (opcional)
-2. instances routes remove <instance> <phone>
-3. agents delete <agent_id> (com confirmação dupla — irreversível)
+1. sessions delete <session_name> --execute (opcional)
+2. instances routes remove <instance> <phone> (soft-delete imediato)
+3. agents delete <agent_id> --execute (sem --execute é dry-run exit 3; com confirmação dupla — irreversível)
 ```
 
 **Quando usar**:

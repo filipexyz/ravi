@@ -27,7 +27,7 @@ ravi apps check --json
 
 ```bash
 ravi apps show <id> --json        # inspect the existing app
-ravi apps scaffold <id> --force   # overwrite if intended
+ravi apps scaffold <id> --force   # refresh contracts; preserve existing cli.ts
 ```
 
 ## Handle Absent App

@@ -109,6 +109,12 @@ export interface ChannelOutboundReceiptStore {
   ): ChannelOutboundReceipt;
   markTraceRecorded(idempotencyKey: string, recordedAt?: number): ChannelOutboundReceipt;
   markComplete(idempotencyKey: string, completedAt?: number): ChannelOutboundReceipt;
+  markTerminalError(
+    idempotencyKey: string,
+    phase: ChannelOutboundReceiptErrorPhase,
+    message: string,
+    completedAt?: number,
+  ): ChannelOutboundReceipt;
   recordError(
     idempotencyKey: string,
     phase: ChannelOutboundReceiptErrorPhase,
@@ -126,6 +132,7 @@ export const sqliteChannelOutboundReceiptStore: ChannelOutboundReceiptStore = {
   markPersisted: markChannelOutboundReceiptPersisted,
   markTraceRecorded: markChannelOutboundReceiptTraceRecorded,
   markComplete: markChannelOutboundReceiptComplete,
+  markTerminalError: markChannelOutboundReceiptTerminalError,
   recordError: recordChannelOutboundReceiptError,
   pruneExpired: pruneExpiredChannelOutboundReceipts,
 };
@@ -353,6 +360,27 @@ export function markChannelOutboundReceiptComplete(
     )
     .run(completedAt, completedAt, key);
   if (result.changes === 0) throw new Error(`Persisted outbound receipt not found: ${key}`);
+  return requireReceipt(key);
+}
+
+export function markChannelOutboundReceiptTerminalError(
+  idempotencyKey: string,
+  phase: ChannelOutboundReceiptErrorPhase,
+  message: string,
+  completedAt = Date.now(),
+): ChannelOutboundReceipt {
+  const key = requireText(idempotencyKey, "idempotencyKey");
+  const result = getDb()
+    .prepare(
+      `UPDATE channel_outbound_receipts
+       SET state = 'complete',
+           completed_at = COALESCE(completed_at, ?),
+           last_error_phase = ?, last_error_message = ?, last_error_at = ?,
+           updated_at = ?
+       WHERE idempotency_key = ? AND state IN ('sent', 'complete')`,
+    )
+    .run(completedAt, phase, requireText(message, "message"), completedAt, completedAt, key);
+  if (result.changes === 0) throw new Error(`Sent outbound receipt not found: ${key}`);
   return requireReceipt(key);
 }
 

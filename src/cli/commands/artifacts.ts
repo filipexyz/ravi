@@ -7,6 +7,7 @@ import { file as bunFile } from "bun";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -32,6 +33,7 @@ import {
   createArtifactVersion,
   getArtifactVersion,
   getArtifactDetails,
+  inspectArtifactPublishStateReadOnly,
   listArtifactEvents,
   listArtifactVersions,
   listArtifactsPage,
@@ -46,11 +48,15 @@ import {
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "../../whatsapp-overlay/artifacts.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import { activateArtifactReleaseInConsole, publishArtifactToConsole } from "../../artifacts/publish-client.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function parseJsonObject(value: string | undefined, label: string): Record<string, unknown> | undefined {
@@ -266,6 +272,144 @@ function isDirectoryPath(path: string): boolean {
   }
 }
 
+function failArtifactUsage(op: string, message: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: 2,
+    details: { suggestedAction: `Inspect the command input and retry '${op}'.` },
+  });
+}
+
+function validateLocalPublishTarget(
+  target: string,
+  artifactVersion: number | undefined,
+  asJson?: boolean,
+): { kind: "artifact"; artifactId: string } | { kind: "file" | "directory" } {
+  const reference = target.trim();
+  if (!reference) failArtifactUsage("artifacts publish", "target is required.", asJson);
+
+  if (reference.startsWith("art_")) {
+    const inspection = inspectArtifactPublishStateReadOnly(reference, artifactVersion);
+    if (!inspection.artifactExists) {
+      failArtifactNotFound("artifacts publish", reference, asJson, inspection.candidates);
+    }
+    if (artifactVersion !== undefined && inspection.versionExists !== true) {
+      failArtifactVersionNotFound("artifacts publish", reference, artifactVersion, asJson);
+    }
+    return { kind: "artifact", artifactId: reference };
+  }
+
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(resolve(reference));
+  } catch {
+    failArtifactUsage("artifacts publish", "Local publish target was not found.", asJson);
+  }
+  if (!stat.isFile() && !stat.isDirectory()) {
+    failArtifactUsage("artifacts publish", "Publish target must be a file, directory, or local artifact id.", asJson);
+  }
+  return { kind: stat.isDirectory() ? "directory" : "file" };
+}
+
+function validateLocalReleaseActivation(
+  id: string,
+  artifactVersion: number | undefined,
+  release: string | undefined,
+  site: string | undefined,
+  asJson?: boolean,
+): void {
+  if (!id.trim()) failArtifactUsage("artifacts release activate", "id is required.", asJson);
+  const inspection = inspectArtifactPublishStateReadOnly(id, artifactVersion);
+  if (!inspection.artifactExists) {
+    failArtifactNotFound("artifacts release activate", id, asJson, inspection.candidates);
+  }
+  if (artifactVersion !== undefined && inspection.versionExists !== true) {
+    failArtifactVersionNotFound("artifacts release activate", id, artifactVersion, asJson);
+  }
+  if (artifactVersion === undefined && !release?.trim()) {
+    failArtifactUsage(
+      "artifacts release activate",
+      "Missing release selector. Use --version <n> or --release <id> to activate an existing Pages release.",
+      asJson,
+    );
+  }
+  const releaseId = release?.trim() || undefined;
+  const publishedEvent = [...inspection.publishedEvents].reverse().find((event) => {
+    const payload = parseRecord(event.payload);
+    const local = parseRecord(payload.local);
+    const remote = parseRecord(payload.remote);
+    const versionMatches = artifactVersion === undefined || Number(local.versionNumber) === artifactVersion;
+    const releaseMatches = !releaseId || String(remote.releaseId ?? "") === releaseId;
+    return versionMatches && releaseMatches;
+  });
+  if (!publishedEvent && (!releaseId || !site?.trim())) {
+    const message =
+      artifactVersion !== undefined
+        ? `No Pages release is recorded for ${id} v${artifactVersion}. Publish that version first.`
+        : "Activating an explicit release not recorded locally requires --site.";
+    failArtifactUsage("artifacts release activate", message, asJson);
+  }
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, op, error:{code, ...}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+function failArtifactNotFound(op: string, artifactRef: string, asJson?: boolean, readOnlyCandidates?: string[]): never {
+  // Artifact ids from the cheap local SQLite ledger feed suggestions without
+  // exposing artifact titles or content.
+  const candidates = readOnlyCandidates ?? listArtifactsPage({ limit: 40 }).items.map((artifact) => artifact.id);
+  contractFail(op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the artifact id (see suggestions; list with: ravi artifacts list --json)",
+      suggestions: suggestSimilar(artifactRef, candidates),
+    },
+  });
+}
+
+function failArtifactVersionNotFound(
+  op: string,
+  artifactRef: string,
+  versionNumber: number | undefined,
+  asJson?: boolean,
+): never {
+  // Version numbers are dense integers per artifact; similarity suggestions
+  // would be noise, so point at the version listing instead.
+  contractFail(
+    op,
+    "ARTIFACT_VERSION_NOT_FOUND",
+    `Artifact version not found: ${artifactRef}${versionNumber !== undefined ? ` v${versionNumber}` : ""}`,
+    {
+      asJson,
+      details: { suggestedAction: `List versions with: ravi artifacts versions ${artifactRef} --json` },
+    },
+  );
+}
+
+/**
+ * The artifact store throws `Artifact not found: <id>` / `Artifact version not
+ * found: <id> vN` on unknown refs instead of returning null; map those throws
+ * to the contract envelope (model: tasks getTaskDetailsForContract).
+ */
+function withArtifactContract<T>(op: string, artifactRef: string, asJson: boolean | undefined, run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof ContractError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/^artifact version not found/i.test(message)) {
+      const versionMatch = /v(\d+)\s*$/.exec(message);
+      failArtifactVersionNotFound(op, artifactRef, versionMatch ? Number(versionMatch[1]) : undefined, asJson);
+    }
+    if (/^artifact not found/i.test(message)) failArtifactNotFound(op, artifactRef, asJson);
+    throw error;
+  }
+}
+
 @Group({
   name: "artifacts",
   description: "Generic artifact ledger and lineage tools",
@@ -409,6 +553,11 @@ export class ArtifactsCommands {
     lifecycle?: string,
     @Option({ flags: "--agent <id>", description: "Filter rich projection by agent id" })
     agentId?: string,
+    @Option({
+      flags: "--fields <list>",
+      description: "Comma-separated fields to keep on each listed item (standard listing; ignored with --rich)",
+    })
+    fields?: string,
   ) {
     if (rich) {
       const normalizedLifecycle = lifecycle?.trim() ? normalizeLifecycle(lifecycle.trim()) : null;
@@ -448,6 +597,7 @@ export class ArtifactsCommands {
     });
     const artifacts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "artifacts", "list"],
       limit: pageLimit,
       offset: pageOffset,
@@ -470,8 +620,8 @@ export class ArtifactsCommands {
     const payload = {
       total: page.total,
       pagination,
-      items: artifacts.map(summarizeArtifact),
-      artifacts: artifacts.map(summarizeArtifact),
+      items: pickFields(artifacts.map(summarizeArtifact), fields),
+      artifacts: pickFields(artifacts.map(summarizeArtifact), fields),
     };
     if (asJson) {
       printJson(payload);
@@ -501,7 +651,7 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const details = getArtifactDetails(id);
-    if (!details) fail(`Artifact not found: ${id}`);
+    if (!details) failArtifactNotFound("artifacts show", id, asJson);
     const payload = { ...details };
     if (asJson) {
       printJson(payload);
@@ -521,7 +671,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
-  @CommandAccess({ kind: "read", resource: "artifacts", action: "snapshot", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "snapshot", risk: "medium" })
   @Returns(artifactSnapshotReturnSchema)
   snapshot(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -534,15 +684,17 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ctx = contextDefaults();
-    const version = createArtifactVersion(id, {
-      ...(label?.trim() ? { label } : {}),
-      ...(status?.trim() ? { status } : {}),
-      ...(source?.trim() ? { source } : {}),
-      ...(message?.trim() ? { message } : {}),
-      ...(manifest ? { manifest: parseJsonObject(manifest, "--manifest") } : {}),
-      ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
-      ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
-    });
+    const version = withArtifactContract("artifacts snapshot", id, asJson, () =>
+      createArtifactVersion(id, {
+        ...(label?.trim() ? { label } : {}),
+        ...(status?.trim() ? { status } : {}),
+        ...(source?.trim() ? { source } : {}),
+        ...(message?.trim() ? { message } : {}),
+        ...(manifest ? { manifest: parseJsonObject(manifest, "--manifest") } : {}),
+        ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+        ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+      }),
+    );
     const payload = { success: true, version: summarizeVersion(version) };
     if (asJson) {
       printJson(payload);
@@ -559,7 +711,7 @@ export class ArtifactsCommands {
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const versions = listArtifactVersions(id);
+    const versions = withArtifactContract("artifacts versions", id, asJson, () => listArtifactVersions(id));
     const payload = {
       artifactId: id,
       total: versions.length,
@@ -586,8 +738,8 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const parsedVersion = versionNumber ? parseInteger(versionNumber, "--version") : undefined;
-    const version = getArtifactVersion(id, parsedVersion);
-    if (!version) fail(`Artifact version not found: ${id}${parsedVersion ? ` v${parsedVersion}` : ""}`);
+    const version = withArtifactContract("artifacts version", id, asJson, () => getArtifactVersion(id, parsedVersion));
+    if (!version) failArtifactVersionNotFound("artifacts version", id, parsedVersion, asJson);
     const payload = { artifactId: id, version: summarizeVersion(version) };
     if (asJson) {
       printJson(payload);
@@ -613,10 +765,15 @@ export class ArtifactsCommands {
     const parsedVersion = parseInteger(versionNumber, "--version");
     if (parsedVersion === undefined) fail("--version is required.");
     const ctx = contextDefaults();
-    const result = restoreArtifactVersion(id, parsedVersion, {
-      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
-      ...(message?.trim() ? { message } : {}),
-    });
+    // Declared UNBRAKED (Manual v2): restore is the reverse half of the
+    // snapshot/restore pair and every restore records a new immutable version,
+    // so the previous content is never lost.
+    const result = withArtifactContract("artifacts restore", id, asJson, () =>
+      restoreArtifactVersion(id, parsedVersion, {
+        ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+        ...(message?.trim() ? { message } : {}),
+      }),
+    );
     const payload = {
       success: true,
       artifact: summarizeArtifact(result.artifact),
@@ -664,35 +821,37 @@ export class ArtifactsCommands {
     @Option({ flags: "--tags <csv>", description: "Replace tags" }) tags?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const artifact = updateArtifact(
-      id,
-      {
-        ...(title?.trim() ? { title } : {}),
-        ...(summary?.trim() ? { summary } : {}),
-        ...(status?.trim() ? { status } : {}),
-        ...(filePath?.trim() ? { filePath } : {}),
-        ...(uri?.trim() ? { uri } : {}),
-        ...(mimeType?.trim() ? { mimeType } : {}),
-        ...(provider?.trim() ? { provider } : {}),
-        ...(model?.trim() ? { model } : {}),
-        ...(prompt !== undefined ? { prompt } : {}),
-        ...(command?.trim() ? { command } : {}),
-        ...(durationMs ? { durationMs: parseInteger(durationMs, "--duration-ms") } : {}),
-        ...(costUsd ? { costUsd: parseNumber(costUsd, "--cost-usd") } : {}),
-        ...(inputTokens ? { inputTokens: parseInteger(inputTokens, "--input-tokens") } : {}),
-        ...(outputTokens ? { outputTokens: parseInteger(outputTokens, "--output-tokens") } : {}),
-        ...(totalTokens ? { totalTokens: parseInteger(totalTokens, "--total-tokens") } : {}),
-        ...(session?.trim() ? { sessionName: session } : {}),
-        ...(taskId?.trim() ? { taskId } : {}),
-        ...(messageId?.trim() ? { messageId } : {}),
-        ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
-        ...(metrics ? { metrics: parseJsonObject(metrics, "--metrics") } : {}),
-        ...(lineage ? { lineage: parseJsonObject(lineage, "--lineage") } : {}),
-        ...(input ? { input: parseJsonValue(input, "--input") } : {}),
-        ...(output ? { output: parseJsonValue(output, "--output") } : {}),
-        ...(tags ? { tags: parseCsv(tags) ?? [] } : {}),
-      },
-      { actor: contextDefaults().agentId, mergeMetadata: true, mergeMetrics: true, mergeLineage: true },
+    const artifact = withArtifactContract("artifacts update", id, asJson, () =>
+      updateArtifact(
+        id,
+        {
+          ...(title?.trim() ? { title } : {}),
+          ...(summary?.trim() ? { summary } : {}),
+          ...(status?.trim() ? { status } : {}),
+          ...(filePath?.trim() ? { filePath } : {}),
+          ...(uri?.trim() ? { uri } : {}),
+          ...(mimeType?.trim() ? { mimeType } : {}),
+          ...(provider?.trim() ? { provider } : {}),
+          ...(model?.trim() ? { model } : {}),
+          ...(prompt !== undefined ? { prompt } : {}),
+          ...(command?.trim() ? { command } : {}),
+          ...(durationMs ? { durationMs: parseInteger(durationMs, "--duration-ms") } : {}),
+          ...(costUsd ? { costUsd: parseNumber(costUsd, "--cost-usd") } : {}),
+          ...(inputTokens ? { inputTokens: parseInteger(inputTokens, "--input-tokens") } : {}),
+          ...(outputTokens ? { outputTokens: parseInteger(outputTokens, "--output-tokens") } : {}),
+          ...(totalTokens ? { totalTokens: parseInteger(totalTokens, "--total-tokens") } : {}),
+          ...(session?.trim() ? { sessionName: session } : {}),
+          ...(taskId?.trim() ? { taskId } : {}),
+          ...(messageId?.trim() ? { messageId } : {}),
+          ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+          ...(metrics ? { metrics: parseJsonObject(metrics, "--metrics") } : {}),
+          ...(lineage ? { lineage: parseJsonObject(lineage, "--lineage") } : {}),
+          ...(input ? { input: parseJsonValue(input, "--input") } : {}),
+          ...(output ? { output: parseJsonValue(output, "--output") } : {}),
+          ...(tags ? { tags: parseCsv(tags) ?? [] } : {}),
+        },
+        { actor: contextDefaults().agentId, mergeMetadata: true, mergeMetrics: true, mergeLineage: true },
+      ),
     );
     const payload = { success: true, artifact };
     if (asJson) {
@@ -714,12 +873,8 @@ export class ArtifactsCommands {
     @Option({ flags: "--metadata <json>", description: "Link metadata JSON object" }) metadata?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const link = attachArtifact(
-      id,
-      targetType,
-      targetId,
-      relation?.trim() || "related",
-      parseJsonObject(metadata, "--metadata"),
+    const link = withArtifactContract("artifacts attach", id, asJson, () =>
+      attachArtifact(id, targetType, targetId, relation?.trim() || "related", parseJsonObject(metadata, "--metadata")),
     );
     const payload = { success: true, link };
     if (asJson) {
@@ -737,7 +892,12 @@ export class ArtifactsCommands {
     @Arg("id", { description: "Artifact id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const artifact = archiveArtifact(id, contextDefaults().agentId);
+    // Declared UNBRAKED (Manual v2): archive is a reversible soft-delete — the
+    // artifact stays consultable with --include-deleted and its content stays
+    // recoverable through `artifacts restore` — so no --execute brake applies.
+    const artifact = withArtifactContract("artifacts archive", id, asJson, () =>
+      archiveArtifact(id, contextDefaults().agentId),
+    );
     const payload = { success: true, artifact };
     if (asJson) {
       printJson(payload);
@@ -748,7 +908,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "event", description: "Append an artifact lifecycle event" })
-  @CommandAccess({ kind: "read", resource: "artifacts", action: "event", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "event", risk: "medium" })
   @Returns(artifactEventReturnSchema)
   event(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -760,15 +920,17 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ctx = contextDefaults();
-    const artifact = status?.trim() ? updateArtifact(id, { status }, { actor: ctx.agentId }) : undefined;
-    const event = appendArtifactEvent(id, {
-      eventType,
-      ...(status?.trim() ? { status } : {}),
-      ...(message?.trim() ? { message } : {}),
-      ...(source?.trim() ? { source } : {}),
-      ...(payload ? { payload: parseJsonObject(payload, "--payload") } : {}),
-      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
-    });
+    const { artifact, event } = withArtifactContract("artifacts event", id, asJson, () => ({
+      artifact: status?.trim() ? updateArtifact(id, { status }, { actor: ctx.agentId }) : undefined,
+      event: appendArtifactEvent(id, {
+        eventType,
+        ...(status?.trim() ? { status } : {}),
+        ...(message?.trim() ? { message } : {}),
+        ...(source?.trim() ? { source } : {}),
+        ...(payload ? { payload: parseJsonObject(payload, "--payload") } : {}),
+        ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+      }),
+    }));
     const result = { success: true, event, ...(artifact ? { artifact } : {}) };
     if (asJson) {
       printJson(result);
@@ -786,7 +948,7 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const events = listArtifactEvents(id);
+      const events = withArtifactContract("artifacts events", id, asJson, () => listArtifactEvents(id));
       const payload = { artifactId: id, total: events.length, events: events.map(summarizeEvent) };
       if (asJson) {
         printJson(payload);
@@ -803,6 +965,9 @@ export class ArtifactsCommands {
       }
       return payload;
     } catch (error) {
+      // Manual v2: contract errors already carry their envelope/exit code —
+      // never let the legacy text funnel flatten them (model: agents.ts).
+      if (error instanceof ContractError) throw error;
       fail(error instanceof Error ? error.message : String(error));
     }
   }
@@ -811,7 +976,14 @@ export class ArtifactsCommands {
     name: "publish",
     description: "Upload a local artifact/file/directory to Console and optionally release it to Ravi Pages",
   })
-  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "publish", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "artifacts",
+    action: "publish",
+    risk: "high",
+    redactions: ["target", "description", "idempotencyKey", "reason"],
+    requiresConfirmation: true,
+  })
   @Returns(artifactPublishReturnSchema)
   async publish(
     @Arg("target", { description: "Local artifact id, file, or directory; use a directory with index.html for Pages" })
@@ -840,9 +1012,38 @@ export class ArtifactsCommands {
     noActivate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually upload/release to Console; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+    const targetPlan = validateLocalPublishTarget(target, parsedArtifactVersion, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): publish uploads local bytes to Console
+      // and (unless --no-activate) exposes them on a hosted Pages URL —
+      // external exposure. Dry-run by default and exit 3 before any upload
+      // session or Console call.
+      contractDryRun(
+        "artifacts publish",
+        {
+          target: targetPlan,
+          project: project ?? null,
+          site: site ?? null,
+          routePresent: Boolean(route),
+          visibility: visibility ?? null,
+          namePresent: Boolean(name),
+          slug: slug ?? null,
+          entrypointPresent: Boolean(entrypoint),
+          artifactVersion: parsedArtifactVersion ?? null,
+          activate: !noActivate,
+          replaceRelease: Boolean(replaceRelease),
+        },
+        { asJson },
+      );
+    }
     try {
-      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
       const result = await publishArtifactToConsole(target, {
         project,
         site,
@@ -870,16 +1071,11 @@ export class ArtifactsCommands {
       }
       return result;
     } catch (error) {
-      const cloudError = cloudAuthErrorFromUnknown(error);
-      if (asJson) {
-        printJson(formatCloudAuthError(cloudError));
-      } else {
-        console.error(`${cloudError.code}: ${cloudError.message}`);
-        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-          console.error("Next: run `ravi login`.");
-        }
-      }
-      process.exit(cloudError.exitCode);
+      // Manual v2: contractFail/contractDryRun already emitted their envelope
+      // and carry the exit taxonomy — never let the CloudAuthError funnel
+      // swallow them (model: mail.ts).
+      if (error instanceof ContractError) throw error;
+      throw cloudAuthErrorFromUnknown(error);
     }
   }
 
@@ -907,7 +1103,13 @@ export class ArtifactsCommands {
 })
 export class ArtifactReleaseCommands {
   @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
-  @CommandAccess({ kind: "mutate", resource: "artifacts.release", action: "activate", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "artifacts.release",
+    action: "activate",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(artifactReleaseActivateReturnSchema)
   async activate(
     @Arg("id", { description: "Local artifact id" }) id: string,
@@ -925,9 +1127,30 @@ export class ArtifactReleaseCommands {
     site?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually activate the release in Console; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--version") : undefined;
+    validateLocalReleaseActivation(id, parsedArtifactVersion, release, site, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): activating a release flips which content
+      // is live on the hosted site — external exposure. Dry-run by default and
+      // exit 3 before any Console call.
+      contractDryRun(
+        "artifacts release activate",
+        {
+          artifactId: id,
+          artifactVersion: parsedArtifactVersion ?? null,
+          release: release ?? null,
+          site: site ?? null,
+        },
+        { asJson },
+      );
+    }
     try {
-      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--version") : undefined;
       const result = await activateArtifactReleaseInConsole(id, {
         artifactVersion: parsedArtifactVersion,
         release,
@@ -942,16 +1165,11 @@ export class ArtifactReleaseCommands {
       }
       return result;
     } catch (error) {
-      const cloudError = cloudAuthErrorFromUnknown(error);
-      if (asJson) {
-        printJson(formatCloudAuthError(cloudError));
-      } else {
-        console.error(`${cloudError.code}: ${cloudError.message}`);
-        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-          console.error("Next: run `ravi login`.");
-        }
-      }
-      process.exit(cloudError.exitCode);
+      // Manual v2: contractFail/contractDryRun already emitted their envelope
+      // and carry the exit taxonomy — never let the CloudAuthError funnel
+      // swallow them (model: mail.ts).
+      if (error instanceof ContractError) throw error;
+      throw cloudAuthErrorFromUnknown(error);
     }
   }
 }

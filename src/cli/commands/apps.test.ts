@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runWithContext } from "../context.js";
+import { getCommandsMetadata } from "../decorators.js";
 import { cleanupIsolatedRaviState } from "../../test/ravi-state.js";
+import { evaluateRaviAppsContract } from "../../apps/contract-eval.js";
+import { RAVI_APPS_COMMAND_GUIDANCE } from "../../apps/guide.js";
+import { dispatch, type AuditEvent } from "../../sdk/gateway/dispatcher.js";
+import { buildRegistry } from "../registry-snapshot.js";
+import { extractTools } from "../tools-export.js";
 import { AppsCommands } from "./apps.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
+import { ContractError, contractFailureOutcome } from "../agent-contract.js";
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -16,6 +23,35 @@ const contextEnvKeys = ["RAVI_CONTEXT_KEY", "RAVI_SESSION_KEY", "RAVI_SESSION_NA
 const originalContextEnv = new Map<(typeof contextEnvKeys)[number], string | undefined>(
   contextEnvKeys.map((key) => [key, process.env[key]]),
 );
+const appsContractFiles = [
+  "src/plugins/internal/ravi-system/skills/apps/SKILL.md",
+  "src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",
+  "src/plugins/internal/ravi-dev/skills/app-creator/references/acceptance-cases.md",
+  ".ravi/specs/apps/SPEC.md",
+  ".ravi/specs/apps/builder/SPEC.md",
+] as const;
+
+function makeAppsContractFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), "ravi-apps-contract-"));
+  tempRoots.push(root);
+  restoreAppsContractFixture(root);
+  return root;
+}
+
+function restoreAppsContractFixture(root: string): void {
+  for (const relativePath of appsContractFiles) {
+    const target = join(root, relativePath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(join(originalCwd, relativePath), "utf8"));
+  }
+}
+
+function removeContractText(root: string, relativePath: (typeof appsContractFiles)[number], text: string): void {
+  const path = join(root, relativePath);
+  const content = readFileSync(path, "utf8");
+  expect(content).toContain(text);
+  writeFileSync(path, content.replaceAll(text, "removed-by-contract-drift-test"));
+}
 
 function makeRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-apps-cli-"));
@@ -46,6 +82,9 @@ function makeRepo(): string {
             namespace: "apps",
           },
         },
+        context: {
+          allow: [],
+        },
         permissions: {
           required: [],
           optional: [],
@@ -61,6 +100,33 @@ function makeRepo(): string {
   );
   process.chdir(root);
   return root;
+}
+
+function writeWriterApp(root: string): void {
+  const appDir = join(root, "src", "apps", "writer");
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(
+    join(appDir, "ravi.app.json"),
+    JSON.stringify({
+      schema: "ravi.app/v1",
+      id: "writer",
+      name: "Writer",
+      version: "0.1.0",
+      description: "Mutation brake fixture.",
+      interfaces: { cli: { command: "ravi writer", json: true } },
+      context: { allow: [] },
+      operations: {
+        "writer.create": {
+          interface: "builtin",
+          handler: "apps.stub.list",
+          mutating: true,
+          permission: "writer:write",
+        },
+      },
+      permissions: { required: [], optional: [], mutating: ["writer:write"] },
+      health: { checks: [] },
+    }),
+  );
 }
 
 function captureJson(fn: () => unknown): unknown {
@@ -121,6 +187,67 @@ afterEach(async () => {
 });
 
 describe("AppsCommands", () => {
+  it("evaluates registry, guide, specs, and skills as one drift-sensitive contract", () => {
+    const registryCommands = getCommandsMetadata(AppsCommands).map((command) => command.name);
+    const result = evaluateRaviAppsContract(registryCommands, { cwd: originalCwd });
+
+    expect(result.ok).toBe(true);
+    expect(result.drift).toEqual([]);
+    expect(result.registryCommands).toEqual(result.documentedCommands);
+
+    const driftedGuidance = RAVI_APPS_COMMAND_GUIDANCE.filter((entry) => entry.command !== "show");
+    const drifted = evaluateRaviAppsContract(registryCommands, {
+      cwd: originalCwd,
+      guidance: driftedGuidance,
+    });
+
+    expect(drifted.ok).toBe(false);
+    expect(drifted.drift).toContainEqual(
+      expect.objectContaining({
+        surface: "guide",
+        code: "registry_command_missing_guidance",
+      }),
+    );
+  });
+
+  it("detects command, builder-link, and acceptance-case drift outside the guide", () => {
+    const registryCommands = getCommandsMetadata(AppsCommands).map((command) => command.name);
+    const fixture = makeAppsContractFixture();
+
+    removeContractText(fixture, "src/plugins/internal/ravi-system/skills/apps/SKILL.md", "ravi apps show");
+    expect(evaluateRaviAppsContract(registryCommands, { cwd: fixture }).drift).toContainEqual(
+      expect.objectContaining({ surface: "system-skill", code: "command_missing" }),
+    );
+
+    restoreAppsContractFixture(fixture);
+    removeContractText(fixture, ".ravi/specs/apps/SPEC.md", "ravi apps show");
+    expect(evaluateRaviAppsContract(registryCommands, { cwd: fixture }).drift).toContainEqual(
+      expect.objectContaining({ surface: "apps-spec", code: "command_missing" }),
+    );
+
+    restoreAppsContractFixture(fixture);
+    removeContractText(fixture, ".ravi/specs/apps/builder/SPEC.md", "ravi-dev-app-creator");
+    expect(evaluateRaviAppsContract(registryCommands, { cwd: fixture }).drift).toContainEqual(
+      expect.objectContaining({
+        surface: "builder-spec",
+        code: "builder_skill_link_missing",
+      }),
+    );
+
+    restoreAppsContractFixture(fixture);
+    removeContractText(
+      fixture,
+      "src/plugins/internal/ravi-dev/skills/app-creator/references/acceptance-cases.md",
+      "Open-Meteo Forecast",
+    );
+    expect(evaluateRaviAppsContract(registryCommands, { cwd: fixture }).drift).toContainEqual(
+      expect.objectContaining({
+        surface: "acceptance-cases",
+        code: "second_reference_case_missing",
+      }),
+    );
+  });
+
   it("lists, shows, and checks app manifests as JSON", () => {
     makeRepo();
     const commands = new AppsCommands();
@@ -162,7 +289,7 @@ describe("AppsCommands", () => {
 
     expect(() =>
       runWithContext({ agentId: "app-agent" }, () => captureJson(() => commands.show("apps", true))),
-    ).toThrow(/App not found: apps/);
+    ).toThrow("Ravi app was not found.");
 
     const appContext = contextWithCapabilities([
       { permission: "use", objectType: "app", objectId: "apps", source: "test" },
@@ -194,12 +321,18 @@ describe("AppsCommands", () => {
     const guide = captureJson(() => commands.guide(undefined, true)) as {
       skill: string;
       skillGate: { group: string; skill: string };
+      builder: { skill: string; spec: string; reviewChecklist: string[] };
       prompts: Array<{ id: string; commands: string[] }>;
     };
 
     expect(guide.skill).toBe("ravi-system-apps");
     expect(guide.skillGate).toEqual({ group: "apps", skill: "ravi-system-apps" });
-    expect(guide.prompts.map((prompt) => prompt.id)).toContain("scaffold");
+    expect(guide.builder).toMatchObject({
+      skill: "ravi-dev-app-creator",
+      spec: "apps/builder",
+    });
+    expect(guide.builder.reviewChecklist.length).toBeGreaterThan(5);
+    expect(guide.prompts.map((prompt) => prompt.id)).toContain("build");
     expect(guide.prompts.find((prompt) => prompt.id === "operate")?.commands).toContain(
       "ravi <app-id> <operation> --json",
     );
@@ -260,34 +393,51 @@ describe("AppsCommands", () => {
       ),
     ) as {
       id: string;
+      cliPath: string;
       manifestPath: string;
       specPath: string;
       skillPath: string;
       skill: string;
       files: Array<{ kind: string; action: string }>;
-      manifest: { operations: Record<string, unknown>; interfaces: Record<string, unknown> };
+      manifest: {
+        context: { allow: string[] };
+        operations: Record<string, unknown>;
+        interfaces: Record<string, { command?: string }>;
+      };
+      builder: { skill: string; spec: string; reviewChecklist: string[] };
       nextCommands: string[];
     };
 
     expect(created.id).toBe("music");
     expect(created.skill).toBe("ravi-system-music");
-    expect(created.files.map((file) => file.action)).toEqual(["created", "created", "created"]);
+    expect(created.files.map((file) => file.action)).toEqual(["created", "created", "created", "created"]);
     expect(Object.hasOwn(created.manifest.operations, "music.list")).toBe(true);
     expect(created.manifest.operations["music.list"]).toMatchObject({
-      interface: "builtin",
-      handler: "apps.stub.list",
+      interface: "cli",
+      command: "bun cli.ts list {args} --json",
     });
     expect(created.manifest.operations["music.check"]).toMatchObject({
       interface: "builtin",
       handler: "apps.manifest.check",
     });
+    expect(created.manifest.interfaces.cli).toMatchObject({ command: "bun cli.ts", json: true });
+    expect(created.manifest.context.allow).toEqual([]);
+    expect(created.builder).toMatchObject({
+      skill: "ravi-dev-app-creator",
+      spec: "apps/builder",
+    });
+    expect(created.builder.reviewChecklist.length).toBeGreaterThan(5);
     expect(created.manifest.interfaces).toHaveProperty("ui");
+    expect(existsSync(created.cliPath)).toBe(true);
+    expect(readFileSync(created.cliPath, "utf8")).toContain("RAVI_CONTEXT_KEY");
+    expect(readFileSync(created.cliPath, "utf8")).toContain("execute:group:<group>");
     expect(existsSync(created.manifestPath)).toBe(true);
     expect(existsSync(created.specPath)).toBe(true);
     expect(existsSync(created.skillPath)).toBe(true);
     expect(readFileSync(created.skillPath, "utf8")).toContain("ravi apps show music --json");
     expect(readFileSync(created.skillPath, "utf8")).toContain("ravi music check --json");
     expect(created.nextCommands).toContain("ravi apps guide music --json");
+    expect(created.nextCommands).toContain("ravi skills show ravi-dev-app-creator --json");
     expect(created.nextCommands).toContain("ravi music check --json");
     expect(created.nextCommands).toContain("ravi music list --json");
     expect(created.nextCommands.some((command) => command.includes("ravi skills show music --source "))).toBe(true);
@@ -305,6 +455,32 @@ describe("AppsCommands", () => {
     };
     expect(check.ok).toBe(true);
     expect(check.results[0]).toMatchObject({ id: "music", ok: true, errors: [] });
+
+    const authoredCli = "// Authored implementation: scaffold must preserve this file.\n";
+    writeFileSync(created.cliPath, authoredCli, "utf8");
+    const forced = captureJson(() =>
+      commands.scaffold(
+        "music",
+        "Music",
+        "Manage music.",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ) as {
+      files: Array<{ kind: string; action: string }>;
+    };
+    expect(forced.files).toEqual([
+      expect.objectContaining({ kind: "manifest", action: "overwritten" }),
+      expect.objectContaining({ kind: "cli", action: "preserved" }),
+      expect.objectContaining({ kind: "spec", action: "overwritten" }),
+      expect.objectContaining({ kind: "skill", action: "overwritten" }),
+    ]);
+    expect(readFileSync(created.cliPath, "utf8")).toBe(authoredCli);
 
     const nested = captureJson(() =>
       commands.scaffold(
@@ -428,21 +604,28 @@ exit 1
       operationCandidates: Array<{ id: string; mutating: boolean; destructive: boolean }>;
       debugCandidates: Array<{ id: string }>;
       manifest: {
-        interfaces: Record<string, { command?: string; health?: string }>;
+        context: { allow: string[] };
+        interfaces: Record<string, { command?: string }>;
         operations: Record<string, { interface: string; command?: string; permission?: string }>;
       };
       reviewRequired: string[];
       sourceCommand: string;
       command: string;
+      builder: {
+        skill: string;
+        command: string;
+        spec: string;
+        reviewChecklist: string[];
+      };
     };
 
     expect(dryRun).toMatchObject({ id: "fake-app", source: "manifest", confidence: "high" });
     expect(dryRun.sourceCommand).toBe(fakeCli);
-    expect(dryRun.command).toBe("ravi fake-app");
+    expect(dryRun.command).toBe(fakeCli);
     expect(dryRun.manifest.interfaces.cli).toMatchObject({
-      command: "ravi fake-app",
-      health: "ravi fake-app check --json",
+      command: fakeCli,
     });
+    expect(dryRun.manifest.context.allow).toEqual([]);
     expect(dryRun.operationCandidates.map((candidate) => candidate.id)).toEqual(["list", "delete"]);
     expect(dryRun.debugCandidates.map((candidate) => candidate.id)).toEqual(["watch"]);
     expect(dryRun.manifest.operations["fake-app.list"]).toMatchObject({
@@ -454,6 +637,13 @@ exit 1
       permission: "fake-app:write",
     });
     expect(dryRun.reviewRequired.join("\n")).toContain("Confirm mutation risk");
+    expect(dryRun.reviewRequired[0]).toContain("draft generator");
+    expect(dryRun.builder).toMatchObject({
+      skill: "ravi-dev-app-creator",
+      command: "ravi skills show ravi-dev-app-creator --json",
+      spec: "apps/builder",
+    });
+    expect(dryRun.builder.reviewChecklist.length).toBeGreaterThan(5);
     expect(existsSync(dryRun.manifestPath)).toBe(false);
 
     const created = captureJson(() =>
@@ -473,9 +663,15 @@ exit 1
     ) as {
       manifestPath: string;
       files: Array<{ action: string }>;
+      builder: { skill: string; spec: string; reviewChecklist: string[] };
     };
 
     expect(created.files.map((file) => file.action)).toEqual(["created", "created", "created"]);
+    expect(created.builder).toMatchObject({
+      skill: "ravi-dev-app-creator",
+      spec: "apps/builder",
+    });
+    expect(created.builder.reviewChecklist.length).toBeGreaterThan(5);
     expect(existsSync(created.manifestPath)).toBe(true);
 
     const check = captureJson(() => commands.check("fake-app", true)) as {
@@ -486,6 +682,7 @@ exit 1
     expect(check.results[0]).toMatchObject({ id: "fake-app", errors: [] });
   });
 
+  // Importing a first-party group loads the complete command registry.
   it("imports first-party Ravi CLI groups from the decorated registry", () => {
     makeRepo();
     const commands = new AppsCommands();
@@ -508,8 +705,12 @@ exit 1
       source: string;
       confidence: string;
       operationCandidates: Array<{ id: string; command: string }>;
-      manifest: { operations: Record<string, { command?: string }> };
+      manifest: {
+        context: { allow: string[] };
+        operations: Record<string, { command?: string }>;
+      };
       files: Array<{ kind: string; path: string; action: string }>;
+      reviewRequired: string[];
       warnings: string[];
     };
 
@@ -519,8 +720,10 @@ exit 1
     expect(imported.manifest.operations["imported-apps.list"]).toMatchObject({
       command: "ravi apps list {args} --json",
     });
+    expect(imported.manifest.context.allow).toEqual(["execute:group:apps"]);
+    expect(imported.reviewRequired.join("\n")).toContain("Review inferred child capability execute:group:apps");
     expect(imported.warnings.join("\n")).toContain("assumes generated operations should use --json");
-  });
+  }, 20_000);
 
   it("runs scaffolded app operations through the explicit app router command", async () => {
     makeRepo();
@@ -553,5 +756,140 @@ exit 1
       operationId: "music.check",
       result: { ok: true, checked: 1 },
     });
+
+    const list = (await captureJsonAsync(() => commands.run("music", "list", ["alpha", "beta"], true))) as {
+      ok: boolean;
+      appId: string;
+      operationId: string;
+      interface: string;
+      result: { items: unknown[]; total: number; args: string[] };
+    };
+
+    expect(list).toMatchObject({
+      ok: true,
+      appId: "music",
+      operationId: "music.list",
+      interface: "cli",
+      result: { items: [], total: 0, args: ["alpha", "beta"] },
+    });
+  });
+
+  it("raises a stable contract error at the public command boundary", async () => {
+    makeRepo();
+    const commands = new AppsCommands();
+
+    try {
+      await commands.run("missing-app", "check", [], true);
+      throw new Error("expected apps run to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect(error).toMatchObject({
+        op: "apps run",
+        code: "not_found",
+        exitCode: 1,
+      });
+      expect(JSON.stringify((error as ContractError).envelope())).not.toContain("App not found: missing-app");
+    }
+  });
+
+  it("returns a minimal policy envelope before a mutating app operation", async () => {
+    const root = makeRepo();
+    writeWriterApp(root);
+    const commands = new AppsCommands();
+    const originalLog = console.log;
+    const output: string[] = [];
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+
+    let error: unknown;
+    try {
+      await commands.run("writer", "create", ["PRIVATE_ARGUMENT_SENTINEL"], true);
+    } catch (caught) {
+      error = caught;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+    expect(output).toHaveLength(1);
+    const envelope = JSON.parse(output[0] ?? "{}");
+    expect(envelope).toMatchObject({
+      success: false,
+      op: "apps run",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        plan: {
+          appId: "writer",
+          operationId: "writer.create",
+          interface: "builtin",
+          mutating: true,
+          argumentCount: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
+
+    const executed = (await captureJsonAsync(() =>
+      commands.run("writer", "create", ["PRIVATE_ARGUMENT_SENTINEL"], true, true),
+    )) as { ok: boolean; operationId: string };
+    expect(executed).toMatchObject({ ok: true, operationId: "writer.create" });
+  });
+
+  it("keeps an app REBAC denial as denied in CLI, tool, gateway, and audit", async () => {
+    const root = makeRepo();
+    writeWriterApp(root);
+    const deniedContext = contextWithCapabilities([
+      { permission: "mutate", objectType: "apps", objectId: "run", source: "test" },
+      { permission: "use", objectType: "app", objectId: "writer", source: "test" },
+    ]);
+    const toolContext = { agentId: deniedContext.agentId, context: deniedContext, suppressCliOutput: true };
+    const commands = new AppsCommands();
+
+    let cliError: unknown;
+    try {
+      await runWithContext(toolContext, () => commands.run("writer", "create", [], true, true));
+    } catch (error) {
+      cliError = error;
+    }
+    expect(cliError).toBeInstanceOf(ContractError);
+    expect(cliError).toMatchObject({ code: "PERMISSION_DENIED", exitCode: 1 });
+    expect(contractFailureOutcome(cliError as ContractError)).toBe("denied");
+
+    const tool = extractTools([AppsCommands]).find((candidate) => candidate.name === "apps_run");
+    expect(tool).toBeDefined();
+    const toolResult = await runWithContext(toolContext, () =>
+      tool!.handler({ id: "writer", operation: "create", args: [], execute: true }),
+    );
+    expect(toolResult).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
+    expect(JSON.parse(toolResult.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      op: "apps run",
+      error: { code: "PERMISSION_DENIED", message: "Ravi app operation was denied." },
+    });
+
+    const command = buildRegistry([AppsCommands]).commands.find((candidate) => candidate.fullName === "apps.run");
+    expect(command).toBeDefined();
+    const audits: AuditEvent[] = [];
+    const gatewayResult = await dispatch(
+      command!,
+      { id: "writer", operation: "create", args: [], execute: true },
+      {},
+      {
+        contextRecord: deniedContext,
+        emitAudit: (event) => {
+          audits.push(event);
+        },
+      },
+    );
+    expect(gatewayResult.response.status).toBe(403);
+    expect(await gatewayResult.response.json()).toMatchObject({
+      success: false,
+      op: "apps run",
+      exitCode: 1,
+      outcome: "denied",
+      error: { code: "PERMISSION_DENIED", message: "Ravi app operation was denied." },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ outcome: "denied", exitCode: 1, errorCode: "PERMISSION_DENIED" });
   });
 });

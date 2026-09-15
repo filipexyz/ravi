@@ -1,17 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { saveMessage } from "../db.js";
+import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import { attachChatToSession } from "../router/sessions.js";
+import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
   getSession,
+  updateSessionName,
+  updateSessionSource,
   updateRuntimeProviderState,
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
+import { getSessionTurnUsageSummary } from "../router/sessions.js";
 import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
@@ -23,6 +26,8 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
@@ -32,8 +37,23 @@ import {
   runRuntimeEventLoop,
   shouldSuppressUserFacingRuntimeLimitFailure,
 } from "./host-event-loop.js";
+import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
+import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
-import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
+import {
+  formatUserFacingTurnFailure,
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+} from "./public-failure.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
+import {
+  buildRuntimeStartRequest,
+  resolveRuntimeCredentialUpstreamProvider,
+  resolveRuntimePromptSource,
+} from "./runtime-request-builder.js";
+import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -44,6 +64,7 @@ import type {
 } from "./types.js";
 
 let stateDir: string | null = null;
+let crashRecovery: RuntimeCrashRecoveryCoordinator;
 
 const SESSION_KEY = "agent:main:main";
 const SESSION_NAME = "trace-runtime";
@@ -135,11 +156,15 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
     pendingAbort: false,
     agentMode: "sentinel",
     traceRunId: "run-1",
+    toolEffectFence: "host_write_ahead",
     ...overrides,
   };
 }
 
-function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
+function makeRuntimeSession(
+  events: RuntimeEvent[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   return {
     provider: PROVIDER,
     events: (async function* () {
@@ -148,10 +173,42 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
       }
     })(),
     interrupt: async () => {},
+    ...options,
   };
 }
 
-function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+function makeRuntimeSessionThenHang(
+  events: RuntimeEvent[],
+  lifecycle?: string[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
+  let resolveClose!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClose = resolve;
+  });
+  return {
+    provider: PROVIDER,
+    events: (async function* () {
+      for (const event of events) {
+        yield event;
+      }
+      await closed;
+    })(),
+    interrupt: async () => {
+      lifecycle?.push("interrupt");
+    },
+    close: async () => {
+      lifecycle?.push("close");
+      resolveClose();
+    },
+    ...options,
+  };
+}
+
+function makeNeverEndingRuntimeSession(
+  lifecycle?: string[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   let resolveClose!: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClose = resolve;
@@ -168,10 +225,14 @@ function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
         };
       },
     },
-    interrupt: async () => {},
+    interrupt: async () => {
+      lifecycle?.push("interrupt");
+    },
     close: async () => {
+      lifecycle?.push("close");
       resolveClose();
     },
+    ...options,
   };
 }
 
@@ -310,6 +371,26 @@ function seedAdapterTrace(streaming: RuntimeHostStreamingSession, turnId = "turn
   streaming.currentTraceSystemPromptSha256 = trace.systemPromptSha256;
   streaming.currentTraceRequestBlobSha256 = trace.requestBlobSha256;
   streaming.currentTraceTurnTerminalRecorded = false;
+  const provenance = classifyTurnProvenance({ source: streaming.currentSource });
+  const attempt = crashRecovery.startTurnAttempt({
+    turnId: trace.turnId,
+    runId: streaming.traceRunId ?? "run-1",
+    sessionKey: SESSION_KEY,
+    sessionName: SESSION_NAME,
+    agentId: AGENT_ID,
+    provider: PROVIDER,
+    model: streaming.currentModel,
+    startedAt: trace.startedAt,
+    requestBlobSha256: trace.requestBlobSha256,
+    userPromptSha256: trace.userPromptSha256,
+    systemPromptSha256: trace.systemPromptSha256,
+    originKind: provenance.origin,
+    source: streaming.currentSource ?? null,
+    turnProvenance: provenance,
+    deliveryBarrier: "after_tool",
+    pendingIds: streaming.currentTurnPendingIds ?? [],
+  });
+  streaming.currentCrashRecoveryAttemptId = attempt.attemptId;
   bindRuntimeCredentialAttemptTurn(streaming.currentRuntimeCredential?.attemptId, turnId);
   markRuntimeCredentialAttemptStarted(streaming.currentRuntimeCredential?.attemptId);
 }
@@ -334,19 +415,30 @@ async function runTraceLoop(
     stashedMessages: new Map(),
     safeEmit: async () => {},
     drainPendingStarts: () => {},
+    crashRecovery,
     ...overrides,
   });
 }
 
 describe("runtime session trace instrumentation", () => {
+  let natsEmitSpy: ReturnType<typeof spyOn> | undefined;
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
+    crashRecovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "trace-test" });
+    crashRecovery.start();
     resetUserFacingRuntimeLimitSuppressionsForTest();
+    natsEmitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
   });
 
   afterEach(async () => {
+    natsEmitSpy?.mockRestore();
+    natsEmitSpy = undefined;
     resetUserFacingRuntimeLimitSuppressionsForTest();
+    if (crashRecovery.acceptingDeliveries) {
+      crashRecovery.stopGracefully("test_cleanup");
+    }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -361,8 +453,13 @@ describe("runtime session trace instrumentation", () => {
       pendingMessages: [
         createQueuedRuntimeUserMessage({
           prompt: "hello trace",
+          source,
           deliveryBarrier: "after_tool",
           taskBarrierTaskId: "task-1",
+        }),
+        createQueuedRuntimeUserMessage({
+          prompt: "source-less follow-up",
+          deliveryBarrier: "after_tool",
         }),
       ],
     });
@@ -400,6 +497,7 @@ describe("runtime session trace instrumentation", () => {
       streamingSession: streaming,
       stashedMessages: new Map(),
       defaultRuntimeProviderId: "claude",
+      crashRecovery,
     });
 
     expect(runtimeRequest.env).toMatchObject({
@@ -414,10 +512,22 @@ describe("runtime session trace instrumentation", () => {
 
     const yielded = await runtimeRequest.prompt.next();
     expect(yielded.value?.message.content).toBe("hello trace");
-    streaming.done = true;
-    streaming.onTurnComplete?.();
-    await runtimeRequest.prompt.return?.(undefined);
-
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    expect(attemptId).toBeTruthy();
+    expect(getRuntimeTurnAttempt(attemptId!)).toMatchObject({
+      status: "running",
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: AGENT_ID,
+      provider: PROVIDER,
+      model: MODEL,
+      originKind: "task",
+      deliveryBarrier: "after_tool",
+      taskBarrierTaskId: "task-1",
+      pendingIds: [streaming.currentTurnPendingIds?.[0]],
+      startedTool: false,
+      materializedOutput: false,
+    });
     const events = listSessionEvents(SESSION_KEY);
     const adapterRequest = events.find((event) => event.eventType === "adapter.request");
     expect(adapterRequest?.messageId).toBe("wamid-1");
@@ -494,6 +604,1034 @@ describe("runtime session trace instrumentation", () => {
         }),
       ]),
     });
+
+    streaming.turnActive = false;
+    streaming.onTurnComplete?.();
+    const sourceLessTurn = await runtimeRequest.prompt.next();
+    expect(sourceLessTurn.value?.message.content).toBe("source-less follow-up");
+    expect(streaming.currentSource).toBeUndefined();
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("serializes attached surfaces and snapshots the reply target for each turn", async () => {
+    const slackChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C123",
+      chatType: "group",
+      title: "Slack test",
+    });
+    const whatsappChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "whatsapp-main",
+      platformChatId: "wa-test@s.whatsapp.net",
+      chatType: "dm",
+      title: "WhatsApp test",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: false });
+
+    const slackSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: slackChat.platformChatId,
+      canonicalChatId: slackChat.id,
+    };
+    const whatsappSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "whatsapp-main",
+      instanceId: "whatsapp-main",
+      chatId: whatsappChat.platformChatId,
+      canonicalChatId: whatsappChat.id,
+    };
+    const streaming = makeStreamingSession({
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({ prompt: "from Slack", source: slackSource }),
+        createQueuedRuntimeUserMessage({ prompt: "from WhatsApp", source: whatsappSource }),
+      ],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-surface-order",
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "from Slack", source: slackSource },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: slackSource,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).value?.message.content).toBe("from Slack");
+    expect(streaming.currentSource?.canonicalChatId).toBe(slackChat.id);
+    expect(streaming.currentReplyTarget?.canonicalChatId).toBe(slackChat.id);
+
+    streaming.turnActive = false;
+    streaming.onTurnComplete?.();
+
+    expect((await runtimeRequest.prompt.next()).value?.message.content).toBe("from WhatsApp");
+    expect(streaming.currentSource?.canonicalChatId).toBe(whatsappChat.id);
+    expect(streaming.currentReplyTarget?.canonicalChatId).toBe(whatsappChat.id);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("keeps a Slack turn ahead of later WhatsApp input while a WhatsApp tool turn is active", async () => {
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const whatsappChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "whatsapp-main",
+      platformChatId: "wa-busy@s.whatsapp.net",
+      chatType: "dm",
+      title: "WhatsApp busy turn",
+    });
+    const slackChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "D123",
+      chatType: "dm",
+      title: "Slack queued turn",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
+
+    const whatsappSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "whatsapp-main",
+      instanceId: "whatsapp-main",
+      chatId: whatsappChat.platformChatId,
+      canonicalChatId: whatsappChat.id,
+      sourceMessageId: "wamid-active",
+    };
+    const slackSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: slackChat.platformChatId,
+      canonicalChatId: slackChat.id,
+      sourceMessageId: "slack-during-tool",
+    };
+    const laterWhatsappSource: RuntimeMessageTarget = {
+      ...whatsappSource,
+      sourceMessageId: "wamid-later",
+    };
+    const activeWhatsapp = createQueuedRuntimeUserMessage({
+      prompt: "long WhatsApp turn",
+      source: whatsappSource,
+      deliveryBarrier: "after_tool",
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: whatsappSource,
+      currentEffort: "xhigh",
+      pendingMessages: [activeWhatsapp],
+      turnActive: false,
+    });
+    const provider: SessionRuntimeProvider = {
+      id: "codex",
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-cross-surface-tool-order",
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
+      session: makeSession(),
+      agent: makeAgent({ provider: "codex" }),
+      runtimeProviderId: "codex",
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: whatsappSource,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "codex",
+      crashRecovery,
+    });
+    const providerTurns: Array<{ prompt: string; sourceChatId?: string; replyChatId?: string }> = [];
+    const readProviderTurn = async () => {
+      const next = await runtimeRequest.prompt.next();
+      if (next.done) throw new Error("runtime prompt stream ended before the queued cross-surface turn");
+      providerTurns.push({
+        prompt: next.value.message.content,
+        sourceChatId: streaming.currentSource?.canonicalChatId,
+        replyChatId: streaming.currentReplyTarget?.canonicalChatId,
+      });
+    };
+
+    let interruptCalls = 0;
+    const toolStatesWhenQueued: boolean[] = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: "codex",
+      interrupt: async () => {
+        interruptCalls++;
+      },
+      events: (async function* () {
+        await readProviderTurn();
+        yield {
+          type: "tool.started",
+          toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
+        } satisfies RuntimeEvent;
+
+        toolStatesWhenQueued.push(streaming.toolRunning);
+        await dispatcher.handlePromptImmediate(SESSION_NAME, {
+          prompt: "Slack while WhatsApp is busy",
+          source: slackSource,
+          context: {
+            channelId: "slack",
+            channelName: "Slack",
+            accountId: slackSource.accountId,
+            instanceId: slackSource.instanceId,
+            chatId: slackSource.chatId,
+            canonicalChatId: slackSource.canonicalChatId,
+            messageId: slackSource.sourceMessageId!,
+            senderId: "U123",
+            isGroup: false,
+            timestamp: Date.now(),
+          },
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        });
+        await dispatcher.handlePromptImmediate(SESSION_NAME, {
+          prompt: "later WhatsApp direction",
+          source: laterWhatsappSource,
+          context: {
+            channelId: "whatsapp",
+            channelName: "WhatsApp",
+            accountId: laterWhatsappSource.accountId,
+            instanceId: laterWhatsappSource.instanceId,
+            chatId: laterWhatsappSource.chatId,
+            canonicalChatId: laterWhatsappSource.canonicalChatId,
+            messageId: laterWhatsappSource.sourceMessageId!,
+            senderId: "5511999999999",
+            isGroup: false,
+            timestamp: Date.now() + 1,
+          },
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        });
+        yield {
+          type: "tool.completed",
+          toolUseId: "tool-long-whatsapp",
+          toolName: "Bash",
+          content: "ok",
+        } satisfies RuntimeEvent;
+        yield { type: "assistant.message", text: "original WhatsApp response" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-whatsapp",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+
+        await readProviderTurn();
+        yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-slack",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+
+        await readProviderTurn();
+        yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-later-whatsapp",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+      })(),
+    };
+    streaming.queryHandle = runtimeSession;
+
+    const releaseAfterTool = dispatcher as unknown as {
+      releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
+    };
+    let toolBarrierReleaseCalls = 0;
+    const responses: Array<{ response?: string; target?: RuntimeMessageTarget }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as (typeof responses)[number]);
+      }
+    });
+
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        agent: makeAgent({ provider: "codex" }),
+        streamingSessions: dispatcher.streamingSessions,
+        onToolBarrierReleased: (sessionName) => {
+          toolBarrierReleaseCalls++;
+          return releaseAfterTool.releaseQueuedPromptsAfterTool(sessionName);
+        },
+      });
+    } finally {
+      emitSpy.mockRestore();
+      streaming.done = true;
+      streaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(toolStatesWhenQueued).toEqual([true]);
+    expect(toolBarrierReleaseCalls).toBe(1);
+    expect(interruptCalls).toBe(0);
+    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy")).toHaveLength(
+      2,
+    );
+    expect(providerTurns).toEqual([
+      {
+        prompt: "long WhatsApp turn",
+        sourceChatId: whatsappChat.id,
+        replyChatId: whatsappChat.id,
+      },
+      {
+        prompt:
+          "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+          "Slack while WhatsApp is busy",
+        sourceChatId: slackChat.id,
+        replyChatId: slackChat.id,
+      },
+      {
+        prompt:
+          "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
+          "later WhatsApp direction",
+        sourceChatId: whatsappChat.id,
+        replyChatId: whatsappChat.id,
+      },
+    ]);
+    expect(
+      responses.map((response) => ({
+        response: response.response,
+        targetChatId: response.target?.canonicalChatId,
+      })),
+    ).toEqual([
+      { response: "original WhatsApp response", targetChatId: whatsappChat.id },
+      { response: "Slack response", targetChatId: slackChat.id },
+      { response: "later WhatsApp response", targetChatId: whatsappChat.id },
+    ]);
+  });
+
+  it("persists operator/HTTP sessions.send as raw user text and keeps inbound surface hints", async () => {
+    const slackSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: "C123",
+      canonicalChatId: "chat_slack",
+      sourceMessageId: "123.456",
+    };
+    const activeMessage = createQueuedRuntimeUserMessage({
+      prompt: "active inbound turn",
+      source,
+      deliveryBarrier: "after_tool",
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: source,
+      currentEffort: "xhigh",
+      pendingMessages: [activeMessage],
+      currentTurnPendingIds: [activeMessage.pendingId!],
+      turnActive: true,
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "responde só: pong",
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      source: slackSource,
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+    });
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "hello from gateway",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+    });
+
+    await dispatcher.handlePromptImmediate(SESSION_NAME, {
+      prompt: "hello from slack",
+      source: slackSource,
+      context: {
+        channelId: "slack",
+        channelName: "Slack",
+        accountId: slackSource.accountId,
+        instanceId: slackSource.instanceId,
+        chatId: slackSource.chatId,
+        canonicalChatId: slackSource.canonicalChatId,
+        messageId: slackSource.sourceMessageId!,
+        senderId: "U123",
+        isGroup: false,
+        timestamp: Date.now(),
+      },
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+    });
+
+    const history = getRecentHistory(SESSION_NAME, 10);
+    const userRows = history.filter((message) => message.role === "user").map((message) => message.content);
+    expect(userRows).toEqual([
+      "responde só: pong",
+      "hello from gateway",
+      "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
+    ]);
+    expect(userRows[0]).not.toContain("[session surface]");
+    expect(userRows[1]).not.toContain("waiting CLI");
+    expect(userRows[1]).not.toContain("no inbound chat");
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
+      "active inbound turn",
+      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong",
+      "[session surface] This turn has no inbound chat. A normal reply stays on this session.\nhello from gateway",
+      "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
+    ]);
+    expect(streaming.pendingMessages[1]?.launchPrompt?.prompt).toBe("responde só: pong");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._runtimePrompt).toContain("waiting CLI");
+    expect(streaming.pendingMessages[1]?.launchPrompt?._sessionSurfaceHintText).toContain("waiting CLI");
+    expect(streaming.pendingMessages[2]?.launchPrompt?.prompt).toBe("hello from gateway");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._runtimePrompt).toContain("stays on this session");
+    expect(streaming.pendingMessages[2]?.launchPrompt?._sessionSurfaceHintText).toContain("stays on this session");
+  });
+
+  it("queues a second sessions.send during an in-flight turn and emits a terminal for both", async () => {
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const firstSend = createQueuedRuntimeUserMessage({
+      prompt: "first overlapping send",
+      deliveryBarrier: "after_response",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: undefined,
+      currentEffort: "low",
+      pendingMessages: [firstSend],
+      currentTurnPendingIds: firstSend.pendingId ? [firstSend.pendingId] : [],
+      turnActive: false,
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-overlap-send",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "first overlapping send",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        deliveryBarrier: "after_response",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: PROVIDER,
+      crashRecovery,
+    });
+
+    const providerTurns: string[] = [];
+    const readProviderTurn = async () => {
+      const next = await runtimeRequest.prompt.next();
+      if (next.done) throw new Error("runtime prompt stream ended before the queued overlapping send");
+      providerTurns.push(next.value.message.content);
+    };
+
+    let interruptCalls = 0;
+    let queuedDuringInFlight = false;
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {
+        interruptCalls++;
+      },
+      events: (async function* () {
+        await readProviderTurn();
+        await dispatcher.handlePromptImmediate(SESSION_NAME, {
+          prompt: "second overlapping send",
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+        });
+        queuedDuringInFlight = streaming.pendingMessages.some((message) =>
+          message.message.content.includes("second overlapping send"),
+        );
+        expect(queuedDuringInFlight).toBe(true);
+        expect(interruptCalls).toBe(0);
+        expect(
+          listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+        ).toHaveLength(1);
+
+        yield { type: "assistant.message", text: "first reply" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-first-send",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+
+        await readProviderTurn();
+        yield { type: "assistant.message", text: "second reply" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-second-send",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+      })(),
+    };
+    streaming.queryHandle = runtimeSession;
+
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        agent: makeAgent(),
+        streamingSessions: dispatcher.streamingSessions,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      streaming.done = true;
+      streaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(queuedDuringInFlight).toBe(true);
+    expect(interruptCalls).toBe(0);
+    expect(providerTurns.some((prompt) => prompt.includes("first overlapping send"))).toBe(true);
+    expect(providerTurns.some((prompt) => prompt.includes("second overlapping send"))).toBe(true);
+
+    const runtimeTerminals = emitted.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${SESSION_NAME}.runtime` &&
+        (entry.data.type === "turn.complete" ||
+          entry.data.type === "turn.failed" ||
+          entry.data.type === "turn.interrupted"),
+    );
+    expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete", "turn.complete"]);
+
+    const history = getRecentHistory(SESSION_NAME, 10);
+    expect(history.filter((message) => message.role === "user").map((message) => message.content)).toEqual(
+      expect.arrayContaining(["second overlapping send"]),
+    );
+    expect(history.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
+      "first reply",
+      "second reply",
+    ]);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("complete");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
+  });
+
+  it("rebounds a session-relay continue without _cliDestination to the primary attached output", async () => {
+    const leftoverChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "leftover-emit@s.whatsapp.net",
+      chatType: "dm",
+      title: "leftover lastChannel",
+    });
+    const inboundChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C-inbound-emit",
+      chatType: "group",
+      title: "inbound slack",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: leftoverChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: inboundChat.id, setOutputTarget: false });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: leftoverChat.platformChatId,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const leftoverSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: leftoverChat.platformChatId,
+      canonicalChatId: leftoverChat.id,
+    };
+    const inboundSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: inboundChat.platformChatId,
+      canonicalChatId: inboundChat.id,
+    };
+    const relayPrompt = {
+      prompt: "hello from gateway",
+      source: leftoverSource,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(relayPrompt, session)).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: leftoverSource,
+      }).source,
+    ).toBe("source-chat");
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: undefined,
+      }).target?.canonicalChatId,
+    ).toBe(leftoverChat.id);
+
+    const relayStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: leftoverSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(relayPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const runtimeResolution = {
+      options: { model: MODEL },
+      sources: { model: "agent_default" as const, effort: null, thinking: null },
+      hasTaskRuntimeContext: false,
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-session-relay-emit",
+      sessionName: SESSION_NAME,
+      prompt: relayPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution,
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(relayPrompt, session),
+      streamingSession: relayStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(relayStreaming.currentSource).toBeUndefined();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(leftoverChat.id);
+
+    const relayEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
+    const relayEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        relayEmits.push(data as (typeof relayEmits)[number]);
+      }
+    });
+    try {
+      await runTraceLoop(
+        relayStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "pong from session" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-relay",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      relayEmitSpy.mockRestore();
+      relayStreaming.done = true;
+      relayStreaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(relayEmits).toHaveLength(1);
+    expect(relayEmits[0]).toMatchObject({
+      response: "pong from session",
+      target: { canonicalChatId: leftoverChat.id },
+    });
+    const assistantRows = getRecentHistory(SESSION_NAME, 10).filter((message) => message.role === "assistant");
+    expect(assistantRows.map((message) => message.content)).toEqual(["pong from session"]);
+
+    const inboundPrompt = {
+      prompt: "hello from slack",
+      source: inboundSource,
+    };
+    const inboundStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: inboundSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(inboundPrompt)],
+    });
+    const inboundRequest = await buildRuntimeStartRequest({
+      runId: "run-inbound-emit",
+      sessionName: SESSION_NAME,
+      prompt: inboundPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution,
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(inboundPrompt, session),
+      streamingSession: inboundStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await inboundRequest.runtimeRequest.prompt.next()).done).toBe(false);
+    expect(inboundStreaming.currentSource?.canonicalChatId).toBe(inboundChat.id);
+    expect(inboundStreaming.currentReplyTarget?.canonicalChatId).toBe(inboundChat.id);
+
+    const inboundEmits: Array<{ response?: unknown; target?: RuntimeMessageTarget }> = [];
+    const inboundEmitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        inboundEmits.push(data as (typeof inboundEmits)[number]);
+      }
+    });
+    try {
+      await runTraceLoop(
+        inboundStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "inbound slack reply" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-inbound",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      inboundEmitSpy.mockRestore();
+      inboundStreaming.done = true;
+      inboundStreaming.onTurnComplete?.();
+      await inboundRequest.runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(inboundEmits).toHaveLength(1);
+    expect(inboundEmits[0]).toMatchObject({
+      response: "inbound slack reply",
+      target: { canonicalChatId: inboundChat.id },
+    });
+    expect(
+      getRecentHistory(SESSION_NAME, 10)
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.content),
+    ).toEqual(["pong from session", "inbound slack reply"]);
+  });
+
+  it("rebounds a session-relay continue when leftover lastChannel is group: and source is baileys @g.us", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+    });
+    const session = getSession(SESSION_KEY)!;
+    const recentContextSource: RuntimeMessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+    const relayPrompt = {
+      prompt: "continue after tools",
+      source: recentContextSource,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(relayPrompt, session)).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey: SESSION_KEY,
+        fallback: recentContextSource,
+      }).target?.canonicalChatId,
+    ).toBe(groupChat.id);
+
+    const relayStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: recentContextSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(relayPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-baileys-group-form-relay",
+      sessionName: SESSION_NAME,
+      prompt: relayPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(relayPrompt, session),
+      streamingSession: relayStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(relayStreaming.currentSource).toBeUndefined();
+    expect(relayStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(relayStreaming.currentReplyTarget?.chatId).toBe("group:test-group-1");
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("keeps the previous bound chat when a successor turn loses currentSource", async () => {
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic attached group",
+    });
+    attachChatToSession({
+      sessionKey: SESSION_KEY,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const inboundSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+    const successorPrompt = {
+      prompt: "continue after tools",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    const successorStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: inboundSource,
+      lastBoundReplyTarget: inboundSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(successorPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-successor-source-loss",
+      sessionName: SESSION_NAME,
+      prompt: successorPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: successorStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(successorStreaming.currentSource).toBeUndefined();
+    expect(successorStreaming.currentReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    expect(successorStreaming.lastBoundReplyTarget?.canonicalChatId).toBe(groupChat.id);
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("keeps CLI-only _cliDestination continues fail-closed for chat emit", async () => {
+    const leftoverChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "leftover-cli-dest@s.whatsapp.net",
+      chatType: "dm",
+      title: "leftover lastChannel",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: leftoverChat.id, setOutputTarget: true });
+    updateSessionSource(SESSION_KEY, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: leftoverChat.platformChatId,
+    });
+    const session = getSession(SESSION_KEY)!;
+    const leftoverSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: leftoverChat.platformChatId,
+      canonicalChatId: leftoverChat.id,
+    };
+    const cliPrompt = {
+      prompt: "hello from waiting CLI",
+      source: leftoverSource,
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    };
+    expect(resolveRuntimePromptSource(cliPrompt, session)).toBeUndefined();
+
+    const cliStreaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: leftoverSource,
+      pendingMessages: [createQueuedRuntimeUserMessage(cliPrompt)],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-cli-destination-emit",
+      sessionName: SESSION_NAME,
+      prompt: cliPrompt,
+      session,
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default" as const, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: resolveRuntimePromptSource(cliPrompt, session),
+      streamingSession: cliStreaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).done).toBe(false);
+    expect(cliStreaming.currentSource).toBeUndefined();
+    expect(cliStreaming.currentReplyTarget).toBeNull();
+    await runtimeRequest.prompt.return?.(undefined);
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
@@ -557,6 +1695,7 @@ describe("runtime session trace instrumentation", () => {
         streamingSession: streaming,
         stashedMessages: new Map(),
         defaultRuntimeProviderId: "claude",
+        crashRecovery,
       }),
     ).rejects.toThrow("No managed runtime credential could be resolved");
   });
@@ -632,6 +1771,7 @@ describe("runtime session trace instrumentation", () => {
         streamingSession: streaming,
         stashedMessages: new Map(),
         defaultRuntimeProviderId: "claude",
+        crashRecovery,
       });
 
       expect(resolveRuntimeCredentialUpstreamProvider("codex", "gpt-5")).toBe("openai");
@@ -670,6 +1810,8 @@ describe("runtime session trace instrumentation", () => {
   it("records tool events and terminal turn.complete state from the runtime event loop", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId!;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
     await runTraceLoop(
       streaming,
@@ -677,6 +1819,10 @@ describe("runtime session trace instrumentation", () => {
         {
           type: "tool.started",
           toolUse: { id: "tool-1", name: "Bash", input: { cmd: "rg trace" } },
+        },
+        {
+          type: "tool.progress",
+          toolUseId: "tool-1",
         },
         {
           type: "tool.completed",
@@ -697,6 +1843,11 @@ describe("runtime session trace instrumentation", () => {
           usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 1 },
         },
       ]),
+      {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
     );
 
     const events = listSessionEvents(SESSION_KEY);
@@ -706,6 +1857,7 @@ describe("runtime session trace instrumentation", () => {
       "tool.end",
       "turn.complete",
     ]);
+    expect(emitted.some(({ data }) => data.type === "tool.progress")).toBe(false);
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
     expect(events.map((event) => event.runId)).toEqual(["run-1", "run-1", "run-1", "run-1"]);
     expect(events.map((event) => event.turnId)).toEqual(["turn-1", "turn-1", "turn-1", "turn-1"]);
@@ -714,10 +1866,17 @@ describe("runtime session trace instrumentation", () => {
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
     expect(turn?.inputTokens).toBe(10);
     expect(turn?.outputTokens).toBe(4);
+    expect(getRuntimeTurnAttempt(crashRecoveryAttemptId)).toMatchObject({
+      status: "complete",
+      completedAt: turn?.completedAt,
+      startedTool: true,
+      materializedOutput: false,
+    });
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["trace-skill"]);
-    expect(
-      (getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot).loadedSkills,
-    ).toEqual(["trace-skill"]);
+    const persistedSkillVisibility = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as
+      | RuntimeSkillVisibilitySnapshot
+      | undefined;
+    expect(persistedSkillVisibility?.loadedSkills).toEqual(["trace-skill"]);
     expect(events[1]).toMatchObject({
       eventType: "tool.start",
       canonicalChatId: "chat_1",
@@ -725,6 +1884,91 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+    expect(streaming.currentCrashRecoveryTerminal).toMatchObject({
+      status: "complete",
+      startedTool: true,
+      materializedOutput: false,
+    });
+  });
+
+  it("releases queued delivery barriers after a tool completes without exposing callback failures", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-barrier-release");
+    const releasedWithToolRunning: boolean[] = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-release", name: "Bash", input: { cmd: "true" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-release",
+          toolName: "Bash",
+          content: "ok",
+        },
+        { type: "turn.interrupted" },
+      ]),
+      {
+        onToolBarrierReleased: () => {
+          releasedWithToolRunning.push(streaming.toolRunning);
+          streaming.currentTurnSuperseded = true;
+          streaming.interrupted = true;
+          throw new Error("synthetic barrier release failure");
+        },
+      },
+    );
+
+    expect(releasedWithToolRunning).toEqual([false]);
+  });
+
+  it("waits for a Codex dynamic tool result to cross JSON-RPC before releasing the barrier", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-result-delivery");
+    const afterCompletion: Array<{ toolRunning: boolean; deliveryPending: boolean }> = [];
+    const released: Array<{ resultDelivered: boolean; toolRunning: boolean; deliveryPending: boolean }> = [];
+    let resultDelivered = false;
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: "codex",
+      events: (async function* () {
+        yield {
+          type: "tool.started",
+          toolUse: { id: "tool-delivery", name: "tools_invoke", input: {} },
+        } satisfies RuntimeEvent;
+        yield {
+          type: "tool.completed",
+          toolUseId: "tool-delivery",
+          toolName: "tools_invoke",
+          content: "ok",
+          metadata: { item: { id: "tool-delivery", type: "dynamic_tool_call", status: "completed" } },
+        } satisfies RuntimeEvent;
+        afterCompletion.push({
+          toolRunning: streaming.toolRunning,
+          deliveryPending: Boolean(streaming.toolResultDeliveryPending),
+        });
+        resultDelivered = true;
+        yield { type: "tool.result_delivered", toolCallId: "tool-delivery" } satisfies RuntimeEvent;
+        yield { type: "turn.interrupted" } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      onToolBarrierReleased: () => {
+        released.push({
+          resultDelivered,
+          toolRunning: streaming.toolRunning,
+          deliveryPending: Boolean(streaming.toolResultDeliveryPending),
+        });
+        streaming.currentTurnSuperseded = true;
+        streaming.interrupted = true;
+      },
+    });
+
+    expect(afterCompletion).toEqual([{ toolRunning: true, deliveryPending: true }]);
+    expect(released).toEqual([{ resultDelivered: true, toolRunning: false, deliveryPending: false }]);
   });
 
   it("marks the active credential attempt succeeded on a successful terminal turn", async () => {
@@ -878,7 +2122,7 @@ describe("runtime session trace instrumentation", () => {
       });
   }
 
-  function attachSpeakingOutputChat(): void {
+  function attachSpeakingOutputChat(): RuntimeMessageTarget {
     const outputChat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -887,6 +2131,13 @@ describe("runtime session trace instrumentation", () => {
       title: "compaction-gate",
     });
     attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+    return {
+      ...source,
+      accountId: "main",
+      instanceId: "main",
+      chatId: outputChat.platformChatId,
+      canonicalChatId: outputChat.id,
+    };
   }
 
   const compactingThenIdle: RuntimeEvent[] = [
@@ -899,13 +2150,117 @@ describe("runtime session trace instrumentation", () => {
     },
   ];
 
-  it("emits external compaction announcements for a human/channel turn", async () => {
-    attachSpeakingOutputChat();
+  it("projects a Codex imageGeneration completion into ordered response media without persisting base64", async () => {
+    const attachedSource = attachSpeakingOutputChat();
+    const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
     const streaming = makeStreamingSession({
       agentMode: "active",
-      currentTurnProvenance: classifyTurnProvenance({ source }),
+      currentSource: attachedSource,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
+    });
+    seedAdapterTrace(streaming, "turn-generated-image");
+
+    const responses: Array<{
+      response?: string;
+      content?: Array<{
+        type?: string;
+        text?: string;
+        media?: { type?: string; filePath?: string; filename?: string; mimeType?: string; source?: string };
+      }>;
+    }> = [];
+    const emitted: Array<{ topic: string; data: unknown }> = [];
+    let generatedFilePath: string | undefined;
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as (typeof responses)[number]);
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        {
+          ...makeRuntimeSession([
+            {
+              type: "tool.started",
+              toolUse: { id: "image-gen-1", name: "image_gen.imagegen", input: { prompt: "tiny image" } },
+            },
+            {
+              type: "tool.completed",
+              toolUseId: "image-gen-1",
+              toolName: "image_gen.imagegen",
+              content: { id: "generated-image-1", result: imageBase64 },
+              rawEvent: {
+                type: "item.completed",
+                item: { id: "provider-item-1", type: "imageGeneration", result: imageBase64 },
+              },
+              metadata: {
+                provider: "codex",
+                nativeEvent: "item.completed",
+                item: { id: "provider-item-1", type: "imageGeneration", status: "completed" },
+              },
+            },
+            {
+              type: "assistant.message",
+              text: "imagem pronta",
+              metadata: {
+                provider: "codex",
+                nativeEvent: "item.completed",
+                item: { id: "assistant-item-1", type: "message", phase: "final_answer" },
+              },
+            },
+            {
+              type: "turn.complete",
+              providerSessionId: "codex-session-after",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            },
+          ]),
+          provider: "codex",
+        },
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        },
+      );
+
+      expect(responses).toHaveLength(1);
+      expect(responses[0]?.response).toBe("imagem pronta");
+      expect(responses[0]?.content).toEqual([
+        {
+          type: "media",
+          media: expect.objectContaining({
+            type: "image",
+            filename: expect.stringContaining("ravi-generated-media"),
+            mimeType: "image/png",
+            source: "runtime.generated_media",
+          }),
+        },
+        { type: "text", text: "imagem pronta" },
+      ]);
+
+      generatedFilePath = responses[0]?.content?.[0]?.media?.filePath;
+      expect(generatedFilePath).toBeDefined();
+      expect(existsSync(generatedFilePath!)).toBe(true);
+      expect(readFileSync(generatedFilePath!).subarray(0, 8)).toEqual(
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      );
+      expect(JSON.stringify({ emitted, trace: listSessionEvents(SESSION_KEY) })).not.toContain(imageBase64);
+    } finally {
+      emitSpy.mockRestore();
+      if (generatedFilePath) rmSync(generatedFilePath, { force: true });
+    }
+  });
+
+  it("emits external compaction announcements for a human/channel turn", async () => {
+    const attachedSource = attachSpeakingOutputChat();
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: attachedSource,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
     });
     seedAdapterTrace(streaming);
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
 
     const responses: string[] = [];
     const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
@@ -924,6 +2279,88 @@ describe("runtime session trace instrumentation", () => {
     expect(responses.some((text) => text.includes("Compactando"))).toBe(true);
     expect(responses.some((text) => text.includes("compactada"))).toBe(true);
     expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "complete",
+      materializedOutput: true,
+    });
+  });
+
+  for (const suppressed of [false, true]) {
+    it(`routes source-less runtime presence to the bound output (suppressed=${suppressed})`, async () => {
+      const target = attachSpeakingOutputChat();
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentSource: undefined,
+        currentReplyTarget: target,
+        suppressChatEmit: suppressed,
+      });
+      seedAdapterTrace(streaming);
+      const emitted: Array<Record<string, unknown>> = [];
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "attached reply" },
+          { type: "turn.complete", providerSessionId: "provider-after", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".runtime")) emitted.push(data);
+          },
+        },
+      );
+      expect(emitted.some((event) => event.type === "turn.complete")).toBe(true);
+      for (const event of emitted) {
+        expect(event._source).toBeUndefined();
+        expect(event._replyTarget).toEqual(suppressed ? undefined : target);
+      }
+    });
+  }
+
+  it("keeps the turn-start reply target when subscriptions change mid-turn", async () => {
+    const attachedSource = attachSpeakingOutputChat();
+    const capturedTarget = resolveSessionOutputTarget({
+      sessionKey: SESSION_KEY,
+      fallback: attachedSource,
+    }).target;
+    expect(capturedTarget).not.toBeNull();
+    detachChatFromSession(SESSION_KEY, attachedSource.canonicalChatId!);
+    expect(resolveSessionOutputTarget({ sessionKey: SESSION_KEY, fallback: attachedSource }).target).toBeNull();
+
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: attachedSource,
+      currentReplyTarget: capturedTarget,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
+    });
+    seedAdapterTrace(streaming, "turn-reply-target-snapshot");
+    const responses: Array<{ response?: unknown; target?: unknown }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: unknown; target?: unknown });
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "captured response" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      response: "captured response",
+      target: { canonicalChatId: attachedSource.canonicalChatId },
+    });
   });
 
   for (const scenario of [
@@ -933,12 +2370,13 @@ describe("runtime session trace instrumentation", () => {
     { name: "heartbeat", prompt: { _heartbeat: true } },
   ] as const) {
     it(`suppresses external compaction announcements for a ${scenario.name} turn while preserving trace observability`, async () => {
-      attachSpeakingOutputChat();
+      const attachedSource = attachSpeakingOutputChat();
       const streaming = makeStreamingSession({
         agentMode: "active",
+        currentSource: attachedSource,
         currentTurnProvenance: classifyTurnProvenance({
           prompt: scenario.prompt,
-          source,
+          source: attachedSource,
         }),
       });
       seedAdapterTrace(streaming);
@@ -1007,6 +2445,7 @@ describe("runtime session trace instrumentation", () => {
           displayId: "provider-after",
           params: {
             sessionId: "provider-after",
+            skillVisibility: makeRaviTaskSkillVisibility(),
           },
         },
         usage: { inputTokens: 10, outputTokens: 4 },
@@ -1039,6 +2478,12 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.complete");
+    const terminalPayload = terminal?.payloadJson as
+      | { session?: { params?: { skillVisibility?: RuntimeSkillVisibilitySnapshot } } }
+      | undefined;
+    const terminalSession = terminalPayload?.session;
+    expect(terminalSession?.params?.skillVisibility?.loadedSkills).toEqual(["ravi-system-tasks"]);
   });
 
   it("keeps skill-gate loaded state when provider turn completion reports only advertised skills", async () => {
@@ -1152,6 +2597,832 @@ describe("runtime session trace instrumentation", () => {
     ]);
   });
 
+  it("releases a mixed assistant/tool raw envelope only after both durable safety markers", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-write-ahead");
+    const rawAssistant = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tool-1", name: "Bash", input: { cmd: "true" } },
+          { type: "text", text: "accepted answer" },
+        ],
+      },
+    };
+    const rawTerminal = { type: "result", subtype: "success" };
+    const order: string[] = [];
+    const originalMark = crashRecovery.markTurnAttemptSafety.bind(crashRecovery);
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation((input) => {
+      order.push(input.materializedOutput ? "marker:output" : "marker:started");
+      return originalMark(input);
+    });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "provider.raw", rawEvent: rawAssistant },
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-1", name: "Bash", input: { cmd: "true" } },
+            rawEvent: rawAssistant,
+          },
+          { type: "assistant.message", text: "accepted answer", rawEvent: rawAssistant },
+          { type: "provider.raw", rawEvent: rawTerminal },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            rawEvent: rawTerminal,
+          },
+        ]),
+        {
+          runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".claude") && data.type === "assistant") order.push("emit:raw-assistant");
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(order).toEqual(["marker:started", "marker:output", "emit:raw-assistant"]);
+    expect(
+      emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "assistant.message")?.data,
+    ).not.toHaveProperty("rawEvent");
+  });
+
+  it("drops a mixed Claude raw envelope when its assistant text is silent", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-mixed-silent");
+    const rawAssistant = {
+      type: "assistant",
+      secretText: "@@SILENT@@",
+      message: { content: [{ type: "tool_use", id: "tool-silent", name: "Bash" }] },
+    };
+    const rawTerminal = { type: "result", subtype: "success", secretText: "must-not-escape" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawAssistant },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-silent", name: "Bash" },
+          rawEvent: rawAssistant,
+        },
+        { type: "assistant.message", text: "@@SILENT@@", rawEvent: rawAssistant },
+        { type: "provider.raw", rawEvent: rawTerminal },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+          rawEvent: rawTerminal,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "provider.raw")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "silent")).toBe(true);
+  });
+
+  it("does not let Pi item lifecycle events release assistant raw content before response policy", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-pi-fallback-raw-silent");
+    const rawMessageStart = {
+      type: "message_start",
+      secretText: "pi-fallback-start-must-not-escape",
+      message: { role: "assistant", content: [{ type: "text", text: "@@SILENT@@" }] },
+    };
+    const rawMessageEnd = {
+      type: "message_end",
+      secretText: "pi-fallback-end-must-not-escape",
+      message: { role: "assistant", content: [{ type: "text", text: "@@SILENT@@" }] },
+    };
+    const rawTerminal = { type: "agent_end" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawMessageStart },
+        { type: "item.started", item: { id: "pi-message", type: "assistant" }, rawEvent: rawMessageStart },
+        { type: "provider.raw", rawEvent: rawMessageEnd },
+        { type: "item.completed", item: { id: "pi-message", type: "assistant" }, rawEvent: rawMessageEnd },
+        { type: "assistant.message", text: "@@SILENT@@", rawEvent: rawMessageEnd },
+        { type: "provider.raw", rawEvent: rawTerminal },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+          rawEvent: rawTerminal,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "silent")).toBe(true);
+  });
+
+  it("drops Pi tool-only assistant raw content until a real tool fence exists", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-pi-tool-only-raw");
+    const rawMessageEnd = {
+      type: "message_end",
+      secretText: "pi-tool-call-before-fence",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "Bash", arguments: { cmd: "true" } }],
+      },
+    };
+    const rawToolStart = { type: "tool_execution_start", toolName: "Bash", toolCallId: "tool-1" };
+    const rawToolEnd = { type: "tool_execution_end", toolName: "Bash", toolCallId: "tool-1" };
+    const rawTerminal = { type: "agent_end" };
+    const order: string[] = [];
+    const originalMark = crashRecovery.markTurnAttemptSafety.bind(crashRecovery);
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation((input) => {
+      if (input.startedTool) order.push("marker:started");
+      return originalMark(input);
+    });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "provider.raw", rawEvent: rawMessageEnd },
+          { type: "item.completed", item: { id: "pi-tool-message", type: "assistant" }, rawEvent: rawMessageEnd },
+          { type: "provider.raw", rawEvent: rawToolStart },
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-1", name: "Bash", input: { cmd: "true" } },
+            rawEvent: rawToolStart,
+          },
+          { type: "provider.raw", rawEvent: rawToolEnd },
+          {
+            type: "tool.completed",
+            toolUseId: "tool-1",
+            toolName: "Bash",
+            content: "ok",
+            rawEvent: rawToolEnd,
+          },
+          { type: "provider.raw", rawEvent: rawTerminal },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 0 },
+            rawEvent: rawTerminal,
+          },
+        ]),
+        {
+          runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".pi") && data.type === "tool_execution_start") order.push("emit:tool-start");
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(emitted.some((entry) => entry.data.secretText === "pi-tool-call-before-fence")).toBe(false);
+    expect(order.indexOf("marker:started")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("emit:tool-start")).toBeGreaterThan(order.indexOf("marker:started"));
+  });
+
+  it("does not release a previously fenced raw envelope after ownership is lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-ownership-race");
+    const rawToolStart = { type: "tool_execution_start", secretText: "must-stay-owned" };
+    const rawNext = { type: "tool_execution_end" };
+    const ownershipFailure = new Error("attempt ownership lost");
+    let lost = false;
+    const failedCoordinator = {
+      get acceptingDeliveries() {
+        return !lost;
+      },
+      get ownershipFailure() {
+        return lost ? ownershipFailure : null;
+      },
+      getActiveTurnAttempt: (attemptId: string) => crashRecovery.getActiveTurnAttempt(attemptId),
+      markTurnAttemptSafety: (input: Parameters<RuntimeCrashRecoveryCoordinator["markTurnAttemptSafety"]>[0]) => {
+        const marked = crashRecovery.markTurnAttemptSafety(input);
+        lost = true;
+        streaming.currentCrashRecoveryAttemptId = undefined;
+        streaming.internalAbortReason = "crash_recovery_ownership_lost";
+        return marked;
+      },
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawToolStart },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-ownership", name: "Bash", input: { cmd: "true" } },
+          rawEvent: rawToolStart,
+        },
+        { type: "provider.raw", rawEvent: rawNext },
+      ]),
+      {
+        crashRecovery: failedCoordinator,
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText === "must-stay-owned")).toBe(false);
+  });
+
+  it("drops provider raw envelopes that never correlate to a canonical boundary", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-orphan");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: { type: "unknown", secretText: "orphan-one" } },
+        { type: "provider.raw", rawEvent: { type: "unknown", secretText: "orphan-two" } },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "provider.raw")).toBe(false);
+  });
+
+  it("keeps suppressed recoverable failures raw-free on the canonical runtime topic", async () => {
+    const streaming = makeStreamingSession({ interrupted: true });
+    seedAdapterTrace(streaming, "turn-suppressed-failure-raw");
+    const rawFailure = { type: "error", message: "operation was aborted", secretText: "partial assistant" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawFailure },
+        {
+          type: "turn.failed",
+          error: "operation was aborted",
+          recoverable: true,
+          rawEvent: rawFailure,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    const interrupted = emitted.find(
+      (entry) => entry.topic.endsWith(".runtime") && entry.data.type === "turn.interrupted",
+    );
+    expect(interrupted?.data).not.toHaveProperty("rawEvent");
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+  });
+
+  it("persists final assistant output without concatenating commentary", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-final-with-commentary");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "assistant.message",
+          text: "Checking the durable state.",
+          metadata: {
+            item: {
+              id: "commentary-a",
+              phase: "commentary",
+            },
+          },
+        },
+        {
+          type: "assistant.message",
+          text: "Final answer only.",
+          metadata: {
+            item: {
+              id: "final-a",
+              phase: "final_answer",
+            },
+          },
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Final answer only."]);
+  });
+
+  it("persists each visible assistant.message as its own chat.db row in one physical turn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-two-visible-parts");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Part one." },
+        { type: "assistant.message", text: "Part two." },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 2 },
+        },
+      ]),
+    );
+
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual(["Part one.", "Part two."]);
+    expect(assistant).toHaveLength(2);
+    expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
+    expect(assistant.some(({ content }) => content.includes("Part one.\n\nPart two."))).toBe(false);
+  });
+
+  it("persists A1/A2/A3 utterances as three rows before runtime SSE and before turn.complete", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-a1-a2-a3-live");
+    const rowsWhenRuntimeSse: string[][] = [];
+    const rowsAfterEachUtterance: string[][] = [];
+
+    await runTraceLoop(
+      streaming,
+      {
+        provider: PROVIDER,
+        events: (async function* () {
+          for (const text of ["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]) {
+            yield { type: "assistant.message", text } satisfies RuntimeEvent;
+            rowsAfterEachUtterance.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-a1a2a3",
+            usage: { inputTokens: 1, outputTokens: 3 },
+          } satisfies RuntimeEvent;
+        })(),
+        interrupt: async () => {},
+      },
+      {
+        safeEmit: async (_topic, data) => {
+          if (data.type === "assistant.message") {
+            rowsWhenRuntimeSse.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+        },
+      },
+    );
+
+    expect(rowsAfterEachUtterance).toEqual([
+      ["A1_LIVESTR_X"],
+      ["A1_LIVESTR_X", "A2_LIVESTR_X"],
+      ["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"],
+    ]);
+    expect(rowsWhenRuntimeSse).toEqual(rowsAfterEachUtterance);
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual(["A1_LIVESTR_X", "A2_LIVESTR_X", "A3_LIVESTR_X"]);
+    expect(assistant).toHaveLength(3);
+    expect(new Set(assistant.map(({ id }) => id)).size).toBe(3);
+    expect(assistant.some(({ content }) => content.includes("A1_LIVESTR_XA2_LIVESTR_X"))).toBe(false);
+  });
+
+  it("persists a mid-turn utterance then a final list body and terminalizes lastTurn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-mid-then-continue");
+    const rowsWhenRuntimeSse: string[][] = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Vou listar os agentes deste Ravi." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call-agents-list", name: "agents.list", input: {} },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call-agents-list",
+          toolName: "agents.list",
+          content: "main\njarvis",
+        },
+        { type: "assistant.message", text: "- main\n- jarvis" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-mid-continue",
+          usage: { inputTokens: 2, outputTokens: 4 },
+        },
+      ]),
+      {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+          if (data.type === "assistant.message") {
+            rowsWhenRuntimeSse.push(
+              getRecentHistory(SESSION_NAME)
+                .filter(({ role }) => role === "assistant")
+                .map(({ content }) => content),
+            );
+          }
+        },
+      },
+    );
+
+    expect(rowsWhenRuntimeSse).toEqual([
+      ["Vou listar os agentes deste Ravi."],
+      ["Vou listar os agentes deste Ravi.", "- main\n- jarvis"],
+    ]);
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content }) => content)).toEqual(["Vou listar os agentes deste Ravi.", "- main\n- jarvis"]);
+    expect(assistant).toHaveLength(2);
+    expect(assistant[0]!.id).not.toBe(assistant[1]!.id);
+
+    const runtimeTerminals = emitted.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${SESSION_NAME}.runtime` &&
+        (entry.data.type === "turn.complete" ||
+          entry.data.type === "turn.failed" ||
+          entry.data.type === "turn.interrupted"),
+    );
+    expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete"]);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("complete");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(getSessionTurn("turn-mid-then-continue")?.status).toBe("complete");
+  });
+
+  it.each([
+    { delivery: "in-process", hangsAfterCompaction: false },
+    { delivery: "in-process", hangsAfterCompaction: true },
+    { delivery: "callback", hangsAfterCompaction: false },
+    { delivery: "callback", hangsAfterCompaction: true },
+  ])("pauses after-tool inactivity during compaction (%j)", async ({ delivery, hangsAfterCompaction }) => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    const turnId = `turn-tool-compaction-${delivery}-${hangsAfterCompaction}`;
+    seedAdapterTrace(streaming, turnId);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSessionThenHang([]);
+    const hangEvents = runtimeSession.events;
+    let abortedDuringCompaction: boolean | undefined;
+    let compactionCompletedAt = 0;
+    if (delivery === "callback") runtimeSession.provider = "codex";
+    runtimeSession.events = (async function* (): AsyncGenerator<RuntimeEvent> {
+      yield { type: "tool.started", toolUse: { id: "tool-before-compact", name: "shell", input: {} } };
+      yield {
+        type: "tool.completed",
+        toolUseId: "tool-before-compact",
+        toolName: "shell",
+        content: "done",
+        ...(delivery === "callback" ? { metadata: { item: { type: "dynamic_tool_call" } } } : {}),
+      };
+      yield { type: "status", status: "compacting" };
+      if (delivery === "callback") {
+        // A delayed callback can arrive after compaction has already started.
+        yield { type: "tool.result_delivered", toolCallId: "tool-before-compact" };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      abortedDuringCompaction = streaming.abortController.signal.aborted;
+      compactionCompletedAt = Date.now();
+      yield { type: "status", status: "thinking" };
+      if (hangsAfterCompaction) {
+        yield* hangEvents;
+      } else {
+        yield { type: "assistant.message", text: "Finished after compaction." };
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-after-compaction",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      }
+    })();
+
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(abortedDuringCompaction).toBe(false);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(hangsAfterCompaction);
+    const terminals = listSessionEvents(SESSION_KEY).filter((event) =>
+      ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.eventType),
+    );
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.eventType).toBe(hangsAfterCompaction ? "turn.failed" : "turn.complete");
+    expect(getSessionTurn(turnId)?.status).toBe(hangsAfterCompaction ? "timeout" : "complete");
+    if (hangsAfterCompaction) {
+      expect(terminals[0]!.timestamp - compactionCompletedAt).toBeGreaterThanOrEqual(1_000);
+      expect(terminals[0]?.payloadJson).toMatchObject({ abort_reason: "provider_inactive" });
+    }
+  });
+
+  it("terminalizes a mid-turn utterance plus tool hang instead of leaving only the mid row", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-mid-then-tool-hang");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const providerLifecycle: string[] = [];
+    const started = Date.now();
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSessionThenHang(
+          [
+            { type: "assistant.message", text: "Vou listar os agentes deste Ravi." },
+            {
+              type: "tool.started",
+              toolUse: { id: "call-agents-list", name: "agents.list", input: {} },
+            },
+            {
+              type: "tool.completed",
+              toolUseId: "call-agents-list",
+              toolName: "agents.list",
+              content: "main\njarvis",
+            },
+          ],
+          providerLifecycle,
+        ),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(providerLifecycle).toEqual(["close"]);
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Vou listar os agentes deste Ravi."]);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
+
+    const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
+    expect(lastTurn?.status).toBe("timeout");
+    expect(lastTurn?.completedAt).toBeGreaterThan(0);
+    expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("timeout");
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "provider_inactive",
+    });
+  });
+
+  it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-silent-no-row");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Routine finished HEARTBEAT_OK" },
+        { type: "assistant.message", text: "No response requested." },
+        { type: "assistant.message", text: "@@SILENT@@" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+        },
+      ]),
+    );
+
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
+  it("does not persist prompt-too-long assistant text as a durable row", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-prompt-too-long-no-row");
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "assistant.message", text: "prompt is too long" }]));
+
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
+  it("keeps sequential user/assistant turns as distinct chat.db rows", async () => {
+    saveMessage(SESSION_NAME, "user", "hello", null, { agentId: AGENT_ID });
+    const first = makeStreamingSession();
+    seedAdapterTrace(first, "turn-seq-1");
+    await runTraceLoop(
+      first,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "welcome" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-1",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    saveMessage(SESSION_NAME, "user", "ping", null, { agentId: AGENT_ID });
+    const second = makeStreamingSession();
+    seedAdapterTrace(second, "turn-seq-2");
+    await runTraceLoop(
+      second,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "pong" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-2",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const rows = getRecentHistory(SESSION_NAME);
+    expect(rows.map(({ role, content }) => [role, content])).toEqual([
+      ["user", "hello"],
+      ["assistant", "welcome"],
+      ["user", "ping"],
+      ["assistant", "pong"],
+    ]);
+    const assistants = rows.filter(({ role }) => role === "assistant");
+    expect(assistants).toHaveLength(2);
+    expect(assistants[1]!.content).not.toContain(assistants[0]!.content);
+    expect(assistants[0]!.content).not.toContain(assistants[1]!.content);
+  });
+
+  it("refuses empty-join mash of assistant history and keeps the new utterance clean", async () => {
+    saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "Olá. A conexão foi restabelecida.", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "Olá", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "ok.", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "assistant", "pong", null, { agentId: AGENT_ID });
+    saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
+
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-empty-join-mash");
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "assistant.message",
+          text: "Olá. A conexão foi restabelecida.Olá. A conexão foi restabelecida.primeiro?Oláok.pongOi. No que você quer trabalhar?",
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-mash",
+          usage: { inputTokens: 1, outputTokens: 8 },
+        },
+      ]),
+    );
+
+    const rows = getRecentHistory(SESSION_NAME, 20);
+    const assistants = rows.filter(({ role }) => role === "assistant");
+    expect(assistants.map(({ content }) => content)).toEqual([
+      "Olá. A conexão foi restabelecida.",
+      "primeiro?",
+      "Olá",
+      "ok.",
+      "pong",
+      "Oi. No que você quer trabalhar?",
+    ]);
+    expect(assistants.some(({ content }) => content.includes("primeiro?Olá"))).toBe(false);
+    expect(assistants.some(({ content }) => content.includes("ok.pong"))).toBe(false);
+    expect(assistants.at(-1)?.content).toBe("Oi. No que você quer trabalhar?");
+  });
+
+  it("splits a first-turn empty-join mash into separate rows", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-empty-join-first");
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "primeiro?Olá" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-first-mash",
+          usage: { inputTokens: 1, outputTokens: 2 },
+        },
+      ]),
+    );
+
+    const assistants = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?", "Olá"]);
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0]!.id).not.toBe(assistants[1]!.id);
+  });
+
+  it("classifies a provider login stub as turn.failed and keeps it off the transcript", async () => {
+    updateRuntimeProviderState(SESSION_KEY, "codex", {
+      providerSessionId: "codex-thread",
+      runtimeSessionDisplayId: "codex-thread",
+    });
+    const session = getSession(SESSION_KEY);
+    expect(session?.runtimeProvider).toBe("codex");
+
+    const streaming = makeStreamingSession({ agentMode: "active" });
+    seedAdapterTrace(streaming, "turn-login-stub");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const outbound: unknown[] = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      outbound.push({ topic, data });
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Not logged in · Please run /login" },
+        {
+          type: "turn.complete",
+          providerSessionId: "claude-fresh",
+          usage: { inputTokens: 0, outputTokens: 0 },
+        },
+      ]),
+      {
+        session: session ?? makeSession(),
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual([]);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "turn.failed")).toBe(true);
+    expect(JSON.stringify(outbound)).not.toContain("/login");
+    expect(JSON.stringify(outbound)).not.toContain("Not logged in");
+
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.runtimeProvider).toBe("codex");
+    expect(persisted?.providerSessionId).toBe("codex-thread");
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.status).toBe("failed");
+    expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
+  });
+
   it("records provider turn interruptions as terminal interrupted turns", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-interrupted");
@@ -1162,6 +3433,348 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
+  });
+
+  it("reports an interrupted model-broker attempt once with its durable effect boundary", async () => {
+    const brokerId = "interrupted-model-broker-test";
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    try {
+      const streaming = makeStreamingSession({
+        currentRuntimeCredential: {
+          attemptId: "attempt_interrupted",
+          credentialId: `model-broker:${brokerId}:profile_main`,
+          modelBrokerId: brokerId,
+          modelBrokerProfileRef: "profile_main",
+          modelBrokerLeaseId: "lease_interrupted",
+          modelBrokerRuntimeId: "runtime_a",
+          modelBrokerSessionKey: SESSION_KEY,
+          modelBrokerTurnId: "turn-model-broker-interrupted",
+          modelBrokerRouteRevision: "route_a",
+          modelBrokerCompatibilityRevision: "compat_a",
+          modelBrokerSelectionCompatibilityKey: "selection_a",
+          modelBrokerLeaseExpiresAt: Date.now() + 60_000,
+          modelBrokerAttemptTerminal: false,
+          label: "Interrupted broker attempt",
+          fingerprint: "sha256:interrupted",
+          runtimeProvider: PROVIDER,
+          authMethod: "model-broker",
+          resolvedEnv: {},
+          sensitiveEnvKeys: [],
+          remoteForwardEnvKeys: [],
+          bindings: [],
+        },
+      });
+      seedAdapterTrace(streaming, "turn-model-broker-interrupted");
+
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-interrupted-broker", name: "Bash", input: { cmd: "true" } },
+          },
+          { type: "turn.interrupted" },
+        ]),
+      );
+
+      expect(feedback).toEqual([
+        expect.objectContaining({
+          attemptId: "attempt_interrupted",
+          outcome: "abandoned",
+          effectState: "tool_started",
+        }),
+      ]);
+      expect(streaming.currentRuntimeCredential?.modelBrokerAttemptTerminal).toBe(true);
+    } finally {
+      unregisterModelBroker(brokerId);
+    }
+  });
+
+  it("drops an interrupted physical turn after durable tool activity while preserving its successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "unsafe tool turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-tool");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-interrupted", name: "Bash", input: { cmd: "touch unsafe" } },
+        },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: true,
+      materializedOutput: false,
+    });
+  });
+
+  it("keeps an intentional tool-boundary interrupt silent and retains the successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "old input" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "new user input" });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      currentTurnSuperseded: true,
+      interrupted: true,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+    seedAdapterTrace(streaming, "turn-human-interrupt");
+    const responses: unknown[] = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response`) responses.push(data);
+    });
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "tool.started", toolUse: { id: "read-1", name: "Read", input: { path: "README.md" } } },
+        { type: "tool.completed", toolUseId: "read-1", toolName: "Read", content: "ok" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+    expect(responses).toEqual([]);
+    expect(streaming.pendingMessages.map((message) => message.pendingId)).toContain(successor.pendingId);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
+  });
+
+  it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+    });
+    seedAdapterTrace(streaming, "turn-grok-open-bash");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(streaming, {
+      ...makeRuntimeSession([
+        { type: "assistant.message", text: "Vou inspecionar o ambiente." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+        },
+        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+      provider: "grok",
+    });
+
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses Grok turn.complete after tools with zero post-tool assistant text", async () => {
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+    });
+    seedAdapterTrace(streaming, "turn-grok-tools-silence");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(streaming, {
+      ...makeRuntimeSession([
+        { type: "assistant.message", text: "Vou inspecionar o ambiente." },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "call_bash",
+          toolName: "Bash",
+          content: "",
+        },
+        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+      provider: "grok",
+    });
+
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("recovers an interrupted turn after completed tools instead of discarding silently", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tool batch turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-completed-tools");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-fetch", name: "WebFetch", input: { url: "https://example.test/doc" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-fetch",
+          toolName: "WebFetch",
+          content: "fetched",
+        },
+        { type: "text.delta", text: "working" },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: true,
+      materializedOutput: true,
+    });
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("recovers an interrupted turn after tools completed even without materialized text", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "tools only turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-tools-only");
+    const responses: Array<{ response?: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { path: "README.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "ok",
+        },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.interrupted).toBe(false);
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(
+      responses.some(
+        (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+      ),
+    ).toBe(true);
+  });
+
+  it("drops an interrupted physical turn after durable output while preserving its successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "partially answered turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "text.delta", text: "partial result" }, { type: "turn.interrupted" }]),
+    );
+
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: false,
+      materializedOutput: true,
+    });
   });
 
   it("replays a pending user turn when the provider stream closes without a terminal event before tools", async () => {
@@ -1200,6 +3813,459 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("reconciles an unsafe ambiguous turn only when the provider advertises support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "reconcile provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    queued.clientMessageId = "ravi:provider-reconciliation";
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([], {
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+      }),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toEqual([
+      expect.objectContaining({
+        clientMessageId: "ravi:provider-reconciliation",
+        replay: true,
+        terminalReplayAllowed: false,
+      }),
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+  });
+
+  it("does not hand an unsafe ambiguous turn to a provider without reconciliation support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not blindly replay provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-without-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+  });
+
+  it("does not replay a turn after streamed output was durably materialized", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate partial output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "text.delta", text: "partial answer" }]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      materializedOutput: true,
+    });
+  });
+
+  it("fails before projecting provider output when the durable attempt binding is missing", async () => {
+    const streaming = makeStreamingSession();
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await expect(
+      runTraceLoop(streaming, makeRuntimeSession([{ type: "text.delta", text: "must not escape" }]), {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      }),
+    ).rejects.toThrow("Crash recovery attempt binding missing before provider side effect");
+
+    expect(emitted).toEqual([]);
+  });
+
+  it("does not persist or project an accepted assistant message before its output marker", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-assistant-marker-failure");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation(() => {
+      throw new Error("output marker unavailable");
+    });
+
+    try {
+      await expect(
+        runTraceLoop(streaming, makeRuntimeSession([{ type: "assistant.message", text: "must not materialize" }]), {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        }),
+      ).rejects.toThrow("output marker unavailable");
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+  });
+
+  it("fails closed when a provider terminal arrives without its durable attempt binding", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-terminal-without-binding");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    streaming.currentCrashRecoveryAttemptId = undefined;
+
+    await expect(
+      runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-terminal-without-binding",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      ),
+    ).rejects.toThrow("Crash recovery attempt binding missing before terminal provider state");
+
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "running", completedAt: null });
+    expect(getSessionTurn("turn-terminal-without-binding")).toMatchObject({ status: "running", completedAt: null });
+  });
+
+  it("always closes provider resources after crash recovery ownership is lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-lost");
+    let iteratorReturnCalls = 0;
+    let handleCloseCalls = 0;
+    let emitted = false;
+    let delivered = false;
+    const iterator: AsyncIterator<RuntimeEvent> & AsyncIterable<RuntimeEvent> = {
+      next: async () => {
+        if (delivered) return { done: true, value: undefined as never };
+        delivered = true;
+        return { done: false, value: { type: "text.delta", text: "must stay fenced" } };
+      },
+      return: async () => {
+        iteratorReturnCalls++;
+        return { done: true, value: undefined as never };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: iterator,
+      interrupt: async () => {},
+      close: async () => {
+        handleCloseCalls++;
+      },
+    };
+    const ownershipFailure = new Error("lost marker fence");
+    const failedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure,
+      markTurnAttemptSafety: () => {
+        streaming.currentCrashRecoveryAttemptId = undefined;
+        streaming.internalAbortReason = "crash_recovery_ownership_lost";
+        streaming.abortController.abort();
+        throw ownershipFailure;
+      },
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
+
+    await expect(
+      runTraceLoop(streaming, runtimeSession, {
+        crashRecovery: failedCoordinator,
+        streamingSessions,
+        safeEmit: async () => {
+          emitted = true;
+        },
+      }),
+    ).rejects.toThrow("lost marker fence");
+
+    expect(emitted).toBe(false);
+    expect(streaming.abortController.signal.aborted).toBe(true);
+    expect(handleCloseCalls).toBe(1);
+    expect(iteratorReturnCalls).toBe(1);
+    expect(streamingSessions.has(SESSION_NAME)).toBe(false);
+  });
+
+  it("does not fabricate a terminal latch or trace after ownership is already lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-terminal-after-ownership-loss");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    streaming.currentCrashRecoveryAttemptId = undefined;
+    const failedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure: new Error("lost durable ownership"),
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after-loss",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+      {
+        crashRecovery: failedCoordinator,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "running", completedAt: null });
+    expect(getSessionTurn("turn-terminal-after-ownership-loss")).toMatchObject({
+      status: "running",
+      completedAt: null,
+    });
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
+  });
+
+  it("does not replay a turn after durable tool authorization without a provider tool event", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate authorized tool",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-tool-allow");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      startedTool: true,
+    });
+  });
+
+  it("stashes and bounded-restarts pending input after durable turn preparation fails", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry durable handoff",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      durableTurnPreparationFailed: true,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "retry durable handoff",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+    expect(streaming.durableTurnPreparationFailed).toBe(false);
+  });
+
+  it("preserves durable turn input without locally retrying after crash recovery ownership is lost", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not retry without ownership",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      durableTurnPreparationFailed: true,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const rejectedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure: new Error("lost ownership"),
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      crashRecovery: rejectedCoordinator,
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "do not retry without ownership",
+    ]);
+    expect(restartRequests).toEqual([]);
+  });
+
+  it("restarts only the successor when a superseded provider turn closes without a terminal event", async () => {
+    const superseded = createQueuedRuntimeUserMessage({
+      prompt: "superseded work",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "new direction",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [superseded, successor],
+      currentTurnPendingIds: superseded.pendingId ? [superseded.pendingId] : [],
+      currentTurnSuperseded: true,
+      currentTurnToolStarted: false,
+      toolRunning: false,
+      interrupted: true,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-supersede");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["new direction"]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+  });
+
+  it("records exhausted recovery without publishing a user-facing response", async () => {
+    const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
+    const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const responseTopics: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string) => {
+      if (topic.endsWith(".response")) responseTopics.push(topic);
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        runtimeEvents.push({ topic, data });
+      },
+      notifyRuntimeRecoveryExhausted: async (input) => {
+        alerts.push(input);
+      },
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.stashedMessages.set(SESSION_KEY, [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry this turn",
+        source,
+        _agentId: AGENT_ID,
+        _runtimeProviderId: PROVIDER,
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = async () => {
+      starts++;
+    };
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    try {
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    const suppression = listSessionEvents(SESSION_KEY).find(
+      (event) => event.eventType === "dispatch.restart_suppressed",
+    );
+    expect(starts).toBe(2);
+    expect(responseTopics).toEqual([]);
+    expect(dispatcher.stashedMessages.has(SESSION_KEY)).toBe(true);
+    expect(alerts).toHaveLength(1);
+    expect(runtimeEvents).toHaveLength(1);
+    expect(suppression).toMatchObject({
+      status: "blocked",
+      payloadJson: {
+        reason: "runtime_event_loop_closed",
+        restartAttempts: 2,
+        stashedQueueSize: 1,
+        resumeStashedMessages: true,
+        userResponseSuppressed: true,
+      },
+    });
   });
 
   it("closes the provider handle and event iterator when the host session is aborted", async () => {
@@ -1305,10 +4371,10 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("keeps raw failure diagnostics internal while sanitizing the external response and live state", async () => {
-    attachSpeakingOutputChat();
+    const attachedSource = attachSpeakingOutputChat();
     const rawError =
       "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'";
-    const streaming = makeStreamingSession({ agentMode: "active" });
+    const streaming = makeStreamingSession({ agentMode: "active", currentSource: attachedSource });
     seedAdapterTrace(streaming, "turn-internal-failure");
     const responses: string[] = [];
     const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
@@ -1391,26 +4457,35 @@ describe("runtime session trace instrumentation", () => {
       source,
       _agentId: AGENT_ID,
     });
+    queued.clientMessageId = "ravi:inactive-turn";
     const streaming = makeStreamingSession({
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
       lastActivity: Date.now() - 2_000,
+      toolEffectFence: "provider_event_only",
     });
     seedAdapterTrace(streaming, "turn-provider-inactive");
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const providerLifecycle: string[] = [];
 
     try {
-      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
-        stashedMessages,
-        restartStashedSession: async (input) => {
-          restartRequests.push(input);
+      await runTraceLoop(
+        streaming,
+        makeNeverEndingRuntimeSession(providerLifecycle, {
+          ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+        }),
+        {
+          stashedMessages,
+          restartStashedSession: async (input) => {
+            restartRequests.push(input);
+          },
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-        safeEmit: async (topic, data) => {
-          emitted.push({ topic, data });
-        },
-      });
+      );
     } finally {
       if (previousTimeout === undefined) {
         delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
@@ -1420,8 +4495,15 @@ describe("runtime session trace instrumentation", () => {
     }
 
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_turn_inactive" }]);
+    expect(providerLifecycle).toEqual(["interrupt", "close"]);
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["stuck audit alert"]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]).toMatchObject({
+      clientMessageId: "ravi:inactive-turn",
+      replay: true,
+      terminalReplayAllowed: false,
+    });
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
 
     const events = listSessionEvents(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);
@@ -1432,6 +4514,51 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-provider-inactive")?.status).toBe("timeout");
+  });
+
+  it("does not restart an inactive provider turn after durable output", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = "1000";
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay timed out output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      lastActivity: Date.now() - 2_000,
+    });
+    seedAdapterTrace(streaming, "turn-provider-inactive-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, materializedOutput: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    try {
+      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "timeout",
+      materializedOutput: true,
+    });
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
   it("stashes the current turn and restarts after retryable credential failure before tools", async () => {
@@ -1447,6 +4574,7 @@ describe("runtime session trace instrumentation", () => {
       currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_before_tool"),
     });
     seedAdapterTrace(streaming, "turn-credential-retry");
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId!;
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -1481,7 +4609,15 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal).toMatchObject({
+      status: "failed",
+      payloadJson: expect.objectContaining({
+        abort_reason: "runtime_credential_rate_limited",
+        autoRecovered: true,
+        credentialRetry: true,
+      }),
+    });
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
       "retry this credential turn",
     ]);
@@ -1494,11 +4630,17 @@ describe("runtime session trace instrumentation", () => {
     const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
     expect(health?.lastRequestId).toBe("req_credential_retry");
     expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
-    const attempt = getDb()
+    const credentialAttempt = getDb()
       .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
-    expect(attempt?.status).toBe("failed");
-    expect(typeof attempt?.completed_at).toBe("number");
+    expect(credentialAttempt?.status).toBe("failed");
+    expect(typeof credentialAttempt?.completed_at).toBe("number");
+    const recoveryAttempt = getRuntimeTurnAttempt(crashRecoveryAttemptId);
+    expect(recoveryAttempt?.status).toBe("failed");
+    expect(getSessionTurn("turn-credential-retry")).toMatchObject({
+      status: "failed",
+      completedAt: recoveryAttempt?.completedAt,
+    });
   });
 
   it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
@@ -1647,6 +4789,55 @@ describe("runtime session trace instrumentation", () => {
     expect(typeof attempt?.completed_at).toBe("number");
   });
 
+  it("does not auto-replay retryable credential failures after durable output", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after partial output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_after_output"),
+    });
+    seedAdapterTrace(streaming, "turn-credential-no-replay-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "text.delta", text: "already visible" },
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: {
+            type: "error",
+            status: 429,
+            headers: { "retry-after": "2", "x-request-id": "req_after_output" },
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "failed",
+      startedTool: false,
+      materializedOutput: true,
+    });
+  });
+
   it("stashes and restarts after a recoverable interrupt failure", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "new message while busy",
@@ -1695,5 +4886,144 @@ describe("runtime session trace instrumentation", () => {
       },
     ]);
     expect(streaming.done).toBe(true);
+  });
+
+  it("replays a stuck already-processing failure as a broken runtime instead of reusing it", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continue after interrupt",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-already-processing");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+          recoverable: true,
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "continue after interrupt",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_transport_failure" }]);
+    expect(streaming.done).toBe(true);
+  });
+
+  it("replays a recoverable provider transport failure before any effect instead of exposing INTERNAL", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "survive a transient websocket close",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-transport-failure-before-effect");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Codex CLI exited without a terminal event (code 0)",
+          recoverable: true,
+          failureKind: "transport",
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "survive a transient websocket close",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_transport_failure" }]);
+    expect(streaming.done).toBe(true);
+  });
+
+  it("does not replay a provider transport failure after a tool effect", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate this effect",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-transport-failure-after-effect");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "Codex CLI exited without a terminal event (code 0)",
+          recoverable: true,
+          failureKind: "transport",
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "failed", startedTool: true });
+  });
+
+  it("does not remove a replacement runtime when the previous event loop exits", async () => {
+    const streaming = makeStreamingSession({ turnActive: false });
+    const replacement = makeStreamingSession({ turnActive: false });
+    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        streamingSessions.set(SESSION_NAME, replacement);
+        yield* [];
+      })(),
+      interrupt: async () => {},
+    };
+    streaming.queryHandle = runtimeSession;
+
+    await runTraceLoop(streaming, runtimeSession, { streamingSessions });
+
+    expect(streamingSessions.get(SESSION_NAME)).toBe(replacement);
+    expect(replacement.done).toBe(false);
   });
 });

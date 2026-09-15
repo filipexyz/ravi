@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
-import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
+import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { RUNTIME_EFFORT_LEVELS } from "../../runtime/effort.js";
+import { TAG_ASSET_TYPES } from "../../tags/types.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -1595,12 +1596,42 @@ export const projectFixturesSeedReturnSchema = z
   })
   .passthrough();
 
+const managedRuntimeMemberReturnSchema = z
+  .object({
+    name: z.string(),
+    managed: z.boolean(),
+    online: z.boolean(),
+    status: z.string(),
+    pid: z.number().nullable(),
+    bundlePath: z.string().nullable(),
+    cwd: z.string().nullable(),
+    version: z.string().nullable(),
+    matchesCli: z.boolean().nullable(),
+  })
+  .strict();
+
+const managedRuntimeIdentityReturnSchema = z
+  .object({
+    alignment: z.enum(["aligned", "drifted", "unknown", "not_running"]),
+    cli: z
+      .object({
+        bundlePath: z.string().nullable(),
+        cwd: z.string().nullable(),
+        version: z.string().nullable(),
+      })
+      .strict(),
+    daemon: managedRuntimeMemberReturnSchema,
+    channels: managedRuntimeMemberReturnSchema,
+  })
+  .strict();
+
 export const daemonStatusReturnSchema = z
   .object({
     pm2Available: z.boolean(),
     processName: z.string(),
     ravi: looseObjectSchema,
     infrastructure: looseObjectSchema,
+    runtime: managedRuntimeIdentityReturnSchema,
     processes: z.array(looseObjectSchema),
   })
   .passthrough();
@@ -1677,6 +1708,120 @@ export const runtimeCredentialClassifyReturnSchema = z
     pressure: looseObjectSchema,
   })
   .passthrough();
+
+export const runtimeEnvEntryReturnSchema = z
+  .object({
+    key: z.string(),
+    present: z.boolean(),
+    secret: z.boolean(),
+    redacted: z.boolean(),
+    value: z.string().nullable(),
+    path: z.string(),
+  })
+  .strict();
+
+export const runtimeEnvMutationReturnSchema = runtimeEnvEntryReturnSchema
+  .extend({
+    action: z.enum(["set", "unset"]),
+    daemonReloadRequired: z.boolean(),
+  })
+  .strict();
+
+const runtimeProviderLoginObjectSchema = z
+  .object({
+    id: z.string(),
+    provider: z.enum(["codex", "grok"]),
+    status: z.enum(["pending", "authorized", "failed", "cancelled"]),
+    verificationUrl: z.string().nullable(),
+    userCode: z.string().nullable(),
+    home: z.string(),
+    pid: z.number().nullable(),
+    command: z.string(),
+    startedAt: z.string(),
+    updatedAt: z.string(),
+    expiresAt: z.string(),
+    replacedLoginId: z.string().optional(),
+    error: z.string().optional(),
+  })
+  .strict();
+
+const runtimeProviderCredentialBindingSchema = z
+  .object({
+    id: z.string(),
+    sourceKind: z.string(),
+    targetKind: z.string(),
+    targetName: z.string(),
+    secretRef: z.string(),
+    sourceHint: z.string().nullable(),
+    sensitive: z.boolean(),
+    remoteForward: z.boolean(),
+  })
+  .strict();
+
+const runtimeProviderCredentialSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    runtimeProvider: z.string(),
+    upstreamProvider: z.string().nullable(),
+    modelAllowlist: z.array(z.string()),
+    modelDenylist: z.array(z.string()),
+    agentAllowlist: z.array(z.string()),
+    taskProfileAllowlist: z.array(z.string()),
+    priority: z.number(),
+    weight: z.number().nullable(),
+    enabled: z.boolean(),
+    status: z.string(),
+    authMethod: z.string().nullable(),
+    sourceKind: z.string().nullable(),
+    strategyHint: z.string().nullable(),
+    sessionCompatibilityKey: z.string().nullable(),
+    authProfileRef: z.string().nullable(),
+    fingerprint: z.string(),
+    sensitiveEnvKeys: z.array(z.string()),
+    remoteForwardEnvKeys: z.array(z.string()),
+    lastErrorCode: z.string().nullable(),
+    lastErrorReason: z.string().nullable(),
+    lastErrorMessageRedacted: z.string().nullable(),
+    resetAt: z.number().nullable(),
+    notes: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    bindings: z.array(runtimeProviderCredentialBindingSchema),
+  })
+  .strict();
+
+const runtimeProviderAgentResultSchema = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    changed: z.boolean(),
+  })
+  .strict();
+
+export const runtimeProviderLoginReturnSchema = z
+  .object({
+    login: runtimeProviderLoginObjectSchema,
+  })
+  .strict();
+
+export const runtimeProviderConfigureReturnSchema = z
+  .object({
+    env: runtimeEnvMutationReturnSchema,
+    credential: runtimeProviderCredentialSchema,
+    credentialCreated: z.boolean(),
+    agents: z.array(runtimeProviderAgentResultSchema),
+  })
+  .strict();
+
+export const runtimeProviderLoginCompleteReturnSchema = z
+  .object({
+    login: runtimeProviderLoginObjectSchema,
+    credential: runtimeProviderCredentialSchema,
+    credentialCreated: z.boolean(),
+    agents: z.array(runtimeProviderAgentResultSchema),
+  })
+  .strict();
 
 export const triggerTopicsReturnSchema = z
   .object({
@@ -1816,20 +1961,93 @@ const agentRuntimePermissionsConfigReturnSchema = z
   })
   .nullable();
 
-export const agentsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    defaultAgent: z.string(),
-    filters: looseObjectSchema,
-    agents: z.array(agentRecordReturnSchema),
+const agentHeartbeatReturnSchema = z
+  .object({
+    enabled: z.boolean(),
+    intervalMs: z.number(),
+    model: z.string().optional(),
+    accountId: z.string().optional(),
+    activeStart: z.string().optional(),
+    activeEnd: z.string().optional(),
+    lastRunAt: z.number().optional(),
   })
-  .passthrough();
+  .strict();
+
+const agentTagBindingReturnSchema = z
+  .object({
+    id: z.string(),
+    tagId: z.string(),
+    tagSlug: z.string(),
+    assetType: z.enum(TAG_ASSET_TYPES),
+    assetId: z.string(),
+    metadata: jsonObjectSchema.optional(),
+    source: z.string(),
+    createdBy: z.string().optional(),
+    updatedBy: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+export const agentJsonSummaryReturnSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().optional(),
+    cwd: z.string(),
+    model: z.string().optional(),
+    effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
+    provider: z.string().optional(),
+    modelPresetId: z.string().nullable(),
+    dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
+    systemPromptAppend: z.string().optional(),
+    debounceMs: z.number().optional(),
+    groupDebounceMs: z.number().optional(),
+    matrixAccount: z.string().optional(),
+    heartbeat: agentHeartbeatReturnSchema.optional(),
+    settingSources: z.array(z.enum(["user", "project"])).optional(),
+    memoryModel: z.string().optional(),
+    specMode: z.boolean().optional(),
+    contactScope: z.string().optional(),
+    allowedSessions: z.array(z.string()).optional(),
+    mode: z.enum(["active", "sentinel"]).optional(),
+    remote: z.string().optional(),
+    remoteUser: z.string().optional(),
+    defaults: jsonObjectSchema.nullable().optional(),
+    isDefault: z.boolean(),
+    effectiveProvider: z.string(),
+    providerSource: z.string(),
+    effectiveModel: z.string().nullable(),
+    modelSource: z
+      .enum(["agent_preset", "agent_default", "global_default", "env_fallback", "runtime_default"])
+      .nullable(),
+    modelPresetVersion: z.number().nullable(),
+    modelError: z.string().nullable(),
+    tags: z.array(agentTagBindingReturnSchema),
+  })
+  .strict();
+
+export const agentsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    defaultAgent: z.string(),
+    filters: z
+      .object({
+        tag: z.string().nullable(),
+      })
+      .strict(),
+    items: z.array(agentJsonSummaryReturnSchema),
+    agents: z.array(agentJsonSummaryReturnSchema),
+  })
+  .strict();
 
 export const agentShowReturnSchema = z
   .object({
-    agent: agentRecordReturnSchema,
+    agent: agentJsonSummaryReturnSchema,
+    runtimePermissions: agentRuntimePermissionsConfigReturnSchema,
     permissionsCommand: z.string(),
   })
-  .passthrough();
+  .strict();
 
 export const agentCreateReturnSchema = z
   .object({
@@ -1893,7 +2111,22 @@ export const agentPermissionsReturnSchema = z.object({
   after: agentRuntimePermissionsConfigReturnSchema.optional(),
   defaults: jsonObjectSchema.nullable().optional(),
   command: z.string().optional(),
-  agent: jsonObjectSchema.optional(),
+  agent: agentJsonSummaryReturnSchema.optional(),
+});
+
+export const agentModelBrokerReturnSchema = z.object({
+  action: z.literal("model-broker"),
+  changed: z.boolean(),
+  agentId: z.string(),
+  modelBroker: z
+    .object({
+      brokerId: z.string(),
+      profileRef: z.string(),
+      required: z.boolean().optional(),
+    })
+    .nullable(),
+  defaults: jsonObjectSchema.nullable().optional(),
+  agent: agentJsonSummaryReturnSchema.optional(),
 });
 
 export const agentDebounceReturnSchema = z
@@ -2589,7 +2822,7 @@ const sessionGoalObjectSchema = z
     sessionKey: z.string(),
     goalId: z.string(),
     objective: z.string(),
-    status: z.enum(["active", "paused", "budget_limited", "blocked", "complete"]),
+    status: z.enum(["active", "paused", "budget_limited", "usage_limited", "blocked", "complete"]),
     tokenBudget: z.number().nullable(),
     tokensUsed: z.number(),
     timeUsedSeconds: z.number(),
@@ -2615,6 +2848,60 @@ export const sessionGoalReturnSchema = z
     changed: z.boolean(),
     session: sessionGoalSessionSummarySchema,
     goal: sessionGoalObjectSchema.nullable(),
+  })
+  .strict();
+
+const sessionRecapIdentitySchema = z
+  .object({
+    sessionKey: z.string(),
+    name: z.string().nullable(),
+    displayName: z.string().nullable(),
+    agentId: z.string(),
+    compactionCount: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const sessionRecapRecentItemSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    text: z.string(),
+    textTruncated: z.boolean(),
+    time: z.string(),
+  })
+  .strict();
+
+export const sessionRecapReturnSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    computed: z.literal(true),
+    persisted: z.literal(false),
+    session: sessionRecapIdentitySchema,
+    goal: sessionGoalObjectSchema.nullable(),
+    summary: z.string().nullable(),
+    pinned: z.array(z.string()),
+    decisions: z.array(z.string()),
+    openLoops: z.array(z.string()),
+    recent: z
+      .object({
+        available: z.boolean(),
+        source: z.string().nullable(),
+        reason: z.string().nullable(),
+        limit: z.number().int().nonnegative(),
+        totalMessages: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        omittedTools: z.literal(true),
+        items: z.array(sessionRecapRecentItemSchema),
+      })
+      .strict(),
+    sources: z
+      .object({
+        sessionRow: z.literal(true),
+        goal: z.boolean(),
+        history: z.string().nullable(),
+      })
+      .strict(),
   })
   .strict();
 

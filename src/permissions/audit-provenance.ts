@@ -1,4 +1,5 @@
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
+import { sanitizePublicValue } from "../cli/redaction.js";
 
 export interface AuditProvenanceInput {
   contextId?: string | null;
@@ -104,7 +105,8 @@ export function buildAuditContextProvenance(input?: AuditProvenanceInput | null)
   const safeSource = buildSafeSource(source);
   if (safeSource) context.source = safeSource;
 
-  return Object.keys(context).length > 0 ? context : undefined;
+  if (Object.keys(context).length === 0) return undefined;
+  return sanitizePublicValue(context) as AuditContextProvenance;
 }
 
 function assignString(target: object, key: string, value: unknown): void {

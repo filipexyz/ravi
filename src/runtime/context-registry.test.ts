@@ -11,6 +11,7 @@ import {
   resolveRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeAgentRuntimeContextsForSession,
+  revokeLiveRuntimeContextsForAgent,
   revokeRuntimeContext,
   snapshotAgentCapabilities,
 } from "./context-registry.js";
@@ -173,6 +174,36 @@ describe("runtime context registry", () => {
     expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
   });
 
+  it("revokes every live authority snapshot when agent permissions change", () => {
+    const agentRuntime = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    });
+    const turnRuntime = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    });
+    const child = issueRuntimeContext({
+      parent: turnRuntime,
+      cliName: "child-cli",
+      inheritCapabilities: true,
+    });
+    const unrelated = createRuntimeContext({ kind: "turn-runtime", capabilities: [] });
+
+    const result = revokeLiveRuntimeContextsForAgent(TEST_AGENT_ID);
+
+    expect(result.map((entry) => entry.context.contextId).sort()).toEqual(
+      [agentRuntime.contextId, turnRuntime.contextId].sort(),
+    );
+    expect(resolveRuntimeContext(agentRuntime.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(turnRuntime.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(unrelated.contextKey, { touch: false })).not.toBeNull();
+    expect(dbGetContext(turnRuntime.contextId)?.metadata?.revocationReason).toBe("agent_permissions_changed");
+  });
+
   it("snapshots provider materialized capabilities only", () => {
     const capabilities = snapshotAgentCapabilities(TEST_AGENT_ID);
     expect(capabilities).toContainEqual({
@@ -267,6 +298,59 @@ describe("runtime context registry", () => {
         capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
       }),
     ).toThrow("Capability not granted by parent context");
+  });
+
+  it("lets an admin parent delegate an explicit service identity", () => {
+    getOrCreateSession("agent:main:main", "main", "/tmp/ravi-main", { name: "main" });
+    const parent = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [
+        { permission: "admin", objectType: "system", objectId: "*" },
+        { permission: "access", objectType: "session", objectId: "main" },
+      ],
+    });
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "hub-client-issuer",
+      capabilities: [{ permission: "access", objectType: "session", objectId: "main" }],
+      identity: {
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        sessionName: "main",
+      },
+    });
+
+    expect(child.agentId).toBe("main");
+    expect(child.sessionKey).toBe("agent:main:main");
+    expect(child.sessionName).toBe("main");
+    expect(child.source).toBeUndefined();
+    expect(child.metadata).toMatchObject({
+      parentContextId: parent.contextId,
+      issuedFor: "hub-client-issuer",
+      identityDelegation: {
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        sessionName: "main",
+      },
+    });
+  });
+
+  it("rejects identity delegation from a non-admin parent", () => {
+    const parent = createRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "access", objectType: "session", objectId: "main" }],
+    });
+
+    expect(() =>
+      issueRuntimeContext({
+        parent,
+        cliName: "hub-client-issuer",
+        capabilities: [{ permission: "access", objectType: "session", objectId: "main" }],
+        identity: { agentId: "main" },
+      }),
+    ).toThrow("Identity delegation requires admin:system:*");
   });
 
   it("cascades revocation to descendants with a single shared revokedAt", () => {

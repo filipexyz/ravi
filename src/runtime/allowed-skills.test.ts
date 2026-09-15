@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { dbUpsertSkillGrant, dbDeleteSkillGrant } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { BASELINE_SYSTEM_SKILL_SLUGS, resolveAgentSkills } from "./allowed-skills.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId, source: "test" };
@@ -100,6 +101,18 @@ describe("resolveAgentSkills — provider-agnostic core", () => {
 });
 
 describe("resolveAgentSkills — custom grants integration", () => {
+  it("treats explicit grants as authoritative over permission-derived skills", () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("main", {
+      capabilitiesOverride: [cap("execute", "group", "*")],
+    });
+
+    expect(resolved.provenance.fromCapabilities).toEqual([]);
+    expect(resolved.provenance.fromGrants).toContain("gmail-pack");
+    expect(resolved.allowlist).not.toContain("ravi-system-agents-manager");
+  });
+
   let stateDir: string | null = null;
 
   beforeEach(async () => {
@@ -151,5 +164,13 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(resolved.allowlist).not.toContain(`my-custom:org-thing`);
     expect(resolved.allowlist).not.toContain(`custom-org-thing`);
     expect(resolved.provenance.fromGrants).toEqual([exoticSlug]);
+  });
+
+  it("hard-denies a skill that is not on the agent's allowlist", () => {
+    dbUpsertSkillGrant({ agentId: "pi-agent", skillName: "gmail-pack" });
+    expect(isSkillAuthorizedForAgent("pi-agent", "gmail-pack")).toBe(true);
+    expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-sessions")).toBe(true);
+    expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-whatsapp-manager")).toBe(false);
+    expect(isSkillAuthorizedForAgent(undefined, "ravi-system-whatsapp-manager")).toBe(true);
   });
 });

@@ -316,7 +316,7 @@ function buildForcedRouteThreadSessionKey(parentSessionKey: string, threadId: st
   return `${parentSessionKey}:thread:${threadId}`;
 }
 
-function generateThreadForkSessionName(parentSessionName: string, threadId: string): string {
+export function generateThreadForkSessionName(parentSessionName: string, threadId: string): string {
   const parent = slugify(parentSessionName) || "session";
   const suffix =
     threadId

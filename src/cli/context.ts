@@ -10,11 +10,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { getRuntimeContextFromEnv, resolveRuntimeContext, RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
+import { CliExpectedError } from "./expected-error.js";
 
 /**
  * Context available to CLI tools during execution
  */
 export interface ToolContext {
+  /** Execution surface for commands that have transport-specific interaction constraints. */
+  transport?: "tool" | "gateway";
   /** Current runtime context ID */
   contextId?: string;
   /** Resolved context registry record */
@@ -29,8 +32,10 @@ export interface ToolContext {
   source?: {
     channel: string;
     accountId: string;
+    instanceId?: string;
     chatId: string;
     threadId?: string;
+    canonicalChatId?: string;
   };
   /** Arbitrary metadata */
   [key: string]: unknown;
@@ -71,9 +76,10 @@ export function runWithContext<T>(context: ToolContext, fn: () => T): T {
  * const ctx = getContext();
  * const sessionKey = ctx?.sessionKey ?? "unknown";
  */
-export function getContext(): ToolContext | undefined {
+export function getContext(options: { localOnly?: boolean } = {}): ToolContext | undefined {
   const store = contextStorage.getStore();
   if (store) return store;
+  if (options.localOnly === true) return undefined;
 
   const env = process.env;
 
@@ -96,15 +102,19 @@ export function getContext(): ToolContext | undefined {
       ctx.source = {
         channel: source.channel,
         accountId: source.accountId,
+        ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
         chatId: source.chatId,
         ...(source.threadId ? { threadId: source.threadId } : {}),
+        ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
       };
     } else if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
       ctx.source = {
         channel: env.RAVI_CHANNEL,
         accountId: env.RAVI_ACCOUNT_ID,
+        ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
         chatId: env.RAVI_CHAT_ID,
         ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
+        ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
       };
     }
 
@@ -125,8 +135,10 @@ export function getContext(): ToolContext | undefined {
     ctx.source = {
       channel: env.RAVI_CHANNEL,
       accountId: env.RAVI_ACCOUNT_ID,
+      ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
       chatId: env.RAVI_CHAT_ID,
       ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
+      ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
     };
   }
 
@@ -144,11 +156,27 @@ export function getContextValue<K extends keyof ToolContext>(key: K): ToolContex
 }
 
 /**
- * Check if running within a tool context (in-process or via env vars).
+ * Check whether any in-process CLI context or explicit runtime env is active.
  */
 export function hasContext(): boolean {
+  return contextStorage.getStore() !== undefined || hasRuntimeContextEnv();
+}
+
+/**
+ * Check whether the current command came from an explicit runtime invocation.
+ *
+ * A generic CLI handler also runs inside AsyncLocalStorage so expected command
+ * failures can be normalized at the registry boundary. That handler context is
+ * not enough to prove the command is running inside the daemon. Runtime tools,
+ * gateway calls, and child CLIs carrying explicit runtime env are.
+ */
+export function hasRuntimeInvocationContext(): boolean {
+  const transport = contextStorage.getStore()?.transport;
+  return transport === "tool" || transport === "gateway" || hasRuntimeContextEnv();
+}
+
+function hasRuntimeContextEnv(): boolean {
   return (
-    contextStorage.getStore() !== undefined ||
     !!process.env[RAVI_CONTEXT_KEY_ENV] ||
     !!process.env.RAVI_SESSION_KEY ||
     !!process.env.RAVI_SESSION_NAME ||
@@ -187,7 +215,7 @@ function installContextualConsoleGate(): void {
  */
 export function fail(message: string): never {
   if (hasContext()) {
-    throw new Error(message);
+    throw new CliExpectedError(message);
   }
   console.error(message);
   process.exit(1);

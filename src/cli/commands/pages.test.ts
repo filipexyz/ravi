@@ -6,7 +6,11 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { PagesCommands } from "./pages.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError } from "../agent-contract.js";
+import { runWithContext } from "../context.js";
+import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata } from "../decorators.js";
+import { PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
 let stateDir: string | null = null;
@@ -23,6 +27,114 @@ afterEach(async () => {
 });
 
 describe("pages CLI commands", () => {
+  it("sets a route password through hidden input and emits only an allowlisted result", async () => {
+    const secret = "correct horse battery staple";
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return passwordResponse({
+        action: "set",
+        configured: true,
+        policy: {
+          configured: true,
+          id: "policy_1",
+          passwordHash: "must-be-discarded",
+          rotatedAt: "2026-08-03T12:00:00.000Z",
+          scope: "route",
+          status: "active",
+          version: 2,
+        },
+        unexpectedPassword: secret,
+      });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async (options) => {
+        expect(options).toMatchObject({ fromStdin: false, prompt: "Page password: " });
+        return secret;
+      },
+    });
+
+    const { output } = await captureConsole(() =>
+      command.set(["proj", "demo"], undefined, "/report", false, undefined, true, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        accessToken: "access-secret",
+        body: { action: "set", password: secret, path: "/report", siteRef: "demo" },
+        method: "POST",
+        path: "/api/cli/projects/proj/pages/password",
+      },
+    ]);
+    expect(payload).toMatchObject({
+      action: "set",
+      configured: true,
+      path: "/report",
+      policy: { id: "policy_1", status: "active", version: 2 },
+      success: true,
+      url: "https://demo.ravi.page/report",
+    });
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain("passwordHash");
+    expect(output).not.toContain("unexpectedPassword");
+  });
+
+  it("reads password status without invoking secret input", async () => {
+    const client = makeClient(async () => passwordResponse({ action: "status", configured: false, policy: null }));
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const { output } = await captureConsole(() =>
+      command.status(["proj", "demo"], undefined, undefined, undefined, true),
+    );
+
+    expect(JSON.parse(output)).toMatchObject({ action: "status", configured: false, policy: null });
+  });
+
+  it("requires an explicit replacement visibility when removing password access", async () => {
+    const command = new PagesPasswordCommands({
+      client: makeClient(async () => passwordResponse()),
+      readCredentials: makeReadCredentials(),
+    });
+
+    const { result } = await captureConsole(() =>
+      runWithContext({}, () =>
+        command
+          .remove(["proj", "demo"], undefined, undefined, undefined, undefined, true)
+          .then(() => null)
+          .catch((error) => error),
+      ),
+    );
+    expect(result).toMatchObject({ code: "PAYLOAD_INVALID" });
+  });
+
+  it("marks ship as the one-shot and create/publish as advanced/compat", () => {
+    const commands = getCommandsMetadata(PagesCommands);
+    const byName = Object.fromEntries(commands.map((command) => [command.name, command]));
+    expect(byName.ship?.description).toContain("One-shot");
+    expect(byName.ship?.helpAfter).toContain('ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json');
+    expect(byName.ship?.helpAfter).not.toContain("--json --execute");
+    expect(byName.create?.description).toMatch(/Advanced\/compat|host-only/i);
+    expect(byName.create?.helpAfter).toContain("Prefer");
+    expect(byName.publish?.description).toMatch(/Advanced\/compat|art_\*/);
+    expect(byName.publish?.helpAfter).toContain("Prefer");
+  });
+
+  it("does not expose a password argument or option in command metadata", () => {
+    const options = getOptionsMetadata(new PagesPasswordCommands(), "set");
+    expect(options.map((option) => option.flags)).not.toContain("--password <value>");
+    expect(options.map((option) => option.flags)).toContain("--stdin");
+    expect(getCliOnlyMetadata(PagesPasswordCommands)).toContain("set");
+  });
+
   it("lists project Pages sites through the Console CLI API", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
@@ -130,7 +242,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.create(["proj", "demo"], undefined, "public", true, undefined, true),
+      command.create(["proj", "demo"], undefined, "public", true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -152,6 +264,8 @@ describe("pages CLI commands", () => {
       site: { slug: "demo", defaultHostname: "demo.ravi.page" },
       url: "https://demo.ravi.page/",
     });
+    expect(payload.contentPublishCommand).toContain("ravi pages publish");
+    expect(payload.contentPublishCommand).not.toContain("--execute");
   });
 
   it("updates a project Pages site visibility through the Console CLI API", async () => {
@@ -174,7 +288,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.update(["proj", "demo"], undefined, "public", undefined, true),
+      command.update(["proj", "demo"], undefined, "public", undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -265,7 +379,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true),
+      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -376,6 +490,8 @@ describe("pages CLI commands", () => {
         noActivate,
         undefined,
         true,
+        undefined,
+        true,
       );
 
     const defaultResult = await captureConsole(() => publish());
@@ -480,6 +596,8 @@ describe("pages CLI commands", () => {
         undefined,
         undefined,
         true,
+        undefined,
+        true,
       ),
     );
     const payload = JSON.parse(output);
@@ -530,6 +648,588 @@ describe("pages CLI commands", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake (exit 3), Console not-found
+// mapping (SITE_NOT_FOUND / ROUTE_NOT_FOUND, exit 1) and compact --fields.
+// The real context module is in play here, so braked calls run inside
+// runWithContext to make the contract helpers throw instead of process.exit.
+// ---------------------------------------------------------------------------
+
+describe("pages agent-first contract", () => {
+  it("create without --execute writes the host immediately", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {
+        id: "site_1",
+        slug: "demo",
+        defaultHostname: "demo.ravi.page",
+        defaultVisibility: "private",
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.create(["proj", "demo"], undefined, "private", true, undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/cli/projects/proj/pages",
+        body: { slug: "demo", defaultVisibility: "private", isDefault: true },
+      },
+    ]);
+    expect(payload).toMatchObject({ success: true, site: { slug: "demo" } });
+  });
+
+  it("domains without --execute dry-runs before credentials or Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {};
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.domains(["proj", "demo", "docs.example.com"], undefined, true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      hostnameCount: 1,
+      readinessCheck: true,
+    });
+    expect(credentialReads).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("publish without --execute uploads immediately", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-publish-unbraked-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const calls: string[] = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      createPageUploadSession: mock(async () => {
+        calls.push("createPageUploadSession");
+        return {
+          uploadSession: { id: "upl_unbraked" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: mock(async () => {
+        calls.push("finalizeArtifactPublish");
+        return {
+          artifact: { id: "cloud_art_unbraked" },
+          site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page" },
+          url: "https://demo.ravi.page/guide",
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.publish(
+        ["proj", "demo", dir],
+        undefined,
+        "/guide",
+        "public",
+        "Docs",
+        undefined,
+        undefined,
+        "index.html",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls).toEqual(["createPageUploadSession", "finalizeArtifactPublish"]);
+    expect(JSON.parse(output)).toMatchObject({
+      success: true,
+      url: "https://demo.ravi.page/guide",
+    });
+  });
+
+  it("password set without --execute never prompts for the password nor calls Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    let prompted = false;
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        prompted = true;
+        return "never-used";
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.set(["proj", "demo"], undefined, "/sentinel/private", false, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      routePresent: true,
+      action: "set",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
+    expect(Object.keys(error.details.plan as Record<string, unknown>)).not.toContain("password");
+    expect(prompted).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("password remove keeps validation BEFORE the brake and exits 3 once the visibility is valid", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    const command = new PagesPasswordCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.remove(["proj", "demo"], undefined, "/sentinel/private", "private", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      routePresent: true,
+      replacementVisibility: "private",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("update to public without --execute exits 3; reducing visibility writes immediately", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {
+        site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "private" },
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    await expectContractError(
+      () => command.update(["proj", "demo"], undefined, "public", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(calls).toHaveLength(0);
+
+    await captureConsole(() => command.update(["proj", "demo"], undefined, "private", undefined, true));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "PATCH" });
+  });
+
+  it("visibility shortcut to public is braked too", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return { site: { id: "site_1", slug: "demo" } };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.visibility(["proj", "demo", "public"], undefined, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ site: "demo", defaultVisibility: "public" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("maps a Console 'site not found' failure to the SITE_NOT_FOUND envelope (exit 1)", async () => {
+    const privateProviderMessage =
+      "Pages site not found: https://user:SENTINEL_PROVIDER_4Q7M@example.test/private?token=value";
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", privateProviderMessage, { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "ghost"], undefined, undefined, undefined, true),
+      "SITE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages list");
+    const serialized = JSON.stringify(error.envelope());
+    expect(error.envelope().error.message).toBe("Pages site was not found.");
+    expect(serialized).not.toContain("SENTINEL_PROVIDER_4Q7M");
+    expect(serialized).not.toContain("user:");
+    expect(serialized).not.toContain("/private");
+  });
+
+  it("maps a Console 'route not found' failure to the ROUTE_NOT_FOUND envelope (exit 1)", async () => {
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Route not found: /missing", { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "demo"], undefined, "/missing", undefined, true),
+      "ROUTE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages published");
+  });
+
+  it("ship without --execute publishes immediately and leftover --execute is a no-op", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-unbraked-test-");
+    const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string, body: unknown) => {
+        listAndCreate.push({ method, path, body });
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+          return [
+            {
+              id: "site_1",
+              slug: "weekly-report",
+              defaultHostname: "weekly-report.ravi.page",
+              defaultVisibility: "private",
+            },
+          ];
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async () => ({
+        uploadSession: { id: "upl_unbraked_ship" },
+        uploadPolicy: { directUpload: false },
+      })),
+      finalizeArtifactPublish: mock(async () => ({
+        artifact: { id: "cloud_art_unbraked_ship" },
+        site: {
+          id: "site_1",
+          slug: "weekly-report",
+          defaultHostname: "weekly-report.ravi.page",
+        },
+        url: "https://weekly-report.ravi.page/",
+      })),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const ship = (execute?: boolean) =>
+      command.ship(
+        [],
+        "proj",
+        "Weekly report",
+        "<h1>OK</h1>",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        execute,
+      );
+
+    const withoutExecute = await captureConsole(() => ship());
+    const withExecuteNoop = await captureConsole(() => ship(true));
+
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+    ]);
+    expect(JSON.parse(withoutExecute.output)).toMatchObject({
+      artifactId: "cloud_art_unbraked_ship",
+      slug: "weekly-report",
+      success: true,
+      url: "https://weekly-report.ravi.page/",
+    });
+    expect(JSON.parse(withExecuteNoop.output)).toMatchObject({
+      success: true,
+      slug: "weekly-report",
+    });
+  });
+
+  it("ship with --execute wraps --body as HTML5, reuses an existing slug, and returns the JSON shape", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-command-test-");
+    const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string, body: unknown) => {
+        listAndCreate.push({ method, path, body });
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+          return [
+            {
+              id: "site_1",
+              slug: "weekly-report",
+              defaultHostname: "weekly-report.ravi.page",
+              defaultVisibility: "private",
+            },
+          ];
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async (input: Record<string, unknown>) => {
+        expect(input).toMatchObject({
+          projectRef: "proj",
+          siteRef: "weekly-report",
+          packageManifest: {
+            entrypoint: "index.html",
+            files: [{ path: "index.html" }],
+          },
+        });
+        return {
+          uploadSession: { id: "upl_ship" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: mock(async (input: Record<string, unknown>) => {
+        expect(input).toMatchObject({
+          uploadSessionId: "upl_ship",
+          artifact: { name: "Weekly report" },
+          publish: {
+            activate: true,
+            siteRef: "weekly-report",
+            visibility: "private",
+            route: { path: "/", visibility: "private" },
+          },
+          source: { tool: "ravi pages ship" },
+        });
+        return {
+          artifact: { id: "cloud_art_ship" },
+          artifactVersion: { id: "cloud_ver_ship", versionNumber: 1 },
+          site: {
+            id: "site_1",
+            slug: "weekly-report",
+            defaultHostname: "weekly-report.ravi.page",
+            defaultVisibility: "private",
+          },
+          publish: { id: "pub_ship" },
+          release: { id: "rel_ship", url: "https://weekly-report.ravi.page/" },
+          routes: [{ id: "route_ship", path: "/" }],
+          url: "https://weekly-report.ravi.page/",
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.ship(
+        [],
+        "proj",
+        "Weekly report",
+        "<h1>OK</h1>",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
+    expect(payload).toEqual({
+      artifactId: "cloud_art_ship",
+      route: "/",
+      site: {
+        id: "site_1",
+        slug: "weekly-report",
+        defaultHostname: "weekly-report.ravi.page",
+        defaultVisibility: "private",
+      },
+      slug: "weekly-report",
+      success: true,
+      url: "https://weekly-report.ravi.page/",
+      visibility: "private",
+    });
+  });
+
+  it("ship with --execute creates the host when the slug is new", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-create-command-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string, body: unknown) => {
+        listAndCreate.push({ method, path, body });
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") return [];
+        if (method === "POST" && path === "/api/cli/projects/proj/pages") {
+          return {
+            id: "site_new",
+            slug: "docs",
+            defaultHostname: "docs.ravi.page",
+            defaultVisibility: "private",
+          };
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async () => ({
+        uploadSession: { id: "upl_new" },
+        uploadPolicy: { directUpload: false },
+      })),
+      finalizeArtifactPublish: mock(async () => ({
+        artifact: { id: "cloud_art_new" },
+        site: { id: "site_new", slug: "docs", defaultHostname: "docs.ravi.page" },
+        url: "https://docs.ravi.page/",
+      })),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.ship(
+        ["proj", "docs"],
+        undefined,
+        "Docs",
+        undefined,
+        undefined,
+        dir,
+        "private",
+        "/",
+        "index.html",
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      {
+        method: "POST",
+        path: "/api/cli/projects/proj/pages",
+        body: { slug: "docs", defaultVisibility: "private" },
+      },
+    ]);
+    expect(payload).toMatchObject({
+      artifactId: "cloud_art_new",
+      route: "/",
+      slug: "docs",
+      url: "https://docs.ravi.page/",
+      visibility: "private",
+    });
+  });
+
+  it("list --fields narrows each site to the requested fields", async () => {
+    const client = makeClient(async () => [
+      { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public", status: "active" },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.list("proj", undefined, undefined, undefined, undefined, true, "slug,status"),
+    );
+    const payload = JSON.parse(output);
+
+    expect(payload.sites).toEqual([{ slug: "demo", status: "active" }]);
+    expect(payload.items).toEqual([{ slug: "demo", status: "active" }]);
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractError> {
+  let caught: unknown;
+  await captureConsole(async () => {
+    try {
+      await runWithContext({}, run);
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractError;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+function passwordResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    action: "set",
+    configured: true,
+    path: "/report",
+    policy: {
+      configured: true,
+      id: "policy_1",
+      rotatedAt: "2026-08-03T12:00:00.000Z",
+      scope: "route",
+      status: "active",
+      version: 1,
+    },
+    projectRef: "proj",
+    release: { id: "release_2", number: 2 },
+    route: {
+      bindingId: "binding_2",
+      effectiveVisibility: "password",
+      id: "route_1",
+      path: "/report",
+      visibility: "password",
+    },
+    scope: "route",
+    site: { defaultHostname: "demo.ravi.page", id: "site_1", projectId: "project_1" },
+    siteRef: "demo",
+    url: "https://demo.ravi.page/report",
+    ...overrides,
+  };
+}
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

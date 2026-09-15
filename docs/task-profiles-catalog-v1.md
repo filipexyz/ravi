@@ -134,7 +134,7 @@ O runtime:
 ### 3. Dispatch
 
 ```bash
-ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>] --execute
 ```
 
 O runtime:
@@ -220,7 +220,7 @@ Contrato:
 
 - workspace = task workspace canônico
 - artifact primário = `TASK.md`
-- protocolo = escrever briefing Devin-ready, criar sessão remota via `ravi devin sessions create`, monitorar com `show/messages/insights/sync`, e sincronizar o estado da task no Ravi
+- protocolo = escrever briefing Devin-ready, criar sessão remota via `ravi devin sessions create` (dry-run por default; adicione `--execute` para criar de verdade — idem em `send`), monitorar com `show/messages/insights/sync`, e sincronizar o estado da task no Ravi
 - use `ravi devin sessions insights <session> --json` para consultar status rico/contagens/análise remota quando a API disponibilizar
 - use `ravi devin sessions sync <session> --insights --artifacts --json` para registrar o snapshot remoto como artifact
 - inputs padrão = ACU limit via `DEVIN_DEFAULT_MAX_ACU_LIMIT` (explicit, not hidden), repos via `DEVIN_DEFAULT_REPOS` or `--repo`

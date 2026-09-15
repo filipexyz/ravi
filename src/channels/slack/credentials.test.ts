@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
   credentialConnectionForChannel,
+  isSlackGatewayChannel,
   parseSlackSecretPayload,
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";
@@ -146,14 +147,67 @@ describe("Slack credential config", () => {
     ).toBe("rbbt-secret");
     expect(credentialConnectionForChannel(slackChannel({ name: "ravi-rbbt-slack" }))).toBeUndefined();
   });
+
+  it("resolves the Hub gateway without hydrating Slack tokens", async () => {
+    const resolveSecret = mock(async () => {
+      throw new Error("broker must not be called");
+    });
+    const channel = slackChannel({
+      name: "slack-main",
+      defaults: { transport: "hub_gateway_v1" },
+    });
+    const credential = "runtime-credential-".padEnd(48, "x");
+
+    const config = await resolveSlackCredentialConfigFromEnv(
+      {
+        RAVI_SLACK_GATEWAY_URL: "https://ravi.example.test/",
+        RAVI_RUNTIME_ID: "11111111-1111-4111-8111-111111111111",
+        RAVI_RUNTIME_CREDENTIAL: credential,
+      },
+      { channel, channels: { "slack-main": channel }, resolveSecret },
+    );
+
+    expect(resolveSecret).not.toHaveBeenCalled();
+    expect(isSlackGatewayChannel(channel)).toBeTrue();
+    expect(config).toMatchObject({
+      source: "gateway",
+      accountId: "slack-main",
+      apiBaseUrl: "https://ravi.example.test/api/runtime/v1/slack/web-api",
+      fileProxyUrl: "https://ravi.example.test/api/runtime/v1/slack/files",
+      requestHeaders: {
+        authorization: `Bearer ${credential}`,
+        "x-ravi-runtime-id": "11111111-1111-4111-8111-111111111111",
+      },
+    });
+  });
+
+  it("rejects an insecure remote Hub gateway", async () => {
+    const channel = slackChannel({ name: "slack-main", defaults: { transport: "hub_gateway_v1" } });
+    await expect(
+      resolveSlackCredentialConfigFromEnv(
+        {
+          RAVI_SLACK_GATEWAY_URL: "http://ravi.example.test",
+          RAVI_RUNTIME_ID: "11111111-1111-4111-8111-111111111111",
+          RAVI_RUNTIME_CREDENTIAL: "runtime-credential-".padEnd(48, "x"),
+        },
+        { channel },
+      ),
+    ).rejects.toThrow("must use HTTPS");
+  });
 });
 
-function slackChannel(input: { name: string; credentialConnection?: string; enabled?: boolean }) {
+function slackChannel(input: {
+  name: string;
+  credentialConnection?: string;
+  enabled?: boolean;
+  defaults?: Record<string, unknown>;
+}) {
   return {
     name: input.name,
     provider: "slack",
     enabled: input.enabled ?? true,
     ...(input.credentialConnection ? { credentialConnection: input.credentialConnection } : {}),
+    ...(input.defaults ? { defaults: input.defaults } : {}),
     createdAt: 1,
     updatedAt: 1,
   };

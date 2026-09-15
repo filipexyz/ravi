@@ -14,6 +14,37 @@ description: |
 Ravi Commands sao atalhos de prompt invocados pelo usuario com `#nome`.
 Eles nao sao slash commands, nao sao shell commands e nao concedem permissao extra ao agent.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (`COMMAND_NOT_FOUND`, `AGENT_NOT_FOUND`). O envelope traz `suggestions` com ids reais parecidos (commands do mesmo registry, agents do config local) — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido).
+- `3` freio de escrita — NÃO existe neste domínio.
+
+Sem freio (declarado): o domínio inteiro é read-only. `commands run` só RENDERIZA o prompt composto para preview — não publica em sessão, não executa runtime — então nada aqui exige `--execute`.
+
+Caso especial: `commands validate` mantém o exit 1 PRÉ-EXISTENTE quando há erros de validação nos arquivos — é veredito sobre os arquivos, não envelope de erro.
+
+Compact mode: `commands list` aceita `--fields a,b,c` (ex.: `--fields id,scope`).
+
+Exemplos:
+
+```bash
+ravi commands show nope --json              # exit 1 + COMMAND_NOT_FOUND + suggestions
+ravi commands list --fields id,scope --json # itens compactos
+ravi commands run restart --json -- "motivo" # renderiza; sem side effects
+```
+
+Checklist antes de responder sobre commands:
+
+- Consultei `suggestions` do envelope antes de declarar command/agent inexistente?
+- Lembrei que `run` só renderiza (nenhum exit 3 esperado neste domínio)?
+- Em `validate`, tratei exit 1 como veredito sobre os arquivos, não como falha do CLI?
+
 ## Modelo Mental
 
 Um Ravi Command e um arquivo Markdown que vira prompt composto.

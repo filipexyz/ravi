@@ -26,15 +26,16 @@ ravi slack canvas-sections-lookup <canvas> --section-types h1,h2 --contains-text
 ravi slack canvas-edit <canvas> replace --section-id <sectionId> --markdown-file ./status.md --execute --json
 
 ravi slack canvas-access-set <canvas> write --channels <channelIds> --execute --json
-ravi slack canvas-access-delete <canvas> --users <userIds> --execute --json
+ravi slack canvas-access-delete <canvas> --users <userIds> --json --execute
 ravi slack canvas-delete <canvas> --execute --json
 ravi slack canvas-artifact-status <artifactId> --json
 ```
 
 ## Dry-run
 
-Mutacoes de Canvas sao dry-run por padrao. Adicione `--execute` somente quando a
-acao estiver correta.
+Mutacoes de Canvas que criam, editam, compartilham ou destroem sao dry-run por
+padrao. `canvas-access-delete` reduz compartilhamento, mas preserva o freio
+legado com `--execute` para não transformar uma prévia antiga em revogação.
 
 ## Artifact Metadata
 

@@ -1,0 +1,28 @@
+{
+  "binding": {
+    "agentId": "agent-a",
+    "channelInstanceId": "channel-instance-a",
+    "chatId": "chat-a",
+    "messageId": "message-a",
+    "sessionId": "session-a",
+    "turnId": "turn-a"
+  },
+  "causationId": "request-a",
+  "content": [
+    {
+      "text": "fixture output",
+      "type": "text"
+    }
+  ],
+  "correlationId": "correlation-a",
+  "emittedAt": "2026-07-24T18:00:01.000Z",
+  "kind": "assistant_message",
+  "outputId": "output-a",
+  "protocol": "ravi.channel.backend",
+  "schemaVersion": 1,
+  "target": {
+    "channelKind": "custom",
+    "connectionId": "connection-a",
+    "conversationId": "external-conversation-a"
+  }
+}

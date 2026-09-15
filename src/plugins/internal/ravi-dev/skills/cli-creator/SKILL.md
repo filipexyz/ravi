@@ -5,7 +5,7 @@ description: >-
   Cobre as duas famílias (CLI nativo do Ravi = classe com decorators auto-descoberta;
   CLI standalone/domínio = binário próprio), o contrato de decorators
   (@Group/@Command/@Arg/@Option/@CommandAccess/@Returns/@Scope), output agent-first
-  (mandato --json, stdout=dado/stderr=log, exit 0/1, helper fail(), IDs semânticos),
+  (mandato --json, envelopes canônicos, exit 0/1/2/3, ContractError, IDs semânticos),
   paginação real (páginas limitadas 50/500 + nextCommand), gate de --help padrão-ouro,
   e os meta-testes de CI que são a lei do repo. Use quando criar nova ferramenta CLI,
   refatorar CLI existente, padronizar comandos, ou integrar CLI ao runtime com
@@ -42,6 +42,10 @@ O resto desta skill foca no **nativo do Ravi** (o caso comum). Para standalone, 
 3. **Contrato de decorators** (nativo Ravi) — um comando só é um "tool" de primeira classe com `@Command` + `@CommandAccess` + `@Returns`.
 4. **Agent-first** — o consumidor é um agente autônomo com contexto escasso: alto sinal, IDs semânticos, `--json`, erros que se autocorrigem.
 5. **RAVI_CONTEXT_KEY** — CLIs que rodam dentro do Ravi usam o contexto como credencial canônica.
+6. **Contrato global** — `.ravi/specs/cli/SPEC.md` é normativo para envelopes, taxonomia,
+   confirmação, transportes, autorização relacional (REBAC), auditoria e
+   sanitização. A spec do domínio só
+   classifica as operações e registra exceções/checks próprios.
 
 ---
 
@@ -50,9 +54,9 @@ O resto desta skill foca no **nativo do Ravi** (o caso comum). Para standalone, 
 ### 1. Brainstorm
 Qual problema resolve? Qual decisão melhora? Quais entidades/artefatos/lineage? O que persistir e por quê?
 
-### 2. Mapa de implementação (GATE — apresentar ao aprovador HITL)
+### 2. Mapa de implementação (GATE — apresentar à aprovação humana, HITL)
 - [ ] Verifiquei se já existe (`ravi tools search "<intenção>"`, `sde --help`, `ravi skills list`)
-- [ ] Li a doc da API do começo ao fim (se integra API externa)
+- [ ] Li a doc da interface de programação (API) do começo ao fim (se integra API externa)
 - [ ] Defini domínio de negócio (financeiro, frete, estoque…)
 - [ ] Escolhi storage: SQLite por domínio se há lineage/cache/auditoria; senão stateless
 
@@ -77,14 +81,16 @@ export class TaskCommands {
     // ... lógica ...
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     else console.log(/* view humana */);
-    return payload;            // <- o return é o que o SDK/gateway serializa
+    return payload;            // <- o return é o que o kit de desenvolvimento (SDK)/gateway serializa
   }
 }
 ```
 
 Os 8 decorators reais (`src/cli/decorators.ts`): `@Group` `@Command` `@Arg` `@Option` `@CommandAccess` `@Returns` `@Scope` `@CliOnly`.
 - **`@CommandAccess({ kind, resource, action, risk })`** — obrigatório em quase todo comando; alimenta o permission-provider. `kind`: `read`|`mutate`. `risk`: `low`|`medium`|`high`|`destructive`.
-- **`@Scope` / `scope` no `@Group`** — fail-secure: default é `admin`. Enum real (`decorators.ts`): `superadmin`|`admin`|`writeContacts`|`resource`|`open`. Use `open` só para leitura genérica.
+- **`@Scope` / `scope` no `@Group`** — gate grosso de exposição; default é
+  `admin`. Enum real (`decorators.ts`): `superadmin`|`admin`|`writeContacts`|`resource`|`open`.
+  `open` não significa read-only e nunca substitui o `@CommandAccess` por operação.
 - **`@Returns(zodSchema)`** — SEM isso o comando não vira tool tipado do SDK. Schema inline (como acima) ou em massa via `declareCommandReturns(Classe, { metodo: schema })`. Primitivos reutilizáveis em `src/cli/return-schemas.ts`: `cliOffsetPaginationSchema`, `cliCursorPageSchema`, `mutationAckSchema`, `jsonValueSchema`.
 - **`@Returns.binary()`** — para resposta binária (blob) no lugar do schema Zod.
 - **`@CliOnly()`** — exclui o comando da superfície SDK (comando só-humano).
@@ -99,7 +105,7 @@ Sem passo de "registrar manifest". A reflexão faz. Verifica com: `ravi tools sh
 ### 5. Integração runtime (RAVI_CONTEXT_KEY) — se aplicável
 - Pai emite `ravi context issue <cli> --allow <cap> --ttl <dur>` → filho recebe `RAVI_CONTEXT_KEY` (única credencial, formato `rctx_*`).
 - CLI valida com `ravi context whoami` / `check <perm> <objType> <objId>`.
-- Capability mínima, TTL curto, audit completo. (Esta parte a skill antiga já acertava.)
+- Capability mínima, tempo de vida (TTL) curto, audit completo. (Esta parte a skill antiga já acertava.)
 
 ### 6. Spike + testes (GATE — antes de entregar)
 Rodar CADA comando com input válido / inválido / faltando. Todos os checks abaixo têm que PASSAR (senão corrigir + re-testar; NUNCA entregar com bug):
@@ -107,7 +113,7 @@ Rodar CADA comando com input válido / inválido / faltando. Todos os checks aba
 - [ ] Erro acionável com input inválido (com o próximo comando sugerido)
 - [ ] Mensagem de uso com input faltando
 - [ ] `--json` retorna JSON válido
-- [ ] Exit code correto (0 sucesso, 1 erro)
+- [ ] Exit code correto (`0` sucesso, `1` falha, `2` uso, `3` bloqueio por política)
 - [ ] `--help` passa no **gate padrão-ouro** (§5 abaixo)
 
 **A lei do repo = meta-testes de CI** (não o spike manual). O repo tem `json-coverage.test.ts` (todo comando finito DEVE expor `--json`) e `pagination-coverage.test.ts` (todo `list`/`ls` DEVE ser paginado). Teste co-locado em `src/cli/commands/<grupo>.test.ts`, roda em `bun:test` com `mock` + `await import(...)`. Se seu CLI não conformar, **a CI fica vermelha.**
@@ -120,10 +126,25 @@ Rodar CADA comando com input válido / inválido / faltando. Todos os checks aba
 
 ## 4. Output agent-first (regras duras)
 
-- **`stdout` = só dado. `stderr` = log/progresso/erro.** Assim o pipe/JSON não corrompe. (`console.log` p/ payload, `console.error` p/ erro.)
+- **`stdout` = dado/envelope em JSON. `stderr` = log/progresso e erro textual.** Em
+  `--json`, uma falha imprime exatamente um envelope canônico no stdout e nada
+  acrescenta `Error:`, stack ou uma segunda renderização.
 - **Mandato `--json`** — todo comando finito expõe `--json`, imprime `JSON.stringify(payload, null, 2)` E `return`a o payload. É CI-enforced.
-- **Exit codes = 0/1.** Sucesso 0, erro 1. (Não invente "2 = uso" — não é a convenção real.) NUNCA `process.exit()` no caminho de sucesso.
-- **Helper `fail(msg)`** (`src/cli/context.ts`): dentro de contexto Ravi ele **lança** (o gateway captura); fora, `console.error` + `exit(1)`. Use `fail()`, não `process.exit` cru — senão quebra rodando dentro do daemon.
+- **Taxonomia = `0/1/2/3`.** `0` sucesso; `1` execução/provider/not-found;
+  `2` uso inválido; `3` bloqueio seguro pela política de confirmação. Exit 3 é
+  `blocked`, não uma execução `failed`.
+- **Falha contratual = `contractFail(...)`.** Passe `op`, código semântico,
+  `asJson`, `exitCode` e detalhes acionáveis. Ele lança `ContractError`; CLI, tool e
+  gateway/SDK preservam o mesmo envelope e taxonomia. `fail()` é legado e não
+  deve nascer em um CLI novo ou em um caminho declarado migrado.
+- **Confirmação baseada em risco.** `contractDryRun(...)` + `--execute` só para
+  publicação/envio externo, mutação relevante em provider, destruição difícil
+  de recuperar, execução disparada ou custo acima de limite conhecido. Escrita
+  local/reversível e custo trivial sem estimativa rodam direto.
+- **Autorização ≠ confirmação.** Toda operação com efeito usa
+  `@CommandAccess({ kind: "mutate" })`, mesmo sem `--execute`; leitura pura usa
+  `read`. O dry-run ocorre depois da autorização/validação e antes de qualquer
+  DB write, provider, recurso, evento, fila ou worker.
 - **Alto sinal** — retorne os campos que informam a próxima ação (`name`, `status`, `url`); corte ruído (`uuid` cru, `mime_type`, `256px_url`) salvo se pedido.
 - **IDs semânticos** — resolva UUID pra nome legível no output; melhora a precisão do agente.
 - **Erros acionáveis** — RUIM: `Error: EACCES`. BOM: `Invalid priority: X. Use low|normal|high|urgent` — sempre com o COMO corrigir / o próximo comando. Retorne o contexto que o agente gastaria uma chamada pra buscar.
@@ -132,9 +153,16 @@ Rodar CADA comando com input válido / inválido / faltando. Todos os checks aba
 
 ## 5. `--help` padrão-ouro (GATE — o contrato completo)
 
-`--help` NÃO é lista de flags — é o **contrato comportamental completo** da CLI, a SSoT. Um agente sem contexto tem que dirigir a CLI só lendo o help ("teste do agente cego"). **Bloqueia entrega se falhar.** **O essencial pra escrever um `--help` padrão-ouro está inline abaixo — esta skill é standalone.** Aprofundamento opcional (building blocks, tipologias): `cli-help-engineering`, se disponível.
+`--help` NÃO é lista de flags — é o **contrato comportamental completo** da CLI,
+a fonte única de verdade (SSoT). Um agente sem contexto tem que dirigir a CLI
+só lendo o help ("teste do agente cego"). **Bloqueia entrega se falhar.** **O
+essencial pra escrever um `--help` padrão-ouro está inline abaixo — esta skill
+é standalone.** Aprofundamento opcional (building blocks, tipologias):
+`cli-help-engineering`, se disponível.
 
-**Padrão-ouro de referência (rodar e replicar a estrutura):** `sde tiny pedido-montar-json --help`.
+**Padrão-ouro de referência:** use o excerto autocontido abaixo. Se `sde` estiver
+disponível no ambiente, rode `sde tiny pedido-montar-json --help` para comparar
+a estrutura completa; a ausência desse CLI externo não bloqueia o uso desta skill.
 
 **Mínimo por comando (todo CLI):**
 - [ ] Descrição de 1 linha + Usage com `<obrigatório>`/`[opcional]`
@@ -157,7 +185,9 @@ USE          ✓ Cliente existe + SKU cadastrado + balcão padrão
 NÃO USE      ✗ Item sem cadastro → `pedido-incluir` direto   ✗ Marketplace → CLI dedicada
 REGRAS HARD  • Atacado requer subtotal > R$2.000   • Frete=0 + subtotal<R$500 → alerta
 ```
-Seções obrigatórias sempre: `USE`, `NÃO USE`, `EXAMPLES`, `ON ERROR`, `FONTES`. As de risco (`REGRAS HARD`, `HITL`, `LIFECYCLE`) entram quando o CLI muta/é irreversível.
+Seções obrigatórias sempre: `USE`, `NÃO USE`, `EXAMPLES`, `ON ERROR`, `FONTES`.
+As de risco (`REGRAS HARD`, `HITL`, `LIFECYCLE`) entram quando o efeito real exige
+restrição, confirmação ou explicação de transição — não pela mera existência de escrita.
 
 **Cristalizar a precedência NO --help** (senão agentes divergem em conflito):
 ```
@@ -198,7 +228,8 @@ Para sets grandes/temporais use cursor (`src/cli/listing.ts` + `cliCursorPageSch
 7. **Output instável entre versões** (renomear campo JSON, reordenar coluna) — quebra todo consumidor.
 8. **`--help` fino/sem exemplo** — falha o teste do agente cego.
 9. **Segredo em flag ou env var** — vaza em `ps`/histórico/processos-filho. Use arquivo de credencial / stdin.
-10. **`process.exit` cru** dentro de handler — quebra execução in-daemon. Use `fail()`.
+10. **`process.exit` cru ou `fail()` legado** num handler novo — quebra a
+    paridade entre processo/tool/gateway. Use `contractFail()`/`contractDryRun()`.
 11. **Editar o barrel `commands/index.ts` à mão** — é auto-gerado. Rode `gen:commands`.
 
 ---
@@ -224,3 +255,5 @@ Quando o CLI existe e tem regra de negócio no source que o `--help` não mostra
 1. **Mapa antes de código, apresentado ao HITL** — genérico, nunca uma pessoa fixa. NUNCA implementar sem aprovação.
 2. **Contrato real = decorators + `@Returns` + `@CommandAccess` + `bun run gen:commands`.** Esqueça manifest/register manual — é ficção pro CLI nativo.
 3. **`--json` + paginação + `--help` padrão-ouro são gates de CI/entrega**, não opcionais. Cada um foi spike-testado no código vivo.
+4. **Taxonomia, confirmação e transportes vêm de `.ravi/specs/cli/`.** Não
+   redefina o contrato por domínio nem aplique `--execute` por verbo.

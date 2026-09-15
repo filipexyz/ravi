@@ -130,6 +130,38 @@ describe("createClaudeRuntimeProvider", () => {
     expect(settings.PermissionRequest[0].matcher).toBe("*");
   });
 
+  it("advertises the allowlisted canonical app builder through the Claude plugin", () => {
+    const provider = createClaudeRuntimeProvider();
+    const pluginPath = join(import.meta.dir, "..", "plugins", "internal", "ravi-dev");
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "build an app" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        {
+          plugins: [{ type: "local", path: pluginPath }],
+          allowedSkills: ["ravi-dev-app-creator"],
+        },
+      ),
+    );
+
+    expect(session.skillVisibility?.loadedSkills).toEqual([]);
+    expect(session.skillVisibility?.skills).toEqual([
+      expect.objectContaining({
+        id: "app-creator",
+        provider: "claude",
+        state: "advertised",
+        confidence: "declared",
+        source: "plugin:ravi-dev/app-creator",
+      }),
+    ]);
+  });
+
   it("closes the active Claude SDK query idempotently", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-close" }];
     queryGate = new Promise<void>((resolve) => {
@@ -309,6 +341,48 @@ describe("createClaudeRuntimeProvider", () => {
       type: "stream.ended",
       reason: "missing_terminal_event",
     });
+  });
+
+  it("does not empty-join distinct assistant text blocks into one message", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "primeiro?" },
+            { type: "text", text: "Olá" },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-mash",
+        usage: {
+          input_tokens: 4,
+          output_tokens: 2,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "oi" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["primeiro?", "Olá"]);
   });
 
   it("passes an explicit native executable path when configured", async () => {
@@ -528,6 +602,76 @@ describe("createClaudeRuntimeProvider", () => {
         process.env.CLAUDE_CODE_OAUTH_TOKEN = originalToken;
       }
     }
+  });
+
+  it("never backfills upstream auth into a model-broker runtime", () => {
+    const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const originalApiKey = process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "daemon-oauth-secret";
+    process.env.ANTHROPIC_API_KEY = "daemon-api-secret";
+    try {
+      const env = buildClaudeCodeEnvironment({
+        RAVI_MODEL_BROKER_ACTIVE: "1",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:43123",
+      });
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:43123");
+    } finally {
+      if (originalToken === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = originalToken;
+      if (originalApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+  });
+
+  it("loads only protected user settings in model-broker mode and excludes malicious project overrides", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-proxy", result: "ok", usage: {} }];
+    const handle = createClaudeRuntimeProvider().startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        {
+          settingSources: ["project"],
+          modelBroker: {
+            version: 1,
+            brokerId: "hub",
+            leaseId: "grant_claude_1",
+            attemptId: "attempt_claude_1",
+            turnId: "turn_claude_1",
+            runtimeId: "runtime_a",
+            runtimeProvider: "claude",
+            model: "claude-sonnet",
+            routeRevision: "route_1",
+            compatibilityRevision: "compat_claude_1",
+            expiresAt: Date.now() + 60_000,
+            transport: {
+              scheme: "local-http-forwarder-v1",
+              protocol: "anthropic-messages",
+              origin: "http://127.0.0.1:43123",
+              path: "/v1/messages",
+              publicHeaders: { "x-public-route": "binding_claude_1" },
+            },
+            profileRef: "profile_main",
+            selectionCompatibilityKey: "selection_main",
+            principalIsolation: "cgroup",
+          },
+          env: {
+            RAVI_MODEL_BROKER_ACTIVE: "1",
+            CLAUDE_CONFIG_DIR: "/tmp/ravi-model-broker/claude",
+          },
+        },
+      ),
+    );
+    await collectEvents(handle.events);
+    expect(queryCalls[0]?.options.settingSources).toEqual(["user"]);
+    expect(queryCalls[0]?.options.settingSources).not.toContain("project");
   });
 });
 afterAll(() => mock.restore());

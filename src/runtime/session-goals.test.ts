@@ -12,6 +12,7 @@ import {
   pauseActiveSessionGoal,
   replaceSessionGoal,
   resumeSessionGoal,
+  syncRuntimeSessionGoal,
 } from "./session-goals.js";
 
 const SESSION_KEY = "agent:dev:main";
@@ -48,6 +49,28 @@ describe("session goals", () => {
       projectId: "proj-1",
     });
     expect(getSessionGoal(SESSION_KEY)?.goalId).toBe(goal.goalId);
+  });
+
+  it("mirrors runtime usage and status while preserving local links across pause and resume", () => {
+    const snapshot = {
+      objective: "Finish fixture",
+      status: "active" as const,
+      tokenBudget: 100,
+      tokensUsed: 12,
+      timeUsedSeconds: 3,
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const first = syncRuntimeSessionGoal(SESSION_KEY, snapshot, { taskId: "task_fixture" });
+    syncRuntimeSessionGoal(SESSION_KEY, { ...snapshot, status: "paused", updatedAt: 3000 });
+    const resumed = syncRuntimeSessionGoal(SESSION_KEY, { ...snapshot, updatedAt: 4000 });
+    expect(resumed).toMatchObject({ ...snapshot, goalId: first?.goalId, taskId: "task_fixture", updatedAt: 4000 });
+    syncRuntimeSessionGoal(SESSION_KEY, { ...snapshot, status: "usage_limited", updatedAt: 5000 });
+    expect(getSessionGoal(SESSION_KEY)?.status).toBe("usage_limited");
+    syncRuntimeSessionGoal(SESSION_KEY, { ...snapshot, status: "paused", updatedAt: 3000 });
+    expect(getSessionGoal(SESSION_KEY)?.status).toBe("usage_limited");
+    syncRuntimeSessionGoal(SESSION_KEY, null);
+    expect(getSessionGoal(SESSION_KEY)).toBeNull();
   });
 
   it("create refuses to replace an existing goal", () => {

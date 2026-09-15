@@ -26,6 +26,9 @@ interface SlackInteractionResponseUrlRow {
 }
 
 export function storeSlackInteractionResponseUrl(input: SlackInteractionResponseUrlInput): string {
+  if (!isAllowedSlackInteractionResponseUrl(input.responseUrl)) {
+    throw new Error("Slack interaction response URL is not trusted.");
+  }
   ensureSlackInteractionResponseUrlTable();
   pruneExpiredSlackInteractionResponseUrls();
 
@@ -64,6 +67,9 @@ export async function respondToSlackInteraction(
     .get(input.responseUrlId) as SlackInteractionResponseUrlRow | undefined;
   if (!row) throw new Error(`Slack interaction response handle not found: ${input.responseUrlId}`);
   if (row.expires_at <= now) throw new Error(`Slack interaction response handle expired: ${input.responseUrlId}`);
+  if (!isAllowedSlackInteractionResponseUrl(row.response_url)) {
+    throw new Error(`Slack interaction response handle is not trusted: ${input.responseUrlId}`);
+  }
 
   const response = await fetch(row.response_url, {
     method: "POST",
@@ -86,6 +92,24 @@ export async function respondToSlackInteraction(
     status: response.status,
     body: text,
   };
+}
+
+export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === "https:" &&
+    url.hostname === "hooks.slack.com" &&
+    !url.username &&
+    !url.password &&
+    !url.port &&
+    !url.hash &&
+    url.pathname.startsWith("/actions/")
+  );
 }
 
 function ensureSlackInteractionResponseUrlTable(): void {

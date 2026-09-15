@@ -474,7 +474,15 @@ async function emitQueuedDelivery(
     reason,
     jobId: job.jobId,
     target: job.request.target,
-    textLen: job.request.content.text.length,
+    ...(job.request.content.type === "text"
+      ? { contentType: "text", textLen: job.request.content.text.length }
+      : {
+          contentType: "chat_action",
+          actionId: job.request.content.actionId,
+          ...("providerMessageId" in job.request.content
+            ? { providerMessageId: job.request.content.providerMessageId }
+            : {}),
+        }),
   });
 }
 

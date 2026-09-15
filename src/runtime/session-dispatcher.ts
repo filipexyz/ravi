@@ -1,6 +1,8 @@
 import { configStore } from "../config-store.js";
+import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { saveMessage } from "../db.js";
 import {
+  DEFAULT_DELIVERY_BARRIER,
   chooseMoreUrgentBarrier,
   describeDeliveryBarrier,
   type DeliveryBarrier,
@@ -8,20 +10,45 @@ import {
 } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
-import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
-import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
-import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
+import {
+  dbGetDaemonRestartPendingMessages,
+  dbGetSetting,
+  dbRecordDaemonRestartSessionSnapshot,
+} from "../router/router-db.js";
+import {
+  createSessionTraceTurnId,
+  recordRuntimeTraceEvent,
+  recordTerminalTurnTrace,
+} from "../session-trace/runtime-trace.js";
+import {
+  dbHasActiveAssignedTaskForSession,
+  dbHasActiveTaskForSession,
+  dbHasServingTaskForSession,
+} from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
+  hasIsolatedRuntimeTurnEnvelope,
   hasDeliverableRuntimeMessages,
+  prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
+  type RuntimeInterruptSuccessorPreparation,
   wakeRuntimeSessionIfDeliverable,
 } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
+  CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  resolveCrashRecoveryRestartResumeMode,
+} from "./daemon-restart-resume.js";
+import {
+  getCrashRecoveryReplayablePendingRuntimeMessages,
+  getPendingRuntimeTurnSuccessors,
+  getRuntimeTurnReplaySafety,
+  runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
@@ -29,31 +56,56 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
-import { resolveAgentModelSelection } from "./model-preset-resolver.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  buildRuntimeModelBrokerPhysicalFingerprint,
+  buildRuntimeModelBrokerSelectionCompatibilityKey,
+  resolveRequiredRuntimeModelBrokerSelection,
+} from "./model-broker.js";
+import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./model-broker-planning.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { formatUserFacingTurnFailure } from "./public-failure.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { isSameRuntimeTurnSurface } from "./turn-surface.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
+import { resolvePersistedUserText, resolveRuntimePromptText, withSessionSurfaceHint } from "./session-surface-hint.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
+  RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isObserverRuntimeSessionName,
+  isObserverRuntimeStart,
+  isTaskSessionName,
+  resolveRuntimeIdleSessionTtlMs,
+  resolveRuntimePendingStartTimeoutMs,
   resolveRuntimeStreamingSession,
+  resolveRuntimeTurnInactivityMs,
   type RuntimeSessionPoolSnapshot,
+  type RuntimeSessionStartLane,
   type RuntimeStreamingSessionIdentity,
 } from "./session-pool.js";
 
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
+const PROVIDER_TURN_INACTIVE_REASON = "provider_turn_inactive";
+const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
+const MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS = 2;
+const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
+  [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+  [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
+  [PROVIDER_TRANSPORT_FAILURE_REASON]: MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS,
+};
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -89,7 +141,13 @@ export interface RuntimeSessionDispatcherOptions {
   maxConcurrentSessions: number;
   interactiveReservedSessions: number;
   safeEmit: RuntimeSafeEmit;
+  notifyRuntimeRecoveryExhausted(input: RuntimeRecoveryExhaustedAlertInput): Promise<void>;
   getConfigModel(): string;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
+  pendingStartTimeoutMs?: number;
+  idleSessionTtlMs?: number;
+  turnInactivityMs?: number;
+  reclaimIntervalMs?: number;
 }
 
 export interface RuntimeAbortProvenance {
@@ -111,9 +169,47 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
-  private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
+  readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
+  private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
+  private reclaimTimer: ReturnType<typeof setInterval> | null = null;
+  private reclaiming = false;
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
+
+  private pendingStartTimeoutMs(): number {
+    return this.options.pendingStartTimeoutMs ?? resolveRuntimePendingStartTimeoutMs();
+  }
+
+  private idleSessionTtlMs(): number {
+    return this.options.idleSessionTtlMs ?? resolveRuntimeIdleSessionTtlMs();
+  }
+
+  private turnInactivityMs(): number {
+    return this.options.turnInactivityMs ?? resolveRuntimeTurnInactivityMs();
+  }
+
+  private reclaimIntervalMs(): number {
+    return this.options.reclaimIntervalMs ?? RUNTIME_SESSION_RECLAIM_INTERVAL_MS;
+  }
+
+  startPoolReclaimer(): void {
+    if (this.reclaimTimer) return;
+    this.reclaiming = true;
+    this.reclaimNonServingRuntimeSessions();
+    this.reclaimTimer = setInterval(() => {
+      if (!this.reclaiming) return;
+      this.reclaimNonServingRuntimeSessions();
+    }, this.reclaimIntervalMs());
+    this.reclaimTimer.unref?.();
+  }
+
+  stopPoolReclaimer(): void {
+    this.reclaiming = false;
+    if (this.reclaimTimer) {
+      clearInterval(this.reclaimTimer);
+      this.reclaimTimer = null;
+    }
+  }
 
   getRuntimeSessionPoolSnapshot(): RuntimeSessionPoolSnapshot {
     return buildRuntimeSessionPoolSnapshot(this.streamingSessions, {
@@ -124,6 +220,7 @@ export class RuntimeSessionDispatcher {
   }
 
   canAcceptRuntimePrompt(sessionName?: string): boolean {
+    if (!this.options.crashRecovery.acceptingDeliveries) return false;
     if (sessionName) {
       const streaming = this.streamingSessions.get(sessionName);
       if (streaming && !streaming.done) return true;
@@ -193,8 +290,28 @@ export class RuntimeSessionDispatcher {
         });
         continue;
       }
-      const pendingMessages = session.pendingMessages.map(cloneRuntimeUserMessage);
-      const nonIdle = isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      const terminalTurnConsumed = session.currentCrashRecoveryTerminal !== undefined;
+      const pendingMessages = (
+        terminalTurnConsumed
+          ? (session.currentTurnPendingIds?.length ?? 0) > 0
+            ? getPendingRuntimeTurnSuccessors(session)
+            : session.pendingMessages
+          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery)
+      ).map(cloneRuntimeUserMessage);
+      const durableReplaySafety = getRuntimeTurnReplaySafety(session, this.options.crashRecovery);
+      // A provider-terminal physical turn has already been consumed even when
+      // it produced no external output or tool side effect. Explicit retry
+      // paths may still use the global replay helper for interrupted/failed
+      // turns, but a daemon restart must never resurrect any terminal turn.
+      const replaySafety = terminalTurnConsumed
+        ? { ...durableReplaySafety, replayable: false as const }
+        : durableReplaySafety;
+      const restartResumeMode = replaySafety.replayable
+        ? "continue"
+        : pendingMessages.length > 0
+          ? "pending_only"
+          : "skip";
+      const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -213,6 +330,10 @@ export class RuntimeSessionDispatcher {
           currentToolName: session.currentToolName ?? null,
           currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
+          currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
+          [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
+          crashRecoveryReplaySafety: replaySafety,
+          crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },
       });
       appendRestartPendingMessages(snapshot, pendingMessages);
@@ -253,6 +374,9 @@ export class RuntimeSessionDispatcher {
     let recorded = 0;
     for (const snapshot of snapshots.values()) {
       if (!snapshot.nonIdle) continue;
+      if (resolveCrashRecoveryRestartResumeMode(snapshot.metadata) === "skip" && snapshot.pendingMessages.length > 0) {
+        snapshot.metadata[CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY] = "pending_only";
+      }
       dbRecordDaemonRestartSessionSnapshot({
         restartEpoch: options.restartEpoch,
         sessionKey: snapshot.sessionKey,
@@ -280,9 +404,15 @@ export class RuntimeSessionDispatcher {
   }
 
   shutdownAll(): void {
+    this.stopPoolReclaimer();
+    if (this.deferredBootstraps.size > 0) {
+      log.info("Clearing deferred session bootstraps", { count: this.deferredBootstraps.size });
+      this.deferredBootstraps.clear();
+    }
     if (this.pendingStarts.length > 0) {
       log.info("Clearing pending session starts", { count: this.pendingStarts.length });
       for (const pendingStart of this.pendingStarts.splice(0)) {
+        this.clearPendingStartTimeout(pendingStart);
         pendingStart.cancelled = true;
         pendingStart.resolve();
       }
@@ -318,7 +448,7 @@ export class RuntimeSessionDispatcher {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
       this.startReservations.clear();
     }
-    this.runtimeEventLoopRestartAttempts.clear();
+    this.runtimeRecoveryRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
       return;
@@ -328,12 +458,33 @@ export class RuntimeSessionDispatcher {
       count: this.streamingSessions.size,
       sessions: [...this.streamingSessions.keys()],
     });
+    let firstError: unknown;
     for (const [sessionName, session] of this.streamingSessions) {
       log.info("Aborting streaming session", { sessionName });
-      recordStreamingAbortTrace(sessionName, session, "shutdown_all");
-      shutdownRuntimeStreamingSession(session, "shutdown_all");
+      try {
+        recordStreamingAbortTrace(this.options.crashRecovery, sessionName, session, "shutdown_all");
+      } catch (error) {
+        firstError ??= error;
+        log.error("Failed to terminalize streaming session during shutdown", {
+          sessionName,
+          error,
+        });
+      } finally {
+        try {
+          shutdownRuntimeStreamingSession(session, "shutdown_all");
+        } catch (error) {
+          firstError ??= error;
+          log.error("Failed to close streaming session during shutdown", {
+            sessionName,
+            error,
+          });
+        }
+      }
     }
     this.streamingSessions.clear();
+    if (firstError) {
+      throw firstError;
+    }
   }
 
   abortSession(
@@ -368,10 +519,11 @@ export class RuntimeSessionDispatcher {
       getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
     const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
 
-    if (session.toolRunning && session.currentToolSafety === "unsafe") {
-      log.info("Deferring abort - unsafe tool running", {
+    if (session.toolResultDeliveryPending || (session.toolRunning && session.currentToolSafety === "unsafe")) {
+      log.info("Deferring abort - tool barrier active", {
         sessionName,
         tool: session.currentToolName,
+        toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
         provenance,
       });
       session.internalAbortReason = `${abortReason}_deferred`;
@@ -393,6 +545,7 @@ export class RuntimeSessionDispatcher {
           provenance,
           tool: session.currentToolName ?? null,
           toolSafety: session.currentToolSafety,
+          toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
         },
       });
       return true;
@@ -400,11 +553,13 @@ export class RuntimeSessionDispatcher {
 
     if (session.pendingMessages.length > 0) {
       log.info("Stashing aborted messages", { sessionName, count: session.pendingMessages.length });
-      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages);
+      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, {
+        crashRecovery: this.options.crashRecovery,
+      });
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
-    recordStreamingAbortTrace(sessionName, session, abortReason, sessionKey, provenance);
+    recordStreamingAbortTrace(this.options.crashRecovery, sessionName, session, abortReason, sessionKey, provenance);
     if (sessionKey) {
       revokeAgentRuntimeContextsForSession(sessionKey, {
         reason: abortReason,
@@ -433,19 +588,27 @@ export class RuntimeSessionDispatcher {
     model: string,
     options: {
       drainReleasedSlot?: boolean;
+      restartStashedMessages?: boolean;
       modelSource?: string | null;
       modelPresetId?: string | null;
       modelPresetVersion?: number | null;
     } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
-    const streaming = this.streamingSessions.get(sessionName);
+    const resolved = resolveRuntimeStreamingSession(this.streamingSessions, {
+      sessionName,
+      sessionKey: sessionName,
+    });
+    const streaming = resolved?.session;
     if (!streaming || streaming.done) {
       return "missing";
     }
+    sessionName = resolved.name;
     if (streaming.currentModel === model) {
       return "unchanged";
     }
 
+    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
+    const sessionKey = sessionEntry?.sessionKey ?? sessionName;
     const presetTrace = {
       ...(options.modelSource ? { modelSource: options.modelSource } : {}),
       ...(options.modelPresetId ? { modelPresetId: options.modelPresetId } : {}),
@@ -456,7 +619,7 @@ export class RuntimeSessionDispatcher {
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
       recordRuntimeTraceEvent({
-        sessionKey: sessionName,
+        sessionKey,
         sessionName,
         agentId: streaming.agentId,
         runId: streaming.traceRunId,
@@ -479,12 +642,15 @@ export class RuntimeSessionDispatcher {
       return "applied";
     }
 
-    if (streaming.pendingMessages.length > 0) {
-      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages);
+    const hasStashedMessages = streaming.pendingMessages.length > 0;
+    if (hasStashedMessages) {
+      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages, {
+        crashRecovery: this.options.crashRecovery,
+      });
     }
     streaming.currentModel = model;
     recordRuntimeTraceEvent({
-      sessionKey: sessionName,
+      sessionKey,
       sessionName,
       agentId: streaming.agentId,
       runId: streaming.traceRunId,
@@ -502,9 +668,22 @@ export class RuntimeSessionDispatcher {
         ...presetTrace,
       },
     });
-    recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
+    recordStreamingTurnInterruptedTrace(
+      this.options.crashRecovery,
+      sessionName,
+      streaming,
+      "model_change_restart",
+      sessionKey,
+    );
     shutdownRuntimeStreamingSession(streaming, "model_change_restart");
-    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainReleasedSlot ?? true });
+    const shouldRestartStashedMessages = options.restartStashedMessages === true && hasStashedMessages;
+    this.releaseRuntimeSessionSlot(sessionName, {
+      drainPendingStarts: shouldRestartStashedMessages ? false : (options.drainReleasedSlot ?? true),
+    });
+    if (shouldRestartStashedMessages) {
+      await this.restartStashedSession(sessionName, "model_change_restart");
+      this.drainPendingStarts();
+    }
     return "restart-next-turn";
   }
 
@@ -638,13 +817,41 @@ export class RuntimeSessionDispatcher {
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     if (!prompt._resumeStashedMessages) {
-      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+      this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
-    const sessionEntry = getSessionByName(sessionName);
+    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
     const existing = this.streamingSessions.get(sessionName);
-    if (!existing && prompt._daemonRestartResume) {
-      prompt = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
+    let daemonRestartMessages: RuntimeUserMessage[] | undefined;
+    if (prompt._daemonRestartResume) {
+      const needsColdStartStash =
+        (!existing || existing.done) &&
+        !this.pendingStartSessions.has(sessionName) &&
+        !this.startingSessions.has(sessionName);
+      const preparedRestart = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
+      if (!preparedRestart) {
+        log.warn("Skipping pending-only daemon restart resume because no durable pending messages remain", {
+          sessionName,
+          restartEpoch: prompt._daemonRestartResume.restartEpoch,
+        });
+        return;
+      }
+      prompt = preparedRestart.prompt;
+      daemonRestartMessages = preparedRestart.messages;
+      if (needsColdStartStash) {
+        this.stashedMessages.set(sessionName, daemonRestartMessages.map(cloneRuntimeUserMessage));
+      } else if (existing && !existing.done) {
+        // Keep every persisted atom on the live queue before any model/provider
+        // restart decision. If the runtime must be replaced, the normal stash
+        // path carries these exact atoms into the replacement session.
+        appendUniqueRuntimeMessages(existing.pendingMessages, daemonRestartMessages);
+      }
+    }
+    if (!prompt._resumeStashedMessages) {
+      prompt = withSessionSurfaceHint(prompt);
+    }
+    if (classifyRuntimeSessionStartLane(sessionName, prompt) === "interactive") {
+      this.dropQueuedObserverPendingStarts();
     }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
@@ -652,17 +859,37 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
-    const agentSelection = resolveAgentModelSelection(agent);
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
-        ? prompt._runtimeProviderId
-        : sessionRuntimeProviderOverride
-          ? sessionRuntimeProviderOverride
-          : agentSelection.modelSource === "agent_preset"
-            ? agentSelection.effectiveProvider
-            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id)) {
+      await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+        sessionEntry: sessionEntry ?? undefined,
+        agentId: sessionEntry?.agentId ?? agent.id,
+        daemonRestartMessages,
+      });
+      return;
+    }
+    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
+    const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
+    modelBrokerPlan = await planRuntimeModelBrokerRoute({
+      agent,
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      turnId: modelBrokerTurnId,
+      globalRequiredSetting: dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+    });
+    if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
+      prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
+    }
+    const requestedProvider: RuntimeProviderId = modelBrokerPlan
+      ? modelBrokerPlan.lease.runtimeProvider
+      : resolveRequestedRuntimeProvider({
+          observationProviderId:
+            prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+          sessionProviderOverride: sessionRuntimeProviderOverride,
+          lastUsedProvider: sessionEntry?.runtimeProvider,
+          restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+          agent,
+        }).value;
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -679,7 +906,9 @@ export class RuntimeSessionDispatcher {
         });
 
         if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
         }
 
         recordRuntimeTraceEvent({
@@ -702,7 +931,13 @@ export class RuntimeSessionDispatcher {
             requestedProvider,
           },
         });
-        recordStreamingTurnInterruptedTrace(sessionName, existing, restartReason, sessionEntry?.sessionKey);
+        recordStreamingTurnInterruptedTrace(
+          this.options.crashRecovery,
+          sessionName,
+          existing,
+          restartReason,
+          sessionEntry?.sessionKey,
+        );
         shutdownRuntimeStreamingSession(existing, restartReason);
         this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
         retainReleasedSlot = true;
@@ -714,10 +949,19 @@ export class RuntimeSessionDispatcher {
           agent,
           configModel: this.options.getConfigModel(),
         });
-        const requestedModel = requestedRuntime.options.model ?? this.options.getConfigModel();
-        if (runtimePromptRequiresRestart(existing, requestedRuntime, prompt)) {
+        const requestedModel =
+          modelBrokerPlan?.lease.model ?? requestedRuntime.options.model ?? this.options.getConfigModel();
+        const modelBrokerConfigurationChanged = runtimeModelBrokerConfigurationRequiresRestart(existing, agent);
+        const modelBrokerRouteChanged = runtimeModelBrokerRouteRequiresRestart(existing, modelBrokerPlan);
+        if (
+          modelBrokerConfigurationChanged ||
+          modelBrokerRouteChanged ||
+          runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
+        ) {
           log.info("Streaming: restarting session after runtime task settings change", {
             sessionName,
+            modelBrokerConfigurationChanged,
+            modelBrokerRouteChanged,
             currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
             requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
             currentEffort: existing.currentEffort ?? null,
@@ -725,7 +969,9 @@ export class RuntimeSessionDispatcher {
             currentThinking: existing.currentThinking ?? null,
             requestedThinking: requestedRuntime.options.thinking ?? null,
           });
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
           recordRuntimeTraceEvent({
             sessionKey: sessionEntry?.sessionKey ?? sessionName,
             sessionName,
@@ -749,6 +995,7 @@ export class RuntimeSessionDispatcher {
             },
           });
           recordStreamingTurnInterruptedTrace(
+            this.options.crashRecovery,
             sessionName,
             existing,
             "runtime_task_settings_change",
@@ -779,27 +1026,28 @@ export class RuntimeSessionDispatcher {
           updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
         }
         const messageSource = prompt.source ?? existing.currentSource;
-        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-          agentId: sessionEntry?.agentId ?? existing.agentId,
-          channel: messageSource?.channel ?? prompt.context?.channelId,
-          accountId: messageSource?.accountId ?? prompt.context?.accountId,
-          chatId: messageSource?.chatId ?? prompt.context?.chatId,
-          sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
-          commands: prompt.commands,
-        });
+        if (!prompt._resumeStashedMessages) {
+          saveMessage(
+            sessionName,
+            "user",
+            resolvePersistedUserText(prompt),
+            sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+            {
+              agentId: sessionEntry?.agentId ?? existing.agentId,
+              channel: messageSource?.channel ?? prompt.context?.channelId,
+              accountId: messageSource?.accountId ?? prompt.context?.accountId,
+              chatId: messageSource?.chatId ?? prompt.context?.chatId,
+              sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+              commands: prompt.commands,
+            },
+          );
+        }
 
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
-        const nativeSteer = await this.tryNativeRuntimeSteer(
-          sessionName,
-          existing,
-          prompt,
-          barrier,
-          sessionEntry?.sessionKey,
-        );
+        const nativeSteer = modelBrokerPlan
+          ? "fallback"
+          : await this.tryNativeRuntimeSteer(sessionName, existing, prompt, barrier, sessionEntry?.sessionKey);
         if (nativeSteer === "accepted") {
-          if (prompt.source) {
-            existing.currentSource = prompt.source;
-          }
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
             summary: "runtime control accepted",
@@ -812,10 +1060,8 @@ export class RuntimeSessionDispatcher {
           return;
         }
 
-        const userMsg: RuntimeUserMessage = {
-          ...createQueuedRuntimeUserMessage(prompt),
-        };
-        existing.pendingMessages.push(userMsg);
+        const queuedMessages = daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)];
+        appendUniqueRuntimeMessages(existing.pendingMessages, queuedMessages);
         updateRuntimeLiveState(sessionName, {
           activity: "thinking",
           summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
@@ -850,9 +1096,6 @@ export class RuntimeSessionDispatcher {
         if (existing.pushMessage) {
           const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
           if (deliverableNow) {
-            if (!existing.turnActive && prompt.source) {
-              existing.currentSource = prompt.source;
-            }
             log.info("Streaming: waking generator", {
               sessionName,
               queueSize: existing.pendingMessages.length,
@@ -954,51 +1197,24 @@ export class RuntimeSessionDispatcher {
               this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
             }
           } else {
-            nats
-              .emit(`ravi.session.${sessionName}.runtime`, {
-                type: "turn.interrupt.requested",
+            const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+            if (!successor) {
+              log.info("Streaming: keeping successor queued behind the active turn", {
                 sessionName,
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
-                barrierSource: prompt.deliveryBarrierSource ?? null,
-                reason: decision.reason,
-                source: prompt.source,
-                context: prompt.context,
-                taskBarrierTaskId: prompt.taskBarrierTaskId,
-                timestamp: new Date().toISOString(),
-              })
-              .catch((error) => {
-                log.warn("Failed to emit turn interrupt audit event", { sessionName, error });
+                reason: "turn_surface_or_delivery_boundary",
               });
-            log.info("Streaming: interrupting turn", {
+              return;
+            }
+            await this.interruptForRuntimeSuccessor(
               sessionName,
-              queueSize: existing.pendingMessages.length,
-              barrier: describeDeliveryBarrier(barrier),
-              reason: decision.reason,
-            });
-            recordRuntimeTraceEvent({
-              sessionKey: sessionEntry?.sessionKey ?? sessionName,
-              sessionName,
-              agentId: existing.agentId,
-              runId: existing.traceRunId,
-              turnId: existing.currentTraceTurnId,
-              provider: existing.queryHandle.provider,
-              model: existing.currentModel,
-              eventType: "dispatch.interrupt_requested",
-              eventGroup: "dispatch",
-              status: "requested",
-              source: prompt.source ?? existing.currentSource,
-              messageId: prompt.context?.messageId,
-              payloadJson: {
-                queueSize: existing.pendingMessages.length,
-                barrier: describeDeliveryBarrier(barrier),
-                barrierSource: prompt.deliveryBarrierSource ?? null,
-                reason: decision.reason,
-                taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
-              },
-            });
-            existing.interrupted = true;
-            existing.queryHandle.interrupt().catch(() => {});
+              existing,
+              successor,
+              decision.reason,
+              prompt,
+              sessionEntry?.sessionKey ?? sessionName,
+            );
           }
         }
         return;
@@ -1009,20 +1225,40 @@ export class RuntimeSessionDispatcher {
       this.releaseRuntimeSessionSlot(sessionName);
     }
 
+    if (
+      prompt._deferRuntimeStart &&
+      !existing &&
+      !this.pendingStartSessions.has(sessionName) &&
+      !this.startingSessions.has(sessionName)
+    ) {
+      this.stashDeferredBootstrap(sessionName, prompt, sessionEntry, agent.id);
+      return;
+    }
+
     if (!existing && this.pendingStartSessions.has(sessionName)) {
       log.info("Streaming: queueing while session start waits for runtime pool slot", { sessionName });
       if (sessionEntry) {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
-      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-        agentId: sessionEntry?.agentId ?? agent.id,
-        channel: prompt.source?.channel ?? prompt.context?.channelId,
-        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-        commands: prompt.commands,
-      });
-      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      if (!prompt._resumeStashedMessages) {
+        saveMessage(
+          sessionName,
+          "user",
+          resolvePersistedUserText(prompt),
+          sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+          {
+            agentId: sessionEntry?.agentId ?? agent.id,
+            channel: prompt.source?.channel ?? prompt.context?.channelId,
+            accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+            chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+            sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+            commands: prompt.commands,
+          },
+        );
+      }
+      const queued = daemonRestartMessages
+        ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
+        : stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
       const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
       const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
       recordRuntimeTraceEvent({
@@ -1066,6 +1302,7 @@ export class RuntimeSessionDispatcher {
         .catch((error) => {
           log.warn("Failed to emit dispatch.queued event", { sessionName, error });
         });
+      this.promotePendingStartLane(sessionName, prompt);
       return;
     }
 
@@ -1074,15 +1311,25 @@ export class RuntimeSessionDispatcher {
       if (sessionEntry) {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
-      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-        agentId: sessionEntry?.agentId ?? agent.id,
-        channel: prompt.source?.channel ?? prompt.context?.channelId,
-        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-        commands: prompt.commands,
-      });
-      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      if (!prompt._resumeStashedMessages) {
+        saveMessage(
+          sessionName,
+          "user",
+          resolvePersistedUserText(prompt),
+          sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+          {
+            agentId: sessionEntry?.agentId ?? agent.id,
+            channel: prompt.source?.channel ?? prompt.context?.channelId,
+            accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+            chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+            sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+            commands: prompt.commands,
+          },
+        );
+      }
+      const queued = daemonRestartMessages
+        ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
+        : stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
       recordRuntimeTraceEvent({
         sessionKey: sessionEntry?.sessionKey ?? sessionName,
         sessionName,
@@ -1146,6 +1393,7 @@ export class RuntimeSessionDispatcher {
       return;
     }
 
+    prompt = this.consumeDeferredBootstrap(sessionName, prompt);
     recordRuntimeTraceEvent({
       sessionKey: sessionEntry?.sessionKey ?? sessionName,
       sessionName,
@@ -1170,28 +1418,29 @@ export class RuntimeSessionDispatcher {
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
     sessionEntry: SessionEntry | null,
-  ): RuntimeLaunchPrompt {
+  ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null {
     const restartResume = prompt._daemonRestartResume;
     if (!restartResume) {
-      return prompt;
+      const message = createQueuedRuntimeUserMessage(prompt);
+      return { prompt, messages: [message] };
     }
 
     const sessionKey = restartResume.sessionKey ?? sessionEntry?.sessionKey ?? sessionName;
     const pendingMessages = normalizePersistedRuntimeMessages(
       dbGetDaemonRestartPendingMessages(restartResume.restartEpoch, sessionKey),
     );
-    if (pendingMessages.length === 0) {
-      return prompt;
+    if (pendingMessages.length === 0 && restartResume.pendingOnly) {
+      return null;
     }
 
-    const resumeMessage = createQueuedRuntimeUserMessage(prompt);
-    const combined = [...pendingMessages, resumeMessage];
+    const combined = restartResume.pendingOnly
+      ? pendingMessages
+      : [...pendingMessages, createQueuedRuntimeUserMessage(prompt)];
     const restartPrompt = buildStashedRestartPrompt(combined);
     if (!restartPrompt) {
-      return prompt;
+      return null;
     }
 
-    this.stashedMessages.set(sessionName, combined);
     log.info("Prepared daemon restart resume with persisted pending messages", {
       sessionName,
       sessionKey,
@@ -1199,8 +1448,11 @@ export class RuntimeSessionDispatcher {
       pendingMessages: pendingMessages.length,
     });
     return {
-      ...restartPrompt,
-      _daemonRestartResume: restartResume,
+      prompt: {
+        ...restartPrompt,
+        _daemonRestartResume: restartResume,
+      },
+      messages: combined.map(cloneRuntimeUserMessage),
     };
   }
 
@@ -1230,6 +1482,8 @@ export class RuntimeSessionDispatcher {
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
+        onToolBarrierReleased: (releasedSessionName) => this.releaseQueuedPromptsAfterTool(releasedSessionName),
+        crashRecovery: this.options.crashRecovery,
       });
     } finally {
       this.inFlightStartPrompts.delete(sessionName);
@@ -1259,12 +1513,24 @@ export class RuntimeSessionDispatcher {
     return Math.max(0, this.options.maxConcurrentSessions - this.options.interactiveReservedSessions);
   }
 
-  private hasRuntimeSessionPoolSlotForStart(sessionName?: string, prompt?: RuntimeLaunchPrompt): boolean {
+  private resolveStartLane(
+    sessionName?: string,
+    prompt?: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
+  ): RuntimeSessionStartLane {
+    return laneOverride ?? classifyRuntimeSessionStartLane(sessionName, prompt);
+  }
+
+  private hasRuntimeSessionPoolSlotForStart(
+    sessionName?: string,
+    prompt?: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
+  ): boolean {
     const used = this.getRuntimeSessionPoolUsedSlots();
     if (used >= this.options.maxConcurrentSessions) {
       return false;
     }
-    const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    const lane = this.resolveStartLane(sessionName, prompt, laneOverride);
     if (lane === "interactive" || this.options.interactiveReservedSessions <= 0) {
       return true;
     }
@@ -1274,9 +1540,10 @@ export class RuntimeSessionDispatcher {
   private getRuntimeSessionPoolNoSlotReason(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
+    laneOverride?: RuntimeSessionStartLane,
   ): "concurrency_limit" | "interactive_reserved_capacity" | "pending_start_backpressure" {
     if (
-      classifyRuntimeSessionStartLane(sessionName, prompt) === "background" &&
+      this.resolveStartLane(sessionName, prompt, laneOverride) === "background" &&
       this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions &&
       this.getRuntimeSessionPoolUsedSlots() >= this.getBackgroundStartLimit()
     ) {
@@ -1311,10 +1578,36 @@ export class RuntimeSessionDispatcher {
     }
 
     if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+      const reclaimedObservers = this.reclaimIdleObserverSessions();
+      if (reclaimedObservers.length > 0 && this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+        log.info("Reclaimed idle observer sessions for runtime start", {
+          sessionName,
+          reclaimed: reclaimedObservers,
+        });
+      }
+    }
+
+    const incomingLane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    if (incomingLane === "interactive") {
+      this.dropQueuedObserverPendingStarts();
+    }
+
+    if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
+      const lane = incomingLane;
+      if (isObserverRuntimeStart(sessionName, prompt)) {
+        log.info("Dropping observer session start — runtime session pool busy", {
+          sessionName,
+          active: this.streamingSessions.size,
+          queued: this.pendingStarts.length,
+          max: this.options.maxConcurrentSessions,
+          lane,
+          reason: "observer_throttled",
+        });
+        return false;
+      }
       const queued = this.pendingStarts.length + 1;
       const reason = this.getRuntimeSessionPoolNoSlotReason(sessionName, prompt);
       const reserved = this.getStartReservationCount();
-      const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
       const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
       log.warn("Session start queued - runtime session pool busy", {
         sessionName,
@@ -1372,11 +1665,15 @@ export class RuntimeSessionDispatcher {
         prompt,
         resolve: () => {},
         cancelled: false,
+        queuedAt: Date.now(),
+        lane,
       };
+      this.armPendingStartTimeout(pendingStart);
       await new Promise<void>((resolve) => {
         pendingStart.resolve = resolve;
         this.pendingStarts.push(pendingStart);
       });
+      this.clearPendingStartTimeout(pendingStart);
       if (pendingStart.cancelled) {
         log.info("Pending session start cancelled", { sessionName });
         return false;
@@ -1425,11 +1722,10 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const restartAttempt =
-      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
-        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
-        : undefined;
-    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+    const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
+    const previousRestarts = this.runtimeRecoveryRestartAttempts.get(sessionName);
+    const restartAttempt = maxRestartAttempts === undefined ? undefined : (previousRestarts?.[reason] ?? 0) + 1;
+    if (restartAttempt !== undefined && maxRestartAttempts !== undefined && restartAttempt > maxRestartAttempts) {
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,
         sessionName,
@@ -1443,9 +1739,10 @@ export class RuntimeSessionDispatcher {
         error: RUNTIME_RESTART_EXHAUSTED_ERROR,
         payloadJson: {
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
+          userResponseSuppressed: true,
         },
       });
       updateRuntimeLiveState(sessionName, {
@@ -1459,8 +1756,10 @@ export class RuntimeSessionDispatcher {
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.restart_suppressed",
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
+          resumeStashedMessages: true,
+          userResponseSuppressed: true,
           error: RUNTIME_RESTART_EXHAUSTED_ERROR,
           ...(prompt.source ? { _source: prompt.source } : {}),
           timestamp: new Date().toISOString(),
@@ -1469,33 +1768,45 @@ export class RuntimeSessionDispatcher {
           log.warn("Failed to emit suppressed runtime restart event", { sessionName, reason, error });
         });
 
-      const outputTarget = resolveSessionOutputTarget({
+      // This is an infrastructure failure, not an agent response. Keep the
+      // stashed turn available for an explicit retry, but never publish the
+      // technical failure onto the session's user-facing response subject.
+      log.error("Runtime recovery exhausted; suppressed channel response", {
+        sessionName,
         sessionKey: traceIdentity.sessionKey,
-        fallback: prompt.source,
-      }).target;
-      if (outputTarget) {
-        const routerConfig = configStore.getConfig();
-        const agentId = traceIdentity.agentId ?? prompt._agentId;
-        const agent = agentId ? routerConfig.agents[agentId] : undefined;
-        if (agent?.mode !== "sentinel") {
-          await nats
-            .emit(`ravi.session.${sessionName}.response`, {
-              response: formatUserFacingTurnFailure(RUNTIME_RESTART_EXHAUSTED_ERROR),
-              target: outputTarget,
-              _emitId: Math.random().toString(36).slice(2, 8),
-              _instanceId: this.options.instanceId,
-              _pid: process.pid,
-              _v: 2,
-            })
-            .catch((error) => {
-              log.warn("Failed to emit exhausted runtime recovery response", { sessionName, reason, error });
-            });
-        }
-      }
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        reason,
+        restartAttempts: maxRestartAttempts,
+        stashedQueueSize: stashed.length,
+      });
+      await this.options
+        .notifyRuntimeRecoveryExhausted({
+          sessionKey: traceIdentity.sessionKey,
+          sessionName,
+          ...((traceIdentity.agentId ?? prompt._agentId) ? { agentId: traceIdentity.agentId ?? prompt._agentId } : {}),
+          ...(prompt._runtimeProviderId ? { provider: prompt._runtimeProviderId } : {}),
+          reason,
+          restartAttempts: maxRestartAttempts,
+          stashedQueueSize: stashed.length,
+          ...((prompt.context?.messageId ?? prompt.source?.sourceMessageId)
+            ? { sourceMessageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId }
+            : {}),
+        })
+        .catch((error) => {
+          log.warn("Failed to notify operator about exhausted runtime recovery", {
+            sessionName,
+            reason,
+            error,
+          });
+        });
       return;
     }
     if (restartAttempt !== undefined) {
-      this.runtimeEventLoopRestartAttempts.set(sessionName, restartAttempt);
+      this.runtimeRecoveryRestartAttempts.set(sessionName, {
+        ...previousRestarts,
+        [reason]: restartAttempt,
+      });
     }
 
     recordRuntimeTraceEvent({
@@ -1513,7 +1824,7 @@ export class RuntimeSessionDispatcher {
         ...(restartAttempt !== undefined
           ? {
               restartAttempt,
-              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+              maxRestartAttempts,
             }
           : {}),
         stashedQueueSize: stashed.length,
@@ -1526,10 +1837,10 @@ export class RuntimeSessionDispatcher {
 
   drainPendingStarts(): void {
     while (this.pendingStarts.length > 0) {
-      const nextIndex = this.pendingStarts.findIndex(
-        (candidate) =>
-          !candidate.cancelled && this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt),
-      );
+      let nextIndex = this.findDrainablePendingStartIndex("interactive");
+      if (nextIndex < 0) {
+        nextIndex = this.findDrainablePendingStartIndex();
+      }
       if (nextIndex < 0) {
         break;
       }
@@ -1538,8 +1849,10 @@ export class RuntimeSessionDispatcher {
         break;
       }
       if (next.cancelled) {
+        this.clearPendingStartTimeout(next);
         continue;
       }
+      this.clearPendingStartTimeout(next);
       this.startReservations.add(next.sessionName);
       log.info("Dequeuing pending session start", {
         sessionName: next.sessionName,
@@ -1547,11 +1860,324 @@ export class RuntimeSessionDispatcher {
         reserved: this.getStartReservationCount(),
         queued: this.pendingStarts.length,
         max: this.options.maxConcurrentSessions,
-        lane: classifyRuntimeSessionStartLane(next.sessionName, next.prompt),
+        lane: this.resolveStartLane(next.sessionName, next.prompt, next.lane),
         interactiveReserved: this.options.interactiveReservedSessions,
         backgroundLimit: this.getBackgroundStartLimit(),
       });
       next.resolve();
+    }
+  }
+
+  promotePendingStartLane(sessionName: string, prompt: RuntimeLaunchPrompt): boolean {
+    const incomingLane = classifyRuntimeSessionStartLane(sessionName, prompt);
+    if (incomingLane !== "interactive") {
+      return false;
+    }
+    this.dropQueuedObserverPendingStarts();
+    const index = this.pendingStarts.findIndex(
+      (candidate) => candidate.sessionName === sessionName && !candidate.cancelled,
+    );
+    if (index < 0) {
+      return false;
+    }
+    const pending = this.pendingStarts[index]!;
+    const previousLane = this.resolveStartLane(pending.sessionName, pending.prompt, pending.lane);
+    pending.lane = "interactive";
+    if (index > 0) {
+      this.pendingStarts.splice(index, 1);
+      this.pendingStarts.unshift(pending);
+    }
+    if (previousLane === "interactive") {
+      this.drainPendingStarts();
+      return false;
+    }
+    log.info("Promoted pending session start to interactive", {
+      sessionName,
+      previousLane,
+      queued: this.pendingStarts.length,
+    });
+    this.drainPendingStarts();
+    return true;
+  }
+
+  reclaimNonServingRuntimeSessions(now = Date.now()): {
+    idleEvicted: string[];
+    stuckReleased: string[];
+    orphanTasks: string[];
+    timedOutStarts: string[];
+  } {
+    const idleEvicted: string[] = [];
+    const stuckReleased: string[] = [];
+    const idleTtlMs = this.idleSessionTtlMs();
+    const stuckAfterMs = this.turnInactivityMs();
+
+    for (const [sessionName, session] of this.streamingSessions) {
+      if (session.done) {
+        this.releaseRuntimeSessionSlot(sessionName);
+        continue;
+      }
+      const idleMs = session.lastActivity ? now - session.lastActivity : now;
+      const servingWork =
+        session.starting ||
+        session.turnActive ||
+        session.compacting ||
+        session.toolRunning ||
+        session.pendingMessages.length > 0 ||
+        Boolean(session.pendingWake);
+      if (!servingWork && idleTtlMs > 0 && idleMs >= idleTtlMs) {
+        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs });
+        shutdownRuntimeStreamingSession(session, "idle_session_ttl");
+        this.releaseRuntimeSessionSlot(sessionName);
+        markRuntimeLiveIdle(sessionName, "idle evicted");
+        idleEvicted.push(sessionName);
+        continue;
+      }
+      if (servingWork && (session.turnActive || session.toolRunning || session.starting) && idleMs >= stuckAfterMs) {
+        log.warn("Reclaiming stuck runtime session", { sessionName, idleMs, timeoutMs: stuckAfterMs });
+        if (session.pendingMessages.length > 0) {
+          stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
+        }
+        shutdownRuntimeStreamingSession(session, "stuck_session_reclaim");
+        this.releaseRuntimeSessionSlot(sessionName);
+        markRuntimeLiveIdle(sessionName, "stuck reclaimed");
+        stuckReleased.push(sessionName);
+      }
+    }
+
+    const observerReclaimed = this.reclaimIdleObserverSessions(now, { drainPendingStarts: true });
+    idleEvicted.push(...observerReclaimed);
+    const orphanTasks = this.auditOrphanTaskSessions();
+    const timedOutStarts = this.failExpiredPendingStarts(now);
+    return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
+    const reclaimed: string[] = [];
+    for (const [sessionName, session] of this.streamingSessions) {
+      if (!isObserverRuntimeSessionName(sessionName)) continue;
+      const servingWork =
+        session.starting ||
+        session.turnActive ||
+        session.compacting ||
+        session.toolRunning ||
+        session.pendingMessages.length > 0 ||
+        Boolean(session.pendingWake);
+      if (servingWork) continue;
+      const idleMs = session.lastActivity ? now - session.lastActivity : now;
+      log.info("Reclaiming idle observer runtime session", { sessionName, idleMs });
+      shutdownRuntimeStreamingSession(session, "idle_observer_reclaim");
+      this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainPendingStarts ?? false });
+      markRuntimeLiveIdle(sessionName, "observer idle evicted");
+      reclaimed.push(sessionName);
+    }
+    return reclaimed;
+  }
+
+  auditOrphanTaskSessions(): string[] {
+    const reaped: string[] = [];
+    for (const [sessionName] of this.streamingSessions) {
+      if (!isTaskSessionName(sessionName)) continue;
+      if (dbHasServingTaskForSession(sessionName)) continue;
+      log.info("Reaping orphan task runtime session", { sessionName });
+      const aborted = this.abortSession(
+        { sessionName },
+        {
+          source: "session-dispatcher",
+          action: "orphan-task-reap",
+          reason: "task_terminal_no_serving_task",
+          actor: "system",
+        },
+      );
+      if (aborted) {
+        reaped.push(sessionName);
+      }
+    }
+    return reaped;
+  }
+
+  private stashDeferredBootstrap(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionEntry: SessionEntry | null,
+    agentId: string,
+  ): void {
+    this.deferredBootstraps.set(sessionName, { ...prompt, _deferRuntimeStart: undefined });
+    if (!prompt._resumeStashedMessages) {
+      saveMessage(
+        sessionName,
+        "user",
+        resolvePersistedUserText(prompt),
+        sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+        {
+          agentId: sessionEntry?.agentId ?? agentId,
+          channel: prompt.source?.channel ?? prompt.context?.channelId,
+          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        },
+      );
+    }
+    log.info("Deferred channel session bootstrap until first interactive turn", { sessionName });
+  }
+
+  private consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    const deferred = this.deferredBootstraps.get(sessionName);
+    if (!deferred) {
+      return prompt;
+    }
+    this.deferredBootstraps.delete(sessionName);
+    const prefix = deferred.prompt?.trim();
+    const incoming = prompt.prompt?.trim();
+    const combined = prefix && incoming && prefix !== incoming ? `${prefix}\n\n${incoming}` : incoming || prefix;
+    return {
+      ...prompt,
+      prompt: combined || prompt.prompt,
+      _deferRuntimeStart: undefined,
+    };
+  }
+
+  private armPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
+    this.clearPendingStartTimeout(pendingStart);
+    const timeoutMs = this.pendingStartTimeoutMs();
+    if (timeoutMs <= 0) {
+      return;
+    }
+    pendingStart.timeout = setTimeout(() => {
+      pendingStart.timeout = undefined;
+      this.failQueuedPendingStart(pendingStart, "pending_start_timeout");
+    }, timeoutMs);
+    pendingStart.timeout.unref?.();
+  }
+
+  private clearPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
+    if (pendingStart.timeout) {
+      clearTimeout(pendingStart.timeout);
+      pendingStart.timeout = undefined;
+    }
+  }
+
+  private failExpiredPendingStarts(now: number): string[] {
+    const timeoutMs = this.pendingStartTimeoutMs();
+    if (timeoutMs <= 0) {
+      return [];
+    }
+    const timedOut: string[] = [];
+    for (const pendingStart of [...this.pendingStarts]) {
+      if (pendingStart.cancelled) continue;
+      const queuedAt = pendingStart.queuedAt ?? now;
+      if (now - queuedAt < timeoutMs) continue;
+      this.failQueuedPendingStart(pendingStart, "pending_start_timeout");
+      timedOut.push(pendingStart.sessionName);
+    }
+    return timedOut;
+  }
+
+  private findDrainablePendingStartIndex(lane?: RuntimeSessionStartLane): number {
+    return this.pendingStarts.findIndex((candidate) => {
+      if (candidate.cancelled) return false;
+      if (!this.hasRuntimeSessionPoolSlotForStart(candidate.sessionName, candidate.prompt, candidate.lane)) {
+        return false;
+      }
+      if (!lane) return true;
+      return this.resolveStartLane(candidate.sessionName, candidate.prompt, candidate.lane) === lane;
+    });
+  }
+
+  dropQueuedObserverPendingStarts(): string[] {
+    const dropped: string[] = [];
+    for (const pendingStart of [...this.pendingStarts]) {
+      if (pendingStart.cancelled) continue;
+      if (!isObserverRuntimeStart(pendingStart.sessionName, pendingStart.prompt)) continue;
+      this.failQueuedPendingStart(pendingStart, "observer_displaced");
+      dropped.push(pendingStart.sessionName);
+    }
+    if (dropped.length > 0) {
+      log.info("Dropped queued observer session starts for interactive inbound", {
+        dropped,
+        queued: this.pendingStarts.length,
+      });
+    }
+    return dropped;
+  }
+
+  private failQueuedPendingStart(
+    pendingStart: PendingRuntimeSessionStart,
+    reason: "pending_start_timeout" | "observer_displaced",
+  ): void {
+    if (pendingStart.cancelled) {
+      return;
+    }
+    const sessionName = pendingStart.sessionName;
+    const prompt = pendingStart.prompt;
+    const lane = this.resolveStartLane(sessionName, prompt, pendingStart.lane);
+    const source = prompt.source;
+    const userFacing = lane === "interactive" || isUserFacingPendingStartSource(source);
+    pendingStart.cancelled = true;
+    this.clearPendingStartTimeout(pendingStart);
+    const index = this.pendingStarts.indexOf(pendingStart);
+    if (index >= 0) {
+      this.pendingStarts.splice(index, 1);
+    }
+    pendingStart.resolve();
+
+    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    const timedOut = reason === "pending_start_timeout";
+    if (timedOut) {
+      log.warn("Pending session start timed out", {
+        sessionName,
+        lane,
+        reason,
+        queued: this.pendingStarts.length,
+        userFacing,
+      });
+    }
+    recordRuntimeTraceEvent({
+      sessionKey: traceIdentity.sessionKey,
+      sessionName,
+      agentId: traceIdentity.agentId,
+      eventType: timedOut ? "dispatch.start_timeout" : "dispatch.dropped",
+      eventGroup: "dispatch",
+      status: "failed",
+      source,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        reason,
+        lane,
+        userFacing,
+      },
+    });
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: timedOut ? "session.timeout" : "dispatch.dropped",
+        reason,
+        lane,
+        sessionName,
+        ...(source ? { _source: source } : {}),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit pending start failure event", { sessionName, reason, error });
+      });
+
+    if (timedOut && userFacing && source) {
+      const response = formatUserFacingTurnFailure(
+        "Runtime session start stayed queued too long. Send another message to retry.",
+      );
+      nats
+        .emit(`ravi.session.${sessionName}.response`, {
+          response,
+          target: source,
+          _emitId: Math.random().toString(36).slice(2, 8),
+          _instanceId: this.options.instanceId,
+          _pid: process.pid,
+          _v: 2,
+        })
+        .catch((error) => {
+          log.warn("Failed to emit pending start timeout response", { sessionName, error });
+        });
     }
   }
 
@@ -1625,11 +2251,309 @@ export class RuntimeSessionDispatcher {
       },
     });
 
-    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages);
-    recordStreamingTurnInterruptedTrace(sessionName, current, "idle_gap_stuck", sessionKey, "aborted");
+    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages, {
+      crashRecovery: this.options.crashRecovery,
+    });
+    recordStreamingTurnInterruptedTrace(
+      this.options.crashRecovery,
+      sessionName,
+      current,
+      "idle_gap_stuck",
+      sessionKey,
+      "aborted",
+    );
     shutdownRuntimeStreamingSession(current, "idle_gap_stuck");
     this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
     await this.restartStashedSession(sessionName, "idle_gap_stuck");
+  }
+
+  private async releaseQueuedPromptsAfterTool(sessionName: string): Promise<void> {
+    const existing = this.streamingSessions.get(sessionName);
+    if (
+      !existing ||
+      existing.done ||
+      existing.starting ||
+      existing.compacting ||
+      existing.toolRunning ||
+      !existing.turnActive ||
+      existing.currentTurnSuperseded ||
+      existing.interrupted
+    ) {
+      return;
+    }
+
+    const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+    if (!successor) return;
+
+    const prompt = successor.message.launchPrompt;
+    const sessionEntry = getSessionByName(sessionName);
+    await this.interruptForRuntimeSuccessor(
+      sessionName,
+      existing,
+      successor,
+      "tool_barrier_released",
+      prompt,
+      sessionEntry?.sessionKey ?? sessionName,
+    );
+  }
+
+  private async interruptForRuntimeSuccessor(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    successor: RuntimeInterruptSuccessorPreparation,
+    reason: string,
+    fallbackPrompt?: RuntimeLaunchPrompt,
+    sessionKey = sessionName,
+  ): Promise<void> {
+    const prompt = successor.message.launchPrompt ?? fallbackPrompt;
+    const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
+    const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+    existing.currentTurnSuperseded = true;
+    existing.interrupted = true;
+    nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.interrupt.requested",
+        sessionName,
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: successor.message.deliveryBarrierSource ?? prompt?.deliveryBarrierSource ?? null,
+        reason,
+        source,
+        context: prompt?.context ?? fallbackPrompt?.context,
+        taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit turn interrupt audit event", { sessionName, error });
+      });
+    log.info("Streaming: interrupting turn", {
+      sessionName,
+      queueSize: existing.pendingMessages.length,
+      barrier: describeDeliveryBarrier(barrier),
+      reason,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.interrupt_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source,
+      messageId: prompt?.context?.messageId ?? fallbackPrompt?.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: successor.message.deliveryBarrierSource ?? prompt?.deliveryBarrierSource ?? null,
+        reason,
+        taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId ?? null,
+        currentTurnReplay: false,
+      },
+    });
+    if (successor.coalescedMessages.length > 0) {
+      recordRuntimeTraceEvent({
+        sessionKey,
+        sessionName,
+        agentId: existing.agentId,
+        runId: existing.traceRunId,
+        turnId: existing.currentTraceTurnId,
+        provider: existing.queryHandle.provider,
+        model: existing.currentModel,
+        eventType: "dispatch.coalesced_steering",
+        eventGroup: "dispatch",
+        status: "queued",
+        source,
+        messageId: prompt?.context?.messageId ?? fallbackPrompt?.context?.messageId,
+        payloadJson: {
+          coalescedMessages: successor.coalescedMessages.length,
+          queueSize: existing.pendingMessages.length,
+          reason: "compatible_channel_backlog",
+        },
+      });
+    }
+    existing.queryHandle.interrupt().catch(() => {});
+    await terminalizeCoalescedChannelMessages(sessionName, successor.coalescedMessages);
+  }
+
+  private async enqueuePromptOnLiveSession(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    prompt: RuntimeLaunchPrompt,
+    options: {
+      sessionEntry?: SessionEntry;
+      agentId: string;
+      daemonRestartMessages?: RuntimeUserMessage[];
+    },
+  ): Promise<void> {
+    const { sessionEntry, agentId, daemonRestartMessages } = options;
+    log.info("Streaming: pushing message to existing session", { sessionName, reason: "live_session_queue" });
+    if (sessionEntry) {
+      updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
+    }
+    const messageSource = prompt.source ?? existing.currentSource;
+    if (!prompt._resumeStashedMessages) {
+      saveMessage(
+        sessionName,
+        "user",
+        resolvePersistedUserText(prompt),
+        sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+        {
+          agentId,
+          channel: messageSource?.channel ?? prompt.context?.channelId,
+          accountId: messageSource?.accountId ?? prompt.context?.accountId,
+          chatId: messageSource?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        },
+      );
+    }
+
+    const barrier = getRuntimePromptDeliveryBarrier(prompt);
+    const queuedMessages = daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)];
+    appendUniqueRuntimeMessages(existing.pendingMessages, queuedMessages);
+    updateRuntimeLiveState(sessionName, {
+      activity: "thinking",
+      summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      source: prompt.source ?? existing.currentSource,
+    });
+
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.push_existing",
+      eventGroup: "dispatch",
+      status: "queued",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        reason: "live_session_queue",
+      },
+    });
+
+    if (existing.pushMessage) {
+      const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
+      if (deliverableNow) {
+        log.info("Streaming: waking generator", {
+          sessionName,
+          queueSize: existing.pendingMessages.length,
+          barrier: describeDeliveryBarrier(barrier),
+        });
+        const resolver = existing.pushMessage;
+        existing.pushMessage = null;
+        resolver(null);
+      } else {
+        log.info("Streaming: queued without wake", {
+          sessionName,
+          queueSize: existing.pendingMessages.length,
+          barrier: describeDeliveryBarrier(barrier),
+          reason: "waiting_for_barrier",
+        });
+        recordRuntimeTraceEvent({
+          sessionKey: sessionEntry?.sessionKey ?? sessionName,
+          sessionName,
+          agentId: existing.agentId,
+          runId: existing.traceRunId,
+          turnId: existing.currentTraceTurnId,
+          provider: existing.queryHandle.provider,
+          model: existing.currentModel,
+          eventType: "dispatch.queued_busy",
+          eventGroup: "dispatch",
+          status: "queued",
+          source: prompt.source ?? existing.currentSource,
+          messageId: prompt.context?.messageId,
+          payloadJson: {
+            queueSize: existing.pendingMessages.length,
+            barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
+            reason: "waiting_for_barrier",
+          },
+        });
+        this.options
+          .safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.queued",
+            provider: existing.queryHandle.provider,
+            reason: "waiting_for_barrier",
+            barrier: describeDeliveryBarrier(barrier),
+            barrierSource: prompt.deliveryBarrierSource ?? null,
+            queueSize: existing.pendingMessages.length,
+            sessionState: describeSessionState(existing),
+            timestamp: new Date().toISOString(),
+          })
+          .catch((error) => {
+            log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+          });
+      }
+      return;
+    }
+
+    const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
+    if (decision.interrupt) {
+      return;
+    }
+    log.info("Streaming: queueing (busy)", {
+      sessionName,
+      queueSize: existing.pendingMessages.length,
+      barrier: describeDeliveryBarrier(barrier),
+      reason: decision.reason,
+      tool: existing.currentToolName,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.queued_busy",
+      eventGroup: "dispatch",
+      status: "queued",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        reason: decision.reason,
+        tool: existing.currentToolName ?? null,
+      },
+    });
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "dispatch.queued",
+        provider: existing.queryHandle.provider,
+        reason: decision.reason,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        queueSize: existing.pendingMessages.length,
+        tool: existing.currentToolName ?? null,
+        sessionState: describeSessionState(existing),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+      });
+    if (decision.reason === "idle_gap") {
+      wakeRuntimeSessionIfDeliverable(sessionName, this.streamingSessions);
+      this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
+    }
   }
 
   private async tryNativeRuntimeSteer(
@@ -1639,14 +2563,18 @@ export class RuntimeSessionDispatcher {
     barrier: DeliveryBarrier,
     sessionKey = sessionName,
   ): Promise<"accepted" | "fallback"> {
-    if (!canUseNativeRuntimeSteer(existing, barrier)) {
+    if (!canUseNativeRuntimeSteer(existing, barrier, prompt)) {
+      return "fallback";
+    }
+
+    if (!fenceRuntimeNativeSteerInput(existing, this.options.crashRecovery)) {
       return "fallback";
     }
 
     const result = await existing.queryHandle
       .control?.({
         operation: "turn.steer",
-        text: prompt.prompt,
+        text: resolveRuntimePromptText(prompt),
       })
       .catch((error) => ({
         ok: false,
@@ -1719,28 +2647,106 @@ export class RuntimeSessionDispatcher {
   }
 }
 
-export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
+export function shouldQueuePromptOnLiveSession(
+  sessionName: string,
+  existing: RuntimeHostStreamingSession,
+  prompt: RuntimeLaunchPrompt,
+  agentId: string,
+): boolean {
+  if (existing.done || existing.agentId !== agentId) {
+    return false;
+  }
+  if (prompt._resumeStashedMessages || prompt._daemonRestartResume || prompt._observation) {
+    return false;
+  }
+  if (
+    prompt._runtimeProviderId &&
+    !prompt._observation &&
+    existing.queryHandle.provider !== prompt._runtimeProviderId
+  ) {
+    return false;
+  }
+  if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
+    return false;
+  }
+  const barrier = getRuntimePromptDeliveryBarrier(prompt);
+  if (canUseNativeRuntimeSteer(existing, barrier, prompt)) {
+    return false;
+  }
+  return !shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId).interrupt;
+}
+
+export function runtimeModelBrokerConfigurationRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
+  agent: Parameters<typeof resolveRequiredRuntimeModelBrokerSelection>[0],
+  globalSetting = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+  environmentSetting?: string,
+): boolean {
+  const selection = resolveRequiredRuntimeModelBrokerSelection(agent, globalSetting, environmentSetting);
+  const current = existing.currentRuntimeCredential;
+  if (!selection) return current?.authMethod === "model-broker";
+  if (current?.authMethod !== "model-broker") return true;
+  return (
+    current.modelBrokerSelectionCompatibilityKey !== buildRuntimeModelBrokerSelectionCompatibilityKey(selection) ||
+    current.modelBrokerId !== selection.brokerId ||
+    current.modelBrokerProfileRef !== selection.profileRef
+  );
+}
+
+export function runtimeModelBrokerRouteRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential" | "currentModel" | "queryHandle">,
+  plan: RuntimeModelBrokerPlan | undefined,
+): boolean {
+  if (!plan) return false;
+  const current = existing.currentRuntimeCredential;
+  if (current?.authMethod !== "model-broker") return true;
+  return (
+    existing.queryHandle.provider !== plan.lease.runtimeProvider ||
+    existing.currentModel !== plan.lease.model ||
+    current.modelBrokerId !== plan.selection.brokerId ||
+    current.modelBrokerProfileRef !== plan.selection.profileRef ||
+    current.modelBrokerRouteRevision !== plan.lease.routeRevision ||
+    current.modelBrokerCompatibilityRevision !== plan.lease.compatibilityRevision ||
+    current.fingerprint !== buildRuntimeModelBrokerPhysicalFingerprint(plan.selection, plan.lease)
+  );
+}
+
+export function fenceRuntimeNativeSteerInput(
+  session: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnInputMutated">,
+  crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">,
+): boolean {
+  const attemptId = session.currentCrashRecoveryAttemptId;
+  if (!attemptId) return false;
+
+  crashRecovery.markTurnAttemptSafety({ attemptId, inputMutated: true });
+  if (session.currentCrashRecoveryAttemptId !== attemptId) return false;
+
+  session.currentTurnInputMutated = true;
+  return true;
+}
+
+export function canUseNativeRuntimeSteer(
+  session: RuntimeHostStreamingSession,
+  barrier: DeliveryBarrier,
+  prompt?: RuntimeLaunchPrompt,
+): boolean {
   const supportsNativeSteer =
     session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
-  const nativeSteerPreTurnQueue =
-    supportsNativeSteer &&
-    session.queryHandle.provider !== "codex" &&
-    !session.turnActive &&
-    !session.pushMessage &&
-    session.pendingMessages.length > 0 &&
-    !session.currentTurnPendingIds?.length;
-  const activeTurnIsFresh =
-    !session.turnActive || Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
+  const activeTurnIsFresh = Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
 
   return (
     barrier === "after_tool" &&
+    !hasIsolatedRuntimeTurnEnvelope(prompt) &&
+    isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
     supportsNativeSteer &&
-    (session.turnActive || nativeSteerPreTurnQueue) &&
+    session.turnActive &&
+    Boolean(session.currentCrashRecoveryAttemptId) &&
     activeTurnIsFresh &&
     !session.done &&
     !session.starting &&
     !session.compacting &&
-    !session.toolRunning
+    !session.toolRunning &&
+    getPendingRuntimeTurnSuccessors(session).length === 0
   );
 }
 
@@ -1750,6 +2756,16 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
   let currentKey: string | null = null;
 
   for (const message of messages) {
+    if (hasIsolatedRuntimeTurnEnvelope(message)) {
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+      }
+      batches.push([message]);
+      currentKey = null;
+      continue;
+    }
+
     const key = getDebounceCompatibilityKey(message);
     if (currentBatch.length > 0 && currentKey !== key) {
       batches.push(currentBatch);
@@ -1809,6 +2825,34 @@ export function stashPromptForStartingSession(
 ): RuntimeUserMessage[] {
   const queued = stashedMessages.get(sessionName) ?? [];
   queued.push(createQueuedRuntimeUserMessage(prompt));
+  stashedMessages.set(sessionName, queued);
+  return queued;
+}
+
+function appendUniqueRuntimeMessages(
+  queued: RuntimeUserMessage[],
+  messages: RuntimeUserMessage[],
+): RuntimeUserMessage[] {
+  const seenPendingIds = new Set(queued.map((message) => message.pendingId).filter(Boolean));
+  for (const message of messages) {
+    if (message.pendingId && seenPendingIds.has(message.pendingId)) {
+      continue;
+    }
+    queued.push(cloneRuntimeUserMessage(message));
+    if (message.pendingId) {
+      seenPendingIds.add(message.pendingId);
+    }
+  }
+  return queued;
+}
+
+function appendUniqueRuntimeMessagesToStash(
+  sessionName: string,
+  messages: RuntimeUserMessage[],
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): RuntimeUserMessage[] {
+  const queued = stashedMessages.get(sessionName) ?? [];
+  appendUniqueRuntimeMessages(queued, messages);
   stashedMessages.set(sessionName, queued);
   return queued;
 }
@@ -1976,6 +3020,25 @@ function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessag
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
 }
 
+async function terminalizeCoalescedChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
+  for (const message of messages) {
+    const metadata = message.launchPrompt?._channelBackend;
+    if (!metadata) continue;
+    try {
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.interrupted" },
+      });
+    } catch (error) {
+      log.warn("Failed to terminalize coalesced channel turn", {
+        sessionName,
+        turnId: metadata.binding.turnId,
+        error,
+      });
+    }
+  }
+}
+
 function cloneRuntimeMessageTarget(target: RuntimeMessageTarget): RuntimeMessageTarget {
   return JSON.parse(JSON.stringify(target)) as RuntimeMessageTarget;
 }
@@ -2014,6 +3077,7 @@ function isRuntimeUserMessage(value: unknown): value is RuntimeUserMessage {
 }
 
 function recordStreamingAbortTrace(
+  crashRecovery: RuntimeCrashRecoveryCoordinator,
   sessionName: string,
   session: RuntimeHostStreamingSession,
   reason: string,
@@ -2040,19 +3104,80 @@ function recordStreamingAbortTrace(
       tool: session.currentToolName ?? null,
     },
   });
-  recordStreamingTurnInterruptedTrace(sessionName, session, reason, sessionKey, "aborted");
+  recordStreamingTurnInterruptedTrace(crashRecovery, sessionName, session, reason, sessionKey, "aborted");
 }
 
 function recordStreamingTurnInterruptedTrace(
+  crashRecovery: RuntimeCrashRecoveryCoordinator,
   sessionName: string,
   session: RuntimeHostStreamingSession,
   reason: string,
   sessionKey = sessionName,
   status: "interrupted" | "aborted" = "interrupted",
 ): void {
+  const requestedCompletedAt = Date.now();
+  const existingTerminal = session.currentCrashRecoveryTerminal;
+  if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
+    return;
+  }
+  let terminal = existingTerminal;
+  if (!terminal) {
+    if (!session.currentCrashRecoveryAttemptId) {
+      if (crashRecovery.ownershipFailure) {
+        log.error("Skipping dispatcher terminal state after crash recovery ownership loss", {
+          sessionName,
+          reason,
+          error: crashRecovery.ownershipFailure,
+        });
+        return;
+      }
+      throw new Error("Crash recovery attempt binding missing before dispatcher terminal state");
+    }
+    if (session.currentCrashRecoveryAttemptId) {
+      const attemptId = session.currentCrashRecoveryAttemptId;
+      try {
+        const terminalAttempt = crashRecovery.terminalizeTurnAttempt({
+          attemptId,
+          status,
+          completedAt: requestedCompletedAt,
+          metadata: { terminalReason: reason },
+        });
+        if (terminalAttempt.status !== status || terminalAttempt.completedAt !== requestedCompletedAt) {
+          throw new Error(`Crash recovery attempt ${attemptId} terminalized with an unexpected first-terminal state`);
+        }
+        session.currentCrashRecoveryAttemptId = undefined;
+        terminal = {
+          status,
+          completedAt: requestedCompletedAt,
+          startedTool: terminalAttempt.startedTool === true || session.currentTurnToolStarted === true,
+          materializedOutput: terminalAttempt.materializedOutput === true,
+          inputMutated: hasRuntimeTurnAttemptInputMutation(terminalAttempt) || session.currentTurnInputMutated === true,
+        };
+      } catch (error) {
+        if (!crashRecovery.ownershipFailure) {
+          throw error;
+        }
+        log.error("Lost crash recovery ownership while aborting runtime turn", {
+          sessionName,
+          attemptId,
+          reason,
+          error,
+        });
+        session.currentCrashRecoveryAttemptId = undefined;
+        return;
+      }
+    }
+    session.currentCrashRecoveryTerminal = terminal;
+  }
+  if (!terminal) {
+    throw new Error("Crash recovery terminal state missing after durable dispatcher terminalization");
+  }
   if (!session.currentTraceTurnId || session.currentTraceTurnTerminalRecorded) {
     return;
   }
+
+  const terminalStatus: RuntimeTurnAttemptTerminalStatus = terminal.status;
+  const dispatcherWonTerminal = existingTerminal === undefined;
 
   recordTerminalTurnTrace({
     sessionKey,
@@ -2062,12 +3187,15 @@ function recordStreamingTurnInterruptedTrace(
     turnId: session.currentTraceTurnId,
     provider: session.queryHandle.provider,
     model: session.currentModel,
-    status,
-    eventType: "turn.interrupted",
-    abortReason: reason,
+    status: terminalStatus,
+    eventType: runtimeTurnAttemptTerminalEventType(terminalStatus),
+    abortReason: terminalStatus === "complete" || !dispatcherWonTerminal ? null : reason,
     startedAt: session.currentTraceTurnStartedAt,
+    completedAt: terminal.completedAt,
     payloadJson: {
-      reason,
+      reason: dispatcherWonTerminal ? reason : null,
+      requestedAbortReason: reason,
+      firstTerminalStatus: terminalStatus,
       source: session.currentSource ?? null,
     },
   });
@@ -2079,8 +3207,14 @@ function describeSessionState(session: RuntimeHostStreamingSession): Record<stri
     starting: session.starting,
     compacting: session.compacting,
     toolRunning: session.toolRunning,
+    toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
     turnActive: session.turnActive,
     tool: session.currentToolName ?? null,
     idleMs: session.lastActivity ? Date.now() - session.lastActivity : null,
   };
+}
+
+function isUserFacingPendingStartSource(source: RuntimeLaunchPrompt["source"] | undefined): boolean {
+  const channel = source?.channel?.trim().toLowerCase();
+  return channel === "whatsapp" || channel === "slack" || channel === "telegram" || channel === "discord";
 }

@@ -192,7 +192,9 @@ ravi permissions init agent:dev safe-executables
 ravi permissions init agent:dev full-access
 ```
 
-`full-access` only answers the Ravi REBAC question. A command can still be denied later by provider-native hooks, workspace hooks, external PreToolUse filters, or other runtime policies outside the REBAC store. When `ravi permissions check` says allowed but Bash still fails, inspect the denial source before changing more permissions.
+`ravi agents permissions <id> full-access` is the break-glass runtime profile. It materializes `admin system:*`, `execute executable:*`, `use tool:*`, and `use toolgroup:*` for that agent. On the next Bash/tool PreToolUse check, a resolved WhatsApp/`turn-runtime` turn rereads that executor ceiling — you do not need to reset the session. Contact `permission.admin` tags are not the Bash execute path.
+
+`full-access` only answers the Ravi REBAC question. A command can still be denied later by provider-native hooks, workspace hooks, external PreToolUse filters, unconditional dangerous-pattern blocks (`bash`/`sh`/`eval`/…), or other runtime policies outside the REBAC store. When `ravi permissions check` says allowed but Bash still fails, inspect the denial source before changing more permissions.
 
 ### Safe Executables List
 

@@ -1,0 +1,170 @@
+{
+  "artifacts": [
+    {
+      "sha256": "664acfca0c4f2ceb26417ae1169cb2f30c712baf32ebd872e997753f74158054",
+      "sizeBytes": 564,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/ingress-request.json"
+    },
+    {
+      "sha256": "03da63be8c6cca23f67eec5545dda955cee681a297d5076086f130fc4bd3d8be",
+      "sizeBytes": 364,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/ingress-result.json"
+    },
+    {
+      "sha256": "2aef05bd691afe4af9a1c891d3439e9cc05e05d1ea9891b074a6520b73d25dda",
+      "sizeBytes": 646,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/output-envelope.json"
+    },
+    {
+      "sha256": "b04df506a5f9bbc828f90a177cbf0a9c27c149f9c641b228b5d7d7dc1d48a99e",
+      "sizeBytes": 20311,
+      "targetPath": "packages/ravi-os-sdk/src/generated/channel-backend-core.schema.json"
+    }
+  ],
+  "capsule": "channel-backend-core",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "exclusions": [
+    "taxonomy-boundary-v1",
+    "authorization-boundary-v1",
+    "commercial-boundary-v1",
+    "network-boundary-v1",
+    "payload-boundary-v1",
+    "secret-boundary-v1"
+  ],
+  "fileAllowlist": [
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/ingress-request.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/ingress-result.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core/output-envelope.json",
+    "packages/ravi-os-sdk/src/generated/channel-backend-core.capsule.json",
+    "packages/ravi-os-sdk/src/generated/channel-backend-core.schema.json"
+  ],
+  "formatVersion": 1,
+  "outputDigest": "1f3a31b7af1d1a902eb6d837edf3f66903662ea7b4ec5b8c56b1123caa804e60",
+  "rationale": "Channel backends need one idempotent local acceptance boundary that returns canonical local identifiers while preserving final local authorization.",
+  "schemaAllowlist": [
+    {
+      "fields": [
+        "code",
+        "category",
+        "retryable",
+        "correlationId",
+        "retryAfterMs"
+      ],
+      "schema": "ChannelSafeError"
+    },
+    {
+      "fields": [
+        "type",
+        "text"
+      ],
+      "schema": "ChannelTextContentBlock"
+    },
+    {
+      "fields": [
+        "type",
+        "artifactId",
+        "name",
+        "mediaType",
+        "sizeBytes"
+      ],
+      "schema": "ChannelArtifactContentBlock"
+    },
+    {
+      "fields": [],
+      "schema": "ChannelContent"
+    },
+    {
+      "fields": [
+        "channelInstanceId",
+        "agentId",
+        "chatId",
+        "messageId",
+        "sessionId",
+        "turnId"
+      ],
+      "schema": "LocalChannelMessageBinding"
+    },
+    {
+      "fields": [
+        "channelKind",
+        "connectionId",
+        "conversationId",
+        "senderId",
+        "messageId"
+      ],
+      "schema": "ExternalChannelIdentity"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "idempotencyKey",
+        "localActorId",
+        "channelInstanceId",
+        "agentId",
+        "external",
+        "content",
+        "receivedAt"
+      ],
+      "schema": "ChannelIngressRequest"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "binding",
+        "error",
+        "acceptedAt"
+      ],
+      "schema": "ChannelIngressResult"
+    },
+    {
+      "fields": [
+        "channelKind",
+        "connectionId",
+        "conversationId"
+      ],
+      "schema": "ExternalChannelTarget"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "outputId",
+        "correlationId",
+        "causationId",
+        "binding",
+        "target",
+        "kind",
+        "content",
+        "error",
+        "emittedAt"
+      ],
+      "schema": "ChannelOutputEnvelope"
+    }
+  ],
+  "sourceDigest": "68716eeeafe6724b9375d91c75abb1ed1e122b00d3dc53cd9103e5a62a7d38c0",
+  "targetRepository": "filipexyz/ravi",
+  "validations": [
+    {
+      "command": [
+        "bun",
+        "test",
+        "packages/ravi-os-sdk/src/__tests__/channel-backend-core.test.ts"
+      ],
+      "id": "sdk-contract"
+    },
+    {
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "id": "typecheck"
+    }
+  ]
+}

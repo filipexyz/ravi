@@ -60,6 +60,22 @@ describe("syncCodexSkills", () => {
     expect(existsSync(firstTargetDir)).toBe(false);
     expect(listCodexSkillDirs({ codexSkillsDir })).toEqual([]);
   });
+
+  it("materializes the canonical app builder skill and its references for Codex", () => {
+    const { codexSkillsDir, manifestPath } = createTestLayout();
+    const pluginPath = join(import.meta.dir, "internal", "ravi-dev");
+
+    const synced = syncCodexSkills([{ type: "local", path: pluginPath }], {
+      codexSkillsDir,
+      manifestPath,
+    });
+    const targetDir = join(codexSkillsDir, "ravi-dev-app-creator");
+
+    expect(synced).toContain("ravi-dev-app-creator");
+    expect(readFileSync(join(targetDir, "SKILL.md"), "utf8")).toContain("name: ravi-dev-app-creator");
+    expect(existsSync(join(targetDir, "references", "review-checklist.md"))).toBe(true);
+    expect(existsSync(join(targetDir, "references", "acceptance-cases.md"))).toBe(true);
+  });
 });
 
 function createTestLayout(): {

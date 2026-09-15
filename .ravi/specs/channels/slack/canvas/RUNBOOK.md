@@ -96,7 +96,7 @@ ravi slack canvas-access-set F123 write --channels C123 --execute --json
 ## Remover acesso
 
 ```bash
-ravi slack canvas-access-delete F123 --users U123 --execute --json
+ravi slack canvas-access-delete F123 --users U123 --json
 ```
 
 ## Deletar canvas

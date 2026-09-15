@@ -1,5 +1,6 @@
+import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { fetchWithTimeout } from "../utils/paths.js";
-import { CloudAuthError, normalizeCloudAuthErrorCode } from "./errors.js";
+import { CloudAuthError, classifyConsoleNetworkError, normalizeCloudAuthErrorCode } from "./errors.js";
 import type {
   CloudAuthOrganization,
   CloudAuthUser,
@@ -13,6 +14,7 @@ import type {
   LogoutInput,
 } from "./types.js";
 import { DEFAULT_CONSOLE_URL } from "./types.js";
+import { completeVerificationUri } from "./verification-uri.js";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -132,9 +134,7 @@ export class ConsoleApiClient {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (error) {
-      throw new CloudAuthError("SERVER_UNAVAILABLE", `Console request failed: ${errorMessage(error)}`, {
-        cause: error,
-      });
+      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
     }
 
     const payload = await readJsonBody(response);
@@ -535,10 +535,9 @@ function deviceAuthorizationFromResponse(response: unknown): DeviceAuthorization
   const deviceCode = stringValue(data?.deviceCode) ?? stringValue(data?.device_code);
   const userCode = stringValue(data?.userCode) ?? stringValue(data?.user_code);
   const verificationUri = stringValue(data?.verificationUri) ?? stringValue(data?.verification_uri);
-  const verificationUriComplete =
-    stringValue(data?.verificationUriComplete) ?? stringValue(data?.verification_uri_complete) ?? verificationUri;
+  const providedComplete = stringValue(data?.verificationUriComplete) ?? stringValue(data?.verification_uri_complete);
 
-  if (!deviceCode || !userCode || !verificationUri || !verificationUriComplete) {
+  if (!deviceCode || !userCode || !verificationUri) {
     throw new CloudAuthError("PAYLOAD_INVALID", "Provider did not return device authorization metadata.");
   }
 
@@ -546,7 +545,7 @@ function deviceAuthorizationFromResponse(response: unknown): DeviceAuthorization
     deviceCode,
     userCode,
     verificationUri,
-    verificationUriComplete,
+    verificationUriComplete: completeVerificationUri(providedComplete ?? verificationUri, userCode),
     expiresIn: numberValue(data?.expiresIn) ?? numberValue(data?.expires_in),
     interval: numberValue(data?.interval),
   };

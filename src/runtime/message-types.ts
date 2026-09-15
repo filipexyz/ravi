@@ -3,6 +3,8 @@ import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
 
+export type { ChannelContext } from "../channels/context.js";
+
 export interface MessageActorMetadata {
   /** Canonical chat id from the Ravi chat model. Raw chat ids remain in chatId as provenance. */
   canonicalChatId?: string;
@@ -47,17 +49,6 @@ export interface MessageContext extends MessageActorMetadata {
   isMentioned?: boolean;
   botTag?: string;
   timestamp: number;
-}
-
-/** Stable channel/group metadata persisted in session for cross-send reuse */
-export interface ChannelContext {
-  channelId: string;
-  channelName: string;
-  isGroup: boolean;
-  groupName?: string;
-  groupId?: string;
-  groupMembers?: string[];
-  botTag?: string;
 }
 
 /** Message routing target */
@@ -108,7 +99,70 @@ export interface ObservationPromptMetadata {
 export interface DaemonRestartResumePromptMetadata {
   restartEpoch: string;
   sessionKey?: string;
+  /** Wake the runtime with persisted pending successors only; never append a generic continuation. */
+  pendingOnly?: true;
+  /**
+   * Last-used / live provider captured on the restart snapshot. Resume selection
+   * treats this as a last-used hint, not a launch override.
+   */
+  runtimeProvider?: RuntimeProviderId;
 }
+
+export interface ChannelBackendPromptMetadata {
+  protocol: "ravi.channel.backend";
+  schemaVersion: 1;
+  ingressRequestId: string;
+  correlationId: string;
+  binding: {
+    channelInstanceId: string;
+    agentId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  target: {
+    channelKind: string;
+    connectionId: string;
+    conversationId: string;
+  };
+}
+
+export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";
+
+export interface RuntimeTurnOriginPrincipal {
+  type: "agent" | "automation";
+  id: string;
+}
+
+interface RuntimeTurnOriginEnvelope {
+  protocol: "ravi.runtime.turn-origin";
+  schemaVersion: 1;
+  principal: RuntimeTurnOriginPrincipal;
+}
+
+export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "session-relay";
+  action: SessionRelayAction;
+  session?: {
+    key?: string;
+    name?: string;
+  };
+}
+
+export type ChannelTurnAction = "session.bootstrap" | "session.return";
+
+export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "channel";
+  action: ChannelTurnAction;
+}
+
+/**
+ * Validated cause asserted by a trusted internal prompt producer. This is not
+ * a credential: access to the internal prompt bus is the trust boundary.
+ * `source` and `context` continue to describe the reply surface.
+ */
+export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
 
 /** Prompt message structure */
 export interface PromptMessage {
@@ -137,6 +191,8 @@ export interface PromptMessage {
   _runtimeProviderId?: RuntimeProviderId;
   /** Explicit runtime model override for internal dispatch paths such as observers. */
   _runtimeModel?: string;
+  /** Internal in-memory model-broker plan lookup; never contains a lease or credential. */
+  _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
   /** Heartbeat runner prompt marker. */
@@ -164,14 +220,62 @@ export interface PromptMessage {
   _resumeStashedMessages?: boolean;
   /** Internal daemon restart resume envelope used for idempotent fan-out. */
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
+  /** Internal marker preventing duplicate session-surface instructions after durable replay. */
+  _sessionSurfaceHint?: boolean;
+  /** Surface header line. Host metadata for the model; not the persisted user row. */
+  _sessionSurfaceHintText?: string;
+  /**
+   * Model-facing prompt when it differs from `prompt` (operator/HTTP send).
+   * `prompt` remains the displayed/persisted user text.
+   */
+  _runtimePrompt?: string;
+  /**
+   * Operator CLI-only turn. Chat attach stays fail-closed; the waiting CLI is
+   * the reply destination via this turn's assistant transcript.
+   */
+  _cliDestination?: boolean;
+  /** Provider-neutral identity for prompts accepted through a channel backend. */
+  _channelBackend?: ChannelBackendPromptMetadata;
+  /** Validated provenance asserted by a trusted internal producer; not a credential. */
+  _turnOrigin?: RuntimeTurnOriginMetadata;
+  /**
+   * Channel bootstrap that must not occupy a runtime pool slot until a later
+   * interactive turn. The dispatcher stashes the inform and prepends it.
+   */
+  _deferRuntimeStart?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;
+
+export type ResponseMediaType = "image" | "video" | "audio" | "document";
+
+export interface ResponseMediaAttachment {
+  type: ResponseMediaType;
+  filePath: string;
+  filename: string;
+  mimeType?: string;
+  caption?: string;
+  voiceNote?: boolean;
+  idempotencyKey?: string;
+  source?: "runtime.generated_media" | (string & {});
+  metadata?: Record<string, unknown>;
+}
+
+export type ResponseContentPart =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "media";
+      media: ResponseMediaAttachment;
+    };
 
 /** Response message structure */
 export interface ResponseMessage {
   response?: string;
   error?: string;
+  content?: ResponseContentPart[];
   target?: MessageTarget;
   metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */

@@ -2,6 +2,40 @@ import { describe, expect, it, mock } from "bun:test";
 import { SlackWebApiClient } from "./client.js";
 
 describe("Slack Web API client", () => {
+  it("routes requests and private file downloads through the authenticated Hub gateway", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      if (String(url).endsWith("/files")) {
+        return new Response(Buffer.from("file"), { headers: { "content-type": "text/plain" } });
+      }
+      return jsonResponse({ ok: true, team: "RBBT", user: "Ravi", team_id: "T1", user_id: "U1" });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "runtime-credential",
+      botToken: "runtime-credential",
+      apiBaseUrl: "https://hub.test/api/runtime/v1/slack/web-api/",
+      fileProxyUrl: "https://hub.test/api/runtime/v1/slack/files",
+      defaultHeaders: { "x-ravi-runtime-id": "runtime-1" },
+      fetchImpl,
+    });
+
+    await client.authTest();
+    const file = await client.downloadFile({ url: "https://files.slack.com/private/F1", maxBytes: 10 });
+
+    expect(calls[0]?.url).toBe("https://hub.test/api/runtime/v1/slack/web-api/auth.test");
+    expect(calls[0]?.init.headers).toMatchObject({
+      authorization: "Bearer runtime-credential",
+      "x-ravi-runtime-id": "runtime-1",
+    });
+    expect(calls[1]?.url).toBe("https://hub.test/api/runtime/v1/slack/files");
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({
+      url: "https://files.slack.com/private/F1",
+      maxBytes: 10,
+    });
+    expect(file.buffer.toString()).toBe("file");
+  });
+
   it("reads token scopes from auth.test response headers", async () => {
     let requestSignal: AbortSignal | null | undefined;
     const fetchImpl = mock(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -67,6 +101,39 @@ describe("Slack Web API client", () => {
       limit: "10",
       cursor: "cursor-1",
     });
+  });
+
+  it("hydrates Slack Connect file metadata through files.info", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return jsonResponse({
+        ok: true,
+        file: {
+          id: "F123",
+          name: "audio_message.m4a",
+          mimetype: "audio/mp4",
+          url_private_download: "https://files.slack.test/private/F123",
+        },
+      });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+
+    await expect(client.filesInfo({ file: "F123" })).resolves.toMatchObject({
+      file: { id: "F123", mimetype: "audio/mp4" },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://slack.com/api/files.info");
+    expect(calls[0]?.init.headers).toMatchObject({
+      authorization: "Bearer xoxb-secret",
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    expect(formBody(calls[0]?.init.body)).toEqual({ file: "F123" });
   });
 
   it("creates, renames and invites to conversations through explicit methods", async () => {
@@ -222,12 +289,16 @@ describe("Slack Web API client", () => {
       channel: "C123",
       ts: "1713000000.000100",
     });
+    await expect(client.deleteMessage({ channel: "C123", ts: "1713000000.000100" })).resolves.toMatchObject({
+      ok: true,
+    });
 
     expect(calls.map((call) => call.method)).toEqual([
       "blocks.validate",
       "chat.postMessage",
       "chat.postEphemeral",
       "chat.update",
+      "chat.delete",
     ]);
     expect(formBody(calls[0]?.init.body)).toEqual({
       message: JSON.stringify({ text: "Fallback", blocks }),
@@ -249,6 +320,10 @@ describe("Slack Web API client", () => {
       ts: "1713000000.000100",
       text: "Updated",
       blocks: JSON.stringify(blocks),
+    });
+    expect(formBody(calls[4]?.init.body)).toEqual({
+      channel: "C123",
+      ts: "1713000000.000100",
     });
   });
 

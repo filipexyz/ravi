@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { logger } from "../utils/logger.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
@@ -126,13 +128,35 @@ describe("createBashPermissionHook", () => {
     });
 
     it("blocks without executable grant", async () => {
-      const result = await callBashHook(
-        "python3 --version",
-        "test",
-        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "ls" }]),
-      );
+      const command = "python3 SENTINEL_COMMAND_6H3N --version";
+      const stderr: string[] = [];
+      const write = spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+        stderr.push(String(chunk));
+        return true;
+      }) as never);
+
+      let result: Awaited<ReturnType<typeof callBashHook>> | undefined;
+      try {
+        logger.setLevel("warn");
+        result = await callBashHook(
+          command,
+          "test",
+          makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "ls" }]),
+        );
+        expect(isDenied(result)).toBe(true);
+      } finally {
+        logger.setLevel("info");
+        write.mockRestore();
+      }
+
+      if (result === undefined) throw new Error("Bash hook did not return a result");
+      expect(stderr.join("\n")).not.toContain("SENTINEL_COMMAND_6H3N");
+      expect(result).toBeDefined();
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("python3");
+      const denial = listPermissionDenials({ subjectType: "agent", subjectId: "test", resolved: false })[0];
+      expect(denial?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(JSON.stringify(denial)).not.toContain(command);
     });
 
     it("blocks unconditional blocks regardless of grants", async () => {
@@ -142,6 +166,15 @@ describe("createBashPermissionHook", () => {
         makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "bash" }]),
       );
       expect(isDenied(result)).toBe(true);
+    });
+
+    it("blocks unconditional shells even with execute:executable:*", () => {
+      const decision = evaluateBashPermission("bash -c 'echo hi'", {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed).toBe(false);
     });
 
     it("checks all executables in piped commands", async () => {
@@ -338,5 +371,122 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
     expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);
     expect(isDenied(await callToolHook("Write", "dev", context))).toBe(true);
+  });
+});
+
+describe("turn-runtime executor ceiling", () => {
+  const agentId = "leo-vps";
+  const bootstrapCaps: ContextCapability[] = [
+    { permission: "use", objectType: "tool", objectId: "*" },
+    { permission: "execute", objectType: "executable", objectId: "git" },
+    { permission: "execute", objectType: "executable", objectId: "ls" },
+  ];
+
+  function whatsappTurn(
+    capabilities: ContextCapability[],
+    metadata: Record<string, unknown> = {},
+  ): Parameters<typeof evaluateBashPermission>[1] {
+    return {
+      agentId,
+      kind: "turn-runtime",
+      capabilities,
+      metadata: {
+        authorityMode: "agent-identity",
+        actorResolution: "resolved",
+        ...metadata,
+      },
+    };
+  }
+
+  function whatsappToolContext(capabilities: ContextCapability[], metadata: Record<string, unknown> = {}): ToolContext {
+    return {
+      ...makeToolContext(agentId, capabilities, "turn-runtime"),
+      context: {
+        ...makeToolContext(agentId, capabilities, "turn-runtime").context!,
+        metadata: {
+          authorityMode: "agent-identity",
+          actorResolution: "resolved",
+          ...metadata,
+        },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    dbCreateAgent({ id: agentId, cwd: "/tmp/leo-vps" });
+  });
+
+  it("allows ssh on a WhatsApp-like turn when the agent has full-access", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    const decision = evaluateBashPermission("ssh host uptime", whatsappTurn(bootstrapCaps));
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("allows ssh when the agent has explicit execute:executable:* even if the turn snapshot is bootstrap-only", () => {
+    dbUpdateAgent(agentId, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },
+    });
+
+    const decision = evaluateBashPermission("ssh host uptime", whatsappTurn(bootstrapCaps));
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("picks up a mid-turn runtimePermissions expansion without resetting the session", () => {
+    const stale = whatsappTurn(bootstrapCaps);
+    expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(false);
+
+    dbUpdateAgent(agentId, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },
+    });
+    expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(true);
+  });
+
+  it("picks up a mid-turn runtimePermissions reduction without resetting the session", () => {
+    dbUpdateAgent(agentId, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },
+    });
+    const stale = whatsappTurn([{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(true);
+
+    dbUpdateAgent(agentId, { defaults: {} });
+    expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(false);
+  });
+
+  it("keeps unresolved WhatsApp actors fail-closed even when the agent has full-access", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    const decision = evaluateBashPermission(
+      "ssh host uptime",
+      whatsappTurn([], { actorResolution: "missing_contact" }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("does not widen observation-narrowed turns beyond the issued snapshot", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    const decision = evaluateBashPermission(
+      "ssh host uptime",
+      whatsappTurn([{ permission: "execute", objectType: "group", objectId: "observer_report" }], {
+        turnCapabilityCount: 1,
+        turnCapabilities: [{ permission: "execute", objectType: "group", objectId: "observer_report" }],
+      }),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("still blocks unconditional shells under full-access", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    const decision = evaluateBashPermission("bash -c 'echo hi'", whatsappTurn(bootstrapCaps));
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("allows the Bash tool on a stale turn-runtime after full-access is applied", async () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    const result = await callToolHook("Bash", agentId, whatsappToolContext([]));
+    expect(isDenied(result)).toBe(false);
   });
 });

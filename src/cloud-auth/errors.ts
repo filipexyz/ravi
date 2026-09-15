@@ -1,3 +1,5 @@
+import { isNetworkIsolationError, type ExecutionPlaneSnapshot } from "../isolation/execution-plane.js";
+
 export const CLOUD_AUTH_ERROR_CODES = [
   "AUTH_REQUIRED",
   "AUTH_PENDING",
@@ -6,9 +8,11 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "ORG_ACCESS_DENIED",
   "PROJECT_ACCESS_DENIED",
   "PUBLISH_NOT_ALLOWED",
+  "DOMAIN_SETUP_REQUIRED",
   "PAYLOAD_INVALID",
   "RATE_LIMITED",
   "SERVER_UNAVAILABLE",
+  "HOST_UNREACHABLE",
   "CREDENTIALS_INVALID",
   "CLOUD_PUBLISH_NOT_IMPLEMENTED",
 ] as const;
@@ -58,9 +62,39 @@ export function normalizeCloudAuthErrorCode(value: unknown, fallback: CloudAuthE
 
 export function cloudAuthErrorFromUnknown(error: unknown): CloudAuthError {
   if (isCloudAuthError(error)) return error;
-  return new CloudAuthError("SERVER_UNAVAILABLE", error instanceof Error ? error.message : String(error), {
+  return new CloudAuthError("SERVER_UNAVAILABLE", "Cloud service request failed.", {
     cause: error,
   });
+}
+
+/**
+ * Classify a Console HTTPS/fetch failure. Provider sandboxes that cannot
+ * reach Console get `HOST_UNREACHABLE` instead of a misleading "Console is
+ * down" `SERVER_UNAVAILABLE`. Host processes keep `SERVER_UNAVAILABLE`.
+ *
+ * Isolation is an explicit snapshot so unused built-in providers such as `pi`
+ * never influence this code.
+ */
+export function classifyConsoleNetworkError(
+  error: unknown,
+  isolation: Pick<ExecutionPlaneSnapshot, "plane"> = { plane: "host" },
+): CloudAuthError {
+  if (isCloudAuthError(error)) return error;
+  if (isolation.plane === "provider-sandbox" && isNetworkIsolationError(error)) {
+    return new CloudAuthError(
+      "HOST_UNREACHABLE",
+      "Console is unreachable from this provider sandbox. The host CLI can reach Console.",
+      { cause: error, exitCode: 1 },
+    );
+  }
+  return new CloudAuthError("SERVER_UNAVAILABLE", `Console request failed: ${consoleErrorMessage(error)}`, {
+    cause: error,
+  });
+}
+
+function consoleErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 export function formatCloudAuthError(error: CloudAuthError): {

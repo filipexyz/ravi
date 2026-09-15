@@ -1,10 +1,17 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { hasContext } from "../context.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError, contractDryRun } from "../agent-contract.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
-import { submitFeedback, type FeedbackClientDeps, type FeedbackSubmitResult } from "../../feedback/client.js";
+import {
+  normalizeFeedbackKind,
+  normalizeFeedbackSeverity,
+  normalizeTags,
+  submitFeedback,
+  type FeedbackClientDeps,
+  type FeedbackSubmitResult,
+} from "../../feedback/client.js";
 import { jsonObjectSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -20,8 +27,12 @@ export interface FeedbackCommandDeps extends FeedbackClientDeps {
 export class FeedbackCommands {
   constructor(private readonly deps: FeedbackCommandDeps = {}) {}
 
-  @Command({ name: "send", aliases: ["create"], description: "Submit structured feedback to Ravi Console" })
-  @CommandAccess({ kind: "mutate", resource: "feedback", action: "send", risk: "low" })
+  @Command({
+    name: "send",
+    aliases: ["create"],
+    description: "Submit structured feedback to Ravi Console (dry-run by default; requires --execute)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "feedback", action: "send", risk: "low", requiresConfirmation: true })
   async send(
     @Arg("message", { variadic: true, description: "Feedback message" }) messageParts: string[],
     @Option({ flags: "--kind <kind>", description: "bug|idea|ux|docs|performance|security|other" }) kind?: string,
@@ -35,23 +46,51 @@ export class FeedbackCommands {
     metadataJson?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description:
+        "Actually submit the feedback to Ravi Console; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runFeedbackCommand(asJson, async () => {
-      const result = await submitFeedback(
-        {
-          console: consoleUrl,
-          kind,
-          message: messageParts.join(" "),
-          metadata: parseMetadataJson(metadataJson),
-          project,
-          severity,
-          surface,
-          tags: normalizeTagOption(tags),
-          title,
-          url,
-        },
-        this.deps,
-      );
+      const message = messageParts.join(" ");
+      if (!message.trim()) {
+        throw new CloudAuthError("PAYLOAD_INVALID", "Missing message.");
+      }
+      const options = {
+        console: consoleUrl,
+        kind,
+        message,
+        metadata: parseMetadataJson(metadataJson),
+        project,
+        severity,
+        surface,
+        tags: normalizeTagOption(tags),
+        title,
+        url,
+      };
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): `send` publishes OUTSIDE the local runtime
+        // (POST to the Ravi Console), so it is dry-run by default, exit 3. The
+        // plan carries only normalized, non-content metadata about the payload.
+        contractDryRun(
+          "feedback send",
+          {
+            kind: normalizeFeedbackKind(kind),
+            severity: normalizeFeedbackSeverity(severity),
+            titlePresent: Boolean(title?.trim()),
+            messageChars: message.length,
+            surface: surface?.trim() || null,
+            projectPresent: Boolean(project?.trim()),
+            urlPresent: Boolean(url?.trim()),
+            tagsCount: normalizeTags(options.tags).length,
+            metadataKeys: Object.keys(options.metadata ?? {}).sort(),
+          },
+          { asJson },
+        );
+      }
+      const result = await submitFeedback(options, this.deps);
       printPayload(result, asJson, () => printFeedbackResult(result));
       return result;
     });
@@ -90,21 +129,14 @@ function normalizeTagOption(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
-async function runFeedbackCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+async function runFeedbackCommand<T>(_asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    // The write brake is not a failure: let ContractError (exit 3) bubble to the
+    // dispatcher untouched instead of wrapping it as SERVER_UNAVAILABLE.
+    if (error instanceof ContractError) throw error;
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

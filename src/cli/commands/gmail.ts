@@ -3,10 +3,10 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError, contractDryRun } from "../agent-contract.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
-import { hasContext } from "../context.js";
 import { jsonValueSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -122,6 +122,7 @@ export class GmailCommands {
     resource: "gmail",
     action: "send",
     risk: "high",
+    requiresConfirmation: true,
     input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
     redactions: ["body", "html"],
   })
@@ -139,6 +140,11 @@ export class GmailCommands {
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
       const recipients = parseAddressList(to);
@@ -150,6 +156,25 @@ export class GmailCommands {
       }
       if (!body && !html) {
         throw new Error("Provide --body or --html");
+      }
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): external e-mail to real recipients is
+        // irreversible, so dry-run by default and exit 3 before any connector
+        // resolution or provider call.
+        contractDryRun(
+          "gmail send",
+          {
+            fromPresent: false,
+            toCount: recipients.length,
+            ccCount: parseAddressList(cc).length,
+            bccCount: parseAddressList(bcc).length,
+            subjectChars: subject.length,
+            bodyChars: (body ?? html ?? "").length,
+            inReplyToPresent: Boolean(inReplyTo),
+          },
+          { asJson },
+        );
       }
 
       const connectorId = connector ?? (await resolveDefaultGoogleConnector());
@@ -295,20 +320,13 @@ function parseAddressList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-async function runGmailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
+async function runGmailCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    // Manual v2 contract: contractDryRun/contractFail already emitted their
+    // envelope and carry the exit taxonomy; never wrap them as cloud errors.
+    if (error instanceof ContractError) throw error;
+    throw cloudAuthErrorFromUnknown(error);
   }
 }

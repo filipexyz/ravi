@@ -52,6 +52,15 @@ export interface IssueRuntimeContextInput {
   metadata?: Record<string, unknown>;
   ttlMs?: number;
   inheritCapabilities?: boolean;
+  /**
+   * Explicit identity delegation for a service issuer. This is intentionally
+   * admin-only: ordinary child contexts always inherit the parent identity.
+   */
+  identity?: {
+    agentId: string;
+    sessionKey?: string;
+    sessionName?: string;
+  };
 }
 
 export function createRuntimeContext(input: CreateRuntimeContextInput): ContextRecord {
@@ -141,6 +150,35 @@ export function revokeAgentRuntimeContextsForSession(
   );
 }
 
+/**
+ * Revoke every live authority snapshot issued for an agent.
+ *
+ * Runtime capabilities are immutable snapshots. Changing an agent's stored
+ * permission profile without revoking those snapshots leaves the old
+ * authority usable until expiry or the next turn rotation. Permission
+ * mutations call this helper so reductions take effect immediately and
+ * expansions only appear in a newly issued context.
+ */
+export function revokeLiveRuntimeContextsForAgent(
+  agentId: string,
+  options: RevokeRuntimeContextOptions = {},
+): RevokeContextResult[] {
+  const contexts = dbListContexts({ agentId, includeInactive: false });
+  const liveContextIds = new Set(contexts.map((context) => context.contextId));
+  const roots = contexts.filter((context) => {
+    const parentContextId = context.metadata?.parentContextId;
+    return typeof parentContextId !== "string" || !liveContextIds.has(parentContextId);
+  });
+
+  return roots.map((context) =>
+    revokeRuntimeContext(context.contextId, {
+      cascade: options.cascade,
+      reason: options.reason ?? "agent_permissions_changed",
+      revokedAt: options.revokedAt,
+    }),
+  );
+}
+
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
   return dedupeCapabilities(materializeSubjectCapabilities("agent", agentId));
 }
@@ -195,6 +233,12 @@ export function getRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.env): 
 
 export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRecord {
   const now = Date.now();
+  const delegatedIdentity = input.identity ? resolveDelegatedIdentity(input.parent, input.identity) : undefined;
+  const identity = delegatedIdentity ?? {
+    agentId: input.parent.agentId,
+    sessionKey: input.parent.sessionKey,
+    sessionName: input.parent.sessionName,
+  };
   const requestedCapabilities = dedupeCapabilities([
     ...(input.inheritCapabilities ? input.parent.capabilities : []),
     ...(input.capabilities ?? []),
@@ -210,12 +254,19 @@ export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRec
 
   return createRuntimeContext({
     kind: input.kind ?? "cli-runtime",
-    agentId: input.parent.agentId,
-    sessionKey: input.parent.sessionKey,
-    sessionName: input.parent.sessionName,
-    source: input.parent.source,
+    agentId: identity.agentId,
+    sessionKey: identity.sessionKey,
+    sessionName: identity.sessionName,
+    source: input.identity ? undefined : input.parent.source,
     capabilities: requestedCapabilities,
-    metadata: buildDerivedContextMetadata(input.parent, input.cliName, input.metadata, input.inheritCapabilities, now),
+    metadata: buildDerivedContextMetadata(
+      input.parent,
+      input.cliName,
+      input.metadata,
+      input.inheritCapabilities,
+      now,
+      delegatedIdentity,
+    ),
     expiresAt: resolveChildExpiresAt(input.parent.expiresAt, input.ttlMs, now),
   });
 }
@@ -334,6 +385,11 @@ function buildDerivedContextMetadata(
   metadata: Record<string, unknown> | undefined,
   inheritCapabilities: boolean | undefined,
   now: number,
+  delegatedIdentity?: {
+    agentId: string;
+    sessionKey?: string;
+    sessionName?: string;
+  },
 ): Record<string, unknown> {
   const derived: Record<string, unknown> = {
     parentContextId: parent.contextId,
@@ -342,6 +398,14 @@ function buildDerivedContextMetadata(
     issuedAt: now,
     issuanceMode: inheritCapabilities ? "inherit" : "explicit",
   };
+
+  if (delegatedIdentity) {
+    derived.identityDelegation = {
+      agentId: delegatedIdentity.agentId,
+      sessionKey: delegatedIdentity.sessionKey ?? null,
+      sessionName: delegatedIdentity.sessionName ?? null,
+    };
+  }
 
   const approvalSource = parent.metadata?.approvalSource;
   if (approvalSource !== undefined) {
@@ -355,6 +419,33 @@ function buildDerivedContextMetadata(
   }
 
   return derived;
+}
+
+function resolveDelegatedIdentity(
+  parent: ContextRecord,
+  requested: {
+    agentId: string;
+    sessionKey?: string;
+    sessionName?: string;
+  },
+): { agentId: string; sessionKey?: string; sessionName?: string } {
+  if (!canWithCapabilityContext(parent, "admin", "system", "*")) {
+    throw new Error("Identity delegation requires admin:system:* on the parent context");
+  }
+
+  const agentId = requested.agentId.trim();
+  const sessionKey = requested.sessionKey?.trim();
+  const sessionName = requested.sessionName?.trim();
+  if (!agentId) throw new Error("Delegated agentId is required");
+  if (Boolean(sessionKey) !== Boolean(sessionName)) {
+    throw new Error("Delegated sessionKey and sessionName must be provided together");
+  }
+
+  return {
+    agentId,
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(sessionName ? { sessionName } : {}),
+  };
 }
 
 function resolveChildExpiresAt(

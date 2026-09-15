@@ -106,6 +106,12 @@ export function resolveTaskRuntimeOptions(input: {
   agentModelPreset?: { model: string; presetId: string; version: number } | null;
   agentEffort?: TaskRuntimeEffort | string | null;
   configModel?: string | null;
+  /**
+   * Source of `configModel` when it is applied. Defaults to `global_default`
+   * for callers that still pass a pre-resolved string.
+   */
+  configModelSource?: Extract<TaskRuntimeOptionsSource, "global_default" | "env_fallback" | "runtime_default">;
+  configEffort?: TaskRuntimeEffort | string | null;
 }): TaskRuntimeResolution {
   const promptOverride = normalizeTaskRuntimeOptions(input.promptOverride);
   const dispatchOverride = normalizeTaskRuntimeOptions(
@@ -124,7 +130,9 @@ export function resolveTaskRuntimeOptions(input: {
     model: input.agentModel ?? undefined,
     effort: input.agentEffort ?? undefined,
   });
-  const configOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
+  const configModelSource = input.configModelSource ?? "global_default";
+  const configModelOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
+  const configEffortOptions = normalizeTaskRuntimeOptions({ effort: input.configEffort ?? undefined });
 
   const sources: Array<[TaskRuntimeOptionsSource, TaskRuntimeOptions | undefined]> = [
     ["prompt_override", promptOverride],
@@ -134,7 +142,8 @@ export function resolveTaskRuntimeOptions(input: {
     ["session_override", sessionOptions],
     ["agent_preset", agentPresetOptions],
     ["agent_default", agentOptions],
-    ["global_default", configOptions],
+    [configModelSource, configModelOptions],
+    ["global_default", configEffortOptions],
   ];
 
   const pick = (key: keyof TaskRuntimeOptions): { value?: string; source: TaskRuntimeOptionsSource | null } => {

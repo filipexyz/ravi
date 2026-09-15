@@ -164,6 +164,7 @@ ravi contacts approve abc123def456 --agent main,vendas
 ### Block a Contact
 
 ```bash
+# Blocks the contact immediately.
 ravi contacts block abc123def456
 ```
 
@@ -268,7 +269,9 @@ When a message arrives, the agent is resolved in this order:
 When the same person exists as two separate contacts (e.g., one created from a phone number and another from a WhatsApp LID), you can merge them:
 
 ```bash
-ravi contacts merge <source-id> <target-id>
+# Run once without --execute to preview the merge plan (dry-run, exit 3),
+# then confirm with --execute.
+ravi contacts merge <source-id> <target-id> --execute
 ```
 
 This operation:
@@ -297,8 +300,8 @@ ravi contacts add 5511999999999 "Joao" --agent main,vendas
 ravi contacts info 5511999999999
 ravi contacts check 5511999999999   # alias for info
 
-# Remove a contact entirely
-ravi contacts remove abc123def456
+# Remove a contact entirely (without --execute it is a dry-run, exit 3)
+ravi contacts remove abc123def456 --execute
 ```
 
 ### Status Management
@@ -307,7 +310,7 @@ ravi contacts remove abc123def456
 ravi contacts approve abc123def456
 ravi contacts approve abc123def456 mention --agent vendas
 ravi contacts allow abc123def456
-ravi contacts block abc123def456
+ravi contacts block abc123def456             # blocks immediately
 ```
 
 ### Tags
@@ -331,7 +334,7 @@ ravi contacts find lead --tag
 ```bash
 ravi contacts identity-add abc123 whatsapp_lid "lid:12345"
 ravi contacts identity-remove whatsapp_lid "lid:12345"
-ravi contacts merge <source-id> <target-id>
+ravi contacts merge <source-id> <target-id> --execute   # without --execute it is a dry-run (exit 3)
 ```
 
 ### Properties

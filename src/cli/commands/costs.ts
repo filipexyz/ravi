@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import {
   dbGetCostSummary,
   dbGetCostByAgent,
@@ -14,7 +15,10 @@ import {
   dbListCostEventsForPricingRecompute,
   dbGetTopSessions,
   dbUpdateCostEventPricing,
+  getAgent,
+  getAllAgents,
   getSession,
+  listSessions,
   resolveSession,
   type CostEventPricingRecomputeRow,
   type CostPricingCoverageRow,
@@ -325,6 +329,51 @@ async function recomputePricingRows(input: {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// Costs deliberately declares NO braked op: every op reads cost tracking,
+// except the `pricing --recompute` path, which rewrites derived pricing
+// metadata on cost_events. That path already ships `--dry-run` as its
+// pre-existing preview flag — the documented equivalent of the write brake
+// (preview with --dry-run, then re-run without it). The flag is NOT renamed
+// to `--execute` to keep the public surface stable. Because CommandAccess is
+// operation-scoped, `pricing` is authorized as mutate even when invoked in
+// its read-only form; exact legacy read grants are migrated separately.
+//
+// Numeric flags (--hours, --limit) keep their lenient legacy normalization
+// (invalid values fall back to defaults) — declared, not a usage error.
+// ============================================================
+
+/**
+ * Agent ids are public through `agents list`, so AGENT_NOT_FOUND enriches the
+ * envelope with real similar ids/names from the local router config.
+ */
+function failCostsAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
+  const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name ?? null]);
+  contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId} (no config entry and no cost history)`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+      suggestions: suggestSimilar(agentId, candidates),
+    },
+  });
+}
+
+function failCostsSessionNotFound(op: string, nameOrKey: string, asJson?: boolean): never {
+  const candidates = listSessions().flatMap((session) => [session.name ?? null, session.sessionKey]);
+  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${nameOrKey} (no session record and no cost history)`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the session name/key (see suggestions; list with: ravi sessions list --json)",
+      suggestions: suggestSimilar(nameOrKey, candidates),
+    },
+  });
+}
+
 @Group({
   name: "costs",
   description: "Inspect token and cost tracking",
@@ -359,6 +408,8 @@ export class CostCommands {
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max agents to show (default: 20)" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const rows = dbGetCostByAgent(sinceMs) as AgentCostRow[];
@@ -400,15 +451,16 @@ export class CostCommands {
       .map(([agentId, data]) => ({ agentId, ...data, models: [...data.models].sort() }))
       .sort((a, b) => b.total_cost - a.total_cost)
       .slice(0, max);
+    const payloadAgents = items.map((item) => ({
+      agentId: item.agentId,
+      ...buildSummaryJson(item),
+      models: item.models,
+    }));
     const payload = {
       window: buildWindowJson(hours),
       limit: max,
       totalAgents: byAgent.size,
-      agents: items.map((item) => ({
-        agentId: item.agentId,
-        ...buildSummaryJson(item),
-        models: item.models,
-      })),
+      agents: pickFields(payloadAgents, fields),
     };
 
     if (asJson) {
@@ -437,6 +489,8 @@ export class CostCommands {
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max sessions to show (default: 10)" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const max = Math.max(1, Number(limit ?? "10") || 10);
@@ -457,7 +511,7 @@ export class CostCommands {
     const payload = {
       window: buildWindowJson(hours),
       limit: max,
-      sessions: items,
+      sessions: pickFields(items, fields),
     };
 
     if (asJson) {
@@ -491,6 +545,12 @@ export class CostCommands {
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const summary = dbGetCostForAgent(agentId, sinceMs) as CostSummary;
+    // Not-found contract: the id resolves to nothing locally only when the
+    // agent has no router config entry AND no cost event ever (all-time), so
+    // deleted agents with history keep returning their numbers.
+    if (summary.turns === 0 && !getAgent(agentId) && (dbGetCostForAgent(agentId, 0) as CostSummary).turns === 0) {
+      failCostsAgentNotFound("costs agent", agentId, asJson);
+    }
     const payload = {
       agentId,
       window: buildWindowJson(hours),
@@ -514,6 +574,12 @@ export class CostCommands {
     const session = resolveSession(nameOrKey);
     const sessionKey = session?.sessionKey ?? nameOrKey;
     const summary = dbGetCostForSession(sessionKey) as CostSummary;
+    // Not-found contract: unresolved input with zero cost history resolves to
+    // nothing locally; a raw key with cost events (e.g. a pruned session) keeps
+    // the legacy fallback and returns its numbers.
+    if (!session && summary.turns === 0) {
+      failCostsSessionNotFound("costs session", nameOrKey, asJson);
+    }
     const payload = {
       sessionKey,
       sessionName: session?.name ?? null,
@@ -529,7 +595,7 @@ export class CostCommands {
   }
 
   @Command({ name: "pricing", description: "Audit pricing coverage for recent cost events" })
-  @CommandAccess({ kind: "read", resource: "costs", action: "pricing", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "costs", action: "pricing", risk: "medium" })
   @Returns(costsPricingReturnSchema)
   async pricing(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
@@ -542,6 +608,8 @@ export class CostCommands {
     includePriced?: boolean,
     @Option({ flags: "--dry-run", description: "Preview recompute results without updating cost_events" })
     dryRun?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each coverage row" })
+    fields?: string,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const recomputeResult = recompute
@@ -565,7 +633,7 @@ export class CostCommands {
     }));
     const payload = {
       window: buildWindowJson(hours),
-      rows: payloadRows,
+      rows: pickFields(payloadRows, fields),
       ...(recomputeResult ? { recompute: recomputeResult } : {}),
     };
 

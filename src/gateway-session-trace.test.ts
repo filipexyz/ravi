@@ -3,7 +3,6 @@ import { configStore } from "./config-store.js";
 import { createContact, getContact, upsertAgentPlatformIdentity } from "./contacts.js";
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import {
-  dbBindSessionToChat,
   dbFindChatMessage,
   dbGetChatMessage,
   dbGetMessageMeta,
@@ -12,7 +11,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertInstance,
 } from "./router/router-db.js";
-import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
+import { attachChatToSession, getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
@@ -26,6 +25,7 @@ const emitMock = mock(async (topic: string, payload: Record<string, unknown>) =>
 });
 
 type RuntimePresenceEventData = {
+  _replyTarget?: ResponseMessage["target"];
   type?: string;
   status?: string;
   nativeEvent?: string;
@@ -54,6 +54,7 @@ type DeliveryObservationData = {
   status?: string;
   messageId?: string;
   platformMessageId?: string;
+  responsePhase?: string;
   target?: ResponseMessage["target"];
 };
 
@@ -255,11 +256,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "5511999999999@s.whatsapp.net",
       chatType: "dm",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_canonical_trace",
+      attachedByType: "system",
+      attachedReason: "test_canonical_trace",
+      setOutputTarget: true,
     });
     dbSaveMessageMeta("inbound-1", "5511999999999@s.whatsapp.net", {
       canonicalChatId: chat.id,
@@ -316,11 +318,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_delete_own_outbound",
+      attachedByType: "system",
+      attachedReason: "test_delete_own_outbound",
+      setOutputTarget: true,
     });
     const own = dbUpsertChatMessage({
       chatId: chat.id,
@@ -374,11 +377,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_edit_own_outbound",
+      attachedByType: "system",
+      attachedReason: "test_edit_own_outbound",
+      setOutputTarget: true,
     });
     const own = dbUpsertChatMessage({
       chatId: chat.id,
@@ -441,11 +445,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "5511999999999@s.whatsapp.net",
       chatType: "dm",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_dm_outbound_projection",
+      attachedByType: "system",
+      attachedReason: "test_dm_outbound_projection",
+      setOutputTarget: true,
     });
     const gateway = makeGateway(mock(async () => ({ messageId: "outbound-dm-1" })));
 
@@ -480,11 +485,12 @@ describe("Gateway session trace instrumentation", () => {
       platformChatId: "120363000000000000@g.us",
       chatType: "group",
     });
-    dbBindSessionToChat({
+    attachChatToSession({
       sessionKey,
       chatId: chat.id,
-      agentId: "main",
-      bindingReason: "test_group_outbound_projection",
+      attachedByType: "system",
+      attachedReason: "test_group_outbound_projection",
+      setOutputTarget: true,
     });
     const gateway = makeGateway(mock(async () => ({ messageId: "outbound-group-1" })));
 
@@ -668,6 +674,22 @@ describe("Gateway session trace instrumentation", () => {
     }
   });
 
+  it("starts and stops typing at the attached output on a source-less CLI resume", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async (_instanceId: string, _chatId: string, _active?: boolean) => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      { sendTyping },
+    );
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _replyTarget: target });
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping.mock.calls[0]).toEqual([expect.any(String), target.chatId, true]);
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _replyTarget: target });
+    expect(sendTyping).toHaveBeenCalledTimes(2);
+    expect(sendTyping.mock.calls[1]).toEqual([expect.any(String), target.chatId, false]);
+  });
+
   it("renews active presence one second after a delivered response when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
@@ -816,6 +838,74 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
+  it("moves native Slack presence to a delivered commentary message immediately", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      responsePhase: "commentary",
+      target,
+    });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "native-delivery-commentary",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("does not reactivate native Slack presence for a delivered final answer", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      responsePhase: "final_answer",
+      target,
+    });
+
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        active: true,
+        target: expect.objectContaining({
+          statusAnchorMessageId: "1783269000.123456",
+        }),
+      }),
+    ]);
+  });
+
   it("keeps native Slack presence on the delivered outbound anchor during later runtime activity", async () => {
     const { sessionName } = seedSession();
     const target = makeSlackTarget();
@@ -941,7 +1031,37 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
-  it("starts the next native Slack turn on the new inbound message even when an outbound anchor is remembered", async () => {
+  it("starts native Slack presence as soon as a sourced prompt is published", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "prompt.published",
+      _source: target,
+    });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-prompt.published",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("starts the next native Slack prompt on the new inbound message even when an outbound anchor is remembered", async () => {
     const { sessionName } = seedSession();
     const target = makeSlackTarget();
     delete target.threadId;
@@ -963,19 +1083,21 @@ describe("Gateway session trace instrumentation", () => {
     emitted.length = 0;
 
     await handleRuntimePresence(gateway, sessionName, {
-      type: "turn.started",
+      type: "prompt.published",
       _source: { ...target, sourceMessageId: "1783269584.402329" },
     });
 
     const startPresence = emitted.find(
       ([topic, payload]) =>
-        topic === "ravi.channel.presence.slack" && payload.active === true && payload.reason === "runtime-turn.started",
+        topic === "ravi.channel.presence.slack" &&
+        payload.active === true &&
+        payload.reason === "runtime-prompt.published",
     );
     expect(startPresence?.[1]).toEqual(
       expect.objectContaining({
         sessionName,
         active: true,
-        reason: "runtime-turn.started",
+        reason: "runtime-prompt.published",
         target: expect.objectContaining({
           channel: "slack",
           chatId: "C123",
@@ -1259,7 +1381,7 @@ describe("Gateway session trace instrumentation", () => {
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "prompt.published", _source: target });
     await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
 
     expect(renewActiveTarget).not.toHaveBeenCalled();

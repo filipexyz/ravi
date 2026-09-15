@@ -238,6 +238,13 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.version).toContain(`public let RAVI_REGISTRY_HASH = "sha256:fixed"`);
     expect(output.version).toContain(`public let RAVI_GIT_SHA = "fixed"`);
   });
+
+  it("uses the delegate streaming transport on platforms without URLSession.AsyncBytes", () => {
+    const { output } = emitMockSwiftSdk();
+    expect(output.streaming).toContain("#if os(Android) || os(Linux)");
+    expect(output.streaming).toContain("RaviStreamingSessionDelegate");
+    expect(output.streaming).toContain("let streamSession = URLSession(");
+  });
 });
 
 describe("swift-codegen :: jsonSchemaToSwift", () => {

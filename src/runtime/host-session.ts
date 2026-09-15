@@ -1,8 +1,15 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
-import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import type {
+  ChannelBackendPromptMetadata,
+  MessageActorMetadata,
+  RaviCommandPromptMetadata,
+  RuntimeLaunchPrompt,
+} from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -10,7 +17,31 @@ import type {
   RuntimeProviderId,
   RuntimeSessionHandle,
   RuntimeThinking,
+  RuntimeToolPermissionMode,
 } from "./types.js";
+
+export type RuntimeToolEffectFence = "host_write_ahead" | "provider_event_only";
+
+/**
+ * A Ravi-host permission callback is the only current provider contract that
+ * runs before a tool may execute. Provider-native/unrestricted adapters report
+ * tool activity asynchronously, so absence of `tool.started` is not evidence
+ * that no effect happened.
+ */
+export function resolveRuntimeToolEffectFence(
+  provider: RuntimeProviderId,
+  permissionMode: RuntimeToolPermissionMode,
+): RuntimeToolEffectFence {
+  // Codex currently advertises ravi-host permissions, but normal threads run
+  // with approvalPolicy=never and its provider hook has no durable attempt ACK.
+  // Pi now gates tools through a Ravi extension before execution, but tool
+  // start events remain asynchronous and there is no Claude-style PreToolUse
+  // durable ACK yet. Keep Pi conservative until that ACK is proven.
+  if (provider === "codex" || provider === "pi") {
+    return "provider_event_only";
+  }
+  return permissionMode === "ravi-host" ? "host_write_ahead" : "provider_event_only";
+}
 
 export interface RuntimeMessageTarget extends MessageActorMetadata {
   channel: string;
@@ -39,6 +70,14 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   queuedAt?: number;
 }
 
+export function runtimeTurnAttemptTerminalEventType(
+  status: RuntimeTurnAttemptTerminalStatus,
+): "turn.complete" | "turn.failed" | "turn.interrupted" {
+  if (status === "complete") return "turn.complete";
+  if (status === "failed" || status === "timeout") return "turn.failed";
+  return "turn.interrupted";
+}
+
 /** Streaming session - persistent runtime process that accepts messages via AsyncGenerator */
 export interface RuntimeHostStreamingSession {
   /** Agent config used to start this runtime process. Changing it requires restart. */
@@ -55,8 +94,16 @@ export interface RuntimeHostStreamingSession {
   pendingWake: boolean;
   /** Queue of messages - stays in queue until turn completes without interrupt */
   pendingMessages: RuntimeUserMessage[];
-  /** Current response source for routing */
+  /** Immutable reply source for the current physical provider turn. Set only when that turn starts. */
   currentSource?: RuntimeMessageTarget;
+  /** Immutable resolved output target for the current turn; null means the turn must not emit externally. */
+  currentReplyTarget?: RuntimeMessageTarget | null;
+  /** Last successfully bound chat target in this live stream. Successor turns may reuse it. */
+  lastBoundReplyTarget?: RuntimeMessageTarget;
+  /** CLI-only or observer turns must not emit to a chat sink. */
+  suppressChatEmit?: boolean;
+  /** Provider-neutral channel backend identity for the currently executing turn. */
+  currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
   currentModel: string;
   /** Runtime effort currently assigned to this live stream */
@@ -67,6 +114,8 @@ export interface RuntimeHostStreamingSession {
   currentTaskBarrierTaskId?: string;
   /** Tool tracking */
   toolRunning: boolean;
+  /** A completed dynamic tool result is still being written to the provider callback. */
+  toolResultDeliveryPending?: boolean;
   currentToolId?: string;
   currentToolName?: string;
   currentToolInput?: unknown;
@@ -92,6 +141,8 @@ export interface RuntimeHostStreamingSession {
   onTurnComplete: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" - session needs reset */
   _promptTooLong?: boolean;
+  /** Login / not-logged-in stub classified as an auth failure, not assistant text. */
+  _providerAuthFailure?: string;
   /** Whether the SDK is currently compacting (do not interrupt during compaction) */
   compacting: boolean;
   /**
@@ -111,8 +162,14 @@ export interface RuntimeHostStreamingSession {
   traceRunId?: string;
   /** Pending message ids yielded to the currently active provider turn. */
   currentTurnPendingIds?: string[];
+  /** Whether a newer prompt intentionally preempted the active provider turn. */
+  currentTurnSuperseded?: boolean;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
+  /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */
+  currentTurnInputMutated?: boolean;
+  /** Whether tool effects are fenced durably before execution or only observed asynchronously. */
+  toolEffectFence?: RuntimeToolEffectFence;
   /** Current Session Trace turn ID while a provider turn is active. */
   currentTraceTurnId?: string;
   currentTraceTurnStartedAt?: number;
@@ -120,6 +177,20 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Whether this physical turn already published a runtime SSE terminal. */
+  runtimeTerminalSseEmitted?: boolean;
+  /** Durable crash-recovery attempt currently owning the provider turn. */
+  currentCrashRecoveryAttemptId?: string;
+  /** First durable terminal fence for the current provider delivery. */
+  currentCrashRecoveryTerminal?: {
+    status: RuntimeTurnAttemptTerminalStatus;
+    completedAt: number;
+    startedTool: boolean;
+    materializedOutput: boolean;
+    inputMutated?: boolean;
+  };
+  /** Durable handoff failed before the prompt reached the provider. */
+  durableTurnPreparationFailed?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
@@ -138,34 +209,65 @@ export function createPendingRuntimeHandle(provider: RuntimeProviderId): Runtime
   };
 }
 
+export interface RuntimeMessageStashOptions {
+  crashRecovery?: RuntimeCrashRecoveryCoordinator;
+  /** Reconcile an ambiguously delivered turn before deciding whether it may be retried. */
+  reconcileCurrentTurn?: boolean;
+}
+
 export function stashPendingRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
-): void {
-  if (session.pendingMessages.length === 0) {
-    return;
+  options: RuntimeMessageStashOptions = {},
+): number {
+  const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
+  const replayableMessages = options.reconcileCurrentTurn
+    ? getReplayablePendingRuntimeMessages(session)
+    : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
+  if (replayableMessages.length === 0) {
+    return 0;
   }
+  const reconciliationIds = options.reconcileCurrentTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
 
   stashedMessages.set(
     sessionName,
-    session.pendingMessages.map((message) => ({ ...message })),
+    replayableMessages.map((message) => cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable)),
   );
+  return replayableMessages.length;
 }
 
 export function stashCurrentTurnRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
+  options: RuntimeMessageStashOptions = {},
 ): number {
   const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (currentTurnPendingIds.size === 0) {
     return 0;
   }
 
-  const messages = session.pendingMessages
-    .filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
-    .map((message) => ({ ...message }));
+  const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
+  const messages = (
+    options.reconcileCurrentTurn
+      ? session.currentTurnSuperseded
+        ? getReplayablePendingRuntimeMessages(session)
+        : session.pendingMessages.filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
+      : safety.replayable
+        ? session.currentTurnSuperseded
+          ? getReplayablePendingRuntimeMessages(session)
+          : session.pendingMessages.filter(
+              (message) => message.pendingId && currentTurnPendingIds.has(message.pendingId),
+            )
+        : getPendingRuntimeTurnSuccessors(session)
+  ).map((message) =>
+    cloneRuntimeMessageForStash(
+      message,
+      options.reconcileCurrentTurn ? currentTurnPendingIds : undefined,
+      safety.replayable,
+    ),
+  );
 
   if (messages.length === 0) {
     return 0;
@@ -173,6 +275,211 @@ export function stashCurrentTurnRuntimeMessages(
 
   stashedMessages.set(sessionName, messages);
   return messages.length;
+}
+
+function cloneRuntimeMessageForStash(
+  message: RuntimeUserMessage,
+  reconciliationIds?: ReadonlySet<string>,
+  terminalReplayAllowed = true,
+): RuntimeUserMessage {
+  const reconcile = Boolean(message.pendingId && reconciliationIds?.has(message.pendingId));
+  return {
+    ...message,
+    ...(reconcile ? { replay: true, terminalReplayAllowed } : {}),
+  };
+}
+
+export function getReplayablePendingRuntimeMessages(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {
+  if (!session.currentTurnSuperseded) {
+    return session.pendingMessages;
+  }
+
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    return session.pendingMessages;
+  }
+
+  return session.pendingMessages.filter(
+    (message) => !message.pendingId || !currentTurnPendingIds.has(message.pendingId),
+  );
+}
+
+export interface RuntimeTurnReplaySafety {
+  replayable: boolean;
+  startedTool: boolean;
+  materializedOutput: boolean;
+  inputMutated: boolean;
+  durableBinding: "none" | "active" | "terminal" | "missing";
+}
+
+/**
+ * Resolve the durable replay fence for the physical turn currently bound to a
+ * streaming session. Missing durable ownership is fail-closed once a trace has
+ * started; a pre-handoff preparation failure remains replayable because the
+ * provider never received the prompt.
+ */
+export function getRuntimeTurnReplaySafety(
+  session: RuntimeHostStreamingSession,
+  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+): RuntimeTurnReplaySafety {
+  // Attempt creation happens before the generator yields to the provider. A
+  // failure at that boundary proves this physical turn was never delivered,
+  // even when the coordinator entered fail-closed while persisting it.
+  if (session.durableTurnPreparationFailed) {
+    return {
+      replayable: true,
+      startedTool: false,
+      materializedOutput: false,
+      inputMutated: false,
+      durableBinding: "none",
+    };
+  }
+
+  const terminal = session.currentCrashRecoveryTerminal;
+  if (crashRecovery && !crashRecovery.acceptingDeliveries) {
+    return {
+      replayable: false,
+      startedTool: terminal?.startedTool === true || session.currentTurnToolStarted === true,
+      materializedOutput: terminal?.materializedOutput === true,
+      inputMutated: terminal?.inputMutated === true || session.currentTurnInputMutated === true,
+      durableBinding: "missing",
+    };
+  }
+  if (terminal) {
+    const startedTool = terminal.startedTool || session.currentTurnToolStarted === true;
+    const inputMutated = terminal.inputMutated === true || session.currentTurnInputMutated === true;
+    return {
+      replayable:
+        terminal.status !== "complete" &&
+        session.toolEffectFence === "host_write_ahead" &&
+        !startedTool &&
+        !terminal.materializedOutput &&
+        !inputMutated,
+      startedTool,
+      materializedOutput: terminal.materializedOutput,
+      inputMutated,
+      durableBinding: "terminal",
+    };
+  }
+
+  const attemptId = session.currentCrashRecoveryAttemptId;
+  if (attemptId) {
+    const attempt = crashRecovery?.getActiveTurnAttempt?.(attemptId);
+    if (!attempt) {
+      return {
+        replayable: false,
+        startedTool: session.currentTurnToolStarted === true,
+        materializedOutput: false,
+        inputMutated: session.currentTurnInputMutated === true,
+        durableBinding: "missing",
+      };
+    }
+    const startedTool = attempt.startedTool || session.currentTurnToolStarted === true;
+    const inputMutated = hasRuntimeTurnAttemptInputMutation(attempt) || session.currentTurnInputMutated === true;
+    return {
+      replayable:
+        session.toolEffectFence === "host_write_ahead" && !startedTool && !attempt.materializedOutput && !inputMutated,
+      startedTool,
+      materializedOutput: attempt.materializedOutput,
+      inputMutated,
+      durableBinding: "active",
+    };
+  }
+
+  if (
+    session.currentTraceTurnId &&
+    !session.currentTraceTurnTerminalRecorded &&
+    !session.durableTurnPreparationFailed
+  ) {
+    return {
+      replayable: false,
+      startedTool: session.currentTurnToolStarted === true,
+      materializedOutput: false,
+      inputMutated: session.currentTurnInputMutated === true,
+      durableBinding: "missing",
+    };
+  }
+
+  if (session.currentTurnToolStarted) {
+    return {
+      replayable: false,
+      startedTool: true,
+      materializedOutput: false,
+      inputMutated: session.currentTurnInputMutated === true,
+      durableBinding: "missing",
+    };
+  }
+
+  return {
+    replayable: true,
+    startedTool: false,
+    materializedOutput: false,
+    inputMutated: false,
+    durableBinding: "none",
+  };
+}
+
+/**
+ * Host-initiated abort (operator/ownership), not a provider end-of-prompt race.
+ * ACP `handle_prompt.done ok=true` and `stopReason=cancelled` without this
+ * marker must not discard a turn that already ran tools.
+ */
+export function isExplicitLocalRuntimeAbort(reason?: string | null): boolean {
+  if (!reason) return false;
+  return (
+    reason === "explicit_abort" ||
+    reason.startsWith("explicit_abort") ||
+    reason === "crash_recovery_ownership_lost" ||
+    reason === "deferred_abort"
+  );
+}
+
+/**
+ * Provider closed the prompt after tools already finished (or after tools plus
+ * materialized output) without an explicit local abort. Keep successors and
+ * recover visibly instead of discarding the turn as an unsafe interrupt.
+ *
+ * This is the leftover-interrupt path. A tools-then-silence `turn.complete`
+ * must still be refused by the Grok adapter / host continuation gate — do
+ * not treat #473 cancelled→complete as user-visible success.
+ */
+export function isProviderEndedAfterCompletedTools(
+  session: Pick<RuntimeHostStreamingSession, "internalAbortReason" | "toolRunning" | "currentTurnSuperseded">,
+  safety: Pick<RuntimeTurnReplaySafety, "startedTool" | "materializedOutput">,
+): boolean {
+  if (session.currentTurnSuperseded || isExplicitLocalRuntimeAbort(session.internalAbortReason)) return false;
+  if (safety.startedTool && safety.materializedOutput) return true;
+  if (session.internalAbortReason) return false;
+  if (!safety.startedTool) return false;
+  return safety.materializedOutput || session.toolRunning === false;
+}
+
+/**
+ * Return messages safe to carry into a replacement runtime. If the physical
+ * turn has durable side-effect/output evidence, its own pending ids are
+ * excluded while independently queued successors remain eligible.
+ */
+export function getCrashRecoveryReplayablePendingRuntimeMessages(
+  session: RuntimeHostStreamingSession,
+  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+): RuntimeUserMessage[] {
+  const safety = getRuntimeTurnReplaySafety(session, crashRecovery);
+  if (session.currentCrashRecoveryTerminal?.status === "complete") {
+    return (session.currentTurnPendingIds?.length ?? 0) > 0
+      ? getPendingRuntimeTurnSuccessors(session)
+      : session.pendingMessages;
+  }
+  return safety.replayable ? getReplayablePendingRuntimeMessages(session) : getPendingRuntimeTurnSuccessors(session);
+}
+
+export function getPendingRuntimeTurnSuccessors(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    return [];
+  }
+  return session.pendingMessages.filter(
+    (message) => typeof message.pendingId === "string" && !currentTurnPendingIds.has(message.pendingId),
+  );
 }
 
 export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {

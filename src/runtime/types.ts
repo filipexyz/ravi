@@ -1,4 +1,5 @@
 import type { RuntimeEffort } from "./effort.js";
+import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -22,6 +23,7 @@ export type RuntimeUsageSemantics = "terminal-event" | "streaming" | "unavailabl
 export type RuntimeToolPermissionMode = "ravi-host" | "provider-native" | "unrestricted";
 export type RuntimeSystemPromptMode = "append" | "override" | "provider-composed";
 export type RuntimeTerminalEventGuarantee = "provider" | "adapter";
+export type RuntimeAmbiguousTurnRecoveryStrategy = "reconcile_by_client_message_id";
 export type RuntimeSkillVisibilityState =
   | "available"
   | "synced"
@@ -65,6 +67,12 @@ export interface RuntimePromptMessage {
   };
   session_id: string;
   parent_tool_use_id: string | null;
+  /** Stable identity for one logical delivery attempt across runtime restarts. */
+  clientMessageId?: string;
+  /** True when the host is recovering this delivery from an ambiguous provider outcome. */
+  replay?: boolean;
+  /** Whether reconciliation may retry after the provider reports a failed or interrupted terminal turn. */
+  terminalReplayAllowed?: boolean;
 }
 
 export interface RuntimeToolUse {
@@ -128,11 +136,15 @@ export interface RuntimeApprovalEvent {
 
 export type RuntimeApprovalHandler = (request: RuntimeApprovalRequest) => Promise<RuntimeApprovalResult>;
 
+/** Host-only fence invoked immediately before an approval/user-input request becomes externally visible. */
+export type RuntimeBeforeExternalApproval = () => void;
+
 export interface RuntimeCapabilityAuthorizationRequest {
   permission: string;
   objectType: string;
   objectId: string;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeCapabilityAuthorizationResult {
@@ -145,17 +157,20 @@ export interface RuntimeCommandAuthorizationRequest {
   command: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeToolUseAuthorizationRequest {
   toolName: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeUserInputRequest {
   questions: RuntimeApprovalQuestion[];
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeDynamicToolSpec {
@@ -209,7 +224,30 @@ export interface RuntimeHostServices {
   ): Promise<RuntimeDynamicToolCallResult>;
 }
 
+export type RuntimeGoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "usage_limited" | "complete";
+
+export interface RuntimeGoal {
+  objective: string;
+  status: RuntimeGoalStatus;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  /** Unix milliseconds; provider timestamp units are normalized by the adapter. */
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RuntimeGoalUpdate {
+  objective?: string;
+  status?: RuntimeGoalStatus;
+  tokenBudget?: number | null;
+  createOnly?: boolean;
+}
+
 export type RuntimeControlOperation =
+  | "goal.get"
+  | "goal.set"
+  | "goal.clear"
   | "thread.list"
   | "thread.read"
   | "thread.rollback"
@@ -236,6 +274,7 @@ export interface RuntimeControlState {
 
 export interface RuntimeControlRequest {
   operation: RuntimeControlOperation;
+  goal?: RuntimeGoalUpdate;
   threadId?: string;
   turnId?: string;
   expectedTurnId?: string;
@@ -259,6 +298,7 @@ export interface RuntimeControlResult {
   ok: boolean;
   operation: RuntimeControlOperation;
   data?: Record<string, unknown>;
+  goal?: RuntimeGoal | null;
   state?: RuntimeControlState;
   error?: string;
 }
@@ -349,6 +389,8 @@ export interface RuntimePrepareSessionRequest {
   cwd: string;
   plugins?: RuntimePlugin[];
   hostServices?: RuntimeHostServices;
+  /** Secretless broker route; adapters fail closed without principal isolation. */
+  modelBroker?: RuntimeModelBrokerBinding;
 }
 
 export interface RuntimePrepareSessionResult {
@@ -382,6 +424,8 @@ export interface RuntimeItemMetadata {
   type?: string;
   status?: string;
   parentId?: string;
+  /** Provider-native assistant output phase, e.g. commentary or final_answer. */
+  phase?: string;
 }
 
 export interface RuntimeEventMetadata {
@@ -419,6 +463,8 @@ export interface RuntimeStartRequest {
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;
+  /** Same immutable secretless broker route prepared for this physical provider session. */
+  modelBroker?: RuntimeModelBrokerBinding;
   /**
    * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
    * When present + non-empty the provider adapter narrows the runtime skill
@@ -426,9 +472,15 @@ export interface RuntimeStartRequest {
    * "load every discovered skill" behavior (Invariant F — grandfather).
    */
   allowedSkills?: string[];
+  /**
+   * CLI-only bootstrap: skip the advertised skill-name catalog. The Ravi system
+   * prompt remains large; this does not claim a 23k-token reduction.
+   */
+  omitAdvertisedSkillCatalog?: boolean;
 }
 
 export type RuntimeEvent =
+  | ({ type: "goal.updated"; goal: RuntimeGoal | null } & RuntimeEventBase)
   | ({
       type: "provider.raw";
       rawEvent: Record<string, unknown>;
@@ -473,6 +525,10 @@ export type RuntimeEvent =
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
+      type: "tool.progress";
+      toolUseId: string;
+    } & RuntimeEventBase)
+  | ({
       type: "tool.completed";
       toolUseId?: string;
       toolName?: string;
@@ -502,6 +558,8 @@ export type RuntimeEvent =
       type: "turn.failed";
       error: string;
       recoverable?: boolean;
+      /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */
+      failureKind?: "transport";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
@@ -517,6 +575,8 @@ export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
   events: AsyncIterable<RuntimeEvent>;
   skillVisibility?: RuntimeSkillVisibilitySnapshot;
+  /** Provider-owned strategy for resolving a handoff whose terminal outcome is unknown. */
+  ambiguousTurnRecoveryStrategy?: RuntimeAmbiguousTurnRecoveryStrategy;
   /**
    * Strategy for concurrent interactive prompts after a live handle exists.
    * The default is Ravi queue + interrupt; native steering must opt in explicitly.
@@ -539,6 +599,8 @@ export interface RuntimeCapabilities {
   systemPrompt: RuntimeSystemPromptCapabilities;
   terminalEvents: RuntimeTerminalEventCapabilities;
   skillVisibility: RuntimeSkillVisibilityCapabilities;
+  /** Omitted when unsupported; `principalIsolation: "none"` is explicitly disabled. */
+  modelBroker?: RuntimeModelBrokerCapabilities;
   supportsSessionResume: boolean;
   supportsSessionFork: boolean;
   supportsPartialText: boolean;
@@ -560,5 +622,10 @@ export interface RuntimeProvider {
 }
 
 export interface SessionRuntimeProvider extends RuntimeProvider {
+  /** Metadata control for a persisted, unloaded session. Must not start model work. */
+  controlSession?(
+    input: { cwd: string; sessionId: string; sessionParams?: Record<string, unknown>; env?: Record<string, string> },
+    request: RuntimeControlRequest,
+  ): Promise<RuntimeControlResult>;
   startSession(input: RuntimeStartRequest): RuntimeSessionHandle;
 }

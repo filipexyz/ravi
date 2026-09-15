@@ -26,7 +26,11 @@ function isSecretKey(key: string): boolean {
     normalized === "idtoken" ||
     normalized === "provideraccesstoken" ||
     normalized === "authorization" ||
-    normalized === "cookie"
+    normalized === "cookie" ||
+    normalized === "material" ||
+    normalized.includes("privatekey") ||
+    normalized === "credentialmaterial" ||
+    normalized === "machinecredential"
   ) {
     return true;
   }

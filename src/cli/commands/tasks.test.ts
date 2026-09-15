@@ -326,6 +326,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -888,6 +891,7 @@ mock.module("../../tasks/index.js", () => ({
 
 const { TaskCommands } = await import("./tasks.js");
 const { TaskDependencyCommands } = await import("./tasks-deps.js");
+const { ContractError } = await import("../agent-contract.js");
 
 describe("TaskCommands create", () => {
   beforeEach(() => {
@@ -1306,7 +1310,20 @@ describe("TaskCommands create", () => {
     console.log = () => {};
 
     try {
-      await commands.dispatch("task-cli-1", "dev", "task-cli-work", "10m", "ops-session", "blocked,failed", true);
+      await commands.dispatch(
+        "task-cli-1",
+        "dev",
+        "task-cli-work",
+        "10m",
+        "ops-session",
+        "blocked,failed",
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
     } finally {
       console.log = originalLog;
     }
@@ -1369,7 +1386,20 @@ describe("TaskCommands create", () => {
     };
 
     try {
-      await commands.dispatch("task-cli-1", "dev", "task-cli-work");
+      await commands.dispatch(
+        "task-cli-1",
+        "dev",
+        "task-cli-work",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
     } finally {
       console.log = originalLog;
     }
@@ -1431,7 +1461,20 @@ describe("TaskCommands create", () => {
     };
 
     try {
-      await commands.dispatch("task-cli-1", "dev");
+      await commands.dispatch(
+        "task-cli-1",
+        "dev",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
     } finally {
       console.log = originalLog;
     }
@@ -2574,7 +2617,7 @@ describe("TaskDependencyCommands", () => {
     console.log = () => {};
 
     try {
-      await commands.rm("task-cli-1", "task-upstream-1", true);
+      await commands.rm("task-cli-1", "task-upstream-1", true, true);
     } finally {
       console.log = originalLog;
     }
@@ -2668,5 +2711,136 @@ describe("TaskDependencyCommands", () => {
         relatedTaskId: "task-downstream-1",
       }),
     ]);
+  });
+});
+
+describe("tasks agent-first contract", () => {
+  beforeEach(() => {
+    dispatchCalls.length = 0;
+    dependencyRemoveCalls.length = 0;
+    listTasksCalls.length = 0;
+    taskListMock = [];
+    taskDetailsMock = { task: null, events: [], comments: [] };
+  });
+
+  it("emits TASK_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    taskListMock = [
+      { id: "task-cli-7", title: "Revisar rotas", status: "open" },
+      { id: "task-cli-8", title: "Outra frente", status: "open" },
+    ];
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      commands.show("task-cli-9", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("tasks show");
+    expect(envelope.error.code).toBe("TASK_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("task-cli-7");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("blocks tasks dispatch without --execute (dry-run, exit 3, no dispatch)", async () => {
+    taskDetailsMock = { task: { id: "task-cli-1" }, events: [], comments: [] };
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.dispatch("task-cli-1", "dev", "task-cli-work", "5m", "report-session", "progress,done", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("tasks dispatch");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect(envelope.error.plan).toEqual({
+      taskId: "task-cli-1",
+      agentId: "dev",
+      sessionName: "task-cli-work",
+      checkpointPresent: true,
+      reportTo: "report-session",
+      reportEventsPresent: true,
+      model: null,
+      effort: null,
+      thinking: null,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("5m");
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("progress,done");
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
+  it("blocks tasks deps rm without --execute (dry-run, exit 3, no write)", async () => {
+    const commands = new TaskDependencyCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.rm("task-cli-1", "task-upstream-1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(3);
+    expect(dependencyRemoveCalls).toHaveLength(0);
+  });
+
+  it("supports --fields compact mode on tasks list", () => {
+    taskListMock = [{ id: "task-cli-1", title: "task", status: "open", priority: "high", progress: 10 }];
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+    try {
+      commands.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "id,title",
+      );
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["id", "title"]);
   });
 });

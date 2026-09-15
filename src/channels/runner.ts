@@ -3,12 +3,26 @@ import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
 import { logger } from "../utils/logger.js";
 import {
+  startNativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponderConnection,
+} from "./inbound-actions.js";
+import {
   startChannelRunnerHealthResponder,
   type ChannelAdapterHealth,
   type ChannelRunnerHealthResponder,
   type ChannelRunnerRuntimeStatus,
 } from "./health.js";
-import type { NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
+import {
+  NativeChannelDriverContractError,
+  NativeChannelDriverManager,
+  NativeChannelDriverRegistry,
+  loadNativeChannelDriverModules,
+  parseNativeChannelDriverModuleConfigs,
+  type NativeInboundChannelActionHandler,
+  type NativeChannelDriverRuntime,
+} from "./native/driver.js";
+import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
   ChannelOutboundPublishReconciler,
@@ -30,14 +44,52 @@ import {
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
 import {
-  createSlackNativeRuntimesFromEnv,
-  type SlackNativeRuntime,
-  type SlackSocketModeStatus,
-} from "./slack/index.js";
+  startChannelBackendEgressResponder,
+  type ChannelBackendEgressResponder,
+  type ChannelBackendEgressResponderConnection,
+} from "./backend-egress.js";
+import { startChannelBackendPublicationReconciler } from "./backend.js";
+import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
+import type { SlackSocketModeStatus } from "./slack/index.js";
 
 const log = logger.child("channels:runner");
 
 export const CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+
+export function collectNativeRuntimeDeliveries(
+  runtimes: readonly Pick<NativeChannelDriverRuntime, "delivery" | "actions" | "presence">[],
+): {
+  deliveries: NativeTextDelivery[];
+  actionDeliveries: NativeChatActionDelivery[];
+  presenceDeliveries: NativePresenceDelivery[];
+} {
+  return {
+    deliveries: runtimes.flatMap((runtime) => (runtime.delivery ? [runtime.delivery] : [])),
+    actionDeliveries: runtimes.flatMap((runtime) => (runtime.actions ? [runtime.actions] : [])),
+    presenceDeliveries: runtimes.flatMap((runtime) => (runtime.presence ? [runtime.presence] : [])),
+  };
+}
+
+export function startChannelRunnerInboundActionResponder(options: {
+  connection: NativeInboundChannelActionResponderConnection;
+  handlers: readonly NativeInboundChannelActionHandler[];
+  startResponder?: typeof startNativeInboundChannelActionResponder;
+}): NativeInboundChannelActionResponder | null {
+  if (options.handlers.length === 0) return null;
+  return (options.startResponder ?? startNativeInboundChannelActionResponder)({
+    connection: options.connection,
+    handlers: options.handlers,
+  });
+}
+
+export function startChannelRunnerBackendEgressResponder(options: {
+  connection: ChannelBackendEgressResponderConnection;
+  startResponder?: typeof startChannelBackendEgressResponder;
+}): ChannelBackendEgressResponder {
+  return (options.startResponder ?? startChannelBackendEgressResponder)({
+    connection: options.connection,
+  });
+}
 
 type ReceiptPruneTimer = ReturnType<typeof setInterval>;
 
@@ -68,11 +120,15 @@ export class ChannelRunner {
   private outboundConsumer: ChannelOutboundConsumer | null = null;
   private presenceConsumer: ChannelPresenceConsumer | null = null;
   private deliveries: NativeTextDelivery[] = [];
+  private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
-  private slackRuntimes: SlackNativeRuntime[] = [];
+  private nativeChannelManager: NativeChannelDriverManager | null = null;
+  private inboundActionResponder: NativeInboundChannelActionResponder | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
+  private backendEgressResponder: ChannelBackendEgressResponder | null = null;
+  private stopBackendPublicationReconciler: (() => void) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -105,7 +161,11 @@ export class ChannelRunner {
       connection: getNats(),
     });
 
-    await this.startSlack(env);
+    await this.startNativeChannels(env);
+    this.stopBackendPublicationReconciler = startChannelBackendPublicationReconciler();
+    this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
+      connection: getNats(),
+    });
 
     if (this.options.consumeOutbound !== false) {
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
@@ -115,6 +175,7 @@ export class ChannelRunner {
 
       this.outboundConsumer = new ChannelOutboundConsumer({
         deliveries: this.deliveries,
+        actionDeliveries: this.actionDeliveries,
         isRunning: () => this.running,
       });
       this.outboundConsumer.start();
@@ -142,6 +203,8 @@ export class ChannelRunner {
     this.healthResponder = null;
     this.stopReceiptPruner?.();
     this.stopReceiptPruner = null;
+    this.stopBackendPublicationReconciler?.();
+    this.stopBackendPublicationReconciler = null;
     log.info("Stopping channel runner", { pid: process.pid });
     await this.outboundPublishReconciler?.stop();
     this.outboundPublishReconciler = null;
@@ -149,12 +212,14 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
-    for (const runtime of this.slackRuntimes) {
-      await runtime.socketMode.stop();
-      this.markAdapter(`slack:${runtime.accountId}`, "slack", "disconnected");
-    }
-    this.slackRuntimes = [];
+    await this.backendEgressResponder?.stop();
+    this.backendEgressResponder = null;
+    await this.inboundActionResponder?.stop();
+    this.inboundActionResponder = null;
+    await this.nativeChannelManager?.stop();
+    this.nativeChannelManager = null;
     this.deliveries = [];
+    this.actionDeliveries = [];
     this.presenceDeliveries = [];
     this.outboundInfrastructureReady = false;
     this.startedAt = null;
@@ -182,45 +247,44 @@ export class ChannelRunner {
     };
   }
 
-  private async startSlack(env: NodeJS.ProcessEnv): Promise<void> {
-    this.markAdapter("slack", "slack", "starting");
-    try {
-      const runtimes = await createSlackNativeRuntimesFromEnv(env, {
-        onRuntimeDisabled: (channel, reason) => {
-          this.markAdapter(`slack:${channel.name}`, "slack", "failed", reason);
-        },
-        onRuntimeError: (channel, error) => {
-          this.markAdapter(`slack:${channel.name}`, "slack", "failed", "startup_failed");
-          log.error("Failed to start configured Slack native runtime", {
-            channel: channel.name,
-            error,
-          });
-        },
-      });
-      this.adapterStatuses.delete("slack");
-      if (!runtimes.length) {
-        this.markAdapter("slack", "slack", "disabled", "not_configured");
-        return;
-      }
+  private async startNativeChannels(env: NodeJS.ProcessEnv): Promise<void> {
+    const registry = new NativeChannelDriverRegistry();
+    registry.register(createSlackNativeChannelDriver(env));
 
-      this.slackRuntimes = runtimes;
-      for (const runtime of runtimes) {
-        this.deliveries.push(runtime.delivery);
-        this.presenceDeliveries.push(runtime.presence);
-        runtime.socketMode.start();
-        this.markAdapter(`slack:${runtime.accountId}`, "slack", "starting", "opening_socket");
+    try {
+      const moduleConfigs = parseNativeChannelDriverModuleConfigs(env.RAVI_NATIVE_CHANNEL_DRIVERS);
+      const loaded = await loadNativeChannelDriverModules(moduleConfigs, registry);
+      for (const failure of loaded.failures) {
+        this.markAdapter(`native-driver:${failure.provider}`, failure.provider, "failed", failure.reason);
+        log.warn("Native channel driver was not loaded", {
+          provider: failure.provider,
+          reason: failure.reason,
+        });
       }
     } catch (error) {
-      this.markAdapter("slack", "slack", "failed", "startup_failed");
-      log.error("Failed to start Slack native runtime", { error });
+      const reason = error instanceof NativeChannelDriverContractError ? error.reason : "invalid_driver_configuration";
+      this.markAdapter("native-driver:configuration", "native", "failed", reason);
+      log.warn("Native channel driver configuration was rejected", { reason });
     }
+
+    this.nativeChannelManager = new NativeChannelDriverManager({
+      channels: configStore.getConfig().channels ?? {},
+      registry,
+    });
+    await this.nativeChannelManager.start();
+    this.inboundActionResponder = startChannelRunnerInboundActionResponder({
+      connection: getNats(),
+      handlers: this.nativeChannelManager.inboundActionHandlers(),
+    });
+    this.deliveries.push(...this.nativeChannelManager.deliveries());
+    this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
+    this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());
   }
 
   private currentAdapterStatuses(): AdapterStatus[] {
     const statuses = new Map(this.adapterStatuses);
-    for (const runtime of this.slackRuntimes) {
-      const socketStatus = runtime.socketMode.status();
-      statuses.set(`slack:${runtime.accountId}`, slackAdapterHealth(runtime.accountId, socketStatus));
+    for (const health of this.nativeChannelManager?.health() ?? []) {
+      statuses.set(health.id, health);
     }
     return Array.from(statuses.values()).sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -250,22 +314,10 @@ export class ChannelRunner {
 }
 
 export function slackAdapterHealth(accountId: string, status: SlackSocketModeStatus): ChannelAdapterHealth {
-  const adapterStatus: ChannelAdapterHealth["status"] =
-    status.state === "stopped"
-      ? "disconnected"
-      : status.state === "connecting"
-        ? "starting"
-        : status.state === "reconnecting"
-          ? "reconnecting"
-          : "connected";
   return {
     id: `slack:${accountId}`,
     channelId: "slack",
-    status: adapterStatus,
-    ...(status.reason ? { reason: status.reason } : {}),
-    ...(status.connectedAt !== undefined ? { connectedAt: status.connectedAt } : {}),
-    ...(status.lastPongAt !== undefined ? { lastPongAt: status.lastPongAt } : {}),
-    reconnectCount: status.reconnectCount,
+    ...slackNativeRuntimeHealth(status),
   };
 }
 

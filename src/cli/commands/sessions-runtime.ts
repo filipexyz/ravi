@@ -7,6 +7,7 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
+import { contractDryRun } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { declareCommandReturns, runtimeControlReturnSchema } from "./operational-return-schemas.js";
 import { requestReply } from "../../utils/request-reply.js";
@@ -102,6 +103,30 @@ async function requestRuntimeControl(
   return reply.result;
 }
 
+function buildRuntimeControlPlan(session: SessionEntry, request: RuntimeControlRequest): Record<string, unknown> {
+  const plan = {
+    session: session.name ?? session.sessionKey,
+    operation: request.operation,
+    threadId: request.threadId ?? null,
+  };
+
+  switch (request.operation) {
+    case "turn.follow_up":
+      return {
+        ...plan,
+        turnId: request.turnId ?? null,
+        expectedTurnId: request.expectedTurnId ?? null,
+        textLength: request.text?.length ?? 0,
+      };
+    case "thread.rollback":
+      return { ...plan, numTurns: request.numTurns ?? 1 };
+    case "thread.fork":
+      return { ...plan, hasPath: Boolean(request.path), hasCwd: Boolean(request.cwd) };
+    default:
+      return plan;
+  }
+}
+
 @Group({
   name: "sessions.runtime",
   description: "Transparent controls for active session runtimes",
@@ -152,7 +177,13 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "steer", description: "Steer the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "steer", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions.runtime",
+    action: "steer",
+    risk: "high",
+    redactions: ["text"],
+  })
   async steer(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Steering text to append to the active turn" }) text: string,
@@ -174,7 +205,14 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "follow-up", description: "Queue a follow-up after the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "follow-up", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions.runtime",
+    action: "follow-up",
+    risk: "high",
+    redactions: ["text"],
+    requiresConfirmation: true,
+  })
   async followUp(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Follow-up text to run after the active turn" }) text: string,
@@ -182,21 +220,30 @@ export class SessionRuntimeCommands {
     @Option({ flags: "--turn <id>", description: "Runtime turn id" }) turnId?: string,
     @Option({ flags: "--expected-turn <id>", description: "Expected active runtime turn id" }) expectedTurnId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually queue the follow-up; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const session = resolveControlSession(nameOrKey, "modify");
-    const result = await requestRuntimeControl(session, {
+    const request: RuntimeControlRequest = {
       operation: "turn.follow_up",
       text,
       threadId,
       turnId,
       expectedTurnId,
-    });
+    };
+    if (execute !== true) {
+      contractDryRun("sessions runtime follow-up", buildRuntimeControlPlan(session, request), { asJson });
+    }
+    const result = await requestRuntimeControl(session, request);
 
     return printRuntimeControlResult(result, asJson, "Queued runtime follow-up.");
   }
 
   @Command({ name: "interrupt", description: "Interrupt the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "interrupt", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "interrupt", risk: "high" })
   async interrupt(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Option({ flags: "--thread <id>", description: "Expected runtime thread id" }) threadId?: string,
@@ -214,25 +261,47 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "rollback", description: "Rollback completed runtime turns" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "rollback", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions.runtime",
+    action: "rollback",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   async rollback(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("turns", { description: "Number of completed turns to rollback", required: false }) turns?: string,
     @Option({ flags: "--thread <id>", description: "Runtime thread id; defaults to current thread" }) threadId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually roll back runtime turns; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const session = resolveControlSession(nameOrKey, "modify");
-    const result = await requestRuntimeControl(session, {
+    const request: RuntimeControlRequest = {
       operation: "thread.rollback",
       threadId,
       numTurns: parsePositiveInt(turns, 1),
-    });
+    };
+    if (execute !== true) {
+      contractDryRun("sessions runtime rollback", buildRuntimeControlPlan(session, request), { asJson });
+    }
+    const result = await requestRuntimeControl(session, request);
 
     return printRuntimeControlResult(result, asJson, "Rolled back runtime thread.");
   }
 
   @Command({ name: "fork", description: "Fork a runtime thread if the provider supports it" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "fork", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions.runtime",
+    action: "fork",
+    risk: "high",
+    redactions: ["path", "cwd"],
+    requiresConfirmation: true,
+  })
   async fork(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("threadId", { description: "Runtime thread id; defaults to current thread", required: false })
@@ -240,14 +309,23 @@ export class SessionRuntimeCommands {
     @Option({ flags: "--path <path>", description: "Runtime fork path" }) path?: string,
     @Option({ flags: "--cwd <path>", description: "Working directory for the fork" }) cwd?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually fork the runtime thread; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const session = resolveControlSession(nameOrKey, "modify");
-    const result = await requestRuntimeControl(session, {
+    const request: RuntimeControlRequest = {
       operation: "thread.fork",
       threadId,
       path: path ?? null,
       cwd: cwd ?? null,
-    });
+    };
+    if (execute !== true) {
+      contractDryRun("sessions runtime fork", buildRuntimeControlPlan(session, request), { asJson });
+    }
+    const result = await requestRuntimeControl(session, request);
 
     return printRuntimeControlResult(result, asJson);
   }

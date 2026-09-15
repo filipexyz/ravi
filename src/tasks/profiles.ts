@@ -1302,7 +1302,7 @@ function buildTaskCreateNextSteps(input: {
       : "upstream dependencies";
     const launchPlanLine = input.launchPlan
       ? `3. Auto-dispatch is armed for ${formatCreateLaunchPlan(input.launchPlan)} when dependencies are satisfied.`
-      : `3. Dispatch only after dependencies are satisfied: ravi tasks dispatch ${input.task.id} --agent <agent>`;
+      : `3. Dispatch only after dependencies are satisfied: ravi tasks dispatch ${input.task.id} --agent <agent> --execute`;
     return [
       `1. Resolve pending dependencies: ${pending}`,
       `2. Keep the task brief current while waiting.`,
@@ -1314,7 +1314,7 @@ function buildTaskCreateNextSteps(input: {
   return [
     `1. Open ${openTarget}`,
     "2. Rewrite the brief until objective, scope, acceptance criteria, risks, and validation are explicit.",
-    `3. Dispatch only after the brief is ready: ravi tasks dispatch ${input.task.id} --agent <agent>`,
+    `3. Dispatch only after the brief is ready: ravi tasks dispatch ${input.task.id} --agent <agent> --execute`,
   ].join("\n");
 }
 
@@ -1333,7 +1333,7 @@ function buildTaskCreateTemplateModel(input: {
     dependencySummary: `${input.readiness.satisfiedDependencyCount}/${input.readiness.dependencyCount} dependencies satisfied`,
     unsatisfiedDependencyIds: input.readiness.unsatisfiedDependencyIds.join(", "),
     launchPlan: formatCreateLaunchPlan(input.launchPlan),
-    dispatchCommand: `ravi tasks dispatch ${input.task.id} --agent <agent>`,
+    dispatchCommand: `ravi tasks dispatch ${input.task.id} --agent <agent> --execute`,
     nextSteps: buildTaskCreateNextSteps(input),
     dependencyCount: input.dependencies?.length ?? 0,
     dependentCount: input.dependents?.length ?? 0,

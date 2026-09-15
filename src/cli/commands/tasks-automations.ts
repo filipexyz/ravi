@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
@@ -413,14 +414,33 @@ export class TaskAutomationCommands {
     return payload;
   }
 
-  @Command({ name: "rm", description: "Delete a task automation", aliases: ["delete", "remove"] })
-  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "rm", risk: "destructive" })
+  @Command({
+    name: "rm",
+    description: "Delete a task automation (dry-run by default; --execute writes)",
+    aliases: ["delete", "remove"],
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks.automations",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(taskAutomationMutationReturnSchema)
   remove(
     @Arg("id", { description: "Task automation ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the automation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const automation = requireAutomation(id);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
+      contractDryRun("tasks automations rm", { id, namePresent: Boolean(automation.name?.trim()) }, { asJson });
+    }
     if (!deleteTaskAutomation(id)) {
       fail(`Task automation not found: ${id}`);
     }

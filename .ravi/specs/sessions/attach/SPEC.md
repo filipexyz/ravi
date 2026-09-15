@@ -3,19 +3,21 @@ id: sessions/attach
 title: Session Attach
 kind: capability
 domain: sessions
-capability: attach
+capabilities:
+  - attach
+  - multi-surface-reply
 tags:
   - sessions
   - chats
-  - attach
   - routing
-  - context
 applies_to:
   - src/router/sessions.ts
   - src/router/router-db.ts
-  - src/router/resolver.ts
-  - src/omni/consumer.ts
-  - src/runtime/host-event-loop.ts
+  - src/runtime/delivery-queue.ts
+  - src/runtime/session-dispatcher.ts
+  - src/runtime/session-output-target.ts
+  - src/runtime/session-surface-hint.ts
+  - src/runtime/runtime-request-builder.ts
   - src/cli/commands/sessions.ts
 owners:
   - ravi-dev
@@ -27,297 +29,228 @@ normative: true
 
 ## Intent
 
-`sessions/attach` decouples a session from the chat that produced the current inbound turn and separates "the session is listening here" from "the session may speak here".
+One session may participate in multiple chats while keeping one shared history.
+Each inbound turn replies to the chat or thread that produced it.
 
-Attach is the single runtime wiring primitive for this capability:
+## Model
 
-1. **Subscription** — a session is attached to a chat so future inbound from that chat can dispatch into the same session without forking history.
-2. **Speech mode** — every active subscription has a `speech_mode`:
-   - `speak`: the session may emit external responses to that chat when the current inbound source is that chat.
-   - `muted`: the session listens to that chat, but a normal response MUST NOT emit there.
-3. **Default output attachment** — one active subscription MAY be selected as the session's default speak surface. It is used when the current source chat is muted/listen-only.
+A `session_chat_subscription` attaches one canonical chat to one session.
 
-There is no separate `focus` primitive. The old `focus` behavior is folded into `attach` semantics and the old `focus` CLI/tool names MUST NOT exist.
+- One session MAY have many active subscriptions across channels.
+- One canonical chat MUST belong to at most one active session.
+- One active subscription MAY be selected as the session's default output.
+- A thread is a distinct reply surface from its parent chat and from other
+  threads.
 
-## Boundary
+Routes and attachments solve different problems:
 
-This capability owns:
+- a route selects the agent/session that receives inbound traffic;
+- an attachment records that the chat participates in that session.
 
-- the multi-chat subscription model;
-- the per-subscription speech mode;
-- the per-session default output attachment selected by `attach`;
-- attach/mute/unmute/detach/list CLI surface;
-- context-snapshot rendering at attach time;
-- target resolution at emit time: source speak subscription -> default speak attachment -> fail closed.
+## Reply Resolution
 
-This capability does NOT own:
+For every physical provider turn, the runtime MUST bind one immutable reply
+surface when the turn starts.
 
-- chat membership of humans (`channels/chats` / `chat_participants`);
-- provider session state (`runtime/session-continuity`);
-- thread/subject context (`threads`);
-- identity resolution (`contacts/identity-graph`);
-- permission system (Permission Provider Runtime);
-- arbitrary broadcast to many chats. This feature selects one outbound surface per response, not fan-out.
+1. An inbound turn replies to its attached source chat or thread.
+2. A turn with no inbound source replies to the default output attachment.
+3. An inbound source that is not attached MUST fail closed. It MUST NOT fall
+   back to the default output.
+4. A source-less turn with no default output MUST fail closed for *chat*
+   delivery. It MUST NOT invent a chat `.response` sink.
 
-## Definitions
+CLI-only `sessions send` (no `--channel`/`--to`, no inbound chat, and no
+output attachment) uses the CLI transcript as its output. The waiting CLI is the
+destination. After `turn.complete`, `sessions send -w` MUST return this
+turn's assistant transcript row (persist may lag). Missing chat delivery
+is not empty success when that transcript exists.
 
-- `session_chat_subscription`: durable record stating "chat X is wired to session S". A session MAY have many. The original `session_chat_bindings` row remains the primary/origin marker for backward compatibility.
-- `speech mode`: durable per-subscription state. `speak` means the session may emit to that chat; `muted` means listen-only.
-- `output attachment`: the active subscription row whose `output_attached_at` is set. At most one active subscription per session may be the default output attachment.
-- `default output target`: the chat record referenced by the active output attachment.
-- `attach context snapshot`: an opt-in projection of attached chat metadata, rendered as a system context block in the next prompt.
+CLI-only `sessions send` with `_cliDestination` (waiting CLI, no inbound
+chat) remains a **session destination**. Leftover `lastChannel` / `lastTo`
+MUST NOT be copied into `prompt.source` / `currentSource`. Chat emit MUST
+fail closed for that CLI-only shape.
 
-## Data Model
+A session-relay continue without `_cliDestination` (operator/system
+`sessions send` into an already-attached chat session) MUST rebind the
+existing primary/default output attachment so replies reach that chat.
+The CLI MUST NOT set `_cliDestination` when an output attachment exists.
+Runtime presence MUST follow the bound reply target when there is no inbound
+source, without fabricating inbound provenance. Suppressed chat output MUST
+NOT expose a reply target for presence.
+Leftover `lastChannel` / `lastTo` still MUST NOT become a fake inbound
+source. Channel aliases (`whatsapp` / `whatsapp-baileys`) and WhatsApp
+group chat-id forms (`group:<id>`, `<id>@g.us`, internal `chat_*`) MUST
+match as one identity when stripping leftover lastChannel and when
+binding an inbound source to its subscription. An inbound source that
+is not attached still MUST fail closed.
 
-### `session_chat_subscriptions`
+A generator successor turn that loses `currentSource` (leftover lastChannel,
+form mismatch, or source-less continue) MUST keep the previous bound chat
+when that target is still attached and the new source is empty or the same
+chat identity. It MUST NOT keep the previous target for a different
+unattached inbound or for a CLI-only `_cliDestination` turn.
 
-Fields:
+Observer sessions (`obs:*` / `_observation`) MUST NOT emit to a chat sink.
+Missing chat delivery there is expected, not an unresolved user-chat drop.
 
-- `id` — primary key.
-- `session_key` — references the session. NOT a unique constraint; a session has many subscriptions.
-- `chat_id` — references the canonical chat id (`channels/chats`).
-- `role`: `primary`, `input`, `mirror`, or future role.
-- `attached_by_type`: `user`, `agent`, `system`.
-- `attached_by_id`.
-- `attached_reason` — short text explaining why, e.g. `manual-cli`, `agent-tool`, `route-migration`.
-- `context_snapshot_at_attach_json` — optional snapshot of group/chat metadata captured at attach time.
-- `speech_mode` — `speak` or `muted`. Defaults to `speak` for manual/default attaches and to `muted` for route-created listen-only subscriptions.
-- `speech_updated_at`.
-- `speech_reason` — short audit reason explaining the last speech-mode mutation.
-- `output_attached_at` — non-null only when this row is the session's current default external output target.
-- `created_at`, `updated_at`.
-- `detached_at` — soft delete; the row is inactive when set.
+Gateway Direct send (`ravi.outbound.deliver` with explicit `channel` /
+`account` / `to`) is independent of this resolver. Approval UX may still
+reach the attached group while streaming assistant emits fail closed on
+`resolveSessionOutputTarget` / `emitResponse` when the per-turn source
+does not match a subscription. That is a source/identity miss, not "no
+WhatsApp route at all".
 
-Constraints:
+The default output is the fallback for source-less continues and for
+proactive turns (cron, heartbeat, follow-up). It never overrides a real
+attached inbound source.
 
-- `(session_key, chat_id)` MUST be unique among active rows.
-- `chat_id` MUST be unique among active rows across ALL sessions. A canonical chat row can only dispatch into one session at a time.
-- `(session_key)` MUST be unique among active rows where `output_attached_at IS NOT NULL`. A session has at most one default output attachment.
-- `speech_mode` MUST be independent from `output_attached_at`. A chat MAY be `speech=speak` without being the default output. A default output row MUST be `speech=speak`.
-- A session MUST keep at least one active `primary` subscription for legacy compatibility. Detaching the last primary MUST clear output only; it MUST NOT orphan the input subscription.
-- Legacy `session_focus` state MUST NOT affect output. Code MUST NOT read it, expose it, or document it.
+## Turn Isolation
 
-## Migration From Current State
+A provider session has one ordered transcript, so its turns MUST remain
+serialized.
 
-- `session_chat_bindings` becomes the `primary` subscription row.
-- Primary rows backfilled from `session_chat_bindings` MUST become `speech=speak` output attachments when the session has no output attachment yet. This preserves normal chat reply behavior for existing sessions.
-- Legacy duplicate bindings pick the most recently updated binding, tiebreak by `session_key`, and drop the rest from subscription backfill.
-- Existing active subscriptions without speech metadata are backfilled as `speech=speak` when they are `primary` or the output attachment, and `speech=muted` otherwise.
-- Existing active subscriptions without any output attachment are backfilled by selecting one row per session, preferring `primary`.
-- Legacy `session_focus` rows are deleted.
-- `sessions.last_channel` / `last_account_id` / `last_to` / `last_thread_id` remain last-source provenance only. They MUST NOT be output fallback.
+- Messages from different reply surfaces MUST NOT share one physical turn.
+- A message from another surface MUST NOT steer or interrupt the active turn.
+- It remains queued in FIFO order and starts after the active turn completes.
+- Messages from the same surface MAY be coalesced or steered when their normal
+  delivery-barrier and authority rules allow it.
+- Provider-neutral channel turn envelopes remain isolated one per physical
+  turn.
+- `currentSource` MUST only be assigned at physical turn start. Queueing,
+  waking, or steering MUST NOT replace it.
+- The external reply target MUST be resolved once at physical turn start.
+  Subscription changes during the turn MUST NOT redirect that turn.
 
-## Target Resolution
+## Prompt Contract
 
-When the runtime emits a response, the target chat MUST be resolved in this order:
+Every new logical turn has two payloads:
 
-1. **Speak-enabled source chat** — if the current inbound source chat is an active subscription for the session and has `speech_mode='speak'`, emit to that source chat.
-2. **Default output target** — otherwise use the active subscription with `output_attached_at IS NOT NULL` only when it has `speech_mode='speak'`.
-3. **Fail closed** — if neither target resolves, do not emit externally. Keep provider transcript/session state intact and emit a trace/log for `response.target_unresolved`.
+- **runtime prompt** — what the provider/model sees
+- **persisted user row** — what `sessions read`, chat display, and transcript
+  show
 
-The inbound source chat is NOT an implicit output fallback. It only wins when it is an active speak-enabled subscription. This is the key behavior: a session may receive prompts from one muted/listen-only chat while responses land in the default speak chat selected by `attach`.
+The dispatcher adds exactly one short English instruction to the
+**runtime** prompt:
 
-Inbound route bookkeeping MUST be monotonic for an existing subscription: reprocessing the same source chat MUST NOT downgrade an active `primary` or default-output subscription to `speech=muted` just because the session already has a primary row. Only new secondary subscriptions created by routing default to listen-only.
-
-## Runtime Chat Context
-
-Attach makes a session multi-chat capable. Runtime prompt context MUST therefore distinguish the chat that produced the current prompt from the chat that receives the response.
-
-For every inbound turn:
-
-- `sourceChat` MUST refer to the canonical chat that produced the inbound message.
-- `sourceSpeech` MUST state whether the source subscription is `speak`, `muted`, or absent.
-- `defaultOutputChat` MUST refer to the canonical chat selected by the active output attachment, when one exists.
-- The prompt header MUST include all active subscriptions with their `speech_mode` and default-output marker.
-- If `sourceChat` and the default output chat are the same canonical chat, runtime context MAY render one chat section and mark output as same-as-source.
-- If `sourceChat` and default output differ, runtime context MUST render them as separate concepts. It MUST NOT imply that participants from one chat belong to the other.
-- Participant lists in prompt context MUST be scoped under `sourceChat.participants`, `defaultOutputChat.participants`, or the resolved outbound target. They MUST NOT be injected as a session-level participant list.
-- Outbound channel features that depend on target membership, such as native mentions, MUST use the resolved outbound target's participants.
-- Inbound interpretation features, such as sender metadata, quoted-message context, or inbound mention rendering, MUST use `sourceChat` metadata.
-- If `sourceSpeech=muted`, the prompt MUST tell the agent that it may internally run `ravi sessions unmute <session> --chat <sourceChat>` before its final response when a public reply must go to the source chat.
-- The prompt MUST explicitly instruct the agent not to explain mute, unmute, attach, subscription, routing, or output mechanics to users.
-
-Example shape:
-
-```ts
-{
-  sourceChat: { canonicalChatId: "<source-chat-id>", participants: ["<display-name>"] },
-  sourceSpeech: "muted",
-  defaultOutputChat: { canonicalChatId: "<output-chat-id>", participants: ["<display-name>"] },
-  subscriptions: [{ canonicalChatId: "<source-chat-id>", speech: "muted", defaultOutput: false }]
-}
+```text
+[session surface] This turn came from a Slack chat. A normal reply returns there.
 ```
 
-Specs, tests, and normative examples MUST use placeholders instead of real person or group names.
+For a thread, it says `Slack thread`. For a CLI-only operator turn, it says
+that a normal reply returns to the waiting CLI. For HTTP / app session-relay
+send with no inbound chat, it says that a normal reply stays on this
+session. For other source-less turns (cron, heartbeat, follow-up), it says
+that the session default will be used when one is available.
 
-## CLI Surface
+The instruction MUST NOT include session names, chat ids, subscription lists,
+roles, database fields, or routing commands. It is added centrally so every
+channel uses the same contract, and it MUST remain idempotent across durable
+replay.
+
+Inbound WhatsApp/Slack may keep the instruction on the persisted user prompt
+when the channel already shows the original message separately.
+
+Operator CLI-only and HTTP/user `sessions.send` MUST persist the raw user
+text. Honor `--raw`. Do not glue `[session surface]`, `waiting CLI`, or
+`no inbound chat` into that `user.text`. Put the header on launch-prompt
+metadata (`_sessionSurfaceHintText` / `_runtimePrompt`) and inject it into
+the model prompt. Leftover `lastChannel` on a session-relay send is not an
+inbound chat turn.
+
+`[from:]` is only `callerSessionKey` inside `[System] Inform:`.
+`SessionsSendInput` has no `from` field. App identity is `context issue`.
+`sessions.set-display` is a session label, not a sender.
+
+## CLI
 
 ```bash
-# attach a chat as a speak-enabled subscription and default output target
-ravi sessions attach <session> --chat <chat-id-or-key> [--reason "..."]
-
-# keep a subscribed chat as listen-only
-ravi sessions mute <session> --chat <chat-id-or-key>
-
-# allow a subscribed chat to receive responses
-ravi sessions unmute <session> --chat <chat-id-or-key>
-
-# detach that chat/subscription from the session
-ravi sessions detach <session> --chat <chat-id-or-key>
-
-# list subscriptions, output target, and speech mode
+ravi sessions attach <session> --chat <chat-id> [--reason "..."]
+ravi sessions detach <session> --chat <chat-id>
 ravi sessions subscriptions <session>
-ravi sessions subscriptions <session> --json
+ravi sessions send <session> "<prompt>" -w --json
 ```
 
-Successful `ravi sessions attach` output MUST include the inverse detach command:
+Operator CLI-only `sessions send` (no channel) sends the raw user text.
+`[System] Inform:` remains for agent-to-agent / in-context sends. `--raw`
+is the escape hatch. Chat-attached `-w` still means delivered.
 
-```text
-Detach hint: ravi sessions detach <session> --chat <canonical-chat-id>
-```
+- `attach` adds/reactivates the subscription and selects it as the default
+  output.
+- `detach` removes the subscription and clears it as default.
+- `subscriptions` lists active chats and the default marker.
+- `--json` attach/detach MUST report the final state: session identity/name,
+  requested chat id, whether that chat is attached, whether it is the default
+  output, remaining active subscriptions (chat id, role, default output,
+  detached flag), and explicit `legacy.status` of `none` for
+  `session_chat_bindings`. Human output MUST summarize the same state.
 
-For `--json`, the same command MUST be returned under `hints.detach`.
+There is no speech mode. `mute`, `unmute`, and `focus` are not part of this
+capability.
 
-Successful `ravi sessions subscriptions` output MUST include `speech=<mode>` for every subscription.
+`@@SILENT@@` suppresses only the current response. It does not modify session
+wiring.
 
-## Runtime Tool Surface
+## Persistence
 
-When native host tools exist for this capability, they MUST expose only:
-
-```ts
-attach_chat({ chat_id, reason? })
-  -> { subscription_id, role: "input", output_attached: true, snapshot?: AttachContextSnapshot, hints: { detach: string } }
-
-set_subscription_speech({ chat_id, mode: "muted" | "speak", reason? })
-  -> { subscription_id, speech_mode: "muted" | "speak" }
-
-detach_chat({ chat_id })
-  -> { detached: boolean, output_detached: boolean }
-
-list_subscriptions()
-  -> { subscriptions: Subscription[] }
-```
-
-Tool rules:
-
-- Tools MUST resolve `chat_id` against canonical chat ids only.
-- Tools MUST emit session trace events for each mutation: `session.attach`, `session.detach`.
-- `attach_chat` MUST return the inverse detach hint, mirroring the CLI.
-- Speech-mode tools MUST NOT create subscriptions implicitly; the chat must already be attached.
-- Tools MUST NOT include `focus_chat` or any equivalent separate output-target mutation.
-
-## System Prompt Documentation
-
-The system-prompt builder MUST document attach/mute/unmute/detach/list. It MUST NOT document `focus`.
-
-The prompt SHOULD describe:
-
-- `attach`: subscribe inbound from that chat, enable speech, and select it as default output;
-- `mute`: keep inbound subscribed while preventing external responses to that chat; if the muted row was the default output attachment, clear `output_attached_at` so a default output row is never muted;
-- `unmute`: enable speech in a subscribed chat, especially before final response when the source chat is muted and the reply must go there;
-- `detach`: durably remove that subscription when possible; if detaching the only primary chat, input may remain but external output stops;
-- `subscriptions`: inspect current wiring, default output, and speech mode.
-
-The prompt MUST tell agents not to externalize the routing/mute/unmute mechanics to users.
-
-## Silent vs Mute vs Detach
-
-`@@SILENT@@`, `mute`, and `detach_chat` are complementary:
-
-- **`@@SILENT@@`** is one-shot. The agent stays attached and suppresses only this turn's answer.
-- **`mute`** is durable listen-only. The session keeps receiving inbound from that chat but does not emit there until `unmute`.
-- **`detach_chat`** is durable removal. The session stops participating in that chat when possible.
-
-## Session Surface Header
-
-Ravi MUST prepend a compact internal header for every inbound turn in a multi-surface session so the agent understands where the inbound came from and where speech is allowed.
-
-```text
-[session surfaces] session=<session> source_chat=<chat_id> source_speech=<muted|speak|unattached> default_speak_chat=<chat-id|none>
-[session surfaces] <chat-id> role=<role> speech=<mode> defaultOutput=<true|false> ...
-[session surfaces] source_chat is muted/listen-only. If a public reply must go to source_chat, internally run `ravi sessions unmute <session> --chat <chat_id>` before your final response. Do not mention routing mechanics to users.
-```
-
-The header MUST include canonical chat ids. It MUST NOT suggest `focus`. It MUST NOT be framed as user-facing content.
-
-## Instance Isolation
-
-A chat MUST only be attached to a session whose instance matches the chat's instance.
-
-Rules:
-
-- `attachChatToSession` MUST throw `SessionAttachInstanceMismatchError` when `chat.instance != session.instance`.
-- `subscriptionAllowsCrossInstance` MUST return false for cross-instance subscription overrides.
-- Operators migrating chats across instances MUST detach from the original session and re-attach explicitly on a session that belongs to the target instance.
-
-## Recipes
-
-### Move Session Output To Another Group
-
-```bash
-ravi sessions attach <session> --chat <target-chat-id> --reason "reply there"
-```
-
-Effect:
-
-- Future responses from `<session>` go to `<target-chat-id>`.
-- Future inbound from `<target-chat-id>` also dispatches into `<session>`.
-- Inbound from other subscribed chats may still dispatch into `<session>`. If those chats are muted, normal output remains `<target-chat-id>`; if they are unmuted, responses to their own inbound may emit there.
-
-### Listen To Another Group Without Speaking There
-
-```bash
-ravi sessions attach <session> --chat <listen-chat-id> --reason "listen there"
-ravi sessions mute <session> --chat <listen-chat-id>
-```
-
-Effect:
-
-- Future inbound from `<listen-chat-id>` dispatches into `<session>`.
-- Normal responses do not emit to `<listen-chat-id>`.
-- If a specific response must go back to that source chat, the agent may internally run `ravi sessions unmute <session> --chat <listen-chat-id>` before its final response.
-
-### Stop External Output
-
-```bash
-ravi sessions detach <session> --chat <output-chat-id>
-```
-
-Effect:
-
-- If `<output-chat-id>` is the current output attachment, future responses do not emit externally until another `attach`.
-- If the row can be removed without orphaning the primary subscription, the input subscription is also detached.
-- If it is the only primary subscription, the primary input remains and only output is cleared.
-
-## Anti-Patterns
-
-- Reintroducing `focus`, `session_focus`, `focus_chat`, or a separate sticky output primitive. The primitive is `attach`.
-- Falling back to inbound source for output when the source chat is not an active `speech=speak` subscription.
-- Letting inbound-route bookkeeping steal the output attachment from an operator-selected chat.
-- Letting inbound-route bookkeeping create speak-enabled secondary subscriptions by default. Secondary route-created subscriptions SHOULD be `speech=muted`.
-- Treating attach as a permission grant. Subscribing a chat MUST NOT bypass `dmPolicy` / `groupPolicy`.
-- Expecting attach to change which agent processes a chat. Attach chooses session/output continuity; agent comes from route or instance default.
-- Having agents narrate mute/unmute/routing mechanics to end users.
-
-## Acceptance Criteria
-
-- `ravi sessions attach <session> --chat <chat>` selects `<chat>` as the session output target.
-- After attaching `<chat>`, responses to inbounds from muted/listen-only subscribed chats are delivered to `<chat>`.
-- Inbound from a speak-enabled source subscription emits to that source chat.
-- Inbound route bookkeeping creates muted subscriptions and does not change the output attachment after it has been selected.
-- Repeated inbound from the current primary/default chat preserves `speech=speak` and keeps the output attachment.
-- `ravi sessions mute/unmute <session> --chat <chat>` toggles only speech mode and does not detach the input subscription.
-- Muting the current output attachment clears the output marker instead of leaving a muted default output.
-- `ravi sessions detach <session> --chat <chat>` clears output when `<chat>` is the output target.
-- With no speak-enabled source and no speak-enabled output attachment, runtime does not emit externally.
-- `ravi sessions subscriptions` shows which chat is the output target and the speech mode of each subscription.
-- `ravi sessions focus`, `focus_chat`, and `set-unattached-focus-policy` are not available/documented.
-- Deleting a session cascade-deletes its subscriptions.
+- `session_chat_subscriptions` is the sole source of truth for attach, detach,
+  inbound chat participation, and default output.
+- One chat belongs to at most one active session. One session MAY have many
+  active chats. At most one active output exists per session.
+- `detach` removes the active association and clears default output for that
+  chat. It MUST NOT delete the session or its history. Repeated detach is
+  idempotent.
+- Resetting provider continuity MUST preserve chat subscriptions.
+- Deleting a session MUST cascade to its subscriptions.
+- Existing databases may retain obsolete speech columns; runtime and CLI code
+  MUST ignore them. New schemas do not create them.
+- Legacy `session_chat_bindings` MUST NOT be created, read, or written at
+  runtime. Compatibility migration converts leftover useful rows into
+  subscriptions once, then drops the table. Migration MUST be idempotent and
+  MUST NOT resurrect an intentionally detached pair or insert a second active
+  output for a session.
 
 ## Validation
 
-- `bun test src/router/session-attach.test.ts`
-- `bun test src/runtime/session-output-target.test.ts`
-- `bun test src/cli/commands/sessions.test.ts`
-- `bun test src/omni/consumer-context.test.ts`
-- `bun run build`
+```bash
+bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts
+bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts
+bun test src/runtime/session-surface-hint.test.ts src/omni/consumer-context.test.ts
+bun test src/cli/commands/sessions.test.ts
+bun test src/channels/slack/socket-mode.test.ts src/channels/slack/thread-lifecycle.test.ts
+```
+
+Regression coverage MUST include:
+
+- detach with another output selected in the same session;
+- detach with no competing output, with no resurrection after repeated DB
+  initialization;
+- repeated detach remaining idempotent;
+- one-time binding migration being idempotent and never violating the unique
+  output index;
+- preservation of unrelated chats and session history;
+- inbound consumer creating/using subscriptions only, never legacy bindings;
+- CLI attach/detach JSON and human output exposing final attached/default
+  state and reporting no legacy binding;
+- Slack active, WhatsApp queued, then one reply to each source in order;
+- two Slack threads remaining separate;
+- source-less output using the default attachment;
+- session-relay / HTTP operator send not emitting to leftover lastChannel
+  or the default output, while persist/read still has the assistant row;
+- inbound WhatsApp/Slack still emitting to the source chat;
+- an unattached inbound source failing closed;
+- replay adding the surface instruction only once;
+- operator CLI-only and HTTP `sessions.send` persisting raw user text
+  while the runtime prompt still carries the surface header;
+- inbound WhatsApp/Slack still receiving the surface instruction.
+
+## Failure Modes
+
+- Mutating `currentSource` when a later message arrives.
+- Resolving subscriptions again when a response is emitted.
+- Combining messages from different chats before provider delivery.
+- Letting a different surface use native steer or host interruption.
+- Sending an inbound turn to the default output.
+- Implementing the surface instruction in one channel adapter instead of the
+  central dispatcher.
+- Gluing the surface header into an operator `user.text` row, or omitting
+  it from the model-facing runtime prompt.

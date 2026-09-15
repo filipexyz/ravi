@@ -10,7 +10,8 @@
 - Delete execution check
   - `ravi apps delete demo-app --json`
   - Must remove only scaffold-owned files.
-  - Must not remove implementation files, runtime storage, or credentials.
+  - Must not remove `cli.ts`, other implementation files, runtime storage, or
+    credentials.
   - Must report deleted file paths, kinds, and actions.
 
 - Delete absent app check
@@ -20,7 +21,8 @@
 - Scaffold collision check
   - `ravi apps scaffold demo-app --json` when files exist
   - Without `--force`: must return typed `already_exists` error with status 409.
-  - With `--force`: must overwrite and succeed.
+  - With `--force`: must overwrite scaffold-owned contracts, preserve an
+    existing `cli.ts`, report it as `preserved`, and succeed.
 
 - Show absent app check
   - `ravi apps show nonexistent --json`

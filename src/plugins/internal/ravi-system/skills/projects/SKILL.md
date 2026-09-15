@@ -22,6 +22,28 @@ Regra de fronteira:
 
 Não use `project` como scheduler, task umbrella, PM tool genérica ou ownership direto de task.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `PROJECT_NOT_FOUND`, `WORKFLOW_RUN_NOT_FOUND`, `WORKFLOW_NODE_NOT_FOUND`, `TASK_NOT_FOUND`, `RESOURCE_NOT_FOUND`). O envelope traz `suggestions` com slugs/títulos reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje: `projects tasks dispatch` e `projects workflows start` (disparam execução real de agente/workflow), `projects fixtures seed` (reseta e resemeia as fixtures — destrutivo) e `projects resources import` (ingestão em massa) são dry-run por default e exigem `--execute`. Todas as demais escritas gravam na hora, sem dry-run: `init`, `create`, `update`, `link`, `workflows attach`, `tasks create`, `tasks attach`, `resources add`. Nessas o freio é você: confira o alvo antes de rodar.
+
+Compact mode: `projects list`, `projects next` e `projects resources list` aceitam `--fields a,b,c` (ex.: `--fields slug,status`) — use em varredura para não arrastar o objeto inteiro de cada project.
+
+Help por operação: `ravi projects <op> --help` (idem nos grupos `workflows`, `tasks`, `resources`, `fixtures`) é enxuto; prefira-o ao help do domínio inteiro.
+
+Checklist antes de responder sobre projects:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+
 ## Invariantes
 
 - O vínculo forte inicial é `workflow -> project`.
@@ -112,10 +134,10 @@ ravi projects init "Ravi Projects System" \
 
 ## Workflows Ligados ao Project
 
-Dia-2: iniciar um workflow run a partir do project:
+Dia-2: iniciar um workflow run a partir do project (freado: sem `--execute` é dry-run, exit 3):
 
 ```bash
-ravi projects workflows start ravi-projects-system wf-spec-canonical-technical-change-v1 --role primary
+ravi projects workflows start ravi-projects-system wf-spec-canonical-technical-change-v1 --role primary --execute
 ```
 
 Anexar run existente:
@@ -148,10 +170,10 @@ Anexar task existente ao node:
 ravi projects tasks attach ravi-projects-system review task-abc123 --workflow wf-run-abc123 --dispatch
 ```
 
-Despachar usando defaults do project:
+Despachar usando defaults do project (freado: sem `--execute` é dry-run, exit 3):
 
 ```bash
-ravi projects tasks dispatch ravi-projects-system task-abc123
+ravi projects tasks dispatch ravi-projects-system task-abc123 --execute
 ```
 
 O comando deve herdar `owner_agent_id` e `operator_session_name` do project quando não houver override.
@@ -164,13 +186,14 @@ Adicionar um resource:
 ravi projects resources add ravi-projects-system <ravi.bot repo> --type worktree --role source
 ```
 
-Importar vários:
+Importar vários (freado: sem `--execute` é dry-run, exit 3):
 
 ```bash
 ravi projects resources import ravi-projects-system \
   --worktree <ravi.bot repo> \
   --url https://example.com/spec \
-  --group 120363424772797713@g.us
+  --group 120363424772797713@g.us \
+  --execute
 ```
 
 Listar e mostrar:
@@ -206,11 +229,11 @@ Links são baratos e polimórficos. Não duplique ownership em tabelas de task.
 
 ## Fixtures
 
-Seedar fixtures canônicas:
+Seedar fixtures canônicas (freado e destrutivo: reseta as fixtures; sem `--execute` é dry-run, exit 3):
 
 ```bash
-ravi projects fixtures seed
-ravi projects fixtures seed --owner-agent dev
+ravi projects fixtures seed --execute
+ravi projects fixtures seed --owner-agent dev --execute
 ```
 
 Use fixtures para validar o caminho:
@@ -222,8 +245,8 @@ project -> workflow run -> node run -> task
 ## Fluxo Recomendado
 
 1. `projects init` para criar o namespace/contexto.
-2. `projects resources import` para anexar substrato útil.
-3. `projects workflows start` para iniciar a trilha coordenada.
+2. `projects resources import --execute` para anexar substrato útil (sem `--execute` só mostra o plano).
+3. `projects workflows start --execute` para iniciar a trilha coordenada (sem `--execute` só mostra o plano).
 4. `projects tasks create|attach --dispatch` para abrir trabalho concreto no node.
 5. `projects status` ou `projects next` para decidir o próximo movimento.
 6. `tasks show/list/watch` para acompanhar execução concreta.

@@ -27,6 +27,7 @@ status: active
 
 ## CI Integration Checks
 
+- A pull request targeting a feature branch starts the same Quality Gate as a pull request targeting `main` or `dev`.
 - `.github/workflows/ci.yml` includes a step that runs spec validation for PRs.
 - `.ravi/specs/**` is not excluded from CI via `paths-ignore` for pull_request events.
 - The gate runs without Notion, Devin, or external API secrets.

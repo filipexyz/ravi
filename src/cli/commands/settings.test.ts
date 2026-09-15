@@ -7,20 +7,12 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 let settingsStore: Record<string, string> = {};
 const emitMock = mock(async () => {});
 
-mock.module("../decorators.js", () => ({
-  Group: () => () => {},
-  Command: () => () => {},
-  CommandAccess: () => () => {},
-  Scope: () => () => {},
-  CliOnly: () => () => {},
-  Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
-  Arg: () => () => {},
-  Option: () => () => {},
-}));
-
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -67,6 +59,8 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 const { SettingsCommands } = await import("./settings.js");
+const { ContractError } = await import("../agent-contract.js");
+const { getCommandAccessMetadata } = await import("../decorators.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -114,7 +108,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (13 returned of 13, limit 50, offset 0):");
+    expect(output).toContain("Settings (17 returned of 17, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
@@ -132,6 +126,32 @@ describe("SettingsCommands", () => {
     expect(output).toContain("Use `ravi instances set main dmPolicy <value>` instead.");
   });
 
+  it("registers stored runtime defaults and keeps env as fallback only", () => {
+    const commands = new SettingsCommands();
+    expect(() => commands.set("runtime.defaultProvider", "not-a-provider")).toThrow(/Invalid provider/);
+    expect(() => commands.set("runtime.defaultProvider", "claude", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultProvider"]).toBe("claude");
+
+    expect(() => commands.set("runtime.defaultEffort", "ludicrous")).toThrow(/Invalid runtime effort/);
+    expect(() => commands.set("runtime.defaultEffort", "high", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultEffort"]).toBe("high");
+
+    expect(() => commands.set("runtime.defaultModel", "opus", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultModel"]).toBe("opus");
+
+    const output = captureLogs(() => {
+      commands.get("runtime.defaultModel");
+    });
+    expect(output).toContain("runtime.defaultModel: opus");
+  });
+
+  it("registers a strict global model-broker-required switch", () => {
+    const commands = new SettingsCommands();
+    expect(() => commands.set("runtime.model_broker.required", "yes")).toThrow(/true, false/);
+    expect(() => commands.set("runtime.model_broker.required", "true", true)).not.toThrow();
+    expect(settingsStore["runtime.model_broker.required"]).toBe("true");
+  });
+
   it("rejects writes to legacy account settings", () => {
     const commands = new SettingsCommands();
 
@@ -139,5 +159,120 @@ describe("SettingsCommands", () => {
       "Legacy setting shadowed by instances: account.main.dmPolicy. Use `ravi instances set main dmPolicy <value>` instead.",
     );
     expect(settingsStore["account.main.dmPolicy"]).toBeUndefined();
+  });
+});
+
+describe("settings agent-first contract", () => {
+  beforeEach(() => {
+    settingsStore = {};
+    emitMock.mockClear();
+  });
+
+  function capture<T>(run: () => T): { thrown?: unknown; result?: T } {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      return { result: run() };
+    } catch (error) {
+      return { thrown: error };
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  it("emits SETTING_NOT_FOUND envelope with suggestions on get --json (exit 1)", () => {
+    const { thrown } = capture(() => new SettingsCommands().get("defaultAgnt", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("settings get");
+    expect(envelope.error.code).toBe("SETTING_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("defaultAgent");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("still reads known-but-unset and legacy keys without a not-found envelope", () => {
+    settingsStore = { "account.main.dmPolicy": "pairing" };
+    const commands = new SettingsCommands();
+
+    const known = capture(() => commands.get("defaultAgent", true));
+    expect(known.thrown).toBeUndefined();
+
+    const legacy = capture(() => commands.get("account.other.dmPolicy", true));
+    expect(legacy.thrown).toBeUndefined();
+  });
+
+  it("blocks settings delete without --execute (dry-run, exit 3, no write)", () => {
+    settingsStore = { "custom.password": "SENTINEL_SECRET_7M4Q" };
+    const { thrown } = capture(() => new SettingsCommands().delete("custom.password", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("settings delete");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect(envelope.error.plan).toEqual({
+      key: "custom.password",
+      valuePresent: true,
+      legacy: false,
+      known: false,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(settingsStore["custom.password"]).toBe("SENTINEL_SECRET_7M4Q");
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("declares the setting value as redacted command input", () => {
+    expect(getCommandAccessMetadata(SettingsCommands).get("set")).toMatchObject({
+      kind: "mutate",
+      resource: "settings",
+      action: "set",
+      redactions: ["value"],
+    });
+  });
+
+  it("deletes with --execute and emits config change", () => {
+    settingsStore = { "custom.featureFlag": "on" };
+    const { thrown, result } = capture(() => new SettingsCommands().delete("custom.featureFlag", true, true));
+
+    expect(thrown).toBeUndefined();
+    expect(result).toMatchObject({ status: "deleted", changedCount: 1 });
+    expect(settingsStore["custom.featureFlag"]).toBeUndefined();
+    expect(emitMock).toHaveBeenCalled();
+  });
+
+  it("fails delete of an unset key with SETTING_NOT_FOUND before the brake (exit 1, never 3)", () => {
+    settingsStore = { "custom.featureFlag": "on" };
+    const { thrown } = capture(() => new SettingsCommands().delete("custom.featureFlg", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().error.code).toBe("SETTING_NOT_FOUND");
+    expect(contractError.envelope().error.suggestions).toContain("custom.featureFlag");
+  });
+
+  it("supports --fields compact mode on settings list", () => {
+    settingsStore = { "custom.featureFlag": "on" };
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") lines.push(value);
+    };
+    try {
+      new SettingsCommands().list(false, true, undefined, undefined, "key,value");
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(lines.join("\n")) as { items: Array<Record<string, unknown>> };
+    expect(payload.items.length).toBeGreaterThan(0);
+    for (const item of payload.items) {
+      expect(Object.keys(item).sort()).toEqual(["key", "value"]);
+    }
   });
 });

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { getItemById, publishInboxNatsEvents, upsertDeliveredItem, type InboxNatsPayload } from "../../inbox/index.js";
+import {
+  getItemById,
+  publishInboxNatsEvents,
+  upsertDeliveredItem,
+  upsertLocalInboxItem,
+  type InboxNatsPayload,
+} from "../../inbox/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata } from "../decorators.js";
 import { InboxCommands } from "./inbox.js";
@@ -51,7 +58,7 @@ describe("inbox replay", () => {
         }),
     });
 
-    const result = await command.replay(String(row.id), true);
+    const result = await command.replay(String(row.id), true, true);
 
     expect(result).toMatchObject({
       ok: true,
@@ -79,7 +86,7 @@ describe("inbox replay", () => {
         }),
     });
 
-    expect(command.replay(String(row.id), true)).rejects.toThrow("flush failed");
+    expect(command.replay(String(row.id), true, true)).rejects.toThrow("flush failed");
     expect(getItemById(row.id)?.replayCount).toBe(0);
   });
 
@@ -89,7 +96,7 @@ describe("inbox replay", () => {
       publishInboxNatsEvents: async () => ["ravi.console.inbox.item"],
     });
 
-    const result = await command.replay(row.itemId, true);
+    const result = await command.replay(row.itemId, true, true);
 
     expect(result).toMatchObject({ ok: true, itemId: row.itemId, sequence: row.sequence });
     expect(getItemById(row.id)?.replayCount).toBe(1);
@@ -125,6 +132,143 @@ describe("inbox command access", () => {
     const access = getCommandAccessMetadata(InboxCommands);
     expect(access.get("poll")).toMatchObject({ kind: "mutate", resource: "inbox", risk: "medium" });
     expect(access.get("replay")).toMatchObject({ kind: "mutate", resource: "inbox", risk: "medium" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake on replay, INBOX_ITEM_NOT_FOUND
+// envelopes and compact --fields mode. `runWithContext({}, ...)` makes
+// hasContext() true so the contract helpers throw ContractError instead of
+// exiting the process.
+// ---------------------------------------------------------------------------
+
+describe("inbox agent-first contract", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-inbox-contract-test-");
+    spyOn(console, "log").mockImplementation(() => {});
+    spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    mock.restore();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  async function expectContractError(
+    run: () => Promise<unknown> | unknown,
+    code: string,
+    exitCode: number,
+  ): Promise<InstanceType<typeof ContractError>> {
+    let caught: unknown;
+    try {
+      await runWithContext({}, () => run());
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ContractError);
+    const contractError = caught as InstanceType<typeof ContractError>;
+    expect(contractError.code).toBe(code);
+    expect(contractError.exitCode).toBe(exitCode);
+    return contractError;
+  }
+
+  it("replay without --execute is a dry-run: exit 3, no publish, replay count unchanged", async () => {
+    const row = seedWatchItem();
+    const publishCalls: string[] = [];
+    const command = new InboxCommands({
+      publishInboxNatsEvents: async () => {
+        publishCalls.push("publish");
+        return ["ravi.console.inbox.item"];
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.replay(String(row.id), true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      ref: String(row.id),
+      itemId: row.itemId,
+      sequence: row.sequence,
+      eventTopic: "ravi.console.inbox.item",
+      nextReplayCount: 1,
+    });
+    expect(publishCalls).toHaveLength(0);
+    expect(getItemById(row.id)?.replayCount).toBe(0);
+  });
+
+  it("replay on an unknown ref exits 1 with INBOX_ITEM_NOT_FOUND before the brake, with mirror suggestions", async () => {
+    const row = seedWatchItem();
+    const publishCalls: string[] = [];
+    const command = new InboxCommands({
+      publishInboxNatsEvents: async () => {
+        publishCalls.push("publish");
+        return ["ravi.console.inbox.item"];
+      },
+    });
+
+    const error = await expectContractError(() => command.replay("999", true, undefined), "INBOX_ITEM_NOT_FOUND", 1);
+
+    expect(error.details.suggestions).toContain(row.itemId);
+    expect(error.details.suggestedAction).toContain("ravi inbox items");
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("read on an unknown local item exits 1 with INBOX_ITEM_NOT_FOUND", async () => {
+    const command = new InboxCommands();
+    const error = await expectContractError(() => command.read("li_missing", true), "INBOX_ITEM_NOT_FOUND", 1);
+    expect(error.details.suggestedAction).toContain("ravi inbox list");
+  });
+
+  it("done on an unknown local item exits 1 with INBOX_ITEM_NOT_FOUND and suggestions from the local list", async () => {
+    const seeded = upsertLocalInboxItem({
+      sourceDomain: "mail",
+      sourceType: "mail_message",
+      sourceId: "msg_1",
+      dedupeKey: "mail:msg_1",
+      title: "Fatura de julho",
+    });
+    const command = new InboxCommands();
+
+    const error = await expectContractError(() => command.done("li_missing", true), "INBOX_ITEM_NOT_FOUND", 1);
+    expect(error.details.suggestions).toContain(seeded.item.id);
+  });
+
+  it("list --fields narrows each local item to the requested fields", async () => {
+    upsertLocalInboxItem({
+      sourceDomain: "mail",
+      sourceType: "mail_message",
+      sourceId: "msg_1",
+      dedupeKey: "mail:msg_1",
+      title: "Fatura de julho",
+    });
+    const command = new InboxCommands();
+
+    const payload = await runWithContext({}, () =>
+      command.list(undefined, undefined, undefined, undefined, undefined, true, "id,status"),
+    );
+
+    expect(payload.items).toHaveLength(1);
+    for (const item of payload.items as unknown as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "status"]);
+    }
+  });
+
+  it("items --fields narrows each mirror item to the requested fields", async () => {
+    seedWatchItem();
+    const command = new InboxCommands();
+
+    const payload = await runWithContext({}, () => command.items(undefined, true, "itemId,sequence"));
+
+    if (!payload) throw new Error("expected an items payload");
+    expect(payload.total).toBe(1);
+    for (const item of payload.items as unknown as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["itemId", "sequence"]);
+    }
   });
 });
 

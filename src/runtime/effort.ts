@@ -4,6 +4,9 @@ export type RuntimeEffort = (typeof RUNTIME_EFFORT_LEVELS)[number];
 
 export const DEFAULT_RUNTIME_EFFORT: RuntimeEffort = "xhigh";
 
+/** CLI-only session bootstrap. Do not change the global WhatsApp/Slack default. */
+export const CLI_SESSION_BOOTSTRAP_EFFORT: RuntimeEffort = "high";
+
 export type StrongestCompatibleRuntimeEffort = "low" | "medium" | "high" | "max";
 
 const STRONGEST_COMPATIBLE_BY_EFFORT: Record<RuntimeEffort, StrongestCompatibleRuntimeEffort> = {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
+import { ContractError, contractFail } from "../agent-contract.js";
 import { emitJson } from "../../sdk/openapi/index.js";
 import { emitAll, computeRegistryHash, compareSdkSource, type EmittedSdk } from "../../sdk/client-codegen/index.js";
 import {
@@ -14,6 +15,12 @@ import {
   type EmittedSwiftSdk,
   type GeneratedSwiftSdkFile,
 } from "../../sdk/swift-codegen/index.js";
+import {
+  emitAllDart,
+  compareDartSdkSource,
+  type EmittedDartSdk,
+  type GeneratedDartSdkFile,
+} from "../../sdk/dart-codegen/index.js";
 
 function buildSpecJson(): string {
   return emitJson(getRegistry());
@@ -26,9 +33,15 @@ function writeFileSafe(target: string, body: string): string {
   return absolute;
 }
 
+function failSdkCommand(error: unknown): never {
+  if (error instanceof ContractError) throw error;
+  fail(error instanceof Error ? error.message : String(error));
+}
+
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
 const DEFAULT_TYPESCRIPT_SDK_VERSION = "0.2.1";
 const DEFAULT_SWIFT_SDK_VERSION = "0.1.0";
+const DEFAULT_DART_SDK_VERSION = "0.1.0";
 const DEFAULT_OPENAPI_SNAPSHOT_PATH = "docs/openapi.json";
 const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts", "streaming.generated.ts"] as const;
 const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
@@ -39,9 +52,18 @@ const GENERATED_SWIFT_FILES = [
   "RaviVersion.generated.swift",
   "RaviStreaming.generated.swift",
 ] as const;
+const DEFAULT_DART_OUT_DIR = "packages/ravi-os-dart-sdk/lib/src";
+const GENERATED_DART_FILES = [
+  "ravi_client.generated.dart",
+  "ravi_types.generated.dart",
+  "ravi_schemas.generated.dart",
+  "ravi_version.generated.dart",
+  "ravi_streaming.generated.dart",
+] as const;
 
 type GeneratedFileName = (typeof GENERATED_FILES)[number];
 type GeneratedSwiftFileName = (typeof GENERATED_SWIFT_FILES)[number];
+type GeneratedDartFileName = (typeof GENERATED_DART_FILES)[number];
 
 const sdkWrittenFileReturnSchema = z.object({
   file: z.string(),
@@ -130,6 +152,28 @@ function generatedSwiftSourceMap(emitted: EmittedSwiftSdk): Record<GeneratedSwif
   };
 }
 
+function generatedDartSources(version: string): EmittedDartSdk {
+  const registry = getRegistry();
+  const hash = computeRegistryHash(registry);
+  return emitAllDart(registry, {
+    version: {
+      sdkVersion: version,
+      registryHash: hash,
+      gitSha: detectGitSha(),
+    },
+  });
+}
+
+function generatedDartSourceMap(emitted: EmittedDartSdk): Record<GeneratedDartFileName, string> {
+  return {
+    "ravi_client.generated.dart": emitted.client,
+    "ravi_types.generated.dart": emitted.types,
+    "ravi_schemas.generated.dart": emitted.schemas,
+    "ravi_version.generated.dart": emitted.version,
+    "ravi_streaming.generated.dart": emitted.streaming,
+  };
+}
+
 function detectGitSha(): string {
   try {
     return execSync("git rev-parse --short=12 HEAD", {
@@ -149,7 +193,7 @@ function detectGitSha(): string {
 })
 export class SdkOpenApiCommands {
   @Command({ name: "emit", description: "Emit OpenAPI 3.1 spec from the CLI registry" })
-  @CommandAccess({ kind: "read", resource: "sdk.openapi", action: "emit", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.openapi", action: "emit", risk: "low" })
   @Returns(openApiEmitReturnSchema)
   emit(
     @Option({
@@ -210,19 +254,28 @@ export class SdkOpenApiCommands {
         liveBytes: live.length,
         storedBytes: stored.length,
       };
+      if (drift) {
+        contractFail(
+          "sdk openapi check",
+          "OPENAPI_DRIFT",
+          `OpenAPI drift detected: ${absolute} differs from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk openapi emit --out <path>' to refresh the snapshot",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift) {
-        console.error(`OpenAPI drift detected: ${absolute} differs from the live registry.`);
-        console.error("Re-run `ravi sdk openapi emit --out <path>` to refresh the snapshot.");
-        process.exit(1);
-      }
       console.log(`OpenAPI snapshot is current: ${absolute}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 }
@@ -320,21 +373,28 @@ export class SdkClientCommands {
         }
       }
       const payload = { dir, drift, files: GENERATED_FILES };
+      if (drift.length > 0) {
+        contractFail(
+          "sdk client check",
+          "SDK_CLIENT_DRIFT",
+          `${drift.length} TypeScript SDK artifact(s) differ from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk client generate' to refresh the generated client",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift.length > 0) {
-        for (const d of drift) {
-          console.error(`SDK drift: ${d.file} — ${d.reason}`);
-        }
-        console.error("Re-run `ravi sdk client generate` to refresh.");
-        process.exit(1);
-      }
       console.log(`SDK client artifacts are current at ${dir}.`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 }
@@ -432,21 +492,147 @@ export class SdkSwiftCommands {
         }
       }
       const payload = { dir, drift, files: GENERATED_SWIFT_FILES };
+      if (drift.length > 0) {
+        contractFail(
+          "sdk swift check",
+          "SDK_SWIFT_DRIFT",
+          `${drift.length} Swift SDK artifact(s) differ from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk swift generate' to refresh the generated client",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift.length > 0) {
-        for (const d of drift) {
-          console.error(`Swift SDK drift: ${d.file} — ${d.reason}`);
-        }
-        console.error("Re-run `ravi sdk swift generate` to refresh.");
-        process.exit(1);
-      }
       console.log(`Swift SDK artifacts are current at ${dir}.`);
       return payload;
     } catch (error) {
+      failSdkCommand(error);
+    }
+  }
+}
+
+@Group({
+  name: "sdk.dart",
+  description: "Dart client codegen for ravi_sdk",
+  scope: "open",
+})
+export class SdkDartCommands {
+  @Command({
+    name: "generate",
+    description: "Generate the Ravi Dart SDK source files from the live registry",
+  })
+  @CommandAccess({ kind: "mutate", resource: "sdk.dart", action: "generate", risk: "high" })
+  @Returns(sdkGenerateReturnSchema)
+  generate(
+    @Option({
+      flags: "--out <path>",
+      description: "Target directory for the generated Dart files",
+      defaultValue: DEFAULT_DART_OUT_DIR,
+    })
+    out: string = DEFAULT_DART_OUT_DIR,
+    @Option({ flags: "--version <semver>", description: "SDK semver baked into ravi_version.generated.dart" })
+    version?: string,
+    @Option({ flags: "--json", description: "Print the result payload as JSON" })
+    asJson?: boolean,
+  ) {
+    try {
+      const sources = generatedDartSources(version?.trim() || DEFAULT_DART_SDK_VERSION);
+      const sourceMap = generatedDartSourceMap(sources);
+      const written: { file: GeneratedDartFileName; path: string; bytes: number }[] = [];
+      for (const file of GENERATED_DART_FILES) {
+        const target = resolve(out, file);
+        writeFileSafe(target, sourceMap[file]);
+        written.push({ file, path: target, bytes: sourceMap[file].length });
+      }
+      const payload = { status: "written" as const, dir: resolve(out), files: written };
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        for (const w of written) {
+          console.log(`Wrote ${w.file} (${w.bytes} bytes) -> ${w.path}`);
+        }
+      }
+      return payload;
+    } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({
+    name: "check",
+    description: "Compare on-disk Ravi Dart SDK sources to a fresh emit; exit 1 on drift",
+  })
+  @CommandAccess({ kind: "read", resource: "sdk.dart", action: "check", risk: "low" })
+  @Returns(sdkCheckReturnSchema)
+  check(
+    @Option({
+      flags: "--out <path>",
+      description: "Directory containing the generated Dart files",
+      defaultValue: DEFAULT_DART_OUT_DIR,
+    })
+    out: string = DEFAULT_DART_OUT_DIR,
+    @Option({ flags: "--version <semver>", description: "SDK semver baked into ravi_version.generated.dart" })
+    version?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    try {
+      const sources = generatedDartSources(version?.trim() || DEFAULT_DART_SDK_VERSION);
+      const sourceMap = generatedDartSourceMap(sources);
+      const drift: { file: GeneratedDartFileName; reason: string; path: string }[] = [];
+      const dir = resolve(out);
+      for (const file of GENERATED_DART_FILES) {
+        const target = resolve(out, file);
+        let stored: string;
+        try {
+          stored = readFileSync(target, "utf8");
+        } catch (error) {
+          drift.push({
+            file,
+            path: target,
+            reason: `missing on disk (${error instanceof Error ? error.message : String(error)})`,
+          });
+          continue;
+        }
+        const comparison = compareDartSdkSource(file as GeneratedDartSdkFile, stored, sourceMap[file]);
+        if (!comparison.equal) {
+          drift.push({
+            file,
+            path: target,
+            reason: comparison.reason ?? "byte mismatch",
+          });
+        }
+      }
+      const payload = { dir, drift, files: GENERATED_DART_FILES };
+      if (drift.length > 0) {
+        contractFail(
+          "sdk dart check",
+          "SDK_DART_DRIFT",
+          `${drift.length} Dart SDK artifact(s) differ from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk dart generate' to refresh the generated client",
+            },
+          },
+        );
+      }
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+        return payload;
+      }
+      console.log(`Dart SDK artifacts are current at ${dir}.`);
+      return payload;
+    } catch (error) {
+      failSdkCommand(error);
     }
   }
 }

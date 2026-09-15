@@ -2,4 +2,4 @@
  * Ephemeral Sessions Module - Public exports
  */
 
-export { startEphemeralRunner, stopEphemeralRunner } from "./runner.js";
+export { startEphemeralRunner, stopEphemeralRunner, runEphemeralCleanupTick } from "./runner.js";

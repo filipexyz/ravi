@@ -12,13 +12,19 @@ import {
   UNCONDITIONAL_BLOCKS,
 } from "../bash/index.js";
 import { nats } from "../nats.js";
-import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
+import {
+  authorizeRuntimeContext,
+  emitApprovalResponseOnce,
+  requestPollAnswer,
+  type ApprovalTarget,
+} from "../approval/service.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
+  RuntimeCapabilityAuthorizationRequest,
   RuntimeCapabilityAuthorizationResult,
   RuntimeCommandAuthorizationRequest,
   RuntimeDynamicToolCallContentItem,
@@ -34,6 +40,8 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -206,12 +214,7 @@ export function createRuntimeHostServices(options: RuntimeHostServicesOptions): 
 
 async function authorizeRuntimeCapability(
   context: ContextRecord,
-  request: {
-    permission: string;
-    objectType: string;
-    objectId: string;
-    eventData?: Record<string, unknown>;
-  },
+  request: RuntimeCapabilityAuthorizationRequest,
 ): Promise<RuntimeCapabilityAuthorizationResult> {
   return authorizeRuntimeContext({
     context,
@@ -219,6 +222,7 @@ async function authorizeRuntimeCapability(
     objectType: request.objectType,
     objectId: request.objectId,
     eventData: request.eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
 }
 
@@ -447,6 +451,19 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
+  const requestedSkill = extractRequestedSkillFromCommandLine(command);
+  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${requestedSkill}`,
+      reason,
+      command,
+      blockType: "runtime_skill_not_authorized",
+    });
+    return { approved: false, reason };
+  }
+
   const dangerous = checkDangerousPatterns(command);
   if (!dangerous.safe) {
     emitRuntimePolicyDenied(options, {
@@ -478,6 +495,7 @@ async function authorizeRuntimeCommandExecution(
     objectType: "tool",
     objectId: "Bash",
     eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
   if (!toolAuthorization.allowed) {
     return {
@@ -512,6 +530,7 @@ async function authorizeRuntimeCommandExecution(
           ...eventData,
           runtimeExecutable: executable,
         },
+        beforeExternalApproval: request.beforeExternalApproval,
       });
       if (!executableAuthorization.allowed) {
         return {
@@ -536,6 +555,7 @@ async function authorizeRuntimeCommandExecution(
           ...eventData,
           runtimeSessionTarget: target,
         },
+        beforeExternalApproval: request.beforeExternalApproval,
       });
       if (!sessionAuthorization.allowed) {
         return {
@@ -582,7 +602,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -591,10 +611,44 @@ async function authorizeRuntimeToolUse(
     objectType: "tool",
     objectId: request.toolName,
     eventData: request.eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
 
   if (!result.allowed) {
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  const requestedSkill = extractRequestedSkillFromToolCall(request.toolName, request.input);
+  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${requestedSkill}`,
+      reason,
+      blockType: "runtime_skill_not_authorized",
+      detail: { toolName: request.toolName, skill: requestedSkill },
+    });
+    return { approved: false, reason };
+  }
+
+  const gateDecision = evaluateRuntimeToolSkillGate({
+    context: options.context,
+    toolName: request.toolName,
+    onSkillGatePersisted: options.onSkillGatePersisted,
+  });
+  if (!gateDecision.allowed) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: gateDecision.skill ? `skill:${gateDecision.skill}` : "skill:<required>",
+      reason: gateDecision.reason ?? `${request.toolName} requires a skill.`,
+      blockType: "runtime_tool_skill_gate_denied",
+      detail: {
+        toolName: request.toolName,
+        ...(gateDecision.skill ? { skill: gateDecision.skill } : {}),
+        ...(gateDecision.code ? { code: gateDecision.code } : {}),
+      },
+    });
+    return { approved: false, reason: gateDecision.reason ?? `${request.toolName} requires a skill.` };
   }
 
   return {
@@ -657,6 +711,7 @@ async function requestRuntimeUserInput(
     }
     pollName += "\n(responda a mensagem para outro)";
 
+    request.beforeExternalApproval?.();
     const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
       selectableCount: question.multiSelect ? optionLabels.length : 1,
     });
@@ -665,17 +720,14 @@ async function requestRuntimeUserInput(
     answers[answerKey] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
   }
 
-  nats
-    .emit("ravi.approval.response", {
-      type: "question",
-      sessionName: options.sessionName,
-      agentId: options.agentId,
-      approved: true,
-      answers,
-      timestamp: Date.now(),
-      ...eventData,
-    })
-    .catch(() => {});
+  await emitApprovalResponseOnce({
+    type: "question",
+    sessionName: options.sessionName,
+    agentId: options.agentId,
+    approved: true,
+    answers,
+    ...eventData,
+  }).catch(() => {});
 
   return { approved: true, answers };
 }

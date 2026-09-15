@@ -5,6 +5,7 @@ import {
   findInstalledSkill,
   findSkillByName,
   listCatalogSkills,
+  listInstalledSkills,
   slugifySkillName,
 } from "../skills/manager.js";
 import type {
@@ -151,6 +152,54 @@ function skillMatchesAllowlist(skill: PluginSkillDescriptor, allowlist: readonly
   return false;
 }
 
+const MANAGED_SKILL_PREFIXES = ["ravi-system-", "ravi-dev-", "ravi-user-skills-"] as const;
+
+/** Match provider-native aliases such as `ravi-system-sessions` to the
+ * canonical allowlist entry `sessions`. */
+export function skillNameMatchesAllowlist(name: string, allowlist: readonly string[]): boolean {
+  const nativeSlug = slugifySkillName(name);
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  if (allowedSlugs.has(nativeSlug)) return true;
+
+  const prefix = MANAGED_SKILL_PREFIXES.find((candidate) => nativeSlug.startsWith(candidate));
+  if (!prefix) return false;
+  const bareSlug = nativeSlug.slice(prefix.length);
+  return allowedSlugs.has(bareSlug);
+}
+
+export function filterSkillNamesByAllowlist(names: readonly string[], allowlist: readonly string[]): string[] {
+  const allowedSlugs = new Set(allowlist.map(slugifySkillName));
+  const selected = new Map<string, { name: string; priority: number; index: number }>();
+
+  names.forEach((name, index) => {
+    const slug = slugifySkillName(name);
+    const prefixIndex = MANAGED_SKILL_PREFIXES.findIndex((prefix) => slug.startsWith(prefix));
+    const bareSlug = prefixIndex >= 0 ? slug.slice(MANAGED_SKILL_PREFIXES[prefixIndex]!.length) : slug;
+    const exact = allowedSlugs.has(slug);
+    if (!exact && !allowedSlugs.has(bareSlug)) return;
+
+    const candidate = { name, priority: exact ? 0 : prefixIndex + 1, index };
+    const current = selected.get(bareSlug);
+    if (!current || candidate.priority < current.priority) {
+      selected.set(bareSlug, candidate);
+    }
+  });
+
+  return [...selected.values()].sort((left, right) => left.index - right.index).map((entry) => entry.name);
+}
+
+export function isStoredSkillVisibilityCompatible(
+  params: Record<string, unknown> | null | undefined,
+  allowedSkills: readonly string[] | undefined,
+): boolean {
+  if (!allowedSkills) return true;
+  if (!isRecord(params?.skillVisibility)) return false;
+  const snapshot = readSkillVisibilityFromParams(params);
+  return (
+    snapshot.skills.length > 0 && snapshot.skills.every((skill) => skillNameMatchesAllowlist(skill.id, allowedSkills))
+  );
+}
+
 export function buildCodexSkillVisibilitySnapshot(
   syncedSkillNames: string[],
   now = Date.now(),
@@ -255,7 +304,11 @@ export function markLoadedFromRaviSkillToolCall(
   });
 
   const records = snapshot.skills.map((skill) => {
-    if (skill.id === loadedSkill.id || slugifySkillName(skill.id) === loadedSlug) {
+    if (
+      skill.id === loadedSkill.id ||
+      slugifySkillName(skill.id) === loadedSlug ||
+      skillNameMatchesAllowlist(skill.id, [loadedSkill.id])
+    ) {
       found = true;
       return loadedRecord(skill);
     }
@@ -376,8 +429,13 @@ export function mergeSkillVisibilitySnapshots(
     return stored;
   }
 
+  const incomingIds = new Set(incoming.skills.map((skill) => slugifySkillName(skill.id)));
+  const retainedStored = incomingIds.size
+    ? stored.skills.filter((skill) => incomingIds.has(slugifySkillName(skill.id)))
+    : stored.skills;
+
   return buildSkillVisibilitySnapshot(
-    [...stored.skills, ...incoming.skills],
+    [...retainedStored, ...incoming.skills],
     Math.max(stored.updatedAt ?? 0, incoming.updatedAt ?? 0, now),
   );
 }
@@ -460,7 +518,7 @@ function detectLoadedSkillFromRaviSkillToolCall(
   const outputSkill = parseSkillFromShowOutput(input.output);
   const dedicatedToolSkill = extractDedicatedSkillShowName(input.toolName, input.toolInput);
   const command = extractCommandFromToolInput(input.toolInput);
-  const commandSkill = command ? extractSkillShowNameFromCommand(command) : null;
+  const commandSkill = command ? extractRaviSkillShowNameFromCommand(command) : null;
   if (!dedicatedToolSkill && !commandSkill) {
     return null;
   }
@@ -524,15 +582,118 @@ function resolveLoadedSkillId(
   return input.outputSkill?.name ?? input.resolved?.name ?? input.requestedName;
 }
 
+const DEDICATED_SKILL_TOOL_NAMES = new Set(["skill", "skills_show", "ravi_skills_show"]);
+const SKILL_FILE_PATH_PATTERN = /(?:^|[/\s"'`])skills\/([^/]+)\/SKILL\.md\b/i;
+
 function extractDedicatedSkillShowName(toolName: string | undefined, toolInput: unknown): string | null {
   const normalized = toolName?.trim().toLowerCase().replace(/[-.]/g, "_");
-  if (!normalized || !["skills_show", "ravi_skills_show"].includes(normalized)) {
+  if (!normalized || !DEDICATED_SKILL_TOOL_NAMES.has(normalized)) {
     return null;
   }
   if (!isRecord(toolInput)) {
     return null;
   }
   return firstNonEmptyString(toolInput.name, toolInput.skill, toolInput.skillName, toolInput.id);
+}
+
+/**
+ * Detect a skill the tool is trying to load or invoke. Covers dedicated Skill
+ * tools, `ravi skills show`, and Read/Edit of `skills/<name>/SKILL.md`.
+ */
+export function extractRequestedSkillFromToolCall(
+  toolName: string | undefined,
+  toolInput: Record<string, unknown> | undefined,
+): string | null {
+  const dedicated = extractDedicatedSkillShowName(toolName, toolInput);
+  if (dedicated) {
+    return dedicated;
+  }
+
+  const command = extractCommandFromToolInput(toolInput);
+  if (command) {
+    const fromCommand = extractRequestedSkillFromCommandLine(command);
+    if (fromCommand) {
+      return fromCommand;
+    }
+  }
+
+  if (!toolInput) {
+    return null;
+  }
+  const path = firstNonEmptyString(
+    toolInput.path,
+    toolInput.file_path,
+    toolInput.filePath,
+    toolInput.target_file,
+    toolInput.targetFile,
+    toolInput.filename,
+    toolInput.file,
+  );
+  return path ? extractSkillNameFromFilesystemPath(path) : null;
+}
+
+export function extractRequestedSkillFromCommandLine(command: string): string | null {
+  return extractRaviSkillShowNameFromCommand(command) ?? extractSkillNameFromFilesystemPath(command);
+}
+
+export function extractSkillNameFromFilesystemPath(value: string): string | null {
+  const normalized = normalizePathForMatch(value);
+  if (!/(?:^|\/)skills\/[^/]+/i.test(normalized) && !/SKILL\.md$/i.test(normalized)) {
+    return null;
+  }
+  const known = resolveSkillNameFromKnownSkillPaths(normalized);
+  if (known) {
+    return known;
+  }
+
+  const skillFile = SKILL_FILE_PATH_PATTERN.exec(normalized);
+  if (skillFile?.[1]) {
+    return skillFile[1];
+  }
+  const skillDir = /(?:^|\/)skills\/([^/]+)\/SKILL\.md$/i.exec(normalized);
+  return skillDir?.[1] ?? null;
+}
+
+function resolveSkillNameFromKnownSkillPaths(normalizedPath: string): string | null {
+  const known = [...listCatalogSkills(), ...listInstalledSkills({ includeCodex: true })];
+  for (const skill of known) {
+    const skillFile = normalizePathForMatch(skill.skillFilePath);
+    const skillDir = normalizePathForMatch(skill.path);
+    if (normalizedPath === skillFile || normalizedPath === skillDir) {
+      return skill.name;
+    }
+    if (skillFile && (normalizedPath.endsWith(`/${skillFile}`) || skillFile.endsWith(`/${normalizedPath}`))) {
+      return skill.name;
+    }
+    if (skillDir && (normalizedPath === skillDir || normalizedPath.startsWith(`${skillDir}/`))) {
+      return skill.name;
+    }
+    if (skillDir && normalizedPath.endsWith(`/${skillDir}/SKILL.md`)) {
+      return skill.name;
+    }
+  }
+  return null;
+}
+
+/**
+ * Allowlist match that also accepts catalog/plugin aliases
+ * (`app-creator` ↔ `ravi-dev-app-creator`).
+ */
+export function isSkillNameAuthorizedOnAllowlist(skillName: string, allowlist: readonly string[]): boolean {
+  if (skillNameMatchesAllowlist(skillName, allowlist)) {
+    return true;
+  }
+  const resolved = findSkillByName(listCatalogSkills(), skillName) ?? findInstalledSkill(skillName);
+  if (!resolved) {
+    return false;
+  }
+  const candidates = [resolved.name];
+  if (resolved.pluginName) {
+    candidates.push(`${resolved.pluginName}-${resolved.name}`);
+    candidates.push(`${resolved.pluginName}:${resolved.name}`);
+    candidates.push(`${resolved.pluginName}-${basename(resolved.path)}`);
+  }
+  return candidates.some((candidate) => skillNameMatchesAllowlist(candidate, allowlist));
 }
 
 function extractCommandFromToolInput(toolInput: unknown): string | null {
@@ -545,7 +706,7 @@ function extractCommandFromToolInput(toolInput: unknown): string | null {
   return firstNonEmptyString(toolInput.command, toolInput.cmd, toolInput.script, toolInput.commandLine);
 }
 
-function extractSkillShowNameFromCommand(command: string): string | null {
+export function extractRaviSkillShowNameFromCommand(command: string): string | null {
   const match = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b([^;&\n\r]*)/m.exec(
     command,
   );

@@ -121,7 +121,8 @@ Credenciais continuam no broker/connection Slack. Agents nao recebem tokens.
 - Standalone canvas precisa de compartilhamento/acesso explicito.
 - `owner` so pode ser definido para usuarios.
 - `channel_ids` e `user_ids` nao podem ser enviados juntos em operacoes de acesso.
-- Mutacoes destrutivas permanecem dry-run por padrao no CLI.
+- Mutacoes destrutivas permanecem dry-run por padrao no CLI; remocao de acesso
+  e contencao imediata porque reduz compartilhamento.
 
 ## Lacunas ate 100%
 

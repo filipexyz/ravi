@@ -1,8 +1,14 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { contractDryRun, contractFail } from "../agent-contract.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
-import { createConsoleSyncBridge, getSyncStatusSummary, inspectSyncRecord, retryOutbox } from "../../sync/index.js";
+import {
+  createConsoleSyncBridge,
+  getSyncStatusSummaryReadOnly,
+  inspectSyncRecordReadOnly,
+  retryOutbox,
+} from "../../sync/index.js";
 import { getSyncRuntimeConfig } from "../../sync/config.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../../session-trace/cloud-trace-export.js";
 import type { ConsoleSyncPullResult, ConsoleSyncPushResult } from "../../sync/console-bridge.js";
@@ -40,7 +46,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "push", description: "Upload a bounded outbox batch to Console" })
-  @CommandAccess({ kind: "mutate", resource: "sync", action: "push", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "push", risk: "high", requiresConfirmation: true })
   async push(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -55,7 +61,33 @@ export class SyncCommands {
     })
     includeTraces?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually upload the batch; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): push uploads a bulk local-event batch to
+      // Console (and --traces also ENQUEUES trace batches locally), so dry-run
+      // by default and exit 3 before the bridge is even created. The plan uses
+      // the cheap local status summary to show what would be uploaded.
+      const summary = getSyncStatusSummaryReadOnly();
+      contractDryRun(
+        "sync push",
+        {
+          domain: clean(domain) ?? null,
+          project: clean(project) ?? clean(projectRef) ?? clean(projectId) ?? null,
+          scope: parseScope(scope) ?? null,
+          limit: parseIntOption(limitRaw) ?? null,
+          maxBytes: parseIntOption(maxBytesRaw) ?? null,
+          includeTraces: includeTraces === true,
+          outboxPending: summary.outbox.pending,
+          outboxFailed: summary.outbox.failed,
+        },
+        { asJson },
+      );
+    }
     const bridge = createConsoleSyncBridge();
     let trace: Awaited<ReturnType<typeof pushTraceExportBatch>> | null = null;
     if (includeTraces === true && readCloudCredentials()) {
@@ -82,7 +114,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "pull", description: "Download a bounded remote event batch from Console" })
-  @CommandAccess({ kind: "mutate", resource: "sync", action: "pull", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "pull", risk: "high", requiresConfirmation: true })
   async pull(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -91,7 +123,30 @@ export class SyncCommands {
     @Option({ flags: "--scope <scope>", description: "Sync scope (organization)" }) scope?: string,
     @Option({ flags: "--limit <n>", description: "Max events in batch" }) limitRaw?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually download and apply the batch; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): pull downloads a bulk remote batch and
+      // APPLIES it to the local inbox/state, so dry-run by default and exit 3
+      // before the bridge is even created.
+      const summary = getSyncStatusSummaryReadOnly();
+      contractDryRun(
+        "sync pull",
+        {
+          domain: clean(domain) ?? null,
+          project: clean(project) ?? clean(projectRef) ?? clean(projectId) ?? null,
+          scope: parseScope(scope) ?? null,
+          limit: parseIntOption(limitRaw) ?? null,
+          inboxPending: summary.inbox.pending,
+          inboxFailed: summary.inbox.failed,
+        },
+        { asJson },
+      );
+    }
     const bridge = createConsoleSyncBridge();
     const result = await bridge.pull({
       domain: clean(domain),
@@ -106,6 +161,9 @@ export class SyncCommands {
     return result;
   }
 
+  // Manual v2: `retry` is intentionally UNBRAKED — it only moves failed/dead
+  // rows back to `pending` in the local outbox (reversible bookkeeping); the
+  // actual upload still goes through the braked `sync push`.
   @Command({ name: "retry", description: "Move failed sync outbox rows back to pending" })
   @CommandAccess({ kind: "mutate", resource: "sync", action: "retry", risk: "medium" })
   retry(
@@ -129,14 +187,22 @@ export class SyncCommands {
     @Arg("id", { description: "sync_outbox or sync_inbox id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = inspectSyncRecord(id);
-    const payload = result ? { found: true, ...result } : { found: false, id };
+    const result = inspectSyncRecordReadOnly(id);
+    if (!result) {
+      // Manual v2 not-found envelope (exit 1). Sync row ids are opaque ULIDs,
+      // so similarity suggestions would be noise — point at the status surface
+      // instead.
+      contractFail("sync inspect", "SYNC_RECORD_NOT_FOUND", `Sync row not found: ${id}`, {
+        asJson,
+        details: {
+          suggestedAction:
+            "Check the id: sync outbox/inbox ids come from sync push/pull output; see counts with: ravi sync status --json",
+        },
+      });
+    }
+    const payload = { found: true, ...result };
     if (asJson) {
       printJson(payload);
-      return payload;
-    }
-    if (!result) {
-      console.log(`Sync row not found: ${id}`);
       return payload;
     }
     console.log(`${result.kind}: ${result.record.id}`);
@@ -270,7 +336,7 @@ declareCommandReturns(SyncCommands, {
 
 function buildStatusPayload() {
   const credentials = readCloudCredentials();
-  const summary = getSyncStatusSummary();
+  const summary = getSyncStatusSummaryReadOnly();
   const config = getSyncRuntimeConfig();
   const lastUpload = summary.cursors.find((cursor) => cursor.domain === "sync" && cursor.cursorKey === "last_upload");
   const lastDownload = summary.cursors.filter((cursor) => cursor.domain === "sync_remote").at(-1);

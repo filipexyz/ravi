@@ -42,7 +42,7 @@ ravi devin sessions sync <id> --insights --artifacts --json
 
 ```bash
 ravi devin sessions terminate <id> --archive --json
-ravi devin sessions archive <id> --json
+ravi devin sessions archive <id> --execute --json
 ```
 
 ## Troubleshooting

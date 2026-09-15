@@ -1,16 +1,19 @@
 /**
  * Tests for resolveSessionOutputTarget — attached sessions emit to the
- * source chat when speech is enabled there, otherwise to the default
- * output attachment, or fail closed when none exists.
+ * source chat for inbound turns, otherwise to the default output
+ * attachment for source-less turns, or fail closed when none exists.
  *
  * See .ravi/specs/sessions/attach/SPEC.md
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { attachChatToSession, detachChatFromSession, getOrCreateSession } from "../router/sessions.js";
+import { attachChatToSession, detachChatFromSession, getOrCreateSession, getSession } from "../router/sessions.js";
 import { dbUpsertChat } from "../router/router-db.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
+import { resolveSessionOutputTarget, resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { updateSessionSource } from "../router/index.js";
 import type { MessageTarget } from "./message-types.js";
 
 let stateDir: string | null = null;
@@ -66,23 +69,17 @@ describe("resolveSessionOutputTarget", () => {
     stateDir = null;
   });
 
-  it("returns the attached output target even when fallback is another chat", () => {
+  it("fails closed instead of leaking an unattached inbound turn to the default", () => {
     const session = getOrCreateSession("agent:dev:s1", "dev", "/tmp/dev");
     const outputChat = makeChat("output");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
     const fallback = makeFallback("inbound@s.whatsapp.net");
     const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback });
-    expect(result.source).toBe("attached-output");
-    expect(result.target).toMatchObject({
-      channel: "whatsapp",
-      accountId: "luis",
-      instanceId: "luis",
-      chatId: "output@s.whatsapp.net",
-      canonicalChatId: outputChat.id,
-    });
+    expect(result.source).toBe("unresolved");
+    expect(result.target).toBeNull();
   });
 
-  it("returns the source chat when its subscription has speech enabled", () => {
+  it("returns the attached source chat", () => {
     const session = getOrCreateSession("agent:dev:s-source-speak", "dev", "/tmp/dev");
     const outputChat = makeChat("source-default-output");
     const sourceChat = makeChat("source-speak");
@@ -91,8 +88,6 @@ describe("resolveSessionOutputTarget", () => {
       sessionKey: session.sessionKey,
       chatId: sourceChat.id,
       setOutputTarget: false,
-      speechMode: "speak",
-      speechReason: "test-source-speak",
     });
 
     const result = resolveSessionOutputTarget({
@@ -114,7 +109,7 @@ describe("resolveSessionOutputTarget", () => {
 
     const result = resolveSessionOutputTarget({
       sessionKey: session.sessionKey,
-      fallback: makeFallback("inbound@s.whatsapp.net"),
+      fallback: undefined,
     });
 
     expect(result.source).toBe("attached-output");
@@ -128,38 +123,250 @@ describe("resolveSessionOutputTarget", () => {
     });
   });
 
-  it("falls back to the default output when the source subscription is muted", () => {
-    const session = getOrCreateSession("agent:dev:s-source-muted", "dev", "/tmp/dev");
-    const outputChat = makeChat("muted-default-output");
-    const sourceChat = makeChat("source-muted");
+  it("does not use the default output for a session-relay destination turn", () => {
+    const session = getOrCreateSession("agent:dev:s-relay-dest", "dev", "/tmp/dev");
+    const outputChat = makeChat("relay-default-output");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
-    attachChatToSession({
-      sessionKey: session.sessionKey,
-      chatId: sourceChat.id,
-      setOutputTarget: false,
-      attachedReason: "listen-only-test",
-    });
 
     const result = resolveSessionOutputTarget({
       sessionKey: session.sessionKey,
-      fallback: makeFallbackForChat(sourceChat),
+      fallback: undefined,
+      allowDefaultOutput: false,
+    });
+
+    expect(result.source).toBe("unresolved");
+    expect(result.target).toBeNull();
+  });
+
+  it("matches a WhatsApp group subscription across baileys, group:, and @g.us forms", () => {
+    const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+
+    const baileysJid: MessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      instanceId: "main",
+      chatId: "test-group-1@g.us",
+      actorType: "contact",
+    };
+
+    const result = resolveSessionOutputTarget({
+      sessionKey: session.sessionKey,
+      fallback: baileysJid,
+    });
+
+    expect(result.source).toBe("source-chat");
+    expect(result.target).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    });
+  });
+
+  it("strips leftover lastChannel when derived group: and recent baileys @g.us disagree in form", () => {
+    const sessionKey = "agent:demo-agent:whatsapp:main:group:test-group-1";
+    getOrCreateSession(sessionKey, "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    updateSessionSource(sessionKey, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+    });
+    const session = getSession(sessionKey)!;
+    const recentContextSource: MessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+
+    expect(
+      resolveRuntimePromptSource(
+        {
+          prompt: "continue from operator",
+          source: recentContextSource,
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        },
+        session,
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveSessionOutputTarget({
+        sessionKey,
+        fallback: undefined,
+      }).target?.canonicalChatId,
+    ).toBe(groupChat.id);
+  });
+
+  it("keeps the previous bound group when leftover baileys source still overlaps the attached identity", () => {
+    const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const previous = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+    const leftoverBaileys: MessageTarget = {
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "test-group-1@g.us",
+    };
+
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: leftoverBaileys,
+      previous,
+    });
+    expect(preserved.source).toBe("source-chat");
+    expect(preserved.target?.canonicalChatId).toBe(groupChat.id);
+  });
+
+  it("does not invent a chat sink for a CLI-only successor even when lastBound exists", () => {
+    const session = getOrCreateSession("agent:demo-agent:s-cli-only-preserve", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
+      allowDefaultOutput: false,
+      previous: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:test-group-1",
+        canonicalChatId: groupChat.id,
+      },
+    });
+    expect(preserved.source).toBe("unresolved");
+    expect(preserved.target).toBeNull();
+  });
+
+  it("keeps the previous bound group across a source-less successor turn", () => {
+    const session = getOrCreateSession("agent:demo-agent:whatsapp:main:group:test-group-1", "demo-agent", "/tmp/demo");
+    const groupChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "group:test-group-1",
+      chatType: "group",
+      title: "synthetic group",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: groupChat.id,
+      role: "primary",
+      attachedReason: "whatsapp.group.create",
+      setOutputTarget: true,
+    });
+    const previous = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:test-group-1",
+      canonicalChatId: groupChat.id,
+    };
+
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
+      previous,
+    });
+    expect(preserved.source).toBe("attached-output");
+    expect(preserved.target?.canonicalChatId).toBe(groupChat.id);
+  });
+
+  it("does not keep the previous target for a different unattached inbound", () => {
+    const session = getOrCreateSession("agent:demo-agent:s-preserve-fail-closed", "demo-agent", "/tmp/demo");
+    const outputChat = makeChat("preserve-default");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+    const other = makeFallback("other-inbound@s.whatsapp.net");
+    const preserved = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: other,
+      previous: {
+        channel: "whatsapp",
+        accountId: "luis",
+        chatId: outputChat.platformChatId,
+        canonicalChatId: outputChat.id,
+      },
+    });
+    expect(preserved.source).toBe("unresolved");
+    expect(preserved.target).toBeNull();
+  });
+
+  it("returns the default output for a source-less turn", () => {
+    const session = getOrCreateSession("agent:dev:s-default", "dev", "/tmp/dev");
+    const outputChat = makeChat("default-output");
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+
+    const result = resolveSessionOutputTarget({
+      sessionKey: session.sessionKey,
+      fallback: undefined,
     });
 
     expect(result.source).toBe("attached-output");
     expect(result.target).toMatchObject({
-      chatId: "muted-default-output@s.whatsapp.net",
+      chatId: "default-output@s.whatsapp.net",
       canonicalChatId: outputChat.id,
     });
   });
 
-  it("fails closed when the source is muted and no default output exists", () => {
-    const session = getOrCreateSession("agent:dev:s-muted-no-output", "dev", "/tmp/dev");
-    const sourceChat = makeChat("muted-no-output");
+  it("fails closed when an inbound source is not attached", () => {
+    const session = getOrCreateSession("agent:dev:s-unattached", "dev", "/tmp/dev");
+    const sourceChat = makeChat("unattached-source");
     attachChatToSession({
       sessionKey: session.sessionKey,
-      chatId: sourceChat.id,
-      setOutputTarget: false,
-      attachedReason: "listen-only-test",
+      chatId: makeChat("unattached-default").id,
+      setOutputTarget: true,
     });
 
     const result = resolveSessionOutputTarget({
@@ -171,10 +378,9 @@ describe("resolveSessionOutputTarget", () => {
     expect(result.target).toBeNull();
   });
 
-  it("returns null when no output attachment exists, even with inbound fallback", () => {
+  it("returns null when no output attachment exists", () => {
     const session = getOrCreateSession("agent:dev:s2", "dev", "/tmp/dev");
-    const fallback = makeFallback("inbound@s.whatsapp.net");
-    const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback });
+    const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback: undefined });
     expect(result.source).toBe("unresolved");
     expect(result.target).toBeNull();
   });

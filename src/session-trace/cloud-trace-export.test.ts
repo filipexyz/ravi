@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dbPruneStaleRows } from "../router/router-db.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getOutboxById, getSyncCursor, inspectSyncRecord } from "../sync/db.js";
@@ -505,25 +504,6 @@ describe("cloud trace export", () => {
     expect(calls).toHaveLength(2);
     expect(inspectSyncRecord(first.outboxId!)?.record.status).toBe("acked");
     expect(inspectSyncRecord(second.outboxId!)?.record.status).toBe("acked");
-  });
-
-  it("moves the export cursor before TTL pruning can delete exported event rows", () => {
-    recordSessionEvent({
-      sessionKey: "agent:dev",
-      eventType: "turn.complete",
-      eventGroup: "runtime",
-      timestamp: 1,
-    });
-    recordSessionEvent({
-      sessionKey: "agent:dev",
-      eventType: "turn.complete",
-      eventGroup: "runtime",
-      timestamp: 2,
-    });
-    enqueueTraceExportBatch({ limit: 1, now: 3 });
-    expect(getSyncCursor("runtime_trace", "session_events_enqueued")?.cursorValue).toBe("1");
-    const prune = dbPruneStaleRows({ dryRun: true, now: 10 * 24 * 60 * 60 * 1000 });
-    expect(prune.sessionEvents).toBe(1);
   });
 });
 

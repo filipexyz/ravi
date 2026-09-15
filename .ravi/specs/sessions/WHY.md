@@ -15,12 +15,23 @@ notion of a session.
 `session_name` must never rewrite `session_key`, otherwise routing and provider
 continuity break for an already-running session.
 
-## Why Attach Is Separate From Bindings
+## Why Session-Relay Send Is Not Chat Emit
 
-The original `session_chat_bindings` row records the primary/origin chat.
-Multi-input work needs additional wiring, so `session_chat_subscription`
-(attach) is a distinct concept. Treating bindings as "the only chat" would block
-multi-chat input and cause replies in the wrong chat.
+Operator / HTTP / app `sessions.send` injects a prompt into a session. It is
+not inbound WhatsApp/Slack. Copying leftover `lastChannel`/`lastTo` into
+`prompt.source` made emit treat that send as a chat reply — including onto
+`main` when the leftover chat was attached. The default output attachment
+has the same leak once the leftover source is stripped. Persist already
+stores the assistant row; emit must fail closed instead of inventing a
+chat sink.
+
+## Why Attach Uses Subscriptions Only
+
+`session_chat_subscriptions` records every participating chat and the one
+default output. The retired `session_chat_bindings` 1:1 row was a second
+ledger: detach cleared the subscription but left the binding, and startup
+backfill could recreate the attachment or fail the unique output index.
+Migration converts leftover useful rows once and drops the table.
 
 ## Why Effective Model Is Resolved, Not Stored
 

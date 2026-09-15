@@ -15,8 +15,10 @@ tags:
   - app-server
 applies_to:
   - src/runtime/codex-provider.ts
+  - src/runtime/codex-hooks.ts
   - src/plugins/codex-skills.ts
   - src/runtime/codex-provider.test.ts
+  - src/runtime/codex-hooks.test.ts
 owners:
   - ravi-dev
 status: active
@@ -35,29 +37,38 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Execution mode: subprocess app-server JSON-RPC transport.
 - Fallback transport: JSON CLI exec exists in code but the app-server path is the active rich integration.
 - Session state: thread/session id plus cwd in `RuntimeSessionState.params`.
-- Resume: supported only when stored cwd matches current cwd.
+- Resume: supported only when stored cwd matches current cwd. Ambiguous delivery recovery resumes the same thread and reconciles the logical delivery id before any replay.
 - Fork: not supported by provider capabilities, even though native control can fork threads operationally. Canonical fork requires the `runtime/session-continuity/forks` materializer to map Codex threads/turns back to Ravi prompt atoms.
 - Partial text: supported through `agent_message.delta`.
 - Dynamic tools: disabled. Ravi CLI registry commands MUST NOT be advertised as Codex native dynamic tools.
 - Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
 - Shell env bridge: the Codex app-server receives Ravi runtime env and is launched with an explicit `shell_environment_policy` that allows the shell to inherit only core shell env plus `RAVI_*`, including `RAVI_CONTEXT_KEY`.
 - Approvals: mapped into Ravi `RuntimeApprovalRequest`.
-- Runtime control: thread list/read/rollback/fork and turn steer/interrupt.
+- Runtime control: thread list/read/rollback/fork, turn steer/interrupt, and goal get/set/clear.
 - Tool access requirement: `tool_surface`.
 - Host session hooks/plugins/spec server/remote spawn: not supported.
 
 ## Event Mapping
 
 - `thread/started` -> `thread.started`
+- `turn/start` response -> `turn.started` binding when the response carries the native turn before a notification
 - `turn/started` -> `turn.started`
 - `item/started` -> `item.started` and optionally `tool.started`
 - `item/completed` -> `item.completed`, `assistant.message`, and optionally `tool.completed`
 - `item/agentMessage/delta` -> `text.delta`
-- `turn/completed` completed -> `turn.complete`
+- `turn/completed` completed -> `turn.complete` when the logical delivery is finished; an active goal emits a non-terminal `turn.goal_continuation` raw event and retains the consumer for the next native turn
 - `turn/completed` interrupted -> `turn.interrupted`
 - `turn/completed` other status -> `turn.failed`
 - JSON-RPC approval request -> `approval.requested` / `approval.resolved`
 - JSON-RPC dynamic tool call -> defensive synthetic `item.started` / `item.completed` plus protocol-safe semantic failure. It MUST NOT execute a Ravi CLI registry command.
+
+## Native goal controls
+
+`goal.get/set/clear` map to the experimental app-server `thread/goal/get/set/clear` API, documented at https://learn.chatgpt.com/docs/app-server#manage-a-thread-goal. They operate on the same persisted goal as native model tools and `/goal`. Updates without an objective preserve native accounting; `createOnly` reads the existing goal before attempting creation.
+
+Native `budgetLimited`/`usageLimited` map to `budget_limited`/`usage_limited`; native timestamps in seconds map to Unix milliseconds. Full goal notifications and resume snapshots emit canonical `goal.updated` events. A malformed response MUST fail explicitly.
+
+Stored goal control initializes an experimental app-server connection without `thread/start` or `thread/resume`, sends the metadata RPC, then closes the connection. It MUST NOT load the thread: setting an active goal on a loaded idle thread can start native work immediately. Opaque session params preserve a custom `CODEX_HOME` locator for stored control.
 
 ## Skill Visibility
 
@@ -72,6 +83,11 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 ## Invariants
 
 - The provider MUST initialize or resume one native thread before starting a turn.
+- The provider MUST pass the stable logical delivery id as `clientUserMessageId` on `turn/start`.
+- The provider MUST capture the native turn id from the `turn/start` response even when `turn/started` is delayed or absent.
+- The live Codex session handle MUST advertise `ambiguousTurnRecoveryStrategy=reconcile_by_client_message_id`.
+- Before replaying an ambiguously delivered turn on resume, the provider MUST reconcile `clientUserMessageId`: hydrate a completed match, reattach to an in-progress match, or inspect an interrupted/failed match. It MAY fork immediately before that terminal turn and replay once only when the host supplied terminal replay authority; otherwise it MUST terminate reconciliation without a second `turn/start`.
+- The provider MUST NOT issue a second `turn/start` for an ambiguous delivery before reconciliation finishes. A legacy exact-prompt fallback MAY match only the newest native turn that lacks a client id.
 - The provider MUST NOT start overlapping turns on one app-server transport.
 - The provider MUST NOT send Ravi dynamic tool definitions to Codex.
 - The provider MUST NOT route Codex app-server dynamic tool calls through `hostServices.executeDynamicTool`.
@@ -79,23 +95,34 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - A reused Codex app-server process MUST be respawned before the next turn when its Ravi env signature differs from the current runtime env.
 - The provider MUST launch the Codex app-server with `shell_environment_policy.inherit=all`, `shell_environment_policy.ignore_default_excludes=true`, and an `include_only` glob allowlist that includes `RAVI_*` plus minimal core shell variables. This is required because Codex default shell env exclusions can strip env names containing `KEY`.
 - The global Codex Bash hook command MUST resolve to a stable Ravi CLI entrypoint such as `bin/ravi` or the bundled CLI, never to a test file or transient runner script.
-- The global Codex Bash hook matcher MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
+- Generated hooks MUST emit `ravi context codex-bash-hook` as the preferred command. They MUST NOT emit `codex-tool-hook` as the preferred command.
+- The CLI MUST accept `ravi context codex-tool-hook` as a deprecated alias of `codex-bash-hook` with the same access and payload so stale `~/.codex/hooks.json` files and in-memory Codex workers cannot hard-block Bash, including `ravi pages list|published|publish`.
+- The global Codex Bash hook matcher MUST be exactly `^(Bash|shell)$`. It MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
+- Rematerializing hooks MUST replace legacy Ravi groups (old status `ravi codex native tool permission gate`, old command `codex-tool-hook`, or a non-canonical matcher) instead of appending a second group beside them.
+- A reused Codex app-server process MUST be respawned before the next turn when `hooks.json` changes. Thread/resume MUST keep session history.
 - The global Codex Bash hook MUST enforce Ravi shell permissions and runtime skill gates only. It MUST NOT rely on `PreToolUse.updatedInput` to inject env because current Codex rejects unsupported updated input for this hook.
 - Ravi provider-owned grants such as `full-access` authorize Ravi's permission layer only. They MUST NOT be documented as a bypass for provider-native hooks, global Codex hooks, or external PreToolUse transforms that may still deny a shell command after Ravi allows it.
 - The shell env bridge MUST NOT print or embed `RAVI_CONTEXT_KEY` directly in user-visible command text or traces.
 - Ravi operations requested by the model MUST execute through the shell/CLI path under the current Ravi context.
 - Command/file/permission/user-input approval requests MUST route through Ravi approval handlers.
 - An unexpected dynamic tool JSON-RPC response MUST always include normalized `contentItems`; missing output MUST become text fallback, but the semantic result MUST remain a failed tool event.
-- A completed native turn MUST produce `turn.complete` with provider session state.
+- A completed native turn without an active goal MUST produce `turn.complete` with provider session state.
+- Goals are thread-scoped. The adapter MUST track `thread/goal/updated` and `thread/goal/cleared` independently of physical turn ids and probe `thread/goal/get` on resume with a bounded timeout for older servers.
+- While a goal is active, successful physical turn completion MUST NOT close the event queue, mark the host idle, release the logical delivery, or inject another `turn/start`. Codex owns automatic continuation. Successor events MUST retain native thread/turn metadata under the same logical Ravi delivery.
+- The adapter MUST accept a successor only on the bound thread after a completed predecessor; late predecessor and child-thread events MUST remain excluded.
+- Usage for completed physical goal turns MUST be accumulated into the logical terminal usage. A paused, cleared, blocked, limited, or completed goal MUST release a delivery waiting between physical turns. A failed or interrupted native turn MUST terminate immediately, even when goal state remains active.
+- Start/resume notifications MUST remain buffered until the explicit `turn/start` response binds the accepted native turn. An automatic resume turn MUST NOT seize the incoming delivery before that binding.
 - A native interrupted turn or interrupt request MUST produce `turn.interrupted`, not `turn.failed`, unless the native process actually fails before interruption can be established.
 - A native exit without terminal event MUST become recoverable `turn.failed`.
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.
 - The provider MUST sync Codex skills during `prepareSession` and include the skill catalog in provider instructions.
 - Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
+- A provider-local fork used only to recover one failed ambiguous turn MUST NOT advertise canonical `supportsSessionFork`.
 
 ## Validation
 
 - `bun test src/runtime/codex-provider.test.ts`
+- `bun test src/runtime/codex-hooks.test.ts`
 - `bun test src/runtime/provider-contract.test.ts`
 - `bun test src/runtime/model-catalog.test.ts`
 - `bun test src/plugins/codex-skills.test.ts`
@@ -106,6 +133,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes; `contentItems` is the app-server contract.
 - Reaction-only or silent turns can finish natively but remain active in Ravi if `turn.complete` is not normalized.
 - Native raw events may continue while the logical turn is stuck; missing `turn/completed` is an adapter/runtime bug, not normal completion.
+- A dropped callback after `turn/start` creates an ambiguous delivery outcome. Resume reconciliation and the host circuit breaker MUST prevent duplicate starts and unbounded recovery loops.
 - Synthetic and native dynamic tool item events can both appear from unexpected app-server requests; the adapter MUST dedupe canonical tool lifecycle by tool call id and keep the request non-operational.
 - The app-server transport rejects overlapping turns; dispatcher must queue/interrupt instead of yielding concurrent prompts.
 - Synthetic tool starts are needed when a completed item arrives without a previous start.

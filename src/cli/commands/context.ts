@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -30,7 +31,13 @@ import {
   getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
-import { dbGetContext, dbListContexts, dbPruneContexts, type ContextRecord } from "../../router/router-db.js";
+import {
+  dbGetAgent,
+  dbGetContext,
+  dbListContexts,
+  dbPruneContexts,
+  type ContextRecord,
+} from "../../router/router-db.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
@@ -145,6 +152,58 @@ interface AgentRuntimeCleanupCandidate {
   sessionExists: boolean;
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SECURITY NOTE: context keys (rctx_*) ARE credentials. Envelopes, plans and
+// suggestions carry only context IDs, agent ids and labels — a full context
+// key must NEVER appear in an error envelope or dry-run plan. When the user
+// input itself is a key, it is masked to its first 8 characters.
+// ============================================================
+
+function failContextNotFound(op: string, contextId: string, asJson?: boolean): never {
+  // Candidates are context IDs only (never rctx_* keys).
+  const candidates = dbListContexts({ includeInactive: true })
+    .slice(0, 40)
+    .map((context) => context.contextId);
+  contractFail(op, "CONTEXT_NOT_FOUND", `Context not found: ${contextId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the context id (see suggestions; list with: ravi context list --all --json)",
+      suggestions: suggestSimilar(contextId, candidates),
+    },
+  });
+}
+
+/** Mask an rctx_* key for display: enough to recognize, never enough to use. */
+function maskContextKey(contextKey: string): string {
+  return `${contextKey.slice(0, 8)}...`;
+}
+
+function failCredentialEntryNotFound(
+  op: string,
+  contextKey: string,
+  path: string,
+  file: CredentialsFile | null,
+  asJson?: boolean,
+): never {
+  // Suggestions carry context IDs and labels only — stored context keys are
+  // credentials and never enter the envelope. The masked input is shown so the
+  // caller can recognize a typo without the envelope becoming a secret.
+  const entries = file ? serializeCredentialsFile(file) : [];
+  const candidates = entries.flatMap((entry) => [entry.contextId, entry.label]);
+  contractFail(op, "CREDENTIAL_NOT_FOUND", `No credential entry for ${maskContextKey(contextKey)} in ${path}`, {
+    asJson,
+    details: {
+      suggestedAction: "Inspect stored entries with: ravi context credentials list --json",
+      suggestions: suggestSimilar(contextKey, candidates),
+    },
+  });
+}
+
 @Group({
   name: "context",
   description: "Runtime context registry and introspection",
@@ -161,11 +220,14 @@ export class ContextCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching contexts to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const contexts = dbListContexts({ agentId, sessionKey, kind, includeInactive });
     const page = paginateCliItems(contexts, { limit, offset });
     const pageContexts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "context", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -173,15 +235,18 @@ export class ContextCommands {
       total: page.total,
       options: ["--agent", agentId, "--session", sessionKey, "--kind", kind, includeInactive ? "--all" : null],
     });
+    const summaries = pageContexts.map((context) => this.serializeContextSummary(context));
+    const projected = pickFields(summaries, fields);
     const payload = {
       count: page.total,
       total: page.total,
       pagination,
-      items: pageContexts.map((context) => this.serializeContextSummary(context)),
-      contexts: pageContexts.map((context) => this.serializeContextSummary(context)),
+      items: projected,
+      contexts: projected,
     };
 
-    this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
+    // Human output always prints the full summaries; --fields narrows JSON only.
+    this.printPayload(payload, asJson, () => this.printContextList(summaries));
     if (!asJson && pagination.nextCommand) {
       console.log("\nNext page:");
       console.log(`  ${pagination.nextCommand}`);
@@ -197,7 +262,7 @@ export class ContextCommands {
   ) {
     const context = dbGetContext(contextId);
     if (!context) {
-      fail(`Context not found: ${contextId}`);
+      failContextNotFound("context info", contextId, asJson);
     }
 
     const payload = this.serializeContextDetail(context);
@@ -282,7 +347,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
-  @CommandAccess({ kind: "read", resource: "context", action: "authorize", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "authorize", risk: "high" })
   async authorize(
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
@@ -315,7 +380,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
-  @CommandAccess({ kind: "read", resource: "context", action: "issue", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "issue", risk: "high" })
   issue(
     @Arg("cliName", { description: "Logical CLI name for audit and lineage" }) cliName: string,
     @Option({
@@ -330,14 +395,31 @@ export class ContextCommands {
     ttl?: string,
     @Option({ flags: "--inherit", description: "Inherit all capabilities from the current context" }) inherit = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--as-agent <id>",
+      description: "Admin-only: delegate the child context to an explicit agent identity",
+    })
+    asAgent?: string,
+    @Option({
+      flags: "--as-session-key <key>",
+      description: "Admin-only: bind the delegated identity to an explicit session key",
+    })
+    asSessionKey?: string,
+    @Option({
+      flags: "--as-session-name <name>",
+      description: "Admin-only: bind the delegated identity to an explicit session name",
+    })
+    asSessionName?: string,
   ) {
     const parent = this.requireResolvedContext();
+    const identity = parseDelegatedIdentity(asAgent, asSessionKey, asSessionName);
     const child = issueRuntimeContext({
       parent,
       cliName,
       capabilities: parseCapabilityList(allow),
       ttlMs: parseDurationMs(ttl),
       inheritCapabilities: inherit,
+      identity,
     });
 
     const payload: ContextIssuePayload = {
@@ -377,6 +459,10 @@ export class ContextCommands {
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
+    const existing = dbGetContext(contextId);
+    if (!existing) {
+      failContextNotFound("context revoke", contextId, asJson);
+    }
     if (noCascade) {
       console.error(
         "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
@@ -511,7 +597,7 @@ export class ContextCommands {
   ) {
     const lineage = getContextLineage(contextId);
     if (!lineage) {
-      fail(`Context not found: ${contextId}`);
+      failContextNotFound("context lineage", contextId, asJson);
     }
 
     const payload = {
@@ -527,6 +613,9 @@ export class ContextCommands {
   @Command({
     name: "codex-bash-hook",
     description: "Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context",
+    aliases: ["codex-tool-hook"],
+    helpAfter:
+      "codex-tool-hook is a deprecated compatibility alias for stale Codex sessions and hooks.json files. It uses the same access and payload as codex-bash-hook. Generated hooks must keep emitting codex-bash-hook.",
   })
   @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low" })
   codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
@@ -928,6 +1017,8 @@ export class ContextCredentialsCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching credential entries to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
@@ -936,20 +1027,22 @@ export class ContextCredentialsCommands {
     const entries = serializeCredentialsFile(data);
     const page = paginateCliItems(entries, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "context", "credentials", "list"],
       limit: page.limit,
       offset: page.offset,
       returned: page.items.length,
       total: page.total,
     });
+    const projected = pickFields(page.items, fields);
     const payload = {
       path,
       exists,
       default: data.default ?? null,
       total: page.total,
       pagination,
-      items: page.items,
-      entries: page.items,
+      items: projected,
+      entries: projected,
     };
 
     if (asJson) {
@@ -1029,11 +1122,8 @@ export class ContextCredentialsCommands {
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
-    if (!file) {
-      fail(`No credentials file at ${path} — add an entry first with 'ravi context credentials add'`);
-    }
-    if (!(contextKey in file.contexts)) {
-      fail(`No credential entry for ${contextKey} — add it first with 'ravi context credentials add'`);
+    if (!file || !(contextKey in file.contexts)) {
+      failCredentialEntryNotFound("context credentials set-default", contextKey, path, file, asJson);
     }
     const next = setDefaultCredentialsEntry(file, contextKey);
     writeCredentialsFile(next, path);
@@ -1047,15 +1137,46 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
-  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "remove", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "context.credentials",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   remove(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the stored entry; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
     if (!file || !(contextKey in file.contexts)) {
-      fail(`No credential entry for ${contextKey} in ${path}`);
+      failCredentialEntryNotFound("context credentials remove", contextKey, path, file, asJson);
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing a stored entry drops a working
+      // local credential, so dry-run by default and exit 3 before any write.
+      // The plan identifies the entry with allowed IDs and presence flags;
+      // neither the store path, label nor any form of the rctx_* key enters it.
+      const entry = file.contexts[contextKey];
+      contractDryRun(
+        "context credentials remove",
+        {
+          credentialsPathPresent: path.length > 0,
+          contextKeyPresent: contextKey.length > 0,
+          contextId: entry?.context_id ?? null,
+          agentId: entry?.agent_id || null,
+          labelPresent: Boolean(entry?.label),
+          kind: entry?.kind ?? null,
+          wasDefault: file.default === contextKey,
+        },
+        { asJson },
+      );
     }
     const contexts = { ...file.contexts };
     delete contexts[contextKey];
@@ -1178,6 +1299,34 @@ function parseDurationMs(input: string | undefined): number | undefined {
   if (unit === "d") return value * 86_400_000;
 
   fail(`Invalid duration: "${input}". Expected 30m, 2h or 1d`);
+}
+
+function parseDelegatedIdentity(
+  agentInput: string | undefined,
+  sessionKeyInput: string | undefined,
+  sessionNameInput: string | undefined,
+): { agentId: string; sessionKey?: string; sessionName?: string } | undefined {
+  const agentId = agentInput?.trim();
+  const sessionKey = sessionKeyInput?.trim();
+  const sessionName = sessionNameInput?.trim();
+  if (!agentId && !sessionKey && !sessionName) return undefined;
+  if (!agentId) fail("--as-agent is required when delegating a context identity");
+  if (Boolean(sessionKey) !== Boolean(sessionName)) {
+    fail("--as-session-key and --as-session-name must be provided together");
+  }
+  if (!dbGetAgent(agentId)) fail(`Agent not found: ${agentId}`);
+  if (sessionKey && !sessionKey.startsWith(`agent:${agentId}:`)) {
+    fail(`Delegated session key must belong to agent ${agentId}`);
+  }
+  const existingSession = sessionKey ? resolveSession(sessionKey) : sessionName ? resolveSession(sessionName) : null;
+  if (existingSession && existingSession.agentId !== agentId) {
+    fail(`Delegated session does not belong to agent ${agentId}`);
+  }
+  return {
+    agentId,
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(sessionName ? { sessionName } : {}),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

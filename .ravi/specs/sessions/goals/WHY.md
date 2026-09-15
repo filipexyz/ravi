@@ -4,45 +4,16 @@ title: "Session Goals — Why"
 kind: capability
 domain: sessions
 capability: goals
-status: draft
+status: active
 normative: false
 ---
 
-# Why Session Goals Exist
+# Why Session Goals Control Runtime Goals
 
-## Problem
+Persisting a goal only in Ravi let the UI report `active` while the execution engine retained an older blocked goal. Injecting the objective into a prompt did not enable native continuation after turn completion.
 
-Sessions need a way to express what they are working toward. Without a native goal primitive:
+Ravi now defines a common goal contract, and each supporting runtime adapter translates that contract to its native API. The runtime confirms lifecycle and usage; Ravi projects those snapshots and maintains session authorization and local links. Codex is the first implementation, while the CLI and host remain provider-neutral.
 
-- Agents have no bounded, inspectable representation of their current objective.
-- Budget enforcement is ad hoc or missing — sessions run until interrupted or context-limited.
-- There is no lifecycle for pausing, blocking, or completing an objective.
-- Runtime prompt building cannot include a traceable current-objective section.
-- The `sessions.goal` SDK surface exposes a weak return schema.
+Activating a loaded idle Codex thread can immediately start model work. Metadata-only control of an unloaded thread, followed by managed Ravi input, keeps that work within the normal trace and channel-delivery lifecycle.
 
-## Decision
-
-Make session goals a first-class Ravi-native session runtime primitive with:
-
-- durable persistence by session identity;
-- a well-defined status lifecycle (`active`, `paused`, `budget_limited`, `blocked`, `complete`);
-- budget accounting with automatic `budget_limited` transition;
-- `blocked` state requiring a concrete reason (not merely "work is hard");
-- bounded prompt/runtime context rendering;
-- concrete SDK return schema.
-
-## Why Not Tasks
-
-Tasks own tracked execution with dispatch, dependencies, reports, and terminal state. Goals are simpler: one objective per session, no dependency graph, no dispatch. A goal MAY reference a task via `taskId`, but it does not replace the task lifecycle.
-
-## Why Not Provider-Native Goals
-
-Provider-native goal or stop-hook behavior (e.g., Codex goals, Claude `/goal`) MAY inform the design. But Ravi MUST own the canonical goal state so it works consistently across providers and survives provider session resets.
-
-## Why Not Crons or Followups
-
-Crons are wall-clock schedules. Followups are inactivity cadences. Goals are bounded objectives with lifecycle states. Different primitives for different jobs.
-
-## Tradeoff
-
-Adding a lifecycle to goals increases the surface area of session state. The cost is justified because it gives agents and operators a single inspectable, enforceable place to understand what a session is doing and whether it should keep going.
+Tasks continue to own assignment and dependencies. Crons own timed notifications. Goals own a runtime objective and its continuation; these features remain separately inspectable.

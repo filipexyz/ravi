@@ -1,8 +1,8 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../../console-scope/resolver.js";
 import type { ResolvedConsoleScope } from "../../console-scope/types.js";
@@ -16,9 +16,12 @@ import {
   createPageSite,
   listPageSites,
   listPublishedPages,
+  managePagePassword,
+  normalizePagePasswordReplacementVisibility,
   normalizePageVisibility,
   updatePageSite,
   type PageDomainBindResult,
+  type PagePasswordManageResult,
   type PagesClientDeps,
   type PageSiteCreateResult,
   type PageSiteListResult,
@@ -27,8 +30,15 @@ import {
   type PublishedPageListResult,
   type PublishedPagePayload,
 } from "../../pages/client.js";
-import { hasContext } from "../context.js";
+import {
+  materializeShipSource,
+  requireShipTitle,
+  slugifyPageTitle,
+  validateShipSourceInput,
+} from "../../pages/ship.js";
+import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishDeps, "fetch"> {
@@ -38,6 +48,58 @@ export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishD
   env?: ConsoleScopeResolverDeps["env"];
   cwd?: ConsoleScopeResolverDeps["cwd"];
 }
+
+export interface PagesPasswordCommandDeps extends PagesCommandDeps {
+  readPassword?: (options: ConfirmedSecretInputOptions) => Promise<string>;
+}
+
+const PAGES_SHIP_HELP = `
+Examples:
+  ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json
+  ravi pages ship demo --title "Landing" --html ./landing.html --visibility public
+  ravi pages ship proj docs --title "Docs" --dir ./site --route / --json
+
+Happy path:
+  One command. Do not choreograph pages create + pages publish.
+  --title is required. Pass exactly one of --body, --html, or --dir.
+  Omit <slug> to generate it from --title. Existing slugs are reused.
+  Public visibility is allowed in the same call.
+
+Write brake:
+  None. ship always ensures the host and publishes. --execute is accepted
+  and ignored for backwards compatibility.
+
+JSON:
+  { url, site, slug, route, visibility, artifactId }
+`;
+
+const PAGES_CREATE_HELP = `
+Advanced / compatibility:
+  Host-only. Does not upload HTML or assets.
+  Prefer \`ravi pages ship --title <title> --body|--html|--dir … --json\` to get a URL.
+
+Examples:
+  ravi pages create demo --json
+  ravi pages create proj docs --visibility private --json
+
+Write brake:
+  None. create always writes the host record. --execute is accepted and ignored
+  for backwards compatibility.
+`;
+
+const PAGES_PUBLISH_HELP = `
+Advanced / compatibility:
+  Upload onto an existing host, or publish a local art_* already in the ledger.
+  Prefer \`ravi pages ship\` unless the HTML is already an art_* id.
+
+Examples:
+  ravi pages publish proj demo ./site --route / --json
+  ravi pages publish proj demo art_demo_123 --route / --json
+
+Write brake:
+  None. publish always uploads. --execute is accepted and ignored for
+  backwards compatibility.
+`;
 
 @Group({
   name: "pages",
@@ -58,12 +120,15 @@ export class PagesCommands {
     @Option({ flags: "--limit <n>", description: "Maximum sites to return (default: 50)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of sites to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <list>", description: "Comma-separated fields to keep on each listed site" })
+    fields?: string,
   ) {
-    return runPagesCommand(asJson, async () => {
+    return runPagesCommand("pages list", asJson, async () => {
       const resolved = await resolvePagesProject(project, projectOption, consoleUrl, this.deps);
       const result = await listPageSites({ project: resolved.projectRef, console: consoleUrl }, this.deps);
       const page = paginateCliItems(result.sites, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "pages", "list"],
         limit: page.limit,
         offset: page.offset,
@@ -76,8 +141,8 @@ export class PagesCommands {
         scope: resolved.scope,
         total: page.total,
         pagination,
-        sites: page.items,
-        items: page.items,
+        sites: pickFields(page.items, fields),
+        items: pickFields(page.items, fields),
       };
       printPayload(payload, asJson, () => printSiteList(payload));
       return payload;
@@ -95,12 +160,15 @@ export class PagesCommands {
     @Option({ flags: "--limit <n>", description: "Maximum pages to return (default: 50)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of pages to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <list>", description: "Comma-separated fields to keep on each listed page" })
+    fields?: string,
   ) {
-    return runPagesCommand(asJson, async () => {
+    return runPagesCommand("pages published", asJson, async () => {
       const resolved = await resolvePagesProject(project, projectOption, consoleUrl, this.deps);
       const result = await listPublishedPages({ project: resolved.projectRef, console: consoleUrl }, this.deps);
       const page = paginateCliItems(result.pages, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "pages", "published"],
         limit: page.limit,
         offset: page.offset,
@@ -113,8 +181,8 @@ export class PagesCommands {
         scope: resolved.scope,
         total: page.total,
         pagination,
-        pages: page.items,
-        items: page.items,
+        pages: pickFields(page.items, fields),
+        items: pickFields(page.items, fields),
       };
       printPayload(payload, asJson, () => printPublishedPageList(payload));
       return payload;
@@ -123,9 +191,16 @@ export class PagesCommands {
 
   @Command({
     name: "create",
-    description: "Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets",
+    description: "Advanced/compat: host-only Pages record; does not upload HTML. Prefer pages ship to get a URL",
+    helpAfter: PAGES_CREATE_HELP,
   })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "create", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "create",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async create(
     @Arg("args", { variadic: true, description: "[project] <slug>; project defaults to Ravi Console scope" })
     args: string[],
@@ -137,15 +212,22 @@ export class PagesCommands {
     isDefault?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Unused compatibility no-op; pages create always writes the host record",
+    })
+    execute?: boolean,
   ) {
-    return runPagesCommand(asJson, async () => {
+    void execute;
+    return runPagesCommand("pages create", asJson, async () => {
       const parsed = parseCreateArgs(args, projectOption);
+      const normalizedVisibility = normalizePageVisibility(visibility);
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await createPageSite(
         {
           project: resolved.projectRef,
           slug: parsed.slug,
-          defaultVisibility: normalizePageVisibility(visibility),
+          defaultVisibility: normalizedVisibility,
           isDefault,
           console: consoleUrl,
         },
@@ -157,8 +239,112 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a project Pages host" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high" })
+  @Command({
+    name: "ship",
+    description: "One-shot: ensure a Pages host and publish HTML or a site directory",
+    helpAfter: PAGES_SHIP_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "ship", risk: "high", requiresConfirmation: true })
+  async ship(
+    @Arg("args", {
+      variadic: true,
+      required: false,
+      description: "[project] [slug]; project defaults to Console scope and slug defaults from --title",
+    })
+    args: string[] = [],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--title <title>", description: "Page title; also used to generate the slug when omitted" })
+    titleOption?: string,
+    @Option({ flags: "--body <html>", description: "HTML body fragment wrapped in a simple HTML5 document" })
+    body?: string,
+    @Option({ flags: "--html <file>", description: "Path to an HTML file to publish" }) html?: string,
+    @Option({ flags: "--dir <path>", description: "Directory with an entrypoint (default index.html)" }) dir?: string,
+    @Option({
+      flags: "--visibility <visibility>",
+      description: "Pages visibility: private|protected_link|public (default: private)",
+    })
+    visibility?: string,
+    @Option({ flags: "--route <path>", description: "Pages route path to mount content at (default: /)" })
+    route?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint path (default: index.html)" })
+    entrypoint?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Unused compatibility no-op; pages ship always ensures the host and publishes",
+    })
+    execute?: boolean,
+  ) {
+    void execute;
+    return runPagesCommand("pages ship", asJson, async () => {
+      const parsed = parseShipArgs(args, projectOption);
+      const title = requireShipTitle(titleOption);
+      const resolvedRoute = stringValue(route) ?? "/";
+      const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
+      const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
+      const slug = parsed.slug ?? slugifyPageTitle(title);
+      await validateShipSourceInput({ body, dir, html });
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const site = await ensurePageSite(
+        {
+          console: consoleUrl,
+          defaultVisibility: normalizedVisibility,
+          project: resolved.projectRef,
+          slug,
+        },
+        this.deps,
+      );
+      const source = await materializeShipSource({
+        body,
+        dir,
+        entrypoint: resolvedEntrypoint,
+        html,
+        title,
+      });
+      try {
+        const result = await publishArtifactToConsole(
+          source.path,
+          {
+            activate: true,
+            console: consoleUrl,
+            entrypoint: resolvedEntrypoint,
+            json: asJson,
+            name: title,
+            project: resolved.projectRef,
+            publishToPages: true,
+            route: resolvedRoute,
+            site: slug,
+            tool: "ravi pages ship",
+            visibility: normalizedVisibility,
+          },
+          this.deps,
+        );
+        const payload = {
+          artifactId: extractPublishedArtifactId(result),
+          route: resolvedRoute,
+          site: objectValue(result.site) ?? site,
+          slug,
+          success: true as const,
+          url: result.url,
+          visibility: normalizedVisibility,
+        };
+        printPayload(payload, asJson, () => printShipResult(payload));
+        return payload;
+      } finally {
+        await source.cleanup?.();
+      }
+    });
+  }
+
+  @Command({
+    name: "publish",
+    description:
+      "Advanced/compat: upload to an existing host or local art_*; prefer pages ship unless the HTML is already art_*",
+    helpAfter: PAGES_PUBLISH_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high", requiresConfirmation: true })
   async publish(
     @Arg("args", {
       variadic: true,
@@ -194,9 +380,17 @@ export class PagesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--site <site>", description: "Legacy site slug/id; defaults to the project Pages host" })
     siteOption?: string,
+    @Option({
+      flags: "--execute",
+      description: "Unused compatibility no-op; pages publish always uploads and publishes",
+    })
+    execute?: boolean,
   ) {
-    return runPagesCommand(asJson, async () => {
+    void execute;
+    return runPagesCommand("pages publish", asJson, async () => {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
+      const normalizedVisibility = normalizePageVisibility(visibility);
+      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await publishArtifactToConsole(
         parsed.source,
@@ -204,12 +398,12 @@ export class PagesCommands {
           project: resolved.projectRef,
           site: parsed.site,
           route,
-          visibility: normalizePageVisibility(visibility),
+          visibility: normalizedVisibility,
           name: title,
           slug: artifactSlug,
           description,
           entrypoint,
-          artifactVersion: artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined,
+          artifactVersion: parsedArtifactVersion,
           basePath,
           assetBase,
           uploadSession,
@@ -231,7 +425,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "update", description: "Update a Ravi Pages site in a Console project" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "update", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "update", risk: "medium", requiresConfirmation: true })
   async update(
     @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
     args: string[],
@@ -241,15 +435,22 @@ export class PagesCommands {
     visibility?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Required to switch a site to public visibility; other updates apply immediately",
+    })
+    execute?: boolean,
   ) {
-    return runPagesCommand(asJson, async () => {
+    return runPagesCommand("pages update", asJson, async () => {
       const parsed = parseSiteArgs(args, projectOption, "update");
+      const normalizedVisibility = normalizePageVisibility(visibility);
+      brakePublicSiteVisibility("pages update", parsed, normalizedVisibility, execute, asJson);
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await updatePageSite(
         {
           project: resolved.projectRef,
           site: parsed.site,
-          defaultVisibility: normalizePageVisibility(visibility),
+          defaultVisibility: normalizedVisibility,
           console: consoleUrl,
         },
         this.deps,
@@ -261,7 +462,13 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
-  @CommandAccess({ kind: "read", resource: "pages", action: "visibility", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "visibility",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async visibility(
     @Arg("args", {
       variadic: true,
@@ -272,15 +479,22 @@ export class PagesCommands {
     projectOption?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Required to switch a site to public visibility; other visibilities apply immediately",
+    })
+    execute?: boolean,
   ) {
-    return runPagesCommand(asJson, async () => {
+    return runPagesCommand("pages visibility", asJson, async () => {
       const parsed = parseVisibilityArgs(args, projectOption);
+      const normalizedVisibility = normalizePageVisibility(parsed.visibility);
+      brakePublicSiteVisibility("pages visibility", parsed, normalizedVisibility, execute, asJson);
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await updatePageSite(
         {
           project: resolved.projectRef,
           site: parsed.site,
-          defaultVisibility: normalizePageVisibility(parsed.visibility),
+          defaultVisibility: normalizedVisibility,
           console: consoleUrl,
         },
         this.deps,
@@ -292,7 +506,13 @@ export class PagesCommands {
   }
 
   @Command({ name: "domains", description: "Bind custom hostnames to a Ravi Pages site" })
-  @CommandAccess({ kind: "read", resource: "pages", action: "domains", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "domains",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async domains(
     @Arg("args", {
       variadic: true,
@@ -304,9 +524,25 @@ export class PagesCommands {
     @Option({ flags: "--check", description: "Run provider readiness check after binding" }) check?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Bind hostnames through the external Pages provider" })
+    execute?: boolean,
   ) {
-    return runPagesCommand(asJson, async () => {
+    // Domain binding mutates Ravi Console and may change external routing, so
+    // confirmation must happen before credential and project resolution.
+    return runPagesCommand("pages domains", asJson, async () => {
       const parsed = parseDomainsArgs(args, projectOption);
+      if (execute !== true) {
+        contractDryRun(
+          "pages domains",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            site: parsed.site,
+            hostnameCount: parsed.hostnames.length,
+            readinessCheck: Boolean(check),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await bindPageDomains(
         {
@@ -325,8 +561,227 @@ export class PagesCommands {
   }
 }
 
+const PAGES_PASSWORD_SET_HELP = `
+Examples:
+  ravi pages password set demo --execute
+  ravi pages password set project demo --route /report --execute
+  ravi pages password set demo --stdin --execute < /secure/path/page-password
+
+Write brake:
+  Without --execute the command is a dry-run: it prints the plan, exits 3 and
+  never prompts for the password.
+
+Security:
+  Interactive input is hidden and confirmed. Automation must use redirected
+  stdin. Password flags, positional passwords, and environment input are not
+  supported. Output never contains the password.
+`;
+
+const PAGES_PASSWORD_REMOVE_HELP = `
+Examples:
+  ravi pages password remove demo --visibility private --execute
+  ravi pages password remove project demo --route /report --visibility protected_link --execute
+
+Without --execute the command is a dry-run (exit 3). The replacement visibility
+is required so removing a password can never make a page public accidentally.
+`;
+
+@Group({
+  name: "pages.password",
+  description: "Manage route password protection without exposing password material",
+  scope: "open",
+})
+export class PagesPasswordCommands {
+  constructor(private readonly deps: PagesPasswordCommandDeps = {}) {}
+
+  @Command({
+    name: "set",
+    description: "Set or rotate a route password and enable password access in one operation",
+    helpAfter: PAGES_PASSWORD_SET_HELP,
+  })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high", requiresConfirmation: true })
+  async set(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to protect (default: /)" })
+    route?: string,
+    @Option({ flags: "--stdin", description: "Read the password from redirected stdin instead of prompting" })
+    fromStdin?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually set/rotate the route password; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages password set", asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password set");
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): setting/rotating a password flips the
+        // route access policy on the hosted site. Braked BEFORE the hidden
+        // password prompt — a dry-run must never read secret material — and
+        // before any Console call. The plan never carries the password.
+        contractDryRun(
+          "pages password set",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            site: parsed.site,
+            routePresent: route !== undefined,
+            action: "set",
+          },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const password = await (this.deps.readPassword ?? readConfirmedSecret)({
+        confirmPrompt: "Confirm page password: ",
+        fromStdin: Boolean(fromStdin),
+        prompt: "Page password: ",
+      });
+      const result = await managePagePassword(
+        {
+          action: "set",
+          console: consoleUrl,
+          password,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+
+  @Command({ name: "status", description: "Show safe route password status without revealing the password" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "password", risk: "low" })
+  async status(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to inspect (default: /)" })
+    route?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand("pages password status", asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password status");
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const result = await managePagePassword(
+        {
+          action: "status",
+          console: consoleUrl,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "remove",
+    description: "Remove a route password after activating an explicit replacement visibility",
+    helpAfter: PAGES_PASSWORD_REMOVE_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high", requiresConfirmation: true })
+  async remove(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to update (default: /)" })
+    route?: string,
+    @Option({
+      flags: "--visibility <visibility>",
+      description: "Required replacement visibility: private|protected_link|public",
+    })
+    visibility?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the route password; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages password remove", asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password remove");
+      // Validation stays BEFORE the brake: a missing replacement visibility is
+      // a payload error even on the dry-run path.
+      const replacementVisibility = normalizePagePasswordReplacementVisibility(visibility);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): removing the password changes who can
+        // reach the route (up to fully public). Dry-run by default and exit 3
+        // before any Console call.
+        contractDryRun(
+          "pages password remove",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            site: parsed.site,
+            routePresent: route !== undefined,
+            replacementVisibility,
+          },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const result = await managePagePassword(
+        {
+          action: "remove",
+          console: consoleUrl,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+          visibility: replacementVisibility,
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+}
+
 function defaultPagesDeps(): PagesCommandDeps {
   return {};
+}
+
+/**
+ * Conditional write brake (Manual v2 7.8): switching a site default to
+ * `public` exposes every already-hosted route to the open web, so it is
+ * dry-run by default. Reducing visibility (private/protected_link) stays
+ * unbraked on purpose — lockdowns must never be slowed down.
+ */
+function brakePublicSiteVisibility(
+  op: string,
+  parsed: { project?: string; site: string },
+  visibility: string | undefined,
+  execute: boolean | undefined,
+  asJson: boolean | undefined,
+): void {
+  if (visibility !== "public" || execute === true) return;
+  contractDryRun(
+    op,
+    {
+      project: parsed.project ?? "(Console scope default)",
+      site: parsed.site,
+      defaultVisibility: visibility,
+    },
+    { asJson },
+  );
 }
 
 async function resolvePagesProject(
@@ -352,6 +807,25 @@ function mergedProjectRef(
     );
   }
   return option ?? positional ?? undefined;
+}
+
+function parseShipArgs(args: string[], projectOption: string | undefined): { project?: string; slug?: string } {
+  const clean = cleanArgs(args ?? []);
+  if (projectOption) {
+    if (clean.length === 0) return { project: projectOption };
+    if (clean.length === 1) return { project: projectOption, slug: clean[0] };
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Usage: ravi pages ship [slug] --title <title> --project <project-ref> plus --body, --html, or --dir.",
+    );
+  }
+  if (clean.length === 0) return {};
+  if (clean.length === 1) return { slug: clean[0] };
+  if (clean.length === 2) return { project: clean[0], slug: clean[1] };
+  throw new CloudAuthError(
+    "PAYLOAD_INVALID",
+    "Usage: ravi pages ship [project] [slug] --title <title> plus --body, --html, or --dir.",
+  );
 }
 
 function parseCreateArgs(args: string[], projectOption: string | undefined): { project?: string; slug: string } {
@@ -518,31 +992,83 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const pagePasswordReturnSchema = z.object({
+  success: z.literal(true),
+  action: z.enum(["remove", "set", "status"]),
+  configured: z.boolean(),
+  consoleUrl: z.string(),
+  path: z.string(),
+  policy: jsonObjectSchema.nullable(),
+  projectRef: z.string(),
+  release: jsonObjectSchema,
+  route: jsonObjectSchema,
+  scope: z.literal("route"),
+  site: jsonObjectSchema,
+  siteRef: z.string(),
+  url: z.string(),
+});
+
+const pageShipReturnSchema = z.object({
+  artifactId: z.string().nullable(),
+  route: z.string(),
+  site: pageSiteSchema,
+  slug: z.string(),
+  success: z.literal(true),
+  url: z.string().nullable(),
+  visibility: z.string(),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
   create: pageSiteCreateReturnSchema,
+  ship: pageShipReturnSchema,
   publish: artifactPublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
 });
 
-async function runPagesCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+declareCommandReturns(PagesPasswordCommands, {
+  set: pagePasswordReturnSchema,
+  status: pagePasswordReturnSchema,
+  remove: pagePasswordReturnSchema,
+});
+
+async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
+    // the legacy CloudAuthError funnel swallow them (model: mail.ts).
+    if (error instanceof ContractError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    failPagesNotFoundFromConsole(op, cloudError, asJson);
+    throw cloudError;
+  }
+}
+
+/**
+ * Sites and routes live only in Console (no cheap local candidate source), so
+ * unknown refs come back as generic Console errors. Map the recognizable
+ * "not found" shapes to the Manual v2 envelope with a listing suggestedAction
+ * instead of similarity suggestions; anything else keeps the legacy
+ * CloudAuthError funnel untouched.
+ */
+function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?: boolean): void {
+  const message = error.message;
+  if (/route\b.*not.?found|not.?found.*\broute/i.test(message)) {
+    contractFail(op, "ROUTE_NOT_FOUND", "Pages route was not found.", {
+      asJson,
+      details: { suggestedAction: "List published routes with: ravi pages published --json" },
+    });
+  }
+  if (/(site|pages host)\b.*not.?found|not.?found.*\bsite/i.test(message)) {
+    contractFail(op, "SITE_NOT_FOUND", "Pages site was not found.", {
+      asJson,
+      details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
+    });
   }
 }
 
@@ -605,6 +1131,50 @@ function printPublishedPageList(
     console.log("\nNext page:");
     console.log(`  ${pagination.nextCommand}`);
   }
+}
+
+async function ensurePageSite(
+  input: { console?: string; defaultVisibility: string; project: string; slug: string },
+  deps: PagesCommandDeps,
+): Promise<PageSitePayload> {
+  const listed = await listPageSites({ console: input.console, project: input.project }, deps);
+  const existing = listed.sites.find((site) => {
+    const slug = stringValue(site.slug);
+    const id = stringValue(site.id);
+    return slug === input.slug || id === input.slug;
+  });
+  if (existing) return existing;
+  const created = await createPageSite(
+    {
+      console: input.console,
+      defaultVisibility: normalizePageVisibility(input.defaultVisibility),
+      project: input.project,
+      slug: input.slug,
+    },
+    deps,
+  );
+  return created.site;
+}
+
+function extractPublishedArtifactId(result: ArtifactPublishResult): string | null {
+  return stringValue(objectValue(result.artifact)?.id);
+}
+
+function printShipResult(result: {
+  artifactId: string | null;
+  route: string;
+  site: PageSitePayload;
+  slug: string;
+  url: string | null;
+  visibility: string;
+}): void {
+  console.log("✓ Pages shipped");
+  printSiteFields(result.site);
+  console.log(`  Slug       ${result.slug}`);
+  console.log(`  Route      ${result.route}`);
+  console.log(`  Visibility ${result.visibility}`);
+  if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
+  console.log(`  URL        ${result.url ?? "not returned by Console"}`);
 }
 
 function printCreatedSite(result: PageSiteCreateResult): void {
@@ -673,6 +1243,22 @@ function printDomainBindings(result: PageDomainBindResult): void {
     const mode = stringValue(objectValue(binding.readiness)?.mode);
     console.log(`  - ${hostname}${status ? `  status=${status}` : ""}${mode ? `  mode=${mode}` : ""}`);
   }
+}
+
+function printPasswordResult(result: PagePasswordManageResult): void {
+  const state =
+    result.action === "remove"
+      ? "removed"
+      : result.action === "set"
+        ? "enabled"
+        : result.configured
+          ? "configured"
+          : "not configured";
+  console.log(`✓ Pages password protection ${state}`);
+  console.log(`  URL        ${result.url}`);
+  console.log(`  Route      ${result.path}`);
+  console.log(`  Visibility ${result.route.effectiveVisibility}`);
+  if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
 }
 
 function siteLabel(site: PageSitePayload): string {

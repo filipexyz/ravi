@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -35,7 +36,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
   "apps.stub.list",
 ]);
 
-const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli", "sdk", "tool", "stream"]);
+const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli"]);
 const VALID_PERMISSION_PROVIDER_INTERFACES = new Set(["builtin", "cli"]);
 const VALID_STORAGE_KINDS = new Set(["state", "cache", "artifact-index", "config", "ledger"]);
 const VALID_EVENT_DURABILITY = new Set(["ephemeral", "logged", "replayable"]);
@@ -314,23 +315,23 @@ function validateManifest(
   requireString(manifest, "description", errors);
 
   if (!isObject(manifest.interfaces)) {
-    errors.push("interfaces must be an object with at least one of cli|sdk|stream|tool|ui.");
+    errors.push("interfaces must be an object with a required cli interface.");
   } else {
     const declared = Object.keys(manifest.interfaces);
     const known = declared.filter((name) => VALID_INTERFACES.has(name));
-    if (known.length === 0) {
-      errors.push("interfaces must declare at least one of cli|sdk|stream|tool|ui.");
-    }
+    if (known.length === 0) errors.push("interfaces must declare at least one known interface.");
+    if (!isObject(manifest.interfaces.cli)) errors.push("interfaces.cli is required and must be an object.");
     for (const name of declared.filter((entry) => !VALID_INTERFACES.has(entry))) {
       warnings.push(`Unknown interface "${name}" will be ignored by v1 discovery.`);
     }
     validateInterfaceBlocks(manifest, operationIds, errors, warnings);
   }
 
+  validateContext(manifest.context, errors);
   validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
 
-  if (manifest.permissions !== undefined && !isObject(manifest.permissions)) {
-    errors.push("permissions must be an object when present.");
+  if (!isObject(manifest.permissions)) {
+    errors.push("permissions is required and must be an object.");
   } else {
     validatePermissions(manifest.permissions, manifest.operations, errors);
   }
@@ -360,6 +361,40 @@ function validateManifest(
   return { errors, warnings };
 }
 
+function validateContext(value: unknown, errors: string[]): void {
+  if (value === undefined) {
+    errors.push("context is required and must declare context.allow.");
+    return;
+  }
+  if (!isObject(value)) {
+    errors.push("context must be an object when present.");
+    return;
+  }
+  if (!isStringArray(value.allow)) {
+    errors.push("context.allow is required and must be an array of capability strings.");
+    return;
+  }
+  const seen = new Set<string>();
+  value.allow.forEach((entry, index) => {
+    const path = `context.allow[${index}]`;
+    if (!entry.trim()) {
+      errors.push(`${path} must be a non-empty capability string.`);
+      return;
+    }
+    if (entry.includes("*")) {
+      errors.push(`${path} must be explicit and must not contain wildcards.`);
+      return;
+    }
+    try {
+      parseRaviAppCapability(entry);
+    } catch (error) {
+      errors.push(`${path}: ${formatError(error)}`);
+    }
+    if (seen.has(entry)) errors.push(`${path} duplicates another delegated capability.`);
+    seen.add(entry);
+  });
+}
+
 function validateInterfaceBlocks(
   manifest: RaviAppManifest,
   operationIds: Set<string>,
@@ -375,7 +410,9 @@ function validateInterfaceBlocks(
     }
     if (name === "cli") {
       if (typeof value.command !== "string" || !value.command.trim()) {
-        warnings.push("interfaces.cli.command should declare the canonical CLI command.");
+        errors.push("interfaces.cli.command must declare the implementation CLI command.");
+      } else {
+        validateCliCommand(value.command, "interfaces.cli.command", errors);
       }
       if (value.json !== true) {
         warnings.push("interfaces.cli.json should be true for machine-consumed CLI apps.");
@@ -387,6 +424,11 @@ function validateInterfaceBlocks(
       ) {
         errors.push(`interfaces.cli.health must not recursively invoke ravi ${manifest.id.split("/").join(" ")}.`);
       }
+      if (typeof value.health === "string") {
+        validateCliCommand(value.health, "interfaces.cli.health", errors);
+      } else if (value.health !== undefined) {
+        errors.push("interfaces.cli.health must be a command string when present.");
+      }
     }
     if (name === "sdk" && (typeof value.namespace !== "string" || !value.namespace.trim())) {
       warnings.push("interfaces.sdk.namespace should declare the generated SDK namespace.");
@@ -397,6 +439,16 @@ function validateInterfaceBlocks(
         warnings.push("interfaces.ui should be paired with top-level operations for snapshots and actions.");
       }
     }
+  }
+}
+
+function validateCliCommand(command: string, path: string, errors: string[]): boolean {
+  try {
+    parseRaviAppCommand(command);
+    return true;
+  } catch (error) {
+    errors.push(`${path}: ${formatError(error)}`);
+    return false;
   }
 }
 
@@ -449,7 +501,7 @@ function validateOperations(
       errors.push(`${path}.permissions must be an array of strings when present.`);
     }
     if (operation.mutating === true && operation.permission === undefined && operation.permissions === undefined) {
-      warnings.push(`${path} is mutating and should declare permission or permissions.`);
+      errors.push(`${path} is mutating and must declare permission or permissions.`);
     }
 
     validateOperationTarget(operation, path, typeof appId === "string" ? appId.trim() : "", errors, warnings);
@@ -532,6 +584,7 @@ function validateOperationTarget(
       errors.push(`${path}.command is required for cli operations.`);
       return;
     }
+    if (!validateCliCommand(operation.command, `${path}.command`, errors)) return;
     if (isRecursiveDynamicAppCommand(appId, operation.command)) {
       errors.push(`${path}.command must not recursively invoke ravi ${appId.split("/").join(" ")}.`);
     }
@@ -539,27 +592,6 @@ function validateOperationTarget(
       warnings.push(`${path}.command should support --json for Web OS snapshots and actions.`);
     }
     return;
-  }
-
-  if (interfaceName === "sdk") {
-    if (typeof operation.namespace !== "string" || !operation.namespace.trim()) {
-      errors.push(`${path}.namespace is required for sdk operations.`);
-    }
-    if (typeof operation.method !== "string" || !operation.method.trim()) {
-      errors.push(`${path}.method is required for sdk operations.`);
-    }
-    return;
-  }
-
-  if (interfaceName === "tool") {
-    if (typeof operation.name !== "string" || !operation.name.trim()) {
-      errors.push(`${path}.name is required for tool operations.`);
-    }
-    return;
-  }
-
-  if (interfaceName === "stream") {
-    validateEventTopic(operation.channel, `${path}.channel`, errors);
   }
 }
 
@@ -577,6 +609,7 @@ function validateHealth(value: Record<string, unknown>, appId: unknown, errors: 
     }
     if (check.type === "cli" && typeof check.command === "string") {
       const id = typeof appId === "string" ? appId.trim() : "";
+      validateCliCommand(check.command, `health.checks[${index}].command`, errors);
       if (isRecursiveDynamicAppCommand(id, check.command) && !isRouterHealthCommand(id, check.command)) {
         errors.push(`health.checks[${index}].command must not recursively invoke ravi ${id.split("/").join(" ")}.`);
       }
@@ -867,12 +900,30 @@ function collectUiViewIds(value: unknown): Set<string> {
 }
 
 function validatePermissions(value: unknown, operations: unknown, errors: string[]): void {
-  if (value === undefined) return;
   if (!isObject(value)) return;
   for (const key of ["required", "optional", "mutating"]) {
     const raw = value[key];
-    if (raw !== undefined && !isStringArray(raw)) {
+    if (!isStringArray(raw)) {
       errors.push(`permissions.${key} must be an array of strings.`);
+    }
+  }
+  const required = isStringArray(value.required) ? value.required : [];
+  const optional = isStringArray(value.optional) ? value.optional : [];
+  const mutating = isStringArray(value.mutating) ? value.mutating : [];
+  if (isObject(operations)) {
+    for (const [id, operation] of Object.entries(operations)) {
+      if (!isObject(operation)) continue;
+      const declared = [
+        ...(typeof operation.permission === "string" ? [operation.permission] : []),
+        ...(isStringArray(operation.permissions) ? operation.permissions : []),
+      ];
+      const allowed = operation.mutating === true ? mutating : [...required, ...optional];
+      for (const permission of declared) {
+        if (!allowed.includes(permission)) {
+          const bucket = operation.mutating === true ? "permissions.mutating" : "permissions.required|optional";
+          errors.push(`operations.${id} permission "${permission}" must be declared in ${bucket}.`);
+        }
+      }
     }
   }
   validatePermissionProvider(value.provider, operations, errors);
@@ -1407,7 +1458,12 @@ function formatError(error: unknown): string {
 
 function isRecursiveDynamicAppCommand(appId: string, command: string): boolean {
   if (!appId || STATIC_APP_ROOT_EXCEPTIONS.has(appId)) return false;
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  let tokens: string[];
+  try {
+    tokens = tokenizeRaviAppCommand(command);
+  } catch {
+    return false;
+  }
   if (tokens[0] !== "ravi") return false;
 
   const slashForm = tokens[1] === appId;
@@ -1419,7 +1475,12 @@ function isRecursiveDynamicAppCommand(appId: string, command: string): boolean {
 
 function isRouterHealthCommand(appId: string, command: string): boolean {
   if (!appId) return false;
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  let tokens: string[];
+  try {
+    tokens = tokenizeRaviAppCommand(command);
+  } catch {
+    return false;
+  }
   if (tokens[0] !== "ravi") return false;
 
   const appSegments = appId.split("/");

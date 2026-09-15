@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { configStore } from "./config-store.js";
 import type { ChannelOutboundJob } from "./channels/outbound-stream.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
+import { dbUpsertInstance, getDb } from "./router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
 const publishedJobs: ChannelOutboundJob[] = [];
+const slackMediaSends: Array<Record<string, unknown>> = [];
 const decoder = new TextDecoder();
 const acceptedMsgIds = new Set<string>();
 let publishBehavior: "ok" | "timeoutOnceThenOk" | "timeoutAlwaysBeforePublish" | "failBeforePublish" = "ok";
@@ -63,11 +66,27 @@ mock.module("./nats.js", () => ({
   },
 }));
 
+mock.module("./channels/slack/media.js", () => ({
+  sendSlackMedia: mock(async (input: Record<string, unknown>) => {
+    slackMediaSends.push(input);
+    return {
+      transport: "slack-native",
+      provider: "slack",
+      success: true,
+      status: "sent",
+      fileId: "F123",
+      messageId: "1720000000.000100",
+      raw: { ok: true },
+    };
+  }),
+}));
+
 let stateDir: string | null = null;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-gateway-native-test-");
   publishedJobs.length = 0;
+  slackMediaSends.length = 0;
   acceptedMsgIds.clear();
   publishBehavior = "ok";
   publishAttempts = 0;
@@ -83,6 +102,7 @@ async function createGateway() {
   const { Gateway } = await import("./gateway.js");
   const emitted: Array<[string, Record<string, unknown>]> = [];
   const omniSend = mock(async () => ({ messageId: "omni-1" }));
+  const omniSendMedia = mock(async () => ({ messageId: "omni-media-1" }));
   const gateway = new Gateway({
     omniSender: {
       send: omniSend,
@@ -90,7 +110,7 @@ async function createGateway() {
       sendReaction: mock(async () => {}),
       deleteMessage: mock(async () => {}),
       editMessage: mock(async () => {}),
-      sendMedia: mock(async () => ({})),
+      sendMedia: omniSendMedia,
       markRead: mock(async () => {}),
     } as never,
     omniConsumer: {
@@ -102,7 +122,19 @@ async function createGateway() {
       emitted.push([topic, payload]);
     }),
   });
-  return { gateway, emitted, omniSend };
+  return { gateway, emitted, omniSend, omniSendMedia };
+}
+
+function ensureGatewaySession(sessionName: string): void {
+  const now = Date.now();
+  getDb()
+    .prepare(
+      `
+      INSERT OR IGNORE INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(`agent:main:${sessionName}`, sessionName, "main", "/tmp/ravi-gateway-test/main", now, now);
 }
 
 async function getPublishOutboxJob(idempotencyKey: string) {
@@ -189,6 +221,179 @@ describe("Gateway native channel outbound queue", () => {
     expect(record).toMatchObject({
       jobId: "runtime:main-slack:emit-1",
       status: "published",
+    });
+  });
+
+  it("delivers response media to the WhatsApp target through Omni media without using session defaults", async () => {
+    dbUpsertInstance({
+      name: "main",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      channel: "whatsapp",
+    });
+    configStore.refresh();
+    const { gateway, emitted, omniSend, omniSendMedia } = await createGateway();
+
+    await handleResponse(gateway, "main-whatsapp", {
+      _emitId: "emit-media-wa",
+      response: "imagem pronta",
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            filePath: "/tmp/generated.png",
+            filename: "generated.png",
+            mimeType: "image/png",
+            idempotencyKey: "media-key-wa",
+          },
+        },
+        { type: "text", text: "imagem pronta" },
+      ],
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: "group:120363407390920496",
+        canonicalChatId: "chat_whatsapp_source",
+      },
+    });
+
+    expect(omniSendMedia).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363407390920496@g.us",
+      "/tmp/generated.png",
+      "image",
+      "generated.png",
+      undefined,
+      undefined,
+    );
+    expect(omniSend).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363407390920496@g.us",
+      "imagem pronta",
+      undefined,
+    );
+    expect(emitted.map((entry) => entry[1].contentType)).toEqual(["media", "text"]);
+    expect(emitted[0]?.[1]).toMatchObject({
+      status: "delivered",
+      target: {
+        channel: "whatsapp",
+        chatId: "group:120363407390920496",
+        canonicalChatId: "chat_whatsapp_source",
+      },
+      mediaType: "image",
+      filename: "generated.png",
+    });
+  });
+
+  it("delivers response media to the Slack target natively and queues the Slack text part", async () => {
+    const { gateway, emitted, omniSend, omniSendMedia } = await createGateway();
+
+    await handleResponse(gateway, "main-slack", {
+      _emitId: "emit-media-slack",
+      response: "slack pronto",
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            filePath: "/tmp/generated-slack.png",
+            filename: "generated-slack.png",
+            mimeType: "image/png",
+            idempotencyKey: "media-key-slack",
+          },
+        },
+        { type: "text", text: "slack pronto" },
+      ],
+      target: {
+        channel: "slack",
+        accountId: "slack",
+        instanceId: "slack-main",
+        chatId: "C123",
+        canonicalChatId: "chat_slack_C123",
+        threadId: "1710000000.000100",
+      },
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(omniSendMedia).not.toHaveBeenCalled();
+    expect(slackMediaSends).toEqual([
+      {
+        accountId: "slack",
+        chatId: "C123",
+        threadId: "1710000000.000100",
+        filePath: "/tmp/generated-slack.png",
+        filename: "generated-slack.png",
+        caption: undefined,
+      },
+    ]);
+    expect(publishedJobs).toHaveLength(1);
+    expect(publishedJobs[0]).toMatchObject({
+      jobId: "runtime:main-slack:emit-media-slack:text:1",
+      request: {
+        targetChatId: "C123",
+        targetThreadId: "1710000000.000100",
+        content: { type: "text", text: "slack pronto" },
+      },
+    });
+    expect(emitted.map((entry) => entry[1].contentType)).toEqual(["media", "text"]);
+    expect(emitted[0]?.[1]).toMatchObject({
+      status: "delivered",
+      target: {
+        channel: "slack",
+        chatId: "C123",
+        threadId: "1710000000.000100",
+      },
+      mediaType: "image",
+      filename: "generated-slack.png",
+      fileId: "F123",
+    });
+  });
+
+  it("does not redeliver generated media after a gateway restart", async () => {
+    const sessionName = "main-whatsapp-media-dedupe";
+    ensureGatewaySession(sessionName);
+    dbUpsertInstance({
+      name: "main",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      channel: "whatsapp",
+    });
+    configStore.refresh();
+    const firstGateway = await createGateway();
+    const response: ResponseMessage = {
+      _emitId: "media-duplicate-proof",
+      response: "",
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            filePath: "/tmp/generated-dedupe.png",
+            filename: "generated-dedupe.png",
+            mimeType: "image/png",
+            idempotencyKey: "runtime.generated_media:session:item:hash",
+          },
+        },
+      ],
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: "5511999999999@s.whatsapp.net",
+        canonicalChatId: "chat_whatsapp_dedupe",
+      },
+    };
+
+    await handleResponse(firstGateway.gateway, sessionName, response);
+    const secondGateway = await createGateway();
+    await handleResponse(secondGateway.gateway, sessionName, response);
+
+    expect(firstGateway.omniSendMedia).toHaveBeenCalledTimes(1);
+    expect(secondGateway.omniSendMedia).not.toHaveBeenCalled();
+    expect(secondGateway.emitted.at(-1)?.[1]).toMatchObject({
+      status: "dropped",
+      reason: "duplicate_media",
+      idempotencyKey: "runtime.generated_media:session:item:hash",
     });
   });
 

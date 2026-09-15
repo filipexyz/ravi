@@ -5,14 +5,21 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { delimiter, join } from "node:path";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  withoutRaviRuntimeContextEnv,
+} from "../../test/ravi-state.js";
+import { ContractError } from "../agent-contract.js";
+import { runWithContext } from "../context.js";
 import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
 
 const tempDirs: string[] = [];
@@ -108,7 +115,7 @@ describe("daemon runtime target", () => {
       cwd: tempRoot,
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...withoutRaviRuntimeContextEnv(process.env),
         PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
         RAVI_STATE_DIR: join(tempRoot, "state"),
         RAVI_TEST_BUNDLE: bundlePath,
@@ -118,7 +125,7 @@ describe("daemon runtime target", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Ravi Daemon Status");
     expect(result.stderr).not.toContain("require() async module");
-  });
+  }, 20_000);
 
   it("restarts the installed runtime from any operator cwd without requiring a source project root", () => {
     const tempRoot = makeTempDir("ravi-daemon-runtime-");
@@ -184,6 +191,63 @@ describe("daemon runtime target", () => {
       sourceProjectRoot: realpathSync(sourceRoot),
     });
   });
+
+  it("executes a direct CLI restart once instead of handing off recursively", async () => {
+    const tempRoot = makeTempDir("ravi-daemon-restart-once-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const fakePm2Path = join(fakeBinDir, "pm2");
+    const fakeBundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    const childMarkerPath = join(tempRoot, "handoff-child.log");
+
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(fakeBundlePath, ".."), { recursive: true });
+    writeFileSync(
+      fakePm2Path,
+      [
+        "#!/bin/sh",
+        'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
+        'if [ "$1" = "jlist" ]; then printf "[]\\n"; fi',
+        "exit 0",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(fakePm2Path, 0o755);
+    writeFileSync(
+      fakeBundlePath,
+      [
+        'import { appendFileSync } from "node:fs";',
+        'appendFileSync(process.env.DAEMON_TEST_CHILD_MARKER, process.argv.slice(2).join(" "));',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "restart once", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...withoutRaviRuntimeContextEnv(process.env),
+        HOME: join(tempRoot, "home"),
+        PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
+        RAVI_STATE_DIR: join(tempRoot, "state"),
+        RAVI_CREDENTIALS_PATH: join(tempRoot, "missing-credentials.json"),
+        RAVI_BUNDLE: fakeBundlePath,
+        RAVI_DAEMON_CWD: tempRoot,
+        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+        DAEMON_TEST_PM2_LOG: pm2LogPath,
+        DAEMON_TEST_CHILD_MARKER: childMarkerPath,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('"mode": "handoff"');
+    const pm2Log = readFileSync(pm2LogPath, "utf8");
+    expect(pm2Log).toContain(`start ${realpathSync(fakeBundlePath)}`);
+    expect(pm2Log).toContain("save --force");
+    expect(existsSync(childMarkerPath)).toBe(false);
+  }, 20_000);
 });
 
 describe("DaemonCommands --json", () => {
@@ -204,6 +268,7 @@ describe("DaemonCommands --json", () => {
     const payload = JSON.parse(lines[0] ?? "{}");
     expect(typeof payload.pm2Available).toBe("boolean");
     expect(payload.processName).toBe("ravi");
+    expect(["aligned", "drifted", "unknown", "not_running"]).toContain(payload.runtime.alignment);
     expect(payload.ravi).toEqual(
       expect.objectContaining({
         name: "ravi",
@@ -214,6 +279,83 @@ describe("DaemonCommands --json", () => {
     );
     expect(payload.stdout).toBeUndefined();
     expect(payload.stderr).toBeUndefined();
+  });
+});
+
+describe("DaemonCommands log transport", () => {
+  it("blocks --clear before probing or flushing PM2 when --execute is absent", () => {
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(false, "50", true, false, true, undefined),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3, op: "daemon logs" });
+    expect((failure as ContractError).envelope()).toMatchObject({
+      success: false,
+      op: "daemon logs",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        dryRun: true,
+        plan: { action: "flush-logs", process: "ravi" },
+      },
+    });
+  });
+
+  it("keeps process state unchanged when logs --clear is blocked", () => {
+    const fakeBin = makeTempDir("ravi-daemon-logs-clear-sink-");
+    const markerPath = join(fakeBin, "process-state.txt");
+    writeFileSync(markerPath, "unchanged", "utf8");
+    const executableSuffix = process.platform === "win32" ? ".cmd" : "";
+    const fakeScript =
+      process.platform === "win32"
+        ? '@echo invoked>>"%RAVI_F012_PROCESS_MARKER%"\r\n@exit /b 0\r\n'
+        : '#!/bin/sh\nprintf invoked >> "$RAVI_F012_PROCESS_MARKER"\nexit 0\n';
+    for (const executable of ["which", "pm2"]) {
+      const executablePath = join(fakeBin, `${executable}${executableSuffix}`);
+      writeFileSync(executablePath, fakeScript, "utf8");
+      if (process.platform !== "win32") chmodSync(executablePath, 0o755);
+    }
+
+    const previousPath = process.env.PATH;
+    const previousMarker = process.env.RAVI_F012_PROCESS_MARKER;
+    process.env.PATH = `${fakeBin}${delimiter}${previousPath ?? ""}`;
+    process.env.RAVI_F012_PROCESS_MARKER = markerPath;
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(false, "50", true, false, true, undefined),
+      );
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousMarker === undefined) delete process.env.RAVI_F012_PROCESS_MARKER;
+      else process.env.RAVI_F012_PROCESS_MARKER = previousMarker;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3, op: "daemon logs" });
+    expect(readFileSync(markerPath, "utf8")).toBe("unchanged");
+  });
+
+  it("rejects an unbounded follow stream before spawning it through a tool transport", () => {
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(true, "50", false, false, true),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "INTERACTIVE_ONLY", exitCode: 2, op: "daemon logs" });
   });
 });
 
@@ -262,5 +404,21 @@ describe("DaemonCommands init-admin-key negated storage", () => {
     expect(result.persisted).toBe(false);
     expect(result.credentialsPath).toBeNull();
     expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(false);
+  });
+
+  it("reports an existing admin context as a policy block", async () => {
+    await issueAdminKey(true);
+
+    let failure: unknown;
+    try {
+      runWithContext({ suppressCliOutput: true }, () =>
+        new DaemonCommands().initAdminKey("test", false, true, false, true),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "ADMIN_CONTEXT_EXISTS", exitCode: 3, op: "daemon init-admin-key" });
   });
 });

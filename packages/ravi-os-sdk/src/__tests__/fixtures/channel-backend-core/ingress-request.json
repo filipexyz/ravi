@@ -1,0 +1,23 @@
+{
+  "agentId": "agent-a",
+  "channelInstanceId": "channel-instance-a",
+  "content": [
+    {
+      "text": "fixture input",
+      "type": "text"
+    }
+  ],
+  "external": {
+    "channelKind": "custom",
+    "connectionId": "connection-a",
+    "conversationId": "external-conversation-a",
+    "messageId": "external-message-a",
+    "senderId": "external-sender-a"
+  },
+  "idempotencyKey": "idempotency-a",
+  "localActorId": "actor-a",
+  "protocol": "ravi.channel.backend",
+  "receivedAt": "2026-07-24T18:00:00.000Z",
+  "requestId": "request-a",
+  "schemaVersion": 1
+}

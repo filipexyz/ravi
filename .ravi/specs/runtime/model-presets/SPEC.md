@@ -56,13 +56,16 @@ model without rewriting agent, session, task, dispatch, or profile state.
   3. profile runtime default
   4. session override
   5. agent preset or direct agent model
-  6. global default
+  6. stored global runtime default (`runtime.defaultModel`)
+  7. env fallback (`RAVI_MODEL`)
+  8. hardcoded last resort
 - MUST NOT mutate session, task, dispatch, or profile state to apply a preset.
 - MUST keep direct `model` and `modelPresetId` mutually exclusive on every
   supported create/update/set path. Legacy drift (both fields set) MUST prefer
   the direct `model` and emit an observable warning/trace.
 - MUST reject missing, disabled, or provider-incompatible preset references
-  without silent global fallback.
+  without silent global or env fallback. Launch MUST fail the turn when the
+  unusable preset would have been the selected model. See `runtime/defaults`.
 - MUST block disable/delete for referenced presets and return paginated
   dependencies plus an actionable correction command.
 - MUST keep the preset provider immutable in this first version.

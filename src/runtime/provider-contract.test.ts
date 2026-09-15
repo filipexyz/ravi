@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createGrokRuntimeProvider } from "./grok-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
 import type { RuntimeCapabilities, RuntimeHostServices, RuntimePrepareSessionResult } from "./types.js";
 
@@ -19,6 +20,7 @@ const REQUIRED_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
   "systemPrompt",
   "terminalEvents",
   "skillVisibility",
+  "modelBroker",
   "supportsSessionResume",
   "supportsSessionFork",
   "supportsPartialText",
@@ -82,6 +84,7 @@ describe("runtime provider contract", () => {
   const builtInProviders = [
     { providerId: "claude", createProvider: createClaudeRuntimeProvider },
     { providerId: "codex", createProvider: createCodexRuntimeProvider },
+    { providerId: "grok", createProvider: createGrokRuntimeProvider },
     { providerId: "pi", createProvider: createPiRuntimeProvider },
   ] as const;
 
@@ -112,6 +115,11 @@ describe("runtime provider contract", () => {
       expect(typeof capabilities.terminalEvents.guarantee).toBe("string");
       expect(typeof capabilities.skillVisibility.availability).toBe("string");
       expect(typeof capabilities.skillVisibility.loadedState).toBe("string");
+      expect(Array.isArray(capabilities.modelBroker?.protocols)).toBe(true);
+      expect(capabilities.modelBroker?.protocols.length).toBeGreaterThan(0);
+      expect(capabilities.modelBroker?.principalIsolation).toBe(
+        providerId === "claude" ? "one-shot-capability" : "none",
+      );
     }
   });
 
@@ -162,7 +170,17 @@ describe("runtime provider contract", () => {
     expect(createCodexRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
         supported: true,
-        operations: ["thread.list", "thread.read", "thread.rollback", "thread.fork", "turn.steer", "turn.interrupt"],
+        operations: [
+          "goal.get",
+          "goal.set",
+          "goal.clear",
+          "thread.list",
+          "thread.read",
+          "thread.rollback",
+          "thread.fork",
+          "turn.steer",
+          "turn.interrupt",
+        ],
       },
       dynamicTools: {
         mode: "none",
@@ -203,6 +221,50 @@ describe("runtime provider contract", () => {
       toolAccessRequirement: "tool_surface",
     });
 
+    expect(createGrokRuntimeProvider().getCapabilities()).toMatchObject({
+      runtimeControl: {
+        supported: true,
+        operations: ["turn.interrupt"],
+      },
+      dynamicTools: {
+        mode: "none",
+      },
+      execution: {
+        mode: "subprocess-rpc",
+      },
+      sessionState: {
+        mode: "provider-session-id",
+        requiresCwdMatch: true,
+      },
+      usage: {
+        semantics: "terminal-event",
+      },
+      tools: {
+        permissionMode: "ravi-host",
+        accessRequirement: "tool_and_executable",
+        supportsParallelCalls: false,
+      },
+      systemPrompt: {
+        mode: "append",
+      },
+      terminalEvents: {
+        guarantee: "adapter",
+      },
+      skillVisibility: {
+        availability: "none",
+        loadedState: "none",
+      },
+      supportsSessionResume: true,
+      supportsSessionFork: false,
+      supportsPartialText: true,
+      supportsToolHooks: true,
+      supportsHostSessionHooks: false,
+      supportsPlugins: false,
+      supportsMcpServers: false,
+      supportsRemoteSpawn: false,
+      toolAccessRequirement: "tool_and_executable",
+    });
+
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
         supported: true,
@@ -232,7 +294,7 @@ describe("runtime provider contract", () => {
         semantics: "terminal-event",
       },
       tools: {
-        permissionMode: "provider-native",
+        permissionMode: "ravi-host",
         accessRequirement: "tool_and_executable",
         supportsParallelCalls: false,
       },
@@ -243,13 +305,13 @@ describe("runtime provider contract", () => {
         guarantee: "adapter",
       },
       skillVisibility: {
-        availability: "none",
+        availability: "provider",
         loadedState: "none",
       },
       supportsSessionResume: true,
       supportsSessionFork: false,
       supportsPartialText: true,
-      supportsToolHooks: false,
+      supportsToolHooks: true,
       supportsHostSessionHooks: false,
       supportsPlugins: false,
       supportsMcpServers: false,

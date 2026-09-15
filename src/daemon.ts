@@ -18,6 +18,7 @@ import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import {
   dbGetSetting,
+  dbGetDaemonRestartSessionSnapshot,
   dbHasDaemonRestartResumeDelivery,
   dbListEligibleDaemonRestartSessionSnapshots,
   dbMarkDaemonRestartResumeDelivered,
@@ -40,9 +41,16 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
+import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
+import {
+  buildDaemonRestartResumePrompt,
+  resolveCrashRecoveryRestartResumeDecision,
+} from "./runtime/daemon-restart-resume.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
+import { createChannelBackendEgressRequester } from "./channels/backend-egress.js";
+import { setChannelBackendEgressRequesterForRuntime } from "./channels/runtime-events.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -179,6 +187,7 @@ let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
+let hostCliGateway: HostCliGatewayHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
@@ -186,7 +195,7 @@ export function getBotInstance(): RaviBot | null {
   return bot;
 }
 
-async function shutdown(signal: string) {
+async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
 
@@ -255,6 +264,11 @@ async function shutdown(signal: string) {
       await webhookHttpServer.stop();
     }
 
+    if (hostCliGateway) {
+      await hostCliGateway.stop();
+      hostCliGateway = null;
+    }
+
     // Stop omni consumer
     if (omniConsumer) {
       await omniConsumer.stop();
@@ -262,6 +276,7 @@ async function shutdown(signal: string) {
 
     // Stop config store refresh
     configStore.stop();
+    setChannelBackendEgressRequesterForRuntime();
 
     // Close NATS connection
     await closeNats();
@@ -276,7 +291,15 @@ async function shutdown(signal: string) {
 
   clearTimeout(shutdownTimeout);
   log.info("Daemon stopped", { pid: process.pid });
-  process.exit(0);
+  process.exit(exitCode);
+}
+
+function restartAfterFatalRuntimeError(error: Error): void {
+  log.error("Fatal runtime ownership error; exiting for supervised restart", {
+    pid: process.pid,
+    error,
+  });
+  void shutdown("fatal runtime ownership error", 1);
 }
 
 export async function startDaemon() {
@@ -284,6 +307,7 @@ export async function startDaemon() {
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl });
   await connectNats(natsUrl, { explicit: true });
+  setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
 
   const config = loadConfig();
   logger.setLevel(config.logLevel);
@@ -317,7 +341,7 @@ export async function startDaemon() {
   log.info("RAVI_EVENTS stream ready");
 
   // Step 5: Start bot
-  bot = new RaviBot({ config });
+  bot = new RaviBot({ config, onFatalRuntimeError: restartAfterFatalRuntimeError });
   await bot.start();
   log.info("Bot started");
 
@@ -415,6 +439,16 @@ export async function startDaemon() {
     log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
   }
 
+  try {
+    hostCliGateway = await startHostCliGateway();
+    if (hostCliGateway) {
+      log.info("Host CLI gateway ready", { socketPath: hostCliGateway.socketPath });
+    }
+  } catch (error) {
+    log.error("Host CLI gateway failed to start", error);
+    hostCliGateway = null;
+  }
+
   log.info("Daemon ready");
 
   // Notify restart reason after consumer is ready + delay to let sessions reconnect first.
@@ -492,13 +526,24 @@ async function notifyRestartReason() {
   });
 
   const callerSessionName = restartInfo.sessionName ?? resolveFallbackRestartSessionName();
-  const callerSnapshot = callerSessionName ? findRestartSnapshotForSession(snapshots, callerSessionName) : undefined;
+  const eligibleCallerSnapshot = callerSessionName
+    ? findRestartSnapshotForSession(snapshots, callerSessionName)
+    : undefined;
+  const callerSessionKey = callerSessionName ? resolveRestartSessionKey(callerSessionName) : undefined;
+  const callerSnapshot =
+    eligibleCallerSnapshot ??
+    (callerSessionKey ? dbGetDaemonRestartSessionSnapshot(restartInfo.restartEpoch, callerSessionKey) : null) ??
+    undefined;
   if (callerSessionName) {
-    await publishRestartResumeEvent(callerSessionName, restartInfo, { kind: "caller", snapshot: callerSnapshot });
+    await publishRestartResumeEvent(callerSessionName, restartInfo, {
+      kind: "caller",
+      snapshot: callerSnapshot,
+      snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
+    });
   }
 
   for (const snapshot of snapshots) {
-    if (callerSnapshot?.sessionKey === snapshot.sessionKey) {
+    if (eligibleCallerSnapshot?.sessionKey === snapshot.sessionKey) {
       continue;
     }
     await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
@@ -527,7 +572,11 @@ function findRestartSnapshotForSession(
 async function publishRestartResumeEvent(
   sessionName: string,
   restartInfo: RestartReasonInfo,
-  options: { kind: "caller" | "active"; snapshot?: DaemonRestartSessionSnapshotRecord } = { kind: "active" },
+  options: {
+    kind: "caller" | "active";
+    snapshot?: DaemonRestartSessionSnapshotRecord;
+    snapshotEligible?: boolean;
+  } = { kind: "active" },
 ): Promise<boolean> {
   const sessionKey = options.snapshot?.sessionKey ?? resolveRestartSessionKey(sessionName);
   if (dbHasDaemonRestartResumeDelivery(restartInfo.restartEpoch, sessionKey)) {
@@ -536,6 +585,28 @@ async function publishRestartResumeEvent(
       sessionKey,
       sessionName,
       kind: options.kind,
+    });
+    return false;
+  }
+
+  const crashRecoveryResumeDecision = resolveCrashRecoveryRestartResumeDecision({
+    metadata: options.snapshot?.metadata,
+    snapshotPresent: Boolean(options.snapshot),
+    snapshotEligible: options.snapshotEligible ?? true,
+  });
+  const crashRecoveryResumeMode = crashRecoveryResumeDecision.mode;
+  if (!crashRecoveryResumeDecision.publish) {
+    log.info("Skipping restart resume for a crash-recovery-fenced snapshot", {
+      restartEpoch: restartInfo.restartEpoch,
+      sessionName,
+      sessionKey,
+      kind: options.kind,
+      reason: crashRecoveryResumeDecision.reason,
+    });
+    dbMarkDaemonRestartResumeDelivered({
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+      sessionName,
     });
     return false;
   }
@@ -556,15 +627,16 @@ async function publishRestartResumeEvent(
     return false;
   }
 
-  const payload: Record<string, unknown> = {
-    prompt: `[System] Daemon reiniciou (${restartInfo.reason}). Continue de onde parou.`,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "default",
-    _daemonRestartResume: {
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-    },
-  };
+  const payload = buildDaemonRestartResumePrompt({
+    restartEpoch: restartInfo.restartEpoch,
+    reason: restartInfo.reason,
+    sessionKey,
+    mode: crashRecoveryResumeMode,
+    ...(options.snapshot?.runtimeProvider ? { runtimeProvider: options.snapshot.runtimeProvider } : {}),
+  });
+  if (!payload) {
+    return false;
+  }
   const restartSource = resolveRestartResumeSource(options.snapshot);
   if (restartSource) {
     payload.source = restartSource;

@@ -2,8 +2,8 @@
  * Output target resolution for the session runtime.
  *
  * Implements the resolution order from `.ravi/specs/sessions/attach/SPEC.md`:
- *   1. Source chat, when that subscription has speech enabled.
- *   2. Attached default output chat, when that subscription has speech enabled.
+ *   1. The attached source chat for an inbound turn.
+ *   2. The default output chat only for a source-less turn.
  *   3. Fail closed → caller drops the external response and keeps the
  *      provider transcript inside the session.
  *
@@ -12,8 +12,15 @@
  * `emitResponse` — decides what to do with `null`.
  */
 
-import { dbGetChat, dbGetSessionOutputAttachment, dbListSessionChatSubscriptions } from "../router/router-db.js";
+import {
+  dbFindChat,
+  dbGetChat,
+  dbGetSessionOutputAttachment,
+  dbListSessionChatSubscriptions,
+  type SessionChatSubscriptionRecord,
+} from "../router/router-db.js";
 import type { MessageTarget } from "./message-types.js";
+import { runtimeChannelsMatch, runtimeChatIdsOverlap, sourceMatchesChat } from "./session-chat-identity.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("session-output-target");
@@ -21,6 +28,12 @@ const log = logger.child("session-output-target");
 export interface ResolveSessionOutputTargetInput {
   sessionKey: string;
   fallback: MessageTarget | undefined;
+  /**
+   * Source-less turns may use the session default output attachment.
+   * CLI-only `_cliDestination` turns stay on the waiting CLI — pass false.
+   * Other session-relay continues rebind the existing primary/default output.
+   */
+  allowDefaultOutput?: boolean;
 }
 
 export type ResolveSource = "source-chat" | "attached-output" | "unresolved";
@@ -34,12 +47,9 @@ export interface ResolvedSessionOutputTarget {
  * Resolve the target chat for an outbound response from this session.
  */
 export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInput): ResolvedSessionOutputTarget {
-  const fallbackChatId = input.fallback?.canonicalChatId;
-  if (fallbackChatId) {
-    const sourceSubscription = dbListSessionChatSubscriptions(input.sessionKey).find(
-      (sub) => sub.chatId === fallbackChatId,
-    );
-    if (sourceSubscription?.speechMode === "speak") {
+  if (input.fallback) {
+    const sourceSubscription = matchSubscriptionForFallback(input.sessionKey, input.fallback);
+    if (sourceSubscription) {
       const target = chatToMessageTarget(sourceSubscription.chatId, input.fallback);
       if (target) return { target, source: "source-chat" };
       log.warn("Session source subscription cannot be resolved to a MessageTarget", {
@@ -47,23 +57,96 @@ export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInpu
         chatId: sourceSubscription.chatId,
       });
     }
+    return { target: null, source: "unresolved" };
+  }
+
+  if (input.allowDefaultOutput === false) {
+    return { target: null, source: "unresolved" };
   }
 
   const attached = dbGetSessionOutputAttachment(input.sessionKey);
-  if (attached?.speechMode === "speak") {
+  if (attached) {
     const target = chatToMessageTarget(attached.chatId, input.fallback);
     if (target) return { target, source: "attached-output" };
     log.warn("Session output attachment cannot be resolved to a MessageTarget", {
       sessionKey: input.sessionKey,
       chatId: attached.chatId,
     });
-  } else if (attached) {
-    log.warn("Session output attachment is muted — dropping emit", {
-      sessionKey: input.sessionKey,
-      chatId: attached.chatId,
-    });
   }
   return { target: null, source: "unresolved" };
+}
+
+/**
+ * Successor / source-loss fallback: keep the previous bound chat when the new
+ * turn is source-less, or when the leftover source is the same chat identity.
+ * A different unattached inbound still fail-closes.
+ */
+export function resolveSessionOutputTargetPreserving(
+  input: ResolveSessionOutputTargetInput & { previous?: MessageTarget | null },
+): ResolvedSessionOutputTarget {
+  const resolved = resolveSessionOutputTarget(input);
+  if (resolved.target || input.allowDefaultOutput === false) return resolved;
+  const previous = input.previous;
+  if (!previous || !isSessionReplyTargetAttached(input.sessionKey, previous)) return resolved;
+  if (input.fallback && !sourceOverlapsReplyTarget(input.fallback, previous)) return resolved;
+  return {
+    target: { ...previous },
+    source: input.fallback ? "source-chat" : "attached-output",
+  };
+}
+
+export function isSessionReplyTargetAttached(sessionKey: string, target: MessageTarget): boolean {
+  return Boolean(matchSubscriptionForFallback(sessionKey, target));
+}
+
+export function sourceOverlapsReplyTarget(
+  source: Pick<MessageTarget, "channel" | "chatId" | "canonicalChatId">,
+  target: Pick<MessageTarget, "channel" | "chatId" | "canonicalChatId">,
+): boolean {
+  if (source.channel && target.channel && !runtimeChannelsMatch(source.channel, target.channel)) {
+    return false;
+  }
+  const sourceTokens = [source.canonicalChatId, source.chatId];
+  const targetTokens = [target.canonicalChatId, target.chatId];
+  return sourceTokens.some((sourceToken) =>
+    targetTokens.some((targetToken) => runtimeChatIdsOverlap(sourceToken, targetToken)),
+  );
+}
+
+function matchSubscriptionForFallback(
+  sessionKey: string,
+  fallback: MessageTarget,
+): SessionChatSubscriptionRecord | undefined {
+  const subscriptions = dbListSessionChatSubscriptions(sessionKey);
+  if (fallback.canonicalChatId) {
+    const exact = subscriptions.find((sub) => sub.chatId === fallback.canonicalChatId);
+    if (exact) return exact;
+  }
+  const resolvedChat = lookupChatForFallback(fallback);
+  if (resolvedChat) {
+    const byResolved = subscriptions.find((sub) => sub.chatId === resolvedChat.id);
+    if (byResolved) return byResolved;
+  }
+  return subscriptions.find((sub) => {
+    const chat = dbGetChat(sub.chatId);
+    return chat ? sourceMatchesChat(fallback, chat) : false;
+  });
+}
+
+function lookupChatForFallback(fallback: MessageTarget) {
+  if (fallback.canonicalChatId) {
+    const byId = dbGetChat(fallback.canonicalChatId);
+    if (byId) return byId;
+  }
+  const platformChatId = fallback.chatId?.trim();
+  if (!platformChatId || !fallback.channel) return null;
+  const isGroup = platformChatId.startsWith("group:") || platformChatId.endsWith("@g.us");
+  return dbFindChat({
+    channel: fallback.channel,
+    instanceId: fallback.instanceId ?? fallback.accountId,
+    platformChatId,
+    ...(isGroup ? { chatType: "group" as const } : {}),
+  });
 }
 
 function chatToMessageTarget(chatId: string, fallback: MessageTarget | undefined): MessageTarget | null {

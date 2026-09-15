@@ -44,7 +44,7 @@ The goal is simple: an agent should be able to keep working across days, chats, 
 - Contacts, chats, platform identities, agents, messages, and sessions have separate meanings, so raw channel ids do not become the product model.
 - Generated outputs become artifacts with lineage, versions, assets, events, and restore/publish paths.
 - Specs under `.ravi/specs` give agents durable rules before they touch governed areas of the codebase.
-- Runtime providers such as Claude Code, Codex, and Pi are adapters. Ravi keeps ownership of queueing, permissions, traces, tasks, responses, and continuity.
+- Runtime providers such as Claude Code, Codex, Pi, and Grok Build are adapters. Ravi keeps ownership of queueing, permissions, traces, tasks, responses, and continuity.
 
 ## Quick Start
 
@@ -104,7 +104,7 @@ Sessions are the durable runtime state for one agent working inside a chat, task
 ravi agents list
 ravi sessions send main "Check what needs attention today" --wait
 ravi sessions trace main --json
-ravi sessions reset main
+ravi sessions reset main --execute
 ```
 
 ### Track Work With Tasks
@@ -146,8 +146,16 @@ Cloud-linked artifact publishing is exposed through a generic Console-compatible
 ```bash
 ravi login
 ravi whoami
-ravi artifacts publish <artifact-id-or-path> --project <project> --site <site>
+ravi artifacts publish <artifact-id-or-path> --project <project> --site <site> --execute
 ```
+
+Native channel drivers may also declare a bounded set of inbound actions in
+their module, driver, and runtime descriptors. Declared slash actions are
+intercepted before model processing and dispatched to the channel runner over
+ephemeral request/reply transport. Only the action name, whether arguments
+were present, and the authenticated channel identity cross that boundary; raw
+arguments do not. A declared action fails closed with a safe unavailable
+response when its runtime is absent or unhealthy.
 
 The proprietary server policy for hosted artifacts, billing, quotas, private asset auth, custom domains, and Console product behavior intentionally lives outside this open-source repo.
 

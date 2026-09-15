@@ -94,6 +94,17 @@ describe("trigger topic catalog", () => {
     expect(entry?.messageTemplate?.template).toContain("ravi mail messages read {{data.mail.messageId}}");
   });
 
+  it("documents the Console bug-status watch subject and per-bugId filter", () => {
+    expect(findTriggerTopicCatalogEntry("ravi.watch.console.bug.status")).toMatchObject({
+      id: "watch.console.bug.status",
+      pattern: "ravi.watch.console.bug.status",
+      filters: expect.arrayContaining([
+        expect.stringContaining("data.payload.bugId"),
+        expect.stringContaining("data.bugId"),
+      ]),
+    });
+  });
+
   it("exposes schemas for built-in trigger-ready topics", () => {
     for (const entry of getTriggerTopicCatalog()) {
       expect(entry.schema?.fields.length).toBeGreaterThan(0);

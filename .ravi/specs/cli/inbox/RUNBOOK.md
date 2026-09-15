@@ -1,5 +1,18 @@
 # Console Delivery CLI Compatibility / RUNBOOK
 
+## Agent-First Contract Debug Flow
+
+1. Reproduce the failing call with `--json` and read `error.code` first.
+2. Exit `1` + `INBOX_ITEM_NOT_FOUND`: read `error.suggestions` — real local
+   item ids/titles (for `read`/`done`/`snooze`/`archive`) or mirror row
+   ids/item ids (for `replay`). Retry with one, or list with
+   `ravi inbox list --include-archived --json` / `ravi inbox items --json`.
+3. Exit `3` on `replay`: read `error.plan` (`itemId`, `sequence`, `subject`,
+   `nextReplayCount`), confirm the republish is intended, then re-run adding
+   `--execute`.
+4. If a replay published without `--execute`, the brake regressed: `replay`
+   must call `contractDryRun` after ref resolution and before any publish.
+
 ## Status
 
 ```bash
@@ -53,10 +66,12 @@ Expected:
 
 ```bash
 ravi inbox items --limit 25
-ravi inbox replay <item-id-or-local-row-id>
+ravi inbox replay <item-id-or-local-row-id>            # dry-run plan, exit 3
+ravi inbox replay <item-id-or-local-row-id> --execute  # real republish
 ```
 
-Replay should publish to `ravi.console.inbox.item` from the SQLite mirror. It
+Replay is a braked write: without `--execute` it prints the plan and exits 3
+without publishing. Replay should publish to `ravi.console.inbox.item` from the SQLite mirror. It
 must not create a new Console delivery item. Success means all applicable NATS
 subjects were flushed; `replay_count` remains unchanged when publish or flush
 fails.

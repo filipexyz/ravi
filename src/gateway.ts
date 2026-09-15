@@ -21,8 +21,9 @@
  *   ravi.config.changed        -> reload router config
  */
 
+import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
-import type { ResponseMessage } from "./runtime/message-types.js";
+import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
 import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
@@ -38,7 +39,7 @@ import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
 import {
   dbGetChat,
-  dbGetSessionChatBinding,
+  dbGetSessionDefaultChatId,
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbSaveMessageMeta,
@@ -48,11 +49,14 @@ import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
+import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
+import { sendSlackMedia } from "./channels/slack/media.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
 const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
 const INTERRUPTED_PRESENCE_GRACE_MS = 15_000;
+const SLACK_THREAD_RECONCILIATION_INTERVAL_MS = 30_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NATIVE_OUTBOUND_CHANNELS = new Set(["slack"]);
 const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
@@ -86,6 +90,67 @@ function mergeMentions(...lists: Array<readonly OmniUserMention[] | undefined>):
   }
   const mentions = Array.from(byId.values());
   return mentions.length ? mentions : undefined;
+}
+
+function isResponseMediaType(value: unknown): value is ResponseMediaAttachment["type"] {
+  return value === "image" || value === "video" || value === "audio" || value === "document";
+}
+
+function normalizeResponseMediaAttachment(value: unknown): ResponseMediaAttachment | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    !isResponseMediaType(record.type) ||
+    typeof record.filePath !== "string" ||
+    !record.filePath.trim() ||
+    typeof record.filename !== "string" ||
+    !record.filename.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    type: record.type,
+    filePath: record.filePath,
+    filename: record.filename,
+    ...(typeof record.mimeType === "string" ? { mimeType: record.mimeType } : {}),
+    ...(typeof record.caption === "string" ? { caption: record.caption } : {}),
+    ...(record.voiceNote === true ? { voiceNote: true } : {}),
+    ...(typeof record.idempotencyKey === "string" ? { idempotencyKey: record.idempotencyKey } : {}),
+    ...(typeof record.source === "string" ? { source: record.source } : {}),
+    ...(record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+      ? { metadata: record.metadata as Record<string, unknown> }
+      : {}),
+  };
+}
+
+function normalizeResponseContentParts(
+  response: ResponseMessage,
+  fallbackText: string | undefined,
+): ResponseContentPart[] {
+  const explicitParts = Array.isArray(response.content)
+    ? response.content.flatMap((part): ResponseContentPart[] => {
+        if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+        const record = part as Record<string, unknown>;
+        if (record.type === "text" && typeof record.text === "string") {
+          return [{ type: "text", text: record.text }];
+        }
+        if (record.type === "media") {
+          const media = normalizeResponseMediaAttachment(record.media);
+          return media ? [{ type: "media", media }] : [];
+        }
+        return [];
+      })
+    : [];
+
+  const text = fallbackText?.trim() ? fallbackText : undefined;
+  if (explicitParts.length === 0) {
+    return text ? [{ type: "text", text }] : [];
+  }
+  if (text && !explicitParts.some((part) => part.type === "text")) {
+    return [...explicitParts, { type: "text", text }];
+  }
+  return explicitParts;
 }
 
 function parsePresenceTarget(value: unknown): PresenceTarget | null {
@@ -125,6 +190,10 @@ function deliveryAnchorMessageId(data: Record<string, unknown>): string | undefi
   if (typeof data.messageId === "string" && data.messageId) return data.messageId;
   if (typeof data.deliveryMessageId === "string" && data.deliveryMessageId) return data.deliveryMessageId;
   return undefined;
+}
+
+function deliveryResponsePhase(data: Record<string, unknown>): string | undefined {
+  return typeof data.responsePhase === "string" && data.responsePhase ? data.responsePhase : undefined;
 }
 
 function slackMessageTs(value: string | undefined): number | undefined {
@@ -208,6 +277,7 @@ export class Gateway {
   private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
+  private slackThreadReconciliationTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -233,6 +303,15 @@ export class Gateway {
     this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
+    await this.reconcileSlackThreads().catch((error) => {
+      log.warn("Initial Slack thread lifecycle reconciliation failed", { error });
+    });
+    this.slackThreadReconciliationTimer = setInterval(() => {
+      this.reconcileSlackThreads().catch((error) => {
+        log.warn("Slack thread lifecycle reconciliation failed", { error });
+      });
+    }, SLACK_THREAD_RECONCILIATION_INTERVAL_MS);
+    this.slackThreadReconciliationTimer.unref?.();
 
     log.info("Gateway started");
   }
@@ -250,6 +329,10 @@ export class Gateway {
     this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
+    if (this.slackThreadReconciliationTimer) {
+      clearInterval(this.slackThreadReconciliationTimer);
+      this.slackThreadReconciliationTimer = undefined;
+    }
     log.info("Gateway stopped");
   }
 
@@ -770,13 +853,44 @@ export class Gateway {
   private async handleDeliveryObservationEvent(sessionName: string, data: Record<string, unknown>): Promise<void> {
     if (data.status !== "delivered") return;
 
+    if (data.actionId === "thread.create") {
+      await handleSlackThreadCreationDelivery(data).catch((error) => {
+        log.warn("Failed to finalize Slack thread create delivery", {
+          sessionName,
+          requestId: data.requestId ?? data.jobId,
+          error,
+        });
+      });
+    }
+
     const target = parsePresenceTarget(data.target);
     if (!target) return;
     if (!this.shouldUseNativePresence(target)) return;
     if (this.isPresenceSuppressed(target)) return;
     const outboundTarget = withOutboundStatusAnchor(target, data);
     this.rememberNativeOutboundTurnAnchor(sessionName, outboundTarget);
+
+    const responsePhase = deliveryResponsePhase(data);
+    if (responsePhase === "commentary") {
+      if (!this.activeRuntimeSessions.has(sessionName)) return;
+      if (this.terminalRuntimeSessions.has(sessionName)) return;
+      this.clearPostDeliveryRenewal(sessionName);
+      await this.forceRenewTyping(sessionName, outboundTarget, "native-delivery-commentary");
+      return;
+    }
+    if (responsePhase === "final_answer") {
+      this.clearPostDeliveryRenewal(sessionName);
+      return;
+    }
+
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
+  }
+
+  private async reconcileSlackThreads(): Promise<void> {
+    const result = await reconcileSlackThreadLifecycle();
+    if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
+      log.info("Reconciled Slack thread lifecycle", result);
+    }
   }
 
   private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
@@ -805,7 +919,7 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "turn.started" || type === "thread.started") return true;
+    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }
@@ -846,24 +960,36 @@ export class Gateway {
   private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
     this.recordResponseTrace(sessionName, response);
 
-    const emitDelivery = (data: Record<string, unknown>) => this.emitDeliveryEvent(sessionName, response, data);
-
     const target = response.target;
+    const emitDelivery = (data: Record<string, unknown>, deliveryResponse: ResponseMessage = response) =>
+      this.emitDeliveryEvent(sessionName, deliveryResponse, data);
     if (!target) {
       await emitDelivery({ status: "dropped", reason: "missing_target" });
       return;
     }
 
-    const text = response.error ? `Error: ${response.error}` : response.response;
+    const fallbackText = response.error ? `Error: ${response.error}` : response.response;
+    const parts = normalizeResponseContentParts(response, fallbackText);
+    const hasMedia = parts.some((part) => part.type === "media");
+    const textLen = parts
+      .filter((part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text")
+      .reduce((total, part) => total + part.text.length, 0);
 
-    if (text && text.trim() === SILENT_TOKEN) {
+    if (
+      !hasMedia &&
+      parts.length > 0 &&
+      parts.every((part) => part.type === "text" && (!part.text.trim() || part.text.trim() === SILENT_TOKEN))
+    ) {
       log.debug("Silent response, not sending to channel", { sessionName });
       await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
       return;
     }
 
-    if (!text) {
+    const deliverableParts = parts.filter(
+      (part) => part.type === "media" || (part.text.trim() && part.text.trim() !== SILENT_TOKEN),
+    );
+    if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });
       return;
     }
@@ -871,14 +997,67 @@ export class Gateway {
     if (!response._emitId) {
       log.warn("GHOST RESPONSE DROPPED", {
         sessionName,
-        textPreview: text.slice(0, 200),
+        textPreview: String(fallbackText ?? "").slice(0, 200),
       });
-      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
+      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen });
       return;
     }
 
+    for (let index = 0; index < deliverableParts.length; index++) {
+      const part = deliverableParts[index]!;
+      if (part.type === "media") {
+        await this.deliverResponseMediaPart(sessionName, response, target, part.media, index);
+      } else {
+        await this.deliverResponseTextPart(sessionName, response, target, part.text, index, deliverableParts.length);
+      }
+    }
+  }
+
+  private buildTextPartResponse(
+    response: ResponseMessage,
+    text: string,
+    partIndex: number,
+    totalParts: number,
+  ): ResponseMessage {
+    if (!response.content && totalParts === 1) {
+      return response;
+    }
+    if (totalParts === 1) {
+      return {
+        ...response,
+        response: text,
+        error: undefined,
+        content: undefined,
+      };
+    }
+    return {
+      ...response,
+      response: text,
+      error: undefined,
+      content: undefined,
+      _emitId: `${response._emitId}:text:${partIndex}`,
+    };
+  }
+
+  private async deliverResponseTextPart(
+    sessionName: string,
+    response: ResponseMessage,
+    target: NonNullable<ResponseMessage["target"]>,
+    text: string,
+    partIndex: number,
+    totalParts: number,
+  ): Promise<void> {
+    const partResponse = this.buildTextPartResponse(response, text, partIndex, totalParts);
+    const emitDelivery = (data: Record<string, unknown>) =>
+      this.emitDeliveryEvent(sessionName, partResponse, {
+        ...data,
+        contentType: "text",
+        partIndex,
+        partCount: totalParts,
+      });
+
     if (this.shouldQueueNativeOutbound(target)) {
-      const built = buildChannelOutboundJobFromResponse(sessionName, response);
+      const built = buildChannelOutboundJobFromResponse(sessionName, partResponse);
       if (!built.ok) {
         await emitDelivery({ status: "dropped", reason: built.reason, target, textLen: text.length });
         return;
@@ -960,7 +1139,6 @@ export class Gateway {
       this.schedulePostDeliveryPresenceRenewal(sessionName, target);
       await emitDelivery({
         status: "delivered",
-        emitId: response._emitId,
         messageId: delivered.messageId,
         target,
         deliveredAt: Date.now(),
@@ -984,6 +1162,143 @@ export class Gateway {
         durationMs: Date.now() - t0,
       });
     }
+  }
+
+  private async deliverResponseMediaPart(
+    sessionName: string,
+    response: ResponseMessage,
+    target: NonNullable<ResponseMessage["target"]>,
+    media: ResponseMediaAttachment,
+    partIndex: number,
+  ): Promise<void> {
+    const emitDelivery = (data: Record<string, unknown>) =>
+      this.emitDeliveryEvent(sessionName, response, {
+        ...data,
+        contentType: "media",
+        mediaType: media.type,
+        filename: media.filename,
+        mimeType: media.mimeType,
+        idempotencyKey: media.idempotencyKey,
+        partIndex,
+      });
+    const channel = target.channel.toLowerCase();
+    const t0 = Date.now();
+
+    if (this.wasResponseMediaDelivered(sessionName, media.idempotencyKey, target)) {
+      log.info("Skipping already delivered response media", {
+        sessionName,
+        channel,
+        filename: media.filename,
+        idempotencyKey: media.idempotencyKey,
+      });
+      await emitDelivery({
+        status: "dropped",
+        reason: "duplicate_media",
+        target,
+        durationMs: Date.now() - t0,
+      });
+      return;
+    }
+
+    try {
+      if (channel === "slack") {
+        const delivered = await sendSlackMedia({
+          accountId: target.accountId,
+          chatId: target.chatId,
+          threadId: target.threadId,
+          filePath: media.filePath,
+          filename: media.filename,
+          caption: media.caption,
+        });
+        this.recordOutboundContactInteraction(sessionName, target);
+        this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+        await emitDelivery({
+          status: "delivered",
+          target,
+          deliveredAt: Date.now(),
+          durationMs: Date.now() - t0,
+          transport: delivered.transport,
+          provider: delivered.provider,
+          fileId: delivered.fileId,
+          ...(delivered.messageId ? { messageId: delivered.messageId } : {}),
+        });
+        await this.cleanupResponseMediaFile(media);
+        return;
+      }
+
+      const instanceId = configStore.resolveInstanceId(target.accountId);
+      if (!instanceId) {
+        await emitDelivery({ status: "dropped", reason: "missing_instance", target });
+        return;
+      }
+
+      const chatId = normalizeOutboundJid(target.chatId);
+      const delivered = await this.omniSender.sendMedia(
+        instanceId,
+        chatId,
+        media.filePath,
+        media.type,
+        media.filename,
+        media.caption,
+        media.voiceNote,
+      );
+      this.recordOutboundContactInteraction(sessionName, target);
+      this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+      await emitDelivery({
+        status: "delivered",
+        target,
+        instanceId,
+        chatId,
+        deliveredAt: Date.now(),
+        durationMs: Date.now() - t0,
+        ...(delivered.messageId ? { messageId: delivered.messageId } : {}),
+      });
+      await this.cleanupResponseMediaFile(media);
+    } catch (err) {
+      log.error("Failed to send response media", {
+        target,
+        mediaType: media.type,
+        filename: media.filename,
+        error: err,
+      });
+      await emitDelivery({
+        status: "failed",
+        reason: "send_error",
+        target,
+        textLen: 0,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - t0,
+      });
+    }
+  }
+
+  private wasResponseMediaDelivered(
+    sessionName: string,
+    idempotencyKey: string | undefined,
+    target: NonNullable<ResponseMessage["target"]>,
+  ): boolean {
+    if (!idempotencyKey) return false;
+    const session = getSessionByName(sessionName);
+    if (!session) return false;
+
+    return listRecentSessionEventsByType(session.sessionKey, "delivery.delivered", { limit: 1000 }).some((event) => {
+      const payload = event.payloadJson;
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false;
+      const record = payload as Record<string, unknown>;
+      if (record.idempotencyKey !== idempotencyKey) return false;
+      const deliveredTarget = parsePresenceTarget(record.target);
+      return deliveredTarget !== null && this.presenceSurfacesMatch(deliveredTarget, target);
+    });
+  }
+
+  private async cleanupResponseMediaFile(media: ResponseMediaAttachment): Promise<void> {
+    if (media.source !== "runtime.generated_media") return;
+    await unlink(media.filePath).catch((error) => {
+      log.debug("Failed to clean generated response media file", {
+        filePath: media.filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private shouldQueueNativeOutbound(target: NonNullable<ResponseMessage["target"]>): boolean {
@@ -1033,8 +1348,8 @@ export class Gateway {
     try {
       const session = getSessionByName(sessionName);
       const agentId = session?.agentId;
-      const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
-      const canonicalChatId = target.canonicalChatId ?? binding?.chatId;
+      const attachedChatId = session?.sessionKey ? dbGetSessionDefaultChatId(session.sessionKey) : null;
+      const canonicalChatId = target.canonicalChatId ?? attachedChatId;
       const agentIdentity = agentId
         ? getAgentPlatformIdentity({
             agentId,
@@ -1043,7 +1358,7 @@ export class Gateway {
           })
         : null;
       dbSaveMessageMeta(messageId, chatId, {
-        canonicalChatId,
+        canonicalChatId: canonicalChatId ?? undefined,
         actorType: "agent",
         agentId,
         platformIdentityId: agentIdentity?.id,
@@ -1053,6 +1368,7 @@ export class Gateway {
         identityProvenance: {
           source: "ravi.gateway.response",
           sessionName,
+          originSessionKey: session?.sessionKey ?? null,
           agentId: agentId ?? null,
           accountId: target.accountId,
           instanceId,
@@ -1070,12 +1386,14 @@ export class Gateway {
           normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
           actorType: "agent",
           agentId,
+          originSessionKey: session?.sessionKey,
           platformIdentityId: agentIdentity?.id,
           messageType: "text",
           content: { type: "text", text: text ?? "" },
           rawProvenance: {
             source: "ravi.gateway.response",
             sessionName,
+            originSessionKey: session?.sessionKey ?? null,
             agentId,
             accountId: target.accountId,
             instanceId,
@@ -1095,8 +1413,8 @@ export class Gateway {
 
     try {
       const session = getSessionByName(sessionName);
-      const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
-      const chatId = target.canonicalChatId ?? binding?.chatId;
+      const attachedChatId = session?.sessionKey ? dbGetSessionDefaultChatId(session.sessionKey) : null;
+      const chatId = target.canonicalChatId ?? attachedChatId;
       if (!chatId) return;
 
       const chat = dbGetChat(chatId);
@@ -1213,8 +1531,12 @@ export class Gateway {
       status?: string;
       nativeEvent?: string;
       _source?: PresenceTarget & { sourceMessageId?: string };
+      _replyTarget?: PresenceTarget;
     },
   ): Promise<void> {
+    // Presence follows the bound output for source-less CLI resumes.
+    // Keep the original runtime event source/provenance unchanged.
+    data = { ...data, _source: data._source ?? data._replyTarget };
     if (data.type === "turn.interrupted") {
       if (this.terminalRuntimeSessions.has(sessionName)) return;
       if (this.isPresenceSuppressed(data._source)) {

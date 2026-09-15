@@ -5,6 +5,8 @@ export interface SlackWebApiClientOptions {
   readonly appToken: string;
   readonly botToken: string;
   readonly apiBaseUrl?: string;
+  readonly fileProxyUrl?: string;
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -26,6 +28,11 @@ export interface SlackUpdateMessageInput {
   readonly ts: string;
   readonly text: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackDeleteMessageInput {
+  readonly channel: string;
+  readonly ts: string;
 }
 
 export interface SlackChatUnfurlInput {
@@ -92,6 +99,10 @@ export interface SlackAuthTestResponse extends SlackApiResponse {
   readonly acceptedScopes?: string[];
 }
 
+export interface SlackUserInfoResponse extends SlackApiResponse {
+  readonly user?: unknown;
+}
+
 export interface SlackConversationListInput {
   readonly types?: string;
   readonly limit?: number;
@@ -140,6 +151,10 @@ export interface SlackFilesListInput {
   readonly cursor?: string;
   readonly tsFrom?: string;
   readonly tsTo?: string;
+}
+
+export interface SlackFileInfoInput {
+  readonly file: string;
 }
 
 export interface SlackCanvasCreateInput {
@@ -244,6 +259,7 @@ export interface SlackChatUnfurlResponse extends SlackApiResponse {}
 export interface SlackEntityPresentDetailsResponse extends SlackApiResponse {}
 
 interface SlackReactionResponse extends SlackApiResponse {}
+interface SlackDeleteMessageResponse extends SlackApiResponse {}
 
 interface SlackAssistantThreadStatusResponse extends SlackApiResponse {}
 
@@ -289,6 +305,10 @@ export interface SlackFilesListResponse extends SlackApiResponse {
   readonly response_metadata?: SlackCursorPaging;
 }
 
+export interface SlackFileInfoResponse extends SlackApiResponse {
+  readonly file?: unknown;
+}
+
 export interface SlackCanvasCreateResponse extends SlackApiResponse {
   readonly canvas_id?: string;
   readonly canvas?: unknown;
@@ -310,12 +330,16 @@ export class SlackWebApiClient {
   private readonly appToken: string;
   private readonly botToken: string;
   private readonly apiBaseUrl: string;
+  private readonly fileProxyUrl?: string;
+  private readonly defaultHeaders: Readonly<Record<string, string>>;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: SlackWebApiClientOptions) {
     this.appToken = options.appToken;
     this.botToken = options.botToken;
-    this.apiBaseUrl = options.apiBaseUrl ?? "https://slack.com/api";
+    this.apiBaseUrl = (options.apiBaseUrl ?? "https://slack.com/api").replace(/\/+$/, "");
+    this.fileProxyUrl = options.fileProxyUrl;
+    this.defaultHeaders = options.defaultHeaders ?? {};
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -408,6 +432,18 @@ export class SlackWebApiClient {
     };
   }
 
+  async deleteMessage(input: SlackDeleteMessageInput): Promise<Record<string, unknown>> {
+    return this.apiRequest<SlackDeleteMessageResponse>(
+      "chat.delete",
+      this.botToken,
+      {
+        channel: input.channel,
+        ts: input.ts,
+      },
+      { okErrors: ["message_not_found"] },
+    );
+  }
+
   async unfurl(input: SlackChatUnfurlInput): Promise<SlackChatUnfurlResponse> {
     const body = compactBody({
       channel: input.channel,
@@ -492,6 +528,10 @@ export class SlackWebApiClient {
       scopes: parseSlackScopeHeader(headers.get("x-oauth-scopes")),
       acceptedScopes: parseSlackScopeHeader(headers.get("x-accepted-oauth-scopes")),
     };
+  }
+
+  async usersInfo(user: string): Promise<SlackUserInfoResponse> {
+    return this.apiRequest<SlackUserInfoResponse>("users.info", this.botToken, { user });
   }
 
   async addReaction(input: SlackReactionInput): Promise<Record<string, unknown>> {
@@ -617,6 +657,12 @@ export class SlackWebApiClient {
     );
   }
 
+  async filesInfo(input: SlackFileInfoInput): Promise<SlackFileInfoResponse> {
+    return this.apiRequest<SlackFileInfoResponse>("files.info", this.botToken, {
+      file: input.file,
+    });
+  }
+
   async canvasesCreate(input: SlackCanvasCreateInput): Promise<SlackCanvasCreateResponse> {
     return this.apiJsonRequest<SlackCanvasCreateResponse>(
       "canvases.create",
@@ -698,10 +744,16 @@ export class SlackWebApiClient {
   }
 
   async downloadFile(input: SlackDownloadFileInput): Promise<SlackDownloadFileResult> {
-    const res = await this.fetchImpl(input.url, {
+    const res = await this.fetchImpl(this.fileProxyUrl ?? input.url, {
+      method: this.fileProxyUrl ? "POST" : "GET",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${this.botToken}`,
+        ...(this.fileProxyUrl ? { "content-type": "application/json; charset=utf-8" } : {}),
       },
+      ...(this.fileProxyUrl
+        ? { body: JSON.stringify({ url: input.url, ...(input.maxBytes ? { maxBytes: input.maxBytes } : {}) }) }
+        : {}),
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
@@ -744,6 +796,7 @@ export class SlackWebApiClient {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${token}`,
         "content-type": "application/json; charset=utf-8",
       },
@@ -770,6 +823,7 @@ export class SlackWebApiClient {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${token}`,
         "content-type": "application/x-www-form-urlencoded",
       },

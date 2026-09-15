@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import {
   addCalendarMember,
   calendarAccessLevel,
@@ -38,7 +38,8 @@ import {
   type CalendarStatus,
   type CalendarVisibility,
 } from "../../calendar/index.js";
-import { hasContext } from "../context.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { hashForAudit } from "../provenance.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { jsonObjectSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -61,6 +62,8 @@ export class CalendarAccountsCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCalendarCommand(asJson, async () => {
       const accounts = listCalendarAccounts({
@@ -69,7 +72,7 @@ export class CalendarAccountsCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       });
-      const payload = { sources: accounts, accounts };
+      const payload = { sources: pickFields(accounts, fields), accounts: pickFields(accounts, fields) };
       printPayload(payload, asJson, () => printItems("Sources", payload, ["id", "provider", "status", "displayName"]));
       return payload;
     });
@@ -110,7 +113,7 @@ export class CalendarAccountsCommands {
   ) {
     return runCalendarCommand(asJson, async () => {
       const account = getCalendarAccount(accountId);
-      if (!account) throw new CloudAuthError("PAYLOAD_INVALID", `Calendar account not found: ${accountId}`);
+      if (!account) failSourceNotFound("calendars sources sync", accountId, asJson);
       requireProviderPermission("sync", account.provider);
       const payload =
         account.provider === "local"
@@ -143,6 +146,8 @@ export class CalendarCalendarsCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCalendarCommand(asJson, async () => {
       const calendars = visibleCalendars({
@@ -151,7 +156,7 @@ export class CalendarCalendarsCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       });
-      const payload = { calendars };
+      const payload = { calendars: pickFields(calendars, fields) };
       printPayload(payload, asJson, () => printItems("Calendars", payload, ["id", "name", "status", "isDefault"]));
       return payload;
     });
@@ -178,7 +183,7 @@ export class CalendarCalendarsCommands {
   ) {
     return runCalendarCommand(asJson, async () => {
       requireOption(name, "--name");
-      const account = resolveCalendarAccount(accountId);
+      const account = resolveCalendarAccount("calendars create", accountId, asJson);
       const ownerRef = parseSubject(owner, defaultOwnerSubject());
       const calendar = createCalendar({
         accountId: account.id,
@@ -207,7 +212,7 @@ export class CalendarCalendarsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
-      const calendar = requireCalendar(calendarRef);
+      const calendar = requireCalendar("calendars show", calendarRef, asJson);
       requireCalendarPermission("read", calendar);
       const payload = {
         calendar,
@@ -219,7 +224,13 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "share", description: "Grant a calendar relation to an agent/contact/system subject" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "share", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "calendar.calendars",
+    action: "share",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async share(
     @Arg("calendar", { description: "Local calendar id or name" }) calendarRef: string,
     @Option({ flags: "--with <subject>", description: "Subject, e.g. agent:main" }) subject?: string,
@@ -228,18 +239,40 @@ export class CalendarCalendarsCommands {
     @Option({ flags: "--expires-at <time>", description: "Optional membership expiration timestamp" })
     expiresAt?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually grant the relation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
       requireOption(subject, "--with");
-      const calendar = requireCalendar(calendarRef);
+      const calendar = requireCalendar("calendars share", calendarRef, asJson);
       requireCalendarPermission("manage", calendar);
       const target = parseSubject(subject as string);
+      const memberRelation = parseMemberRelation(relation);
+      const expiresAtMs = expiresAt ? parseTime(expiresAt, "--expires-at") : null;
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): sharing exposes agenda data to another
+        // subject, so dry-run by default and exit 3 before the membership write.
+        contractDryRun(
+          "calendars share",
+          {
+            calendarId: calendar.id,
+            memberType: target.type,
+            memberRef: `sha256:${hashForAudit(`${target.type}:${target.id}`)}`,
+            relation: memberRelation,
+            expiresAtPresent: expiresAtMs !== null,
+          },
+          { asJson },
+        );
+      }
       const member = addCalendarMember({
         calendarId: calendar.id,
         memberType: target.type,
         memberId: target.id,
-        relation: parseMemberRelation(relation),
-        expiresAt: expiresAt ? parseTime(expiresAt, "--expires-at") : null,
+        relation: memberRelation,
+        expiresAt: expiresAtMs,
       });
       const payload = { calendar, member };
       printPayload(payload, asJson, () => printRecord("Member", { member }));
@@ -254,7 +287,7 @@ export class CalendarCalendarsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
-      const existing = requireCalendar(calendarRef);
+      const existing = requireCalendar("calendars disable", calendarRef, asJson);
       requireCalendarPermission("manage", existing);
       const calendar = setCalendarStatus(existing.id, "disabled");
       const payload = { calendar };
@@ -282,10 +315,12 @@ export class CalendarEventsCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCalendarCommand(asJson, async () => {
       const { fromMs, toMs } = parseWindow(from, to);
-      const calendars = resolveReadableCalendars(calendarRef);
+      const calendars = resolveReadableCalendars("calendars events list", calendarRef, asJson);
       const events = calendars.length
         ? (listCalendarEvents({
             calendarIds: calendars.map((calendar) => calendar.id),
@@ -301,7 +336,7 @@ export class CalendarEventsCommands {
         : [];
       const payload = {
         window: { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
-        events: safeCalendarEvents(events, calendars),
+        events: pickFields(safeCalendarEvents(events, calendars), fields),
       };
       printPayload(payload, asJson, () => printItems("Events", payload, ["id", "title", "startAt", "endAt"]));
       return payload;
@@ -315,8 +350,8 @@ export class CalendarEventsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
-      const event = readCalendarEvent(eventId, { includeAttendees: true });
-      const calendar = requireCalendar(event.calendarId);
+      const event = requireCalendarEvent("calendars events read", eventId, asJson, { includeAttendees: true });
+      const calendar = requireCalendar("calendars events read", event.calendarId, asJson);
       requireCalendarPermission("read", calendar);
       const payload = { event: safeCalendarEvent(event, "read") };
       printPayload(payload, asJson, () => printRecord("Event", payload));
@@ -342,7 +377,7 @@ export class CalendarEventsCommands {
       requireOption(title, "--title");
       requireOption(start, "--start");
       requireOption(end, "--end");
-      const calendar = resolveWriteCalendar(calendarRef);
+      const calendar = resolveWriteCalendar("calendars events create", calendarRef, asJson);
       requireCalendarPermission("write", calendar);
       const result = createCalendarEvent({
         calendarId: calendar.id,
@@ -384,8 +419,8 @@ export class CalendarEventsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
-      const event = readCalendarEvent(eventId);
-      const calendar = requireCalendar(event.calendarId);
+      const event = requireCalendarEvent("calendars events update", eventId, asJson);
+      const calendar = requireCalendar("calendars events update", event.calendarId, asJson);
       requireCalendarPermission("write", calendar);
       const result = updateCalendarEvent(event.id, {
         title,
@@ -408,16 +443,41 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "cancel", description: "Cancel a local calendar event" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "cancel", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "calendar.events",
+    action: "cancel",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   async cancel(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--idempotency-key <key>", description: "Local write idempotency key" }) idempotencyKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually cancel the event; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
-      const event = readCalendarEvent(eventId);
-      const calendar = requireCalendar(event.calendarId);
+      const event = requireCalendarEvent("calendars events cancel", eventId, asJson, { includeAttendees: true });
+      const calendar = requireCalendar("calendars events cancel", event.calendarId, asJson);
       requireCalendarPermission("write", calendar);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): once delivered by a provider adapter a
+        // cancellation notifies attendees and cannot be un-sent, so dry-run by
+        // default and exit 3 before the local cancel + outbox enqueue.
+        contractDryRun(
+          "calendars events cancel",
+          {
+            eventId: event.id,
+            calendarId: calendar.id,
+            attendeeCount: event.attendees.length,
+          },
+          { asJson },
+        );
+      }
       const result = cancelCalendarEvent(event.id, { idempotencyKey });
       const payload = {
         event: safeCalendarEvent(result.event, "read"),
@@ -429,7 +489,13 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "respond", description: "Record an attendee response and enqueue provider delivery" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "respond", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "calendar.events",
+    action: "respond",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   async respond(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--status <status>", description: "accepted, declined, tentative, needs_action, or unknown" })
@@ -438,14 +504,36 @@ export class CalendarEventsCommands {
     @Option({ flags: "--attendee-agent <agent>", description: "Attendee agent id" }) attendeeAgent?: string,
     @Option({ flags: "--idempotency-key <key>", description: "Local write idempotency key" }) idempotencyKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually record the response; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runCalendarCommand(asJson, async () => {
       requireOption(status, "--status");
-      const event = readCalendarEvent(eventId);
-      const calendar = requireCalendar(event.calendarId);
+      const responseStatus = parseResponseStatus(status);
+      const event = requireCalendarEvent("calendars events respond", eventId, asJson);
+      const calendar = requireCalendar("calendars events respond", event.calendarId, asJson);
       requireCalendarPermission("respond", calendar);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): a response is addressed to the event
+        // organizer once a provider adapter delivers the outbox row, so dry-run
+        // by default and exit 3 before the local response + outbox enqueue.
+        contractDryRun(
+          "calendars events respond",
+          {
+            eventId: event.id,
+            calendarId: calendar.id,
+            status: responseStatus,
+            attendeeEmailPresent: Boolean(attendeeEmail),
+            attendeeAgentId: attendeeAgent ?? null,
+          },
+          { asJson },
+        );
+      }
       const result = respondToCalendarEvent(event.id, {
-        status: parseResponseStatus(status),
+        status: responseStatus,
         attendeeEmail,
         attendeeAgentId: attendeeAgent,
         idempotencyKey,
@@ -490,16 +578,19 @@ export class CalendarOutboxCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCalendarCommand(asJson, async () => {
-      if (calendarRef) requireCalendarPermission("write", requireCalendar(calendarRef));
+      if (calendarRef)
+        requireCalendarPermission("write", requireCalendar("calendars outbox list", calendarRef, asJson));
       const outbox = listCalendarOutbox({
         status: parseOutboxStatus(status),
         calendar: calendarRef,
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       }).filter((row) => canUseRowCalendar("write", row.calendarId));
-      const payload = { outbox: outbox.map(redactOutboxPayload) };
+      const payload = { outbox: pickFields(outbox.map(redactOutboxPayload), fields) };
       printPayload(payload, asJson, () => printItems("Outbox", payload, ["id", "status", "operation", "eventId"]));
       return payload;
     });
@@ -513,8 +604,8 @@ export class CalendarOutboxCommands {
   ) {
     return runCalendarCommand(asJson, async () => {
       const outbox = getCalendarOutbox(outboxId);
-      if (!outbox) throw new CloudAuthError("PAYLOAD_INVALID", `Calendar outbox row not found: ${outboxId}`);
-      requireCalendarPermission("write", requireCalendar(outbox.calendarId));
+      if (!outbox) failOutboxNotFound("calendars outbox inspect", outboxId, asJson);
+      requireCalendarPermission("write", requireCalendar("calendars outbox inspect", outbox.calendarId, asJson));
       const payload = { outbox: redactOutboxPayload(outbox) };
       printPayload(payload, asJson, () => printRecord("Outbox", payload));
       return payload;
@@ -529,8 +620,8 @@ export class CalendarOutboxCommands {
   ) {
     return runCalendarCommand(asJson, async () => {
       const existing = getCalendarOutbox(outboxId);
-      if (!existing) throw new CloudAuthError("PAYLOAD_INVALID", `Calendar outbox row not found: ${outboxId}`);
-      requireCalendarPermission("write", requireCalendar(existing.calendarId));
+      if (!existing) failOutboxNotFound("calendars outbox retry", outboxId, asJson);
+      requireCalendarPermission("write", requireCalendar("calendars outbox retry", existing.calendarId, asJson));
       const outbox = retryCalendarOutbox(outboxId);
       const payload = { outbox: redactOutboxPayload(outbox) };
       printPayload(payload, asJson, () => printRecord("Outbox", payload));
@@ -554,10 +645,12 @@ export class CalendarCommands {
     @Option({ flags: "--to <time>", description: "Window end; default +30d" }) to?: string,
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCalendarCommand(asJson, async () => {
       const { fromMs, toMs } = parseWindow(from, to);
-      const calendars = resolveAvailabilityCalendars(calendarRef);
+      const calendars = resolveAvailabilityCalendars("calendars availability", calendarRef, asJson);
       const events = calendars.length
         ? (listCalendarEvents({
             calendarIds: calendars.map((calendar) => calendar.id),
@@ -583,10 +676,10 @@ export class CalendarCommands {
       });
       const payload = {
         window: { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
-        busy,
+        busy: pickFields(busy, fields),
       };
       printPayload(payload, asJson, () =>
-        printItems("Busy blocks", { busy }, ["calendarId", "title", "startAt", "endAt"]),
+        printItems("Busy blocks", { busy: payload.busy }, ["calendarId", "title", "startAt", "endAt"]),
       );
       return payload;
     });
@@ -804,24 +897,22 @@ declareCommandReturns(CalendarCommands, {
   }),
 });
 
-async function runCalendarCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+async function runCalendarCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (error) {
+    // Agent-first contract (Manual v2): contractFail/contractDryRun already
+    // emitted the envelope; rethrow so the registry dispatcher preserves the
+    // exit taxonomy (1 error · 2 usage · 3 policy brake) instead of the
+    // legacy CloudAuthError wrapping below.
+    if (error instanceof ContractError) throw error;
     const cloudError =
       error instanceof CloudAuthError
         ? error
         : new CloudAuthError("PAYLOAD_INVALID", error instanceof Error ? error.message : String(error), {
             cause: error,
           });
-    const formatted = cloudAuthErrorFromUnknown(cloudError);
-    if (asJson) {
-      printJson(formatCloudAuthError(formatted));
-    } else {
-      console.error(`${formatted.code}: ${formatted.message}`);
-    }
-    if (hasContext()) throw formatted;
-    process.exit(formatted.exitCode);
+    throw cloudAuthErrorFromUnknown(cloudError);
   }
 }
 
@@ -832,9 +923,9 @@ function visibleCalendars(options: Parameters<typeof listCalendars>[0] = {}): Ca
   );
 }
 
-function resolveReadableCalendars(calendarRef?: string): CalendarCalendar[] {
+function resolveReadableCalendars(op: string, calendarRef?: string, asJson?: boolean): CalendarCalendar[] {
   if (calendarRef?.trim()) {
-    const calendar = requireCalendar(calendarRef);
+    const calendar = requireCalendar(op, calendarRef, asJson);
     const access = calendarAccessLevel(getCalendarScopeContext(), calendar);
     if (access === "none") requireCalendarPermission("search", calendar);
     return [calendar];
@@ -842,17 +933,17 @@ function resolveReadableCalendars(calendarRef?: string): CalendarCalendar[] {
   return visibleCalendars();
 }
 
-function resolveAvailabilityCalendars(calendarRef?: string): CalendarCalendar[] {
+function resolveAvailabilityCalendars(op: string, calendarRef?: string, asJson?: boolean): CalendarCalendar[] {
   if (calendarRef?.trim()) {
-    const calendar = requireCalendar(calendarRef);
+    const calendar = requireCalendar(op, calendarRef, asJson);
     requireCalendarPermission("free-busy", calendar);
     return [calendar];
   }
   return visibleCalendars().filter((calendar) => canUseCalendar(getCalendarScopeContext(), "free-busy", calendar));
 }
 
-function resolveWriteCalendar(calendarRef?: string): CalendarCalendar {
-  if (calendarRef?.trim()) return requireCalendar(calendarRef);
+function resolveWriteCalendar(op: string, calendarRef?: string, asJson?: boolean): CalendarCalendar {
+  if (calendarRef?.trim()) return requireCalendar(op, calendarRef, asJson);
   const calendars = visibleCalendars().filter((calendar) =>
     canUseCalendar(getCalendarScopeContext(), "write", calendar),
   );
@@ -863,10 +954,10 @@ function resolveWriteCalendar(calendarRef?: string): CalendarCalendar {
   return calendar;
 }
 
-function resolveCalendarAccount(accountId?: string) {
+function resolveCalendarAccount(op: string, accountId?: string, asJson?: boolean) {
   if (accountId?.trim()) {
     const account = getCalendarAccount(accountId);
-    if (!account) throw new CloudAuthError("PAYLOAD_INVALID", `Calendar account not found: ${accountId}`);
+    if (!account) failSourceNotFound(op, accountId, asJson);
     return account;
   }
   const active = listCalendarAccounts({ status: "active", limit: 500 });
@@ -875,10 +966,74 @@ function resolveCalendarAccount(accountId?: string) {
   return account;
 }
 
-function requireCalendar(calendarRef: string): CalendarCalendar {
+/**
+ * NOT_FOUND envelopes (Manual v2): the code follows the resource
+ * (CALENDAR/SOURCE/EVENT/OUTBOX) and `suggestions` come only from cheap local
+ * lists already scoped to the requester. Events and outbox rows have no cheap
+ * candidate list (events need a bounded time window; outbox rows are opaque
+ * per-calendar ids), so those envelopes omit `suggestions` and carry a
+ * `suggestedAction` pointing at the listing command instead.
+ */
+function failCalendarNotFound(op: string, calendarRef: string, asJson?: boolean): never {
+  // Cheap + permission-scoped: only calendars the requester can already see.
+  const candidates = visibleCalendars().flatMap((calendar) => [calendar.id, calendar.name]);
+  const suggestions = suggestSimilar(calendarRef, candidates);
+  contractFail(op, "CALENDAR_NOT_FOUND", `Calendar not found: ${calendarRef}`, {
+    asJson,
+    details: {
+      ...(suggestions.length > 0 ? { suggestions } : {}),
+      suggestedAction: "List visible calendars with: ravi calendars list --json",
+    },
+  });
+}
+
+function failSourceNotFound(op: string, sourceRef: string, asJson?: boolean): never {
+  const candidates = listCalendarAccounts({ limit: 500 }).flatMap((account) => [account.id, account.displayName]);
+  const suggestions = suggestSimilar(sourceRef, candidates);
+  contractFail(op, "SOURCE_NOT_FOUND", `Calendar source not found: ${sourceRef}`, {
+    asJson,
+    details: {
+      ...(suggestions.length > 0 ? { suggestions } : {}),
+      suggestedAction: "List local sources with: ravi calendars sources list --json",
+    },
+  });
+}
+
+function failEventNotFound(op: string, eventId: string, asJson?: boolean): never {
+  contractFail(op, "EVENT_NOT_FOUND", `Calendar event not found: ${eventId}`, {
+    asJson,
+    details: { suggestedAction: "List events with: ravi calendars events list --from now --to +30d --json" },
+  });
+}
+
+function failOutboxNotFound(op: string, outboxId: string, asJson?: boolean): never {
+  contractFail(op, "OUTBOX_NOT_FOUND", `Calendar outbox row not found: ${outboxId}`, {
+    asJson,
+    details: { suggestedAction: "List outbox rows with: ravi calendars outbox list --json" },
+  });
+}
+
+function requireCalendar(op: string, calendarRef: string, asJson?: boolean): CalendarCalendar {
   const calendar = getCalendar(calendarRef);
-  if (!calendar) throw new CloudAuthError("PAYLOAD_INVALID", `Calendar not found: ${calendarRef}`);
+  if (!calendar) failCalendarNotFound(op, calendarRef, asJson);
   return calendar;
+}
+
+/** `readCalendarEvent` throws a plain Error on unknown ids; map it to the EVENT_NOT_FOUND envelope. */
+function requireCalendarEvent(
+  op: string,
+  eventId: string,
+  asJson?: boolean,
+  options: { includeAttendees?: boolean } = {},
+): CalendarEventWithAttendees {
+  try {
+    return readCalendarEvent(eventId, options);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Calendar event not found")) {
+      failEventNotFound(op, eventId, asJson);
+    }
+    throw error;
+  }
 }
 
 function requireCalendarPermission(

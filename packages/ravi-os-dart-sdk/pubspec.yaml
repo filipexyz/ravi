@@ -1,0 +1,16 @@
+name: ravi_sdk
+description: Generated HTTP client for the Ravi SDK gateway.
+version: 0.1.0
+repository: https://github.com/filipexyz/ravi
+homepage: https://github.com/filipexyz/ravi
+issue_tracker: https://github.com/filipexyz/ravi/issues
+
+environment:
+  sdk: ^3.3.0
+
+dependencies:
+  http: ^1.2.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

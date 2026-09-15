@@ -97,6 +97,20 @@ export function buildRuntimeCredentialSessionMetadata(
   return {
     attemptId: binding.attemptId ?? null,
     credentialId: binding.credentialId,
+    ...(binding.modelBrokerId ? { modelBrokerId: binding.modelBrokerId } : {}),
+    ...(binding.modelBrokerProfileRef ? { modelBrokerProfileRef: binding.modelBrokerProfileRef } : {}),
+    ...(binding.modelBrokerLeaseId ? { modelBrokerLeaseId: binding.modelBrokerLeaseId } : {}),
+    ...(binding.modelBrokerRuntimeId ? { modelBrokerRuntimeId: binding.modelBrokerRuntimeId } : {}),
+    ...(binding.modelBrokerSessionKey ? { modelBrokerSessionKey: binding.modelBrokerSessionKey } : {}),
+    ...(binding.modelBrokerTurnId ? { modelBrokerTurnId: binding.modelBrokerTurnId } : {}),
+    ...(binding.modelBrokerRouteRevision ? { modelBrokerRouteRevision: binding.modelBrokerRouteRevision } : {}),
+    ...(binding.modelBrokerCompatibilityRevision
+      ? { modelBrokerCompatibilityRevision: binding.modelBrokerCompatibilityRevision }
+      : {}),
+    ...(binding.modelBrokerSelectionCompatibilityKey
+      ? { modelBrokerSelectionCompatibilityKey: binding.modelBrokerSelectionCompatibilityKey }
+      : {}),
+    ...(binding.modelBrokerLeaseExpiresAt ? { modelBrokerLeaseExpiresAt: binding.modelBrokerLeaseExpiresAt } : {}),
     fingerprint: binding.fingerprint,
     runtimeProvider: binding.runtimeProvider,
     ...(binding.upstreamProvider ? { upstreamProvider: binding.upstreamProvider } : {}),
@@ -132,6 +146,28 @@ export function readRuntimeCredentialSessionMetadata(
   return {
     ...(typeof record.attemptId === "string" ? { attemptId: record.attemptId } : {}),
     credentialId: record.credentialId,
+    ...(typeof record.modelBrokerId === "string" ? { modelBrokerId: record.modelBrokerId } : {}),
+    ...(typeof record.modelBrokerProfileRef === "string"
+      ? { modelBrokerProfileRef: record.modelBrokerProfileRef }
+      : {}),
+    ...(typeof record.modelBrokerLeaseId === "string" ? { modelBrokerLeaseId: record.modelBrokerLeaseId } : {}),
+    ...(typeof record.modelBrokerRuntimeId === "string" ? { modelBrokerRuntimeId: record.modelBrokerRuntimeId } : {}),
+    ...(typeof record.modelBrokerSessionKey === "string"
+      ? { modelBrokerSessionKey: record.modelBrokerSessionKey }
+      : {}),
+    ...(typeof record.modelBrokerTurnId === "string" ? { modelBrokerTurnId: record.modelBrokerTurnId } : {}),
+    ...(typeof record.modelBrokerRouteRevision === "string"
+      ? { modelBrokerRouteRevision: record.modelBrokerRouteRevision }
+      : {}),
+    ...(typeof record.modelBrokerCompatibilityRevision === "string"
+      ? { modelBrokerCompatibilityRevision: record.modelBrokerCompatibilityRevision }
+      : {}),
+    ...(typeof record.modelBrokerSelectionCompatibilityKey === "string"
+      ? { modelBrokerSelectionCompatibilityKey: record.modelBrokerSelectionCompatibilityKey }
+      : {}),
+    ...(typeof record.modelBrokerLeaseExpiresAt === "number"
+      ? { modelBrokerLeaseExpiresAt: record.modelBrokerLeaseExpiresAt }
+      : {}),
     fingerprint: record.fingerprint,
     runtimeProvider: record.runtimeProvider,
     ...(typeof record.upstreamProvider === "string" ? { upstreamProvider: record.upstreamProvider } : {}),
@@ -150,7 +186,16 @@ export function isRuntimeCredentialSessionCompatible(
   const stored = readRuntimeCredentialSessionMetadata(params);
   if (!stored) return false;
   if (stored.runtimeProvider !== binding.runtimeProvider) return false;
+  if ((stored.modelBrokerId ?? "") !== (binding.modelBrokerId ?? "")) return false;
+  if ((stored.modelBrokerProfileRef ?? "") !== (binding.modelBrokerProfileRef ?? "")) return false;
   if ((stored.upstreamProvider ?? "") !== (binding.upstreamProvider ?? "")) return false;
+  if ((stored.modelBrokerRouteRevision ?? "") !== (binding.modelBrokerRouteRevision ?? "")) return false;
+  if (
+    (stored.modelBrokerCompatibilityRevision ?? "") !== (binding.modelBrokerCompatibilityRevision ?? "") ||
+    (stored.modelBrokerSelectionCompatibilityKey ?? "") !== (binding.modelBrokerSelectionCompatibilityKey ?? "")
+  ) {
+    return false;
+  }
   if (stored.fingerprint !== binding.fingerprint) return false;
   return (
     (stored.sessionCompatibilityKey ?? stored.credentialId) ===
@@ -162,6 +207,16 @@ export function serializeRuntimeCredentialAttemptBinding(binding: RuntimeCredent
   return {
     attemptId: binding.attemptId ?? null,
     credentialId: binding.credentialId,
+    modelBrokerId: binding.modelBrokerId ?? null,
+    modelBrokerProfileRef: binding.modelBrokerProfileRef ?? null,
+    modelBrokerLeaseId: binding.modelBrokerLeaseId ?? null,
+    modelBrokerRuntimeId: binding.modelBrokerRuntimeId ?? null,
+    modelBrokerSessionKey: binding.modelBrokerSessionKey ?? null,
+    modelBrokerTurnId: binding.modelBrokerTurnId ?? null,
+    modelBrokerRouteRevision: binding.modelBrokerRouteRevision ?? null,
+    modelBrokerCompatibilityRevision: binding.modelBrokerCompatibilityRevision ?? null,
+    modelBrokerSelectionCompatibilityKey: binding.modelBrokerSelectionCompatibilityKey ?? null,
+    modelBrokerLeaseExpiresAt: binding.modelBrokerLeaseExpiresAt ?? null,
     label: binding.label,
     fingerprint: binding.fingerprint,
     runtimeProvider: binding.runtimeProvider,
@@ -189,6 +244,10 @@ function tryResolveAttemptBinding(
   env: Record<string, string | undefined>,
 ): { ok: true; binding: RuntimeCredentialAttemptBinding } | { ok: false; reason: string } {
   const resolvedEnv: Record<string, string> = {};
+
+  if (credential.authMethod === "model-broker") {
+    return { ok: false, reason: "model_broker_requires_route_lease" };
+  }
 
   for (const binding of credential.bindings) {
     if (binding.targetKind !== "env") continue;

@@ -1,6 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { RuntimeCredentialsCommands } from "./runtime-credentials.js";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../context.js");
+
+mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const { RuntimeCredentialsCommands } = await import("./runtime-credentials.js");
+const { ContractError } = await import("../agent-contract.js");
 
 let stateDir: string | null = null;
 let previousStateDir: string | undefined;
@@ -203,5 +219,126 @@ describe("RuntimeCredentialsCommands", () => {
       }),
     );
     expect(refreshed.output).not.toContain("RAVI_TEST_OPENAI_KEY");
+  });
+});
+
+describe("runtime credentials agent-first contract", () => {
+  beforeEach(async () => {
+    previousStateDir = process.env.RAVI_STATE_DIR;
+    stateDir = await createIsolatedRaviState("ravi-runtime-credentials-contract-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+    if (previousStateDir) process.env.RAVI_STATE_DIR = previousStateDir;
+    previousStateDir = undefined;
+  });
+
+  function addCredential(commands: InstanceType<typeof RuntimeCredentialsCommands>, label = "OpenAI primary"): string {
+    const added = captureConsole(() =>
+      commands.add(
+        "codex",
+        label,
+        "openai",
+        "api-key",
+        "RAVI_TEST_OPENAI_KEY",
+        "OPENAI_API_KEY",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "0",
+        false,
+        undefined,
+        false,
+        true,
+      ),
+    );
+    return (JSON.parse(added.output) as { credential: { id: string } }).credential.id;
+  }
+
+  it("emits CREDENTIAL_NOT_FOUND envelope with suggestions on status --json (exit 1)", () => {
+    const commands = new RuntimeCredentialsCommands();
+    const credentialId = addCredential(commands);
+
+    let thrown: unknown;
+    const captured = captureConsole(() => {
+      try {
+        commands.status("rc_nope", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("runtime credentials status");
+    expect(envelope.error.code).toBe("CREDENTIAL_NOT_FOUND");
+    expect(envelope.error.suggestions).toEqual(expect.arrayContaining([expect.any(String)]));
+    const candidatePool = [credentialId, "OpenAI primary"];
+    for (const suggestion of envelope.error.suggestions as string[]) {
+      expect(candidatePool).toContain(suggestion);
+    }
+    // Anti-leak: the envelope carries ids/labels only — never secret env names
+    // or secret values.
+    const serialized = JSON.stringify(envelope) + captured.output;
+    expect(serialized).not.toContain("RAVI_TEST_OPENAI_KEY");
+    expect(serialized).not.toContain("OPENAI_API_KEY");
+  });
+
+  it("maps store not-found errors on disable to CREDENTIAL_NOT_FOUND (exit 1)", () => {
+    const commands = new RuntimeCredentialsCommands();
+    addCredential(commands);
+
+    let thrown: unknown;
+    captureConsole(() => {
+      try {
+        commands.disable("rc_missing", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().op).toBe("runtime credentials disable");
+    expect(contractError.envelope().error.code).toBe("CREDENTIAL_NOT_FOUND");
+  });
+
+  it("maps refresh of an unknown credential to CREDENTIAL_NOT_FOUND (exit 1)", async () => {
+    const commands = new RuntimeCredentialsCommands();
+
+    let thrown: unknown;
+    await captureConsoleAsync(async () => {
+      try {
+        await commands.refresh("rc_missing", undefined, undefined, undefined, undefined, undefined, false, true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().op).toBe("runtime credentials refresh");
+    expect(contractError.envelope().error.code).toBe("CREDENTIAL_NOT_FOUND");
+  });
+
+  it("supports --fields compact mode on runtime credentials list", () => {
+    const commands = new RuntimeCredentialsCommands();
+    const credentialId = addCredential(commands);
+
+    const listed = captureConsole(() =>
+      commands.list(undefined, undefined, undefined, true, true, undefined, undefined, "id,label"),
+    );
+    const payload = JSON.parse(listed.output) as { credentials: Array<Record<string, unknown>> };
+    expect(payload.credentials.length).toBe(1);
+    expect(Object.keys(payload.credentials[0]).sort()).toEqual(["id", "label"]);
+    expect(payload.credentials[0].id).toBe(credentialId);
   });
 });

@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
+import {
+  buildRaviAppProcessEnv,
+  parseRaviAppCapability,
+  resolveRaviAppCommand,
+  tokenizeRaviAppCommand,
+} from "./command.js";
 import type {
   RaviAppAliasInvocation,
   RaviAppManifestRecord,
@@ -9,9 +15,23 @@ import type {
   RaviAppRunOptions,
   RaviAppRunResult,
 } from "./types.js";
-import { emitCliAuditEvent } from "../cli/audit.js";
+import { RaviAppError } from "./types.js";
+import { runWithCliAudit } from "../cli/audit.js";
+import { getContext } from "../cli/context.js";
 import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from "../permissions/provider-runtime.js";
-import { assertCanRunAppOperation, assertCanUseApp, filterVisibleAppManifests } from "./permissions.js";
+import {
+  getRuntimeContextFromEnv,
+  issueRuntimeContext,
+  type IssueRuntimeContextInput,
+} from "../runtime/context-registry.js";
+import type { ContextRecord } from "../router/router-db.js";
+import {
+  assertCanRunAppOperation,
+  assertCanUseApp,
+  filterVisibleAppManifests,
+  RaviAppPermissionDeniedError,
+} from "./permissions.js";
+import { enforceRaviAppRunResult } from "./error-contract.js";
 
 interface ResolvedOperation {
   id: string;
@@ -28,6 +48,7 @@ const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
   const startedAt = Date.now();
   const operationName = options.operation?.trim() || null;
+  const callerContext = resolveCallerContext(options.env);
   let result: RaviAppRunResult;
 
   try {
@@ -47,9 +68,21 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       cwd: options.cwd,
       env: options.env,
       staticRootCommands: mergeStaticRootCommands(options.staticRootCommands),
+      runtime: options.runtime,
+      callerContext,
       startedAt,
+      execute: options.execute === true,
     });
   } catch (error) {
+    const errorCode = classifyAppRunError(error);
+    const message =
+      errorCode === "not_found"
+        ? "Ravi app was not found."
+        : errorCode === "PERMISSION_DENIED"
+          ? "Ravi app operation was denied."
+          : errorCode === "APP_PERMISSION_PROVIDER_FAILED"
+            ? "Ravi app permission provider failed."
+            : "Ravi app operation failed.";
     result = {
       ok: false,
       appId: options.appId,
@@ -59,40 +92,25 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       mutating: false,
       status: "failed",
       durationMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      errorCode,
+      ...(callerContext ? { callerContextId: callerContext.contextId } : {}),
       ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
     };
   }
 
-  await emitCliAuditEvent({
-    group: "apps",
-    name: "run",
-    tool: "apps_run",
-    input: {
-      appId: result.appId,
-      operation: result.operation,
-      operationId: result.operationId,
-      interface: result.interface,
-      mutating: result.mutating,
-      permissionProvider: result.permissionProvider
-        ? {
-            providerId: result.permissionProvider.providerId,
-            providerVersion: result.permissionProvider.providerVersion,
-            providerOperationId: result.permissionProvider.providerOperationId,
-            decision: result.permissionProvider.decision,
-            reasonCode: result.permissionProvider.reasonCode,
-            cache: result.permissionProvider.cache,
-            durationMs: result.permissionProvider.durationMs,
-          }
-        : undefined,
-    },
-    isError: !result.ok,
-    status: "completed",
-    durationMs: result.durationMs,
-    closeLazyConnection: true,
-  });
-
   return result;
+}
+
+function classifyAppRunError(error: unknown): string {
+  if (error instanceof RaviAppError) return error.code;
+  if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
+  if (error instanceof AppPermissionProviderDeniedError) {
+    return ["deny", "needs_grant", "not_applicable"].includes(error.audit.decision)
+      ? "PERMISSION_DENIED"
+      : "APP_PERMISSION_PROVIDER_FAILED";
+  }
+  return "APP_OPERATION_FAILED";
 }
 
 export function resolveAppAliasInvocation(
@@ -119,13 +137,14 @@ export function resolveAppAliasInvocation(
     const candidate = argv.slice(0, segmentCount).join("/");
     if (!appIds.has(candidate)) continue;
     const rest = argv.slice(segmentCount);
-    const { json, help, args } = stripRouterFlags(rest);
+    const { json, help, execute, args } = stripRouterFlags(rest);
     const operation = help ? "help" : args[0];
     return {
       appId: candidate,
       operation,
-      args: operation ? args.slice(1) : args,
+      args: help ? args : operation ? args.slice(1) : args,
       json,
+      ...(execute ? { execute: true } : {}),
     };
   }
 
@@ -143,17 +162,35 @@ export async function maybeRunAppAliasRoute(
   const invocation = resolveAppAliasInvocation(argv, options);
   if (!invocation) return false;
 
-  const result = await runAppOperation({
-    appId: invocation.appId,
-    operation: invocation.operation,
-    args: invocation.args,
-    json: invocation.json,
-    cwd: options.cwd,
-    env: options.env,
-    staticRootCommands: options.staticRootCommands,
-  });
-  printAppRunResult(result, { json: invocation.json });
-  if (!result.ok) process.exitCode = 1;
+  await runWithCliAudit(
+    {
+      group: "apps",
+      name: "run",
+      tool: "apps_run",
+      input: {
+        appId: invocation.appId,
+        operation: invocation.operation,
+        json: invocation.json,
+        execute: invocation.execute === true,
+        argumentCount: invocation.args.length,
+      },
+      closeLazyConnection: true,
+    },
+    async () => {
+      const result = await runAppOperation({
+        appId: invocation.appId,
+        operation: invocation.operation,
+        args: invocation.args,
+        json: invocation.json,
+        execute: invocation.execute === true,
+        cwd: options.cwd,
+        env: options.env,
+        staticRootCommands: options.staticRootCommands,
+      });
+      enforceRaviAppRunResult(result, invocation.json);
+      printAppRunResult(result, { json: invocation.json });
+    },
+  );
   return true;
 }
 
@@ -273,7 +310,10 @@ async function dispatchResolvedOperation(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     staticRootCommands: Set<string>;
+    runtime?: RaviAppRunOptions["runtime"];
+    callerContext?: ContextRecord;
     startedAt: number;
+    execute: boolean;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
@@ -290,6 +330,27 @@ async function dispatchResolvedOperation(
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
   assertCanRunAppOperation(appId, resolved.id, mutating);
+  if (mutating && !options.execute) {
+    return {
+      ok: false,
+      appId,
+      operation: localOperationName(appId, resolved.id),
+      operationId: resolved.id,
+      interface: interfaceName,
+      mutating: true,
+      status: "blocked",
+      durationMs: Date.now() - options.startedAt,
+      dryRun: true,
+      plan: {
+        appId,
+        operationId: resolved.id,
+        interface: interfaceName,
+        mutating: true,
+        argumentCount: options.args.length,
+      },
+      ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+    };
+  }
   const permissionProvider = await evaluateAppPermissionProvider(app, resolved, {
     args: options.args,
     cwd: options.cwd,
@@ -311,8 +372,9 @@ async function dispatchResolvedOperation(
         mutating,
         status: "completed",
         durationMs: Date.now() - options.startedAt,
+        ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
         handler,
-        result: runBuiltinHandler(handler, app),
+        result: runBuiltinHandler(handler, app, options.args),
       },
       permissionProvider,
     );
@@ -328,28 +390,7 @@ async function dispatchResolvedOperation(
     return withPermissionProvider(await runCliOperation(app, resolved, options), permissionProvider);
   }
 
-  if (interfaceName === "stream") {
-    return withPermissionProvider(
-      {
-        ok: true,
-        appId,
-        operation: localOperationName(appId, resolved.id),
-        operationId: resolved.id,
-        interface: "stream",
-        mutating,
-        status: "completed",
-        durationMs: Date.now() - options.startedAt,
-        channel: operation.channel,
-        result: {
-          channel: operation.channel,
-          message: "Stream operations must be handled by a dedicated stream/control surface.",
-        },
-      },
-      permissionProvider,
-    );
-  }
-
-  throw new Error(`App operation interface is not supported by the CLI router yet: ${interfaceName}`);
+  throw new Error(`App operation interface is not supported by the router: ${interfaceName}`);
 }
 
 function withPermissionProvider(
@@ -368,39 +409,51 @@ async function runCliOperation(
     json: boolean;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    runtime?: RaviAppRunOptions["runtime"];
+    callerContext?: ContextRecord;
     startedAt: number;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
-  const command = renderCliCommand(resolved.operation.command ?? "", {
-    appId,
-    operationId: resolved.id,
-    args: options.args,
-  });
-  const runtimeCommand = resolveRaviCliCommand(command);
+  const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
-  const run = await spawnShellCommand(runtimeCommand, {
+  const childContext = issueAppChildContext(app, resolved.id, options.callerContext);
+  const run = await spawnExecutable(invocation.executable, invocation.argv, {
     cwd: appRoot,
-    env: {
-      ...options.env,
-      RAVI_APP_ID: appId,
-      RAVI_APP_OPERATION_ID: resolved.id,
-      RAVI_APP_ROOT: appRoot,
-    },
+    env: buildRaviAppProcessEnv(options.env ?? process.env, {
+      appId,
+      operationId: resolved.id,
+      appRoot,
+      contextKey: childContext?.contextKey,
+    }),
     capture: options.json,
   });
   const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;
 
-  return {
-    ok: run.exitCode === 0,
+  const base = {
     appId,
     operation: localOperationName(appId, resolved.id),
     operationId: resolved.id,
-    interface: "cli",
+    interface: "cli" as const,
     mutating: resolved.operation.mutating === true,
-    status: run.exitCode === 0 ? "completed" : "failed",
     durationMs: Date.now() - options.startedAt,
-    command,
+    ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+    ...(childContext ? { childContextId: childContext.contextId } : {}),
+  };
+  if (run.exitCode !== 0) {
+    return {
+      ...base,
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    };
+  }
+  return {
+    ...base,
+    ok: true,
+    status: "completed",
+    command: invocation.displayCommand,
     exitCode: run.exitCode,
     ...(options.json
       ? {
@@ -409,20 +462,80 @@ async function runCliOperation(
           result: parsed ?? run.stdout.trim(),
         }
       : {}),
-    ...(run.exitCode === 0
-      ? {}
-      : {
-          error: run.stderr.trim() || `Command exited with code ${run.exitCode}`,
-        }),
   };
 }
 
-function runBuiltinHandler(handler: string, app: RaviAppManifestRecord): unknown {
+function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): unknown {
   if (handler === "apps.help") {
     const operationIds = visibleOperationIdsForHelp(app);
+    const perOpHint = `ravi ${app.id.split("/").join(" ")} help <op> — help enxuto por operacao`;
+    const requested = args[0];
+    if (requested) {
+      const operations = manifestOperations(app);
+      const ids = Object.keys(operations);
+      const match = ids.find((id) => id === requested) ?? ids.find((id) => id.endsWith(`.${requested}`));
+      if (match) {
+        const operation = (operations[match] ?? {}) as RaviAppOperationDeclaration & Record<string, unknown>;
+        const help = (operation.help ?? {}) as Record<string, unknown>;
+        const safety = operation.safety as Record<string, unknown> | undefined;
+        return {
+          app: app.id,
+          operation: match,
+          found: true,
+          usage: help.usage,
+          routedUsage: help.routedUsage,
+          description: operation.description,
+          mutating: operation.mutating === true,
+          safety: safety
+            ? {
+                risk: safety.risk,
+                liveExecution: safety.liveExecution,
+                confirmationRequired: safety.confirmationRequired,
+                destructive: safety.destructive,
+                gates: safety.gates,
+              }
+            : undefined,
+          backingRequest: help.backingRequest,
+          arguments: help.arguments ?? [],
+          options: help.options ?? [],
+          examples: help.examples ?? [],
+          inputSchema: operation.inputSchema,
+          summary: help.summary,
+          sections: help.sections ?? [],
+          dica: perOpHint,
+        };
+      }
+      return {
+        app: app.id,
+        operation: requested,
+        found: false,
+        error: `Operacao desconhecida: ${requested}`,
+        suggestions: ids.filter((id) => id.includes(requested)).slice(0, 10),
+        disponiveis: ids.length,
+      };
+    }
     return {
       app: toDetail(app),
       operations: operationIds,
+      index: operationIds.map((id) => {
+        const operation = (manifestOperations(app)[id] ?? {}) as RaviAppOperationDeclaration & Record<string, unknown>;
+        let description = typeof operation.description === "string" ? operation.description : "";
+        if (!description && operation.interface === "builtin") {
+          if (operation.handler === "apps.help") {
+            description = "Mostra este indice (ou help <op> para detalhe)";
+          } else if (operation.handler === "apps.manifest.show") {
+            description = "Mostra o manifesto completo do app (grande, uso raro)";
+          } else if (operation.handler === "apps.manifest.check") {
+            description = "Valida a saude/config do app";
+          }
+        }
+        return {
+          op: localOperationName(app.id, id),
+          description,
+          mutating: operation.mutating === true,
+        };
+      }),
+      hint: perOpHint,
       nextCommands: [
         `ravi ${app.id.split("/").join(" ")} --help`,
         `ravi ${app.id.split("/").join(" ")} check --json`,
@@ -533,10 +646,12 @@ function toDetail(record: RaviAppManifestRecord): Record<string, unknown> {
 function stripRouterFlags(argv: string[]): {
   json: boolean;
   help: boolean;
+  execute: boolean;
   args: string[];
 } {
   let json = false;
   let help = false;
+  let execute = false;
   const args: string[] = [];
   for (const arg of argv) {
     if (arg === "--json") {
@@ -547,44 +662,21 @@ function stripRouterFlags(argv: string[]): {
       help = true;
       continue;
     }
+    if (arg === "--execute") {
+      execute = true;
+      continue;
+    }
     args.push(arg);
   }
-  return { json, help, args };
+  return { json, help, execute, args };
 }
 
-function renderCliCommand(template: string, input: { appId: string; operationId: string; args: string[] }): string {
-  let usedArgsPlaceholder = false;
-  const rendered = template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, name: string) => {
-    if (name === "id" || name === "appId") return quoteShellArg(input.appId);
-    if (name === "operation" || name === "operationId") return quoteShellArg(input.operationId);
-    if (name === "args") {
-      usedArgsPlaceholder = true;
-      return input.args.map(quoteShellArg).join(" ");
-    }
-    return match;
-  });
-  if (usedArgsPlaceholder || input.args.length === 0) return rendered;
-  return `${rendered} ${input.args.map(quoteShellArg).join(" ")}`;
-}
-
-export function resolveRaviCliCommand(
-  command: string,
-  runtime: { execPath?: string; entrypoint?: string } = {},
-): string {
-  if (!/^\s*ravi(?=\s|$)/.test(command)) return command;
-  const execPath = runtime.execPath ?? process.execPath;
-  const entrypoint = runtime.entrypoint ?? process.argv[1];
-  if (!execPath?.trim() || !entrypoint?.trim()) return command;
-  const selfInvocation = `${quoteShellArg(execPath)} ${quoteShellArg(resolve(entrypoint))}`;
-  return command.replace(/^\s*ravi(?=\s|$)/, selfInvocation);
-}
-
-function spawnShellCommand(
-  command: string,
+function spawnExecutable(
+  executable: string,
+  argv: string[],
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    mergeProcessEnv?: boolean;
     capture: boolean;
     stdin?: string;
     timeoutMs?: number;
@@ -597,11 +689,11 @@ function spawnShellCommand(
   timedOut: boolean;
   truncated: boolean;
 }> {
-  return new Promise((resolve) => {
-    const child = spawn(command, {
+  return new Promise((resolveRun) => {
+    const child = spawn(executable, argv, {
       cwd: options.cwd ?? process.cwd(),
-      env: options.mergeProcessEnv === false ? options.env : { ...process.env, ...(options.env ?? {}) },
-      shell: true,
+      env: options.env,
+      shell: false,
       stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
@@ -640,9 +732,19 @@ function spawnShellCommand(
       child.stdin?.on("error", () => {});
       child.stdin?.end(options.stdin ?? "");
     }
+    let spawnError: Error | null = null;
+    child.on("error", (error) => {
+      spawnError = error;
+    });
     child.on("close", (exitCode) => {
       if (timeout) clearTimeout(timeout);
-      resolve({ exitCode, stdout, stderr, timedOut, truncated });
+      resolveRun({
+        exitCode,
+        stdout,
+        stderr: spawnError ? `${stderr}${stderr ? "\n" : ""}${spawnError.message}` : stderr,
+        timedOut,
+        truncated,
+      });
     });
   });
 }
@@ -679,7 +781,7 @@ function mergeStaticRootCommands(staticRootCommands?: Set<string>): Set<string> 
 }
 
 function isRecursiveCliCommand(appId: string, command: string, staticRootCommands: Set<string>): boolean {
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  const tokens = resolveCommandTokens(command);
   if (tokens[0] !== "ravi") return false;
   const first = tokens[1];
   if (!first || staticRootCommands.has(first)) return false;
@@ -689,7 +791,38 @@ function isRecursiveCliCommand(appId: string, command: string, staticRootCommand
   return appSegments.every((segment, index) => tokens[index + 1] === segment);
 }
 
-function quoteShellArg(value: string): string {
-  if (/^[A-Za-z0-9_./:=@-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, "'\\''")}'`;
+function resolveCallerContext(env?: NodeJS.ProcessEnv): ContextRecord | undefined {
+  return getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context;
+}
+
+function issueAppChildContext(
+  app: RaviAppManifestRecord,
+  operationId: string,
+  parent: ContextRecord | undefined,
+): ContextRecord | undefined {
+  if (!parent) return undefined;
+  const appId = app.manifest?.id ?? app.id;
+  const allow = app.manifest?.context?.allow ?? [];
+  const capabilities = allow.map(parseRaviAppCapability);
+  const input: IssueRuntimeContextInput = {
+    parent,
+    cliName: `app:${appId}`,
+    kind: "app-runtime",
+    capabilities,
+    inheritCapabilities: false,
+    metadata: {
+      appId,
+      operationId,
+      source: "app-router",
+    },
+  };
+  return issueRuntimeContext(input);
+}
+
+function resolveCommandTokens(command: string): string[] {
+  try {
+    return tokenizeRaviAppCommand(command);
+  } catch {
+    return [];
+  }
 }

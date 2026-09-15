@@ -11,6 +11,7 @@ import {
   dbCreateTask,
   dbFailTask,
   dbHasActiveTaskForSession,
+  dbHasServingTaskForSession,
   dbResolveActiveTaskBindingForSession,
   dbDeleteTask,
   dbDispatchTask,
@@ -886,6 +887,33 @@ describe("task-db", () => {
     });
 
     expect(dbHasActiveTaskForSession(sessionName)).toBe(false);
+  });
+
+  it("treats blocked tasks as terminal for serving-session lookup", () => {
+    const created = dbCreateTask({
+      title: "Blocked is not serving",
+      instructions: "Blocked must not keep a work session alive",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+    const sessionName = `${created.task.id}-work`;
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+    });
+    expect(dbHasServingTaskForSession(sessionName)).toBe(true);
+    expect(dbHasActiveTaskForSession(sessionName)).toBe(true);
+
+    dbBlockTask(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName,
+      message: "waiting on an operator",
+    });
+    expect(dbHasActiveTaskForSession(sessionName)).toBe(true);
+    expect(dbHasServingTaskForSession(sessionName)).toBe(false);
   });
 
   it("persists comments separately from operational events", () => {

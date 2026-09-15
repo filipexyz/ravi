@@ -1,7 +1,23 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { CloudProjectsCommands } from "./cloud-projects.js";
+
+// Manual v2 contract: hasContext() true makes the contract helpers throw
+// ContractError instead of process.exit, which is what tests need.
+const actualContext = await import("../context.js");
+mock.module("../context.js", () => ({
+  ...actualContext,
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const { CloudProjectsCommands } = await import("./cloud-projects.js");
+const { ContractError } = await import("../agent-contract.js");
+
+afterAll(() => mock.restore());
 
 describe("cloud projects CLI commands", () => {
   it("lists Ravi Cloud projects through the Console CLI API", async () => {
@@ -60,7 +76,7 @@ describe("cloud projects CLI commands", () => {
     const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.create("nx-hv", "Namastex - Hapvida", undefined, "private", undefined, undefined, true),
+      command.create("nx-hv", "Namastex - Hapvida", undefined, "private", undefined, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -100,7 +116,7 @@ describe("cloud projects CLI commands", () => {
     });
     const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
-    await captureConsole(() => command.create("demo", "Demo", undefined, undefined, "demo", undefined, true));
+    await captureConsole(() => command.create("demo", "Demo", undefined, undefined, "demo", undefined, true, true));
 
     expect(calls[0]?.body).toEqual({
       name: "Demo",
@@ -112,6 +128,123 @@ describe("cloud projects CLI commands", () => {
     });
   });
 });
+
+// Manual v2 agent-first contract: write brake on remote project creation,
+// validation before the brake, `--fields` compact mode, and ContractError
+// passing through the legacy CloudAuthError funnel untouched.
+describe("cloud projects contract", () => {
+  it("create without --execute is a dry-run: exit 3 and NO Console call", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return { project: { id: "proj_1", slug: "nx-hv" } };
+    });
+    const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.create(
+          "nx-hv",
+          "PRIVATE_PROJECT_NAME_8K2R",
+          "PRIVATE_PROJECT_DESCRIPTION_7M4Q",
+          "private",
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toEqual({
+      slug: "nx-hv",
+      namePresent: true,
+      descriptionPresent: true,
+      defaultVisibility: "private",
+      defaultPageSite: false,
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_PROJECT");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("create validates --visibility BEFORE the brake: invalid value fails with PAYLOAD_INVALID and no plan", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return {};
+    });
+    const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    let caught: unknown;
+    try {
+      await captureConsole(() =>
+        command.create("nx-hv", undefined, undefined, "bogus", undefined, undefined, true, undefined),
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(CloudAuthError);
+    expect((caught as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("list --fields narrows each project to the requested fields", async () => {
+    const client = makeClient(async () => [
+      { id: "proj_1", slug: "nx-hv", name: "Namastex - Hapvida", defaultVisibility: "private" },
+      { id: "proj_2", slug: "demo", name: "Demo", defaultVisibility: "public" },
+    ]);
+    const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list(undefined, undefined, undefined, true, "slug,id"));
+    const payload = JSON.parse(output);
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "slug"]);
+    }
+  });
+
+  it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
+    const boom = new ContractError("cloud projects list", "SOME_CONTRACT_CODE", "boom", 1, {});
+    const command = new CloudProjectsCommands({
+      client: makeClient(async () => []),
+      readCredentials: () => {
+        throw boom;
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await captureConsole(() => command.list(undefined, undefined, undefined, true));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBe(boom);
+    expect((caught as InstanceType<typeof ContractError>).exitCode).toBe(1);
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  try {
+    await captureConsole(async () => await run());
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

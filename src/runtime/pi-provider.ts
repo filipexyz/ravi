@@ -9,6 +9,7 @@ import type {
   RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeExecutionMetadata,
+  RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
   RuntimePromptMessage,
   RuntimeSessionHandle,
@@ -19,8 +20,26 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
-import { emptySkillVisibilitySnapshot } from "./skill-visibility.js";
+import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
+import {
+  materializeRuntimeModelBroker,
+  resolveRuntimeModelBrokerLocalProviderId,
+} from "./model-broker-materializer.js";
+import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
+import { resolveRuntimeModelBrokerProviderModel } from "./model-broker.js";
+import {
+  createPiApprovalHandler,
+  DEFAULT_PI_PERMISSION_HOOKS_READY_TIMEOUT_MS,
+  isPiPermissionBridgeError,
+  isPiPermissionHooksReadyEvent,
+  materializePiPermissionExtensionFile,
+  PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+  PI_PERMISSION_EXTENSION_FILENAME,
+  PiPermissionBridgeError,
+  resolvePiExtensionUiResponse,
+} from "./pi-tool-permissions.js";
 
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
@@ -78,6 +97,7 @@ interface PiRpcSessionState extends Record<string, unknown> {
   model?: PiModel | null;
   thinkingLevel?: unknown;
   isStreaming?: unknown;
+  isProcessing?: unknown;
   isCompacting?: unknown;
   steeringMode?: unknown;
   followUpMode?: unknown;
@@ -96,6 +116,7 @@ export interface PiRpcStartInput {
   modelArg?: string;
   thinkingLevel?: PiThinkingLevel;
   systemPromptAppend?: string;
+  extensionPath?: string;
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -120,6 +141,10 @@ export interface PiRpcTransport {
   events: AsyncIterable<PiRpcEvent>;
   start(input: PiRpcStartInput): Promise<void> | void;
   send(command: PiRpcCommand): Promise<PiRpcResponse>;
+  /** Fire-and-forget stdin write used by the permission UI sub-protocol. */
+  writeMessage?(message: Record<string, unknown>): Promise<void>;
+  /** Discard events already queued from a previous turn without blocking. */
+  drainPendingEvents?(): PiRpcEvent[];
   close(): Promise<void>;
 }
 
@@ -127,6 +152,7 @@ interface AsyncQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
   end(): void;
   fail(error: unknown): void;
+  drain(): T[];
 }
 
 interface PendingRequest {
@@ -138,6 +164,13 @@ interface PendingRequest {
 interface PiSessionRuntimeState {
   activeTurn: boolean;
   interrupted: boolean;
+  /**
+   * After interrupt/fail, leftover `agent_end` / `turn_end` from the previous
+   * Pi run can still be in-flight. Ignore those as terminals until the next
+   * prompt observes `agent_start` or `turn_start`.
+   */
+  ignoreStaleTerminals: boolean;
+  permissionHooksReady: boolean;
   currentState?: PiRpcSessionState;
   started: boolean;
   transport?: PiRpcTransport;
@@ -153,6 +186,8 @@ interface CreatePiRpcSubprocessTransportOptions {
 export interface CreatePiRuntimeProviderOptions extends CreatePiRpcSubprocessTransportOptions {
   transport?: PiRpcTransport;
   transportFactory?: () => PiRpcTransport;
+  /** How long to wait for `ravi.permission.hooks.ready` after RPC start. */
+  permissionHooksReadyTimeoutMs?: number;
 }
 
 export interface PiRuntimeProvider extends SessionRuntimeProvider {
@@ -182,7 +217,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           semantics: "terminal-event",
         },
         tools: {
-          permissionMode: "provider-native",
+          permissionMode: "ravi-host",
           accessRequirement: "tool_and_executable",
           supportsParallelCalls: false,
         },
@@ -193,13 +228,17 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           guarantee: "adapter",
         },
         skillVisibility: {
-          availability: "none",
+          availability: "provider",
           loadedState: "none",
+        },
+        modelBroker: {
+          protocols: ["openai-completions"],
+          principalIsolation: "none",
         },
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
-        supportsToolHooks: false,
+        supportsToolHooks: true,
         supportsHostSessionHooks: false,
         supportsPlugins: false,
         supportsMcpServers: false,
@@ -207,10 +246,17 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         toolAccessRequirement: "tool_and_executable",
       };
     },
-    prepareSession(): RuntimePrepareSessionResult {
-      return {};
+    prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
+      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
+      return {
+        ...(materialized?.env ? { env: materialized.env } : {}),
+        ...(input.hostServices
+          ? { startRequest: { approveRuntimeRequest: createPiApprovalHandler(input.hostServices) } }
+          : {}),
+      };
     },
     startSession(input) {
+      if (input.modelBroker) assertNoPiModelBrokerCredentialEnv(input.env);
       const createTransport =
         options.transportFactory ??
         (options.transport
@@ -223,10 +269,25 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
               }));
       const canRestartTransport = Boolean(options.transportFactory) || !options.transport;
       const initialTransport = createTransport();
-      const skillVisibility = emptySkillVisibilitySnapshot();
+      const skillVisibility = buildPluginSkillVisibilitySnapshot({
+        provider: "pi",
+        plugins: input.plugins,
+        state: "advertised",
+        confidence: "declared",
+        evidenceKind: "system-prompt",
+        ...(input.allowedSkills && input.allowedSkills.length > 0 ? { allowedSkills: input.allowedSkills } : {}),
+      });
+      const request: RuntimeStartRequest = {
+        ...input,
+        systemPromptAppend: input.omitAdvertisedSkillCatalog
+          ? input.systemPromptAppend
+          : buildPiSkillCatalogSystemPrompt(input.systemPromptAppend, skillVisibility),
+      };
       const state: PiSessionRuntimeState = {
         activeTurn: false,
         interrupted: false,
+        ignoreStaleTerminals: false,
+        permissionHooksReady: false,
         started: false,
         transport: initialTransport,
         pendingSteers: [],
@@ -243,7 +304,12 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         provider: "pi",
         skillVisibility,
         concurrentInputStrategy: "native_steer",
-        events: runPiTurns(input, createTransport, state, { canRestartTransport, skillVisibility }),
+        events: runPiTurns(request, createTransport, state, {
+          canRestartTransport,
+          skillVisibility,
+          permissionHooksReadyTimeoutMs:
+            options.permissionHooksReadyTimeoutMs ?? DEFAULT_PI_PERMISSION_HOOKS_READY_TIMEOUT_MS,
+        }),
         interrupt: async () => {
           state.interrupted = true;
           const transport = state.transport;
@@ -257,17 +323,77 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           await transport?.close();
         },
         setModel: async (model) => {
+          if (input.modelBroker && model !== input.modelBroker.model) {
+            throw new Error("Changing models requires resolving a matching model-broker route.");
+          }
           const parsed = parsePiModelSelector(model);
           await sendPiCommand(requireTransport(), {
             type: "set_model",
-            provider: parsed.provider ?? defaultPiModelProvider(),
+            provider: input.modelBroker
+              ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)
+              : (parsed.provider ?? defaultPiModelProvider()),
             modelId: parsed.modelId ?? model,
           });
         },
-        control: (request) => controlPiRuntime(state, request),
+        control: (request) => controlPiRuntime(state, request, input.modelBroker),
       };
     },
   };
+}
+
+function assertNoPiModelBrokerCredentialEnv(env: Record<string, string> | undefined): void {
+  if (!env) return;
+  const credentialKeys = SANITIZED_ENV_VARS.filter((key) => key !== "DATABASE_URL");
+  const leaked = credentialKeys.find((key) => env[key]?.trim());
+  if (leaked) {
+    throw new Error(`Pi model broker refuses upstream credential environment variable ${leaked}.`);
+  }
+}
+
+export function buildPiSkillCatalogSystemPrompt(
+  basePrompt: string,
+  skillVisibility: RuntimeSkillVisibilitySnapshot,
+): string {
+  if (skillVisibility.skills.length === 0) {
+    return basePrompt;
+  }
+
+  const catalog = skillVisibility.skills.map((skill) => {
+    const alias = piManagedSkillAlias(skill);
+    return alias === skill.id ? `- ${alias}` : `- ${alias} (skill: ${skill.id})`;
+  });
+
+  return [
+    basePrompt.trim(),
+    "",
+    "## Ravi Skills Available to Pi",
+    "",
+    "The following skills are indexed for this session. When a task matches one, load its complete instructions before acting with:",
+    "",
+    "`ravi skills show <skill-name> --json`",
+    "",
+    ...catalog,
+    "",
+    "Treat this catalog as availability only. A skill is loaded only after its complete instructions are read.",
+  ]
+    .filter((line, index) => line || index > 0)
+    .join("\n");
+}
+
+function piManagedSkillAlias(skill: RuntimeSkillVisibilitySnapshot["skills"][number]): string {
+  const sourceMatch = /^plugin:([^/]+)\/([^/]+)$/.exec(skill.source ?? "");
+  if (!sourceMatch) {
+    return skill.id;
+  }
+  return `${piSkillSlug(sourceMatch[1] ?? "")}-${piSkillSlug(sourceMatch[2] ?? skill.id)}`;
+}
+
+function piSkillSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportOptions = {}): PiRpcTransport {
@@ -284,6 +410,35 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
   let closed = true;
   let intentionalClose = false;
   let closeFailure: Error | null = null;
+  let stdinWrites: Promise<void> = Promise.resolve();
+
+  const writeStdin = (line: string): Promise<void> => {
+    if (!child || closed) {
+      return Promise.reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
+    }
+    const currentChild = child;
+    const next = stdinWrites.then(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          if (currentChild !== child || closed) {
+            reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
+            return;
+          }
+          currentChild.stdin.write(line, (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        }),
+    );
+    stdinWrites = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
 
   const failPending = (error: unknown) => {
     for (const request of pending.values()) {
@@ -323,6 +478,9 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
 
   return {
     events: queue,
+    drainPendingEvents() {
+      return queue.drain();
+    },
     async start(input) {
       if (child) {
         throw new Error("Pi RPC transport is already started");
@@ -333,9 +491,10 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
       closeFailure = null;
       closed = false;
       intentionalClose = false;
+      stdinWrites = Promise.resolve();
       child = spawn(command, args, {
         cwd: input.cwd,
-        env: { ...process.env, ...input.env },
+        env: buildPiRpcSpawnEnv(input),
         stdio: ["pipe", "pipe", "pipe"],
       }) as ChildProcessWithoutNullStreams;
 
@@ -386,15 +545,15 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
           reject(new Error(`Timeout waiting for Pi RPC response to ${commandBody.type}`));
         }, responseTimeoutMs);
         pending.set(id, { resolve, reject, timeout });
-        child!.stdin.write(`${JSON.stringify(commandWithId)}\n`, (error) => {
-          if (!error) {
-            return;
-          }
+        writeStdin(`${JSON.stringify(commandWithId)}\n`).catch((error) => {
           pending.delete(id);
           clearTimeout(timeout);
           reject(error);
         });
       });
+    },
+    writeMessage(message) {
+      return writeStdin(`${JSON.stringify(message)}\n`);
     },
     async close() {
       stopStdoutReader?.();
@@ -426,36 +585,109 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
   };
 }
 
+export function buildPiRpcSpawnEnv(input: Pick<PiRpcStartInput, "env">): NodeJS.ProcessEnv {
+  const env = { ...input.env };
+  // Tool execution still shares the Pi RPC process. Keep provider secrets out
+  // of that env even after permission hooks unlock restricted agents.
+  for (const key of SANITIZED_ENV_VARS) {
+    delete env[key];
+  }
+  return env;
+}
+
+function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
+  return buildPiRpcSpawnEnv({
+    env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
+  });
+}
+
+/** Snapshot of managed Ravi authority env that must stay live in the Pi process. */
+export function buildPiManagedRuntimeEnvSignature(env: NodeJS.ProcessEnv): string {
+  return JSON.stringify(
+    Object.entries(env)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .filter(([key]) => key.startsWith("RAVI_"))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function piManagedRuntimeEnvChanged(current: NodeJS.ProcessEnv, next: NodeJS.ProcessEnv): boolean {
+  return buildPiManagedRuntimeEnvSignature(current) !== buildPiManagedRuntimeEnvSignature(next);
+}
+
 async function* runPiTurns(
   input: RuntimeStartRequest,
   createTransport: () => PiRpcTransport,
   state: PiSessionRuntimeState,
-  options: { canRestartTransport: boolean; skillVisibility: RuntimeSkillVisibilitySnapshot },
+  options: {
+    canRestartTransport: boolean;
+    skillVisibility: RuntimeSkillVisibilitySnapshot;
+    permissionHooksReadyTimeoutMs: number;
+  },
 ): AsyncGenerator<RuntimeEvent> {
   const modelSelector = parsePiModelSelector(input.model);
   const thinkingLevel = toPiThinkingLevel(input.effort, input.thinking);
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
-    env: input.env ?? process.env,
-    provider: modelSelector.provider,
+    env: resolvePiRpcProcessEnv(input),
+    provider: input.modelBroker ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker) : modelSelector.provider,
     model: modelSelector.modelId,
-    modelArg: modelSelector.modelArg,
+    modelArg: input.modelBroker
+      ? `${resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)}/${resolveRuntimeModelBrokerProviderModel(input.modelBroker)}`
+      : modelSelector.modelArg,
     thinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
+    extensionPath: materializePiPermissionExtensionFile(),
   };
   let transport = state.transport ?? createTransport();
   state.transport = transport;
   let eventIterator = transport.events[Symbol.asyncIterator]();
+  let pendingStartupEvents: PiRpcEvent[] = [];
+
+  const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
+    if (pendingStartupEvents.length > 0) {
+      return { value: pendingStartupEvents.shift()!, done: false };
+    }
+    return eventIterator.next();
+  };
+
+  // The host rotates `input.env` (RAVI_CONTEXT_KEY and related managed Ravi
+  // keys) before yielding each turn. Snapshot at start/restart so the long-lived
+  // Pi process never keeps a revoked context key.
+  const applyCurrentPiRpcSpawnEnv = (): boolean => {
+    const nextEnv = resolvePiRpcProcessEnv(input);
+    const changed = piManagedRuntimeEnvChanged(startInput.env, nextEnv);
+    startInput.env = nextEnv;
+    return changed;
+  };
 
   const startTransport = async () => {
+    applyCurrentPiRpcSpawnEnv();
     await transport.start(startInput);
     state.started = true;
+    state.permissionHooksReady = false;
     eventIterator = transport.events[Symbol.asyncIterator]();
     await resumePiSessionIfNeeded(transport, input, state.currentState);
     state.currentState = await readPiState(transport, state.currentState);
     await configurePiQueueModes(transport, state);
     await flushPendingPiSteers(transport, state);
+    if (!transport.writeMessage) {
+      await transport.close().catch(() => {});
+      throw new PiPermissionBridgeError("Pi RPC transport cannot answer extension UI permission requests");
+    }
+    try {
+      pendingStartupEvents = await awaitPiPermissionHooksReady(
+        transport,
+        eventIterator,
+        options.permissionHooksReadyTimeoutMs,
+        abortSignal,
+      );
+      state.permissionHooksReady = true;
+    } catch (error) {
+      await transport.close().catch(() => {});
+      throw error;
+    }
   };
 
   const restartTransport = async (): Promise<boolean> => {
@@ -470,7 +702,6 @@ async function* runPiTurns(
   };
 
   try {
-    await startTransport();
     let turnIndex = 0;
 
     for await (const promptMessage of input.prompt) {
@@ -483,6 +714,29 @@ async function* runPiTurns(
         continue;
       }
 
+      // Start (or respawn) after the host has applied this turn's runtime env.
+      // Eager spawn at session open would bake the pre-rotation context key,
+      // which refreshRuntimeRequestContextForTurn then revokes.
+      if (!state.started) {
+        try {
+          await startTransport();
+        } catch (error) {
+          if (!isPiPermissionBridgeError(error)) {
+            throw error;
+          }
+          yield {
+            type: "turn.failed",
+            error: error.message,
+            recoverable: true,
+            failureKind: "transport",
+            rawEvent: { type: "permission.bridge_unavailable" },
+          };
+          return;
+        }
+      } else if (applyCurrentPiRpcSpawnEnv()) {
+        await restartTransport();
+      }
+
       const terminalTracker = createRuntimeTerminalEventTracker();
       turnIndex += 1;
       const context: PiEventContext = {
@@ -491,6 +745,8 @@ async function* runPiTurns(
         turnIndex,
         itemIndex: 0,
         state: state.currentState,
+        ignoreStaleTerminals: state.ignoreStaleTerminals,
+        lifecycleStarted: !state.ignoreStaleTerminals,
       };
 
       state.activeTurn = true;
@@ -499,21 +755,34 @@ async function* runPiTurns(
         void safePiCommand(transport, { type: "abort" });
       };
       abortSignal.addEventListener("abort", abortListener, { once: true });
+      let lastTerminalFailed = false;
+      let lastTerminalInterrupted = false;
 
       try {
         let promptResponse: PiRpcResponse;
         try {
-          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
+          promptResponse = await sendPiPromptOrRecover(transport, prompt, abortSignal, restartTransport, state);
         } catch (error) {
           if (!isPiTransportDisconnectedError(error) || !(await restartTransport())) {
             throw error;
           }
-          promptResponse = await sendPiPromptWithBusyRetry(transport, prompt, abortSignal);
+          state.ignoreStaleTerminals = false;
+          context.ignoreStaleTerminals = false;
+          context.lifecycleStarted = true;
+          promptResponse = await sendPiPromptOrRecover(
+            state.transport ?? transport,
+            prompt,
+            abortSignal,
+            restartTransport,
+            state,
+          );
         }
         if (!promptResponse.success) {
+          lastTerminalFailed = true;
           const terminal = terminalTracker.fail({
             error: promptResponse.error ?? "Pi prompt was rejected",
             recoverable: true,
+            ...(isPiBusyResponse(promptResponse) ? { failureKind: "transport" as const } : {}),
             rawEvent: promptResponse,
             metadata: buildPiEventMetadata(promptResponse, context),
           });
@@ -524,7 +793,7 @@ async function* runPiTurns(
         }
 
         while (!terminalTracker.terminalEmitted) {
-          const next = await eventIterator.next();
+          const next = await takeNextPiEvent();
           if (next.done) {
             const terminal = state.interrupted
               ? terminalTracker.interrupt({
@@ -544,6 +813,31 @@ async function* runPiTurns(
           }
 
           const event = next.value;
+          if (isPiPermissionHooksReadyEvent(event)) {
+            state.permissionHooksReady = true;
+          }
+          if (event.type === "tool_execution_start" && !state.permissionHooksReady) {
+            lastTerminalFailed = true;
+            const terminal = terminalTracker.fail({
+              error: PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
+              recoverable: true,
+              failureKind: "transport",
+              rawEvent: event,
+              metadata: buildPiEventMetadata(event, context),
+            });
+            if (terminal) {
+              yield terminal;
+            }
+            break;
+          }
+          if (event.type === "extension_ui_request") {
+            await answerPiExtensionUiRequest(state.transport ?? transport, event, input);
+          }
+          if (event.type === "agent_start" || event.type === "turn_start") {
+            context.lifecycleStarted = true;
+            context.ignoreStaleTerminals = false;
+            state.ignoreStaleTerminals = false;
+          }
           for (const runtimeEvent of normalizePiEvent(event, context)) {
             if (!terminalTracker.accept(runtimeEvent)) {
               continue;
@@ -560,6 +854,12 @@ async function* runPiTurns(
             attachPiSkillVisibility(terminal, options.skillVisibility);
             if (terminal.type === "turn.complete") {
               state.currentState = context.state;
+            }
+            if (terminal.type === "turn.failed") {
+              lastTerminalFailed = true;
+            }
+            if (terminal.type === "turn.interrupted") {
+              lastTerminalInterrupted = true;
             }
             yield terminal;
             break;
@@ -579,11 +879,26 @@ async function* runPiTurns(
         }
 
         const disconnected = isPiTransportDisconnectedError(error);
+        const permissionBridgeFailed = isPiPermissionBridgeError(error);
         const terminal = terminalTracker.fail({
           error: error instanceof Error ? error.message : String(error),
           recoverable: true,
-          rawEvent: disconnected ? { type: "transport.disconnected" } : undefined,
-          metadata: buildPiEventMetadata({ type: disconnected ? "transport.disconnected" : "stream.error" }, context),
+          ...(disconnected || permissionBridgeFailed ? { failureKind: "transport" as const } : {}),
+          rawEvent: disconnected
+            ? { type: "transport.disconnected" }
+            : permissionBridgeFailed
+              ? { type: "permission.bridge_unavailable" }
+              : undefined,
+          metadata: buildPiEventMetadata(
+            {
+              type: disconnected
+                ? "transport.disconnected"
+                : permissionBridgeFailed
+                  ? "permission.bridge_unavailable"
+                  : "stream.error",
+            },
+            context,
+          ),
         });
         if (terminal) {
           yield terminal;
@@ -593,7 +908,20 @@ async function* runPiTurns(
         }
       } finally {
         abortSignal.removeEventListener("abort", abortListener);
+        const interrupted = state.interrupted || abortSignal.aborted;
         state.activeTurn = false;
+        drainPendingPiEvents(transport);
+        if (!abortSignal.aborted && (interrupted || lastTerminalFailed || lastTerminalInterrupted)) {
+          const idle = await recoverPiAfterInterrupt(transport, state);
+          state.ignoreStaleTerminals = true;
+          context.ignoreStaleTerminals = true;
+          if (!idle && (await restartTransport())) {
+            state.ignoreStaleTerminals = false;
+            context.ignoreStaleTerminals = false;
+          }
+        } else if (interrupted || lastTerminalInterrupted) {
+          state.ignoreStaleTerminals = true;
+        }
         state.interrupted = false;
       }
     }
@@ -613,6 +941,8 @@ interface PiEventContext {
   activeTurnId?: string;
   state?: PiRpcSessionState;
   lastAssistantMessage?: PiAgentMessage;
+  ignoreStaleTerminals?: boolean;
+  lifecycleStarted?: boolean;
 }
 
 function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEvent[] {
@@ -655,8 +985,7 @@ function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEv
       events.push({ type: "item.completed", item, rawEvent, metadata });
       if (message?.role === "assistant") {
         context.lastAssistantMessage = message;
-        const text = extractPiAssistantText(message);
-        if (text) {
+        for (const text of extractPiAssistantTexts(message)) {
           events.push({ type: "assistant.message", text, rawEvent, metadata });
         }
       }
@@ -710,6 +1039,9 @@ async function maybeBuildPiTerminalEvent(
   terminalTracker: ReturnType<typeof createRuntimeTerminalEventTracker>,
 ): Promise<Extract<RuntimeEvent, { type: "turn.complete" | "turn.failed" | "turn.interrupted" }> | null> {
   const rawEvent = event as Record<string, unknown>;
+  if (shouldIgnoreStalePiTerminal(event, context)) {
+    return null;
+  }
 
   if (event.type === "turn_end") {
     const message = asPiAgentMessage(event.message);
@@ -761,6 +1093,7 @@ async function maybeBuildPiTerminalEvent(
 async function controlPiRuntime(
   state: PiSessionRuntimeState,
   request: RuntimeControlRequest,
+  modelBroker?: RuntimeStartRequest["modelBroker"],
 ): Promise<RuntimeControlResult> {
   const buildState = (): RuntimeControlState => ({
     provider: "pi",
@@ -816,12 +1149,21 @@ async function controlPiRuntime(
         if (!model) {
           return failControl(request, "Missing model for Pi model.set", buildState());
         }
+        if (modelBroker && model !== modelBroker.model) {
+          return failControl(
+            request,
+            "Changing models requires resolving a matching model-broker route.",
+            buildState(),
+          );
+        }
         const parsed = parsePiModelSelector(model);
         return okControl(
           request,
           await sendPiCommand(transport, {
             type: "set_model",
-            provider: parsed.provider ?? defaultPiModelProvider(),
+            provider: modelBroker
+              ? resolveRuntimeModelBrokerLocalProviderId(modelBroker)
+              : (parsed.provider ?? defaultPiModelProvider()),
             modelId: parsed.modelId ?? model,
           }),
           buildState(),
@@ -963,8 +1305,57 @@ function sendPiPrompt(transport: PiRpcTransport, prompt: string): Promise<PiRpcR
 
 export function isPiBusyResponse(response: PiRpcResponse): boolean {
   if (response.success) return false;
-  const error = typeof response.error === "string" ? response.error : "";
-  return error.includes("already processing");
+  return isPiAlreadyProcessingError(response.error);
+}
+
+export function isPiAlreadyProcessingError(error: unknown): boolean {
+  const text = typeof error === "string" ? error : "";
+  return text.toLowerCase().includes("already processing");
+}
+
+function isPiSessionBusy(session?: PiRpcSessionState): boolean {
+  return session?.isStreaming === true || session?.isProcessing === true || session?.isCompacting === true;
+}
+
+function drainPendingPiEvents(transport: PiRpcTransport): PiRpcEvent[] {
+  return transport.drainPendingEvents?.() ?? [];
+}
+
+async function recoverPiAfterInterrupt(transport: PiRpcTransport, state: PiSessionRuntimeState): Promise<boolean> {
+  await safePiCommand(transport, { type: "abort" });
+  drainPendingPiEvents(transport);
+  const current = await readPiState(transport, state.currentState);
+  state.currentState = current;
+  return !isPiSessionBusy(current);
+}
+
+function shouldIgnoreStalePiTerminal(event: PiRpcEvent, context: PiEventContext): boolean {
+  if (!context.ignoreStaleTerminals || context.lifecycleStarted) {
+    return false;
+  }
+  return event.type === "turn_end" || event.type === "agent_end";
+}
+
+async function sendPiPromptOrRecover(
+  transport: PiRpcTransport,
+  prompt: string,
+  signal: AbortSignal,
+  restartTransport: () => Promise<boolean>,
+  state: PiSessionRuntimeState,
+): Promise<PiRpcResponse> {
+  const response = await sendPiPromptWithBusyRetry(transport, prompt, signal);
+  if (!isPiBusyResponse(response) || signal.aborted) {
+    return response;
+  }
+  if (!(await restartTransport())) {
+    return response;
+  }
+  state.ignoreStaleTerminals = false;
+  const nextTransport = state.transport;
+  if (!nextTransport) {
+    return response;
+  }
+  return sendPiPromptWithBusyRetry(nextTransport, prompt, signal);
 }
 
 function piPromptBackoffMs(attempt: number): number | undefined {
@@ -1026,7 +1417,7 @@ async function safePiCommand(transport: PiRpcTransport, command: PiRpcCommand): 
   }
 }
 
-function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[]): string[] {
+export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[] = []): string[] {
   const args = [...commandArgs, "--mode", "rpc"];
   const modelArg = input.modelArg ?? input.model;
 
@@ -1043,8 +1434,93 @@ function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[]): s
   if (systemPromptAppend) {
     args.push("--append-system-prompt", systemPromptAppend);
   }
+  if (input.extensionPath) {
+    args.push("--extension", input.extensionPath);
+  }
 
   return args;
+}
+
+async function awaitPiPermissionHooksReady(
+  transport: PiRpcTransport,
+  eventIterator: AsyncIterator<PiRpcEvent>,
+  timeoutMs: number,
+  abortSignal: AbortSignal,
+): Promise<PiRpcEvent[]> {
+  const buffered: PiRpcEvent[] = [];
+  const consume = (event: PiRpcEvent): boolean => {
+    if (isPiPermissionHooksReadyEvent(event)) {
+      return true;
+    }
+    if (event.type === "extension_error") {
+      const extensionPath = firstString(event.extensionPath) ?? "";
+      if (!extensionPath || extensionPath.includes(PI_PERMISSION_EXTENSION_FILENAME)) {
+        throw new PiPermissionBridgeError(
+          `Pi permission extension failed: ${firstString(event.error) ?? "unknown error"}`,
+        );
+      }
+    }
+    if (event.type === "tool_execution_start") {
+      throw new PiPermissionBridgeError(
+        "Pi tool started before permission hooks were confirmed live. Refusing ungoverned ravi-host execution.",
+      );
+    }
+    buffered.push(event);
+    return false;
+  };
+
+  for (const event of transport.drainPendingEvents?.() ?? []) {
+    if (consume(event)) {
+      return buffered;
+    }
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (!abortSignal.aborted) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      break;
+    }
+    const next = await Promise.race([
+      eventIterator.next().then((result) => ({ kind: "event" as const, result })),
+      waitWithAbort(remaining, abortSignal).then((aborted) => ({
+        kind: aborted ? ("abort" as const) : ("timeout" as const),
+      })),
+    ]);
+    if (next.kind !== "event") {
+      if (next.kind === "abort") {
+        throw new PiPermissionBridgeError("Pi permission handshake aborted before hooks were confirmed live.");
+      }
+      break;
+    }
+    if (next.result.done) {
+      break;
+    }
+    if (consume(next.result.value)) {
+      return buffered;
+    }
+  }
+
+  throw new PiPermissionBridgeError(PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE);
+}
+
+async function answerPiExtensionUiRequest(
+  transport: PiRpcTransport,
+  event: PiRpcEvent,
+  input: RuntimeStartRequest,
+): Promise<void> {
+  const response = await resolvePiExtensionUiResponse(event, {
+    canUseTool: input.canUseTool,
+    approveRuntimeRequest: input.approveRuntimeRequest,
+    allowedSkills: input.allowedSkills,
+  });
+  if (!response) {
+    return;
+  }
+  if (!transport.writeMessage) {
+    throw new Error("Pi RPC transport cannot answer extension UI permission requests");
+  }
+  await transport.writeMessage(response);
 }
 
 function attachStrictJsonlLineReader(stream: NodeJS.ReadableStream, onLine: (line: string) => void): () => void {
@@ -1122,6 +1598,9 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
       while (waiters.length > 0) {
         waiters.shift()!.reject(error);
       }
+    },
+    drain() {
+      return values.splice(0, values.length);
     },
     [Symbol.asyncIterator]() {
       return {
@@ -1318,21 +1797,21 @@ function mapPiUsage(usage: PiUsage | undefined): RuntimeUsage {
   };
 }
 
-function extractPiAssistantText(message: PiAgentMessage): string {
+function extractPiAssistantTexts(message: PiAgentMessage): string[] {
   const content = message.content;
   if (typeof content === "string") {
-    return content;
+    return content.trim() ? [content.trim()] : [];
   }
   if (!Array.isArray(content)) {
-    return "";
+    return [];
   }
-  let text = "";
+  const blocks: string[] = [];
   for (const block of content) {
     if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
-      text += block.text;
+      blocks.push(block.text);
     }
   }
-  return text;
+  return coalesceAssistantTextBlocks(blocks);
 }
 
 function findLastAssistantMessage(messages: unknown[]): PiAgentMessage | undefined {

@@ -1,4 +1,10 @@
+import { syncRuntimeSessionGoal } from "./session-goals.js";
+import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
+import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -19,6 +25,7 @@ import {
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
+import { resolveVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   buildRuntimeContextRecoveryPrompt,
@@ -27,6 +34,14 @@ import {
 } from "./context-window-recovery.js";
 import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
+import {
+  reportRuntimeModelBrokerAttempt,
+  type ModelBrokerAttemptFeedbackResult,
+  type RuntimeModelBrokerEffectState,
+} from "./model-broker.js";
+import { createModelBroker } from "./model-broker-registry.js";
+import { releaseRuntimeModelBrokerPlanForAdvance } from "./model-broker-planning.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
 import {
@@ -35,19 +50,42 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
+  getCrashRecoveryReplayablePendingRuntimeMessages,
+  getRuntimeTurnReplaySafety,
+  isProviderEndedAfterCompletedTools,
+  runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
-import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
+import { resolveSessionOutputTargetPreserving } from "./session-output-target.js";
+import {
+  isObserverRuntimeSessionName,
+  resolveRuntimeIdleSessionTtlMs,
+  resolveRuntimeTurnInactivityMs,
+} from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
-import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import {
+  formatUserFacingTurnFailure,
+  PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+  publicRuntimeFailureDetail,
+} from "./public-failure.js";
+import {
+  createTurnToolContinuationLedger,
+  listOpenTurnToolNames,
+  noteTurnPostToolAssistant,
+  noteTurnToolStarted,
+  noteTurnToolTerminal,
+  resetTurnToolContinuationLedger,
+  resolveHostTurnCompleteAfterTools,
+} from "./turn-tool-continuation.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -71,6 +109,9 @@ import type {
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import { buildRuntimeToolPresentation } from "./tool-presentation.js";
+import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
+import { createToolLivenessLease, DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS } from "./tool-liveness.js";
 
 const log = logger.child("bot");
 
@@ -78,11 +119,16 @@ const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
+const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+const GENERATED_IMAGE_ITEM_TYPE = "imageGeneration";
+const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
+const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
 
 const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
@@ -128,6 +174,16 @@ function truncateLiveSummary(value: unknown, maxLength = 180): string | undefine
   return text || undefined;
 }
 
+function appendAssistantResponse(current: string, next: string): string {
+  const trimmed = next.trim();
+  if (!trimmed) return current;
+  return current ? `${current}\n\n${trimmed}` : trimmed;
+}
+
+function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
+  return metadata?.item?.phase === "commentary";
+}
+
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!rawEvent) return undefined;
 
@@ -161,6 +217,155 @@ function firstNumber(...values: unknown[]): number | undefined {
     }
   }
   return undefined;
+}
+
+function isGeneratedImageToolCompletion(event: Extract<RuntimeEvent, { type: "tool.completed" }>): boolean {
+  return event.isError !== true && event.metadata?.item?.type === GENERATED_IMAGE_ITEM_TYPE;
+}
+
+function extractGeneratedImagePayload(content: unknown): { id?: string; base64: string } | null {
+  if (typeof content === "string" && content.trim()) {
+    return { base64: content.trim() };
+  }
+
+  const record = asRecord(content);
+  if (!record) return null;
+
+  const base64 = firstString(record.result, record.image, record.base64, record.b64_json, record.data);
+  if (!base64) return null;
+
+  return {
+    base64,
+    ...(firstString(record.id, record.imageId, record.itemId)
+      ? { id: firstString(record.id, record.imageId, record.itemId) }
+      : {}),
+  };
+}
+
+function decodeBase64ImagePayload(value: string): Buffer | null {
+  const trimmed = value.trim();
+  const dataUrlMatch = /^data:[^;,]+;base64,(.*)$/s.exec(trimmed);
+  if (trimmed.startsWith("data:") && !dataUrlMatch) return null;
+  const payload = dataUrlMatch?.[1] ?? trimmed;
+  const normalized = payload.replace(/\s+/g, "");
+  if (!normalized) return null;
+
+  const estimatedBytes = Math.floor((normalized.length * 3) / 4);
+  if (estimatedBytes > MAX_GENERATED_MEDIA_BYTES) return null;
+
+  const bytes = Buffer.from(normalized, "base64");
+  return bytes.byteLength > 0 && bytes.byteLength <= MAX_GENERATED_MEDIA_BYTES ? bytes : null;
+}
+
+function inferImageFormat(bytes: Buffer): { mimeType: string; extension: string } | null {
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { mimeType: "image/png", extension: "png" };
+  }
+  if (bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+    return { mimeType: "image/jpeg", extension: "jpg" };
+  }
+  if (
+    bytes.byteLength >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return { mimeType: "image/webp", extension: "webp" };
+  }
+  const gifHeader = bytes.subarray(0, 6).toString("ascii");
+  if (gifHeader === "GIF87a" || gifHeader === "GIF89a") {
+    return { mimeType: "image/gif", extension: "gif" };
+  }
+  return null;
+}
+
+function safeFileComponent(value: unknown, fallback: string): string {
+  const normalized = String(value ?? "")
+    .replace(/[^a-zA-Z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return normalized || fallback;
+}
+
+async function materializeGeneratedImageAttachment(input: {
+  sessionKey: string;
+  sessionName: string;
+  provider: RuntimeProviderId;
+  toolUseId?: string;
+  content: unknown;
+  metadata?: RuntimeEventMetadata;
+}): Promise<ResponseMediaAttachment | null> {
+  const payload = extractGeneratedImagePayload(input.content);
+  if (!payload) return null;
+
+  const bytes = decodeBase64ImagePayload(payload.base64);
+  if (!bytes) return null;
+
+  const format = inferImageFormat(bytes);
+  if (!format) return null;
+
+  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const itemId = payload.id ?? input.metadata?.item?.id ?? input.toolUseId ?? "image";
+  const filename = `${GENERATED_MEDIA_FILE_PREFIX}-${safeFileComponent(input.sessionName, "session")}-${safeFileComponent(itemId, "image")}-${hash}.${format.extension}`;
+  const filePath = join(tmpdir(), filename);
+  await writeFile(filePath, bytes);
+
+  return {
+    type: "image",
+    filePath,
+    filename,
+    mimeType: format.mimeType,
+    idempotencyKey: `runtime.generated_media:${input.sessionKey}:${itemId}:${hash}`,
+    source: "runtime.generated_media",
+    metadata: {
+      provider: input.provider,
+      ...(input.toolUseId ? { toolUseId: input.toolUseId } : {}),
+      ...(payload.id ? { providerOutputId: payload.id } : {}),
+      ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+    },
+  };
+}
+
+function summarizeGeneratedImageToolOutput(input: {
+  content: unknown;
+  attachment?: ResponseMediaAttachment | null;
+  metadata?: RuntimeEventMetadata;
+}): Record<string, unknown> {
+  const payload = extractGeneratedImagePayload(input.content);
+  return {
+    type: "generated_image",
+    ...(input.attachment !== undefined ? { materialized: input.attachment !== null } : {}),
+    ...(input.attachment
+      ? {
+          filename: input.attachment.filename,
+          mimeType: input.attachment.mimeType,
+          idempotencyKey: input.attachment.idempotencyKey,
+        }
+      : {}),
+    ...(payload?.id ? { providerOutputId: payload.id } : {}),
+    ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+  };
+}
+
+function redactGeneratedImageProviderRawEvent(
+  rawEvent: Record<string, unknown>,
+  metadata: RuntimeEventMetadata | undefined,
+): Record<string, unknown> {
+  if (metadata?.item?.type !== GENERATED_IMAGE_ITEM_TYPE) return rawEvent;
+
+  const payloadKeys = new Set(["result", "image", "base64", "b64_json", "data"]);
+  const redact = (value: unknown, key?: string): unknown => {
+    if (key && payloadKeys.has(key) && typeof value === "string") {
+      return "[generated image payload redacted]";
+    }
+    if (Array.isArray(value)) return value.map((item) => redact(item));
+    const record = asRecord(value);
+    if (!record) return value;
+    return Object.fromEntries(
+      Object.entries(record).map(([nestedKey, nestedValue]) => [nestedKey, redact(nestedValue, nestedKey)]),
+    );
+  };
+
+  return redact(rawEvent) as Record<string, unknown>;
 }
 
 function headerValue(value: unknown): string | number | undefined {
@@ -225,11 +430,19 @@ function extractRuntimeFailureHeaders(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSession): void {
+async function recordRuntimeCredentialTurnSuccess(
+  streaming: RuntimeHostStreamingSession,
+  effectState: RuntimeModelBrokerEffectState,
+): Promise<void> {
   const credential = streaming.currentRuntimeCredential;
   const credentialId = credential?.credentialId;
   if (!credentialId) return;
   try {
+    if (credential.authMethod === "model-broker") {
+      await reportModelBrokerFeedback(credential, streaming.agentId, "succeeded", effectState);
+      credential.modelBrokerAttemptTerminal = true;
+      return;
+    }
     recordRuntimeCredentialSuccess(credentialId);
     completeRuntimeCredentialAttempt(credential?.attemptId, {
       status: "succeeded",
@@ -244,18 +457,26 @@ function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSessi
 
 function clearRuntimeCredentialAttempt(streaming: RuntimeHostStreamingSession, attemptId: string | undefined): void {
   if (!attemptId) return;
+  if (streaming.currentRuntimeCredential?.authMethod === "model-broker") return;
   if (streaming.currentRuntimeCredential?.attemptId === attemptId) {
     streaming.currentRuntimeCredential.attemptId = undefined;
   }
 }
 
-function recordRuntimeCredentialTurnFailure(input: {
+async function recordRuntimeCredentialTurnFailure(input: {
   streaming: RuntimeHostStreamingSession;
   provider: RuntimeProviderId;
   model: string;
   error: string;
   rawEvent?: Record<string, unknown>;
-}): RuntimeCredentialFailureSignal | undefined {
+  effectState: RuntimeModelBrokerEffectState;
+}): Promise<
+  | {
+      signal: RuntimeCredentialFailureSignal;
+      modelBrokerFeedback?: ModelBrokerAttemptFeedbackResult;
+    }
+  | undefined
+> {
   const credential = input.streaming.currentRuntimeCredential;
   if (!credential) return undefined;
   const rawError = asRecord(input.rawEvent?.error);
@@ -280,11 +501,19 @@ function recordRuntimeCredentialTurnFailure(input: {
   });
 
   try {
+    if (credential.authMethod === "model-broker") {
+      const modelBrokerFeedback = await reportModelBrokerFeedback(
+        credential,
+        input.streaming.agentId,
+        signal.retryableByCredential ? "credential_failed" : "provider_failed",
+        input.effectState,
+        signal.kind,
+      );
+      credential.modelBrokerAttemptTerminal = true;
+      return { signal, modelBrokerFeedback };
+    }
     recordRuntimeCredentialFailure(credential.credentialId, signal);
-    completeRuntimeCredentialAttempt(credential.attemptId, {
-      status: "failed",
-      signal,
-    });
+    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
   } catch (error) {
     log.warn("Failed to record runtime credential failure", {
       credentialId: credential.credentialId,
@@ -292,7 +521,59 @@ function recordRuntimeCredentialTurnFailure(input: {
       error,
     });
   }
-  return signal;
+  return { signal };
+}
+
+async function reportModelBrokerFeedback(
+  credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
+  agentId: string,
+  outcome: "succeeded" | "credential_failed" | "provider_failed",
+  effectState: RuntimeModelBrokerEffectState,
+  failureKind?: string,
+): Promise<ModelBrokerAttemptFeedbackResult> {
+  if (
+    !credential.attemptId ||
+    !credential.modelBrokerId ||
+    !credential.modelBrokerLeaseId ||
+    !credential.modelBrokerRuntimeId ||
+    !credential.modelBrokerSessionKey ||
+    !credential.modelBrokerTurnId
+  ) {
+    throw new Error("Model-broker attempt is missing authoritative feedback metadata.");
+  }
+  const result = await reportRuntimeModelBrokerAttempt(createModelBroker(credential.modelBrokerId), {
+    attemptId: credential.attemptId,
+    turnId: credential.modelBrokerTurnId,
+    leaseId: credential.modelBrokerLeaseId,
+    runtimeId: credential.modelBrokerRuntimeId,
+    sessionKey: credential.modelBrokerSessionKey,
+    outcome,
+    effectState,
+    ...(failureKind ? { failureKind } : {}),
+  });
+  if (result.nextAction === "advance") {
+    releaseRuntimeModelBrokerPlanForAdvance({
+      brokerId: credential.modelBrokerId,
+      runtimeId: credential.modelBrokerRuntimeId,
+      agentId,
+      sessionKey: credential.modelBrokerSessionKey,
+      turnId: credential.modelBrokerTurnId,
+      leaseId: credential.modelBrokerLeaseId,
+      attemptId: credential.attemptId,
+    });
+  }
+  return result;
+}
+
+function resolveModelBrokerEffectState(safety: {
+  inputMutated: boolean;
+  startedTool: boolean;
+  materializedOutput: boolean;
+}): RuntimeModelBrokerEffectState {
+  if (safety.materializedOutput) return "output_materialized";
+  if (safety.startedTool) return "tool_started";
+  if (safety.inputMutated) return "input_mutated";
+  return "none";
 }
 
 function buildProviderRawRuntimeEvent(
@@ -323,6 +604,18 @@ function buildProviderRawRuntimeEvent(
   };
 }
 
+function stripRuntimeRawEvent<T extends RuntimeEvent>(event: T): T {
+  const safeEvent: Record<string, unknown> = { ...event };
+  delete safeEvent.rawEvent;
+  if (event.type === "tool.completed" && isGeneratedImageToolCompletion(event)) {
+    safeEvent.content = summarizeGeneratedImageToolOutput({
+      content: event.content,
+      metadata: event.metadata,
+    });
+  }
+  return safeEvent as T;
+}
+
 function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<string, unknown> }): string | undefined {
   const parts: string[] = [];
   const rawEvent = event.rawEvent;
@@ -340,7 +633,21 @@ function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<s
 }
 
 function runtimeEventLogLevel(eventType: string): "debug" | "info" {
-  return eventType === "text.delta" || eventType === "provider.raw" || eventType === "status" ? "debug" : "info";
+  return eventType === "text.delta" ||
+    eventType === "provider.raw" ||
+    eventType === "status" ||
+    eventType === "tool.progress"
+    ? "debug"
+    : "info";
+}
+
+function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<string, unknown> }): boolean {
+  const details = [event.error, event.rawEvent?.error, event.rawEvent?.message]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+    .join("\n")
+    .toLowerCase();
+  return details.includes("already processing");
 }
 
 function isRecoverableInterruptionFailure(event: {
@@ -530,6 +837,7 @@ export interface RunRuntimeEventLoopOptions {
   streaming: RuntimeHostStreamingSession;
   runtimeSession: RuntimeSessionHandle;
   runtimeCapabilities: RuntimeCapabilities;
+  crashRecovery?: RuntimeCrashRecoveryCoordinator;
   model: string;
   instanceId: string;
   defaultRuntimeProviderId: RuntimeProviderId;
@@ -538,6 +846,7 @@ export interface RunRuntimeEventLoopOptions {
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
+  onToolBarrierReleased?(sessionName: string): void | Promise<void>;
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -550,6 +859,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming,
     runtimeSession,
     runtimeCapabilities,
+    crashRecovery,
     model,
     instanceId,
     streamingSessions,
@@ -557,6 +867,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
+    onToolBarrierReleased,
   } = options;
   prewarmPricingCatalog();
   const recordTraceEvent = (
@@ -572,12 +883,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       source,
     });
   };
+  const terminalizeCurrentCrashRecoveryAttempt = (
+    status: RuntimeTurnAttemptTerminalStatus,
+    requestedCompletedAt?: number,
+  ) => {
+    if (streaming.currentCrashRecoveryTerminal) {
+      return streaming.currentCrashRecoveryTerminal;
+    }
+
+    const completedAt = requestedCompletedAt ?? Date.now();
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId;
+    const activeAttempt =
+      crashRecoveryAttemptId && crashRecovery ? crashRecovery.getActiveTurnAttempt?.(crashRecoveryAttemptId) : null;
+    let terminalAttempt = activeAttempt;
+    if (!crashRecoveryAttemptId && crashRecovery?.ownershipFailure) {
+      // Ownership loss means this process cannot prove a first-terminal ledger
+      // write. Do not fabricate an in-memory terminal latch that could later be
+      // projected or recorded as though durability had succeeded.
+      return undefined;
+    }
+    if (!crashRecoveryAttemptId && streaming.currentTraceTurnId && crashRecovery && !crashRecovery.ownershipFailure) {
+      throw new Error("Crash recovery attempt binding missing before terminal provider state");
+    }
+    if (crashRecoveryAttemptId) {
+      if (!crashRecovery) {
+        throw new Error(`Crash recovery coordinator missing for active attempt ${crashRecoveryAttemptId}`);
+      }
+      terminalAttempt = crashRecovery.terminalizeTurnAttempt({
+        attemptId: crashRecoveryAttemptId,
+        status,
+        completedAt,
+      });
+      if (terminalAttempt.status !== status || terminalAttempt.completedAt !== completedAt) {
+        throw new Error(
+          `Crash recovery attempt ${crashRecoveryAttemptId} terminalized with an unexpected first-terminal state`,
+        );
+      }
+      // Release the in-memory binding only after the terminal ledger write is durable.
+      streaming.currentCrashRecoveryAttemptId = undefined;
+    }
+    const terminal = {
+      status,
+      completedAt,
+      startedTool: terminalAttempt?.startedTool === true || streaming.currentTurnToolStarted === true,
+      materializedOutput: terminalAttempt?.materializedOutput === true,
+      inputMutated:
+        (terminalAttempt ? hasRuntimeTurnAttemptInputMutation(terminalAttempt) : false) ||
+        streaming.currentTurnInputMutated === true,
+    };
+    streaming.currentCrashRecoveryTerminal = terminal;
+    return terminal;
+  };
   const recordTerminalTraceOnce = (
     input: Omit<
       Parameters<typeof recordTerminalTurnTrace>[0],
       "sessionKey" | "sessionName" | "agentId" | "runId" | "turnId" | "provider" | "model" | "startedAt"
     >,
   ) => {
+    const terminal = terminalizeCurrentCrashRecoveryAttempt(input.status, input.completedAt);
+    if (!terminal) return;
+
     if (!streaming.currentTraceTurnId || streaming.currentTraceTurnTerminalRecorded) {
       return;
     }
@@ -591,10 +956,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       model,
       startedAt: streaming.currentTraceTurnStartedAt,
       ...input,
+      status: terminal.status,
+      eventType: runtimeTurnAttemptTerminalEventType(terminal.status),
+      abortReason: terminal.status === "complete" ? null : input.abortReason,
+      completedAt: terminal.completedAt,
     });
     streaming.currentTraceTurnTerminalRecorded = true;
   };
   const clearTraceTurnState = () => {
+    if (streaming.currentCrashRecoveryAttemptId) {
+      throw new Error(
+        `Cannot clear trace state while crash recovery attempt ${streaming.currentCrashRecoveryAttemptId} is running`,
+      );
+    }
     streaming.currentTraceTurnId = undefined;
     streaming.currentTraceTurnStartedAt = undefined;
     streaming.currentTraceUserPromptSha256 = undefined;
@@ -602,9 +976,35 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceRequestBlobSha256 = undefined;
     streaming.currentTraceTurnTerminalRecorded = false;
   };
+  const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    if (!crashRecovery) {
+      if (!attemptId) return;
+      throw new Error(`Crash recovery coordinator missing for active attempt ${attemptId}`);
+    }
+    if (!attemptId) {
+      throw new Error("Crash recovery attempt binding missing before provider side effect");
+    }
+    crashRecovery.markTurnAttemptSafety({ attemptId, ...input });
+  };
 
   let providerRawEventCount = 0;
   let responseText = "";
+  let channelResponseText = "";
+  const turnToolContinuation = createTurnToolContinuationLedger();
+  let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
+  const generatedMediaKeys = new Set<string>();
+  const clearPendingGeneratedMedia = () => {
+    pendingGeneratedMedia = [];
+    generatedMediaKeys.clear();
+  };
+  const queueGeneratedMedia = (attachment: ResponseMediaAttachment): boolean => {
+    const key = attachment.idempotencyKey ?? attachment.filePath;
+    if (generatedMediaKeys.has(key)) return false;
+    generatedMediaKeys.add(key);
+    pendingGeneratedMedia.push(attachment);
+    return true;
+  };
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
   let restartStashedReason: string | undefined;
@@ -729,29 +1129,69 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     skills: runtimeSession.skillVisibility?.skills,
     loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
   });
-  const STUCK_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
   // Tight timeout for the well-known codex bug: after we deliver a tool result,
   // codex's app-server occasionally drops the JSON-RPC callback and never asks
   // the model for the next step. The agent can't make progress until we abort.
-  // 3 minutes is enough for legitimate xhigh thinking on most workloads while
-  // recovering quickly from the silent hang.
+  // Compaction is provider work and can legitimately exceed this window, so
+  // suspend the watch until the provider leaves compacting status.
   // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
   const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
     1_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
-  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
-    1_000,
-    Number(process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS) || 15 * 60 * 1000,
-  );
+  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(1_000, resolveRuntimeTurnInactivityMs());
   const PROVIDER_TURN_INACTIVITY_CHECK_MS = Math.min(
     30_000,
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
   );
   const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
-  let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  let providerInactivityWatchArmed = false;
+  const toolLivenessLease = createToolLivenessLease({
+    inactivityTimeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+    onInactive: (toolUseId) => {
+      if (!streaming.toolRunning || streaming.currentToolId !== toolUseId) return;
+      const inactiveTool = streaming.currentToolName ?? "unknown";
+      log.warn("Tool inactive — aborting session", {
+        sessionName,
+        tool: inactiveTool,
+        toolId: toolUseId,
+        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+      });
+      pushObservationEvent("tool.inactive", {
+        preview: inactiveTool,
+        payload: {
+          toolId: toolUseId,
+          toolName: inactiveTool,
+          timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        },
+      });
+      safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "tool.inactive",
+        reason: TOOL_INACTIVITY_REASON,
+        tool: inactiveTool,
+        toolId: toolUseId,
+        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        sessionName,
+      }).catch(() => {});
+      updateRuntimeLiveState(sessionName, {
+        activity: "blocked",
+        summary: `${inactiveTool} inactive`,
+        agentId: agent.id,
+        runId,
+        provider: runtimeSession.provider,
+        model,
+        toolName: inactiveTool,
+        source: streaming.currentSource,
+      });
+      if (!streaming.abortController.signal.aborted) {
+        streaming.internalAbortReason = TOOL_INACTIVITY_REASON;
+        streaming.abortController.abort();
+      }
+    },
+  });
   const clearProviderInactivityWatch = () => {
+    providerInactivityWatchArmed = false;
     if (providerInactivityTimer !== undefined) {
       clearTimeout(providerInactivityTimer);
       providerInactivityTimer = undefined;
@@ -759,8 +1199,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const armProviderInactivityWatch = () => {
     clearProviderInactivityWatch();
+    if (streaming.done || !streaming.turnActive || streaming.abortController.signal.aborted) return;
+    // Keep the watch armed while suspended, including result-delivered events
+    // that arrive during compaction. The next non-compacting status starts a
+    // fresh inactivity window rather than charging for compaction time.
+    providerInactivityWatchArmed = true;
+    if (streaming.compacting) return;
     providerInactivityTimer = setTimeout(() => {
       providerInactivityTimer = undefined;
+      providerInactivityWatchArmed = false;
+      if (streaming.done || !streaming.turnActive || streaming.compacting || streaming.abortController.signal.aborted)
+        return;
       log.warn("Provider inactive after tool result — aborting session", {
         sessionName,
         timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
@@ -823,16 +1272,71 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.idleSessionEvictionTimer.unref?.();
   };
   const clearActiveToolState = () => {
-    if (toolStuckTimer !== undefined) {
-      clearTimeout(toolStuckTimer);
-      toolStuckTimer = undefined;
-    }
+    toolLivenessLease.clear();
     streaming.toolRunning = false;
+    streaming.toolResultDeliveryPending = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
     streaming.currentToolInput = undefined;
     streaming.toolStartTime = undefined;
     streaming.currentToolSafety = null;
+  };
+  const finishActiveToolBarrier = async () => {
+    clearActiveToolState();
+
+    if (streaming.pendingAbort) {
+      if (streaming.pendingMessages.length > 0) {
+        log.info("Stashing aborted messages (deferred)", {
+          sessionName,
+          count: streaming.pendingMessages.length,
+        });
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+      }
+      log.info("Executing deferred abort after tool barrier released", {
+        sessionName,
+      });
+      streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
+      recordTraceEvent({
+        turnId: streaming.currentTraceTurnId,
+        provider: runtimeSession.provider,
+        model,
+        eventType: "session.abort",
+        eventGroup: "session",
+        status: "requested",
+        source: streaming.currentSource,
+        payloadJson: {
+          reason: streaming.internalAbortReason,
+          deferred: true,
+          toolCompleted: true,
+        },
+      });
+      recordTerminalTraceOnce({
+        status: "aborted",
+        eventType: "turn.interrupted",
+        abortReason: streaming.internalAbortReason,
+        payloadJson: {
+          reason: streaming.internalAbortReason,
+          deferred: true,
+        },
+      });
+      revokeAgentRuntimeContextsForSession(session.sessionKey, {
+        reason: streaming.internalAbortReason,
+      });
+      streaming.abortController.abort();
+      if (streamingSessions.delete(sessionName)) {
+        drainPendingStarts();
+      }
+      return;
+    }
+
+    try {
+      await onToolBarrierReleased?.(sessionName);
+    } catch (error) {
+      log.warn("Failed to release queued prompts after tool completion", {
+        sessionName,
+        error,
+      });
+    }
   };
   const signalTurnComplete = () => {
     clearProviderInactivityWatch();
@@ -862,17 +1366,118 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
+    if (event.type === "turn.complete" || event.type === "turn.failed" || event.type === "turn.interrupted") {
+      streaming.runtimeTerminalSseEmitted = true;
+    }
     const augmented = {
       ...event,
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
+        ? { _replyTarget: streaming.currentReplyTarget }
+        : {}),
       ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
     };
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
+  const emitHostRuntimeTerminal = async (event: Record<string, unknown>) => {
+    if (streaming.runtimeTerminalSseEmitted) {
+      return;
+    }
+    await emitRuntimeEvent(event);
+  };
 
-  const recordProviderTurnInactivityTimeout = (idleMs: number) => {
+  interface PendingProviderRawEvent {
+    event: Extract<RuntimeEvent, { type: "provider.raw" }>;
+    safetyFenced: boolean;
+  }
+
+  const pendingProviderRawEvents: PendingProviderRawEvent[] = [];
+  let suppressProviderRawForCurrentTurn = false;
+  const canReleaseProviderRawEvent = () =>
+    crashRecovery?.acceptingDeliveries === true && !crashRecovery.ownershipFailure;
+  const removePendingProviderRawEvent = (pending: PendingProviderRawEvent) => {
+    const index = pendingProviderRawEvents.indexOf(pending);
+    if (index >= 0) pendingProviderRawEvents.splice(index, 1);
+  };
+  const releasePendingProviderRawEvent = async (pending: PendingProviderRawEvent | undefined) => {
+    if (!pending) return;
+    removePendingProviderRawEvent(pending);
+    if (suppressProviderRawForCurrentTurn || !pending.safetyFenced || !canReleaseProviderRawEvent()) return;
+
+    await emitLegacyProviderEvent(redactGeneratedImageProviderRawEvent(pending.event.rawEvent, pending.event.metadata));
+    await emitRuntimeEvent(
+      buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
+    );
+  };
+  const settlePreviousProviderRawEvents = async () => {
+    const previous = pendingProviderRawEvents.splice(0);
+    for (const pending of previous) {
+      // Structural lifecycle events such as item.started/item.completed/status
+      // do not prove that assistant content or tool arguments crossed a durable
+      // replay-safety fence. Drop their raw envelopes fail-closed.
+      if (!pending.safetyFenced || suppressProviderRawForCurrentTurn || !canReleaseProviderRawEvent()) continue;
+      await emitLegacyProviderEvent(
+        redactGeneratedImageProviderRawEvent(pending.event.rawEvent, pending.event.metadata),
+      );
+      await emitRuntimeEvent(
+        buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
+      );
+    }
+  };
+  const correlatePendingProviderRawEvent = (event: RuntimeEvent): PendingProviderRawEvent | undefined => {
+    if (!("rawEvent" in event) || !event.rawEvent) return undefined;
+    for (let index = pendingProviderRawEvents.length - 1; index >= 0; index--) {
+      const pending = pendingProviderRawEvents[index];
+      if (pending?.event.rawEvent !== event.rawEvent) continue;
+      return pending;
+    }
+    return undefined;
+  };
+  const fencePendingProviderRawEvent = (pending: PendingProviderRawEvent | undefined) => {
+    if (pending) pending.safetyFenced = true;
+  };
+
+  const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
+    const metadata = streaming.currentChannelBackend;
+    if (!metadata) return;
+    const toolProjection =
+      event.type === "tool.started"
+        ? {
+            toolPresentation: buildRuntimeToolPresentation(event.toolUse.name, event.toolUse.input),
+          }
+        : event.type === "tool.completed"
+          ? {
+              toolPresentation: buildRuntimeToolPresentation(
+                streaming.currentToolName ?? event.toolName ?? "tool",
+                streaming.currentToolInput,
+              ),
+              ...(streaming.toolStartTime === undefined
+                ? {}
+                : {
+                    toolDurationMs: Date.now() - streaming.toolStartTime,
+                  }),
+            }
+          : {};
+    try {
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: stripRuntimeRawEvent(event),
+        ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
+        ...toolProjection,
+      });
+    } catch (error) {
+      log.warn("Channel runtime event projection failed", {
+        sessionName,
+        turnId: metadata.binding.turnId,
+        eventType: event.type,
+        errorKind: error instanceof Error ? error.name : typeof error,
+      });
+    }
+  };
+
+  const recordProviderTurnInactivityTimeout = (idleMs: number, autoRecovered: boolean) => {
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+    if ((!currentTurnId || streaming.currentTraceTurnTerminalRecorded) && !streaming.currentCrashRecoveryAttemptId) {
       return;
     }
 
@@ -916,7 +1521,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         reason: PROVIDER_TURN_INACTIVITY_REASON,
         timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
         idleMs,
-        autoRecovered: true,
+        autoRecovered,
       },
     });
     flushObservationEvents("turn.failed", {
@@ -924,13 +1529,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       reason: PROVIDER_TURN_INACTIVITY_REASON,
       timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
       idleMs,
-      autoRecovered: true,
+      autoRecovered,
+    });
+    void emitHostRuntimeTerminal({
+      type: "turn.failed",
+      error: `Provider produced no runtime events for ${PROVIDER_TURN_INACTIVITY_TIMEOUT_MS}ms.`,
+      recoverable: true,
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
     });
   };
 
   const recordUnterminatedTurnExit = () => {
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+    if (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId) {
+      return;
+    }
+    if ((!currentTurnId || streaming.currentTraceTurnTerminalRecorded) && !streaming.currentCrashRecoveryAttemptId) {
       return;
     }
 
@@ -940,9 +1556,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const timedOut =
       reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
       reason === PROVIDER_TURN_INACTIVITY_REASON ||
-      reason === "stuck_tool";
-    const status = timedOut ? "timeout" : "aborted";
-    const eventType = timedOut ? "turn.failed" : "turn.interrupted";
+      reason === TOOL_INACTIVITY_REASON;
+    const status = streaming.currentCrashRecoveryTerminal?.status ?? (timedOut ? "timeout" : "aborted");
+    const eventType = runtimeTurnAttemptTerminalEventType(status);
 
     log.warn("Runtime event loop ended with unterminated active turn", {
       runId,
@@ -978,19 +1594,63 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     recordTerminalTraceOnce({
       status,
       eventType,
-      abortReason: reason,
+      abortReason: status === "complete" ? null : reason,
       error: timedOut ? `Runtime ended without a terminal provider event after ${reason}.` : null,
+      completedAt: streaming.currentCrashRecoveryTerminal?.completedAt,
       payloadJson: {
         reason,
         phase: "runtime.event_loop.finally",
         autoRecovered: Boolean(restartStashedReason),
+        providerTerminalRecorded: Boolean(streaming.currentCrashRecoveryTerminal),
       },
+    });
+    void emitHostRuntimeTerminal({
+      type: eventType,
+      ...(eventType === "turn.failed"
+        ? {
+            error: timedOut
+              ? `Runtime ended without a terminal provider event after ${reason}.`
+              : `Runtime ended without a terminal provider event (${reason}).`,
+            recoverable: true,
+          }
+        : {}),
+      reason,
+      phase: "runtime.event_loop.finally",
     });
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (streaming.durableTurnPreparationFailed) {
+      if (!restartStashedReason) {
+        // The prompt was never yielded to the provider. Preserve it even when
+        // the failed attempt write made the coordinator reject new work;
+        // shutdown snapshots still need the exact original envelope.
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+      }
+      if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
+        return;
+      }
+      const stashedCount = stashedMessages.get(sessionName)?.length ?? 0;
+      if (stashedCount === 0) {
+        return;
+      }
+      restartStashedReason = "runtime_event_loop_closed";
+      log.warn("Retrying runtime after durable turn preparation failed", {
+        runId,
+        sessionName,
+        reason: restartStashedReason,
+        stashedMessages: stashedCount,
+      });
+      return;
+    }
+
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded || restartStashedReason) {
+    if (
+      !currentTurnId ||
+      streaming.currentTraceTurnTerminalRecorded ||
+      streaming.currentCrashRecoveryTerminal ||
+      restartStashedReason
+    ) {
       return;
     }
 
@@ -1001,11 +1661,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (reason !== "runtime_event_loop_closed") {
       return;
     }
-    if (streaming.pendingMessages.length === 0 || streaming.toolRunning || streaming.currentTurnToolStarted) {
+    if (streaming.pendingMessages.length === 0 || streaming.toolRunning) {
       return;
     }
 
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    if (!attemptId || !crashRecovery?.acceptingDeliveries) {
+      return;
+    }
+    const activeAttempt = crashRecovery.getActiveTurnAttempt(attemptId);
+    if (!activeAttempt) {
+      return;
+    }
+    const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+    const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
+    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+      crashRecovery,
+      reconcileCurrentTurn,
+    });
     if (stashedCount === 0) {
       return;
     }
@@ -1017,7 +1690,36 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: currentTurnId,
       reason,
       stashedMessages: stashedCount,
+      recoveryStrategy: reconcileCurrentTurn ? "provider_reconciliation" : "safe_replay",
+      terminalReplayAllowed: safety.replayable,
     });
+  };
+
+  const projectUnterminatedChannelTurn = async (terminalRecordedBeforeFinalization: boolean) => {
+    if (
+      !streaming.currentChannelBackend ||
+      terminalRecordedBeforeFinalization ||
+      restartStashedReason ||
+      (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId)
+    ) {
+      return;
+    }
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+    const timedOut =
+      reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
+      reason === PROVIDER_TURN_INACTIVITY_REASON ||
+      reason === TOOL_INACTIVITY_REASON;
+    await projectRuntimeEventToChannel(
+      timedOut
+        ? {
+            type: "turn.failed",
+            error: "Runtime ended before a terminal provider event",
+            recoverable: true,
+          }
+        : { type: "turn.interrupted" },
+    );
   };
 
   const patchLiveState = (
@@ -1083,6 +1785,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
     session.runtimeSessionParams = runtimeSessionParams;
     runtimeSession.skillVisibility = skillVisibility;
+    const lastUsedMatchesCurrent =
+      Boolean(session.runtimeProvider) && session.runtimeProvider === runtimeSession.provider;
+    if (!lastUsedMatchesCurrent) {
+      return runtimeSessionParams;
+    }
     if (persistedSessionId) {
       updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
         runtimeSessionParams,
@@ -1096,36 +1803,98 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSessionParams;
   };
 
+  const recentAssistantContents = (): string[] =>
+    getRecentHistory(sessionName, 48)
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content);
+
+  const persistVisibleAssistantMessage = (text: string) => {
+    const trimmedVisible = text.trim();
+    if (!trimmedVisible) return;
+    saveMessage(sessionName, "assistant", trimmedVisible, session.providerSessionId ?? session.sdkSessionId ?? null, {
+      agentId: streaming.agentId,
+      channel: streaming.currentSource?.channel,
+      accountId: streaming.currentSource?.accountId,
+      chatId: streaming.currentSource?.chatId,
+      sourceMessageId: streaming.currentSource?.sourceMessageId,
+    });
+  };
+
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
-    const emitId = Math.random().toString(36).slice(2, 8);
+    const mediaParts = isCommentaryResponse(metadata) ? [] : pendingGeneratedMedia.splice(0);
+    const channelBackendOwnsText = streaming.currentChannelBackend !== undefined;
+    if (channelBackendOwnsText && mediaParts.length === 0) {
+      log.debug("Channel backend response deferred to terminal projection", {
+        sessionName,
+        turnId: streaming.currentChannelBackend?.binding.turnId,
+      });
+      return;
+    }
+    const responseText = channelBackendOwnsText ? "" : text;
+    const emitId =
+      mediaParts.length > 0
+        ? `media-${createHash("sha256")
+            .update(mediaParts.map((media) => media.idempotencyKey ?? media.filePath).join("\n"))
+            .digest("hex")
+            .slice(0, 16)}`
+        : Math.random().toString(36).slice(2, 8);
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
-    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
-    let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
+    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTargetPreserving>["target"] | undefined;
+    let resolvedSource: ReturnType<typeof resolveSessionOutputTargetPreserving>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
-      const resolution = resolveSessionOutputTarget({
-        sessionKey: session.sessionKey,
-        fallback: streaming.currentSource,
-      });
-      resolvedTarget = resolution.target;
-      resolvedSource = resolution.source;
-      if (!resolution.target) {
+      if (streaming.suppressChatEmit || isObserverRuntimeSessionName(sessionName)) {
+        log.debug("Chat emit suppressed", {
+          sessionName,
+          reason: streaming.suppressChatEmit ? "turn_suppress" : "observer_session",
+        });
+        clearPendingGeneratedMedia();
+        return;
+      }
+      if (streaming.currentReplyTarget) {
+        resolvedTarget = streaming.currentReplyTarget;
+        resolvedSource = streaming.currentSource ? "source-chat" : "attached-output";
+      } else {
+        const resolution = resolveSessionOutputTargetPreserving({
+          sessionKey: session.sessionKey,
+          fallback: streaming.currentSource,
+          previous: streaming.lastBoundReplyTarget,
+        });
+        resolvedTarget = resolution.target;
+        resolvedSource = resolution.source;
+        if (resolution.target) {
+          streaming.currentReplyTarget = { ...resolution.target };
+          streaming.lastBoundReplyTarget = { ...resolution.target };
+        }
+      }
+      if (!resolvedTarget) {
         log.warn("Response target unresolved — dropping emit", {
           sessionName,
           source: resolvedSource,
         });
+        clearPendingGeneratedMedia();
         return;
       }
     }
+    const content =
+      mediaParts.length > 0
+        ? ([
+            ...mediaParts.map((media) => ({ type: "media" as const, media })),
+            ...(responseText.trim() ? [{ type: "text" as const, text: responseText }] : []),
+          ] satisfies ResponseContentPart[])
+        : undefined;
     log.info("Emitting response", {
       sessionName,
       emitId,
-      textLen: text.length,
+      textLen: responseText.length,
+      mediaCount: mediaParts.length,
       targetSource: resolvedSource,
+      channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
-      response: text,
+      response: responseText,
+      ...(content ? { content } : {}),
       target: resolvedTarget,
       ...(metadata ? { metadata } : {}),
       _emitId: emitId,
@@ -1161,6 +1930,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     const closeResources = async () => {
+      if (streaming.internalAbortReason === PROVIDER_TURN_INACTIVITY_REASON) {
+        try {
+          // Inactivity is a turn-level failure. Give the provider a chance to
+          // terminate that turn before releasing its transport so a resumed
+          // session does not inherit an ambiguous in-flight operation.
+          await runtimeSession.interrupt();
+        } catch (error) {
+          log.warn("Failed to interrupt inactive provider turn before close", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            error,
+          });
+        }
+      }
       await Promise.all([
         (async () => {
           try {
@@ -1223,9 +2007,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (idleMs < PROVIDER_TURN_INACTIVITY_TIMEOUT_MS) return;
 
         timedOut = true;
-        recordProviderTurnInactivityTimeout(idleMs);
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
-        restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+        const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
+        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+          crashRecovery,
+          reconcileCurrentTurn,
+        });
+        recordProviderTurnInactivityTimeout(idleMs, stashedCount > 0);
+        if (stashedCount > 0) {
+          restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+          if (reconcileCurrentTurn && !safety.replayable) {
+            log.warn("Provider inactivity recovery will reconcile without terminal replay authority", {
+              runId,
+              sessionName,
+              startedTool: safety.startedTool,
+              materializedOutput: safety.materializedOutput,
+              durableBinding: safety.durableBinding,
+            });
+          }
+        } else {
+          log.warn("Skipping provider inactivity replay because the current turn is not replay-safe", {
+            runId,
+            sessionName,
+            startedTool: safety.startedTool,
+            materializedOutput: safety.materializedOutput,
+            durableBinding: safety.durableBinding,
+          });
+        }
         streaming.interrupted = true;
         streaming.turnActive = false;
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
@@ -1267,16 +2075,71 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (next.done) {
         break;
       }
-      const event = next.value;
+      let event = next.value;
       if (streaming.done) {
         break;
       }
+      if (event.type === "turn.complete") {
+        const blockedComplete = resolveHostTurnCompleteAfterTools({
+          provider: runtimeSession.provider,
+          issuedTools: turnToolContinuation.issued,
+          openToolNames: listOpenTurnToolNames(turnToolContinuation),
+          postToolAssistantChars: turnToolContinuation.postToolAssistantChars,
+        });
+        if (blockedComplete) {
+          log.warn("Refusing user-visible turn.complete after tools without continuation", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            code: blockedComplete.code,
+            openTools: listOpenTurnToolNames(turnToolContinuation),
+            postToolAssistantChars: turnToolContinuation.postToolAssistantChars,
+          });
+          event = {
+            type: "turn.failed",
+            error: blockedComplete.error,
+            recoverable: true,
+            rawEvent: event.rawEvent,
+            metadata: event.metadata,
+          };
+        }
+      }
+      if (
+        event.type === "turn.complete" &&
+        (streaming._providerAuthFailure || isRuntimeProviderLoginStub(responseText))
+      ) {
+        const error = streaming._providerAuthFailure ?? responseText.trim();
+        streaming._providerAuthFailure = undefined;
+        responseText = "";
+        channelResponseText = "";
+        event = {
+          type: "turn.failed",
+          error,
+          recoverable: false,
+          rawEvent: event.rawEvent,
+        };
+      }
+      const awaitsToolResultDelivery =
+        event.type === "tool.completed" &&
+        runtimeSession.provider === "codex" &&
+        event.metadata?.item?.type === "dynamic_tool_call";
+      if (awaitsToolResultDelivery) {
+        // Codex queues the synthetic completion before its JSON-RPC callback
+        // write resolves. Close every interrupt lane before asynchronous event
+        // projection gives another inbound dispatch a chance to run.
+        streaming.toolResultDeliveryPending = true;
+      }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+      // Update compaction before asynchronous projection so the after-tool
+      // watch cannot expire while handling the compaction-start event itself.
+      const wasCompacting = streaming.compacting;
+      if (event.type === "status") streaming.compacting = event.status === "compacting";
 
       // Any event from the provider counts as activity — reset the inactivity watchdog.
-      // The watchdog is only armed after tool.result_delivered, so this is a no-op otherwise.
-      if (providerInactivityTimer !== undefined && event.type !== "tool.result_delivered") {
+      // The watchdog is armed after tool.result_delivered (Codex) or after
+      // tool.completed for providers that finish the tool in-process (Grok/Claude/Pi).
+      if (providerInactivityWatchArmed && event.type !== "tool.result_delivered") {
         armProviderInactivityWatch();
       }
 
@@ -1288,7 +2151,123 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       });
 
+      // Provider adapters commonly surface the native envelope before its
+      // canonical assistant/tool event. Hold that raw envelope until the
+      // canonical event has crossed its durable write-ahead fence.
+      if (event.type === "provider.raw") {
+        await settlePreviousProviderRawEvents();
+        pendingProviderRawEvents.push({ event, safetyFenced: false });
+        continue;
+      }
+      const correlatedProviderRawEvent = correlatePendingProviderRawEvent(event);
+
+      // Safety markers are write-ahead fences for crash classification. A
+      // completed/delivered tool event defensively proves that a tool started
+      // even if the provider omitted or Ravi missed the corresponding start.
+      if (event.type === "tool.started" || event.type === "tool.completed" || event.type === "tool.result_delivered") {
+        markCurrentTurnAttemptSafety({ startedTool: true });
+        fencePendingProviderRawEvent(correlatedProviderRawEvent);
+      }
+
+      if (event.type === "tool.progress") {
+        if (!toolLivenessLease.progress(event.toolUseId)) {
+          log.debug("Ignoring progress for inactive tool", {
+            sessionName,
+            toolId: event.toolUseId,
+          });
+        }
+        continue;
+      }
+
+      const receivedFailureClassification =
+        event.type === "turn.failed"
+          ? (() => {
+              const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
+              const internalAbortReason = streaming.internalAbortReason;
+              const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+              const replayable = getRuntimeTurnReplaySafety(streaming, crashRecovery).replayable;
+              const transportRecoverable =
+                event.recoverable !== false &&
+                replayable &&
+                (event.failureKind === "transport" || isAlreadyProcessingFailure(event));
+              return {
+                internalAbortReason,
+                suppressedRecoverable: interruptedRecoverable || internalRecoverable || transportRecoverable,
+                recoveryReason: transportRecoverable
+                  ? PROVIDER_TRANSPORT_FAILURE_REASON
+                  : (internalAbortReason ?? "recoverable_interrupt_failure"),
+              };
+            })()
+          : undefined;
+
+      // Provider terminal events fence the physical delivery before any
+      // projection, stream flush, persistence, or other asynchronous work.
+      // The richer trace write below reuses this exact completion timestamp.
+      const receivedTerminalStatus: RuntimeTurnAttemptTerminalStatus | undefined =
+        event.type === "turn.complete"
+          ? "complete"
+          : event.type === "turn.interrupted"
+            ? "interrupted"
+            : event.type === "turn.failed"
+              ? receivedFailureClassification?.suppressedRecoverable
+                ? "interrupted"
+                : "failed"
+              : undefined;
+      if (receivedTerminalStatus) {
+        clearProviderInactivityWatch();
+        const terminal = terminalizeCurrentCrashRecoveryAttempt(receivedTerminalStatus);
+        if (!terminal) {
+          log.warn("Ignoring provider terminal event after crash recovery ownership loss", {
+            runId,
+            sessionName,
+            providerEvent: event.type,
+            providerStatus: receivedTerminalStatus,
+          });
+          break;
+        }
+        if (terminal.status !== receivedTerminalStatus) {
+          log.info("Ignoring provider terminal event after another terminal path won", {
+            runId,
+            sessionName,
+            providerEvent: event.type,
+            providerStatus: receivedTerminalStatus,
+            winningStatus: terminal.status,
+            completedAt: terminal.completedAt,
+          });
+          const winningType = runtimeTurnAttemptTerminalEventType(terminal.status);
+          await emitHostRuntimeTerminal({
+            type: winningType,
+            ...(winningType === "turn.failed"
+              ? { error: "Turn already terminalized by another path", recoverable: true }
+              : {}),
+            reason: "first_terminal_won",
+            winningStatus: terminal.status,
+          });
+          break;
+        }
+        if (receivedTerminalStatus !== "complete") {
+          // Interrupted/failed native envelopes may contain partial assistant
+          // content that was never accepted by response policy.
+          suppressProviderRawForCurrentTurn = true;
+        }
+      }
+
       if (event.type === "text.delta") {
+        // The chunk can be queued for external emission below, so persist the
+        // replay-safety fence before any projection or async work.
+        markCurrentTurnAttemptSafety({ materializedOutput: true });
+        fencePendingProviderRawEvent(correlatedProviderRawEvent);
+        if (streaming.agentMode !== "sentinel" && !streaming.interrupted) {
+          // Raw deltas arrive before whole-message response policy can classify
+          // silent, heartbeat, no-response, or prompt-too-long content. They
+          // may advance the externally visible turn to running, but content is
+          // projected only after the complete assistant message is authorized.
+          await projectRuntimeEventToChannel({
+            type: "status",
+            status: "thinking",
+            metadata: event.metadata,
+          });
+        }
         updateRuntimeLiveState(sessionName, {
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
@@ -1304,23 +2283,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type === "provider.raw" && event.rawEvent) {
-        await emitLegacyProviderEvent(event.rawEvent);
+      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+        await projectRuntimeEventToChannel(
+          event,
+          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+        );
       }
 
-      if (event.type !== "turn.failed") {
-        await emitRuntimeEvent(
-          event.type === "provider.raw"
-            ? buildProviderRawRuntimeEvent(runtimeSession.provider, event.rawEvent, event.metadata)
-            : { ...event, provider: runtimeSession.provider },
-        );
+      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+        await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
+      }
+
+      if (event.type === "turn.complete" || event.type === "turn.interrupted") {
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
       }
 
       // Track compaction status - block interrupts while compacting
       if (event.type === "status") {
         const status = event.status;
-        const wasCompacting = streaming.compacting;
-        streaming.compacting = status === "compacting";
         const compactionChanged = streaming.compacting !== wasCompacting;
         // Snapshot whether compaction announcements may be externalized for the
         // turn effectively executing. Falls back to source-only classification
@@ -1388,6 +2369,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           },
           statusSkillVisibility,
         );
+        if (status === "idle" && !streaming.turnActive && !streaming.toolRunning && !streaming.compacting) {
+          scheduleIdleSessionEviction();
+        }
 
         // External compaction announcements are user-facing runtime responses.
         // They are suppressed for automation-originated turns (cron, trigger,
@@ -1402,8 +2386,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           compactionAnnouncement.externalAnnouncementsAllowed
         ) {
           if (streaming.compacting && !wasCompacting) {
+            markCurrentTurnAttemptSafety({ materializedOutput: true });
             emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
           } else if (!streaming.compacting && wasCompacting) {
+            markCurrentTurnAttemptSafety({ materializedOutput: true });
             emitResponse("🧠 Memória compactada. Pronto pra continuar.").catch(() => {});
           }
         }
@@ -1412,6 +2398,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "tool.started") {
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = true;
+        noteTurnToolStarted(turnToolContinuation, event.toolUse.id, event.toolUse.name);
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
@@ -1422,27 +2409,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           tool: event.toolUse.name,
           toolId: event.toolUse.id,
         });
-        // Arm stuck-tool watchdog: if tool.completed never fires within the window, abort the session.
-        if (toolStuckTimer !== undefined) clearTimeout(toolStuckTimer);
-        toolStuckTimer = setTimeout(() => {
-          toolStuckTimer = undefined;
-          const stuckTool = streaming.currentToolName ?? "unknown";
-          log.warn("Tool stuck — aborting session", {
-            sessionName,
-            tool: stuckTool,
-            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
-          });
-          safeEmit(`ravi.session.${sessionName}.runtime`, {
-            type: "tool.stuck",
-            tool: stuckTool,
-            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
-            sessionName,
-          }).catch(() => {});
-          if (!streaming.abortController.signal.aborted) {
-            streaming.internalAbortReason = "stuck_tool";
-            streaming.abortController.abort();
-          }
-        }, STUCK_TOOL_TIMEOUT_MS);
+        // Expire only after a full inactivity window. Provider progress events
+        // renew this lease without exposing their output to channels or traces.
+        toolLivenessLease.start(event.toolUse.id);
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
@@ -1515,12 +2484,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
           if (streaming.interrupted) {
             // Turn was interrupted - discard response
+            suppressProviderRawForCurrentTurn = true;
             log.info("Discarding interrupted response", {
               sessionName,
               textLen: messageText.length,
             });
           } else if (!messageText) {
             // After stripping SILENT_TOKEN, nothing left
+            suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
             await emitLegacyProviderEvent({ type: "silent" });
             await emitRuntimeEvent({
@@ -1528,31 +2499,51 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            responseText += messageText;
-            ensureCurrentTurnUserObservation();
-            pushObservationEvent("message.assistant", {
-              preview: truncateObservationPreview(messageText),
-              payload: {
-                chars: messageText.length,
-                metadata: event.metadata ?? null,
-              },
-            });
-            recordTraceEvent({
-              turnId: streaming.currentTraceTurnId,
-              provider: runtimeSession.provider,
-              model,
-              eventType: "assistant.message",
-              eventGroup: "response",
-              status: "received",
-              payloadJson: {
-                chars: messageText.length,
-                metadata: event.metadata,
-              },
-              preview: messageText,
-            });
-
             const trimmed = messageText.trim().toLowerCase();
-            if (trimmed === "prompt is too long") {
+            const promptTooLong = trimmed === "prompt is too long";
+            const heartbeatResponse = messageText.trim().endsWith(HEARTBEAT_OK);
+            const noResponseRequested =
+              trimmed === "no response requested." ||
+              trimmed === "no response requested" ||
+              trimmed === "no response needed." ||
+              trimmed === "no response needed";
+            const commentaryResponse = isCommentaryResponse(event.metadata);
+            const recordAssistantState = (observe: boolean, text = messageText) => {
+              if (observe) {
+                ensureCurrentTurnUserObservation();
+                pushObservationEvent("message.assistant", {
+                  preview: truncateObservationPreview(text),
+                  payload: {
+                    chars: text.length,
+                    metadata: event.metadata ?? null,
+                  },
+                });
+              }
+              recordTraceEvent({
+                turnId: streaming.currentTraceTurnId,
+                provider: runtimeSession.provider,
+                model,
+                eventType: "assistant.message",
+                eventGroup: "response",
+                status: "received",
+                payloadJson: {
+                  chars: text.length,
+                  metadata: event.metadata,
+                },
+                preview: text,
+              });
+              // Only user-visible (observed) non-commentary text accumulates.
+              // Silent / heartbeat / no-response / prompt-too-long stay off the
+              // persist buffer so they cannot become durable assistant rows.
+              if (observe && !commentaryResponse) {
+                responseText = appendAssistantResponse(responseText, text);
+              }
+            };
+            if (promptTooLong) {
+              suppressProviderRawForCurrentTurn = true;
+              // Retain the provider outcome in local history/trace, but do not
+              // publish a realtime observation or advance the output fence.
+              recordAssistantState(false);
               log.warn("Prompt too long - will auto-reset session", {
                 sessionName,
               });
@@ -1562,19 +2553,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
+            } else if (heartbeatResponse) {
+              suppressProviderRawForCurrentTurn = true;
+              recordAssistantState(false);
               log.info("Heartbeat OK", { sessionName });
               await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else if (
-              trimmed === "no response requested." ||
-              trimmed === "no response requested" ||
-              trimmed === "no response needed." ||
-              trimmed === "no response needed"
-            ) {
+            } else if (noResponseRequested) {
+              suppressProviderRawForCurrentTurn = true;
+              recordAssistantState(false);
               log.info("Silent response (no response requested)", {
                 sessionName,
               });
@@ -1583,17 +2573,77 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else {
-              updateRuntimeLiveState(sessionName, {
-                activity: "streaming",
-                summary: truncateLiveSummary(messageText) || "response",
-                agentId: agent.id,
-                runId,
+            } else if (isRuntimeProviderLoginStub(messageText)) {
+              suppressProviderRawForCurrentTurn = true;
+              streaming._providerAuthFailure = messageText.trim();
+              log.warn("Provider login stub classified as auth failure", {
+                sessionName,
                 provider: runtimeSession.provider,
-                model,
-                source: streaming.currentSource,
               });
-              await emitResponse(messageText, event.metadata);
+              await emitLegacyProviderEvent({ type: "silent" });
+              await emitRuntimeEvent({
+                type: "silent",
+                provider: runtimeSession.provider,
+              });
+            } else {
+              // This content will be persisted/projected/emitted. Fence replay
+              // before any of those effects; silent and discarded responses do
+              // not advance the materialized-output marker.
+              const visibleUtterances = commentaryResponse
+                ? [messageText]
+                : resolveVisibleAssistantUtterances(messageText, recentAssistantContents());
+              if (!commentaryResponse && visibleUtterances.length === 0) {
+                suppressProviderRawForCurrentTurn = true;
+                recordAssistantState(false);
+                log.info("Skipping replayed or empty-join mashed assistant history", {
+                  sessionName,
+                  textLen: messageText.length,
+                });
+                continue;
+              }
+              markCurrentTurnAttemptSafety({ materializedOutput: true });
+              fencePendingProviderRawEvent(correlatedProviderRawEvent);
+              for (const utterance of visibleUtterances) {
+                noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
+                recordAssistantState(true, utterance);
+                if (!commentaryResponse) {
+                  channelResponseText = appendAssistantResponse(channelResponseText, utterance);
+                  persistVisibleAssistantMessage(utterance);
+                }
+                await emitRuntimeEvent({
+                  type: "assistant.message",
+                  provider: runtimeSession.provider,
+                  text: utterance,
+                  ...(event.metadata ? { metadata: event.metadata } : {}),
+                });
+                if (commentaryResponse && streaming.agentMode !== "sentinel") {
+                  await projectRuntimeEventToChannel({
+                    ...event,
+                    text: utterance,
+                  });
+                }
+                updateRuntimeLiveState(sessionName, {
+                  activity: "streaming",
+                  summary: truncateLiveSummary(utterance) || "response",
+                  agentId: agent.id,
+                  runId,
+                  provider: runtimeSession.provider,
+                  model,
+                  source: streaming.currentSource,
+                });
+                await emitResponse(utterance, event.metadata);
+              }
+              if (
+                !commentaryResponse &&
+                (visibleUtterances.length > 1 || visibleUtterances[0] !== messageText.trim())
+              ) {
+                log.info("Split empty-join assistant mash into turn-immutable rows", {
+                  sessionName,
+                  incomingLen: messageText.length,
+                  utteranceCount: visibleUtterances.length,
+                  utteranceLens: visibleUtterances.map((utterance) => utterance.length),
+                });
+              }
             }
           }
         }
@@ -1604,21 +2654,59 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "tool.result_delivered") {
         // Tool handler finished and result was sent to the runtime provider.
         // The provider is now responsible (model thinking). Clear the stuck-tool watchdog.
-        if (toolStuckTimer !== undefined) {
-          clearTimeout(toolStuckTimer);
-          toolStuckTimer = undefined;
-        }
+        toolLivenessLease.clear();
         // Arm provider inactivity watchdog: catches cases where the provider
         // (e.g. codex's API call to OpenAI) hangs silently with no further events.
         armProviderInactivityWatch();
+        if (streaming.toolResultDeliveryPending || streaming.toolRunning) {
+          await finishActiveToolBarrier();
+        }
+        continue;
       }
 
       if (event.type === "tool.completed") {
+        noteTurnToolTerminal(turnToolContinuation, event.toolUseId, event.toolName);
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
         const toolInput = streaming.currentToolInput;
-        const output = truncateOutput(event.content);
+        const generatedImageCompletion = isGeneratedImageToolCompletion(event);
+        let generatedImageAttachment: ResponseMediaAttachment | null = null;
+        if (generatedImageCompletion) {
+          try {
+            generatedImageAttachment = await materializeGeneratedImageAttachment({
+              sessionKey: session.sessionKey,
+              sessionName,
+              provider: runtimeSession.provider,
+              toolUseId: toolId,
+              content: event.content,
+              metadata: event.metadata,
+            });
+            if (generatedImageAttachment) {
+              const queued = queueGeneratedMedia(generatedImageAttachment);
+              log.info(queued ? "Generated image queued for next response" : "Duplicate generated image ignored", {
+                sessionName,
+                toolId,
+                filename: generatedImageAttachment.filename,
+                idempotencyKey: generatedImageAttachment.idempotencyKey,
+              });
+            } else {
+              log.warn("Generated image tool completed without materializable image payload", {
+                sessionName,
+                toolId,
+              });
+            }
+          } catch (error) {
+            log.warn("Failed to materialize generated image", { sessionName, toolId, error });
+          }
+        }
+        const output = generatedImageCompletion
+          ? summarizeGeneratedImageToolOutput({
+              content: event.content,
+              attachment: generatedImageAttachment,
+              metadata: event.metadata,
+            })
+          : truncateOutput(event.content);
         ensureCurrentTurnUserObservation();
         pushObservationEvent("tool.end", {
           preview: toolName,
@@ -1660,6 +2748,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           metadata: event.metadata,
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
+
         updateRuntimeLiveState(sessionName, {
           activity: event.isError ? "blocked" : "thinking",
           summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
@@ -1731,54 +2820,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               metadata: event.metadata,
             }
           : undefined;
-        clearActiveToolState();
-
-        // Execute deferred abort now that unsafe tool has completed
-        if (streaming.pendingAbort) {
-          if (streaming.pendingMessages.length > 0) {
-            log.info("Stashing aborted messages (deferred)", {
-              sessionName,
-              count: streaming.pendingMessages.length,
-            });
-            stashedMessages.set(
-              sessionName,
-              streaming.pendingMessages.map((message) => ({ ...message })),
-            );
-          }
-          log.info("Executing deferred abort after unsafe tool completed", {
-            sessionName,
-          });
-          streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
-          recordTraceEvent({
-            turnId: streaming.currentTraceTurnId,
-            provider: runtimeSession.provider,
-            model,
-            eventType: "session.abort",
-            eventGroup: "session",
-            status: "requested",
-            source: streaming.currentSource,
-            payloadJson: {
-              reason: streaming.internalAbortReason,
-              deferred: true,
-              toolCompleted: true,
-            },
-          });
-          recordTerminalTraceOnce({
-            status: "aborted",
-            eventType: "turn.interrupted",
-            abortReason: streaming.internalAbortReason,
-            payloadJson: {
-              reason: streaming.internalAbortReason,
-              deferred: true,
-            },
-          });
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: streaming.internalAbortReason,
-          });
-          streaming.abortController.abort();
-          if (streamingSessions.delete(sessionName)) {
-            drainPendingStarts();
-          }
+        // Dynamic Codex callbacks finish on the later result-delivered marker.
+        if (!awaitsToolResultDelivery) {
+          await finishActiveToolBarrier();
+          // Grok/Claude/Pi do not emit tool.result_delivered. After a mid-turn
+          // utterance plus an in-process tool, session/prompt can stall with no
+          // further events. Arm the after-tool inactivity watch so the turn
+          // still reaches a SPEC terminal instead of sitting on only the mid row.
+          armProviderInactivityWatch();
         }
         continue;
       }
@@ -1801,7 +2850,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
-        recordRuntimeCredentialTurnSuccess(streaming);
+        await recordRuntimeCredentialTurnSuccess(
+          streaming,
+          resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+        );
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
@@ -1873,7 +2925,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
-            session: event.session ?? null,
+            session: event.session
+              ? { ...event.session, params: runtimeSessionParams ?? event.session.params }
+              : runtimeSessionParams
+                ? { displayId: runtimeSessionDisplayId, params: runtimeSessionParams }
+                : null,
             metadata: event.metadata ?? null,
             pricing:
               resolvedCost?.pricingStatus === "priced"
@@ -1939,25 +2995,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.abortController.abort();
         }
 
-        if (!streaming.interrupted && responseText.trim()) {
-          const sdkId = event.providerSessionId;
-          saveMessage(sessionName, "assistant", responseText.trim(), sdkId, {
-            agentId: streaming.agentId,
-            channel: streaming.currentSource?.channel,
-            accountId: streaming.currentSource?.accountId,
-            chatId: streaming.currentSource?.chatId,
-            sourceMessageId: streaming.currentSource?.sourceMessageId,
-          });
+        if (!streaming.interrupted && pendingGeneratedMedia.length > 0) {
+          markCurrentTurnAttemptSafety({ materializedOutput: true });
+          await emitResponse("", event.metadata);
         }
 
-        // Reset for next turn
+        // Visible assistant rows are INSERTed per assistant.message. turn.complete
+        // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
+        channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
+        streaming.currentTurnInputMutated = false;
         streaming.turnActive = false;
+        streaming.currentChannelBackend = undefined;
         clearTraceTurnState();
         patchLiveState(
           {
@@ -1978,8 +3034,36 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         continue;
       }
 
+      if (event.type === "goal.updated") {
+        syncRuntimeSessionGoal(session.sessionKey, event.goal);
+        await emitRuntimeEvent({ type: "goal.updated", goal: event.goal });
+        continue;
+      }
+
       if (event.type === "turn.interrupted") {
         log.info("Turn interrupted", { runId, sessionName });
+        const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const interruptedCredential = streaming.currentRuntimeCredential;
+        if (
+          interruptedCredential?.authMethod === "model-broker" &&
+          interruptedCredential.attemptId &&
+          interruptedCredential.modelBrokerAttemptTerminal !== true
+        ) {
+          try {
+            await reportModelBrokerAbandoned(
+              interruptedCredential,
+              resolveModelBrokerEffectState(interruptedReplaySafety),
+            );
+            interruptedCredential.modelBrokerAttemptTerminal = true;
+          } catch (error) {
+            log.warn("Failed to terminalize model-broker attempt after provider interruption", {
+              runId,
+              sessionName,
+              attemptId: interruptedCredential.attemptId,
+              error,
+            });
+          }
+        }
         recordTerminalTraceOnce({
           status: "interrupted",
           eventType: "turn.interrupted",
@@ -1994,12 +3078,54 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           reason: streaming.internalAbortReason ?? "provider_interrupted",
           metadata: event.metadata ?? null,
         });
-        streaming.interrupted = true;
+        const leftoverResponse = responseText.trim();
+        const providerEndedAfterCompletedTools = isProviderEndedAfterCompletedTools(streaming, interruptedReplaySafety);
+        if (providerEndedAfterCompletedTools) {
+          // Provider closed the prompt after tools already finished. Do not
+          // mark the generator interrupted (that logs a silent unexpected
+          // death). Keep successors and emit leftover text or a recovery hint.
+          streaming.interrupted = false;
+          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+          log.info("Provider ended turn after completed tools; keeping session recoverable", {
+            runId,
+            sessionName,
+            remaining: streaming.pendingMessages.length,
+            startedTool: interruptedReplaySafety.startedTool,
+            materializedOutput: interruptedReplaySafety.materializedOutput,
+            durableBinding: interruptedReplaySafety.durableBinding,
+            toolRunning: streaming.toolRunning,
+          });
+          if (streaming.agentMode !== "sentinel") {
+            await emitResponse(
+              leftoverResponse || formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+            );
+          }
+        } else {
+          streaming.interrupted = true;
+          if (!interruptedReplaySafety.replayable) {
+            const queuedBefore = streaming.pendingMessages.length;
+            streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+            log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+              runId,
+              sessionName,
+              discarded: queuedBefore - streaming.pendingMessages.length,
+              remaining: streaming.pendingMessages.length,
+              startedTool: interruptedReplaySafety.startedTool,
+              materializedOutput: interruptedReplaySafety.materializedOutput,
+              durableBinding: interruptedReplaySafety.durableBinding,
+            });
+          }
+        }
         responseText = "";
+        channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
+        streaming.currentTurnInputMutated = false;
+        streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
@@ -2008,21 +3134,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.failed") {
-        const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
-        const internalAbortReason = streaming.internalAbortReason;
-        const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
-        const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
+        const internalAbortReason = receivedFailureClassification?.internalAbortReason;
+        const recoveryReason = receivedFailureClassification?.recoveryReason;
+        const suppressedRecoverable = receivedFailureClassification?.suppressedRecoverable ?? false;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
-        const currentTurnHadToolStarted = streaming.currentTurnToolStarted === true;
-        const credentialFailureSignal = !suppressedRecoverable
-          ? recordRuntimeCredentialTurnFailure({
+        const currentTurnReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const currentTurnHadToolStarted = currentTurnReplaySafety.startedTool;
+        const currentTurnHadMaterializedOutput = currentTurnReplaySafety.materializedOutput;
+        const credentialFailureRecord = !suppressedRecoverable
+          ? await recordRuntimeCredentialTurnFailure({
               streaming,
               provider: runtimeSession.provider,
               model,
               error: event.error,
               rawEvent: event.rawEvent,
+              effectState: resolveModelBrokerEffectState(currentTurnReplaySafety),
             })
           : undefined;
+        const credentialFailureSignal = credentialFailureRecord?.signal;
         const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
@@ -2038,17 +3167,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         );
 
         if (suppressedRecoverable) {
+          await projectRuntimeEventToChannel({
+            type: "turn.interrupted",
+            metadata: event.metadata,
+          });
           await emitRuntimeEvent({
             type: "turn.interrupted",
             provider: runtimeSession.provider,
-            reason: internalAbortReason ?? "recoverable_interrupt_failure",
-            rawEvent: event.rawEvent,
+            reason: recoveryReason,
             metadata: event.metadata,
           });
+          await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+          suppressProviderRawForCurrentTurn = false;
           recordTerminalTraceOnce({
             status: "interrupted",
             eventType: "turn.interrupted",
-            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            abortReason: recoveryReason,
             error: null,
             payloadJson: {
               recoverable: event.recoverable ?? true,
@@ -2063,11 +3197,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
             error: null,
-            abortReason: internalAbortReason ?? "recoverable_interrupt_failure",
+            abortReason: recoveryReason,
           });
         }
 
         responseText = "";
+        channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2076,7 +3212,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.internalAbortReason = undefined;
 
         if (suppressedRecoverable) {
-          const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
+          const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
           markRuntimeLiveIdle(sessionName, "turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
@@ -2090,26 +3226,54 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
-          restartStashedReason = restartReason;
+          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+          if (stashedCount > 0) {
+            restartStashedReason = restartReason;
+          } else {
+            log.info("Skipping recoverable interrupt replay because the current turn is not replay-safe", {
+              runId,
+              sessionName,
+              startedTool: currentTurnHadToolStarted,
+              materializedOutput: currentTurnHadMaterializedOutput,
+              durableBinding: currentTurnReplaySafety.durableBinding,
+            });
+          }
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
+          streaming.currentChannelBackend = undefined;
           break;
         }
 
-        if (credentialFailureSignal?.retryableByCredential) {
+        const modelBrokerRetryApproved =
+          streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
+          credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
+        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          if (currentTurnHadToolStarted) {
-            log.info("Skipping runtime credential retry after tool activity", {
-              runId,
-              sessionName,
-              credentialId: streaming.currentRuntimeCredential?.credentialId,
-              kind: credentialFailureSignal.kind,
+          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+            crashRecovery,
+          });
+          if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
+            // This physical delivery is terminal even when the failure is
+            // hidden from user-facing channels and retried on a fresh runtime.
+            // Close the canonical trace with the attempt's first-terminal
+            // status/timestamp before starting the replacement delivery.
+            recordTerminalTraceOnce({
+              status: "failed",
+              eventType: "turn.failed",
+              abortReason: restartReason,
+              error: truncateLogDetail(event.error),
+              payloadJson: {
+                recoverable: true,
+                autoRecovered: true,
+                credentialRetry: true,
+                credentialFailureKind: credentialFailureSignal.kind,
+                failureDetails: formatRuntimeFailureDetails(event) ?? null,
+                rawEvent: rawEventSummary ?? null,
+                metadata: event.metadata ?? null,
+              },
             });
-          } else {
-            const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
-            if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
+            if (streaming.currentRuntimeCredential.authMethod !== "model-broker") {
               try {
                 await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
                   reason: "retryable_failure",
@@ -2122,28 +3286,42 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   error,
                 });
               }
-              restartStashedReason = restartReason;
-              log.info("Closing runtime after retryable credential failure", {
-                runId,
-                sessionName,
-                credentialId: streaming.currentRuntimeCredential.credentialId,
-                kind: credentialFailureSignal.kind,
-                pendingMessages: streaming.pendingMessages.length,
-                stashedMessages: stashedCount,
-              });
-              streaming.currentTurnToolStarted = false;
-              signalTurnComplete();
-              clearTraceTurnState();
-              streaming.done = true;
-              break;
             }
-            log.warn("Skipping runtime credential retry because current turn messages are unavailable", {
+            restartStashedReason = restartReason;
+            log.info("Closing runtime after retryable credential failure", {
               runId,
               sessionName,
-              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              credentialId: streaming.currentRuntimeCredential.credentialId,
               kind: credentialFailureSignal.kind,
+              pendingMessages: streaming.pendingMessages.length,
+              stashedMessages: stashedCount,
             });
+            streaming.currentTurnToolStarted = false;
+            resetTurnToolContinuationLedger(turnToolContinuation);
+            streaming.currentTurnInputMutated = false;
+            signalTurnComplete();
+            clearTraceTurnState();
+            streaming.done = true;
+            break;
           }
+          log.warn("Skipping runtime credential retry because no replay-safe turn messages are available", {
+            runId,
+            sessionName,
+            credentialId: streaming.currentRuntimeCredential?.credentialId,
+            kind: credentialFailureSignal.kind,
+            startedTool: currentTurnHadToolStarted,
+            materializedOutput: currentTurnHadMaterializedOutput,
+            durableBinding: currentTurnReplaySafety.durableBinding,
+          });
+        }
+
+        if (credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
+          log.warn("Skipping model-broker failover without authoritative pre-effect advance", {
+            runId,
+            sessionName,
+            attemptId: streaming.currentRuntimeCredential?.attemptId,
+            effectState: resolveModelBrokerEffectState(currentTurnReplaySafety),
+          });
         }
 
         const contextWindowFailure = classifyRuntimeContextWindowFailure({
@@ -2151,7 +3329,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           error: event.error,
           rawEvent: event.rawEvent,
         });
-        if (contextWindowFailure) {
+        if (contextWindowFailure && currentTurnReplaySafety.replayable) {
+          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
@@ -2237,19 +3416,38 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             source: streaming.currentSource,
           });
           streaming.currentTurnToolStarted = false;
+          resetTurnToolContinuationLedger(turnToolContinuation);
+          streaming.currentTurnInputMutated = false;
           streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
           streaming.interrupted = true;
           clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
+          streaming.currentChannelBackend = undefined;
           break;
         }
+        if (contextWindowFailure) {
+          log.warn("Skipping context-window auto-recovery because the current turn is not replay-safe", {
+            runId,
+            sessionName,
+            startedTool: currentTurnHadToolStarted,
+            materializedOutput: currentTurnHadMaterializedOutput,
+            durableBinding: currentTurnReplaySafety.durableBinding,
+          });
+        }
 
+        const channelBackendFailure = streaming.currentChannelBackend !== undefined;
+        const loginStubFailure = isRuntimeProviderLoginStub(event.error);
+        if (!loginStubFailure) {
+          await projectRuntimeEventToChannel(event);
+        }
         await emitRuntimeEvent({
-          ...event,
+          ...stripRuntimeRawEvent(event),
           provider: runtimeSession.provider,
         });
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
         recordTerminalTraceOnce({
           status: "failed",
           eventType: "turn.failed",
@@ -2273,9 +3471,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
+        resetTurnToolContinuationLedger(turnToolContinuation);
+        streaming.currentTurnInputMutated = false;
+        streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
-        if (streaming.agentMode !== "sentinel") {
+        if (streaming.agentMode !== "sentinel" && !channelBackendFailure && !loginStubFailure) {
           const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
             error: event.error,
             scope: buildUserFacingFailureSuppressionScope({
@@ -2310,17 +3511,49 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
     }
   } finally {
+    // Never let an exceptional/ownership-loss path externalize a raw envelope
+    // that did not reach its canonical write-ahead boundary.
+    pendingProviderRawEvents.length = 0;
     log.info("Streaming session ended", { runId, sessionName });
 
-    prepareUnterminatedTurnRecovery();
-    recordUnterminatedTurnExit();
-    clearTraceTurnState();
+    try {
+      const terminalRecordedBeforeFinalization = Boolean(
+        streaming.currentCrashRecoveryTerminal || streaming.currentTraceTurnTerminalRecorded,
+      );
+      prepareUnterminatedTurnRecovery();
+      recordUnterminatedTurnExit();
+      await projectUnterminatedChannelTurn(terminalRecordedBeforeFinalization);
+    } catch (error) {
+      // A lost crash-recovery fence has already made the coordinator reject
+      // new work. It must not prevent provider/process cleanup below.
+      log.error("Failed to finalize runtime turn before session cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
+    streaming.currentChannelBackend = undefined;
+    if (streaming.currentCrashRecoveryAttemptId && crashRecovery?.ownershipFailure) {
+      log.warn("Detaching crash recovery attempt after ownership loss", {
+        runId,
+        sessionName,
+        attemptId: streaming.currentCrashRecoveryAttemptId,
+      });
+      streaming.currentCrashRecoveryAttemptId = undefined;
+    }
+    try {
+      clearTraceTurnState();
+    } catch (error) {
+      log.error("Failed to clear runtime trace state during cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
+    streaming.durableTurnPreparationFailed = false;
     clearProviderInactivityWatch();
     clearIdleSessionEvictionTimer();
-    if (toolStuckTimer !== undefined) {
-      clearTimeout(toolStuckTimer);
-      toolStuckTimer = undefined;
-    }
+    toolLivenessLease.clear();
     streaming.done = true;
     streaming.starting = false;
     streaming.turnActive = false;
@@ -2342,20 +3575,73 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     await closeRuntimeSession();
 
-    if (streamingSessions.delete(sessionName)) {
-      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
-        status: "abandoned",
-        metadata: { phase: "runtime.event_loop.finally" },
-      });
-      if (restartStashedReason && restartStashedSession) {
-        await restartStashedSession({
-          sessionName,
-          reason: restartStashedReason,
+    const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
+    if (stillOwnsRuntimeSlot) {
+      streamingSessions.delete(sessionName);
+    }
+    try {
+      const finalCredential = streaming.currentRuntimeCredential;
+      if (
+        finalCredential?.authMethod === "model-broker" &&
+        finalCredential.attemptId &&
+        finalCredential.modelBrokerAttemptTerminal !== true
+      ) {
+        await reportModelBrokerAbandoned(
+          finalCredential,
+          resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+        );
+        finalCredential.modelBrokerAttemptTerminal = true;
+      } else if (finalCredential?.authMethod !== "model-broker") {
+        completeRuntimeCredentialAttempt(finalCredential?.attemptId, {
+          status: "abandoned",
+          metadata: { phase: "runtime.event_loop.finally" },
         });
       }
-      drainPendingStarts();
+    } catch (error) {
+      log.warn("Failed to abandon runtime credential attempt during cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
+    if (stillOwnsRuntimeSlot) {
+      try {
+        if (restartStashedReason && restartStashedSession) {
+          await restartStashedSession({
+            sessionName,
+            reason: restartStashedReason,
+          });
+        }
+      } finally {
+        drainPendingStarts();
+      }
     }
   }
+}
+
+async function reportModelBrokerAbandoned(
+  credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
+  effectState: RuntimeModelBrokerEffectState,
+): Promise<ModelBrokerAttemptFeedbackResult> {
+  if (
+    !credential.attemptId ||
+    !credential.modelBrokerId ||
+    !credential.modelBrokerLeaseId ||
+    !credential.modelBrokerRuntimeId ||
+    !credential.modelBrokerSessionKey ||
+    !credential.modelBrokerTurnId
+  ) {
+    throw new Error("Model-broker attempt is missing authoritative abandonment metadata.");
+  }
+  return reportRuntimeModelBrokerAttempt(createModelBroker(credential.modelBrokerId), {
+    attemptId: credential.attemptId,
+    turnId: credential.modelBrokerTurnId,
+    leaseId: credential.modelBrokerLeaseId,
+    runtimeId: credential.modelBrokerRuntimeId,
+    sessionKey: credential.modelBrokerSessionKey,
+    outcome: "abandoned",
+    effectState,
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

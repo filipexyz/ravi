@@ -2,12 +2,12 @@
 
 ## Session Lifecycle
 
-1. **Create** — `ravi devin sessions create --prompt "..." --max-acu N`
+1. **Create** — `ravi devin sessions create --prompt "..." --max-acu N --execute`
 2. **Monitor** — `ravi devin sessions show <id> --sync --json`
-3. **Message** — `ravi devin sessions send <id> "follow-up"`
+3. **Message** — `ravi devin sessions send <id> "follow-up" --execute`
 4. **Sync** — `ravi devin sessions sync <id> --insights --artifacts`
 5. **Terminate** — `ravi devin sessions terminate <id>`
-6. **Archive** — `ravi devin sessions archive <id>`
+6. **Archive** — `ravi devin sessions archive <id> --execute`
 
 ## Filtering and Inspection
 

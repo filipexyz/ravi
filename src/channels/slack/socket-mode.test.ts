@@ -4,7 +4,9 @@ import { configStore } from "../../config-store.js";
 import {
   createContact,
   ensureContactFromInbound,
+  getPendingContacts,
   linkContactIdentity,
+  listAccountPendingContacts,
   resolvePlatformIdentity,
   upsertAgentPlatformIdentity,
 } from "../../contacts.js";
@@ -20,7 +22,9 @@ import type { AgentConfig } from "../../router/index.js";
 import {
   dbFindChatMessage,
   dbGetChat,
+  dbGetChannelBackendIngressReceiptByTurnId,
   dbGetContext,
+  dbLegacySessionChatBindingsTableExists,
   dbListChatParticipants,
   dbUpsertChat,
   dbUpsertInstance,
@@ -36,6 +40,7 @@ import {
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
   SlackAssistantThreadPresence,
+  SlackChatActionDelivery,
   SlackPresenceStack,
   SlackReactionPresence,
   SlackSocketModeService,
@@ -43,6 +48,18 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import {
+  acceptSlackInboundEnvelope,
+  claimSlackInboundEnvelope,
+  getSlackInboundEnvelope,
+  markSlackInboundEnvelopeProcessed,
+  pruneProcessedSlackInboundEnvelopes,
+} from "./inbound-inbox.js";
+import {
+  createSlackThreadLifecycle,
+  getSlackThreadLifecycle,
+  markSlackThreadRootDelivered,
+} from "./thread-lifecycle-store.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 class FakeSlackWebSocket extends EventEmitter {
@@ -198,6 +215,182 @@ describe("Slack Socket Mode routing", () => {
     ).toBe(false);
   });
 
+  it("holds an unknown Slack DM for owner review and hydrates its human profile", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const usersInfo = mock(async () => ({
+      ok: true,
+      user: {
+        id: "U123",
+        name: "luis",
+        profile: { display_name: "Luis", real_name: "Luis Filipe", image_72: "https://avatars.slack-edge.com/u123" },
+      },
+    }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "pairing",
+            groupPolicy: "allowlist",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { usersInfo } as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-owner-candidate",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-owner-candidate",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "D123",
+          channel_type: "im",
+          user: "U123",
+          text: "oi Ravi",
+          ts: "1713000000.000100",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(0);
+    expect(usersInfo).toHaveBeenCalledWith("U123");
+    expect(listAccountPendingContacts("slack-main")).toMatchObject([
+      { accountId: "slack-main", phone: "U123", name: "Luis", chatId: "D123", isGroup: false },
+    ]);
+    const contact = getPendingContacts()[0];
+    expect(contact?.name).toBe("Luis");
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U123" }),
+    ).toMatchObject({ ownerType: "contact", platformDisplayName: "Luis" });
+  });
+
+  it("routes an approved Slack DM by the sender identity instead of the conversation id", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [
+          {
+            pattern: "u123",
+            accountId: "slack-main",
+            agent: "ravi-hil",
+            session: "main",
+            priority: 1_000,
+            policy: "open",
+            channel: "slack",
+            dmScope: "per-peer",
+          },
+        ],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "pairing",
+            groupPolicy: "allowlist",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-approved-owner",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-approved-owner",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "D123",
+          channel_type: "im",
+          user: "U123",
+          text: "oi Ravi",
+          ts: "1713000000.000200",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.sessionName).toBe("main");
+  });
+
+  it("keeps identical Slack user ids isolated between workspace instances", () => {
+    const first = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-workspace-a",
+      platformSenderId: "U123",
+      displayName: "Luis A",
+      intakeMode: "pending",
+    });
+    const second = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-workspace-b",
+      platformSenderId: "U123",
+      displayName: "Luis B",
+      intakeMode: "pending",
+    });
+
+    expect(first.contact?.id).toBeTruthy();
+    expect(second.contact?.id).toBeTruthy();
+    expect(first.contact?.id).not.toBe(second.contact?.id);
+  });
+
   it("loads explicit Slack instance UUID aliases into outbound runtime scope", async () => {
     const slug = "ravi-rbbt-slack";
     const uuid = "0bc9635c-1ee9-42e3-9112-95be9cdb0334";
@@ -285,6 +478,135 @@ describe("Slack Socket Mode routing", () => {
       platformMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_000,
       raw: { ok: true },
+    });
+  });
+
+  it("executes native Slack edit, delete, and reaction actions against provider message ids", async () => {
+    const updateMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true, action: "updated" },
+    }));
+    const deleteMessage = mock(async () => ({ ok: true, action: "deleted" }));
+    const addReaction = mock(async () => ({ ok: true, action: "reacted" }));
+    const removeReaction = mock(async () => ({ ok: true, action: "unreacted" }));
+    const delivery = new SlackChatActionDelivery({
+      updateMessage,
+      deleteMessage,
+      addReaction,
+      removeReaction,
+    } as never);
+    const target = {
+      channel: "slack",
+      accountId: "ravi-slack",
+      chatId: "C123",
+    };
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "edit-1",
+        target,
+        action: {
+          type: "chat_action",
+          actionId: "message.edit",
+          providerMessageId: "1713000000.000100",
+          text: "corrected",
+        },
+      }),
+    ).resolves.toMatchObject({
+      provider: "slack",
+      platformMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "delete-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.delete",
+        providerMessageId: "1713000000.000100",
+      },
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "react-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId: "1713000000.000100",
+        emoji: ":+1:",
+      },
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "unreact-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId: "1713000000.000100",
+        emoji: "+1",
+        operation: "remove",
+      },
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "corrected",
+    });
+    expect(deleteMessage).toHaveBeenCalledWith({ channel: "C123", ts: "1713000000.000100" });
+    expect(addReaction).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1713000000.000100",
+      name: "+1",
+    });
+    expect(removeReaction).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1713000000.000100",
+      name: "+1",
+    });
+  });
+
+  it("creates a native Slack thread root with a stable client message id", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const idempotencyKey = "slack-thread:req-1:slack:ravi-slack:C123:thread.create:thread.create";
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey,
+        target: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          chatId: "C123",
+          threadId: "old-thread-is-not-a-parent",
+        },
+        action: {
+          type: "chat_action",
+          actionId: "thread.create",
+          text: "Investigate this branch",
+        },
+      }),
+    ).resolves.toMatchObject({
+      provider: "slack",
+      platformMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+    });
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      text: "Investigate this branch",
+      clientMsgId: slackClientMessageId(idempotencyKey),
     });
   });
 
@@ -455,6 +777,16 @@ describe("Slack Socket Mode routing", () => {
         accountId: "ravi-rbbt-slack",
         instanceId: "slack-instance-1",
         chatId: "C123",
+        sourceMessageId: "1713000000.000100",
+      },
+      _channelBackend: {
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        target: {
+          channelKind: "slack",
+          connectionId: "ravi-rbbt-slack",
+          conversationId: "C123",
+        },
       },
     });
     expect(
@@ -468,15 +800,188 @@ describe("Slack Socket Mode routing", () => {
       instanceId: "slack-instance-1",
       platformChatId: "C123",
     });
+    const backend = published[0]?.payload._channelBackend as
+      | { binding?: { turnId?: string; chatId?: string; messageId?: string } }
+      | undefined;
+    expect(backend?.binding?.chatId).toBe(canonicalChatId);
+    expect(dbGetChannelBackendIngressReceiptByTurnId(backend?.binding?.turnId ?? "")).toMatchObject({
+      state: "published",
+      chatId: canonicalChatId,
+      messageId: backend?.binding?.messageId,
+      prompt: {
+        prompt: expect.stringContaining("<@U123>: ravi?"),
+      },
+    });
     const session = getSessionByName("ravi-hil");
     expect(typeof session?.sessionKey).toBe("string");
     expect(listSessionSubscriptions(session!.sessionKey)).toEqual([
       expect.objectContaining({
         chatId: canonicalChatId,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
+    expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
+  });
+
+  it("persists a message envelope before ack and resumes it after transient publication failure", async () => {
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const envelope: SlackSocketEnvelope = {
+      envelope_id: "env-durable-a",
+      payload: {
+        token: "must-not-be-persisted",
+        team_id: "T1",
+        event_id: "Ev-durable-a",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "durable?",
+          ts: "1713000000.000200",
+        },
+      },
+    };
+    const failing = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async () => {
+        throw new Error("publisher unavailable");
+      },
+      webClient: {} as never,
+    });
+    let acknowledged = false;
+
+    await expect(
+      failing.handleEnvelope(envelope, async (envelopeId) => {
+        acknowledged = true;
+        expect(envelopeId).toBe("env-durable-a");
+        expect(getSlackInboundEnvelope("slack-instance-1", envelopeId)).toMatchObject({
+          state: "accepted",
+        });
+        expect(JSON.stringify(getSlackInboundEnvelope("slack-instance-1", envelopeId)?.envelope)).not.toContain(
+          "must-not-be-persisted",
+        );
+      }),
+    ).rejects.toThrow("slack_channel_backend_unavailable");
+    expect(acknowledged).toBe(true);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-durable-a")).toMatchObject({
+      state: "accepted",
+    });
+
+    const published: Record<string, unknown>[] = [];
+    const recovered = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (_sessionName, payload) => {
+        published.push(payload);
+      },
+      webClient: {} as never,
+    });
+
+    expect(await recovered.resumePendingInboundEnvelopes()).toEqual({
+      scanned: 1,
+      processed: 1,
+      busy: 0,
+      failed: 0,
+    });
+    expect(published).toHaveLength(1);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-durable-a")).toMatchObject({
+      state: "processed",
+    });
+  });
+
+  it("prunes only processed inbound envelopes outside the retention window", () => {
+    const envelope = (envelopeId: string): SlackSocketEnvelope => ({
+      envelope_id: envelopeId,
+      payload: {
+        event: {
+          type: "message",
+          channel: "C123",
+          user: "U123",
+          text: envelopeId,
+          ts: "1713000000.000200",
+        },
+      },
+    });
+    const processEnvelope = (envelopeId: string, acceptedAt: number, processedAt: number) => {
+      acceptSlackInboundEnvelope({
+        scopeId: "slack-instance-1",
+        envelopeId,
+        envelope: envelope(envelopeId),
+        acceptedAt,
+      });
+      const claimId = `claim-${envelopeId}`;
+      expect(
+        claimSlackInboundEnvelope({
+          scopeId: "slack-instance-1",
+          envelopeId,
+          claimId,
+          claimedAt: processedAt - 1,
+        }).status,
+      ).toBe("acquired");
+      markSlackInboundEnvelopeProcessed({
+        scopeId: "slack-instance-1",
+        envelopeId,
+        claimId,
+        processedAt,
+      });
+    };
+
+    processEnvelope("env-expired", 1_000, 3_000);
+    processEnvelope("env-retained", 4_000, 6_000);
+    acceptSlackInboundEnvelope({
+      scopeId: "slack-instance-1",
+      envelopeId: "env-pending",
+      envelope: envelope("env-pending"),
+      acceptedAt: 1_000,
+    });
+
+    expect(
+      pruneProcessedSlackInboundEnvelopes({
+        scopeId: "slack-instance-1",
+        olderThan: 4_000,
+      }),
+    ).toBe(1);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-expired")).toBeNull();
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-retained")).toMatchObject({
+      state: "processed",
+    });
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-pending")).toMatchObject({
+      state: "accepted",
+    });
   });
 
   it("routes Slack inbound to an existing chat subscription when no route matches", async () => {
@@ -511,7 +1016,6 @@ describe("Slack Socket Mode routing", () => {
       role: "primary",
       attachedByType: "system",
       attachedReason: "test-owner",
-      speechMode: "speak",
       setOutputTarget: true,
     });
 
@@ -573,7 +1077,6 @@ describe("Slack Socket Mode routing", () => {
       expect.objectContaining({
         chatId: chat.id,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
   });
@@ -625,7 +1128,7 @@ describe("Slack Socket Mode routing", () => {
             ts: "1713000000.000100",
             thread_ts: "1713000000.000100",
           },
-          response_url: "https://hooks.slack.test/secret",
+          response_url: "https://hooks.slack.com/actions/T1/B1/secret",
           actions: [
             {
               type: "button",
@@ -680,7 +1183,7 @@ describe("Slack Socket Mode routing", () => {
         }),
       },
     ]);
-    expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.test");
+    expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.com");
   });
 
   it("publishes Slack Work Object link and detail events as inbound interactions", async () => {
@@ -903,7 +1406,6 @@ describe("Slack Socket Mode routing", () => {
       expect.objectContaining({
         chatId: canonicalChatId,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
     expect(inboundEvents).toEqual([
@@ -957,6 +1459,97 @@ describe("Slack Socket Mode routing", () => {
     expect(published).toHaveLength(2);
     expect(published[1]?.sessionName).toBe("ravi-hil-t-1713000000000100");
     expect(inboundEvents).toHaveLength(1);
+  });
+
+  it("leaves the created event to a pending programmatic thread bootstrap", async () => {
+    getOrCreateSession("ravi-hil", "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const requestId = "slack-thread:pending-created-event";
+    const threadTs = "1713000000.000100";
+    createSlackThreadLifecycle({
+      requestId,
+      parentSessionKey: "ravi-hil",
+      parentSessionName: "ravi-hil",
+      initiatorSessionKey: "ravi-hil",
+      initiatorSessionName: "ravi-hil",
+      accountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123",
+      initialPrompt: "start work",
+    });
+    markSlackThreadRootDelivered({
+      requestId,
+      providerThreadId: threadTs,
+      canonicalRootMessageId: "cm-root",
+    });
+
+    const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const inboundEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        prompts.push({ sessionName, payload });
+      },
+      publishInteraction: async (topic, payload) => {
+        inboundEvents.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "env-thread-race",
+      payload: {
+        team_id: "T1",
+        event_id: "EvThreadRace",
+        event_time: 1_713_000_030,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "human follow-up",
+          ts: "1713000030.000200",
+          thread_ts: threadTs,
+        },
+      },
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(inboundEvents).toHaveLength(0);
+    expect(getSlackThreadLifecycle(requestId)).toMatchObject({
+      source: "action",
+      status: "root_delivered",
+      childSessionKey: `ravi-hil:thread:${threadTs}`,
+    });
   });
 
   it("uses a temporary Slack reaction as the native working presence indicator", async () => {
@@ -1258,12 +1851,13 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
-  it("routes Slack audio file_share events as media prompts", async () => {
+  it("hydrates Slack Connect audio metadata before downloading and transcribing", async () => {
+    const audioAgentCwd = stateDir!;
     const config: RouterConfig = {
       agents: {
         "ravi-hil": {
           id: "ravi-hil",
-          cwd: "/tmp/ravi-hil",
+          cwd: audioAgentCwd,
           dmScope: "per-peer",
         },
       },
@@ -1285,6 +1879,28 @@ describe("Slack Socket Mode routing", () => {
       instances: {},
     };
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const filesInfo = mock(async () => ({
+      ok: true,
+      file: {
+        id: "F123",
+        name: "audio_message.m4a",
+        title: "audio_message.m4a",
+        mimetype: "audio/mp4",
+        filetype: "m4a",
+        size: 2_558_655,
+        media_display_type: "audio",
+        url_private_download: "https://files.slack.test/private/F123",
+      },
+    }));
+    const downloadFile = mock(async () => ({
+      buffer: Buffer.from("audio-bytes"),
+      contentType: "audio/mp4",
+    }));
+    const transcribe = mock(async () => ({
+      text: "fala transcrita",
+      provider: "groq",
+      model: "whisper-large-v3-turbo",
+    }));
     const service = new SlackSocketModeService({
       appToken: "xapp-test",
       botToken: "xoxb-test",
@@ -1295,7 +1911,8 @@ describe("Slack Socket Mode routing", () => {
       publishPrompt: async (sessionName, payload) => {
         published.push({ sessionName, payload });
       },
-      webClient: {} as never,
+      webClient: { filesInfo, downloadFile } as never,
+      transcribeAudio: transcribe,
     });
     const envelope: SlackSocketEnvelope = {
       envelope_id: "env-audio-1",
@@ -1305,7 +1922,6 @@ describe("Slack Socket Mode routing", () => {
         event_time: 1_713_000_010,
         event: {
           type: "message",
-          subtype: "file_share",
           channel: "C123",
           channel_type: "channel",
           user: "U123",
@@ -1314,13 +1930,9 @@ describe("Slack Socket Mode routing", () => {
           files: [
             {
               id: "F123",
-              name: "audio_message.m4a",
-              title: "audio_message.m4a",
-              mimetype: "audio/mp4",
+              mode: "file_access",
+              file_access: "check_file_info",
               filetype: "m4a",
-              size: 2_558_655,
-              media_display_type: "audio",
-              url_private_download: "https://files.slack.test/private/F123",
             },
           ],
         },
@@ -1329,9 +1941,16 @@ describe("Slack Socket Mode routing", () => {
 
     await service.handleEnvelope(envelope);
 
+    expect(filesInfo).toHaveBeenCalledWith({ file: "F123" });
+    expect(downloadFile).toHaveBeenCalledWith({
+      url: "https://files.slack.test/private/F123",
+      maxBytes: 20 * 1024 * 1024,
+    });
+    expect(transcribe).toHaveBeenCalledWith(Buffer.from("audio-bytes"), "audio/mp4");
     expect(published).toHaveLength(1);
     expect(String(published[0]?.payload.prompt)).toContain("[Audio: audio_message.m4a, audio/mp4, 2.4 MB]");
-    expect(String(published[0]?.payload.prompt)).toContain("Transcript: unavailable");
+    expect(String(published[0]?.payload.prompt)).toContain("Transcript:\nfala transcrita");
+    expect(String(published[0]?.payload.prompt)).toContain(`file: ${audioAgentCwd}/attachments/`);
 
     const canonicalChatId = (published[0]?.payload.source as { canonicalChatId?: string } | undefined)?.canonicalChatId;
     expect(typeof canonicalChatId).toBe("string");
@@ -1347,9 +1966,16 @@ describe("Slack Socket Mode routing", () => {
       files: [
         {
           id: "F123",
+          mode: "file_access",
+          fileAccess: "check_file_info",
           name: "audio_message.m4a",
           mimeType: "audio/mp4",
           mediaDisplayType: "audio",
+          transcript: "fala transcrita",
+          transcriptionProvider: "groq",
+          transcriptionModel: "whisper-large-v3-turbo",
+          downloadError: null,
+          transcriptionError: null,
         },
       ],
     });

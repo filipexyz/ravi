@@ -32,7 +32,7 @@ Audit: cada apply emite `profile.tag_added`/`profile.tag_removed` no timeline do
 ## Comandos
 
 ```bash
-ravi tag-rules list
+ravi tag-rules list [--fields id,scope]
 ravi tag-rules show <rule-id>
 ravi tag-rules validate
 ravi tag-rules explain --target contact:<id>
@@ -41,6 +41,44 @@ ravi tag-rules tick [--apply] [--limit <n>]
 ```
 
 `evaluate` e `tick` são dry-run por default. Use `--apply` quando confirmar.
+
+## Contrato Do CLI
+
+Contrato agent-first (Manual v2). Exit codes: `0` sucesso · `1` erro
+(not-found/provider) · `2` erro de uso · `3` freio de escrita (não usado neste
+domínio — veja abaixo). Com `--json`, falhas retornam o envelope
+`{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
+
+**Freadas vs sem-freio:**
+
+- Nenhuma op deste domínio usa `--execute`. As duas escritas do domínio —
+  `tick` (em massa, TODOS os contatos) e `evaluate` (alvo único) — já nascem
+  dry-run: **sem `--apply` são preview puro e não escrevem nada** (exit 0).
+  `--apply` é o equivalente documentado do freio e NÃO será renomeado.
+- Reads (`list`, `show`, `validate`, `explain`) são sem-freio, declaradas.
+
+**Códigos de erro:**
+
+| caso | code | exit |
+|---|---|---|
+| rule desconhecida (`show`, `evaluate`) | `TAG_RULE_NOT_FOUND` + `suggestions` de ids reais | 1 |
+| contato desconhecido (`explain`, `evaluate`) | `CONTACT_NOT_FOUND` sem suggestions (visibilidade de contatos é escopada; use `ravi contacts list`) | 1 |
+
+**Compact mode:** `ravi tag-rules list --json --fields id,scope` retorna só os
+campos pedidos em cada rule.
+
+**Autorização:** `tick` e `evaluate` declaram `@CommandAccess kind:"mutate"`
+porque podem escrever tags com `--apply`. Isso não adiciona `--execute`:
+autorização e confirmação são controles separados, e o preview sem `--apply`
+continua sem efeitos.
+
+**Checklist antes de aplicar em massa:**
+
+1. `ravi tag-rules validate` — regras carregam sem erro?
+2. `ravi tag-rules explain --target contact:<id>` — o match é o esperado?
+3. `ravi tag-rules evaluate <rule> --target contact:<id>` — preview do alvo único.
+4. `ravi tag-rules tick --json` — preview em massa; conferir `matched`/`appliedActions`.
+5. Só então `ravi tag-rules tick --apply --json`.
 
 ## Inspeção Cruzada
 
@@ -184,4 +222,7 @@ NATS: assine `ravi.tags.rule.applied` para reagir em outros sistemas.
 
 ## Spec
 
-Spec normativa: `tags/auto-tagging` em `.ravi/specs`. Cobre invariants, performance, audit, e convergência futura com observer rules compostas.
+Specs normativas em `.ravi/specs`:
+
+- `tags/auto-tagging` — invariants do engine, performance, audit, e convergência futura com observer rules compostas.
+- `cli/tag-rules` — contrato agent-first do CLI (envelopes, exit taxonomy, equivalência do `--apply`, autorização mutate).

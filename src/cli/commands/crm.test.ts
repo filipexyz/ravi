@@ -22,6 +22,7 @@ let scopeEnforced = false;
 let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
+let lastOpportunityMoveInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
 let lastProfileUpdateInput: Record<string, unknown> | null = null;
 let lastOpportunityContactInput: Record<string, unknown> | null = null;
@@ -76,6 +77,13 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => ({ agentId: "scoped-agent" }),
   isScopeEnforced: () => scopeEnforced,
   canAccessContact: (_scopeCtx: unknown, contact: { id: string }) => readableContactIds.has(contact.id),
+  // Named imports of src/cli/command-access.ts and src/cli/registry.ts, pulled in
+  // when a test builds the real commander tree. Usage errors are raised by the
+  // parser, so authorization is never reached.
+  enforceScopeCheck: () => ({ allowed: true, errorMessage: "" }),
+  flushAuditAndExit: (code: number): never => {
+    throw new Error(`flushAuditAndExit(${code})`);
+  },
 }));
 
 mock.module("../../contacts.js", () => ({
@@ -264,12 +272,15 @@ mock.module("../../contacts.js", () => ({
     lastOpportunityCreateInput = input;
     return { id: "crm_opp_1", title: input.title, accountId: input.accountId ?? null };
   },
-  moveCrmOpportunityStage: (input: Record<string, unknown>) => ({
-    id: input.opportunityId,
-    title: "Pilot",
-    status: "open",
-    stageId: input.stageRef,
-  }),
+  moveCrmOpportunityStage: (input: Record<string, unknown>) => {
+    lastOpportunityMoveInput = input;
+    return {
+      id: input.opportunityId,
+      title: "Pilot",
+      status: "open",
+      stageId: input.stageRef,
+    };
+  },
   linkCrmOpportunityContact: (input: Record<string, unknown>) => {
     lastOpportunityContactInput = input;
     return {
@@ -342,10 +353,40 @@ const {
   CrmFactCommands,
   CrmOpportunityCommands,
   CrmPipelineCommands,
+  CrmPipelinePolicyCommands,
   CrmPipelineStageCommands,
   CrmPipelineStageTopicCommands,
   CrmTaskCommands,
 } = await import("./crm.js");
+
+const { ContractError: CrmContractError, installUsageContract } = await import("../agent-contract.js");
+const { Command: CommanderCommand } = await import("commander");
+const { registerCommands } = await import("../registry.js");
+
+/**
+ * Real commander tree for the `crm` group, wired exactly like `src/cli/index.ts`
+ * (classes in the barrel's alphabetical order, then the usage contract). Usage
+ * errors are raised by the parser, so they never reach the action handler.
+ */
+function buildCrmProgram() {
+  const program = new CommanderCommand();
+  program.name("ravi");
+  program.showSuggestionAfterError();
+  registerCommands(program, [
+    ACrmCommands,
+    CrmAccountCommands,
+    CrmContactCommands,
+    CrmFactCommands,
+    CrmOpportunityCommands,
+    CrmPipelineCommands,
+    CrmPipelinePolicyCommands,
+    CrmPipelineStageCommands,
+    CrmPipelineStageTopicCommands,
+    CrmTaskCommands,
+  ]);
+  installUsageContract(program, "crm");
+  return program;
+}
 
 function captureJson(run: () => unknown): Record<string, unknown> {
   const original = console.log;
@@ -359,6 +400,23 @@ function captureJson(run: () => unknown): Record<string, unknown> {
   } finally {
     console.log = original;
   }
+}
+
+function captureJsonError(run: () => unknown): { payload: Record<string, unknown>; error: unknown } {
+  const original = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  let error: unknown;
+  try {
+    run();
+  } catch (caught) {
+    error = caught;
+  } finally {
+    console.log = original;
+  }
+  return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
 }
 
 function silenceLogs(run: () => unknown): void {
@@ -479,6 +537,7 @@ describe("CRM commands", () => {
     ];
     lastAccountCreateInput = null;
     lastOpportunityCreateInput = null;
+    lastOpportunityMoveInput = null;
     lastTaskCreateInput = null;
     lastProfileUpdateInput = null;
     lastOpportunityContactInput = null;
@@ -905,5 +964,265 @@ describe("CRM commands", () => {
     expect(() => {
       new CrmContactCommands().show("missing-contact", true);
     }).toThrow(/Contact not found: missing-contact/);
+  });
+
+  it("keeps the legacy text error path for pipeline show without --json", () => {
+    expect(() => {
+      new CrmPipelineCommands().show("vendas");
+    }).toThrow(/CRM pipeline not found: vendas/);
+  });
+
+  it("emits PIPELINE_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmPipelineCommands().show("vendas", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("PIPELINE_NOT_FOUND");
+      expect(contractError.exitCode).toBe(1);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm pipeline show");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("PIPELINE_NOT_FOUND");
+      expect(errorPayload.retryable).toBe(false);
+      expect(errorPayload.suggestedAction).toBeTruthy();
+      const suggestions = errorPayload.suggestions as string[];
+      expect(suggestions.length).toBeGreaterThan(0);
+      expect(suggestions.length).toBeLessThanOrEqual(3);
+      expect(suggestions).toContain("Default Sales Pipeline");
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("emits PIPELINE_REVIEW_FAILED when review finds high-severity gaps", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmPipelineCommands().review("crm_pipeline_default", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("PIPELINE_REVIEW_FAILED");
+      expect(contractError.exitCode).toBe(1);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm pipeline review");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("PIPELINE_REVIEW_FAILED");
+      expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
+      expect(Number(errorPayload.highSeverityGaps)).toBeGreaterThan(0);
+      expect((errorPayload.gaps as Array<Record<string, unknown>>)[0]).not.toHaveProperty("detail");
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("emits PIPELINE_VALIDATION_FAILED when pipeline metadata is invalid", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: 99 } };
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmPipelineCommands().validate("crm_pipeline_default", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("PIPELINE_VALIDATION_FAILED");
+      expect(contractError.exitCode).toBe(1);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm pipeline validate");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("PIPELINE_VALIDATION_FAILED");
+      expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
+      expect((errorPayload.errors as unknown[]).length).toBeGreaterThan(0);
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("emits OPPORTUNITY_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    crmOpportunity = null;
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmOpportunityCommands().show("crm_opp_missing", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("OPPORTUNITY_NOT_FOUND");
+      expect(contractError.exitCode).toBe(1);
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(payload.success).toBe(false);
+      expect(errorPayload.code).toBe("OPPORTUNITY_NOT_FOUND");
+      expect(errorPayload.suggestions).toContain("crm_opp_1");
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("creates an opportunity immediately without --execute", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const payload = captureJson(() => {
+        new CrmOpportunityCommands().create(
+          "Pilot",
+          "crm_acc_1",
+          "contact-1",
+          "crm_pipeline_default",
+          "qualified",
+          "500000",
+          "BRL",
+          "agent:dev",
+          true,
+        );
+      });
+      expect(payload.status).toBe("created");
+      expect(lastOpportunityCreateInput).toMatchObject({ title: "Pilot", stageKey: "qualified" });
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("creates a pipeline immediately without --execute", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const payload = captureJson(() => {
+        new CrmPipelineCommands().create("Reativacao", "opportunity", true, undefined, true);
+      });
+      expect(payload.status).toBe("created");
+      expect(lastPipelineCreateInput).toMatchObject({ name: "Reativacao", isDefault: true });
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("moves an opportunity immediately without --execute", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const payload = captureJson(() => {
+        new CrmOpportunityCommands().move("crm_opp_1", "won", undefined, true);
+      });
+      expect(payload.status).toBe("moved");
+      expect(lastOpportunityMoveInput).toMatchObject({ opportunityId: "crm_opp_1", stageRef: "won" });
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("exits 2 with acceptedFlags on invalid --value (USAGE_ERROR)", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmOpportunityCommands().create(
+          "Pilot",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "abc",
+          undefined,
+          undefined,
+          true,
+        );
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("USAGE_ERROR");
+      expect(contractError.exitCode).toBe(2);
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("USAGE_ERROR");
+      expect(errorPayload.acceptedFlags).toContain("--value");
+      expect(errorPayload.acceptedFlags).not.toContain("--execute");
+      expect(lastOpportunityCreateInput).toBeNull();
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("exits 2 with the usage envelope on an unknown crm flag", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const program = buildCrmProgram();
+      const { payload, error } = captureJsonError(() => {
+        program.parse(["crm", "board", "--flag-inexistente", "--json"], { from: "user" });
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("USAGE_ERROR");
+      expect(contractError.exitCode).toBe(2);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm board");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("USAGE_ERROR");
+      expect(errorPayload.message).toContain("unknown option '--flag-inexistente'");
+      expect(errorPayload.retryable).toBe(false);
+      expect(errorPayload.suggestedAction).toContain("ravi crm board");
+      expect(errorPayload.usage).toBe("ravi crm board [options]");
+      expect(errorPayload.acceptedFlags).toContain("--json");
+      expect(errorPayload.acceptedFlags).toContain("--fields");
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("exits 2 with the usage envelope on a missing required crm argument", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const program = buildCrmProgram();
+      const { payload, error } = captureJsonError(() => {
+        program.parse(["crm", "opportunity", "show", "--json"], { from: "user" });
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("USAGE_ERROR");
+      expect(contractError.exitCode).toBe(2);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm opportunity show");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.message).toContain("missing required argument 'opportunity'");
+      expect(errorPayload.retryable).toBe(false);
+      expect(errorPayload.usage).toBe("ravi crm opportunity show [options] <opportunity>");
+      expect(errorPayload.acceptedFlags).toContain("--json");
+      expect(errorPayload.acceptedPositionals).toEqual(["<opportunity>"]);
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("teaches the correct syntax on usage errors without --json", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    const originalError = console.error;
+    const lines: string[] = [];
+    console.error = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    try {
+      const program = buildCrmProgram();
+      expect(() => {
+        program.parse(["crm", "opportunity", "show"], { from: "user" });
+      }).toThrow(/missing required argument 'opportunity'/);
+      const output = lines.join("\n");
+      expect(output).toContain("usage: ravi crm opportunity show [options] <opportunity>");
+      expect(output).toContain("accepted flags: --json");
+    } finally {
+      console.error = originalError;
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("supports --fields compact mode on listings", () => {
+    const pipelinePayload = captureJson(() => {
+      new CrmPipelineCommands().list(undefined, undefined, true, undefined, undefined, "id,name");
+    });
+    const pipeline = (pipelinePayload.pipelines as Array<Record<string, unknown>>)[0];
+    expect(Object.keys(pipeline).sort()).toEqual(["id", "name"]);
+    expect(pipeline.id).toBe("crm_pipeline_default");
+
+    const boardPayload = captureJson(() => {
+      new ACrmCommands().board(true, undefined, undefined, "opportunityId,title");
+    });
+    const boardOpportunity = (boardPayload.opportunities as Array<Record<string, unknown>>)[0];
+    expect(Object.keys(boardOpportunity).sort()).toEqual(["opportunityId", "title"]);
   });
 });

@@ -1,7 +1,6 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import type { ApprovalServiceDependencies } from "./approval/service.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
-
-afterAll(() => mock.restore());
 
 setDefaultTimeout(20_000);
 
@@ -94,6 +93,8 @@ type RuntimeHandle = {
 
 const emittedEvents: Array<{ topic: string; data: any }> = [];
 const sessions = new Map<string, SessionState>();
+const createdBots: Array<{ stop(): Promise<void> }> = [];
+const fatalRuntimeErrors: Error[] = [];
 let activeProvider: RuntimeProviderId = "claude";
 let runtimeStartCalls: RuntimeStartRequest[] = [];
 let runtimePrepareImpl: (
@@ -137,9 +138,10 @@ function resetRuntimeDoubles(): void {
   runtimeStartCalls = [];
   runtimePrepareImpl = async () => undefined;
   discoveredPlugins = [];
-  runtimeStartImpl = (providerId) => ({
+  runtimeStartImpl = (providerId, request) => ({
     provider: providerId,
     events: (async function* () {
+      await request.prompt.next();
       yield {
         type: "turn.complete",
         providerSessionId: `${providerId}-session`,
@@ -148,6 +150,27 @@ function resetRuntimeDoubles(): void {
     })(),
     interrupt: async () => {},
   });
+}
+
+function holdRuntimeTurnOpen(): () => void {
+  let releaseRuntime!: () => void;
+  const runtimeLifetime = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  runtimeStartImpl = (providerId, request) => ({
+    provider: providerId,
+    events: (async function* () {
+      await request.prompt.next();
+      await runtimeLifetime;
+      yield {
+        type: "turn.complete",
+        providerSessionId: `${providerId}-session`,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })(),
+    interrupt: async () => releaseRuntime(),
+  });
+  return releaseRuntime;
 }
 
 function createMockCodexStartRequest(hostServices: RuntimeHostServices): Partial<RuntimeStartRequest> {
@@ -441,6 +464,7 @@ mock.module("./cli/context.js", () => ({
 
 mock.module("./cli/tool-definitions.js", () => ({
   getAllCommandClasses: () => [],
+  getCliToolDefinition: () => undefined,
   createSdkTools: () => [
     {
       name: "tools_list",
@@ -690,9 +714,20 @@ mock.module("./runtime/provider-registry.js", () => ({
   },
 }));
 
+const { setApprovalServiceDependenciesForTest } = await import("./approval/service.js");
 const { RaviBot } = await import("./bot.js");
 
+beforeAll(async () => {
+  // The fixture already runs in its own process. Keep its SQLite state alive
+  // until every bot handle is stopped so no case can reuse a closed statement.
+  stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
+});
+
 afterEach(async () => {
+  for (const bot of createdBots.splice(0)) {
+    await bot.stop();
+  }
+  setApprovalServiceDependenciesForTest();
   saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
   agentCanImpl = (...args: Parameters<typeof actualAgentCan>) => actualAgentCan(...args);
   canWithCapabilitiesImpl = (...args: Parameters<typeof actualCanWithCapabilities>) =>
@@ -703,28 +738,56 @@ afterEach(async () => {
       actualTaskDbModule.dbDeleteTask(taskId);
     }
   }
-  await cleanupIsolatedRaviState(stateDir);
-  stateDir = null;
 });
 
-function createBot() {
-  return new RaviBot({
+afterAll(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+  mock.restore();
+});
+
+function createBot(options: { startCrashRecovery?: boolean } = {}) {
+  const bot = new RaviBot({
     config: {
       model: "test-model",
       logLevel: "error",
       apiKey: "fake",
     } as any,
+    onFatalRuntimeError: (error) => fatalRuntimeErrors.push(error),
   });
+  if (options.startCrashRecovery !== false) {
+    (bot as any).crashRecovery.start();
+  }
+  createdBots.push(bot);
+  return bot;
 }
 
-function makePrompt(text: string) {
+type TestPromptSource = {
+  channel: string;
+  accountId: string;
+  instanceId?: string;
+  chatId: string;
+  canonicalChatId?: string;
+  threadId?: string;
+};
+
+const WHATSAPP_SURFACE_HINT = "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.";
+
+function withWhatsAppSurfaceHint(text: string): string {
+  return `${WHATSAPP_SURFACE_HINT}\n${text}`;
+}
+
+function makePrompt(
+  text: string,
+  source: TestPromptSource = { channel: "whatsapp", accountId: "main", chatId: "test" },
+) {
   return {
     prompt: text,
-    source: { channel: "whatsapp", accountId: "main", chatId: "test" },
+    source,
   };
 }
 
-function attachOutputForSession(sessionKey: string): void {
+function attachOutputForSession(sessionKey: string): TestPromptSource {
   const now = Date.now();
   actualRouterDbModule
     .getDb()
@@ -749,6 +812,123 @@ function attachOutputForSession(sessionKey: string): void {
     attachedReason: "runtime-guard-test-output",
     outputAttachedAt: Date.now(),
   });
+  return {
+    channel: "whatsapp",
+    accountId: "main",
+    instanceId: "main",
+    chatId: chat.platformChatId,
+    canonicalChatId: chat.id,
+  };
+}
+
+function ensureSessionRow(sessionKey: string): void {
+  const now = Date.now();
+  actualRouterDbModule
+    .getDb()
+    .prepare(
+      `
+      INSERT OR IGNORE INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(sessionKey, sessionKey, "main", "/tmp/ravi-test-bot/main", now, now);
+}
+
+function makeRuntimeGuardChat(input: {
+  suffix: string;
+  channel: string;
+  accountId: string;
+  platformChatId: string;
+  chatType?: "dm" | "group" | "thread";
+}) {
+  return actualRouterDbModule.dbUpsertChat({
+    channel: input.channel,
+    instanceId: input.accountId,
+    platformChatId: input.platformChatId,
+    chatType: input.chatType ?? "dm",
+    title: `test-${input.suffix}`,
+  });
+}
+
+function attachMultiSurfaceOutputForSession(input: {
+  sessionKey: string;
+  defaultChat: ReturnType<typeof makeRuntimeGuardChat>;
+  sourceChat: ReturnType<typeof makeRuntimeGuardChat>;
+}): void {
+  ensureSessionRow(input.sessionKey);
+  actualRouterDbModule.dbCreateSessionChatSubscription({
+    sessionKey: input.sessionKey,
+    chatId: input.defaultChat.id,
+    attachedReason: "runtime-guard-test-default-output",
+    outputAttachedAt: Date.now(),
+  });
+  actualRouterDbModule.dbCreateSessionChatSubscription({
+    sessionKey: input.sessionKey,
+    chatId: input.sourceChat.id,
+    attachedReason: "runtime-guard-test-source-speak",
+  });
+}
+
+function promptForChat(text: string, chat: ReturnType<typeof makeRuntimeGuardChat>) {
+  const separator = chat.platformChatId.indexOf("#");
+  const chatId = separator === -1 ? chat.platformChatId : chat.platformChatId.slice(0, separator);
+  const threadId = separator === -1 ? undefined : chat.platformChatId.slice(separator + 1);
+  return {
+    prompt: text,
+    source: {
+      channel: chat.channel,
+      accountId: chat.instanceId,
+      instanceId: chat.instanceId,
+      chatId,
+      ...(threadId ? { threadId } : {}),
+      canonicalChatId: chat.id,
+      actorType: "contact",
+    },
+  };
+}
+
+const TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+function streamGeneratedImageTurn(finalText: string, options: { duplicateCompletion?: boolean } = {}) {
+  runtimeStartImpl = (providerId, request) => ({
+    provider: providerId,
+    events: (async function* () {
+      await request.prompt.next();
+      yield {
+        type: "tool.started",
+        toolUse: { id: "image-gen", name: "image_gen.imagegen", input: { prompt: "test image" } },
+      };
+      const completion = {
+        type: "tool.completed",
+        toolUseId: "image-gen",
+        toolName: "image_gen.imagegen",
+        content: { id: "generated-image-1", result: TINY_PNG_BASE64 },
+        isError: false,
+        metadata: {
+          provider: "codex",
+          nativeEvent: "item.completed",
+          item: { id: "item-generated-image-1", type: "imageGeneration", status: "completed" },
+        },
+      };
+      yield completion;
+      if (options.duplicateCompletion) yield { ...completion };
+      yield {
+        type: "assistant.message",
+        text: finalText,
+        metadata: {
+          provider: "codex",
+          nativeEvent: "item.completed",
+          item: { id: "item-final-answer-1", type: "message", phase: "final_answer" },
+        },
+      };
+      yield {
+        type: "turn.complete",
+        providerSessionId: `${providerId}-session`,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })(),
+    interrupt: async () => {},
+  });
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
@@ -762,8 +942,8 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 
 describe("RaviBot runtime guards", () => {
   beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
     emittedEvents.length = 0;
+    fatalRuntimeErrors.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
     delete process.env.RAVI_BIN;
@@ -785,7 +965,7 @@ describe("RaviBot runtime guards", () => {
       );
   });
 
-  it("clears legacy provider session state before switching an agent to Codex", async () => {
+  it("starts Codex without resuming a leftover Claude id when last-used is unset", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:legacy-switch";
     sessions.set(sessionKey, {
@@ -800,13 +980,13 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(clearProviderSession).toHaveBeenCalledWith(sessionKey);
+    expect(clearProviderSession).not.toHaveBeenCalled();
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.resume).toBeUndefined();
     expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
   });
 
-  it("marks task bootstrap as accepted and persists runtime provider state before the first turn completes", async () => {
+  it("marks task bootstrap as accepted without stamping last-used provider before the first turn completes", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:task-bootstrap";
     const dispatched = createDispatchedTaskForSession(sessionKey, { profileId: "task-doc-none" });
@@ -817,9 +997,10 @@ describe("RaviBot runtime guards", () => {
     const turnGate = new Promise<void>((resolve) => {
       releaseTurn = resolve;
     });
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         await turnGate;
         yield {
           type: "turn.complete",
@@ -841,13 +1022,17 @@ describe("RaviBot runtime guards", () => {
       const session = sessions.get(sessionKey);
       const task = actualTaskDbModule.dbGetTask(dispatched.task.id);
       const assignment = actualTaskDbModule.dbGetActiveAssignment(dispatched.task.id);
-      expect(session?.runtimeProvider).toBe("codex");
+      expect(session?.runtimeProvider).toBeUndefined();
       expect(session?.providerSessionId).toBeUndefined();
       expect(task?.status).toBe("in_progress");
       expect(assignment?.status).toBe("accepted");
       expect(assignment?.checkpointDueAt).toBeGreaterThan(assignment?.assignedAt ?? 0);
       expect(runtimeStartCalls[0]?.env?.RAVI_BIN).toBe("/tmp/ravi-repo/bin/ravi");
       expect(runtimeStartCalls[0]?.env?.PATH?.startsWith("/tmp/ravi-repo/bin")).toBe(true);
+
+      releaseTurn?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
     } finally {
       releaseTurn?.();
       if (originalRaviBin === undefined) {
@@ -890,11 +1075,12 @@ describe("RaviBot runtime guards", () => {
 
   it("keeps runtime failure responses bounded while preserving runtime error detail", async () => {
     const sessionKey = "agent:main:runtime-failure";
-    attachOutputForSession(sessionKey);
+    const source = attachOutputForSession(sessionKey);
     const longError = `TypeError: oD is not a function\n${"at minified.bundle.js:1:1\n".repeat(100)}`;
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         yield {
           type: "turn.failed",
           error: longError,
@@ -906,7 +1092,7 @@ describe("RaviBot runtime guards", () => {
     });
 
     const bot = createBot();
-    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello", source));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const runtimeFailure = emittedEvents.find(
@@ -961,7 +1147,7 @@ describe("RaviBot runtime guards", () => {
     await firstPrompt;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(combinedPrompt).toBe("first\n\nsecond");
+    expect(combinedPrompt).toBe(withWhatsAppSurfaceHint("first\n\nsecond"));
   });
 
   it("passes discovered plugins into runtime prepareSession for provider-specific bridges", async () => {
@@ -988,6 +1174,23 @@ describe("RaviBot runtime guards", () => {
       { permission: "use", objectType: "tool", objectId: "Write", source: "test" },
       { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
     ];
+    let releaseRuntime!: () => void;
+    const runtimeLifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        await request.prompt.next();
+        await runtimeLifetime;
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt: async () => releaseRuntime(),
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-approval-bridge", { prompt: "hello" });
@@ -1026,10 +1229,12 @@ describe("RaviBot runtime guards", () => {
       inherited: true,
       permissions: { "use:tool:Bash": true },
     });
+    releaseRuntime();
   });
 
   it("denies runtime user input when no outbound target exists", async () => {
     activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-source", { prompt: "hello" });
@@ -1050,10 +1255,12 @@ describe("RaviBot runtime guards", () => {
       approved: false,
       reason: "Runtime user input requires a target source.",
     });
+    releaseRuntime();
   });
 
   it("denies runtime user input questions without selectable options", async () => {
     activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-options", makePrompt("hello"));
@@ -1074,6 +1281,74 @@ describe("RaviBot runtime guards", () => {
       approved: false,
       reason: "Runtime user input question requires selectable options: freeform",
     });
+    releaseRuntime();
+  });
+
+  it("does not emit a second user-input poll after durable attempt ownership is lost", async () => {
+    activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
+    const sessionKey = "agent:main:codex-user-input-multi-question-race";
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await waitFor(() => Boolean((bot as any).streamingSessions.get(sessionKey)?.currentCrashRecoveryAttemptId));
+
+    const streamingSession = (bot as any).streamingSessions.get(sessionKey);
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId as string;
+    const pollRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    setApprovalServiceDependenciesForTest({
+      requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
+        pollRequests.push({ topic, data });
+        return { messageId: `poll-${pollRequests.length}` } as T;
+      }) satisfies ApprovalServiceDependencies["requestReply"],
+      nats: {
+        emit: async () => {},
+        subscribe: (() => {
+          const stream = (async function* () {
+            yield {
+              topic: "ravi.inbound.pollVote",
+              data: {
+                pollMessageId: "poll-1",
+                votes: [{ name: "A", voters: ["actor-1"] }],
+              },
+            };
+          })();
+          const closeStream = stream.return.bind(stream);
+          stream.return = async (value) => {
+            streamingSession.currentCrashRecoveryAttemptId = undefined;
+            return closeStream(value);
+          };
+          return stream;
+        }) satisfies ApprovalServiceDependencies["nats"]["subscribe"],
+      },
+    });
+
+    try {
+      const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
+      await expect(
+        approveRuntimeRequest?.({
+          kind: "user_input",
+          method: "item/tool/requestUserInput",
+          input: {
+            questions: [
+              { id: "first", question: "First?", options: [{ label: "A" }] },
+              { id: "second", question: "Second?", options: [{ label: "B" }] },
+            ],
+          },
+        }),
+      ).resolves.toMatchObject({
+        approved: false,
+        reason: "Runtime action approval denied because durable turn ownership changed before authorization completed.",
+      });
+      expect(pollRequests).toHaveLength(1);
+      expect(pollRequests[0]).toMatchObject({
+        topic: "ravi.outbound.deliver",
+        data: { poll: { name: expect.stringContaining("First?"), values: ["A"] } },
+      });
+    } finally {
+      streamingSession.currentCrashRecoveryAttemptId = attemptId;
+      setApprovalServiceDependenciesForTest();
+      releaseRuntime();
+    }
   });
 
   it("keeps Codex runtime requests free of native Ravi dynamic tools even with tool capabilities", async () => {
@@ -1324,60 +1599,65 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(firstPrompt).toBe("first");
-    expect(secondPrompt).toBe("second");
+    expect(firstPrompt).toBe(withWhatsAppSurfaceHint("first"));
+    expect(secondPrompt).toBe(withWhatsAppSurfaceHint("second"));
     expect(interrupt).not.toHaveBeenCalled();
   });
 
-  it("restarts an active streaming session when the agent provider changes", async () => {
+  it("keeps an active streaming session on last-used provider when the agent default changes", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:provider-switch-live-session";
-    const interruptedProviders: RuntimeProviderId[] = [];
+    const interrupt = mock(async () => {});
+    let secondPromptRequestReached: (() => void) | undefined;
+    const waitingForSecondPrompt = new Promise<void>((resolve) => {
+      secondPromptRequestReached = resolve;
+    });
     const seenPrompts: Array<{ provider: RuntimeProviderId; prompt: string }> = [];
-    const lifetimeResolvers = new Map<RuntimeProviderId, () => void>();
 
-    runtimeStartImpl = (providerId, request) => {
-      const lifetime = new Promise<void>((resolve) => {
-        lifetimeResolvers.set(providerId, resolve);
-      });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        seenPrompts.push({
+          provider: providerId,
+          prompt: first.value?.message.content ?? "",
+        });
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
 
-      return {
-        provider: providerId,
-        events: (async function* () {
-          const first = await request.prompt.next();
-          seenPrompts.push({
-            provider: providerId,
-            prompt: first.value?.message.content ?? "",
-          });
-          yield {
-            type: "turn.complete",
-            providerSessionId: `${providerId}-session`,
-            usage: { inputTokens: 1, outputTokens: 1 },
-          };
-          await lifetime;
-        })(),
-        interrupt: async () => {
-          interruptedProviders.push(providerId);
-          lifetimeResolvers.get(providerId)?.();
-        },
-      };
-    };
+        secondPromptRequestReached?.();
+        const second = await request.prompt.next();
+        seenPrompts.push({
+          provider: providerId,
+          prompt: second.value?.message.content ?? "",
+        });
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt,
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first via codex"));
+    await waitingForSecondPrompt;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     activeProvider = "claude";
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second via claude"));
     await new Promise((resolve) => setTimeout(resolve, 40));
 
-    expect(runtimeStartCalls).toHaveLength(2);
+    expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.model).toBe("test-model");
-    expect(runtimeStartCalls[1]?.model).toBe("test-model");
-    expect(interruptedProviders).toContain("codex");
+    expect(interrupt).not.toHaveBeenCalled();
     expect(seenPrompts).toEqual([
-      { provider: "codex", prompt: "first via codex" },
-      { provider: "claude", prompt: "first via codex\n\nsecond via claude" },
+      { provider: "codex", prompt: withWhatsAppSurfaceHint("first via codex") },
+      { provider: "codex", prompt: withWhatsAppSurfaceHint("second via claude") },
     ]);
 
     await bot.stop();
@@ -1418,16 +1698,24 @@ describe("RaviBot runtime guards", () => {
     await bot.stop();
   });
 
-  it("does not emit legacy .claude events for Codex sessions", async () => {
+  it("does not emit legacy .claude or unfenced structural raw events for Codex sessions", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:codex-no-legacy-feed";
 
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
+        const rawThreadStarted = { type: "thread.started", thread_id: "thread-codex" };
         yield {
           type: "provider.raw",
-          rawEvent: { type: "thread.started", thread_id: "thread-codex" },
+          rawEvent: rawThreadStarted,
+          metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
+        };
+        yield {
+          type: "thread.started",
+          thread: { id: "thread-codex" },
+          rawEvent: rawThreadStarted,
           metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
         };
         yield {
@@ -1445,10 +1733,17 @@ describe("RaviBot runtime guards", () => {
           type: "assistant.message",
           text: "hello from codex",
         };
+        const rawTurnComplete = { type: "turn.completed", thread_id: "thread-codex" };
+        yield {
+          type: "provider.raw",
+          rawEvent: rawTurnComplete,
+          metadata: { provider: "codex", nativeEvent: "turn.completed", thread: { id: "thread-codex" } },
+        };
         yield {
           type: "turn.complete",
           providerSessionId: `${providerId}-session`,
           usage: { inputTokens: 1, outputTokens: 1 },
+          rawEvent: rawTurnComplete,
         };
       })(),
       interrupt: async () => {},
@@ -1464,7 +1759,7 @@ describe("RaviBot runtime guards", () => {
       emittedEvents.some(
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "provider.raw",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       emittedEvents.some(
         (entry) =>
@@ -1472,7 +1767,7 @@ describe("RaviBot runtime guards", () => {
           entry.data?.type === "provider.raw" &&
           (entry.data.metadata as any)?.thread?.id === "thread-codex",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       emittedEvents.some(
         (entry) =>
@@ -1490,9 +1785,10 @@ describe("RaviBot runtime guards", () => {
       pricedModels.push(model);
       return { inputCost: 1, outputCost: 2, cacheCost: 0, totalCost: 3, pricingStatus: "priced" };
     };
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         yield {
           type: "turn.complete",
           providerSessionId: `${providerId}-session`,
@@ -1519,7 +1815,7 @@ describe("RaviBot runtime guards", () => {
       provider: providerId,
       events: (async function* () {
         const first = await request.prompt.next();
-        expect(first.value?.message.content).toBe("first");
+        expect(first.value?.message.content).toBe(withWhatsAppSurfaceHint("first"));
         await new Promise(() => {});
       })(),
       interrupt,
@@ -1538,7 +1834,7 @@ describe("RaviBot runtime guards", () => {
     expect(interrupt).toHaveBeenCalledTimes(1);
   });
 
-  it("suppresses recoverable abort failures from internally interrupted turns", async () => {
+  it("suppresses recoverable abort failures and retries the successor after prompt interruption", async () => {
     const sessionKey = "agent:main:interrupted-abort-no-outbound";
     let releaseAfterTool: (() => void) | undefined;
     const afterTool = new Promise<void>((resolve) => {
@@ -1566,7 +1862,7 @@ describe("RaviBot runtime guards", () => {
           provider: providerId,
           events: (async function* () {
             const first = await request.prompt.next();
-            expect(first.value?.message.content).toBe("first");
+            expect(first.value?.message.content).toBe(withWhatsAppSurfaceHint("first"));
             yield {
               type: "tool.started",
               toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/a" } },
@@ -1599,7 +1895,7 @@ describe("RaviBot runtime guards", () => {
         provider: providerId,
         events: (async function* () {
           const retry = await request.prompt.next();
-          expect(retry.value?.message.content).toBe("first\n\nsecond");
+          expect(retry.value?.message.content).toBe(withWhatsAppSurfaceHint("second"));
           releaseRetryPrompt?.();
           yield {
             type: "assistant.message",
@@ -1616,10 +1912,10 @@ describe("RaviBot runtime guards", () => {
     };
 
     const bot = createBot();
-    attachOutputForSession(sessionKey);
-    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    const source = attachOutputForSession(sessionKey);
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first", source));
     await afterTool;
-    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second", source));
     await firstFailureSeen;
     await waitFor(() =>
       emittedEvents.some(
@@ -1658,7 +1954,7 @@ describe("RaviBot runtime guards", () => {
       provider: providerId,
       events: (async function* () {
         const first = await request.prompt.next();
-        expect(first.value?.message.content).toBe("first");
+        expect(first.value?.message.content).toBe(withWhatsAppSurfaceHint("first"));
         await failureAllowed;
         yield {
           type: "turn.failed",
@@ -1702,7 +1998,7 @@ describe("RaviBot runtime guards", () => {
       provider: providerId,
       events: (async function* () {
         const first = await request.prompt.next();
-        expect(first.value?.message.content).toBe("first");
+        expect(first.value?.message.content).toBe(withWhatsAppSurfaceHint("first"));
         await firstTurnDone;
         yield {
           type: "turn.complete",
@@ -1736,7 +2032,7 @@ describe("RaviBot runtime guards", () => {
     releaseFirstTurn?.();
     await new Promise((resolve) => setTimeout(resolve, 40));
 
-    expect(secondPrompt).toBe("follow after response");
+    expect(secondPrompt).toBe(withWhatsAppSurfaceHint("follow after response"));
   });
 
   it("keeps p3/after_task prompts parked until the task becomes inactive", async () => {
@@ -1844,8 +2140,8 @@ describe("RaviBot runtime guards", () => {
 
 describe("RaviBot streaming session lifecycle", () => {
   beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
     emittedEvents.length = 0;
+    fatalRuntimeErrors.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
     activeProvider = "claude";
@@ -1861,6 +2157,234 @@ describe("RaviBot streaming session lifecycle", () => {
       capabilities.some(
         (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
       );
+  });
+
+  it("owns a boot epoch before subscriptions accept work and closes it gracefully", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+
+    await bot.start();
+
+    expect((bot as any).crashRecovery.boot).toMatchObject({
+      instanceId: bot.instanceId,
+      status: "active",
+    });
+    expect(bot.canAcceptRuntimePrompt()).toBe(true);
+
+    await bot.stop();
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("fences an expired boot during stop instead of leaving its heartbeat alive", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+    await bot.start();
+    const crashRecovery = (bot as any).crashRecovery;
+    const sessionName = "agent:main:expired-boot-stop";
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const streaming = {
+      agentId: "main",
+      traceRunId: "run-expired-boot-stop",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: true,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    };
+    const attempt = crashRecovery.startTurnAttempt({
+      attemptId: "attempt-expired-boot-stop",
+      turnId: "turn-expired-boot-stop",
+      runId: streaming.traceRunId,
+      sessionKey: sessionName,
+      sessionName,
+      agentId: "main",
+      provider: "claude",
+      model: "test-model",
+      requestBlobSha256: "sha-expired-boot-stop",
+      originKind: "human",
+      deliveryBarrier: "after_response",
+    });
+    (streaming as any).currentCrashRecoveryAttemptId = attempt.attemptId;
+    (bot as any).streamingSessions.set(sessionName, streaming);
+    const leaseExpiresAt = crashRecovery.boot.leaseExpiresAt;
+    crashRecovery.now = () => leaseExpiresAt;
+
+    let stopError: unknown;
+    try {
+      await bot.stop();
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toMatchObject({ name: "RuntimeCrashRecoveryOwnershipLostError" });
+    expect(crashRecovery.ownershipFailure).toBe(stopError);
+    expect(crashRecovery.heartbeatTimer).toBeNull();
+    expect(crashRecovery.boot).toMatchObject({ status: "active" });
+    expect(bot.canAcceptRuntimePrompt()).toBe(false);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(abortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("fences intake, closes runtime sessions, and requests a supervised restart when ownership is lost", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+    await bot.start();
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const sessionName = "agent:main:ownership-lost";
+    (bot as any).streamingSessions.set(sessionName, {
+      agentId: "main",
+      traceRunId: "run-ownership-lost",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+
+    const crashRecovery = (bot as any).crashRecovery;
+    expect((bot as any).promptSubscription.healthTimer).not.toBeNull();
+    crashRecovery.now = () => crashRecovery.boot.leaseExpiresAt;
+    expect(() => crashRecovery.heartbeatNow()).toThrow("Crash recovery boot lease expired before heartbeat");
+    const ownershipError = crashRecovery.ownershipFailure;
+
+    expect(bot.canAcceptRuntimePrompt()).toBe(false);
+    expect((bot as any).promptSubscription.healthTimer).toBeNull();
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect(abortController.signal.aborted).toBe(true);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(crashRecovery.boot).toMatchObject({ status: "active" });
+    expect(fatalRuntimeErrors).toEqual([ownershipError]);
+
+    await bot.stop();
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("closes every provider when one shutdown trace fails", async () => {
+    const bot = createBot();
+    const firstAbortController = new AbortController();
+    const secondAbortController = new AbortController();
+    const firstInterrupt = mock(async () => {});
+    const secondInterrupt = mock(async () => {});
+    const runtimeSession = (
+      abortController: AbortController,
+      interrupt: ReturnType<typeof mock>,
+      traceTurnId?: string,
+    ) => ({
+      agentId: "main",
+      traceRunId: "run-shutdown-cleanup",
+      currentTraceTurnId: traceTurnId,
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: Boolean(traceTurnId),
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+    (bot as any).streamingSessions.set(
+      "agent:main:shutdown-trace-failure",
+      runtimeSession(firstAbortController, firstInterrupt, "turn-without-attempt-binding"),
+    );
+    (bot as any).streamingSessions.set(
+      "agent:main:shutdown-after-failure",
+      runtimeSession(secondAbortController, secondInterrupt),
+    );
+
+    let stopError: unknown;
+    try {
+      await bot.stop();
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toMatchObject({
+      message: "Crash recovery attempt binding missing before dispatcher terminal state",
+    });
+    expect(firstInterrupt).toHaveBeenCalledTimes(1);
+    expect(secondInterrupt).toHaveBeenCalledTimes(1);
+    expect(firstAbortController.signal.aborted).toBe(true);
+    expect(secondAbortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("finishes shutdown cleanup before propagating a restart snapshot failure", async () => {
+    const bot = createBot();
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const snapshotError = new Error("restart snapshot write failed");
+    (bot as any).streamingSessions.set("agent:main:restart-snapshot-failure", {
+      agentId: "main",
+      traceRunId: "run-restart-snapshot-failure",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+    (bot as any).sessionDispatcher.recordDaemonRestartSnapshot = () => {
+      throw snapshotError;
+    };
+
+    let stopError: unknown;
+    try {
+      await bot.stop({
+        restart: {
+          restartEpoch: "epoch-snapshot-failure",
+          reason: "test restart snapshot failure",
+        },
+      });
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toBe(snapshotError);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(abortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
   });
 
   it("creates a new streaming session for first message", async () => {
@@ -1904,7 +2428,7 @@ describe("RaviBot streaming session lifecycle", () => {
 
     const streamingSession = (bot as any).streamingSessions.get(sessionKey);
     expect(streamingSession.pendingMessages).toHaveLength(1);
-    expect(streamingSession.pendingMessages[0]?.message.content).toBe("follow-up");
+    expect(streamingSession.pendingMessages[0]?.message.content).toBe(withWhatsAppSurfaceHint("follow-up"));
     expect(wokenUp).toBe(true);
     expect(streamingSession.pushMessage).toBeNull();
   });
@@ -1980,7 +2504,7 @@ describe("RaviBot streaming session lifecycle", () => {
     expect((bot as any).streamingSessions.get(sessionKey)).not.toBe(doneSession);
   });
 
-  it("updates the response source when pushing into an existing session", async () => {
+  it("keeps the active response source stable until the queued turn starts", async () => {
     const sessionKey = "agent:main:test-source";
     const bot = createBot();
 
@@ -2010,7 +2534,201 @@ describe("RaviBot streaming session lifecycle", () => {
 
     await (bot as any).handlePromptImmediate(sessionKey, prompt);
 
-    expect(streamingSession.currentSource?.chatId).toBe("new-chat");
+    const queued = (streamingSession.pendingMessages as any[])[0];
+    expect(streamingSession.currentSource?.chatId).toBe("old");
+    expect(queued?.launchPrompt?.source?.chatId).toBe("new-chat");
+    expect(queued?.message.content).toBe(withWhatsAppSurfaceHint("update source"));
+  });
+
+  it("attaches generated media to the WhatsApp response target even when Slack is the default output", async () => {
+    const sessionKey = "agent:main:generated-media-wa-source";
+    const slackDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-default",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "DDEFAULT#1781574894.010449",
+      chatType: "thread",
+    });
+    const whatsappSource = makeRuntimeGuardChat({
+      suffix: "generated-media-whatsapp-source",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511999999999@s.whatsapp.net",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: slackDefault, sourceChat: whatsappSource });
+    streamGeneratedImageTurn("imagem pronta");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera imagem", whatsappSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.target).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "5511999999999@s.whatsapp.net",
+      canonicalChatId: whatsappSource.id,
+    });
+    expect(response?.target?.channel).not.toBe("slack");
+    expect(response?.content).toEqual([
+      expect.objectContaining({
+        type: "media",
+        media: expect.objectContaining({
+          type: "image",
+          filename: expect.stringContaining("ravi-generated-media"),
+          mimeType: "image/png",
+          source: "runtime.generated_media",
+        }),
+      }),
+      { type: "text", text: "imagem pronta" },
+    ]);
+    const generatedMediaEvents = emittedEvents.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${sessionKey}.runtime` || entry.topic === `ravi.session.${sessionKey}.tool`,
+    );
+    expect(JSON.stringify(generatedMediaEvents)).not.toContain(TINY_PNG_BASE64);
+    const persistedTracePayloads = actualRouterDbModule
+      .getDb()
+      .prepare("SELECT payload_json FROM session_events WHERE session_key = ?")
+      .all(sessionKey);
+    expect(JSON.stringify(persistedTracePayloads)).not.toContain(TINY_PNG_BASE64);
+  });
+
+  it("attaches generated media to the Slack response target even when WhatsApp is the default output", async () => {
+    const sessionKey = "agent:main:generated-media-slack-source";
+    const whatsappDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-whatsapp-default",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511888888888@s.whatsapp.net",
+    });
+    const slackSource = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-source",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "CSOURCE#1781575000.010449",
+      chatType: "thread",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    streamGeneratedImageTurn("slack pronto");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera imagem no slack", slackSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.target).toMatchObject({
+      channel: "slack",
+      accountId: "slack-main",
+      chatId: "CSOURCE",
+      threadId: "1781575000.010449",
+      canonicalChatId: slackSource.id,
+    });
+    expect(response?.target?.channel).not.toBe("whatsapp");
+    expect(response?.content).toEqual([
+      expect.objectContaining({
+        type: "media",
+        media: expect.objectContaining({
+          type: "image",
+          filename: expect.stringContaining("ravi-generated-media"),
+          mimeType: "image/png",
+          source: "runtime.generated_media",
+        }),
+      }),
+      { type: "text", text: "slack pronto" },
+    ]);
+  });
+
+  it("emits generated media on a native Slack backend turn without duplicating the backend-owned text", async () => {
+    const sessionKey = "agent:main:generated-media-slack-backend";
+    const whatsappDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-backend-whatsapp-default",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511777777777@s.whatsapp.net",
+    });
+    const slackSource = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-backend-source",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "CBACKEND#1781576000.010449",
+      chatType: "thread",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    streamGeneratedImageTurn("texto do backend");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...promptForChat("gera imagem no backend slack", slackSource),
+      _channelBackend: {
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        ingressRequestId: "request-generated-media-slack-backend",
+        correlationId: "correlation-generated-media-slack-backend",
+        binding: {
+          channelInstanceId: "slack-main",
+          agentId: "main",
+          chatId: slackSource.id,
+          messageId: "message-generated-media-slack-backend",
+          sessionId: sessionKey,
+          turnId: "turn-generated-media-slack-backend",
+        },
+        target: {
+          channelKind: "slack",
+          connectionId: "slack-main",
+          conversationId: "CBACKEND",
+        },
+      },
+    });
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]?.data).toMatchObject({
+      response: "",
+      target: {
+        channel: "slack",
+        accountId: "slack-main",
+        chatId: "CBACKEND",
+        threadId: "1781576000.010449",
+        canonicalChatId: slackSource.id,
+      },
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            mimeType: "image/png",
+            source: "runtime.generated_media",
+          },
+        },
+      ],
+    });
+    expect(responses[0]?.data.content.some((part: { type?: string }) => part.type === "text")).toBe(false);
+  });
+
+  it("deduplicates repeated generated-image completions inside the runtime turn", async () => {
+    const sessionKey = "agent:main:generated-media-duplicate-completion";
+    const whatsappSource = makeRuntimeGuardChat({
+      suffix: "generated-media-duplicate-source",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511666666666@s.whatsapp.net",
+    });
+    attachOutputForSession(sessionKey);
+    actualRouterDbModule.dbCreateSessionChatSubscription({
+      sessionKey,
+      chatId: whatsappSource.id,
+      attachedReason: "runtime-guard-test-generated-media-dedupe",
+    });
+    streamGeneratedImageTurn("imagem única", { duplicateCompletion: true });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera uma imagem", whatsappSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.content.filter((part: { type?: string }) => part.type === "media")).toHaveLength(1);
   });
 
   it("routes runtime control requests to the active session handle", async () => {

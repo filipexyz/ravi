@@ -494,7 +494,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "snooze", description: "Snooze a followup cadence until a timestamp" })
-  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "snooze", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "snooze", risk: "medium" })
   snooze(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--until <iso>", description: "Wake-up timestamp" }) until?: string,

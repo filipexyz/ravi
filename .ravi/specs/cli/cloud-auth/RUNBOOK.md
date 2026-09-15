@@ -9,7 +9,12 @@ ravi login --console https://console.ravi.bot --json
 Check:
 
 - Console auth config endpoint is reachable.
-- Browser/device verification URL is shown.
+- Browser/device verification URL is shown and already includes
+  `?user_code=<issued-code>` (example shape:
+  `https://console.ravi.bot/cli/authorize?user_code=<CODE>`).
+- JSON `auth.authorizationUrl` / `auth.verificationUriComplete` match that
+  complete URL. Do not open the bare `/cli/authorize` page; it does not bind
+  the pending device grant.
 - CLI does not require a client secret.
 - Exchange endpoint returns Ravi CLI credentials.
 - Credentials are stored outside stdout.

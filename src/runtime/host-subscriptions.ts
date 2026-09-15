@@ -1,3 +1,6 @@
+import { handleRuntimeGoalControl, isRuntimeGoalOperation } from "./goal-control-host.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { nats } from "../nats.js";
 import { deleteSession, getSessionByName } from "../router/sessions.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../session-control.js";
@@ -45,6 +48,29 @@ export class RuntimeHostSubscriptions {
   }
 
   async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {
+    if (data.request && isRuntimeGoalOperation(data.request.operation)) {
+      await handleRuntimeGoalControl(data, {
+        streamingSessions: this.options.dispatcher.streamingSessions,
+        safeEmit: this.options.safeEmit,
+        retireIdle: async (name, session) => {
+          this.options.dispatcher.abortSession(name, {
+            source: "runtime_goal",
+            action: "goal.activate",
+            reason: "goal_activation_reload",
+          });
+          await session.queryHandle.close?.();
+        },
+        wake: (name, goal) =>
+          publishSessionPrompt(name, {
+            prompt: `Work on the active runtime goal: ${goal.objective}`,
+            deliveryBarrier: "after_response",
+            deliveryBarrierSource: "explicit",
+            _turnOrigin: buildSessionRelayTurnOrigin("execute"),
+          }),
+      });
+      return;
+    }
+
     await handleRuntimeControl(data, {
       streamingSessions: this.options.dispatcher.streamingSessions,
       safeEmit: this.options.safeEmit,
@@ -211,7 +237,9 @@ export class RuntimeHostSubscriptions {
             .map((value) => value.trim());
 
           for (const key of new Set(keys)) {
-            const status = await this.options.dispatcher.applySessionModelChange(key, effectiveModel);
+            const status = await this.options.dispatcher.applySessionModelChange(key, effectiveModel, {
+              restartStashedMessages: true,
+            });
             if (status !== "missing") {
               log.info("Session model change applied", { key, effectiveModel, status });
               break;

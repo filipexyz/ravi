@@ -5,7 +5,7 @@ import { expandHome } from "../router/resolver.js";
 import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
-import { loadConfig } from "../utils/config.js";
+import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { isAbsolute, relative as relativePath, resolve as resolvePath } from "node:path";
 import { z } from "zod";
@@ -1656,6 +1656,7 @@ export function resolveTaskRuntimeForRead(
     options.sessionEffortOverride !== undefined ? options.sessionEffortOverride : runtimeSession?.effortOverride;
   const sessionThinkingLevel =
     options.sessionThinkingLevel !== undefined ? options.sessionThinkingLevel : runtimeSession?.thinkingLevel;
+  const defaults = resolveRuntimeDefaults();
   return resolveTaskRuntimeOptions({
     task,
     profile,
@@ -1666,7 +1667,8 @@ export function resolveTaskRuntimeForRead(
     sessionThinkingLevel,
     agentModel,
     agentEffort,
-    configModel: loadConfig().model,
+    configModel: defaults.model.value,
+    configModelSource: defaults.model.source,
   });
 }
 

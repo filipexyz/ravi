@@ -1,4 +1,5 @@
 import type { MessageTarget } from "../../runtime/message-types.js";
+import type { ChannelChatActionContent } from "../chat-actions.js";
 
 export interface NativeTextDeliveryRequest {
   readonly sessionName: string;
@@ -20,6 +21,28 @@ export interface NativeTextDelivery {
   readonly channelId: string;
   supports(target: MessageTarget): boolean;
   deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult>;
+}
+
+export interface NativeChatActionDeliveryRequest {
+  readonly sessionName: string;
+  readonly emitId?: string;
+  readonly idempotencyKey: string;
+  readonly target: MessageTarget;
+  readonly action: ChannelChatActionContent;
+}
+
+export interface NativeChatActionDeliveryResult {
+  readonly provider: string;
+  readonly messageId?: string;
+  readonly platformMessageId?: string;
+  readonly providerTimestamp?: number;
+  readonly raw?: Record<string, unknown>;
+}
+
+export interface NativeChatActionDelivery {
+  readonly channelId: string;
+  supports(target: MessageTarget): boolean;
+  executeChatAction(request: NativeChatActionDeliveryRequest): Promise<NativeChatActionDeliveryResult>;
 }
 
 export interface NativePresenceDeliveryRequest {

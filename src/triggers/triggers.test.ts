@@ -44,6 +44,29 @@ describe("triggers native automation support", () => {
     expect(entry?.examples.some((example) => example.includes("ravi.inbound.thread.created"))).toBe(true);
   });
 
+  it("catalogs exhausted runtime recovery as an operator alert event", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbox.system.runtime_recovery_exhausted");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("inbox");
+    expect(entry?.messageTemplate?.template).toContain("ravi sessions trace");
+    expect(fields).toContain("sessionName");
+    expect(fields).toContain("restartAttempts");
+    expect(fields).toContain("stashedQueueSize");
+  });
+
+  it("catalogs Console bug-status watch events with a per-bugId filter", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.watch.console.bug.status");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("watch");
+    expect(entry?.id).toBe("watch.console.bug.status");
+    expect(fields).toContain("payload.bugId");
+    expect(entry?.filters?.some((filter) => filter.includes("data.payload.bugId"))).toBe(true);
+    expect(entry?.filters?.some((filter) => filter.includes("data.bugId"))).toBe(true);
+    expect(entry?.examples.some((example) => example.includes("ravi.watch.console.bug.status"))).toBe(true);
+  });
+
   it("persists shell trigger command fields and clears them for agent triggers", () => {
     const trigger = dbCreateTrigger({
       name: "shell-ticket-flow",

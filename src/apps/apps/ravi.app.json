@@ -61,34 +61,37 @@
       ]
     }
   },
+  "context": {
+    "allow": ["execute:group:apps"]
+  },
   "operations": {
     "apps.list": {
       "interface": "cli",
-      "command": "ravi apps list --json",
+      "command": "ravi apps list {args} --json",
       "mutating": false,
       "outputSchema": "schemas/apps-list.v1.json"
     },
     "apps.check": {
       "interface": "cli",
-      "command": "ravi apps check {id} --json",
+      "command": "ravi apps check {args} --json",
       "mutating": false,
       "outputSchema": "schemas/apps-check.v1.json"
     },
     "apps.guide": {
       "interface": "cli",
-      "command": "ravi apps guide {id} --json",
+      "command": "ravi apps guide {args} --json",
       "mutating": false,
       "outputSchema": "schemas/apps-guide.v1.json"
     },
     "apps.prompts": {
       "interface": "cli",
-      "command": "ravi apps prompts {id} --json",
+      "command": "ravi apps prompts {args} --json",
       "mutating": false,
       "outputSchema": "schemas/apps-guide.v1.json"
     },
     "apps.scaffold": {
       "interface": "cli",
-      "command": "ravi apps scaffold {id} --json",
+      "command": "ravi apps scaffold {args} --json",
       "mutating": true,
       "permission": "apps:write",
       "outputSchema": "schemas/apps-scaffold.v1.json"

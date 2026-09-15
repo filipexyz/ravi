@@ -18,8 +18,8 @@ on:
       - "Makefile"
       - ".env.example"
       - "LICENSE"
-  pull_request:
-    branches: [main, dev]
+  # Stacked PRs must run the same checks when targeting another feature branch.
+  pull_request: {}
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,6 +51,9 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Test Swift SDK
+        run: bun run test:swift-sdk
 
       # The quality gate is diff-based and must evaluate the pull request delta.
       # Push events on long-lived branches can include merge commits or branch

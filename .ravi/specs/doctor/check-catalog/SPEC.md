@@ -124,6 +124,7 @@ usage accounting.
 Initial checks:
 
 - `runtime.daemon_offline`
+- `runtime.isolation`
 - `runtime.bundle_mismatch`
 - `runtime.branch_drift`
 - `runtime.dirty_worktree`
@@ -134,6 +135,31 @@ Initial checks:
 Runtime checks MUST normalize process names and known aliases before reporting
 failures. For example, renamed Omni process names MUST not be reported as
 missing when the replacement process is healthy.
+
+### Execution plane (`runtime.isolation`)
+
+Provider sandboxes (Codex shell and other isolated CLIs) can see host state
+files while being unable to see `pm2` or reach Console. Doctor MUST report
+that plane without blaming unused built-in providers.
+
+- `id`: `runtime.isolation` (domain `runtime`).
+- `defaultSeverity`: `info` on the host plane, `warn` inside a provider
+  sandbox. This check MUST NOT fail the host because a sandbox probe is
+  isolated.
+- Evidence MUST include `plane`, host-evidence booleans, and sandbox markers.
+  Evidence MUST NOT name unused providers such as `pi`.
+
+`runtime.providers` MUST check only providers used by registered agents
+(or the default provider when no agents exist). A built-in provider that is
+registered but unused, including `pi`, MUST NOT fail doctor.
+
+`runtime.daemon` MUST distinguish "daemon offline on the host" from "daemon
+not visible from this provider sandbox while host `ravi.db` is present". The
+sandbox case is `skip`/`warn`, not a host-offline error.
+
+`permissions.provider_runtime_boundaries` MUST skip when cwd is not a Ravi
+source tree (agent/sandbox workspace), and MUST fail only when the source
+tree is present and the boundary file is missing or imports a retired engine.
 
 Dirty worktree SHOULD be `info` in development contexts and `warn` or `error`
 only in release/deploy contexts.

@@ -21,27 +21,36 @@ The scaffold keeps app creation aligned with the ecosystem:
 - The generated skill lives under the internal `ravi-system` plugin for
   first-party system apps.
 - Dry-run exists so agents can preview side effects before writing files.
-- The scaffold creates contract files only. CLI/domain implementation happens
+- The default scaffold creates a thin runnable `cli.ts` so the public alias can
+  prove real process execution immediately. Domain implementation still happens
   after the contract is reviewed.
+- The generated CLI command identifies the real app executable. The root
+  `ravi <app-id>` surface is derived by the router.
+- Child capabilities start empty because generation cannot safely infer what
+  authority an app should receive.
 - The scaffold should prepare apps for runtime routing. The generated root
   command is an app-router alias, not a new static TypeScript command.
 - Initial scaffold operations should prefer router builtins for help/show/check
-  so a new app is inspectable before domain implementation exists.
+  and use the thin CLI for a read-only `list`, so a new app is both inspectable
+  and invokable before domain implementation exists.
 
 ## Rejected Alternatives
 
-- Generating full CLI implementation immediately: rejected because domain logic
+- Generating full domain logic immediately: rejected because product behavior
   needs app-specific modeling.
 - Putting scaffold instructions only in chat: rejected because agents need to
-  recover the protocol through `ravi apps`.
+  recover the contract through `ravi apps`.
 - Overwriting by default: rejected because app manifests and skills are durable
   product surfaces.
-- Generating static CLI stubs for every scaffolded app: rejected because app
-  routing should work at runtime without a CLI rebuild.
+- Generating a new static Ravi command for every app: rejected because the
+  dynamic root alias is derived from the manifest and App Router.
+- Generating SDK/tool/stream implementations: rejected because they would
+  duplicate the app CLI instead of calling the generic App Router.
 - Generating operations that call `ravi <app-id>` from inside the manifest:
   rejected because router-executed CLI operations would recursively dispatch
   themselves.
-- Generating health checks that call arbitrary `ravi <app-id> ...` operations:
-  rejected because non-health app operations can recursively dispatch
-  themselves. The router-owned safe check `ravi <app-id> check --json` is
-  allowed for `interfaces.cli.health`.
+- Generating health checks without a real CLI health contract: rejected because
+  the scaffold cannot prove that an invented command is safe or implemented.
+- Using `ravi <app-id> check` as `interfaces.cli.health`: rejected because
+  router `check` validates metadata and would recurse if executed as app
+  health.

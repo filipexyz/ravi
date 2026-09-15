@@ -29,11 +29,17 @@ audit events.
   commands by themselves.
 - Router-owned operations use `interface: "builtin"` so scaffolded apps can
   support help/show/check before domain implementation exists.
-- CLI operation commands are allowed, but they must not call the same public
-  dynamic alias. Recursion is a spec violation, not a runtime trick to support.
+- Domain operations use `interface: "cli"` and point to the app's real CLI.
+  They must not call the same public dynamic alias. A textually identical
+  registered static command is valid because static resolution does not
+  re-enter the router.
+- Every runtime launch gets a least-privilege child context. Passing the
+  caller's context would make the app inherit unrelated authority.
 - Dynamic app routes do not automatically enter the SDK decorator registry.
-  SDK clients can use a generic app router route unless the app explicitly
-  ships a typed SDK surface; CLI prompts should still teach `ravi <app-id>`.
+  SDK, UI, tools, and automations use the generic App Router route; CLI prompts
+  teach `ravi <app-id>`.
+- The process contract is enough. JSON remains an output mode, and the app uses
+  public `ravi ...` commands to talk to the OS.
 
 ## Rejected Alternatives
 
@@ -41,6 +47,15 @@ audit events.
   installation would require build-time work, codegen, and a CLI rebuild.
 - Making only `ravi apps run` available: rejected because humans expect a
   direct operator command once an app exists.
+- Supporting SDK, tool, and stream as independent executors: rejected because
+  one app would have multiple implementations and auth paths.
+- Adding an App-specific JSON protocol: rejected because CLI composition and a
+  child `RAVI_CONTEXT_KEY` already provide invocation, identity, and output.
+- Executing manifest command strings through a shell: rejected because
+  user-supplied argv would become code and quoting would become
+  platform-dependent.
+- Inheriting the full parent process environment: rejected because it leaks
+  unrelated credentials and authority outside the manifest contract.
 - Letting app ids override static commands: rejected because it would make app
   installation capable of changing core CLI behavior.
 - Using manifest `interface: "cli"` commands like `ravi <app-id> check`:

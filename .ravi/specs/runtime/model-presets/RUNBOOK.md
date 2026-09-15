@@ -84,7 +84,9 @@ ravi sessions info <session> --json
 - `modelSource=agent_preset` → the effective model came from the assigned preset.
 - `modelSource=agent_default` → the agent uses a direct model.
 - `modelSource=session_override` → a session model override shadows the agent.
-- `modelSource=global_default` → no agent-level or session model is set.
+- `modelSource=global_default` → stored `runtime.defaultModel` is in effect.
+- `modelSource=env_fallback` → `RAVI_MODEL` is in effect because nothing stored won.
+- `modelSource=runtime_default` → hardcoded last resort (`sonnet`).
 
 If an agent shows both a direct model and a preset (legacy drift), the direct
 model is preferred and a warning is traced.

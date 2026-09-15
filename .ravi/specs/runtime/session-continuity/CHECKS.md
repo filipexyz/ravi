@@ -31,6 +31,8 @@
 - Codex `thread.fork` is not advertised as canonical fork until parent/child mapping and rollback/replay are implemented.
 - Pi fork/clone commands are not advertised as canonical fork until file-backed state mapping is implemented.
 - Replay fallback works for all providers that can accept a fresh prompt, but trace records whether replay was lossy.
+- Ambiguous delivery recovery preserves compatible provider session state and reconciles the stable logical delivery id before replay.
+- Provider-local recovery forks do not advertise canonical fork support.
 
 ## Safety
 
@@ -38,3 +40,8 @@
 - Rebase does not silently discard pending messages.
 - Rebase preserves actor metadata and source message ids.
 - Rebase fails closed when the target message id cannot be matched to a prompt atom.
+- Repeated inactivity recovery is bounded and cannot resend the same logical delivery indefinitely.
+- After daemon restart, resume MUST pick last-used / snapshot provider when no explicit override is present.
+- Stored provider session ids MUST remain when agent or global default differs from last-used.
+- Stored provider session ids MUST clear only on an explicit provider change.
+- A `/login` or `Not logged in` stub MUST be recorded as `turn.failed` and MUST NOT persist on the session transcript.

@@ -5,7 +5,8 @@ import { basename, extname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { file as bunFile } from "bun";
 import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../cloud-auth/client.js";
-import { CloudAuthError } from "../cloud-auth/errors.js";
+import { CloudAuthError, classifyConsoleNetworkError } from "../cloud-auth/errors.js";
+import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import {
@@ -671,11 +672,16 @@ async function uploadPackageFiles(input: {
     const body = bunFile(file.absolutePath, {
       type: headers.get("content-type") ?? file.contentType,
     });
-    const response = await (input.fetch ?? fetch)(request.url, {
-      method: request.method,
-      headers,
-      body,
-    });
+    let response: Response;
+    try {
+      response = await (input.fetch ?? fetch)(request.url, {
+        method: request.method,
+        headers,
+        body,
+      });
+    } catch (error) {
+      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
+    }
     if (!response.ok) {
       throw new CloudAuthError("SERVER_UNAVAILABLE", `Console upload failed for ${file.path}.`, {
         status: response.status,

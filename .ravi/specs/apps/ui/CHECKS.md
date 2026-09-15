@@ -31,12 +31,17 @@
 - Operation check
   - Fail if `operations` exists and is not an object.
   - Fail if operation ids are not fully qualified dot ids.
-  - Fail if operation `interface` is not `cli`, `sdk`, `tool`, or `stream`.
-  - Fail if an operation references an undeclared interface block.
-  - Fail if CLI operations omit command, SDK operations omit namespace/method,
-    tool operations omit name, or stream operations omit channel.
+  - Fail if operation `interface` is not `cli` or `builtin`.
+  - Fail if CLI operations omit command.
+  - Fail if builtin operations omit an allowlisted handler.
   - Warn if operations omit `mutating`.
   - Warn if CLI operations do not indicate machine-readable JSON output.
+
+- Router boundary check
+  - Confirm UI queries and actions invoke the generic App Router.
+  - Confirm UI invocation and CLI alias invocation resolve the same operation.
+  - Confirm both paths enforce caller authorization and issue the same bounded
+    child-context class.
 
 - Design-system boundary check
   - Fail if UI declarations include raw CSS, HTML, JavaScript, component,

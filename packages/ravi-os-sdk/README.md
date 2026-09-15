@@ -78,6 +78,19 @@ To keep the HTTP server available for webhooks while disabling SDK routes:
 RAVI_SDK_GATEWAY_DISABLE=1
 ```
 
+Browser clients (Flutter web, Chrome) are cross-origin when the page port
+differs from the gateway. CORS is closed by default. `chrome-extension://`
+origins stay allowed. To allow a web page origin, set an exact allowlist:
+
+```bash
+RAVI_CORS_ORIGINS=http://127.0.0.1:8088
+```
+
+For local-only development, `RAVI_CORS_LOCALHOST=1` allows
+`http://localhost:<port>` and `http://127.0.0.1:<port>` only. It is off by
+default. The gateway never sends `Access-Control-Allow-Origin: *` because
+SDK requests include `Authorization: Bearer rctx_*`.
+
 ## Create A Context Key
 
 Most SDK routes require a runtime context key (`rctx_*`) in the bearer auth
@@ -118,8 +131,20 @@ Deep imports are available when you want smaller bundles:
 
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
+import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
+
+### Handle Native Inbound Actions
+
+Drivers can reserve provider-owned slash actions with the `inbound_actions`
+capability and an exact `inboundActions` list repeated in the module, driver,
+and runtime descriptors. The runtime implements
+`inboundActions.supports(action)` and `inboundActions.handle(request)`. The
+host sends only a bounded authenticated channel identity, the declared action
+name, and a `hasArguments` boolean; command arguments are never exposed to the
+driver. Declared actions are fail-closed and never fall through to model
+processing when the runtime cannot answer.
 
 ## Inherit The Calling Ravi Runtime
 
@@ -213,7 +238,7 @@ await ravi.sessions.answer("support", "Build OK em 12s.", "agent:main");
 // Steer / interrupt / rollback the active runtime turn
 await ravi.sessions.runtime.interrupt("support");
 await ravi.sessions.runtime.steer("support", "Mais conciso, por favor.");
-await ravi.sessions.runtime.rollback("support", "1"); // undo last turn
+await ravi.sessions.runtime.rollback("support", "1", { execute: true }); // undo last turn
 
 // Lifecycle
 await ravi.sessions.reset("support");

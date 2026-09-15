@@ -2,6 +2,14 @@
  * Shared JSON response helpers for the gateway.
  */
 
+import {
+  ContractError,
+  CONTRACT_EXIT_ERROR,
+  contractFailureOutcome,
+  type ContractErrorEnvelope,
+  type ContractFailureOutcome,
+} from "../../cli/agent-contract.js";
+
 export interface JsonIssue {
   path: (string | number)[];
   code: string;
@@ -13,6 +21,12 @@ export interface ErrorBody {
   message?: string;
   issues?: JsonIssue[];
   [key: string]: unknown;
+}
+
+export interface GatewayContractErrorBody extends ContractErrorEnvelope {
+  /** CLI-compatible exit taxonomy, retained for non-CLI consumers. */
+  exitCode: number;
+  outcome: ContractFailureOutcome | "denied";
 }
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" } as const;
@@ -50,8 +64,35 @@ export function internalError(message: string): Response {
   return errorResponse(500, "InternalError", { message });
 }
 
-export function returnShapeError(issues: JsonIssue[]): Response {
-  return errorResponse(500, "ReturnShapeError", { issues });
+/**
+ * Translate a CLI contract failure without flattening it into InternalError.
+ * HTTP status communicates the broad class; the body remains the canonical
+ * contract envelope and carries the original CLI exit code losslessly.
+ */
+export function contractErrorResponse(
+  error: ContractError,
+  statusOverride?: number,
+  outcomeOverride?: GatewayContractErrorBody["outcome"],
+): Response {
+  const status =
+    statusOverride ??
+    (error.code === "PERMISSION_DENIED" ? 403 : error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
+  const body: GatewayContractErrorBody = {
+    ...error.envelope(),
+    exitCode: error.exitCode,
+    outcome: outcomeOverride ?? contractFailureOutcome(error),
+  };
+  return json(status, body);
+}
+
+export function returnShapeError(op: string, issues: JsonIssue[]): Response {
+  return contractErrorResponse(
+    new ContractError(op, "RETURN_SHAPE_ERROR", "Command returned an invalid response shape.", CONTRACT_EXIT_ERROR, {
+      suggestedAction: "Report the invalid SDK return contract to the command owner",
+      issues,
+    }),
+    500,
+  );
 }
 
 export function badRequest(message: string): Response {

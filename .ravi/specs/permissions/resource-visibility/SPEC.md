@@ -122,7 +122,7 @@ Session discovery MUST be backed by `canAccessSession` and
 
 - `sessions list/info/read/trace` MUST require own-session access or
   `access session:<id>`.
-- `sessions reset/delete/rename/attach/detach/mute/unmute` MUST require
+- `sessions reset/delete/rename/attach/detach` MUST require
   own-session authority or `modify session:<id>`, unless a narrower operation
   relation is introduced.
 - Session traces are sensitive and MUST NOT be visible merely because the agent

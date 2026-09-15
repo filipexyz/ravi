@@ -148,22 +148,37 @@ export function resolveAgentModelSelection(
  * Convenience view for observability surfaces: resolves the agent selection and
  * folds in the global default so callers can report the true effective model.
  */
+export type EffectiveAgentModelSource =
+  | "agent_preset"
+  | "agent_default"
+  | "global_default"
+  | "env_fallback"
+  | "runtime_default";
+
 export interface EffectiveAgentModel {
   effectiveProvider: string;
   effectiveModel: string | null;
-  modelSource: "agent_preset" | "agent_default" | "global_default" | null;
+  modelSource: EffectiveAgentModelSource | null;
   modelPresetId: string | null;
   modelPresetVersion: number | null;
   warning: string | null;
   error: string | null;
 }
 
+export interface ResolveEffectiveAgentModelOptions extends ResolveAgentModelSelectionOptions {
+  /** Source of `globalDefaultModel` when it is applied. Defaults to `global_default`. */
+  globalDefaultSource?: Exclude<EffectiveAgentModelSource, "agent_preset" | "agent_default">;
+}
+
 export function resolveEffectiveAgentModel(
   agent: Pick<AgentConfig, "model" | "modelPresetId" | "provider">,
   globalDefaultModel?: string | null,
-  options: ResolveAgentModelSelectionOptions = {},
+  options: ResolveEffectiveAgentModelOptions = {},
 ): EffectiveAgentModel {
   const selection = resolveAgentModelSelection(agent, options);
+  if (selection.error) {
+    return { ...selection, effectiveModel: null, modelSource: null };
+  }
   if (selection.effectiveModel !== null) {
     return { ...selection, modelSource: selection.modelSource };
   }
@@ -171,6 +186,6 @@ export function resolveEffectiveAgentModel(
   return {
     ...selection,
     effectiveModel: globalModel,
-    modelSource: globalModel ? "global_default" : null,
+    modelSource: globalModel ? (options.globalDefaultSource ?? "global_default") : null,
   };
 }

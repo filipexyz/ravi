@@ -34,7 +34,7 @@ Session followups are durable inactivity cadences that inject compact reminder p
 - A followup cadence is not a cron job. Fixed wall-clock schedules belong to `cron`.
 - A followup cadence MAY use reading lists as the grouping primitive for chats/groups.
 - A followup cadence MAY target a session directly, a single chat, or a chat reading list.
-- A followup cadence MUST NOT attach, detach, mute, unmute, or otherwise rewire sessions as a side effect.
+- A followup cadence MUST NOT attach, detach, or otherwise rewire sessions as a side effect.
 
 ## Delivery
 

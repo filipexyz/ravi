@@ -3,7 +3,14 @@ import { buildAuditContextProvenance } from "../permissions/audit-provenance.js"
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "../permissions/provider-runtime.js";
 import { normalizeAppId } from "./service.js";
-import type { RaviAppCheckResult, RaviAppManifestRecord } from "./types.js";
+import { RaviAppError, type RaviAppCheckResult, type RaviAppManifestRecord } from "./types.js";
+
+export class RaviAppPermissionDeniedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RaviAppPermissionDeniedError";
+  }
+}
 
 export function canUseApp(appId: string): boolean {
   return canAccessApp(appId, "use");
@@ -40,7 +47,7 @@ export function assertCanUseApp(appId: string): void {
   const normalizedAppId = normalizeAppId(appId);
   if (canUseApp(normalizedAppId)) return;
   recordAppPermissionDenial(normalizedAppId, "use", `Permission denied: requires use on app:${normalizedAppId}`);
-  throw new Error(`App not found: ${normalizedAppId}`);
+  throw new RaviAppError("not_found", `App not found: ${normalizedAppId}`);
 }
 
 export function assertCanRunAppOperation(appId: string, operationId: string, mutating: boolean): void {
@@ -51,7 +58,7 @@ export function assertCanRunAppOperation(appId: string, operationId: string, mut
   const ctx = getContext();
   const reason = `Permission denied: agent:${ctx?.agentId ?? "unknown"} requires ${relation} on app:${normalizedAppId} for ${operationId}`;
   recordAppPermissionDenial(normalizedAppId, relation, reason, operationId);
-  throw new Error(reason);
+  throw new RaviAppPermissionDeniedError(reason);
 }
 
 function recordAppPermissionDenial(

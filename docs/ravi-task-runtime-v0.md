@@ -76,7 +76,7 @@ Fluxo:
 ### Dispatch
 
 ```bash
-ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>] --execute
 ```
 
 Fluxo:
@@ -199,7 +199,7 @@ Runtime:
 
 ```bash
 ravi tasks create "..." --instructions "..." --profile <id> [--input k=v] [--model <model>] [--effort <level>] [--thinking <mode>]
-ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>] --execute
 ravi tasks show <task-id>
 ravi tasks watch <task-id>
 ravi tasks report <task-id> --message "..."

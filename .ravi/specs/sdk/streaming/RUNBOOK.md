@@ -42,6 +42,11 @@ Se um cliente reporta que stream não recebe eventos:
    silently dropped por scope mismatch.
 4. Inspecionar o keepalive: client que não recebe `: ping` a cada 15s
    sugere conexão morta (load balancer dropou).
+5. Quedas a cada ~10s (inclusive idle antes do send), sem `ERR_HTTP2`:
+   o `idleTimeout` default do Bun (10s) fechou o socket no `:7777`
+   antes do ping de 15s. Confirmar nos logs do webhook HTTP server
+   `idleTimeoutSeconds: 30` e `sseKeepaliveMs: 15000`. Não desligar
+   HTTP/2 e não tratar como knob do `client.caddyfile`.
 
 ## Como Confirmar que Channel é o Padrão Certo
 

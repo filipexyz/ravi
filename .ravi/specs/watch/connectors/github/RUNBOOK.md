@@ -14,8 +14,12 @@ ravi watch create github owner/repo --event release.published --placement auto
 ```bash
 ravi watch trigger <watch-id> \
   --event release.published \
-  --message "Resume a release e diga se precisamos agir."
+  --message "Resume a release e diga se precisamos agir." \
+  --execute
 ```
+
+Without `--execute` the command is a dry-run (exit 3) that only prints the
+resolved trigger plan.
 
 Expected topic:
 
@@ -47,7 +51,7 @@ Use local only when explicitly requested or when Console is unavailable:
 
 ```bash
 ravi watch create github owner/repo --event pull_request.merged --placement local
-ravi watch run <watch-id> --once --json
+ravi watch run <watch-id> --once --json --execute
 ```
 
 Check:

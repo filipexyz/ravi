@@ -4,9 +4,13 @@
 
 ```bash
 ravi work-objects resolve --type task --id <task-id> --json
-ravi work-objects action task <task-id> task.comment --value "comment" --json
+ravi work-objects action task <task-id> task.comment --value "comment" --json --execute
 ravi work-objects suggest task <task-id> status --json
 ```
+
+`work-objects action` is a braked write on the CLI (agent-first contract,
+`cli/work-objects`): without `--execute` it prints the dry-run plan and exits
+3 without calling the adapter. The NATS transport below is not braked.
 
 ## NATS Transport
 

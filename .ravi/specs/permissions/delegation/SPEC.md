@@ -92,6 +92,37 @@ effective_caps = automation_caps INTERSECT agent_caps INTERSECT target_surface_c
 
 Internal execution MUST use an explicit `automation:<id>` or `system:<id>` principal. It MUST NOT silently inherit the last human speaker.
 
+## Externally Governed Compartments
+
+A provider MAY supply an authenticated, signed, short-lived authority grant
+for one externally governed execution. That grant MUST materialize as an
+explicit execution compartment; it MUST NOT rewrite the executor Agent's
+ambient permissions.
+
+For such a turn:
+
+```text
+effective_caps =
+  accepted_provider_ceiling
+  INTERSECT verified_turn_grant
+  INTERSECT local_host_and_provider_guards
+  INTERSECT applicable_approval
+  INTERSECT runtime_constraints
+```
+
+- The accepted provider ceiling is a locally persisted maximum for one
+  provider/subject binding and revision.
+- The verified turn grant MAY replace ordinary actor/surface role expansion
+  only inside that compartment.
+- A grant MUST be bound to provider audience, subject/binding revision,
+  operation or normalized arguments digest, expiry, and replay identity.
+- Revocation, expiry, stale binding revision, invalid signature, failed local
+  guard, missing approval, or runtime fencing MUST fail closed.
+- Compartment authority MUST NOT become visible to unrelated chats, sessions,
+  automations, providers, or direct local execution.
+- Generic Ravi contracts MUST remain provider-neutral and MUST NOT ingest the
+  provider's organizational Role vocabulary.
+
 For app execution:
 
 ```text

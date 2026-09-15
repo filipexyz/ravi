@@ -111,6 +111,205 @@ await client.sdk.client.check();
 Kebab-case commands become camelCase methods. For example,
 `daemon init-admin-key` becomes `client.daemon.initAdminKey()`.
 
+## Native Channel Backends
+
+Use the provider-neutral channel backend client when an adapter needs to accept
+an external message into a local Ravi agent without depending on a provider
+payload:
+
+```ts
+import {
+  RaviClient,
+  createChannelBackendClient,
+  createHttpTransport,
+} from "@ravi-os/sdk";
+
+const ravi = new RaviClient(
+  createHttpTransport({
+    baseUrl: "http://127.0.0.1:7777",
+    contextKey: process.env.RAVI_CONTEXT_KEY!,
+  }),
+);
+const backend = createChannelBackendClient(ravi);
+
+const result = await backend.ingress({
+  protocol: "ravi.channel.backend",
+  schemaVersion: 1,
+  requestId: "request-01",
+  idempotencyKey: "provider-message-01",
+  localActorId: "actor-01",
+  channelInstanceId: "custom-main",
+  agentId: "support",
+  external: {
+    channelKind: "custom",
+    connectionId: "connection-01",
+    conversationId: "conversation-01",
+    senderId: "sender-01",
+    messageId: "message-01",
+  },
+  content: [{ type: "text", text: "Hello" }],
+  receivedAt: new Date().toISOString(),
+});
+```
+
+Ingress requires a concrete `mutate:agent:<agentId>` capability. Ravi persists
+one canonical local message and one stable chat/session/turn binding for each
+channel-instance idempotency key. A retry with the same semantic request
+returns `duplicate` and the original binding; conflicting reuse fails closed.
+The local permission decision remains authoritative.
+
+The projected JSON Schema and fixtures live under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core`.
+Adapters can implement `ChannelOutputSink` to consume validated,
+provider-neutral assistant or safe-error envelopes. Runtime lifecycle streams
+use the separate `ravi.channel.runtime-events` contract:
+
+```ts
+import {
+  createChannelRuntimeClient,
+} from "@ravi-os/sdk/channel-runtime-events";
+
+const runtime = createChannelRuntimeClient(ravi);
+const state = await runtime.readback({
+  protocol: "ravi.channel.runtime-events",
+  schemaVersion: 1,
+  requestId: "readback-01",
+  binding: result.binding!,
+});
+
+await runtime.interrupt({
+  protocol: "ravi.channel.runtime-events",
+  schemaVersion: 1,
+  requestId: "interrupt-01",
+  idempotencyKey: "interrupt-turn-01",
+  binding: result.binding!,
+  requestedAt: new Date().toISOString(),
+});
+```
+
+The adapter-side runtime bridge consumes the event contract through
+`ChannelRuntimeEventSink`:
+
+```ts
+import type { ChannelRuntimeEventSink } from "@ravi-os/sdk/channel-runtime-events";
+
+const sink: ChannelRuntimeEventSink = {
+  async emit(event, target) {
+    console.log(event.sequence, event.kind, target?.conversationId);
+  },
+};
+```
+
+Lifecycle events use a monotonically increasing sequence per local turn and
+cover state, policy-approved phase-tagged assistant messages, tool summaries,
+approvals, and terminal output. Raw deltas remain internal until whole-message
+response policy can classify them. Commentary remains a separate lifecycle
+event; provider delivery records its transport metadata without creating a
+canonical Chat Message. Completed terminal output contains only the final
+assistant response and attaches provider identity to the assistant Message
+already persisted for the accepted Turn. The durable job carries that Turn's
+canonical Chat identity, so a later Session rebind cannot move the delivery.
+Missing or mismatched terminal state fails closed before handoff; a structural
+mismatch discovered after a successful provider send emits a provider-sent,
+canonical-rejected delivery record and terminalizes the durable receipt before
+acknowledgement. A transient bookkeeping retry never calls the provider again.
+The optional sink target preserves compatibility with one-argument sinks; the
+host registry supplies it whenever an event is dispatched. Readback remains
+available after reconnects, including the canonical assistant message id and
+exact durable terminal event after successful completion. A completed Turn
+whose output was intentionally suppressed has terminal state without a
+`terminalEvent`, so consumers must treat the state itself as authoritative.
+The current and last-event runtime generation ids let a caller distinguish a
+live nonterminal turn from state orphaned by a process restart without
+assuming that retry is safe. Interrupt publication is idempotent and requires
+the same concrete local-agent authorization boundary as ingress.
+Provider-native payloads and diagnostics are not part of this contract.
+
+Tool summaries may include a runtime-authored `presentation` with the
+registered description, canonical category, operation, risk, bounded safe
+parameters and invocation summary. Terminal summaries may also include
+`durationMs`. These fields are already sanitized at the runtime boundary;
+clients should render them directly and must not derive labels by splitting or
+translating `toolName`. Raw tool input, output, credentials and local paths are
+not part of the presentation contract.
+
+The projected runtime schema and fixtures live beside the backend capsule under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events`.
+
+## Native Channel Drivers
+
+An installed provider can run inside the channel runner through the versioned
+`NativeChannelDriver` ABI. The driver receives a channel-scoped host for
+ingress, runtime readback and interrupt, output sinks, and lifecycle event
+sinks. Optional text delivery, chat actions, and presence surfaces join the
+same outbound consumers as built-in channels.
+
+Each module must expose the named `nativeChannelDriver` export:
+
+```ts
+import type {
+  NativeChannelDriver,
+} from "@ravi-os/sdk/native-channel-driver";
+
+export const nativeChannelDriver: NativeChannelDriver = {
+  descriptor: {
+    protocol: "ravi.channel.native-driver",
+    schemaVersion: 1,
+    driverId: "example.native",
+    provider: "example",
+    capabilities: ["inbound"],
+  },
+  createRuntime({ channel }) {
+    return {
+      descriptor: {
+        protocol: "ravi.channel.native-driver",
+        schemaVersion: 1,
+        driverId: "example.native",
+        provider: "example",
+        runtimeId: channel.name,
+        channelInstanceId: channel.name,
+        capabilities: ["inbound"],
+      },
+      start() {},
+      stop() {},
+      health: () => ({ status: "connected" }),
+    };
+  },
+};
+```
+
+Operators declare local modules explicitly:
+
+```bash
+RAVI_NATIVE_CHANNEL_DRIVERS='[
+  {
+    "protocol": "ravi.channel.native-driver",
+    "schemaVersion": 1,
+    "provider": "example",
+    "moduleSpecifier": "@example/native-channel-driver"
+  }
+]'
+```
+
+Installed package names and absolute `file:///` URLs are accepted. Ravi never
+derives a module name from the provider, searches for plugins, or downloads
+driver code. ABI version, provider ownership, runtime identity, capabilities,
+and optional surfaces are validated before start. Duplicate or incompatible
+drivers fail closed.
+
+Drivers start sequentially with enabled channel instances and stop in reverse
+order. Health projection includes only lifecycle state, stable reason codes,
+timestamps, and reconnect counts; provider payloads, secrets, and thrown error
+details are excluded. The ABI introduces no new Ravi capability. Local driver
+code runs inside the channel runner, so installation remains an explicit
+operator trust decision.
+
+The generated driver schema and neutral fixtures live under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver`.
+
 ## Wire Contract
 
 Every command call is a POST:
@@ -245,6 +444,9 @@ The published TypeScript package exports:
 
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
+import { createChannelBackendClient } from "@ravi-os/sdk/channel-backend";
+import { createChannelRuntimeClient } from "@ravi-os/sdk/channel-runtime-events";
+import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 import { createStreamClient } from "@ravi-os/sdk/streaming";
 import { RaviError } from "@ravi-os/sdk/errors";

@@ -3,12 +3,14 @@ import { resolveTaskProfileForTask } from "../tasks/profiles.js";
 import { resolveTaskRuntimeOptions } from "../tasks/runtime-options.js";
 import { emitTaskEvent } from "../tasks/service.js";
 import { dbMarkTaskAcceptedForSession, dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
-import type { TaskRuntimeResolution } from "../tasks/types.js";
+import type { TaskRuntimeOptionsSource, TaskRuntimeResolution } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
+import { resolveRuntimeDefaults } from "./runtime-defaults.js";
+import { assertUsableAgentModelPreset } from "./runtime-selection.js";
 
 const log = logger.child("runtime:task-context");
 
@@ -17,7 +19,8 @@ export function resolveRuntimeForPrompt(options: {
   prompt: RuntimeLaunchPrompt;
   session: SessionEntry | null | undefined;
   agent: AgentConfig;
-  configModel: string;
+  configModel?: string;
+  configModelSource?: Extract<TaskRuntimeOptionsSource, "global_default" | "env_fallback" | "runtime_default">;
 }): TaskRuntimeResolution {
   const binding = options.prompt.taskBarrierTaskId
     ? dbResolveActiveTaskBindingForSession(options.sessionName, options.prompt.taskBarrierTaskId)
@@ -59,6 +62,19 @@ export function resolveRuntimeForPrompt(options: {
     });
   }
 
+  const hasHigherPriorityModel = Boolean(
+    promptOverride?.model ||
+      binding?.assignment?.runtimeOverride?.model ||
+      binding?.task?.runtimeOverride?.model ||
+      profile?.runtimeDefaults?.model ||
+      options.session?.modelOverride,
+  );
+  assertUsableAgentModelPreset({
+    error: agentSelection.error,
+    modelPresetId: agentSelection.modelPresetId,
+    shadowedByHigherModel: hasHigherPriorityModel,
+  });
+
   const agentModelPreset =
     agentSelection.modelSource === "agent_preset" &&
     agentSelection.effectiveModel &&
@@ -71,6 +87,11 @@ export function resolveRuntimeForPrompt(options: {
         }
       : null;
   const agentModel = agentSelection.modelSource === "agent_default" ? agentSelection.effectiveModel : undefined;
+  const defaults = resolveRuntimeDefaults();
+  const configModel = options.configModel ?? defaults.model.value;
+  const configModelSource =
+    options.configModelSource ??
+    (options.configModel && options.configModel !== defaults.model.value ? "global_default" : defaults.model.source);
 
   return resolveTaskRuntimeOptions({
     promptOverride,
@@ -83,7 +104,9 @@ export function resolveRuntimeForPrompt(options: {
     agentModel,
     agentModelPreset,
     agentEffort: options.agent.effort,
-    configModel: options.configModel,
+    configModel,
+    configModelSource,
+    configEffort: defaults.effort.source === "global_default" ? defaults.effort.value : undefined,
   });
 }
 

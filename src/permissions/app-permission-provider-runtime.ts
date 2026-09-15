@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
+import { resolveRaviAppCommand } from "../apps/command.js";
 import { getContext } from "../cli/context.js";
 import {
   RAVI_APP_BUILTIN_OPERATION_HANDLERS,
@@ -12,7 +14,10 @@ import type {
   RaviAppOperationAuthorizationOwner,
   RaviAppOperationDeclaration,
   RaviAppPermissionDecision,
+  RaviAppPermissionGrantPrincipal,
+  RaviAppPermissionGrantSuggestion,
   RaviAppPermissionProviderAudit,
+  RaviAppPermissionProviderAuditSummary,
   RaviAppPermissionProviderDeclaration,
 } from "../apps/types.js";
 
@@ -35,6 +40,9 @@ const APP_PERMISSION_REQUEST_SCHEMA = "ravi.app.permission.request/v1";
 const APP_PERMISSION_DECISION_SCHEMA = "ravi.app.permission.decision/v1";
 const APP_PERMISSION_PROVIDER_MAX_OUTPUT_BYTES = 64 * 1024;
 const REDACTED_VALUE = "[redacted]";
+const STABLE_REASON_CODE_PATTERN = /^[a-z][a-z0-9._-]{0,127}$/;
+const STABLE_IDENTIFIER_TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const STABLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
 const RAVI_CONTEXT_ENV_KEYS = new Set([
   "RAVI_CONTEXT_KEY",
   "RAVI_SESSION_KEY",
@@ -119,15 +127,10 @@ export async function evaluateAppPermissionProvider(
       );
     }
 
-    const renderedCommand = renderCliCommand(command, {
-      appId: app.manifest?.id ?? app.id,
-      operationId: provider.operation,
-      args: [],
-    });
-    const run = await spawnShellCommand(renderedCommand, {
-      cwd: options.cwd,
+    const invocation = resolveRaviAppCommand(command);
+    const run = await spawnExecutable(invocation.executable, invocation.argv, {
+      cwd: dirname(app.path),
       env: buildPermissionProviderEnv(options.env),
-      mergeProcessEnv: false,
       capture: true,
       stdin: `${JSON.stringify(request)}\n`,
       timeoutMs: provider.timeoutMs ?? RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS,
@@ -165,7 +168,7 @@ export async function evaluateAppPermissionProvider(
         buildProviderAudit(provider, startedAt, {
           decision: "error",
           reasonCode: "provider_exit_nonzero",
-          error: run.stderr.trim() || `Provider exited with code ${run.exitCode}`,
+          error: "Permission provider process exited unsuccessfully.",
           requestId: String(request.requestId),
         }),
       );
@@ -226,7 +229,7 @@ function finishPermissionProviderDecision(
       buildProviderAudit(provider, startedAt, {
         decision: "invalid",
         reasonCode: "provider_unknown_decision",
-        error: `Unknown decision: ${String(decision)}`,
+        error: "Provider decision is not supported.",
         requestId: String(request.requestId),
       }),
     );
@@ -243,15 +246,28 @@ function finishPermissionProviderDecision(
       }),
     );
   }
+  const normalizedReasonCode = reasonCode.trim();
+  if (!STABLE_REASON_CODE_PATTERN.test(normalizedReasonCode)) {
+    throw providerDenied(
+      provider,
+      "Permission provider decision has an invalid reasonCode.",
+      buildProviderAudit(provider, startedAt, {
+        decision: "invalid",
+        reasonCode: "provider_reason_code_invalid",
+        error: "Provider decision reasonCode must be a stable identifier.",
+        requestId: String(request.requestId),
+      }),
+    );
+  }
 
   const audit = buildProviderAudit(provider, startedAt, {
     requestId: String(request.requestId),
     decision,
-    reasonCode: reasonCode.trim(),
-    reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    reasonCode: normalizedReasonCode,
+    reasonPresent: typeof parsed.reason === "string" && Boolean(parsed.reason.trim()),
     cacheTtlSec: resolveDecisionCacheTtl(provider, parsed.cache),
-    grantSuggestion: parsed.grantSuggestion ?? undefined,
-    audit: isObject(parsed.audit) ? parsed.audit : undefined,
+    grantSuggestion: projectGrantSuggestion(parsed.grantSuggestion),
+    audit: projectProviderAudit(parsed.audit),
   });
 
   if (decision !== "allow") {
@@ -260,9 +276,7 @@ function finishPermissionProviderDecision(
         ? "Permission provider requires a grant before this operation can run."
         : decision === "not_applicable"
           ? "Permission provider returned not_applicable for a provider-required operation."
-          : typeof parsed.reason === "string" && parsed.reason.trim()
-            ? parsed.reason.trim()
-            : "Permission provider denied this operation.";
+          : "Permission provider denied this operation.";
     throw providerDenied(provider, message, audit);
   }
 
@@ -287,11 +301,11 @@ function buildProviderAudit(
     requestId?: string;
     decision: RaviAppPermissionProviderAudit["decision"];
     reasonCode: string | null;
-    reason?: string;
+    reasonPresent?: boolean;
     error?: string;
     cacheTtlSec?: number;
-    grantSuggestion?: unknown;
-    audit?: unknown;
+    grantSuggestion?: RaviAppPermissionGrantSuggestion;
+    audit?: RaviAppPermissionProviderAuditSummary;
   },
 ): RaviAppPermissionProviderAudit {
   return {
@@ -307,10 +321,10 @@ function buildProviderAudit(
       hit: false,
       ...(input.cacheTtlSec !== undefined ? { ttlSec: input.cacheTtlSec } : {}),
     },
-    ...(input.reason ? { reason: input.reason } : {}),
+    ...(input.reasonPresent ? { reason: REDACTED_VALUE, reasonPresent: true } : {}),
     ...(input.error ? { error: input.error } : {}),
-    ...(input.grantSuggestion !== undefined ? { grantSuggestion: input.grantSuggestion } : {}),
-    ...(input.audit !== undefined ? { audit: input.audit } : {}),
+    ...(input.grantSuggestion ? { grantSuggestion: input.grantSuggestion } : {}),
+    ...(input.audit ? { audit: input.audit } : {}),
   };
 }
 
@@ -400,17 +414,70 @@ function buildPermissionProviderInput(
   const input = authorization?.input;
   const includeOptions = new Set((input?.includeOptions ?? []).map(normalizeOptionName).filter(Boolean));
   const options: Record<string, unknown> = {};
+  let redacted = parsed.redacted;
   for (const option of includeOptions) {
     const value = parsed.options[option];
-    if (value !== undefined) options[option] = value;
+    if (value === undefined) continue;
+    if (typeof value === "boolean") {
+      options[option] = value;
+      continue;
+    }
+    options[option] = Array.isArray(value) ? value.map(() => REDACTED_VALUE) : REDACTED_VALUE;
+    redacted = true;
   }
 
+  const args = input?.includeArgs === true ? parsed.positional.map(() => REDACTED_VALUE) : [];
+  if (args.length > 0) redacted = true;
+
   return {
-    args: input?.includeArgs === true ? parsed.positional : [],
+    args,
     options,
     rawArgCount,
-    redacted: parsed.redacted,
+    redacted,
   };
+}
+
+function projectGrantSuggestion(value: unknown): RaviAppPermissionGrantSuggestion | undefined {
+  if (!isObject(value)) return undefined;
+  const subject = projectGrantPrincipal(value.subject);
+  const object = projectGrantPrincipal(value.object);
+  const relation = stableIdentifier(value.relation, STABLE_IDENTIFIER_TYPE_PATTERN);
+  if (!subject || !object || !relation) return undefined;
+
+  const ttlSec =
+    Number.isInteger(value.ttlSec) && typeof value.ttlSec === "number" && value.ttlSec > 0 ? value.ttlSec : undefined;
+  const reasonPresent = typeof value.reason === "string" && Boolean(value.reason.trim());
+  return {
+    subject,
+    relation,
+    object,
+    ...(ttlSec !== undefined ? { ttlSec } : {}),
+    ...(reasonPresent ? { reasonPresent: true } : {}),
+  };
+}
+
+function projectGrantPrincipal(value: unknown): RaviAppPermissionGrantPrincipal | null {
+  if (!isObject(value)) return null;
+  const type = stableIdentifier(value.type, STABLE_IDENTIFIER_TYPE_PATTERN);
+  const id = stableIdentifier(value.id, STABLE_IDENTIFIER_PATTERN);
+  return type && id ? { type, id } : null;
+}
+
+function projectProviderAudit(value: unknown): RaviAppPermissionProviderAuditSummary | undefined {
+  if (!isObject(value)) return undefined;
+  const policyVersion = stableIdentifier(value.policyVersion, STABLE_IDENTIFIER_PATTERN);
+  const evidenceCount = Array.isArray(value.evidence) ? value.evidence.length : 0;
+  if (!policyVersion && evidenceCount === 0) return undefined;
+  return {
+    ...(policyVersion ? { policyVersion } : {}),
+    evidenceCount,
+  };
+}
+
+function stableIdentifier(value: unknown, pattern: RegExp): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return pattern.test(normalized) ? normalized : null;
 }
 
 function buildPermissionProviderResource(
@@ -700,27 +767,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function renderCliCommand(template: string, input: { appId: string; operationId: string; args: string[] }): string {
-  let usedArgsPlaceholder = false;
-  const rendered = template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, name: string) => {
-    if (name === "id" || name === "appId") return quoteShellArg(input.appId);
-    if (name === "operation" || name === "operationId") return quoteShellArg(input.operationId);
-    if (name === "args") {
-      usedArgsPlaceholder = true;
-      return input.args.map(quoteShellArg).join(" ");
-    }
-    return match;
-  });
-  if (usedArgsPlaceholder || input.args.length === 0) return rendered;
-  return `${rendered} ${input.args.map(quoteShellArg).join(" ")}`;
-}
-
-function spawnShellCommand(
-  command: string,
+function spawnExecutable(
+  executable: string,
+  argv: string[],
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    mergeProcessEnv?: boolean;
     capture: boolean;
     stdin?: string;
     timeoutMs?: number;
@@ -734,10 +786,10 @@ function spawnShellCommand(
   truncated: boolean;
 }> {
   return new Promise((resolve) => {
-    const child = spawn(command, {
+    const child = spawn(executable, argv, {
       cwd: options.cwd ?? process.cwd(),
-      env: options.mergeProcessEnv === false ? options.env : { ...process.env, ...(options.env ?? {}) },
-      shell: true,
+      env: options.env,
+      shell: false,
       stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
@@ -776,6 +828,11 @@ function spawnShellCommand(
       child.stdin?.on("error", () => {});
       child.stdin?.end(options.stdin ?? "");
     }
+    child.on("error", (error) => {
+      const next = appendOutputChunk(stderr, error.message, maxOutputBytes);
+      stderr = next.value;
+      truncated ||= next.truncated;
+    });
     child.on("close", (exitCode) => {
       if (timeout) clearTimeout(timeout);
       resolve({ exitCode, stdout, stderr, timedOut, truncated });
@@ -808,11 +865,6 @@ function parseJsonOutput(stdout: string): unknown {
 function localOperationName(appId: string, operationId: string): string {
   const prefix = `${appId.replace(/\//g, ".")}.`;
   return operationId.startsWith(prefix) ? operationId.slice(prefix.length) : operationId;
-}
-
-function quoteShellArg(value: string): string {
-  if (/^[A-Za-z0-9_./:=@-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function toSummary(record: RaviAppManifestRecord): Record<string, unknown> {

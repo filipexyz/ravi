@@ -92,6 +92,8 @@ describe("ConsoleApiClient", () => {
 
     expect(config.clientId).toBe("ravi-cli");
     expect(device.userCode).toBe("ABC");
+    expect(device.verificationUri).toBe("https://console.example/cli/authorize");
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABC");
     expect(credentials).toMatchObject({
       consoleUrl: "https://console.example",
       installationId: "ins_123",
@@ -132,6 +134,71 @@ describe("ConsoleApiClient", () => {
         body: null,
       },
     ]);
+  });
+
+  it("constructs verification_uri_complete from verification_uri and user_code when omitted", async () => {
+    const fetchImpl = mock(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/cli/auth/config") {
+        return jsonResponse({
+          configured: true,
+          clientId: "ravi-cli",
+          mode: "console_device",
+          endpoints: {
+            deviceAuthorization: "https://console.example/api/cli/auth/device",
+            token: null,
+          },
+        });
+      }
+      if (path === "/api/cli/auth/device") {
+        return jsonResponse({
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://console.example/cli/authorize",
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+    });
+    const client = new ConsoleApiClient({ consoleUrl: "https://console.example/", fetch: fetchImpl });
+    const device = await client.startDeviceAuthorization(await client.getAuthConfig());
+
+    expect(device.verificationUri).toBe("https://console.example/cli/authorize");
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABCD-EFGH");
+    expect(new URL(device.verificationUriComplete).searchParams.get("user_code")).toBe("ABCD-EFGH");
+  });
+
+  it("does not treat a bare verification_uri_complete as the URL to open", async () => {
+    const fetchImpl = mock(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/cli/auth/config") {
+        return jsonResponse({
+          configured: true,
+          clientId: "ravi-cli",
+          mode: "console_device",
+          endpoints: {
+            deviceAuthorization: "https://console.example/api/cli/auth/device",
+            token: null,
+          },
+        });
+      }
+      if (path === "/api/cli/auth/device") {
+        return jsonResponse({
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://console.example/cli/authorize",
+          verification_uri_complete: "https://console.example/cli/authorize",
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+    });
+    const client = new ConsoleApiClient({ consoleUrl: "https://console.example/", fetch: fetchImpl });
+    const device = await client.startDeviceAuthorization(await client.getAuthConfig());
+
+    expect(device.verificationUriComplete).toBe("https://console.example/cli/authorize?user_code=ABCD-EFGH");
   });
 
   it("creates artifact upload sessions through the CLI bearer endpoint", async () => {
@@ -220,6 +287,80 @@ describe("ConsoleApiClient", () => {
       expect((error as CloudAuthError).code).toBe("AUTH_EXPIRED");
       expect((error as CloudAuthError).status).toBe(401);
       expect((error as CloudAuthError).message).toBe("The CLI access token expired.");
+    }
+  });
+
+  it("preserves the Pages domain setup code and safe DNS instruction", async () => {
+    const message = [
+      "Pages domain setup was saved but is not ready yet.",
+      "TXT _ravi-verify.example.com = ravi-domain-verification=test-token",
+    ].join("\n");
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () =>
+        jsonResponse(
+          {
+            error: {
+              code: "DOMAIN_SETUP_REQUIRED",
+              message,
+            },
+          },
+          400,
+        ),
+    });
+
+    try {
+      await client.requestJson("POST", "/api/cli/projects/proj/pages/site/domains", {
+        hostnames: ["docs.example.com"],
+      });
+      throw new Error("Expected domain setup to remain pending");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudAuthError);
+      expect(error).toMatchObject({
+        code: "DOMAIN_SETUP_REQUIRED",
+        message,
+        status: 400,
+      });
+    }
+  });
+
+  it("maps sandbox Console fetch failures to HOST_UNREACHABLE", async () => {
+    const previousPlane = process.env.RAVI_EXECUTION_PLANE;
+    process.env.RAVI_EXECUTION_PLANE = "provider-sandbox";
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () => {
+        throw Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+      },
+    });
+
+    try {
+      await expect(client.requestJson("GET", "/api/cli/projects/rbbt-lab/pages/published")).rejects.toMatchObject({
+        code: "HOST_UNREACHABLE",
+      });
+    } finally {
+      if (previousPlane === undefined) delete process.env.RAVI_EXECUTION_PLANE;
+      else process.env.RAVI_EXECUTION_PLANE = previousPlane;
+    }
+  });
+
+  it("keeps host Console fetch failures as SERVER_UNAVAILABLE", async () => {
+    const previousPlane = process.env.RAVI_EXECUTION_PLANE;
+    process.env.RAVI_EXECUTION_PLANE = "host";
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () => {
+        throw Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" });
+      },
+    });
+
+    try {
+      await expect(client.requestJson("GET", "/api/cli/projects/rbbt-lab/pages/published")).rejects.toMatchObject({
+        code: "SERVER_UNAVAILABLE",
+      });
+    } finally {
+      if (previousPlane === undefined) delete process.env.RAVI_EXECUTION_PLANE;
+      else process.env.RAVI_EXECUTION_PLANE = previousPlane;
     }
   });
 

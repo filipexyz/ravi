@@ -96,7 +96,9 @@ of a direct `model`. The two are mutually exclusive on every create/update/set
 path: assigning `modelPreset` clears the direct `model`, and writing a direct
 `model` clears `modelPresetId`, both in one transaction. Provider writes fail
 with an actionable error when incompatible with a referenced preset. Agent JSON
-(`agents list/show`) exposes `effectiveProvider`, `effectiveModel`,
-`modelSource` (`agent_preset` | `agent_default` | `global_default`),
-`modelPresetId`, and `modelPresetVersion`, resolved through the canonical
-`resolveEffectiveAgentModel`. See `runtime/model-presets`.
+(`agents list/show`) exposes `effectiveProvider`, `providerSource`,
+`effectiveModel`, `modelSource` (`agent_preset` | `agent_default` |
+`global_default` | `env_fallback` | `runtime_default`), `modelPresetId`,
+`modelPresetVersion`, and `modelError`, resolved through the canonical
+`resolveEffectiveAgentModel` / `resolveRequestedRuntimeProvider`. See
+`runtime/model-presets` and `runtime/defaults`.

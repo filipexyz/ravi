@@ -38,6 +38,7 @@ export function buildRuntimeEnv(
   raviEnv: Record<string, string>,
   providerEnv: Record<string, string> | undefined,
   capabilities: RuntimeCapabilities,
+  forceSanitizeSecrets = false,
 ): Record<string, string> {
   const sanitizedBaseEnv = { ...baseEnv };
   for (const key of TASK_RUNTIME_ENV_VARS) {
@@ -55,7 +56,7 @@ export function buildRuntimeEnv(
     runtimeEnv.PATH = prependPathEntry(runtimeEnv.PATH, dirname(canonicalRaviCliPath));
   }
 
-  if (!capabilities.supportsToolHooks) {
+  if (forceSanitizeSecrets || !capabilities.supportsToolHooks) {
     for (const key of SANITIZED_ENV_VARS) {
       delete runtimeEnv[key];
     }

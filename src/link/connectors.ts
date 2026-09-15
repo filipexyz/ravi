@@ -168,7 +168,7 @@ async function resolveConnectorProjectId(
   if (projects.length === 0) {
     throw new CloudAuthError(
       "PAYLOAD_INVALID",
-      "No Ravi Cloud projects found. Create one with `ravi cloud projects create <slug>` before connecting providers.",
+      "No Ravi Cloud projects found. Create one with `ravi cloud projects create <slug> --execute` before connecting providers.",
     );
   }
 

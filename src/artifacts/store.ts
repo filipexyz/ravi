@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import {
   copyFileSync,
@@ -11,7 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { getDb } from "../router/router-db.js";
+import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -323,6 +324,95 @@ export interface ListArtifactsOptions {
 }
 
 export type ArtifactListPage = ListPage<ArtifactRecord>;
+
+export interface ArtifactPublishStateInspection {
+  artifactExists: boolean;
+  versionExists: boolean | null;
+  artifact: ArtifactRecord | null;
+  version: ArtifactVersion | null;
+  publishedEvents: ArtifactEvent[];
+  candidates: string[];
+}
+
+/**
+ * Inspect the artifact selector used by a dry-run without opening the normal
+ * router connection or invoking artifact schema initialization.
+ */
+export function inspectArtifactPublishStateReadOnly(
+  artifactIdValue: string,
+  versionNumber?: number,
+): ArtifactPublishStateInspection {
+  const dbPath = getRaviDbPath();
+  const empty = {
+    artifactExists: false,
+    versionExists: versionNumber === undefined ? null : false,
+    artifact: null,
+    version: null,
+    publishedEvents: [],
+    candidates: [],
+  } satisfies ArtifactPublishStateInspection;
+  if (!existsSync(dbPath)) return empty;
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    const tableExists = (tableName: string): boolean =>
+      Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
+    if (!tableExists("artifacts")) return empty;
+
+    const candidates = (
+      db.prepare("SELECT id FROM artifacts ORDER BY updated_at DESC LIMIT 40").all() as Array<{ id: string }>
+    ).map((artifact) => artifact.id);
+    const artifactRow = db.prepare("SELECT * FROM artifacts WHERE id = ?").get(artifactIdValue) as
+      | ArtifactRow
+      | undefined;
+    if (!artifactRow) return { ...empty, candidates };
+
+    const versionRow = !tableExists("artifact_versions")
+      ? undefined
+      : versionNumber === undefined
+        ? (db
+            .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? ORDER BY version_number DESC LIMIT 1")
+            .get(artifactIdValue) as ArtifactVersionRow | undefined)
+        : (db
+            .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? AND version_number = ?")
+            .get(artifactIdValue, versionNumber) as ArtifactVersionRow | undefined);
+    const versionAssets =
+      versionRow && tableExists("artifact_version_assets")
+        ? (
+            db
+              .prepare(
+                `SELECT * FROM artifact_version_assets
+             WHERE version_id = ?
+             ORDER BY CASE WHEN role = 'primary' THEN 0 ELSE 1 END, path ASC`,
+              )
+              .all(versionRow.id) as ArtifactVersionAssetRow[]
+          ).map(rowToVersionAsset)
+        : [];
+    const versionExists = versionNumber === undefined ? null : Boolean(versionRow);
+    const publishedEvents = !tableExists("artifact_events")
+      ? []
+      : (
+          db
+            .prepare(
+              `SELECT * FROM artifact_events
+               WHERE artifact_id = ? AND event_type = 'published'
+               ORDER BY created_at ASC, id ASC`,
+            )
+            .all(artifactIdValue) as ArtifactEventRow[]
+        ).map(rowToEvent);
+    return {
+      artifactExists: true,
+      versionExists,
+      artifact: rowToArtifact(artifactRow),
+      version: versionRow ? rowToVersion(versionRow, versionAssets) : null,
+      publishedEvents,
+      candidates,
+    };
+  } finally {
+    db.close();
+  }
+}
 
 function ensureArtifactSchema(): void {
   const db = getDb();
@@ -740,7 +830,7 @@ function listVersionAssets(versionId: string): ArtifactVersionAsset[] {
   ).map(rowToVersionAsset);
 }
 
-function rowToVersion(row: ArtifactVersionRow): ArtifactVersion {
+function rowToVersion(row: ArtifactVersionRow, assets = listVersionAssets(row.id)): ArtifactVersion {
   return {
     id: row.id,
     artifactId: row.artifact_id,
@@ -752,7 +842,7 @@ function rowToVersion(row: ArtifactVersionRow): ArtifactVersion {
     ...(row.metadata_json ? { metadata: parseJsonObject(row.metadata_json) } : {}),
     ...(row.created_by ? { createdBy: row.created_by } : {}),
     createdAt: row.created_at,
-    assets: listVersionAssets(row.id),
+    assets,
   };
 }
 
@@ -983,7 +1073,7 @@ export function listArtifactVersions(artifactIdValue: string): ArtifactVersion[]
     getDb()
       .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? ORDER BY version_number ASC")
       .all(artifactIdValue) as ArtifactVersionRow[]
-  ).map(rowToVersion);
+  ).map((row) => rowToVersion(row));
 }
 
 export function getArtifactVersion(artifactIdValue: string, versionNumber?: number): ArtifactVersion | null {

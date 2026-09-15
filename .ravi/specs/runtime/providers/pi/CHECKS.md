@@ -4,7 +4,17 @@
 
 - Provider id is `pi`.
 - Capability matrix includes generic extended fields before provider is enabled broadly.
-- Restricted agents are rejected in RPC MVP.
+- Restricted agents are accepted because `tools.permissionMode` is `ravi-host` and `supportsToolHooks` is true.
+- Simulated extension load failure (missing `ravi.permission.hooks.ready` handshake) MUST fail the turn with `failureKind=transport`, MUST NOT send `prompt`, and MUST NOT emit `tool.started`. Capability advertisement staying `ravi-host` while tools run ungoverned is forbidden.
+- A pre-handshake `tool_execution_start` or a transport restart that comes back without the handshake MUST fail closed the same way.
+- A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with a decision value that carries the host sub-reason (capability / bash policy / skill / bridge / fence) and blocks the tool. The materialized extension MUST put that reason on `{ block: true, reason }`. A boolean-only `confirm` response that collapses every deny to a fixed string is forbidden.
+- Parallel permission UI requests MUST stay correlated by `id`. The extension MUST serialize overlapping `tool_call` dialogs so a single-outstanding-dialog UI cannot cancel a sibling as an unexplained deny.
+- The same path allows a granted Read/tool call.
+- Bash requires both `canUseTool("Bash")` and `authorizeCommandExecution`. Missing handlers, thrown authorization, and unconditional/observation denials fail closed.
+- Unauthorized skill use (Read/`Skill`/`ravi skills show` of a skill outside `allowedSkills`) MUST be denied on the extension authorize path with `SKILL_NOT_AUTHORIZED`, even when `canUseTool` would otherwise allow the tool.
+- Authorized skill use and ordinary non-skill file reads MUST still be allowed when the tool itself is granted.
+- The advertised Pi skill catalog MUST remain filtered by the same allowlist. Catalog text is not a substitute for the tool-time gate.
+- RPC steer, interrupt, busy-retry, and dead-transport restart still work with the permission bridge loaded.
 - `startSession` starts a fake RPC client and returns a valid runtime handle.
 - `interrupt()` sends `abort` and emits `turn.interrupted`.
 - `setModel()` sends `set_model` and affects subsequent prompt metadata.
@@ -13,7 +23,10 @@
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
 - Active-turn `turn.steer` sends Pi RPC `steer` and does not become Ravi host prompt concatenation.
 - A `prompt` response rejected with "already processing" is retried as a plain `prompt` on the bounded busy backoff and resolves once Pi reports idle. No retry adds `streamingBehavior`.
-- Persistent "already processing" responses exhaust the busy backoff and surface a single `turn.failed`, never silently drop the prompt.
+- Persistent "already processing" responses exhaust the busy backoff, then restart the Pi RPC transport when a factory is available and retry the same plain `prompt` once more. If it is still busy, they surface a single `turn.failed` with `failureKind=transport` so the host respawns instead of reusing the stuck process.
+- After `turn.interrupted` / `turn.failed` / abort, leftover queued Pi events are drained and `abort` is sent again. If `get_state` still reports `isStreaming` / `isProcessing` / `isCompacting`, the adapter restarts the transport before the next prompt.
+- Leftover `agent_end` / `turn_end` from the interrupted run MUST NOT complete the next Ravi prompt. The next prompt waits for a fresh `agent_start` / `turn_start` (or a respawned transport) before accepting a terminal.
+- Interrupt then a subsequent prompt MUST emit `turn.interrupted` for the first turn and a real terminal for the second, never a ~instant fake `turn.complete`.
 
 ## Event Mapping Tests
 

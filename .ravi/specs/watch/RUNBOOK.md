@@ -31,8 +31,11 @@ The command should print:
 From a group chat, prefer the watch helper when available:
 
 ```bash
-ravi watch trigger <watch-id> --event release.published --message "Resume a release e diga se precisamos agir."
+ravi watch trigger <watch-id> --event release.published --message "Resume a release e diga se precisamos agir." --execute
 ```
+
+Without `--execute` the command is a dry-run (exit 3) that only prints the
+resolved trigger plan; nothing is created.
 
 Equivalent low-level form:
 

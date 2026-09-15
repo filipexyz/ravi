@@ -308,6 +308,9 @@ async function runBotRoundTrip(
       model,
       logLevel: "error",
     } as any,
+    onFatalRuntimeError: (error) => {
+      throw error;
+    },
   });
 
   const sessionName = `agent:main:live:${provider}`;

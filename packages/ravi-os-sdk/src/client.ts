@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsCreateReturn, ChannelsListReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsSetReturn, ChannelsShowReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsPreviewReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsListsShowReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPublishReturn, PagesPublishedReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, RuntimePresetsCreateReturn, RuntimePresetsDeleteReturn, RuntimePresetsDisableReturn, RuntimePresetsEnableReturn, RuntimePresetsImpactReturn, RuntimePresetsListReturn, RuntimePresetsSetReturn, RuntimePresetsShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsMuteReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetEffortReturn, SessionsSetModelReturn, SessionsSetProviderReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsUnmuteReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsGrantBatchReturn, SkillsGrantReturn, SkillsInspectReturn, SkillsInstallReturn, SkillsListReturn, SkillsRevokeBatchReturn, SkillsRevokeReturn, SkillsShowReturn, SkillsSyncReturn, SkillsWhoReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackModalsOpenReturn, SlackModalsPushReturn, SlackModalsUpdateReturn, SlackPermissionsListReturn, SlackTopologyReturn, SlackWorkObjectsPresentDetailsReturn, SlackWorkObjectsSendReturn, SlackWorkObjectsUnfurlReturn, SlackWorkObjectsValidateReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn, YtAnalyticsCountriesReturn, YtAnalyticsDemographicsReturn, YtAnalyticsDevicesReturn, YtAnalyticsOverviewReturn, YtAnalyticsSeriesReturn, YtAnalyticsTopReturn, YtAnalyticsTrafficReturn, YtCaptionDownloadReturn, YtCaptionsReturn, YtCommentsReturn, YtHealthReturn, YtInfoReturn, YtPlaylistAddReturn, YtPlaylistCreateReturn, YtPlaylistDeleteReturn, YtPlaylistRemoveReturn, YtPlaylistReturn, YtPlaylistsReturn, YtReplyReturn, YtSearchReturn, YtStatsReturn, YtSubscriptionsReturn, YtUnansweredReturn, YtVideoCategoriesReturn, YtVideoDeleteReturn, YtVideoReturn, YtVideoUpdateReturn, YtVideosReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsModelBrokerReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, BugListReturn, BugReportReturn, BugStatusReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsBackendIngressReturn, ChannelsBackendRuntimeInterruptReturn, ChannelsBackendRuntimeReadbackReturn, ChannelsCreateReturn, ChannelsListReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsSetReturn, ChannelsShowReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsEnsureReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsPreviewReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsListsShowReturn, ChatsMessagesCreateReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPasswordRemoveReturn, PagesPasswordStatusReturn, PagesPublishReturn, PagesPublishedReturn, PagesShipReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, RuntimeEnvGetReturn, RuntimeEnvSetReturn, RuntimeEnvUnsetReturn, RuntimePresetsCreateReturn, RuntimePresetsDeleteReturn, RuntimePresetsDisableReturn, RuntimePresetsEnableReturn, RuntimePresetsImpactReturn, RuntimePresetsListReturn, RuntimePresetsSetReturn, RuntimePresetsShowReturn, RuntimeProvidersClaudeConfigureReturn, RuntimeProvidersCodexLoginCancelReturn, RuntimeProvidersCodexLoginCompleteReturn, RuntimeProvidersCodexLoginStartReturn, RuntimeProvidersCodexLoginStatusReturn, RuntimeProvidersGrokLoginCancelReturn, RuntimeProvidersGrokLoginCompleteReturn, RuntimeProvidersGrokLoginStartReturn, RuntimeProvidersGrokLoginStatusReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkDartCheckReturn, SdkDartGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsCloseThreadReturn, SessionsCreateThreadReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRecapReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetEffortReturn, SessionsSetModelReturn, SessionsSetProviderReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsGrantBatchReturn, SkillsGrantReturn, SkillsInspectReturn, SkillsInstallReturn, SkillsListReturn, SkillsRevokeBatchReturn, SkillsRevokeReturn, SkillsShowReturn, SkillsSyncReturn, SkillsWhoReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackModalsOpenReturn, SlackModalsPushReturn, SlackModalsUpdateReturn, SlackPermissionsListReturn, SlackTopologyReturn, SlackWorkObjectsPresentDetailsReturn, SlackWorkObjectsSendReturn, SlackWorkObjectsUnfurlReturn, SlackWorkObjectsValidateReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn, YtAnalyticsCountriesReturn, YtAnalyticsDemographicsReturn, YtAnalyticsDevicesReturn, YtAnalyticsOverviewReturn, YtAnalyticsSeriesReturn, YtAnalyticsTopReturn, YtAnalyticsTrafficReturn, YtCaptionDownloadReturn, YtCaptionsReturn, YtCommentsReturn, YtHealthReturn, YtInfoReturn, YtPlaylistAddReturn, YtPlaylistCreateReturn, YtPlaylistDeleteReturn, YtPlaylistRemoveReturn, YtPlaylistReturn, YtPlaylistsReturn, YtReplyReturn, YtSearchReturn, YtStatsReturn, YtSubscriptionsReturn, YtUnansweredReturn, YtVideoCategoriesReturn, YtVideoDeleteReturn, YtVideoReturn, YtVideoUpdateReturn, YtVideosReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -73,15 +73,18 @@ export class RaviClient {
       });
     },
     /** Delete an agent */
-    delete: async (id: string): Promise<AgentsDeleteReturn> => {
+    delete: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<AgentsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "delete",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** List all agents */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -92,10 +95,25 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
+    /** Set or inspect an agent's generic model-broker profile */
+    modelBroker: async (id: string, options?: {
+      broker?: string;
+      clear?: boolean;
+      execute?: boolean;
+      profile?: string;
+      required?: string;
+    }): Promise<AgentsModelBrokerReturn> => {
+      return this.transport.call({
+        groupSegments: ["agents"],
+        command: "model-broker",
+        body: { id, ...(options ?? {}) },
+      });
+    },
     /** Set or show an agent runtime permission profile */
     permissions: async (id: string, profile?: string, options?: {
       capabilities?: string;
       clearCapabilities?: boolean;
+      execute?: boolean;
     }): Promise<AgentsPermissionsReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
@@ -104,11 +122,13 @@ export class RaviClient {
       });
     },
     /** Reset agent session */
-    reset: async (id: string, nameOrKey?: string): Promise<AgentsResetReturn> => {
+    reset: async (id: string, nameOrKey?: string, options?: {
+      execute?: boolean;
+    }): Promise<AgentsResetReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "reset",
-        body: { id, nameOrKey },
+        body: { id, nameOrKey, ...(options ?? {}) },
       });
     },
     /** Show agent session status */
@@ -222,11 +242,13 @@ export class RaviClient {
       });
     },
     /** Run a Ravi app operation through the runtime app router */
-    run: async (id: string, operation?: string, args?: string[]): Promise<AppsRunReturn> => {
+    run: async (id: string, operation?: string, args?: string[], options?: {
+      execute?: boolean;
+    }): Promise<AppsRunReturn> => {
       return this.transport.call({
         groupSegments: ["apps"],
         command: "run",
-        body: { id, operation, args },
+        body: { id, operation, args, ...(options ?? {}) },
       });
     },
     /** Create a Ravi app scaffold from the app contract */
@@ -345,6 +367,7 @@ export class RaviClient {
     /** List artifacts */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       includeDeleted?: boolean;
       kind?: string;
       lifecycle?: string;
@@ -370,6 +393,7 @@ export class RaviClient {
       console?: string;
       description?: string;
       entrypoint?: string;
+      execute?: boolean;
       idempotencyKey?: string;
       name?: string;
       noActivate?: boolean;
@@ -392,6 +416,7 @@ export class RaviClient {
       /** Activate an existing Pages release for a local artifact */
       activate: async (id: string, options?: {
         console?: string;
+        execute?: boolean;
         release?: string;
         site?: string;
         version?: string;
@@ -503,6 +528,7 @@ export class RaviClient {
     /** Generate speech from text using ElevenLabs TTS */
     generate: async (text?: string, options?: {
       caption?: string;
+      execute?: boolean;
       format?: string;
       lang?: string;
       model?: string;
@@ -523,6 +549,7 @@ export class RaviClient {
       agent?: string;
       chat?: string;
       clientId?: string;
+      fields?: string;
       id?: string;
       includeFailed?: boolean;
       limit?: string;
@@ -545,6 +572,7 @@ export class RaviClient {
       chat?: string;
       clientId?: string;
       elevenlabs?: string;
+      execute?: boolean;
       format?: string;
       id?: string;
       lang?: string;
@@ -565,6 +593,7 @@ export class RaviClient {
     /** List available ElevenLabs voices for picker UIs */
     voices: async (options?: {
       category?: string;
+      fields?: string;
       limit?: string;
       search?: string;
       voiceType?: string;
@@ -596,6 +625,7 @@ export class RaviClient {
     /** List Ravi MCP bridges for a Console project */
     list: async (options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       project?: string;
@@ -609,6 +639,7 @@ export class RaviClient {
     /** Revoke a Ravi MCP bridge and its client tokens */
     revoke: async (id: string, options?: {
       console?: string;
+      execute?: boolean;
       yes?: boolean;
     }): Promise<BridgesRevokeReturn> => {
       return this.transport.call({
@@ -619,10 +650,54 @@ export class RaviClient {
     }
   };
 
+  readonly bug = {
+    /** List your Console bug reports */
+    list: async (options?: {
+      console?: string;
+      fields?: string;
+      limit?: string;
+      offset?: string;
+    }): Promise<BugListReturn> => {
+      return this.transport.call({
+        groupSegments: ["bug"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Collect a sanitized bug dossier and submit it to Console (dry-run by default; requires --execute) */
+    report: async (options?: {
+      console?: string;
+      dossierFile?: string;
+      dossierJson?: string;
+      execute?: boolean;
+      severity?: string;
+      summary?: string;
+      surface?: string;
+      title?: string;
+    }): Promise<BugReportReturn> => {
+      return this.transport.call({
+        groupSegments: ["bug"],
+        command: "report",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Show one of your Console bug reports */
+    status: async (id: string, options?: {
+      console?: string;
+    }): Promise<BugStatusReturn> => {
+      return this.transport.call({
+        groupSegments: ["bug"],
+        command: "status",
+        body: { id, ...(options ?? {}) },
+      });
+    }
+  };
+
   readonly calendars = {
     /** Return free/busy availability in a bounded time window */
     availability: async (options?: {
       calendar?: string;
+      fields?: string;
       from?: string;
       limit?: string;
       to?: string;
@@ -663,6 +738,7 @@ export class RaviClient {
     events: {
       /** Cancel a local calendar event */
       cancel: async (event: string, options?: {
+        execute?: boolean;
         idempotencyKey?: string;
       }): Promise<CalendarsEventsCancelReturn> => {
         return this.transport.call({
@@ -692,6 +768,7 @@ export class RaviClient {
       /** List local calendar events in a bounded time window */
       list: async (options?: {
         calendar?: string;
+        fields?: string;
         from?: string;
         includeCancelled?: boolean;
         limit?: string;
@@ -718,6 +795,7 @@ export class RaviClient {
       respond: async (event: string, options?: {
         attendeeAgent?: string;
         attendeeEmail?: string;
+        execute?: boolean;
         idempotencyKey?: string;
         status?: string;
       }): Promise<CalendarsEventsRespondReturn> => {
@@ -749,6 +827,7 @@ export class RaviClient {
     /** List local calendars visible to the current requester */
     list: async (options?: {
       account?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -761,6 +840,7 @@ export class RaviClient {
     },
     /** Grant a calendar relation to an agent/contact/system subject */
     share: async (calendar: string, options?: {
+      execute?: boolean;
       expiresAt?: string;
       relation?: string;
       with?: string;
@@ -784,6 +864,86 @@ export class RaviClient {
   };
 
   readonly channels = {
+    backend: {
+      /** Accept one idempotent external channel message into a local agent session */
+      ingress: async (agentId: string, request: {
+  agentId: string;
+  channelInstanceId: string;
+  content: Array<({
+    text: string;
+    type: "text";
+  }) | ({
+    artifactId: string;
+    mediaType?: string;
+    name?: string;
+    sizeBytes?: number;
+    type: "artifact";
+  })>;
+  external: {
+    channelKind: string;
+    connectionId: string;
+    conversationId: string;
+    messageId: string;
+    senderId: string;
+  };
+  idempotencyKey: string;
+  localActorId: string;
+  protocol: "ravi.channel.backend";
+  receivedAt: string;
+  requestId: string;
+  schemaVersion: 1;
+}): Promise<ChannelsBackendIngressReturn> => {
+        return this.transport.call({
+          groupSegments: ["channels","backend"],
+          command: "ingress",
+          body: { agentId, request },
+        });
+      },
+      runtime: {
+        /** Idempotently request interruption of an accepted channel turn */
+        interrupt: async (agentId: string, request: {
+  binding: {
+    agentId: string;
+    channelInstanceId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  idempotencyKey: string;
+  protocol: "ravi.channel.runtime-events";
+  requestId: string;
+  requestedAt: string;
+  schemaVersion: 1;
+}): Promise<ChannelsBackendRuntimeInterruptReturn> => {
+          return this.transport.call({
+            groupSegments: ["channels","backend","runtime"],
+            command: "interrupt",
+            body: { agentId, request },
+          });
+        },
+        /** Read the provider-neutral state of an accepted channel turn */
+        readback: async (agentId: string, request: {
+  binding: {
+    agentId: string;
+    channelInstanceId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  protocol: "ravi.channel.runtime-events";
+  requestId: string;
+  schemaVersion: 1;
+}): Promise<ChannelsBackendRuntimeReadbackReturn> => {
+          return this.transport.call({
+            groupSegments: ["channels","backend","runtime"],
+            command: "readback",
+            body: { agentId, request },
+          });
+        }
+      }
+    },
     /** Create or update a native channel config */
     create: async (name: string, options?: {
       credentialConnection?: string;
@@ -797,6 +957,7 @@ export class RaviClient {
     },
     /** List configured native channels */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       provider?: string;
@@ -882,11 +1043,20 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
+    /** Ensure one canonical direct chat between an actor and an agent */
+    ensure: async (actorId: string, agentId: string, clientRequestId: string): Promise<ChatsEnsureReturn> => {
+      return this.transport.call({
+        groupSegments: ["chats"],
+        command: "ensure",
+        body: { actorId, agentId, clientRequestId },
+      });
+    },
     /** List recent canonical chats */
     list: async (options?: {
       agent?: string;
       channel?: string;
       contact?: string;
+      fields?: string;
       includeRaw?: boolean;
       instance?: string;
       limit?: string;
@@ -947,6 +1117,7 @@ export class RaviClient {
       },
       /** List chat reading lists */
       list: async (options?: {
+        fields?: string;
         includeArchived?: boolean;
         limit?: string;
         offset?: string;
@@ -976,6 +1147,7 @@ export class RaviClient {
       },
       /** List chats in a reading list with unread counts */
       members: async (list: string, options?: {
+        fields?: string;
         includeRaw?: boolean;
         limit?: string;
         offset?: string;
@@ -1031,6 +1203,16 @@ export class RaviClient {
         });
       }
     },
+    messages: {
+      /** Create one idempotent actor-authored message in a canonical chat */
+      create: async (chatId: string, actorId: string, clientMessageId: string, content: string): Promise<ChatsMessagesCreateReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","messages"],
+          command: "create",
+          body: { chatId, actorId, clientMessageId, content },
+        });
+      }
+    },
     /** Read messages from one chat */
     read: async (chat: string, options?: {
       channel?: string;
@@ -1056,6 +1238,7 @@ export class RaviClient {
         console?: string;
         defaultPageSite?: string;
         description?: string;
+        execute?: boolean;
         name?: string;
         visibility?: string;
       }): Promise<CloudProjectsCreateReturn> => {
@@ -1068,6 +1251,7 @@ export class RaviClient {
       /** List Ravi Cloud projects from Console */
       list: async (options?: {
         console?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<CloudProjectsListReturn> => {
@@ -1136,6 +1320,7 @@ export class RaviClient {
     /** List Ravi commands */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -1181,6 +1366,7 @@ export class RaviClient {
   readonly connectors = {
     /** List your connectors */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       project?: string;
@@ -1194,6 +1380,7 @@ export class RaviClient {
     },
     /** Revoke a connector and delete its stored credentials */
     revoke: async (id: string, options?: {
+      execute?: boolean;
       yes?: boolean;
     }): Promise<ConnectorsRevokeReturn> => {
       return this.transport.call({
@@ -1297,6 +1484,7 @@ export class RaviClient {
     },
     /** Find contacts by tag or search query */
     find: async (query: string, options?: {
+      fields?: string;
       tag?: boolean;
     }): Promise<ContactsFindReturn> => {
       return this.transport.call({
@@ -1336,6 +1524,7 @@ export class RaviClient {
     },
     /** List all contacts */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -1347,11 +1536,13 @@ export class RaviClient {
       });
     },
     /** Merge two contacts (move identities from source to target) */
-    merge: async (source: string, target: string): Promise<ContactsMergeReturn> => {
+    merge: async (source: string, target: string, options?: {
+      execute?: boolean;
+    }): Promise<ContactsMergeReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "merge",
-        body: { source, target },
+        body: { source, target, ...(options ?? {}) },
       });
     },
     /** Show messages attributed to a contact */
@@ -1434,11 +1625,13 @@ export class RaviClient {
       });
     },
     /** Remove a contact */
-    remove: async (contact: string): Promise<ContactsRemoveReturn> => {
+    remove: async (contact: string, options?: {
+      execute?: boolean;
+    }): Promise<ContactsRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "remove",
-        body: { contact },
+        body: { contact, ...(options ?? {}) },
       });
     },
     /** Show session summaries attributed to a contact */
@@ -1564,6 +1757,7 @@ export class RaviClient {
       },
       /** List entries in the local credentials store */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ContextCredentialsListReturn> => {
@@ -1574,11 +1768,13 @@ export class RaviClient {
         });
       },
       /** Remove a stored context-key from the credentials store */
-      remove: async (contextKey: string): Promise<ContextCredentialsRemoveReturn> => {
+      remove: async (contextKey: string, options?: {
+        execute?: boolean;
+      }): Promise<ContextCredentialsRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["context","credentials"],
           command: "remove",
-          body: { contextKey },
+          body: { contextKey, ...(options ?? {}) },
         });
       },
       /** Mark a stored context-key as the default */
@@ -1601,6 +1797,9 @@ export class RaviClient {
     /** Issue a least-privilege child context for an external CLI */
     issue: async (cliName: string, options?: {
       allow?: string;
+      asAgent?: string;
+      asSessionKey?: string;
+      asSessionName?: string;
       inherit?: boolean;
       ttl?: string;
     }): Promise<ContextIssueReturn> => {
@@ -1622,6 +1821,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       all?: boolean;
+      fields?: string;
       kind?: string;
       limit?: string;
       offset?: string;
@@ -1687,6 +1887,7 @@ export class RaviClient {
     },
     /** Show cost breakdown by agent */
     agents: async (options?: {
+      fields?: string;
       hours?: string;
       limit?: string;
     }): Promise<CostsAgentsReturn> => {
@@ -1699,6 +1900,7 @@ export class RaviClient {
     /** Audit pricing coverage for recent cost events */
     pricing: async (options?: {
       dryRun?: boolean;
+      fields?: string;
       hours?: string;
       includePriced?: boolean;
       limit?: string;
@@ -1730,6 +1932,7 @@ export class RaviClient {
     },
     /** Show most expensive sessions */
     topSessions: async (options?: {
+      fields?: string;
       hours?: string;
       limit?: string;
     }): Promise<CostsTopSessionsReturn> => {
@@ -1768,6 +1971,7 @@ export class RaviClient {
       /** List provider credential connections without secret values */
       list: async (options?: {
         all?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -1852,6 +2056,7 @@ export class RaviClient {
     },
     /** Show open opportunity board */
     board: async (options?: {
+      fields?: string;
       includeEmptyStages?: boolean;
       pipeline?: string;
     }): Promise<CrmBoardReturn> => {
@@ -1891,6 +2096,7 @@ export class RaviClient {
     },
     /** List CRM contact cards */
     contacts: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       owner?: string;
@@ -1960,6 +2166,7 @@ export class RaviClient {
       dueAfter?: string;
       dueBefore?: string;
       dueToday?: boolean;
+      fields?: string;
       limit?: string;
       offset?: string;
       opportunity?: string;
@@ -2038,7 +2245,7 @@ export class RaviClient {
       });
     },
     pipeline: {
-      /** Create a CRM pipeline (with optional declarative metadata) */
+      /** Create a CRM pipeline */
       create: async (name: string, options?: {
         analystAvoid?: string;
         analystMentions?: string;
@@ -2073,6 +2280,7 @@ export class RaviClient {
       /** List CRM pipelines */
       list: async (options?: {
         entityType?: string;
+        fields?: string;
         includeArchived?: boolean;
         limit?: string;
         offset?: string;
@@ -2390,6 +2598,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       allAgents?: boolean;
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -2401,19 +2610,23 @@ export class RaviClient {
       });
     },
     /** Delete a job */
-    rm: async (id: string): Promise<CronRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<CronRmReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Manually run a job (ignores schedule) */
-    run: async (id: string): Promise<CronRunReturn> => {
+    run: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<CronRunReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
         command: "run",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Set job property */
@@ -2467,6 +2680,7 @@ export class RaviClient {
     /** Show daemon logs (PM2) */
     logs: async (options?: {
       clear?: boolean;
+      execute?: boolean;
       follow?: boolean;
       path?: boolean;
       tail?: string;
@@ -2535,11 +2749,13 @@ export class RaviClient {
     },
     sessions: {
       /** Archive a Devin session */
-      archive: async (session: string): Promise<DevinSessionsArchiveReturn> => {
+      archive: async (session: string, options?: {
+        execute?: boolean;
+      }): Promise<DevinSessionsArchiveReturn> => {
         return this.transport.call({
           groupSegments: ["devin","sessions"],
           command: "archive",
-          body: { session },
+          body: { session, ...(options ?? {}) },
         });
       },
       /** List and cache session attachments */
@@ -2561,6 +2777,7 @@ export class RaviClient {
         childPlaybook?: string;
         devinId?: string;
         devinMode?: string;
+        execute?: boolean;
         knowledge?: string[];
         maxAcu?: string;
         noMaxAcuLimit?: boolean;
@@ -2590,6 +2807,7 @@ export class RaviClient {
       },
       /** Show Devin session insights/activity summary */
       insights: async (session: string, options?: {
+        execute?: boolean;
         generate?: boolean;
       }): Promise<DevinSessionsInsightsReturn> => {
         return this.transport.call({
@@ -2600,6 +2818,7 @@ export class RaviClient {
       },
       /** List local or remote Devin sessions */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         remote?: boolean;
@@ -2625,6 +2844,7 @@ export class RaviClient {
       /** Send a message to a Devin session */
       send: async (session: string, message: string, options?: {
         asUser?: string;
+        execute?: boolean;
       }): Promise<DevinSessionsSendReturn> => {
         return this.transport.call({
           groupSegments: ["devin","sessions"],
@@ -2680,9 +2900,10 @@ export class RaviClient {
   };
 
   readonly feedback = {
-    /** Submit structured feedback to Ravi Console */
+    /** Submit structured feedback to Ravi Console (dry-run by default; requires --execute) */
     send: async (message: string[], options?: {
       console?: string;
+      execute?: boolean;
       kind?: string;
       metadataJson?: string;
       project?: string;
@@ -2762,19 +2983,23 @@ export class RaviClient {
       });
     },
     /** Show heartbeat status for all agents */
-    status: async (): Promise<HeartbeatStatusReturn> => {
+    status: async (options?: {
+      fields?: string;
+    }): Promise<HeartbeatStatusReturn> => {
       return this.transport.call({
         groupSegments: ["heartbeat"],
         command: "status",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Manually trigger a heartbeat */
-    trigger: async (id: string): Promise<HeartbeatTriggerReturn> => {
+    trigger: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HeartbeatTriggerReturn> => {
       return this.transport.call({
         groupSegments: ["heartbeat"],
         command: "trigger",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     }
   };
@@ -2824,6 +3049,7 @@ export class RaviClient {
     },
     /** List configured hooks */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -2835,11 +3061,13 @@ export class RaviClient {
       });
     },
     /** Delete a hook */
-    rm: async (id: string): Promise<HooksRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HooksRmReturn> => {
       return this.transport.call({
         groupSegments: ["hooks"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Show hook details */
@@ -2851,11 +3079,13 @@ export class RaviClient {
       });
     },
     /** Execute a hook once with a synthetic event */
-    test: async (id: string): Promise<HooksTestReturn> => {
+    test: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HooksTestReturn> => {
       return this.transport.call({
         groupSegments: ["hooks"],
         command: "test",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     }
   };
@@ -2869,6 +3099,7 @@ export class RaviClient {
         caption?: string;
         channel?: string;
         cols?: string;
+        execute?: boolean;
         fit?: string;
         fuzz?: string;
         mode?: string;
@@ -2898,6 +3129,7 @@ export class RaviClient {
       background?: string;
       caption?: string;
       compression?: string;
+      execute?: boolean;
       format?: string;
       mode?: string;
       model?: string;
@@ -2952,6 +3184,7 @@ export class RaviClient {
     },
     /** List recently delivered inbox items in the local mirror */
     items: async (options?: {
+      fields?: string;
       limit?: string;
     }): Promise<InboxItemsReturn> => {
       return this.transport.call({
@@ -2962,6 +3195,7 @@ export class RaviClient {
     },
     /** List local inbox items */
     list: async (options?: {
+      fields?: string;
       includeArchived?: boolean;
       limit?: string;
       offset?: string;
@@ -2993,11 +3227,13 @@ export class RaviClient {
       });
     },
     /** Republish a locally stored inbox item to NATS */
-    replay: async (ref: string): Promise<InboxReplayReturn> => {
+    replay: async (ref: string, options?: {
+      execute?: boolean;
+    }): Promise<InboxReplayReturn> => {
       return this.transport.call({
         groupSegments: ["inbox"],
         command: "replay",
-        body: { ref },
+        body: { ref, ...(options ?? {}) },
       });
     },
     /** Snooze a local inbox item until a timestamp */
@@ -3056,6 +3292,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       confidence?: string;
+      fields?: string;
       importance?: string;
       kind?: string;
       limit?: string;
@@ -3075,6 +3312,7 @@ export class RaviClient {
     },
     /** Search insights by free text */
     search: async (text: string, options?: {
+      fields?: string;
       limit?: string;
     }): Promise<InsightsSearchReturn> => {
       return this.transport.call({
@@ -3158,6 +3396,7 @@ export class RaviClient {
     },
     /** List all instances */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -3191,11 +3430,13 @@ export class RaviClient {
         });
       },
       /** Reject and remove a pending contact or chat */
-      reject: async (name: string, contact: string): Promise<InstancesPendingRejectReturn> => {
+      reject: async (name: string, contact: string, options?: {
+        execute?: boolean;
+      }): Promise<InstancesPendingRejectReturn> => {
         return this.transport.call({
           groupSegments: ["instances","pending"],
           command: "reject",
-          body: { name, contact },
+          body: { name, contact, ...(options ?? {}) },
         });
       }
     },
@@ -3336,6 +3577,7 @@ export class RaviClient {
       },
       /** List local mail accounts */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -3408,6 +3650,7 @@ export class RaviClient {
       /** List local mailboxes */
       list: async (options?: {
         account?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
         status?: string;
@@ -3449,6 +3692,7 @@ export class RaviClient {
       /** List local mail messages */
       list: async (options?: {
         addresses?: boolean;
+        fields?: string;
         limit?: string;
         mailbox?: string;
         offset?: string;
@@ -3494,6 +3738,7 @@ export class RaviClient {
       },
       /** List local outbox rows */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         mailbox?: string;
         offset?: string;
@@ -3525,6 +3770,7 @@ export class RaviClient {
     providers: {
       /** List known mail providers and local account counts */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<MailProvidersListReturn> => {
@@ -3623,6 +3869,7 @@ export class RaviClient {
         send: async (options?: {
           body?: string;
           console?: string;
+          execute?: boolean;
           from?: string;
           idempotencyKey?: string;
           subject?: string;
@@ -3641,6 +3888,7 @@ export class RaviClient {
       bcc?: string;
       body?: string;
       cc?: string;
+      execute?: boolean;
       from?: string;
       idempotencyKey?: string;
       subject?: string;
@@ -3655,6 +3903,7 @@ export class RaviClient {
     /** Queue mail in the local outbox */
     send: async (options?: {
       body?: string;
+      execute?: boolean;
       from?: string;
       idempotencyKey?: string;
       subject?: string;
@@ -3686,6 +3935,7 @@ export class RaviClient {
       account?: string;
       caption?: string;
       channel?: string;
+      execute?: boolean;
       ptt?: boolean;
       threadId?: string;
       to?: string;
@@ -3724,6 +3974,7 @@ export class RaviClient {
       },
       /** List resolved meeting profiles */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<MeetingsProfilesListReturn> => {
@@ -3785,6 +4036,7 @@ export class RaviClient {
       agent?: string;
       by?: string;
       days?: string;
+      fields?: string;
       since?: string;
       through?: string;
     }): Promise<MetricsShowReturn> => {
@@ -3800,6 +4052,7 @@ export class RaviClient {
     /** List session observer bindings */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       session?: string;
@@ -3824,6 +4077,7 @@ export class RaviClient {
       },
       /** List observer profiles */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ObserversProfilesListReturn> => {
@@ -3897,6 +4151,7 @@ export class RaviClient {
       },
       /** List observer rules */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ObserversRulesListReturn> => {
@@ -3907,11 +4162,13 @@ export class RaviClient {
         });
       },
       /** Delete an observer rule */
-      rm: async (id: string): Promise<ObserversRulesRmReturn> => {
+      rm: async (id: string, options?: {
+        execute?: boolean;
+      }): Promise<ObserversRulesRmReturn> => {
         return this.transport.call({
           groupSegments: ["observers","rules"],
           command: "rm",
-          body: { id },
+          body: { id, ...(options ?? {}) },
         });
       },
       /** Create or overwrite an observer rule */
@@ -3972,10 +4229,11 @@ export class RaviClient {
   };
 
   readonly pages = {
-    /** Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets */
+    /** Advanced/compat: host-only Pages record; does not upload HTML. Prefer pages ship to get a URL */
     create: async (args: string[], options?: {
       console?: string;
       defaultSite?: boolean;
+      execute?: boolean;
       project?: string;
       visibility?: string;
     }): Promise<PagesCreateReturn> => {
@@ -3989,6 +4247,7 @@ export class RaviClient {
     domains: async (args: string[], options?: {
       check?: boolean;
       console?: string;
+      execute?: boolean;
       project?: string;
     }): Promise<PagesDomainsReturn> => {
       return this.transport.call({
@@ -4000,6 +4259,7 @@ export class RaviClient {
     /** List Ravi Pages sites in a Console project */
     list: async (project?: string, options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<PagesListReturn> => {
@@ -4009,7 +4269,35 @@ export class RaviClient {
         body: { project, ...(options ?? {}) },
       });
     },
-    /** Publish a directory, file, or local artifact to a project Pages host */
+    password: {
+      /** Remove a route password after activating an explicit replacement visibility */
+      remove: async (args: string[], options?: {
+        console?: string;
+        execute?: boolean;
+        project?: string;
+        route?: string;
+        visibility?: string;
+      }): Promise<PagesPasswordRemoveReturn> => {
+        return this.transport.call({
+          groupSegments: ["pages","password"],
+          command: "remove",
+          body: { args, ...(options ?? {}) },
+        });
+      },
+      /** Show safe route password status without revealing the password */
+      status: async (args: string[], options?: {
+        console?: string;
+        project?: string;
+        route?: string;
+      }): Promise<PagesPasswordStatusReturn> => {
+        return this.transport.call({
+          groupSegments: ["pages","password"],
+          command: "status",
+          body: { args, ...(options ?? {}) },
+        });
+      }
+    },
+    /** Advanced/compat: upload to an existing host or local art_*; prefer pages ship unless the HTML is already art_* */
     publish: async (args: string[], options?: {
       artifactSlug?: string;
       artifactVersion?: string;
@@ -4018,6 +4306,7 @@ export class RaviClient {
       console?: string;
       description?: string;
       entrypoint?: string;
+      execute?: boolean;
       idempotencyKey?: string;
       noActivate?: boolean;
       project?: string;
@@ -4038,6 +4327,7 @@ export class RaviClient {
     /** List published Ravi Pages URLs in a Console project */
     published: async (project?: string, options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<PagesPublishedReturn> => {
@@ -4047,9 +4337,29 @@ export class RaviClient {
         body: { project, ...(options ?? {}) },
       });
     },
+    /** One-shot: ensure a Pages host and publish HTML or a site directory */
+    ship: async (args?: string[], options?: {
+      body?: string;
+      console?: string;
+      dir?: string;
+      entrypoint?: string;
+      execute?: boolean;
+      html?: string;
+      project?: string;
+      route?: string;
+      title?: string;
+      visibility?: string;
+    }): Promise<PagesShipReturn> => {
+      return this.transport.call({
+        groupSegments: ["pages"],
+        command: "ship",
+        body: { args, ...(options ?? {}) },
+      });
+    },
     /** Update a Ravi Pages site in a Console project */
     update: async (args: string[], options?: {
       console?: string;
+      execute?: boolean;
       project?: string;
       visibility?: string;
     }): Promise<PagesUpdateReturn> => {
@@ -4062,6 +4372,7 @@ export class RaviClient {
     /** Set a Ravi Pages site default visibility */
     visibility: async (args: string[], options?: {
       console?: string;
+      execute?: boolean;
       project?: string;
     }): Promise<PagesVisibilityReturn> => {
       return this.transport.call({
@@ -4155,6 +4466,7 @@ export class RaviClient {
     fixtures: {
       /** Reset and seed the canonical project fixtures used in demos and smoke tests */
       seed: async (options?: {
+        execute?: boolean;
         ownerAgent?: string;
       }): Promise<ProjectsFixturesSeedReturn> => {
         return this.transport.call({
@@ -4199,6 +4511,7 @@ export class RaviClient {
     },
     /** List projects */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -4212,6 +4525,7 @@ export class RaviClient {
     },
     /** List projects as an operational next-work surface */
     next: async (options?: {
+      fields?: string;
       status?: string;
       tag?: string;
     }): Promise<ProjectsNextReturn> => {
@@ -4252,6 +4566,7 @@ export class RaviClient {
       },
       /** List resource links for a project */
       list: async (project: string, options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         type?: string;
@@ -4320,6 +4635,7 @@ export class RaviClient {
       /** Dispatch a task using project owner/session defaults */
       dispatch: async (project: string, taskId: string, options?: {
         agent?: string;
+        execute?: boolean;
         session?: string;
       }): Promise<ProjectsTasksDispatchReturn> => {
         return this.transport.call({
@@ -4360,6 +4676,7 @@ export class RaviClient {
       },
       /** Start one workflow run from a project and link it in one step */
       start: async (project: string, specId: string, options?: {
+        execute?: boolean;
         role?: string;
         runId?: string;
       }): Promise<ProjectsWorkflowsStartReturn> => {
@@ -4397,6 +4714,7 @@ export class RaviClient {
         configure: async (profile_id: string, options?: {
           agentId?: string;
           dynamicPlaceholder?: string[];
+          execute?: boolean;
           firstMessage?: string;
           language?: string;
           prompt?: string;
@@ -4414,6 +4732,7 @@ export class RaviClient {
         },
         /** List available call profiles */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           tag?: string;
@@ -4435,6 +4754,7 @@ export class RaviClient {
       },
       /** Request a call to a person */
       request: async (options?: {
+        execute?: boolean;
         force?: boolean;
         person?: string;
         phone?: string;
@@ -4509,6 +4829,7 @@ export class RaviClient {
         },
         /** List call tools */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           profile?: string;
@@ -4606,6 +4927,7 @@ export class RaviClient {
         },
         /** List voice agents */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           tag?: string;
@@ -4671,6 +4993,7 @@ export class RaviClient {
     },
     /** List routes across all instances or for one instance */
     list: async (name?: string, options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -4692,7 +5015,7 @@ export class RaviClient {
   };
 
   readonly rules = {
-    /** Import provider rules into .ravi/rules/imported */
+    /** Import provider rules into .ravi/rules/imported (dry-run without --write) */
     import: async (source?: string, options?: {
       cwd?: string;
       force?: boolean;
@@ -4708,6 +5031,7 @@ export class RaviClient {
     /** List importable provider rule sources */
     sources: async (source?: string, options?: {
       cwd?: string;
+      fields?: string;
       includeUser?: boolean;
     }): Promise<RulesSourcesReturn> => {
       return this.transport.call({
@@ -4794,6 +5118,7 @@ export class RaviClient {
       /** List runtime provider credentials */
       list: async (options?: {
         all?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -4849,6 +5174,35 @@ export class RaviClient {
           groupSegments: ["runtime","credentials"],
           command: "status",
           body: { id },
+        });
+      }
+    },
+    env: {
+      /** Show whether an allowlisted env key is set; secret values are redacted */
+      get: async (key: string): Promise<RuntimeEnvGetReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","env"],
+          command: "get",
+          body: { key },
+        });
+      },
+      /** Atomically set one allowlisted key in the Ravi env file */
+      set: async (key: string, options?: {
+        stdin?: boolean;
+        value?: string;
+      }): Promise<RuntimeEnvSetReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","env"],
+          command: "set",
+          body: { key, ...(options ?? {}) },
+        });
+      },
+      /** Remove one allowlisted key from the Ravi env file */
+      unset: async (key: string): Promise<RuntimeEnvUnsetReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","env"],
+          command: "unset",
+          body: { key },
         });
       }
     },
@@ -4911,6 +5265,7 @@ export class RaviClient {
       list: async (options?: {
         disabled?: boolean;
         enabled?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -4939,6 +5294,104 @@ export class RaviClient {
           body: { id },
         });
       }
+    },
+    providers: {
+      claude: {
+        /** Set CLAUDE_CODE_OAUTH_TOKEN and attach a claude-oauth runtime credential */
+        configure: async (options?: {
+          agents?: string;
+          label?: string;
+          setProvider?: boolean;
+          stdin?: boolean;
+          token?: string;
+        }): Promise<RuntimeProvidersClaudeConfigureReturn> => {
+          return this.transport.call({
+            groupSegments: ["runtime","providers","claude"],
+            command: "configure",
+            body: { ...(options ?? {}) },
+          });
+        }
+      },
+      codex: {
+        login: {
+          /** Cancel a pending Codex device login */
+          cancel: async (id?: string): Promise<RuntimeProvidersCodexLoginCancelReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","codex","login"],
+              command: "cancel",
+              body: { id },
+            });
+          },
+          /** Import Codex CODEX_HOME after the human authorizes */
+          complete: async (id?: string, options?: {
+            agents?: string;
+            label?: string;
+            setProvider?: boolean;
+          }): Promise<RuntimeProvidersCodexLoginCompleteReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","codex","login"],
+              command: "complete",
+              body: { id, ...(options ?? {}) },
+            });
+          },
+          /** Start Codex device-code login and return URL + user code */
+          start: async (): Promise<RuntimeProvidersCodexLoginStartReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","codex","login"],
+              command: "start",
+              body: {},
+            });
+          },
+          /** Poll a Codex device login */
+          status: async (id?: string): Promise<RuntimeProvidersCodexLoginStatusReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","codex","login"],
+              command: "status",
+              body: { id },
+            });
+          }
+        }
+      },
+      grok: {
+        login: {
+          /** Cancel a pending Grok device login */
+          cancel: async (id?: string): Promise<RuntimeProvidersGrokLoginCancelReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","grok","login"],
+              command: "cancel",
+              body: { id },
+            });
+          },
+          /** Import the Grok auth profile after the human authorizes */
+          complete: async (id?: string, options?: {
+            agents?: string;
+            label?: string;
+            setProvider?: boolean;
+          }): Promise<RuntimeProvidersGrokLoginCompleteReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","grok","login"],
+              command: "complete",
+              body: { id, ...(options ?? {}) },
+            });
+          },
+          /** Start Grok device-code login and return URL + user code */
+          start: async (): Promise<RuntimeProvidersGrokLoginStartReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","grok","login"],
+              command: "start",
+              body: {},
+            });
+          },
+          /** Poll a Grok device login */
+          status: async (id?: string): Promise<RuntimeProvidersGrokLoginStatusReturn> => {
+            return this.transport.call({
+              groupSegments: ["runtime","providers","grok","login"],
+              command: "status",
+              body: { id },
+            });
+          }
+        }
+      }
     }
   };
 
@@ -4962,6 +5415,30 @@ export class RaviClient {
       }): Promise<SdkClientGenerateReturn> => {
         return this.transport.call({
           groupSegments: ["sdk","client"],
+          command: "generate",
+          body: { ...(options ?? {}) },
+        });
+      }
+    },
+    dart: {
+      /** Compare on-disk Ravi Dart SDK sources to a fresh emit; exit 1 on drift */
+      check: async (options?: {
+        out?: string;
+        version?: string;
+      }): Promise<SdkDartCheckReturn> => {
+        return this.transport.call({
+          groupSegments: ["sdk","dart"],
+          command: "check",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Generate the Ravi Dart SDK source files from the live registry */
+      generate: async (options?: {
+        out?: string;
+        version?: string;
+      }): Promise<SdkDartGenerateReturn> => {
+        return this.transport.call({
+          groupSegments: ["sdk","dart"],
           command: "generate",
           body: { ...(options ?? {}) },
         });
@@ -5030,6 +5507,7 @@ export class RaviClient {
     /** Show the full current self-context packet */
     context: async (options?: {
       depth?: string;
+      fields?: string;
       limit?: string;
     }): Promise<SelfContextReturn> => {
       return this.transport.call({
@@ -5140,20 +5618,46 @@ export class RaviClient {
         body: { nameOrKey, ...(options ?? {}) },
       });
     },
+    /** Close the current Slack thread session, optionally returning a result to its parent */
+    closeThread: async (options?: {
+      return?: string;
+      session?: string;
+    }): Promise<SessionsCloseThreadReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "close-thread",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Create a native Slack thread and start a child session in it */
+    createThread: async (message: string, options?: {
+      model?: string;
+      session?: string;
+    }): Promise<SessionsCreateThreadReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "create-thread",
+        body: { message, ...(options ?? {}) },
+      });
+    },
     /** Delete a session permanently */
-    delete: async (nameOrKey: string): Promise<SessionsDeleteReturn> => {
+    delete: async (nameOrKey: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "delete",
-        body: { nameOrKey },
+        body: { nameOrKey, ...(options ?? {}) },
       });
     },
     /** Delete one of this session agent's own channel messages */
-    deleteMessage: async (sessionOrMessage: string, messageRef?: string): Promise<SessionsDeleteMessageReturn> => {
+    deleteMessage: async (sessionOrMessage: string, messageRef?: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsDeleteMessageReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "delete-message",
-        body: { sessionOrMessage, messageRef },
+        body: { sessionOrMessage, messageRef, ...(options ?? {}) },
       });
     },
     /** Detach a chat/output target from a session */
@@ -5168,6 +5672,7 @@ export class RaviClient {
     },
     /** Edit one of this session agent's own text channel messages */
     editMessage: async (sessionOrMessage: string, messageOrText?: string, textArg?: string, options?: {
+      execute?: boolean;
       text?: string;
     }): Promise<SessionsEditMessageReturn> => {
       return this.transport.call({
@@ -5317,7 +5822,7 @@ export class RaviClient {
         });
       }
     },
-    /** Inspect or mutate persisted session goal state */
+    /** Control the runtime native goal and refresh its confirmed session snapshot */
     goal: async (action: string, nameOrKey: string, objective?: string, options?: {
       budget?: string;
       project?: string;
@@ -5366,6 +5871,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       ephemeral?: boolean;
+      fields?: string;
       limit?: string;
       live?: boolean;
       offset?: string;
@@ -5375,16 +5881,6 @@ export class RaviClient {
         groupSegments: ["sessions"],
         command: "list",
         body: { ...(options ?? {}) },
-      });
-    },
-    /** Keep a subscribed chat as listen-only for a session */
-    mute: async (nameOrKey: string, options?: {
-      chat?: string;
-    }): Promise<SessionsMuteReturn> => {
-      return this.transport.call({
-        groupSegments: ["sessions"],
-        command: "mute",
-        body: { nameOrKey, ...(options ?? {}) },
       });
     },
     /** Prune sessions inactive for a duration (dry-run by default) */
@@ -5405,11 +5901,22 @@ export class RaviClient {
     read: async (nameOrKey?: string, options?: {
       count?: string;
       messageId?: string;
+      visibility?: boolean;
       workspace?: boolean;
     }): Promise<SessionsReadReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "read",
+        body: { nameOrKey, ...(options ?? {}) },
+      });
+    },
+    /** Compute a bounded recap of a session (identity, goal, recent tail) */
+    recap: async (nameOrKey?: string, options?: {
+      count?: string;
+    }): Promise<SessionsRecapReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "recap",
         body: { nameOrKey, ...(options ?? {}) },
       });
     },
@@ -5422,16 +5929,19 @@ export class RaviClient {
       });
     },
     /** Reset a session (fresh start) */
-    reset: async (nameOrKey: string): Promise<SessionsResetReturn> => {
+    reset: async (nameOrKey: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsResetReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "reset",
-        body: { nameOrKey },
+        body: { nameOrKey, ...(options ?? {}) },
       });
     },
     runtime: {
       /** Queue a follow-up after the active runtime turn */
       followUp: async (session: string, text: string, options?: {
+        execute?: boolean;
         expectedTurn?: string;
         thread?: string;
         turn?: string;
@@ -5445,6 +5955,7 @@ export class RaviClient {
       /** Fork a runtime thread if the provider supports it */
       fork: async (session: string, threadId?: string, options?: {
         cwd?: string;
+        execute?: boolean;
         path?: string;
       }): Promise<SessionsRuntimeForkReturn> => {
         return this.transport.call({
@@ -5490,6 +6001,7 @@ export class RaviClient {
       },
       /** Rollback completed runtime turns */
       rollback: async (session: string, turns?: string, options?: {
+        execute?: boolean;
         thread?: string;
       }): Promise<SessionsRuntimeRollbackReturn> => {
         return this.transport.call({
@@ -5516,8 +6028,10 @@ export class RaviClient {
       agent?: string;
       barrier?: string;
       channel?: string;
+      effort?: string;
       immediate?: boolean;
       interactive?: boolean;
+      raw?: boolean;
       steer?: boolean;
       thread?: string;
       threadOwner?: string;
@@ -5611,16 +6125,6 @@ export class RaviClient {
         body: { nameOrKey, ...(options ?? {}) },
       });
     },
-    /** Allow a subscribed chat to receive session responses */
-    unmute: async (nameOrKey: string, options?: {
-      chat?: string;
-    }): Promise<SessionsUnmuteReturn> => {
-      return this.transport.call({
-        groupSegments: ["sessions"],
-        command: "unmute",
-        body: { nameOrKey, ...(options ?? {}) },
-      });
-    },
     /** Show runtime session visibility state */
     visibility: async (nameOrKey: string): Promise<SessionsVisibilityReturn> => {
       return this.transport.call({
@@ -5632,12 +6136,14 @@ export class RaviClient {
   };
 
   readonly settings = {
-    /** Delete a setting */
-    delete: async (key: string): Promise<SettingsDeleteReturn> => {
+    /** Delete a setting (dry-run by default; requires --execute) */
+    delete: async (key: string, options?: {
+      execute?: boolean;
+    }): Promise<SettingsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["settings"],
         command: "delete",
-        body: { key },
+        body: { key, ...(options ?? {}) },
       });
     },
     /** Get a setting value */
@@ -5650,6 +6156,7 @@ export class RaviClient {
     },
     /** List live settings (legacy account.* hidden by default) */
     list: async (options?: {
+      fields?: string;
       legacy?: boolean;
       limit?: string;
       offset?: string;
@@ -5689,6 +6196,7 @@ export class RaviClient {
     },
     /** List skill gate rules */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -5699,20 +6207,24 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
-    /** Delete a configured override and restore the default behavior */
-    reset: async (id: string): Promise<SkillGatesResetReturn> => {
+    /** Delete a configured override and restore the default behavior. Dry-run by default; pass --execute to write. */
+    reset: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<SkillGatesResetReturn> => {
       return this.transport.call({
         groupSegments: ["skill-gates"],
         command: "reset",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
-    /** Remove a custom gate or disable a default gate */
-    rm: async (id: string): Promise<SkillGatesRmReturn> => {
+    /** Remove a custom gate or disable a default gate. Dry-run by default; pass --execute to write. */
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<SkillGatesRmReturn> => {
       return this.transport.call({
         groupSegments: ["skill-gates"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Create or overwrite a skill gate rule */
@@ -5776,9 +6288,10 @@ export class RaviClient {
         body: { agent },
       });
     },
-    /** Install Ravi catalog skills or skills from an explicit source */
+    /** Install Ravi catalog skills or skills from an explicit source. Git sources and overwrites require --execute. */
     install: async (name?: string, options?: {
       all?: boolean;
+      execute?: boolean;
       overwrite?: boolean;
       plugin?: string;
       skill?: string;
@@ -5794,6 +6307,7 @@ export class RaviClient {
     /** List Ravi catalog skills, installed skills or source skills */
     list: async (options?: {
       codex?: boolean;
+      fields?: string;
       installed?: boolean;
       limit?: string;
       offset?: string;
@@ -5850,6 +6364,7 @@ export class RaviClient {
     /** List agents currently granted a skill (or list all grants for an agent with --agent) */
     who: async (skill?: string, options?: {
       agent?: string;
+      fields?: string;
     }): Promise<SkillsWhoReturn> => {
       return this.transport.call({
         groupSegments: ["skills"],
@@ -5907,7 +6422,7 @@ export class RaviClient {
         body: { file, ...(options ?? {}) },
       });
     },
-    /** Delete Slack standalone canvas access; dry-run unless --execute is set */
+    /** Revoke Slack standalone canvas access; dry-run unless --execute is set */
     canvasAccessDelete: async (canvas: string, options?: {
       channel?: string;
       channels?: string;
@@ -6032,6 +6547,7 @@ export class RaviClient {
     canvasSectionsLookup: async (canvas: string, options?: {
       channel?: string;
       containsText?: string;
+      fields?: string;
       sectionTypes?: string;
     }): Promise<SlackCanvasSectionsLookupReturn> => {
       return this.transport.call({
@@ -6068,6 +6584,7 @@ export class RaviClient {
     /** Read Slack conversation history */
     channelsHistory: async (channel: string, options?: {
       cursor?: string;
+      fields?: string;
       inclusive?: boolean;
       latest?: string;
       limit?: string;
@@ -6102,6 +6619,7 @@ export class RaviClient {
     channelsList: async (options?: {
       channel?: string;
       cursor?: string;
+      fields?: string;
       includeArchived?: boolean;
       limit?: string;
       types?: string;
@@ -6126,6 +6644,7 @@ export class RaviClient {
     filesList: async (options?: {
       channel?: string;
       cursor?: string;
+      fields?: string;
       limit?: string;
       slackChannel?: string;
       user?: string;
@@ -6310,6 +6829,7 @@ export class RaviClient {
     /** List specs from .ravi/specs */
     list: async (options?: {
       domain?: string;
+      fields?: string;
       kind?: string;
       limit?: string;
       offset?: string;
@@ -6361,6 +6881,7 @@ export class RaviClient {
     },
     /** List stickers in the typed catalog */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<StickersListReturn> => {
@@ -6371,17 +6892,20 @@ export class RaviClient {
       });
     },
     /** Remove a sticker catalog entry */
-    remove: async (id: string): Promise<StickersRemoveReturn> => {
+    remove: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<StickersRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["stickers"],
         command: "remove",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Send a sticker to the current WhatsApp chat */
     send: async (id: string, options?: {
       account?: string;
       channel?: string;
+      execute?: boolean;
       session?: string;
       to?: string;
     }): Promise<StickersSendReturn> => {
@@ -6413,6 +6937,7 @@ export class RaviClient {
     /** Download a bounded remote event batch from Console */
     pull: async (options?: {
       domain?: string;
+      execute?: boolean;
       limit?: string;
       project?: string;
       projectId?: string;
@@ -6428,6 +6953,7 @@ export class RaviClient {
     /** Upload a bounded outbox batch to Console */
     push: async (options?: {
       domain?: string;
+      execute?: boolean;
       limit?: string;
       maxBytes?: string;
       project?: string;
@@ -6488,6 +7014,7 @@ export class RaviClient {
     },
     /** List loaded tag rules from .ravi/tag-rules */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<TagRulesListReturn> => {
@@ -6619,6 +7146,7 @@ export class RaviClient {
     /** List tag definitions */
     list: async (options?: {
       cursor?: string;
+      fields?: string;
       kind?: string;
       limit?: string;
       order?: string;
@@ -6646,6 +7174,7 @@ export class RaviClient {
       cronJob?: string;
       cursor?: string;
       devinSession?: string;
+      fields?: string;
       hook?: string;
       insight?: string;
       instance?: string;
@@ -6760,12 +7289,14 @@ export class RaviClient {
           body: { ...(options ?? {}) },
         });
       },
-      /** Delete a task automation */
-      rm: async (id: string): Promise<TasksAutomationsRmReturn> => {
+      /** Delete a task automation (dry-run by default; --execute writes) */
+      rm: async (id: string, options?: {
+        execute?: boolean;
+      }): Promise<TasksAutomationsRmReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","automations"],
           command: "rm",
-          body: { id },
+          body: { id, ...(options ?? {}) },
         });
       },
       /** Show one task automation and its recent runs */
@@ -6843,12 +7374,14 @@ export class RaviClient {
           body: { taskId, ...(options ?? {}) },
         });
       },
-      /** Remove one gating dependency from a task */
-      rm: async (taskId: string, dependencyTaskId: string): Promise<TasksDepsRmReturn> => {
+      /** Remove one gating dependency from a task (dry-run by default; --execute writes) */
+      rm: async (taskId: string, dependencyTaskId: string, options?: {
+        execute?: boolean;
+      }): Promise<TasksDepsRmReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","deps"],
           command: "rm",
-          body: { taskId, dependencyTaskId },
+          body: { taskId, dependencyTaskId, ...(options ?? {}) },
         });
       }
     },
@@ -6858,6 +7391,7 @@ export class RaviClient {
       agent?: string;
       checkpoint?: string;
       effort?: string;
+      execute?: boolean;
       model?: string;
       reportEvents?: string;
       reportTo?: string;
@@ -6897,6 +7431,7 @@ export class RaviClient {
       allTime?: boolean;
       archived?: boolean;
       cursor?: string;
+      fields?: string;
       last?: string;
       limit?: string;
       mine?: boolean;
@@ -7082,6 +7617,7 @@ export class RaviClient {
     },
     /** List Ravi threads */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       owner?: string;
@@ -7237,6 +7773,7 @@ export class RaviClient {
     },
     /** List all event triggers */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -7248,11 +7785,13 @@ export class RaviClient {
       });
     },
     /** Delete a trigger */
-    rm: async (id: string): Promise<TriggersRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<TriggersRmReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Set trigger property */
@@ -7272,11 +7811,13 @@ export class RaviClient {
       });
     },
     /** Test trigger with fake event data */
-    test: async (id: string): Promise<TriggersTestReturn> => {
+    test: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<TriggersTestReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],
         command: "test",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** List trigger-ready NATS topics */
@@ -7357,6 +7898,7 @@ export class RaviClient {
     },
     /** List watches */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       provider?: string;
@@ -7369,11 +7911,13 @@ export class RaviClient {
       });
     },
     /** Remove a watch */
-    rm: async (id: string): Promise<WatchRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<WatchRmReturn> => {
       return this.transport.call({
         groupSegments: ["watch"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Show watch details */
@@ -7390,6 +7934,7 @@ export class RaviClient {
       agent?: string;
       cooldown?: string;
       event?: string;
+      execute?: boolean;
       message?: string;
       session?: string;
     }): Promise<WatchTriggerReturn> => {
@@ -7406,6 +7951,7 @@ export class RaviClient {
       /** Send read receipt (blue ticks) for a specific message */
       ack: async (contact: string, messageId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappDmAckReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],
@@ -7416,6 +7962,7 @@ export class RaviClient {
       /** Read recent messages from a DM chat */
       read: async (contact: string, options?: {
         account?: string;
+        fields?: string;
         last?: string;
         noAck?: boolean;
       }): Promise<WhatsappDmReadReturn> => {
@@ -7428,6 +7975,7 @@ export class RaviClient {
       /** Send a direct message to a contact */
       send: async (contact: string, message: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappDmSendReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],
@@ -7440,6 +7988,7 @@ export class RaviClient {
       /** Add participants to a group */
       add: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupAddReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7457,6 +8006,7 @@ export class RaviClient {
         agentModel?: string;
         agentProvider?: string;
         createAgent?: boolean;
+        execute?: boolean;
         skipTaggedAdmins?: boolean;
       }): Promise<WhatsappGroupCreateReturn> => {
         return this.transport.call({
@@ -7478,6 +8028,7 @@ export class RaviClient {
       /** Update group description */
       description: async (groupId: string, text: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupDescriptionReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7508,6 +8059,7 @@ export class RaviClient {
       /** Join a group via invite link/code */
       join: async (code: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupJoinReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7518,6 +8070,7 @@ export class RaviClient {
       /** Leave a group */
       leave: async (groupId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupLeaveReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7528,6 +8081,7 @@ export class RaviClient {
       /** List all groups the bot participates in */
       list: async (options?: {
         account?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WhatsappGroupListReturn> => {
@@ -7540,6 +8094,7 @@ export class RaviClient {
       /** Promote participants to admin */
       promote: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupPromoteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7550,6 +8105,7 @@ export class RaviClient {
       /** Remove participants from a group */
       remove: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7560,6 +8116,7 @@ export class RaviClient {
       /** Rename a group */
       rename: async (groupId: string, name: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRenameReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7570,6 +8127,7 @@ export class RaviClient {
       /** Revoke current invite link */
       revokeInvite: async (groupId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRevokeInviteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7580,6 +8138,7 @@ export class RaviClient {
       /** Send a message to a WhatsApp group */
       send: async (groupId: string, message: string, options?: {
         account?: string;
+        execute?: boolean;
         mention?: string[];
       }): Promise<WhatsappGroupSendReturn> => {
         return this.transport.call({
@@ -7591,6 +8150,7 @@ export class RaviClient {
       /** Update group settings (announcement, not_announcement, locked, unlocked) */
       settings: async (groupId: string, setting: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupSettingsReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7604,6 +8164,7 @@ export class RaviClient {
   readonly workObjects = {
     /** Execute one Work Object action */
     action: async (type: string, id: string, actionId: string, options?: {
+      execute?: boolean;
       value?: string;
     }): Promise<WorkObjectsActionReturn> => {
       return this.transport.call({
@@ -7650,11 +8211,13 @@ export class RaviClient {
   readonly workflows = {
     runs: {
       /** Archive one node run from workflow aggregate state */
-      archiveNode: async (runId: string, nodeKey: string): Promise<WorkflowsRunsArchiveNodeReturn> => {
+      archiveNode: async (runId: string, nodeKey: string, options?: {
+        execute?: boolean;
+      }): Promise<WorkflowsRunsArchiveNodeReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","runs"],
           command: "archive-node",
-          body: { runId, nodeKey },
+          body: { runId, nodeKey, ...(options ?? {}) },
         });
       },
       /** Cancel one workflow node run */
@@ -7667,6 +8230,7 @@ export class RaviClient {
       },
       /** List workflow runs */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WorkflowsRunsListReturn> => {
@@ -7702,6 +8266,7 @@ export class RaviClient {
       },
       /** Instantiate one workflow run from a spec */
       start: async (specId: string, options?: {
+        execute?: boolean;
         runId?: string;
       }): Promise<WorkflowsRunsStartReturn> => {
         return this.transport.call({
@@ -7748,6 +8313,7 @@ export class RaviClient {
       },
       /** List workflow specs */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WorkflowsSpecsListReturn> => {
@@ -7874,6 +8440,7 @@ export class RaviClient {
     /** List top-level comment threads for a video */
     comments: async (videoId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtCommentsReturn> => {
@@ -7906,6 +8473,7 @@ export class RaviClient {
     /** List videos and playlist-item IDs from one playlist */
     playlist: async (playlistId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtPlaylistReturn> => {
@@ -7918,6 +8486,7 @@ export class RaviClient {
     /** Add one video to a YouTube playlist */
     playlistAdd: async (playlistId: string, videoId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistAddReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -7929,6 +8498,7 @@ export class RaviClient {
     playlistCreate: async (title: string, options?: {
       connection?: string;
       description?: string;
+      execute?: boolean;
       privacy?: "public" | "private" | "unlisted";
     }): Promise<YtPlaylistCreateReturn> => {
       return this.transport.call({
@@ -7940,6 +8510,7 @@ export class RaviClient {
     /** Permanently delete a YouTube playlist without deleting its videos */
     playlistDelete: async (playlistId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -7950,6 +8521,7 @@ export class RaviClient {
     /** Remove one playlist item without deleting the video */
     playlistRemove: async (playlistItemId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -7960,6 +8532,7 @@ export class RaviClient {
     /** List playlists owned by the authenticated channel */
     playlists: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtPlaylistsReturn> => {
@@ -7972,6 +8545,7 @@ export class RaviClient {
     /** Publish a reply to a top-level YouTube comment */
     reply: async (commentId: string, text: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtReplyReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -7982,6 +8556,7 @@ export class RaviClient {
     /** Search videos in the authenticated channel */
     search: async (query: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtSearchReturn> => {
@@ -8004,6 +8579,7 @@ export class RaviClient {
     /** List channels followed by the authenticated channel */
     subscriptions: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtSubscriptionsReturn> => {
@@ -8016,6 +8592,7 @@ export class RaviClient {
     /** List recent comment threads with zero replies */
     unanswered: async (videoId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtUnansweredReturn> => {
@@ -8049,6 +8626,7 @@ export class RaviClient {
     /** Permanently delete an owned YouTube video */
     videoDelete: async (id: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtVideoDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8061,6 +8639,7 @@ export class RaviClient {
       category?: string;
       connection?: string;
       description?: string;
+      execute?: boolean;
       privacy?: "public" | "private" | "unlisted";
       tags?: string;
       title?: string;
@@ -8074,6 +8653,7 @@ export class RaviClient {
     /** List videos from the authenticated channel uploads playlist */
     videos: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtVideosReturn> => {

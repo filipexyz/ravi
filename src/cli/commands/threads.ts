@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -79,11 +80,48 @@ function parsePointerOption(value: string | undefined, label: string) {
   }
 }
 
-function resolveThreadForCli(ref: string, scope?: string): ThreadRecord {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// Threads have no braked op: every write is a local, reversible SQLite
+// append/status change (same class as tasks comment/close) — declared in
+// .ravi/specs/cli/threads/SPEC.md.
+// ============================================================
+
+interface ContractCallSite {
+  op: string;
+  asJson?: boolean;
+}
+
+/**
+ * Thread ids/slugs/titles are public through `threads list`, so
+ * THREAD_NOT_FOUND enriches the envelope with real similar candidates.
+ */
+function failThreadNotFound(op: string, threadRef: string, asJson?: boolean): never {
+  const candidates = listThreads({ limit: 40 }).items.flatMap((thread) => [thread.id, thread.slug, thread.title]);
+  contractFail(op, "THREAD_NOT_FOUND", `Thread not found: ${threadRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the thread id/slug (see suggestions; list with: ravi threads list --json)",
+      suggestions: suggestSimilar(threadRef, candidates),
+    },
+  });
+}
+
+/**
+ * `resolveThread` throws a plain "Thread not found: ..." on unknown refs; map
+ * that to the contract envelope. Other errors (ambiguous slug across scopes,
+ * invalid pointer) keep the legacy `fail()` path.
+ */
+function resolveThreadForCli(ref: string, scope: string | undefined, site: ContractCallSite): ThreadRecord {
   try {
     return resolveThread(ref, { scope: parsePointerOption(scope, "--scope") });
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    if (/thread not found/i.test(message)) failThreadNotFound(site.op, ref, site.asJson);
+    fail(message);
   }
 }
 
@@ -166,6 +204,8 @@ export class ThreadCommands {
     @Option({ flags: "--limit <n>", description: "Page size" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Page offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const parsedLimit = parseCliListLimit(limit);
     const parsedOffset = parseCliListOffset(offset);
@@ -178,6 +218,7 @@ export class ThreadCommands {
       offset: parsedOffset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "threads", "list"],
       limit: result.limit,
       offset: result.offset,
@@ -187,7 +228,7 @@ export class ThreadCommands {
     });
     const payload = {
       action: "list",
-      items: result.items.map(threadToJson),
+      items: pickFields(result.items.map(threadToJson), fields),
       pagination,
     };
     if (asJson) {
@@ -207,7 +248,7 @@ export class ThreadCommands {
     @Option({ flags: "--entries <n>", description: "Number of entries to include" }) entriesLimit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: "threads show", asJson });
     const entries = listThreadEntries(thread.id, {
       limit: parseCliListLimit(entriesLimit, { defaultLimit: 20, maxLimit: 100 }),
       order: "asc",
@@ -253,7 +294,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "note", description: "Append a note to a thread" })
-  @CommandAccess({ kind: "read", resource: "threads", action: "note", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "note", risk: "medium" })
   @Returns(threadEntryReturnSchema)
   note(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -279,10 +320,12 @@ export class ThreadCommands {
     visibility?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: "threads link", asJson });
+    const targetPointer = parsePointerOption(target, "target");
+    if (!targetPointer) fail("target is required.");
     const link = upsertThreadLink({
       threadId: thread.id,
-      target: parseThreadPointer(target),
+      target: targetPointer,
       role,
       label,
       visibility,
@@ -309,7 +352,7 @@ export class ThreadCommands {
     @Option({ flags: "--offset <n>", description: "Page offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: "threads entries", asJson });
     const entries = listThreadEntries(thread.id, {
       limit: parseCliListLimit(limit, { defaultLimit: 50, maxLimit: 200 }),
       offset: parseCliListOffset(offset),
@@ -335,7 +378,7 @@ export class ThreadCommands {
     @Option({ flags: "--scope <type:id>", description: "Scope when resolving a slug" }) scope?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: "threads brief", asJson });
     const brief = buildThreadBrief(thread.id);
     const payload = { action: "brief", thread: threadToJson(thread), brief };
     if (asJson) {
@@ -347,7 +390,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "close", description: "Close a thread" })
-  @CommandAccess({ kind: "read", resource: "threads", action: "close", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "close", risk: "medium" })
   @Returns(threadActionReturnSchema)
   close(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -355,7 +398,7 @@ export class ThreadCommands {
     @Option({ flags: "--reason <reason>", description: "Closure reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: "threads close", asJson });
     const updated = updateThreadStatus(thread.id, "closed", { reason });
     const payload = { action: "close", thread: threadToJson(updated) };
     if (asJson) {
@@ -374,7 +417,7 @@ export class ThreadCommands {
     visibility?: string,
     asJson?: boolean,
   ) {
-    const thread = resolveThreadForCli(threadRef, scope);
+    const thread = resolveThreadForCli(threadRef, scope, { op: `threads ${kind}`, asJson });
     const entry = addThreadEntry({
       threadId: thread.id,
       kind,

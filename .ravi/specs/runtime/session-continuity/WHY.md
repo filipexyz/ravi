@@ -45,3 +45,16 @@ The host must plan a canonical Ravi fork first, then choose a materialization st
 Message edit is not just "make a new child thread". The channel conversation has changed. The current session should behave as if the edited message replaced the original message, with later messages preserved.
 
 That is a rebase of the current Ravi session, not a branch for exploration.
+
+## Why Inactivity Does Not Disable Resume
+
+Missing provider activity is an ambiguous delivery outcome: the turn may have
+been rejected, may still be running, or may already be complete while its
+callback was lost. Starting a fresh provider session with `resume=false`
+discards valid conversation context but still does not answer which outcome
+occurred.
+
+Ravi instead keeps a stable logical delivery id, resumes compatible provider
+state, and lets the adapter reconcile that id before replay. A bounded circuit
+breaker stops repeated silence. This preserves continuity while preventing both
+duplicate turns and infinite recovery loops.

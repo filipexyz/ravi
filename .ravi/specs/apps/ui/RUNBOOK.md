@@ -18,9 +18,11 @@
    `view`.
 3. Confirm each route view exists in `interfaces.ui.views`.
 4. Confirm each view query/action references a declared top-level operation.
-5. Confirm each operation declares a real interface target.
+5. Confirm each operation declares `cli` or an allowlisted router `builtin`.
 6. Confirm event topics in `refreshOn` are dot-separated Ravi topics.
 7. Remove raw CSS, HTML, JS, bundle, component, class, or Tailwind keys.
+8. Confirm the UI invokes the generic App Router and does not spawn the CLI
+   directly.
 
 ## Debug A Stale UI
 

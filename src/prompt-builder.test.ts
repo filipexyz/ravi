@@ -67,6 +67,7 @@ describe("buildSystemPrompt", () => {
       "system.commands",
       "session.attach",
       "session.actions",
+      "bug.report",
       "automation.background_followups",
       "session.runtime",
       "session.boundary",
@@ -79,10 +80,16 @@ describe("buildSystemPrompt", () => {
     const prompt = renderPromptSections(sections);
     expect(prompt.startsWith("## Identidade\n\nVocê é Ravi.")).toBe(true);
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
-    expect(prompt).toContain("ravi sessions unmute");
+    expect(prompt).toContain("A normal reply returns to the chat or thread that supplied the current turn.");
+    expect(prompt).not.toContain("ravi sessions unmute");
+    expect(prompt).not.toContain("speech=muted");
     expect(prompt).toContain("ravi sessions actions --json");
-    expect(prompt).toContain("ravi sessions delete-message <message-id>");
-    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("ravi sessions delete-message <message-id> --execute");
+    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
+    expect(prompt).toContain("## Bug Reports");
+    expect(prompt).toContain("ask the user whether to file a Ravi bug report");
+    expect(prompt).toContain("ravi bug report");
+    expect(prompt).toContain("Do not use `ravi feedback` for product/runtime bugs");
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
     expect(prompt).toContain("Do this in the background without announcing it in your visible response.");
@@ -129,6 +136,9 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).not.toContain("## Background Followup Automation");
     expect(prompt).not.toContain("ravi cron add");
+    expect(prompt).toContain("ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID");
+    expect(prompt).not.toContain("ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID --no-ack");
+    expect(prompt).toContain("ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute");
   });
 
   it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {
@@ -144,7 +154,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/^## Runtime[\s\S]+## Legacy Extra/);
   });
 
-  it("instructs agents to recover missing context only from the current session", () => {
+  it("names recap as a same-session tool and allows authorized recap of another session", () => {
     const prompt = buildSystemPrompt(
       "main",
       {
@@ -158,8 +168,18 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("## Session Boundary");
     expect(prompt).toContain("current session (main-dm-615153)");
+    expect(prompt).toContain("ravi sessions recap --json");
     expect(prompt).toContain("ravi sessions read --json");
-    expect(prompt).toContain("Never recover missing context from another DM/group/session");
+    expect(prompt).toContain("ravi sessions recap <nameOrKey> --json");
+    expect(prompt).not.toContain("ravi sessions recap main-dm-615153 --json");
+    expect(prompt).toContain("access session:<id>");
+    expect(prompt).toContain("SESSION_NOT_FOUND");
+    expect(prompt).toContain("A chat attach is not permission to recap");
+    expect(prompt).toContain(
+      "Never recover missing context by dumping another DM, group, or chat, reading `MEMORY.md`",
+    );
+    expect(prompt).toContain("Do not expect a recap to be injected into this prompt");
+    expect(prompt).not.toContain("Never recover missing context from another DM/group/session");
   });
 
   describe("proactive scheduling prompt", () => {

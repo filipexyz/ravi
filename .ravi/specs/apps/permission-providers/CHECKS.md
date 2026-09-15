@@ -17,6 +17,7 @@ ravi specs sync --json
 - A manifest with `permissions.provider` and missing `version` fails
   validation.
 - A manifest with unknown provider `interface` fails validation.
+- Provider interface other than `builtin` or `cli` fails validation.
 - A manifest with provider timeout above the runtime maximum fails validation
   or warns with a bounded clamp.
 - A manifest with provider operation pointing to a mutating/protected operation
@@ -62,6 +63,8 @@ ravi specs sync --json
 - Request does not include credentials or bearer tokens.
 - Provider subprocess env does not include raw context keys or credential-like
   variables.
+- An allowed domain operation receives a new bounded child key only after the
+  provider decision completes.
 - Request does not depend on display names, phone numbers, chat titles, session
   labels, or prompt annotations for authority.
 - Resource owner is canonical when ownership matters.
@@ -101,6 +104,15 @@ ravi specs sync --json
   denial.
 - Grant suggestion audit includes proposed subject/relation/object/TTL/reason
   without applying it.
+
+## Protocol Boundary Checks
+
+- Provider CLI reads one request from stdin and writes one decision to stdout.
+- Provider request/decision JSON is used only by the Permission Provider
+  Runtime.
+- Ordinary app operations are not required to implement the provider JSON ABI.
+- Ordinary app operations talk to Ravi through public CLI commands under their
+  child context.
 
 ## Migration Checks
 

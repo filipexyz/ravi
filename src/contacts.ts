@@ -2935,9 +2935,36 @@ function findCanonicalContactByIdentity(database: Database, identity: string): C
     candidates.add(`lid:${normalized}`);
   }
 
+  const byExactId = getCanonicalCompatContactById(database, raw);
+  if (byExactId) return byExactId;
+
+  // Exact platform identities must win over compatibility heuristics. A
+  // legacy contact created by phone-normalizing a Slack id such as
+  // U0BAA2B1LTS to 021 must never shadow the real Slack identity.
+  const exactPlatformIdentity = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE owner_type = 'contact'
+        AND (
+          id = ?
+          OR normalized_platform_user_id COLLATE NOCASE = ?
+          OR platform_user_id COLLATE NOCASE = ?
+        )
+      ORDER BY is_primary DESC, updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(raw, raw, raw) as PlatformIdentityRow | undefined;
+  if (exactPlatformIdentity?.owner_id) {
+    const byExactPlatformIdentity = getCanonicalCompatContactById(database, exactPlatformIdentity.owner_id);
+    if (byExactPlatformIdentity) return byExactPlatformIdentity;
+  }
+
   for (const candidate of candidates) {
-    const byId = getCanonicalCompatContactById(database, candidate);
-    if (byId) return byId;
+    if (candidate === raw) continue;
+    const byCompatibilityId = getCanonicalCompatContactById(database, candidate);
+    if (byCompatibilityId) return byCompatibilityId;
   }
 
   const platformIdentity = findDefaultPlatformIdentityForIdentity(database, raw);
@@ -7655,6 +7682,7 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
   const platformSenderId = input.platformSenderId.trim();
   if (!platformSenderId) throw new Error("Platform sender id is required");
   const contactIdentity = (input.contactIdentity?.trim() || platformSenderId).trim();
+  const scopedPlatformIdentityOnly = channel === "slack";
   const desiredStatus = contactStatusFromIntakeMode(input.intakeMode ?? "off");
   const intakeSource = input.source?.trim() || "inbound_contact_intake";
   const eventIds: string[] = [];
@@ -7682,7 +7710,7 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         contact = getCanonicalCompatContactById(database, existingIdentity.owner_id);
         platformIdentity = rowToPlatformIdentity(existingIdentity);
       }
-      if (!contact && contactIdentity) {
+      if (!contact && contactIdentity && !scopedPlatformIdentityOnly) {
         contact = findCanonicalContactByIdentity(database, contactIdentity);
       }
 
@@ -7700,13 +7728,32 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
       const evidence = inboundIntakeEventEvidence(input);
 
       if (!contact) {
-        contact = createCanonicalContactForIdentity(database, contactIdentity, {
-          name: input.displayName ?? null,
-          status: desiredStatus!,
-          source: "inbound",
-          tags: [],
-          notes: {},
-        });
+        if (scopedPlatformIdentityOnly) {
+          const id = generateId();
+          upsertCanonicalContactRecord(database, {
+            id,
+            displayName: input.displayName ?? null,
+            metadata: { source: "contacts", identityModel: "canonical" },
+          });
+          upsertCanonicalContactPolicy(database, {
+            contactId: id,
+            status: desiredStatus!,
+            replyMode: "auto",
+            tags: [],
+            notes: {},
+            source: "inbound",
+          });
+          contact = getCanonicalCompatContactById(database, id);
+        } else {
+          contact = createCanonicalContactForIdentity(database, contactIdentity, {
+            name: input.displayName ?? null,
+            status: desiredStatus!,
+            source: "inbound",
+            tags: [],
+            notes: {},
+          });
+        }
+        if (!contact) throw new Error("Inbound contact was not created.");
         createdContact = true;
         const createdEvent = insertContactEvent(database, {
           contactId: contact.id,
@@ -9131,9 +9178,13 @@ export function deleteContact(phone: string): boolean {
  */
 export function setContactStatus(phone: string, status: ContactStatus): void {
   const database = ensureDb();
-  const normalized = assertPersonOrOrgIdentity(phone, "setContactStatus");
-  const contact = resolveContact(normalized);
+  // Resolve the original reference first. Non-phone identities (for example a
+  // Slack user id) are already canonical platform identities and must not be
+  // passed through phone normalization, which would strip their letters and
+  // update a different compatibility contact.
+  const contact = resolveContact(phone);
   if (!contact) {
+    const normalized = assertPersonOrOrgIdentity(phone, "setContactStatus");
     upsertContact(normalized, null, status);
   } else {
     upsertCanonicalContactPolicy(database, {

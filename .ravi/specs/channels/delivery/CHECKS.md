@@ -6,6 +6,10 @@
 - [ ] Ambiguous send timeouts MUST NOT blindly retry when the platform lacks idempotency.
 - [ ] Delivery state MUST NOT overwrite runtime status.
 - [ ] Runtime status MUST NOT be inferred from delivery receipts.
+- [ ] Tool presentation MUST come from registered runtime metadata and the concrete invocation, never downstream tool-name heuristics.
+- [ ] Tool presentation MUST redact credentials, content, patches, environment values and local paths before channel projection.
+- [ ] Tool start and completion MUST preserve one stable presentation and terminal duration without exposing raw output.
+- [ ] Unknown tools MUST retain their exact normalized name and use a safe fallback presentation.
 - [ ] A successful provider send MUST create a SQLite receipt keyed by idempotency key before canonical persistence or telemetry.
 - [ ] Provider send MUST be preceded by an atomic owner lease and immutable request fingerprint claim.
 - [ ] An active foreign claim MUST NAK without provider send; an expired claim MAY resume with the same provider idempotency token.

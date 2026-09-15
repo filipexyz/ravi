@@ -59,7 +59,7 @@ Credential fallback is a runtime/provider concern. Routes, sessions, tasks, chan
 
 ## Terminology
 
-- **Runtime provider**: Ravi adapter id such as `claude`, `codex`, or `pi`.
+- **Runtime provider**: Ravi adapter id such as `claude`, `codex`, `pi`, or `grok`.
 - **Upstream provider**: Provider behind a runtime adapter, such as `anthropic`, `openai`, `google`, `openrouter`, `groq`, or `kimi-coding`.
 - **Credential pool**: Ordered set of credentials eligible for a runtime provider, upstream provider, model family, agent, or task scope.
 - **Credential slot**: One configured credential entry with metadata, secret bindings, state, and health.

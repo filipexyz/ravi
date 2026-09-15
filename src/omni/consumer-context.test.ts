@@ -5,6 +5,7 @@ import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 import type { MessageMetadata } from "../router/router-db.js";
+import type { RouteConfig } from "../router/types.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterIndexModule = await import("../router/index.js");
@@ -18,7 +19,6 @@ const actualDbCanonicalizeDmChatForContact = actualRouterDbModule.dbCanonicalize
 const actualDbContactDmNormalizedChatId = actualRouterDbModule.dbContactDmNormalizedChatId;
 const actualDbUpsertChatMessage = actualRouterDbModule.dbUpsertChatMessage;
 const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
-const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
 const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
 const actualGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
 const actualGetSession = actualRouterSessionsModule.getSession;
@@ -42,10 +42,18 @@ const fetchCachedOmniMediaMock = mock(async () => null as Buffer | null);
 const fetchOmniMediaMock = mock(async () => null as Buffer | null);
 const saveToAgentAttachmentsMock = mock(async () => null as string | null);
 const transcribeAudioMock = mock(async () => ({ text: "" }));
+const handleSlashCommandMock = mock(async (_input: Record<string, unknown>) => false);
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
 let routeResult: Record<string, unknown> | null = null;
+let configuredAgentMode: "active" | "sentinel" = "active";
+let configuredRoutes: RouteConfig[] = [];
+let useAccountAgentFallback = true;
+const commitMatchedRouteCalls: Array<{
+  matched: { agentId: string; route?: { pattern?: string } };
+  params: { phone: string };
+}> = [];
 
 function defaultRouteResult(): Record<string, unknown> {
   return {
@@ -56,7 +64,7 @@ function defaultRouteResult(): Record<string, unknown> {
     agent: {
       id: "main",
       cwd: agentCwd,
-      mode: "active",
+      mode: configuredAgentMode,
     },
   };
 }
@@ -73,10 +81,12 @@ mock.module("../nats.js", () => ({
   getNats: () => {
     throw new Error("not used in this test");
   },
+  isExplicitConnect: () => false,
   publish: mock(async () => {}),
   nats: {
     emit: mock(async () => {}),
     subscribe: async function* () {},
+    close: mock(async () => {}),
   },
 }));
 
@@ -88,7 +98,7 @@ mock.module("./session-stream.js", () => ({
 }));
 
 mock.module("../slash/index.js", () => ({
-  handleSlashCommand: mock(async () => false),
+  handleSlashCommand: handleSlashCommandMock,
 }));
 
 // Note: we intentionally do NOT override `matchRoute` here. Overriding a
@@ -100,7 +110,10 @@ mock.module("../slash/index.js", () => ({
 mock.module("../router/index.js", () => ({
   ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
-  commitMatchedRoute: () => routeResult,
+  commitMatchedRoute: (matched: { agentId: string; route?: { pattern?: string } }, params: { phone: string }) => {
+    commitMatchedRouteCalls.push({ matched, params });
+    return routeResult;
+  },
 }));
 
 mock.module("../config-store.js", () => ({
@@ -117,13 +130,19 @@ mock.module("../config-store.js", () => ({
           contactIntakeMode,
         },
       },
-      routes: [],
+      routes: configuredRoutes,
       agents: {
         main: {
           id: "main",
           cwd: agentCwd,
           dmScope: "main",
-          mode: "active",
+          mode: configuredAgentMode,
+        },
+        john: {
+          id: "john",
+          cwd: agentCwd,
+          dmScope: "per-peer",
+          mode: configuredAgentMode,
         },
       },
       defaultAgent: "main",
@@ -134,7 +153,7 @@ mock.module("../config-store.js", () => ({
       // branch. When routeResult is set, accountAgents maps main→main so
       // matchRoute returns a valid match; commitMatchedRoute is then mocked
       // to inject the test's routeResult for downstream assertions.
-      accountAgents: routeResult ? { main: "main" } : {},
+      accountAgents: useAccountAgentFallback && routeResult ? { main: "main" } : {},
       ignoredOmniInstanceIds: [],
     }),
   },
@@ -227,9 +246,6 @@ mock.module("../router/router-db.js", () => ({
     chatParticipantCalls.push(input);
     return actualDbUpsertChatParticipant(input);
   }),
-  dbBindSessionToChat: mock((input: Parameters<typeof actualDbBindSessionToChat>[0]) =>
-    actualDbBindSessionToChat(input),
-  ),
   dbUpsertSessionParticipant: mock((input: Parameters<typeof actualDbUpsertSessionParticipant>[0]) => {
     sessionParticipantCalls.push(input);
     return actualDbUpsertSessionParticipant(input);
@@ -294,8 +310,12 @@ describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
     agentCwd = join(stateDir, "agent");
+    configuredAgentMode = "active";
     routeResult = defaultRouteResult();
     contactIntakeMode = "off";
+    configuredRoutes = [];
+    useAccountAgentFallback = true;
+    commitMatchedRouteCalls.length = 0;
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
     chatMessageCalls.length = 0;
@@ -315,10 +335,12 @@ describe("OmniConsumer channel context", () => {
     fetchOmniMediaMock.mockClear();
     saveToAgentAttachmentsMock.mockClear();
     transcribeAudioMock.mockClear();
+    handleSlashCommandMock.mockClear();
     fetchCachedOmniMediaMock.mockImplementation(async () => null);
     fetchOmniMediaMock.mockImplementation(async () => null);
     saveToAgentAttachmentsMock.mockImplementation(async () => null);
     transcribeAudioMock.mockImplementation(async () => ({ text: "" }));
+    handleSlashCommandMock.mockImplementation(async () => false);
   });
 
   afterEach(async () => {
@@ -391,6 +413,95 @@ describe("OmniConsumer channel context", () => {
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
     });
+  });
+
+  it("includes the required execution confirmation in sentinel reply guidance", async () => {
+    configuredAgentMode = "sentinel";
+    routeResult = defaultRouteResult();
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-sentinel-guidance",
+      type: "message.received",
+      payload: {
+        externalId: "msg-sentinel-guidance",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "observe" },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0]?.[1].prompt).toContain("whatsapp dm send --execute to reply if instructed");
+    expect(sender.sendTyping).not.toHaveBeenCalled();
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  it("passes the provider message identifier to intercepted slash commands", async () => {
+    handleSlashCommandMock.mockImplementation(async () => true);
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-native-action",
+      type: "message.received",
+      payload: {
+        externalId: "msg-native-action",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "/connect",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(handleSlashCommandMock).toHaveBeenCalledTimes(1);
+    expect(handleSlashCommandMock.mock.calls[0]?.[0]).toMatchObject({
+      text: "/connect",
+      messageId: "msg-native-action",
+      senderId: "178035101794451",
+      chatId: "120363424772797713@g.us",
+      channelType: "whatsapp-baileys",
+      accountId: "main",
+    });
+    expect(promptCalls).toHaveLength(0);
   });
 
   it("resolves new WhatsApp LID group senders through contact intake without canonicalizing the group as a DM", async () => {
@@ -478,7 +589,204 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("does not mute an existing primary output subscription on repeated inbound from the same chat", async () => {
+  it("routes WhatsApp LID DMs through the resolved sender phone", async () => {
+    const route: RouteConfig = {
+      pattern: "5511947879044",
+      accountId: "main",
+      agent: "main",
+      dmScope: "main",
+      channel: "whatsapp",
+    };
+    configuredRoutes = [route];
+    useAccountAgentFallback = false;
+    routeResult = {
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      dmScope: "main",
+      route,
+      agent: {
+        id: "main",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:main:main", "main", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-dm-lid-route",
+      type: "message.received",
+      payload: {
+        externalId: "msg-dm-lid-route",
+        chatId: "178035101794451@lid",
+        from: "178035101794451@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0]?.[1].context).toMatchObject({
+      senderId: "178035101794451",
+      senderPhone: "5511947879044",
+      isGroup: false,
+    });
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("5511947879044");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("main");
+  });
+
+  it("routes unresolved WhatsApp LID DMs by lid: identity instead of falling through to main", async () => {
+    const lidRoute: RouteConfig = {
+      pattern: "lid:224420715061374",
+      accountId: "main",
+      agent: "john",
+      priority: 10,
+      channel: "whatsapp",
+    };
+    const fallbackRoute: RouteConfig = {
+      pattern: "*",
+      accountId: "main",
+      agent: "main",
+      priority: 0,
+    };
+    configuredRoutes = [lidRoute, fallbackRoute];
+    useAccountAgentFallback = true;
+    routeResult = {
+      sessionKey: "agent:john:dm:lid:224420715061374",
+      sessionName: "john-dm-061374",
+      dmScope: "per-peer",
+      route: lidRoute,
+      agent: {
+        id: "john",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:john:dm:lid:224420715061374", "john", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-dm-lid-unresolved",
+      type: "message.received",
+      payload: {
+        externalId: "msg-dm-lid-unresolved",
+        chatId: "224420715061374@lid",
+        from: "224420715061374@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Dudu",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("lid:224420715061374");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("john");
+    expect(commitMatchedRouteCalls[0]?.matched.route?.pattern).toBe("lid:224420715061374");
+    expect(promptCalls).toHaveLength(1);
+  });
+
+  it("does not canonicalize Slack U-ids when routing DMs", async () => {
+    const slackRoute: RouteConfig = {
+      pattern: "U012ABCDEF",
+      accountId: "main",
+      agent: "john",
+      priority: 10,
+      channel: "slack",
+    };
+    configuredRoutes = [slackRoute];
+    useAccountAgentFallback = false;
+    routeResult = {
+      sessionKey: "agent:john:slack:dm:U012ABCDEF",
+      sessionName: "john-dm-abcdef",
+      dmScope: "per-peer",
+      route: slackRoute,
+      agent: {
+        id: "john",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:john:slack:dm:U012ABCDEF", "john", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.slack.instance-1", {
+      id: "evt-slack-uid",
+      type: "message.received",
+      payload: {
+        externalId: "msg-slack-uid",
+        chatId: "D012ABCDEF",
+        from: "U012ABCDEF",
+        content: {
+          type: "text",
+          text: "hello",
+        },
+        rawPayload: {
+          isDm: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "slack",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+    expect(commitMatchedRouteCalls[0]?.params.phone).toBe("U012ABCDEF");
+    expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("john");
+  });
+
+  it("keeps an existing primary output subscription on repeated inbound from the same chat", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const sender = {
       send: mock(async () => {}),
@@ -521,11 +829,11 @@ describe("OmniConsumer channel context", () => {
     expect(subscriptions).toHaveLength(1);
     expect(subscriptions[0]).toMatchObject({
       role: "primary",
-      speechMode: "speak",
     });
     expect(subscriptions[0].outputAttachedAt).toBeDefined();
+    expect(actualRouterDbModule.dbLegacySessionChatBindingsTableExists()).toBe(false);
     expect(promptCalls).toHaveLength(2);
-    expect(promptCalls[1][1].prompt).toContain("source_speech=speak");
+    expect(promptCalls[1][1].prompt).not.toContain("[session surface");
   });
 
   it("records consumer lag from plugin received timestamps in channel traces", async () => {
@@ -642,7 +950,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("renders attached input origin hints with attach-as-output guidance", async () => {
+  it("leaves session-surface instructions to the central dispatcher", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const primaryChat = actualDbUpsertChat({
       channel: "whatsapp",
@@ -702,11 +1010,9 @@ describe("OmniConsumer channel context", () => {
     });
     expect(promptCalls).toHaveLength(1);
     const [, prompt] = promptCalls[0];
-    expect(prompt.prompt).toContain(`[session surfaces] session=dev source_chat=${inputChat?.id}`);
-    expect(prompt.prompt).toContain("source_speech=muted");
-    expect(prompt.prompt).toContain(`ravi sessions unmute dev --chat ${inputChat?.id}`);
-    expect(prompt.prompt).toContain("Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics");
-    expect(prompt.prompt).not.toContain("ravi sessions focus");
+    expect(prompt.prompt).not.toContain("[session surface");
+    expect(prompt.prompt).not.toContain("ravi sessions unmute");
+    expect(actualRouterSessionsModule.findSessionByAttachedChat(inputChat!.id)?.sessionKey).toBe(sessionKey);
   });
 
   it("stores inbound DM messages and runs contact intake before no-route return", async () => {
@@ -827,6 +1133,50 @@ describe("OmniConsumer channel context", () => {
         },
       },
     });
+  });
+
+  it("ignores WhatsApp Status before chat or contact persistence", async () => {
+    contactIntakeMode = "pending";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-status-broadcast",
+      type: "message.received",
+      payload: {
+        externalId: "msg-status-broadcast",
+        chatId: "status@broadcast",
+        from: "5511999904321@s.whatsapp.net",
+        content: {
+          type: "image",
+          text: "status must not become a private chat",
+        },
+        rawPayload: {
+          pushName: "Status Author",
+          resolvedSenderPhone: "5511999904321",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "history-sync",
+      },
+      timestamp: 1_777_777_777_000,
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(0);
+    expect(chatMessageCalls).toHaveLength(0);
+    expect(chatParticipantCalls).toHaveLength(0);
+    expect(messageMetaSaveCalls).toHaveLength(0);
+    expect(promptCalls).toHaveLength(0);
+    expect(sessionParticipantCalls).toHaveLength(0);
   });
 
   it("captures old timestamp messages without replaying them to runtime", async () => {

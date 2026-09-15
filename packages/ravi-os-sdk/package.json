@@ -1,6 +1,6 @@
 {
   "name": "@ravi-os/sdk",
-  "version": "0.260716.1",
+  "version": "0.260725.1",
   "description": "Type-safe TypeScript SDK for the Ravi gateway, generated from the live registry.",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,6 +33,18 @@
     "./streaming": {
       "types": "./dist/streaming.d.ts",
       "default": "./dist/streaming.js"
+    },
+    "./channel-backend": {
+      "types": "./dist/channel-backend.d.ts",
+      "default": "./dist/channel-backend.js"
+    },
+    "./channel-runtime-events": {
+      "types": "./dist/channel-runtime-events.d.ts",
+      "default": "./dist/channel-runtime-events.js"
+    },
+    "./native-channel-driver": {
+      "types": "./dist/native-channel-driver.d.ts",
+      "default": "./dist/native-channel-driver.js"
     },
     "./transport/http": {
       "types": "./dist/transport/http.d.ts",

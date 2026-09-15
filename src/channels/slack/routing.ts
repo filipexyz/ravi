@@ -125,7 +125,7 @@ export function shouldIgnoreSlackMessageEvent(
 
 export function isSlackMessageEventStructurallyEligible(event: SlackEventPayload): boolean {
   return (
-    event.type === "message" &&
+    (event.type === "message" || event.type === "app_mention") &&
     event.hidden !== true &&
     Boolean(cleanSlackId(event.channel)) &&
     Boolean(cleanSlackId(event.ts)) &&

@@ -1,3 +1,4 @@
+import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -19,6 +20,11 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import {
+  CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
+  migrateAgentDefaultsRecord,
+  migrateLegacyReadCapabilityInputs,
+} from "../permissions/command-access-kind-migration.js";
 import { RUNTIME_EFFORT_LEVELS } from "../runtime/effort.js";
 import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
@@ -260,6 +266,8 @@ interface ChatRow {
   instance_id: string;
   platform_chat_id: string;
   normalized_chat_id: string;
+  actor_id: string | null;
+  agent_id: string | null;
   chat_type: string;
   title: string | null;
   avatar_url: string | null;
@@ -295,16 +303,21 @@ interface ChatMessageRow {
   channel: string;
   instance_id: string;
   provider_message_id: string;
+  client_message_id: string | null;
   raw_chat_id: string;
   raw_sender_id: string | null;
   normalized_sender_id: string | null;
   actor_type: string;
+  actor_id: string | null;
   contact_id: string | null;
   agent_id: string | null;
+  origin_session_key: string | null;
   platform_identity_id: string | null;
   message_type: string | null;
   content_json: string | null;
   raw_provenance_json: string | null;
+  revision: number | null;
+  state: string | null;
   provider_timestamp: number | null;
   edited_at: number | null;
   deleted_at: number | null;
@@ -315,6 +328,52 @@ interface ChatMessageRow {
 
 interface ChatMessageWithSortKeyRow extends ChatMessageRow {
   message_sort_key: string;
+}
+
+interface ChannelBackendIngressReceiptRow {
+  id: string;
+  channel_instance_id: string;
+  idempotency_key: string;
+  request_fingerprint: string;
+  initial_request_id: string;
+  local_actor_id: string;
+  agent_id: string;
+  chat_id: string;
+  message_id: string;
+  session_key: string;
+  session_name: string;
+  turn_id: string;
+  external_json: string;
+  prompt_json: string | null;
+  state: ChannelBackendIngressPublicationState;
+  publish_claim_id: string | null;
+  publish_claim_expires_at: number | null;
+  published_at: number | null;
+  accepted_at: number;
+  updated_at: number;
+}
+
+interface ChannelBackendRuntimeStateRow {
+  turn_id: string;
+  state: ChannelBackendRuntimeState;
+  last_sequence: number;
+  last_delta_sequence: number;
+  assistant_message_id: string | null;
+  runtime_generation_id: string | null;
+  terminal_error_json: string | null;
+  updated_at: number;
+}
+
+interface ChannelBackendRuntimeInterruptRow {
+  turn_id: string;
+  idempotency_key: string;
+  request_id: string;
+  state: "accepted" | "publishing" | "published";
+  publish_claim_id: string | null;
+  publish_claim_expires_at: number | null;
+  published_at: number | null;
+  requested_at: number;
+  updated_at: number;
 }
 
 interface ChatReadingListRow {
@@ -357,16 +416,6 @@ interface ChatReadingCursorRow {
   last_read_at: number | null;
   read_reason: string | null;
   metadata_json: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-interface SessionChatBindingRow {
-  session_key: string;
-  chat_id: string;
-  agent_id: string | null;
-  route_id: number | null;
-  binding_reason: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -544,6 +593,8 @@ export interface ChatRecord {
   instanceId: string;
   platformChatId: string;
   normalizedChatId: string;
+  actorId?: string;
+  agentId?: string;
   chatType: ChatType;
   title?: string;
   avatarUrl?: string;
@@ -566,6 +617,19 @@ export interface UpsertChatInput {
   metadata?: Record<string, unknown> | null;
   rawProvenance?: Record<string, unknown> | null;
   seenAt?: number;
+}
+
+export interface EnsureActorAgentChatInput {
+  actorId: string;
+  agentId: string;
+  clientRequestId: string;
+  seenAt?: number;
+}
+
+export interface EnsureActorAgentChatResult {
+  chat: ChatRecord;
+  created: boolean;
+  clientRequestId: string;
 }
 
 export interface CanonicalizeDmChatForContactInput {
@@ -603,16 +667,21 @@ export interface ChatMessageRecord {
   channel: string;
   instanceId: string;
   providerMessageId: string;
+  clientMessageId?: string;
   rawChatId: string;
   rawSenderId?: string;
   normalizedSenderId?: string;
   actorType: "contact" | "agent" | "system" | "unknown" | string;
+  actorId?: string;
   contactId?: string;
   agentId?: string;
+  originSessionKey?: string;
   platformIdentityId?: string;
   messageType?: string;
   content?: Record<string, unknown>;
   rawProvenance?: Record<string, unknown>;
+  revision?: number;
+  state?: string;
   providerTimestamp?: number;
   editedAt?: number;
   deletedAt?: number;
@@ -669,6 +738,7 @@ export interface UpsertChatMessageInput {
   actorType?: "contact" | "agent" | "system" | "unknown" | string | null;
   contactId?: string | null;
   agentId?: string | null;
+  originSessionKey?: string | null;
   platformIdentityId?: string | null;
   messageType?: string | null;
   content?: Record<string, unknown> | null;
@@ -686,6 +756,144 @@ export interface UpsertChatMessageResult {
   providerMessageId: string;
   providerTimestamp?: number;
 }
+
+export interface CreateCanonicalActorMessageInput {
+  chatId: string;
+  actorId: string;
+  clientMessageId: string;
+  content: Record<string, unknown>;
+  messageType?: string | null;
+  createdAt?: number;
+}
+
+export interface CreateCanonicalActorMessageResult {
+  message: ChatMessageWithSortKey;
+  created: boolean;
+  canonicalMessageId: string;
+  clientMessageId: string;
+}
+
+export type ChannelBackendIngressPublicationState = "accepted" | "publishing" | "published";
+
+export interface ChannelBackendExternalIdentityRecord {
+  channelKind: string;
+  connectionId: string;
+  conversationId: string;
+  senderId: string;
+  messageId: string;
+}
+
+export interface ChannelBackendIngressReceiptRecord {
+  id: string;
+  channelInstanceId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  initialRequestId: string;
+  localActorId: string;
+  agentId: string;
+  chatId: string;
+  messageId: string;
+  sessionKey: string;
+  sessionName: string;
+  turnId: string;
+  external: ChannelBackendExternalIdentityRecord;
+  prompt?: Record<string, unknown>;
+  state: ChannelBackendIngressPublicationState;
+  publishClaimId?: string;
+  publishClaimExpiresAt?: number;
+  publishedAt?: number;
+  acceptedAt: number;
+  updatedAt: number;
+}
+
+export type ChannelBackendRuntimeState =
+  | "accepted"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+export interface ChannelBackendRuntimeStateRecord {
+  turnId: string;
+  state: ChannelBackendRuntimeState;
+  lastSequence: number;
+  lastDeltaSequence: number;
+  assistantMessageId?: string;
+  runtimeGenerationId?: string;
+  terminalError?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface RecordChannelBackendRuntimeEventInput {
+  turnId: string;
+  state?: ChannelBackendRuntimeState;
+  assistantDelta?: boolean;
+  assistantText?: string;
+  runtimeGenerationId: string;
+  terminalError?: Record<string, unknown>;
+  occurredAt?: number;
+}
+
+export interface RecordChannelBackendRuntimeEventResult {
+  receipt: ChannelBackendIngressReceiptRecord;
+  runtime: ChannelBackendRuntimeStateRecord;
+}
+
+export interface ChannelBackendRuntimeInterruptRecord {
+  turnId: string;
+  idempotencyKey: string;
+  requestId: string;
+  state: "accepted" | "publishing" | "published";
+  publishClaimId?: string;
+  publishClaimExpiresAt?: number;
+  publishedAt?: number;
+  requestedAt: number;
+  updatedAt: number;
+}
+
+export type ChannelBackendRuntimeInterruptClaimResult =
+  | { status: "acquired"; record: ChannelBackendRuntimeInterruptRecord }
+  | { status: "busy"; record: ChannelBackendRuntimeInterruptRecord }
+  | { status: "published"; record: ChannelBackendRuntimeInterruptRecord };
+
+export interface AcceptChannelBackendIngressInput {
+  channelInstanceId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  requestId: string;
+  localActorId: string;
+  agentId: string;
+  clientMessageId: string;
+  sessionKey: string;
+  sessionName: string;
+  turnId: string;
+  external: ChannelBackendExternalIdentityRecord;
+  content: Record<string, unknown>;
+  receivedAt: number;
+  acceptedAt?: number;
+  prompt?: Record<string, unknown>;
+  canonical?: {
+    chatId: string;
+    messageId: string;
+  };
+}
+
+export type AcceptChannelBackendIngressResult =
+  | {
+      status: "accepted" | "duplicate";
+      receipt: ChannelBackendIngressReceiptRecord;
+      message: ChatMessageWithSortKey;
+    }
+  | {
+      status: "conflict";
+      receipt: ChannelBackendIngressReceiptRecord;
+    };
+
+export type ChannelBackendIngressPublicationClaimResult =
+  | { status: "acquired"; receipt: ChannelBackendIngressReceiptRecord }
+  | { status: "busy"; receipt: ChannelBackendIngressReceiptRecord }
+  | { status: "published"; receipt: ChannelBackendIngressReceiptRecord };
 
 export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
 export type ChatReadingListVisibility = "private" | "team" | "system" | string;
@@ -776,16 +984,6 @@ export interface UpsertChatParticipantInput {
   seenAt?: number;
 }
 
-export interface SessionChatBindingRecord {
-  sessionKey: string;
-  chatId: string;
-  agentId?: string;
-  routeId?: number;
-  bindingReason?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
 export interface SessionParticipantRecord {
   id: string;
   sessionKey: string;
@@ -816,7 +1014,6 @@ export interface UpsertSessionParticipantInput {
 // see .ravi/specs/sessions/attach/SPEC.md
 export type SubscriptionRole = "primary" | "input" | "mirror";
 export type AttachedByType = "user" | "agent" | "system";
-export type SubscriptionSpeechMode = "muted" | "speak";
 
 export interface SessionChatSubscriptionRecord {
   id: number;
@@ -827,9 +1024,6 @@ export interface SessionChatSubscriptionRecord {
   attachedById?: string;
   attachedReason?: string;
   contextSnapshotAtAttach?: Record<string, unknown>;
-  speechMode: SubscriptionSpeechMode;
-  speechUpdatedAt?: number;
-  speechReason?: string;
   outputAttachedAt?: number;
   createdAt: number;
   updatedAt: number;
@@ -844,9 +1038,6 @@ export interface CreateSessionChatSubscriptionInput {
   attachedById?: string | null;
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
-  speechMode?: SubscriptionSpeechMode | null;
-  speechUpdatedAt?: number | null;
-  speechReason?: string | null;
   outputAttachedAt?: number | null;
 }
 
@@ -1042,8 +1233,10 @@ function getDb(): Database {
   db.exec("PRAGMA synchronous = NORMAL");
   // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
   db.exec("PRAGMA cache_size = -64000");
-  // Temp tables & sort scratch in RAM.
-  db.exec("PRAGMA temp_store = MEMORY");
+  // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
+  // DB can OOM SQLite/process memory even when the host disk still has free
+  // space (SQLITE_NOMEM / "out of memory").
+  db.exec("PRAGMA temp_store = DEFAULT");
   // 256MB memory-mapped read window. Hot queries become page-cache hits.
   db.exec("PRAGMA mmap_size = 268435456");
 
@@ -1166,7 +1359,7 @@ function getDb(): Database {
       session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
       goal_id TEXT NOT NULL,
       objective TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','blocked','complete')),
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','usage_limited','blocked','complete')),
       token_budget INTEGER,
       tokens_used INTEGER NOT NULL DEFAULT 0,
       time_used_seconds INTEGER NOT NULL DEFAULT 0,
@@ -1186,6 +1379,8 @@ function getDb(): Database {
       instance_id TEXT NOT NULL DEFAULT '',
       platform_chat_id TEXT NOT NULL,
       normalized_chat_id TEXT NOT NULL,
+      actor_id TEXT,
+      agent_id TEXT,
       chat_type TEXT NOT NULL DEFAULT 'unknown',
       title TEXT,
       avatar_url TEXT,
@@ -1241,16 +1436,21 @@ function getDb(): Database {
       channel TEXT NOT NULL,
       instance_id TEXT NOT NULL DEFAULT '',
       provider_message_id TEXT NOT NULL,
+      client_message_id TEXT,
       raw_chat_id TEXT NOT NULL,
       raw_sender_id TEXT,
       normalized_sender_id TEXT,
       actor_type TEXT NOT NULL DEFAULT 'unknown',
+      actor_id TEXT,
       contact_id TEXT,
       agent_id TEXT,
+      origin_session_key TEXT,
       platform_identity_id TEXT,
       message_type TEXT,
       content_json TEXT,
       raw_provenance_json TEXT,
+      revision INTEGER,
+      state TEXT,
       provider_timestamp INTEGER,
       edited_at INTEGER,
       deleted_at INTEGER,
@@ -1273,6 +1473,79 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_platform_identity
       ON chat_messages(platform_identity_id, provider_timestamp)
       WHERE platform_identity_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS channel_backend_ingress_receipts (
+      id TEXT PRIMARY KEY,
+      channel_instance_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_fingerprint TEXT NOT NULL,
+      initial_request_id TEXT NOT NULL,
+      local_actor_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE RESTRICT,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE RESTRICT,
+      message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE RESTRICT,
+      session_key TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      external_json TEXT NOT NULL,
+      prompt_json TEXT,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN ('accepted', 'publishing', 'published')),
+      publish_claim_id TEXT,
+      publish_claim_expires_at INTEGER,
+      published_at INTEGER,
+      accepted_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(channel_instance_id, idempotency_key),
+      UNIQUE(message_id),
+      UNIQUE(turn_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_state
+      ON channel_backend_ingress_receipts(state, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_claim
+      ON channel_backend_ingress_receipts(state, publish_claim_expires_at);
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_session
+      ON channel_backend_ingress_receipts(session_name, accepted_at);
+
+    CREATE TABLE IF NOT EXISTS channel_backend_runtime_state (
+      turn_id TEXT PRIMARY KEY
+        REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN (
+          'accepted',
+          'running',
+          'waiting_approval',
+          'completed',
+          'failed',
+          'interrupted'
+        )),
+      last_sequence INTEGER NOT NULL DEFAULT 0
+        CHECK(last_sequence >= 0),
+      last_delta_sequence INTEGER NOT NULL DEFAULT 0
+        CHECK(last_delta_sequence >= 0),
+      assistant_message_id TEXT
+        REFERENCES chat_messages(id) ON DELETE RESTRICT,
+      runtime_generation_id TEXT,
+      terminal_error_json TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS channel_backend_runtime_interrupts (
+      turn_id TEXT NOT NULL
+        REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
+      idempotency_key TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN ('accepted', 'publishing', 'published')),
+      publish_claim_id TEXT,
+      publish_claim_expires_at INTEGER,
+      published_at INTEGER,
+      requested_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(turn_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_runtime_interrupt_request
+      ON channel_backend_runtime_interrupts(request_id);
 
     CREATE TABLE IF NOT EXISTS chat_reading_lists (
       id TEXT PRIMARY KEY,
@@ -1350,21 +1623,6 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_chat_reading_cursor_events_scope
       ON chat_reading_cursor_events(list_id, chat_id, reader_type, reader_id, created_at DESC);
 
-    CREATE TABLE IF NOT EXISTS session_chat_bindings (
-      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
-      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-      agent_id TEXT,
-      route_id INTEGER,
-      binding_reason TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (session_key, chat_id)
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_bindings_session
-      ON session_chat_bindings(session_key);
-    CREATE INDEX IF NOT EXISTS idx_session_chat_bindings_chat
-      ON session_chat_bindings(chat_id);
-
     CREATE TABLE IF NOT EXISTS session_chat_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
@@ -1374,9 +1632,6 @@ function getDb(): Database {
       attached_by_id TEXT,
       attached_reason TEXT,
       context_snapshot_at_attach_json TEXT,
-      speech_mode TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak')),
-      speech_updated_at INTEGER,
-      speech_reason TEXT,
       output_attached_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -1387,6 +1642,50 @@ function getDb(): Database {
       WHERE detached_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
       ON session_chat_subscriptions(session_key, detached_at);
+
+    CREATE TABLE IF NOT EXISTS slack_thread_lifecycle (
+      request_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL CHECK(source IN ('action', 'inbound')),
+      status TEXT NOT NULL CHECK(status IN ('queued', 'root_delivered', 'starting', 'open', 'closed', 'failed')),
+      parent_session_key TEXT NOT NULL,
+      parent_session_name TEXT NOT NULL,
+      initiator_session_key TEXT,
+      initiator_session_name TEXT,
+      child_session_key TEXT,
+      child_session_name TEXT,
+      account_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      platform_chat_id TEXT NOT NULL,
+      root_canonical_chat_id TEXT,
+      thread_canonical_chat_id TEXT,
+      provider_thread_id TEXT,
+      canonical_root_message_id TEXT,
+      initial_prompt TEXT,
+      model_override TEXT,
+      creation_claim_id TEXT,
+      creation_claim_expires_at INTEGER,
+      prompt_published_at INTEGER,
+      close_sequence INTEGER NOT NULL DEFAULT 0,
+      close_result TEXT,
+      closed_at INTEGER,
+      parent_return_requested INTEGER NOT NULL DEFAULT 0 CHECK(parent_return_requested IN (0,1)),
+      parent_event_id TEXT,
+      parent_notification_claim_id TEXT,
+      parent_notification_claim_expires_at INTEGER,
+      parent_notified_at INTEGER,
+      failure_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(instance_id, platform_chat_id, provider_thread_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_child
+      ON slack_thread_lifecycle(child_session_key, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent
+      ON slack_thread_lifecycle(parent_session_key, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_creation
+      ON slack_thread_lifecycle(status, creation_claim_expires_at, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent_return
+      ON slack_thread_lifecycle(parent_return_requested, parent_notified_at, parent_notification_claim_expires_at);
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -1776,6 +2075,247 @@ function getDb(): Database {
       ON session_turns(session_key, COALESCE(completed_at, updated_at, started_at), started_at DESC, turn_id DESC);
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
+
+    CREATE TABLE IF NOT EXISTS runtime_boot_epochs (
+      boot_epoch TEXT PRIMARY KEY,
+      instance_id TEXT NOT NULL,
+      pid INTEGER NOT NULL CHECK(pid > 0),
+      status TEXT NOT NULL CHECK(status IN ('active','graceful_stopped','abandoned')),
+      started_at INTEGER NOT NULL,
+      last_heartbeat_at INTEGER NOT NULL,
+      lease_expires_at INTEGER NOT NULL,
+      graceful_stopped_at INTEGER,
+      abandoned_at INTEGER,
+      stop_reason TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK(
+        (status = 'active' AND graceful_stopped_at IS NULL AND abandoned_at IS NULL)
+        OR (status = 'graceful_stopped' AND graceful_stopped_at IS NOT NULL AND abandoned_at IS NULL)
+        OR (status = 'abandoned' AND abandoned_at IS NOT NULL AND graceful_stopped_at IS NULL)
+      ),
+      CHECK(last_heartbeat_at >= started_at),
+      CHECK(lease_expires_at > last_heartbeat_at),
+      CHECK(graceful_stopped_at IS NULL OR graceful_stopped_at >= last_heartbeat_at),
+      CHECK(abandoned_at IS NULL OR abandoned_at >= lease_expires_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_boot_epochs_status
+      ON runtime_boot_epochs(instance_id, status, lease_expires_at, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_runs (
+      recovery_run_id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL CHECK(mode IN ('inspect','dry-run','apply')),
+      boot_epoch TEXT,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','failed')),
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      summary_json TEXT,
+      error TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      CHECK(
+        (status = 'running' AND completed_at IS NULL)
+        OR (status != 'running' AND completed_at IS NOT NULL)
+      ),
+      CHECK(completed_at IS NULL OR completed_at >= started_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_runs_started
+      ON runtime_recovery_runs(started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS runtime_turn_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      turn_id TEXT NOT NULL,
+      recovered_from_attempt_id TEXT,
+      run_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      agent_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      boot_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','failed','interrupted','timeout','aborted')),
+      started_at INTEGER NOT NULL,
+      lease_expires_at INTEGER NOT NULL,
+      last_heartbeat_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      request_blob_sha256 TEXT,
+      user_prompt_sha256 TEXT,
+      system_prompt_sha256 TEXT,
+      checkpoint_json TEXT,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('human','cron','trigger','session-followup','heartbeat','observer','task','routine','daemon-restart','automation','agent','system','background','unknown')),
+      source_json TEXT,
+      turn_provenance_json TEXT,
+      task_barrier_task_id TEXT,
+      delivery_barrier TEXT NOT NULL CHECK(delivery_barrier IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      pending_ids_json TEXT,
+      started_tool INTEGER NOT NULL DEFAULT 0 CHECK(started_tool IN (0,1)),
+      materialized_output INTEGER NOT NULL DEFAULT 0 CHECK(materialized_output IN (0,1)),
+      recovery_claim_id TEXT,
+      recovery_status TEXT,
+      recovery_reason TEXT,
+      recovery_run_id TEXT,
+      recovered_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(recovered_from_attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK(
+        (status = 'running' AND completed_at IS NULL)
+        OR (status != 'running' AND completed_at IS NOT NULL)
+      ),
+      CHECK(last_heartbeat_at >= started_at),
+      CHECK(lease_expires_at > last_heartbeat_at),
+      CHECK(completed_at IS NULL OR completed_at >= last_heartbeat_at),
+      CHECK(request_blob_sha256 IS NOT NULL OR checkpoint_json IS NOT NULL),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_recovery
+      ON runtime_turn_attempts(status, boot_epoch, lease_expires_at, recovery_status);
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_session
+      ON runtime_turn_attempts(session_key, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_turn
+      ON runtime_turn_attempts(turn_id, started_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_turn_attempts_claim
+      ON runtime_turn_attempts(recovery_claim_id)
+      WHERE recovery_claim_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS runtime_prompt_queue (
+      queue_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      queue_item_id TEXT NOT NULL UNIQUE,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      immutable_fingerprint TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      agent_id TEXT,
+      lane_key TEXT NOT NULL CHECK(lane_key IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      boot_epoch TEXT,
+      status TEXT NOT NULL CHECK(status IN ('queued','leased','starting','delivered','complete','cancelled','superseded','failed','requeued','deferred')),
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('human','cron','trigger','session-followup','heartbeat','observer','task','routine','daemon-restart','automation','agent','system','background','unknown')),
+      delivery_barrier TEXT NOT NULL CHECK(delivery_barrier IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      task_barrier_task_id TEXT,
+      pending_id TEXT,
+      prompt_json TEXT NOT NULL,
+      runtime_message_json TEXT NOT NULL,
+      queued_at INTEGER NOT NULL,
+      lease_owner TEXT,
+      lease_expires_at INTEGER,
+      delivered_attempt_id TEXT,
+      delivered_turn_id TEXT,
+      completed_at INTEGER,
+      recovery_claim_id TEXT,
+      recovery_status TEXT,
+      recovery_reason TEXT,
+      recovery_run_id TEXT,
+      recovered_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(delivered_attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK((status IN ('complete','cancelled','superseded','failed') AND completed_at IS NOT NULL) OR (status NOT IN ('complete','cancelled','superseded','failed') AND completed_at IS NULL)),
+      CHECK(lease_expires_at IS NULL OR lease_owner IS NOT NULL),
+      CHECK(status NOT IN ('leased','starting') OR (boot_epoch IS NOT NULL AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)),
+      CHECK(status != 'delivered' OR (delivered_attempt_id IS NOT NULL AND delivered_turn_id IS NOT NULL)),
+      CHECK(completed_at IS NULL OR completed_at >= queued_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_status
+      ON runtime_prompt_queue(status, boot_epoch, queue_sequence);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_session_lane
+      ON runtime_prompt_queue(session_key, lane_key, queue_sequence);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_pending
+      ON runtime_prompt_queue(session_key, pending_id);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_lease
+      ON runtime_prompt_queue(status, lease_expires_at)
+      WHERE lease_expires_at IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_prompt_queue_claim
+      ON runtime_prompt_queue(recovery_claim_id)
+      WHERE recovery_claim_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_candidates (
+      recovery_run_id TEXT NOT NULL,
+      candidate_key TEXT NOT NULL,
+      candidate_type TEXT NOT NULL CHECK(candidate_type IN ('turn_attempt','prompt_queue','legacy_session_turn')),
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      attempt_id TEXT,
+      turn_id TEXT,
+      queue_item_id TEXT,
+      decision TEXT NOT NULL CHECK(decision IN ('resume','requeue','reconcile_interrupted','defer_next_schedule','ignore_stale','manual_review')),
+      reason_code TEXT NOT NULL,
+      action TEXT NOT NULL,
+      action_status TEXT NOT NULL CHECK(action_status IN ('pending','not_applied','claimed','applied','failed')),
+      claim_id TEXT,
+      details_json TEXT,
+      result_json TEXT,
+      action_completed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (recovery_run_id, candidate_key),
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(queue_item_id) REFERENCES runtime_prompt_queue(queue_item_id) ON DELETE RESTRICT,
+      FOREIGN KEY(claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK(
+        (candidate_type = 'turn_attempt' AND attempt_id IS NOT NULL AND queue_item_id IS NULL)
+        OR (candidate_type = 'prompt_queue' AND queue_item_id IS NOT NULL AND attempt_id IS NULL)
+        OR (candidate_type = 'legacy_session_turn' AND attempt_id IS NULL AND queue_item_id IS NULL AND turn_id IS NOT NULL)
+      ),
+      CHECK(
+        (action_status = 'pending' AND claim_id IS NULL AND action_completed_at IS NULL)
+        OR (action_status = 'claimed' AND claim_id IS NOT NULL AND action_completed_at IS NULL)
+        OR (action_status IN ('applied','failed') AND claim_id IS NOT NULL AND action_completed_at IS NOT NULL)
+        OR (action_status = 'not_applied' AND action_completed_at IS NOT NULL)
+      ),
+      CHECK(action_completed_at IS NULL OR action_completed_at >= created_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_candidates_session
+      ON runtime_recovery_candidates(session_key, created_at);
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_claims (
+      candidate_key TEXT PRIMARY KEY,
+      claim_id TEXT NOT NULL UNIQUE,
+      candidate_type TEXT NOT NULL CHECK(candidate_type IN ('turn_attempt','prompt_queue')),
+      session_key TEXT NOT NULL,
+      attempt_id TEXT,
+      queue_item_id TEXT,
+      recovery_run_id TEXT NOT NULL,
+      claimed_by_boot_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('claimed','applied','failed')),
+      claimed_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(recovery_run_id, candidate_key) REFERENCES runtime_recovery_candidates(recovery_run_id, candidate_key) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(claimed_by_boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(queue_item_id) REFERENCES runtime_prompt_queue(queue_item_id) ON DELETE RESTRICT,
+      CHECK(
+        (candidate_type = 'turn_attempt' AND attempt_id IS NOT NULL AND queue_item_id IS NULL)
+        OR (candidate_type = 'prompt_queue' AND queue_item_id IS NOT NULL AND attempt_id IS NULL)
+      ),
+      CHECK(
+        (status = 'claimed' AND completed_at IS NULL)
+        OR (status != 'claimed' AND completed_at IS NOT NULL)
+      ),
+      CHECK(completed_at IS NULL OR completed_at >= claimed_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_claims_run
+      ON runtime_recovery_claims(recovery_run_id, claimed_at);
 
     CREATE TABLE IF NOT EXISTS daemon_restart_epochs (
       restart_epoch TEXT PRIMARY KEY,
@@ -2681,8 +3221,18 @@ function getDb(): Database {
   `);
 
   ensureCostEventMigrations(db);
+  ensureColumn(
+    db,
+    "channel_backend_runtime_state",
+    "last_delta_sequence",
+    "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
+  );
+  ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
+  ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
+  ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
+  ensureCliCommandAccessKindGrantMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
 
@@ -3043,6 +3593,7 @@ function ensureCostEventMigrations(database: Database): void {
 
 function ensureSessionGoalBlockedMigration(database: Database): void {
   ensureColumn(database, "session_goals", "blocked_reason", "TEXT");
+  ensureSessionGoalStatusSchema(database);
 }
 
 function ensureAgentVisibilityMigration(database: Database): void {
@@ -3053,6 +3604,72 @@ function ensureAgentVisibilityMigration(database: Database): void {
     objectType: "agent",
     objectId: "*",
   });
+}
+
+function ensureCliCommandAccessKindGrantMigration(database: Database): void {
+  const existing = database
+    .prepare("SELECT value FROM router_meta WHERE key = ?")
+    .get(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router) as { value: string } | undefined;
+  if (existing?.value === "done") return;
+
+  const rows = database.prepare("SELECT id, defaults FROM agents WHERE defaults IS NOT NULL").all() as Array<{
+    id: string;
+    defaults: string;
+  }>;
+  let changedAgents = 0;
+  let changedContexts = 0;
+  let addedGrants = 0;
+  let ambiguousGrants = 0;
+  const affectedAgentIds = new Set<string>();
+  const update = database.prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?");
+  const now = Date.now();
+  const contextRows = database
+    .prepare(
+      `SELECT context_id, agent_id, capabilities_json
+       FROM contexts
+       WHERE (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+         AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?)`,
+    )
+    .all(now, now) as Array<{ context_id: string; agent_id: string | null; capabilities_json: string }>;
+  const updateContext = database.prepare("UPDATE contexts SET capabilities_json = ? WHERE context_id = ?");
+
+  database.transaction(() => {
+    for (const row of rows) {
+      const migration = migrateAgentDefaultsRecord(parseAgentDefaultsRecord(row.defaults));
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      update.run(JSON.stringify(migration.defaults), Date.now(), row.id);
+      changedAgents += 1;
+      addedGrants += migration.added;
+      affectedAgentIds.add(row.id);
+    }
+    for (const row of contextRows) {
+      const migration = migrateLegacyReadCapabilityInputs(parseJsonArray(row.capabilities_json));
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      updateContext.run(JSON.stringify(migration.capabilities), row.context_id);
+      changedContexts += 1;
+      addedGrants += migration.added;
+      if (row.agent_id) affectedAgentIds.add(row.agent_id);
+    }
+  })();
+
+  if (changedAgents > 0 || changedContexts > 0) {
+    log.info("Migrated CLI read grants for reclassified commands", {
+      stores: ["agent-defaults", "active-contexts"],
+      changedAgents,
+      changedContexts,
+      addedGrants,
+      ambiguousGrants,
+      affectedAgentIds: Array.from(affectedAgentIds).sort(),
+    });
+  } else if (ambiguousGrants > 0) {
+    log.debug("Found broad agent-default read grants requiring manual review", { ambiguousGrants });
+  }
+
+  database
+    .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
+    .run(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router, "done", Date.now());
 }
 
 function getDefaultAgentIdFromDatabase(database: Database): string {
@@ -3165,6 +3782,13 @@ function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "session_events", "normalized_sender_id", "TEXT");
   ensureColumn(database, "session_events", "identity_confidence", "REAL");
   ensureColumn(database, "session_events", "identity_provenance_json", "TEXT");
+  ensureColumn(database, "chats", "actor_id", "TEXT");
+  ensureColumn(database, "chats", "agent_id", "TEXT");
+  ensureColumn(database, "chat_messages", "client_message_id", "TEXT");
+  ensureColumn(database, "chat_messages", "actor_id", "TEXT");
+  ensureColumn(database, "chat_messages", "origin_session_key", "TEXT");
+  ensureColumn(database, "chat_messages", "revision", "INTEGER");
+  ensureColumn(database, "chat_messages", "state", "TEXT");
   ensureColumn(database, "chat_messages", "edited_at", "INTEGER");
   ensureColumn(database, "chat_messages", "deleted_at", "INTEGER");
 
@@ -3172,23 +3796,20 @@ function ensureIdentityChatMigrations(database: Database): void {
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
   database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_actor_agent ON chats(actor_id, agent_id) WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL",
+  );
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client_idempotency ON chat_messages(chat_id, actor_id, client_message_id) WHERE actor_id IS NOT NULL AND client_message_id IS NOT NULL",
+  );
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_chat_messages_origin_session_time ON chat_messages(origin_session_key, provider_timestamp, ingested_at) WHERE origin_session_key IS NOT NULL",
+  );
 
   // sessions/attach owns the output attachment. Remove legacy focus state
   // so old focus rows cannot surprise a future downgrade/inspection path.
   database.exec("DROP TABLE IF EXISTS session_focus");
   ensureColumn(database, "session_chat_subscriptions", "output_attached_at", "INTEGER");
-  const hadSubscriptionSpeechMode = tableHasColumn(database, "session_chat_subscriptions", "speech_mode");
-  ensureColumn(
-    database,
-    "session_chat_subscriptions",
-    "speech_mode",
-    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
-  );
-  ensureColumn(database, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
-  ensureColumn(database, "session_chat_subscriptions", "speech_reason", "TEXT");
-  if (!hadSubscriptionSpeechMode) {
-    backfillSessionSpeechModes(database);
-  }
 
   // sessions/attach: enforce the spec invariant that a chat can only be
   // active in one session at a time. Order matters here:
@@ -3196,55 +3817,50 @@ function ensureIdentityChatMigrations(database: Database): void {
   //      recent active row per chat) so the UNIQUE index can install;
   //   2. drop any legacy non-unique index by the same name (created by
   //      older code on this branch);
-  //   3. install the partial UNIQUE index;
-  //   4. backfill from session_chat_bindings, picking one binding per
-  //      chat (the most recent) so legacy 1:N data does not regenerate
-  //      duplicates after cleanup.
+  //   3. install the partial UNIQUE active-chat index;
+  //   4. one-time convert leftover session_chat_bindings into
+  //      subscriptions (never a second output; never resurrect a
+  //      detached pair), then DROP the legacy table;
+  //   5. assign a default output only when a session has none;
+  //   6. install the partial UNIQUE output-per-session index.
   // The whole sequence is wrapped in a transaction so a concurrent
   // writer (e.g. the daemon's consumer doing `attachChatToSession`)
   // cannot squeeze an INSERT between dedupe and CREATE UNIQUE INDEX,
   // which would make the CREATE fail and leave the migration half-done.
   database.transaction(() => {
-    dedupeSessionChatSubscriptions(database);
-    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
-    database.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
-    );
-    backfillSessionChatSubscriptionsFromBindings(database);
-    backfillSessionOutputAttachments(database);
-    database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
-    database.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
-    );
+    runSessionChatSubscriptionMigrations(database);
   })();
 }
 
 /**
- * Test-only: re-run the dedupe + backfill migration steps on the current
+ * Test-only: re-run the subscription migration (dedupe, one-time legacy
+ * binding convert/drop, output backfill, unique indexes) on the current
  * database. Production callers must rely on `ensureIdentityChatMigrations`
- * running once at startup.
+ * running at startup. Safe to call repeatedly.
  */
 export function dbRunSessionAttachMigrationForTests(): void {
-  const db = getDb();
-  ensureColumn(
-    db,
-    "session_chat_subscriptions",
-    "speech_mode",
-    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
-  );
-  ensureColumn(db, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
-  ensureColumn(db, "session_chat_subscriptions", "speech_reason", "TEXT");
-  dedupeSessionChatSubscriptions(db);
-  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
-  db.exec(
+  runSessionChatSubscriptionMigrations(getDb());
+}
+
+function runSessionChatSubscriptionMigrations(database: Database): void {
+  dedupeSessionChatSubscriptions(database);
+  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
+  database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_active_chat ON session_chat_subscriptions(chat_id) WHERE detached_at IS NULL",
   );
-  backfillSessionChatSubscriptionsFromBindings(db);
-  backfillSessionOutputAttachments(db);
-  db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
-  db.exec(
+  migrateAndDropSessionChatBindings(database);
+  backfillSessionOutputAttachments(database);
+  database.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_output_target");
+  database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_subscriptions_output_target ON session_chat_subscriptions(session_key) WHERE detached_at IS NULL AND output_attached_at IS NOT NULL",
   );
+}
+
+function tableExists(database: Database, name: string): boolean {
+  const row = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) as
+    | { 1: number }
+    | undefined;
+  return Boolean(row);
 }
 
 function dedupeSessionChatSubscriptions(database: Database): void {
@@ -3277,31 +3893,37 @@ function dedupeSessionChatSubscriptions(database: Database): void {
   }
 }
 
-function backfillSessionChatSubscriptionsFromBindings(database: Database): void {
-  const now = Date.now();
-  // Backfill at most ONE subscription per chat. When legacy
-  // session_chat_bindings has multiple sessions sharing the same chat
-  // (allowed by the legacy schema), pick the most recently updated row
-  // (tiebreak by session_key for determinism). This matches the spec
-  // invariant "one chat → one session" at the cost of losing the older
-  // bindings; operators can manually attach to recover if needed.
+/**
+ * One-time retirement of `session_chat_bindings`.
+ *
+ * Existing active subscriptions win. A leftover binding is converted only
+ * when that chat has no active subscription and the (session, chat) pair
+ * has no prior subscription row (active or detached). Converted rows are
+ * inserted without output so a second output cannot violate the unique
+ * session output index; `backfillSessionOutputAttachments` assigns output
+ * only when a session has none. The table is then dropped and is never
+ * created again.
+ */
+function migrateAndDropSessionChatBindings(database: Database): void {
+  if (!tableExists(database, "session_chat_bindings")) return;
+
   const result = database
     .prepare(
       `
       INSERT INTO session_chat_subscriptions (
         session_key, chat_id, role, attached_by_type, attached_by_id,
         attached_reason, context_snapshot_at_attach_json,
-        speech_mode, speech_updated_at, speech_reason,
         output_attached_at, created_at, updated_at, detached_at
       )
       SELECT
         ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
-        'backfill-from-session-chat-bindings', NULL,
-        'speak', ?, 'backfill-from-session-chat-bindings',
-        ?, ?, ?, NULL
+        'migrate-from-session-chat-bindings', NULL,
+        NULL, ranked.created_at, ranked.updated_at, NULL
       FROM (
         SELECT b.session_key,
                b.chat_id,
+               b.created_at,
+               b.updated_at,
                ROW_NUMBER() OVER (
                  PARTITION BY b.chat_id
                  ORDER BY b.updated_at DESC, b.session_key
@@ -3314,12 +3936,18 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
           WHERE s.chat_id = ranked.chat_id
             AND s.detached_at IS NULL
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM session_chat_subscriptions s
+          WHERE s.session_key = ranked.session_key
+            AND s.chat_id = ranked.chat_id
+        )
     `,
     )
-    .run(now, now, now, now);
+    .run();
   if (result.changes > 0) {
-    log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
+    log.info("Migrated session_chat_bindings into session_chat_subscriptions", { rows: result.changes });
   }
+  database.exec("DROP TABLE IF EXISTS session_chat_bindings");
 }
 
 function backfillSessionOutputAttachments(database: Database): void {
@@ -3329,9 +3957,6 @@ function backfillSessionOutputAttachments(database: Database): void {
       `
       UPDATE session_chat_subscriptions
       SET output_attached_at = ?,
-          speech_mode = 'speak',
-          speech_updated_at = ?,
-          speech_reason = 'backfill-output-attachment',
           updated_at = ?
       WHERE id IN (
         SELECT id FROM (
@@ -3356,33 +3981,9 @@ function backfillSessionOutputAttachments(database: Database): void {
       )
     `,
     )
-    .run(now, now, now);
-  if (result.changes > 0) {
-    log.info("Backfilled session output attachments", { rows: result.changes });
-  }
-}
-
-function backfillSessionSpeechModes(database: Database): void {
-  const now = Date.now();
-  const result = database
-    .prepare(
-      `
-      UPDATE session_chat_subscriptions
-      SET speech_mode = CASE
-            WHEN output_attached_at IS NOT NULL OR role = 'primary' THEN 'speak'
-            ELSE 'muted'
-          END,
-          speech_updated_at = ?,
-          speech_reason = 'backfill-from-attach-output',
-          updated_at = ?
-      WHERE detached_at IS NULL
-    `,
-    )
     .run(now, now);
   if (result.changes > 0) {
-    log.info("Backfilled session subscription speech modes", {
-      rows: result.changes,
-    });
+    log.info("Backfilled session output attachments", { rows: result.changes });
   }
 }
 
@@ -3477,6 +4078,8 @@ function rowToChat(row: ChatRow): ChatRecord {
     instanceId: row.instance_id,
     platformChatId: row.platform_chat_id,
     normalizedChatId: row.normalized_chat_id,
+    actorId: row.actor_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
     chatType: row.chat_type as ChatType,
     title: row.title ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
@@ -3520,16 +4123,21 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
     channel: row.channel,
     instanceId: row.instance_id,
     providerMessageId: row.provider_message_id,
+    clientMessageId: row.client_message_id ?? undefined,
     rawChatId: row.raw_chat_id,
     rawSenderId: row.raw_sender_id ?? undefined,
     normalizedSenderId: row.normalized_sender_id ?? undefined,
     actorType: row.actor_type,
+    actorId: row.actor_id ?? undefined,
     contactId: row.contact_id ?? undefined,
     agentId: row.agent_id ?? undefined,
+    originSessionKey: row.origin_session_key ?? undefined,
     platformIdentityId: row.platform_identity_id ?? undefined,
     messageType: row.message_type ?? undefined,
     content: parseJsonRecord(row.content_json),
     rawProvenance: parseJsonRecord(row.raw_provenance_json),
+    revision: row.revision ?? undefined,
+    state: row.state ?? undefined,
     providerTimestamp: row.provider_timestamp ?? undefined,
     editedAt: row.edited_at ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
@@ -3550,6 +4158,94 @@ function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessag
     ...rowToChatMessage(row),
     sortKey: row.message_sort_key || chatMessageSortKey(row),
   };
+}
+
+function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow): ChannelBackendIngressReceiptRecord {
+  const external = parseJsonRecord(row.external_json);
+  const prompt = parseJsonRecord(row.prompt_json);
+  if (
+    !external ||
+    typeof external.channelKind !== "string" ||
+    typeof external.connectionId !== "string" ||
+    typeof external.conversationId !== "string" ||
+    typeof external.senderId !== "string" ||
+    typeof external.messageId !== "string"
+  ) {
+    throw new Error(`Channel backend ingress receipt ${row.id} has invalid external identity`);
+  }
+  return {
+    id: row.id,
+    channelInstanceId: row.channel_instance_id,
+    idempotencyKey: row.idempotency_key,
+    requestFingerprint: row.request_fingerprint,
+    initialRequestId: row.initial_request_id,
+    localActorId: row.local_actor_id,
+    agentId: row.agent_id,
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    sessionKey: row.session_key,
+    sessionName: row.session_name,
+    turnId: row.turn_id,
+    external: {
+      channelKind: external.channelKind,
+      connectionId: external.connectionId,
+      conversationId: external.conversationId,
+      senderId: external.senderId,
+      messageId: external.messageId,
+    },
+    ...(prompt ? { prompt } : {}),
+    state: row.state,
+    ...(row.publish_claim_id ? { publishClaimId: row.publish_claim_id } : {}),
+    ...(row.publish_claim_expires_at !== null ? { publishClaimExpiresAt: row.publish_claim_expires_at } : {}),
+    ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    acceptedAt: row.accepted_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
+  const terminalError = parseJsonRecord(row.terminal_error_json);
+  return {
+    turnId: row.turn_id,
+    state: row.state,
+    lastSequence: row.last_sequence,
+    lastDeltaSequence: row.last_delta_sequence,
+    ...(row.assistant_message_id ? { assistantMessageId: row.assistant_message_id } : {}),
+    ...(row.runtime_generation_id ? { runtimeGenerationId: row.runtime_generation_id } : {}),
+    ...(terminalError ? { terminalError } : {}),
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToChannelBackendRuntimeInterrupt(
+  row: ChannelBackendRuntimeInterruptRow,
+): ChannelBackendRuntimeInterruptRecord {
+  return {
+    turnId: row.turn_id,
+    idempotencyKey: row.idempotency_key,
+    requestId: row.request_id,
+    state: row.state,
+    ...(row.publish_claim_id ? { publishClaimId: row.publish_claim_id } : {}),
+    ...(row.publish_claim_expires_at !== null ? { publishClaimExpiresAt: row.publish_claim_expires_at } : {}),
+    ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    requestedAt: row.requested_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function assertChannelBackendRuntimeTransition(
+  current: ChannelBackendRuntimeState,
+  next: ChannelBackendRuntimeState,
+): void {
+  if (current === "completed" || current === "failed" || current === "interrupted") {
+    if (current !== next) {
+      throw new Error(`Channel runtime turn is already terminal: ${current}`);
+    }
+    throw new Error(`Channel runtime turn already recorded terminal state ${current}`);
+  }
+  if (next === "accepted" && current !== "accepted") {
+    throw new Error(`Channel runtime state cannot transition from ${current} to accepted`);
+  }
 }
 
 function parsePositiveIntegerOption(value: number | string | null | undefined, optionName: string): number | undefined {
@@ -3617,18 +4313,6 @@ function rowToChatReadingCursor(row: ChatReadingCursorRow): ChatReadingCursorRec
     lastReadAt: row.last_read_at ?? undefined,
     readReason: row.read_reason ?? undefined,
     metadata: parseJsonRecord(row.metadata_json),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToSessionChatBinding(row: SessionChatBindingRow): SessionChatBindingRecord {
-  return {
-    sessionKey: row.session_key,
-    chatId: row.chat_id,
-    agentId: row.agent_id ?? undefined,
-    routeId: row.route_id ?? undefined,
-    bindingReason: row.binding_reason ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -3704,6 +4388,82 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow;
   return rowToChat(row);
+}
+
+const OPAQUE_CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
+const CANONICAL_CHAT_ID_PATTERN = /^chat_[0-9a-f]{24}$/;
+
+function normalizeOpaqueCanonicalId(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!OPAQUE_CANONICAL_ID_PATTERN.test(normalized)) {
+    throw new Error(`${label} must be an opaque URL-safe identifier of 128 characters or fewer`);
+  }
+  return normalized;
+}
+
+function normalizeCanonicalChatId(value: string): string {
+  const normalized = value.trim();
+  if (!CANONICAL_CHAT_ID_PATTERN.test(normalized)) {
+    throw new Error("chatId must use the canonical chat_<24 hex> form");
+  }
+  return normalized;
+}
+
+function normalizeCanonicalMessageType(value: string | null | undefined): string {
+  const normalized = (value ?? "text").trim();
+  if (!normalized) throw new Error("messageType is required");
+  if (normalized.length > 128) throw new Error("messageType must be 128 characters or fewer");
+  return normalized;
+}
+
+function ensureActorAgentChat(database: Database, input: EnsureActorAgentChatInput): EnsureActorAgentChatResult {
+  const actorId = normalizeOpaqueCanonicalId(input.actorId, "actorId");
+  const agentId = normalizeOpaqueCanonicalId(input.agentId, "agentId");
+  const clientRequestId = normalizeOpaqueCanonicalId(input.clientRequestId, "clientRequestId");
+  const agent = database.prepare("SELECT id FROM agents WHERE id = ?").get(agentId) as { id: string } | undefined;
+  if (!agent) throw new Error(`Agent not found: ${agentId}`);
+
+  const existing = database.prepare("SELECT * FROM chats WHERE actor_id = ? AND agent_id = ?").get(actorId, agentId) as
+    | ChatRow
+    | undefined;
+  if (existing) {
+    return {
+      chat: rowToChat(existing),
+      created: false,
+      clientRequestId,
+    };
+  }
+
+  const now = input.seenAt ?? Date.now();
+  const channel = "ravi";
+  const instanceId = "";
+  const normalizedChatId = semanticId("actor_agent", [actorId, agentId]);
+  const id = semanticId("chat", [channel, instanceId, normalizedChatId]);
+  const inserted = database
+    .prepare(
+      `
+      INSERT INTO chats (
+        id, channel, instance_id, platform_chat_id, normalized_chat_id,
+        actor_id, agent_id, chat_type, title, avatar_url, metadata_json, raw_provenance_json,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'dm', NULL, NULL, NULL, NULL, ?, ?, ?, ?)
+      ON CONFLICT(actor_id, agent_id)
+        WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL
+        DO NOTHING
+    `,
+    )
+    .run(id, channel, instanceId, normalizedChatId, normalizedChatId, actorId, agentId, now, now, now, now);
+
+  const row = database.prepare("SELECT * FROM chats WHERE actor_id = ? AND agent_id = ?").get(actorId, agentId) as
+    | ChatRow
+    | undefined;
+  if (!row) throw new Error(`Chat ensure failed for actor ${actorId} and agent ${agentId}`);
+  return {
+    chat: rowToChat(row),
+    created: inserted.changes > 0,
+    clientRequestId,
+  };
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -3874,26 +4634,6 @@ function mergeChatParticipantsIntoTarget(
       seenAt: Math.max(row.last_seen_at, now),
     });
     database.prepare("DELETE FROM chat_participants WHERE id = ?").run(row.id);
-  }
-}
-
-function mergeSessionChatBindingsIntoTarget(database: Database, sourceChatId: string, targetChatId: string): void {
-  const rows = database
-    .prepare("SELECT session_key FROM session_chat_bindings WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ session_key: string }>;
-  for (const row of rows) {
-    const existing = database
-      .prepare("SELECT 1 FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
-      .get(row.session_key, targetChatId);
-    if (existing) {
-      database
-        .prepare("DELETE FROM session_chat_bindings WHERE session_key = ? AND chat_id = ?")
-        .run(row.session_key, sourceChatId);
-    } else {
-      database
-        .prepare("UPDATE session_chat_bindings SET chat_id = ? WHERE session_key = ? AND chat_id = ?")
-        .run(targetChatId, row.session_key, sourceChatId);
-    }
   }
 }
 
@@ -4071,7 +4811,6 @@ function canonicalizeDmChatForContact(database: Database, input: CanonicalizeDmC
 
   mergeChatMessagesIntoTarget(database, source.id, target.id, now);
   mergeChatParticipantsIntoTarget(database, source.id, target.id, now);
-  mergeSessionChatBindingsIntoTarget(database, source.id, target.id);
   mergeSessionChatSubscriptionsIntoTarget(database, source.id, target.id, now);
   mergeReadingListMembersIntoTarget(database, source.id, target.id, now);
   mergeReadingCursorsIntoTarget(database, source.id, target.id, now);
@@ -4321,11 +5060,12 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       `
       INSERT INTO chat_messages (
         id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
-        raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, platform_identity_id,
+        raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, origin_session_key,
+        platform_identity_id,
         message_type, content_json, raw_provenance_json, provider_timestamp,
         edited_at, deleted_at, ingested_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(channel, instance_id, chat_id, provider_message_id) DO UPDATE SET
         raw_sender_id = COALESCE(excluded.raw_sender_id, chat_messages.raw_sender_id),
         normalized_sender_id = COALESCE(excluded.normalized_sender_id, chat_messages.normalized_sender_id),
@@ -4335,6 +5075,7 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         END,
         contact_id = COALESCE(excluded.contact_id, chat_messages.contact_id),
         agent_id = COALESCE(excluded.agent_id, chat_messages.agent_id),
+        origin_session_key = COALESCE(excluded.origin_session_key, chat_messages.origin_session_key),
         platform_identity_id = COALESCE(excluded.platform_identity_id, chat_messages.platform_identity_id),
         message_type = COALESCE(excluded.message_type, chat_messages.message_type),
         content_json = COALESCE(excluded.content_json, chat_messages.content_json),
@@ -4357,6 +5098,7 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       input.actorType ?? "unknown",
       input.contactId ?? null,
       input.agentId ?? null,
+      input.originSessionKey?.trim() || null,
       input.platformIdentityId ?? null,
       input.messageType ?? null,
       cleanJsonRecord(input.content),
@@ -4380,48 +5122,293 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
   };
 }
 
-function bindSessionToChat(
+function sortCanonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sortCanonicalJsonValue(item));
+  if (!value || typeof value !== "object") return value;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const item = (value as Record<string, unknown>)[key];
+    if (item === undefined || typeof item === "function" || typeof item === "symbol") continue;
+    sorted[key] = sortCanonicalJsonValue(item);
+  }
+  return sorted;
+}
+
+function canonicalJsonRecord(value: Record<string, unknown>): string {
+  if (Object.keys(value).length === 0) throw new Error("content is required");
+  const serialized = JSON.stringify(sortCanonicalJsonValue(value));
+  if (!serialized || serialized === "{}") throw new Error("content is required");
+  return serialized;
+}
+
+function createCanonicalActorMessage(
   database: Database,
-  input: {
-    sessionKey: string;
-    chatId: string;
-    agentId?: string | null;
-    routeId?: number | null;
-    bindingReason?: string | null;
-    seenAt?: number;
-  },
-): SessionChatBindingRecord {
-  const now = input.seenAt ?? Date.now();
-  database
+  input: CreateCanonicalActorMessageInput,
+): CreateCanonicalActorMessageResult {
+  const chatId = normalizeCanonicalChatId(input.chatId);
+  const actorId = normalizeOpaqueCanonicalId(input.actorId, "actorId");
+  const clientMessageId = normalizeOpaqueCanonicalId(input.clientMessageId, "clientMessageId");
+  const messageType = normalizeCanonicalMessageType(input.messageType);
+  const contentJson = canonicalJsonRecord(input.content);
+  const chat = database.prepare("SELECT * FROM chats WHERE id = ?").get(chatId) as ChatRow | undefined;
+  if (!chat) throw new Error(`Chat not found: ${chatId}`);
+  if (!chat.actor_id || !chat.agent_id) {
+    throw new Error(`Chat does not support actor-authored messages: ${chatId}`);
+  }
+  if (chat.actor_id !== actorId) {
+    throw new Error(`Actor ${actorId} does not own chat ${chatId}`);
+  }
+
+  const existing = database
     .prepare(
       `
-      INSERT INTO session_chat_bindings (
-        session_key, chat_id, agent_id, route_id, binding_reason, created_at, updated_at
+      SELECT *
+      FROM chat_messages
+      WHERE chat_id = ? AND actor_id = ? AND client_message_id = ?
+    `,
+    )
+    .get(chatId, actorId, clientMessageId) as ChatMessageRow | undefined;
+  if (existing) {
+    if (existing.message_type !== messageType || existing.content_json !== contentJson) {
+      throw new Error(
+        `clientMessageId ${clientMessageId} was already used with different message content in chat ${chatId}`,
+      );
+    }
+    return {
+      message: {
+        ...rowToChatMessage(existing),
+        sortKey: chatMessageSortKey(existing),
+      },
+      created: false,
+      canonicalMessageId: existing.id,
+      clientMessageId,
+    };
+  }
+
+  const now = input.createdAt ?? Date.now();
+  const providerMessageId = semanticId("client_message", [chatId, actorId, clientMessageId]);
+  const id = semanticId("cm", [chat.channel, chat.instance_id, chatId, providerMessageId]);
+  const inserted = database
+    .prepare(
+      `
+      INSERT INTO chat_messages (
+        id, chat_id, channel, instance_id, provider_message_id, client_message_id, raw_chat_id,
+        raw_sender_id, normalized_sender_id, actor_type, actor_id, contact_id, agent_id,
+        platform_identity_id, message_type, content_json, raw_provenance_json, revision, state,
+        provider_timestamp, edited_at, deleted_at, ingested_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(session_key) DO UPDATE SET
-        chat_id = excluded.chat_id,
-        agent_id = COALESCE(excluded.agent_id, session_chat_bindings.agent_id),
-        route_id = COALESCE(excluded.route_id, session_chat_bindings.route_id),
-        binding_reason = COALESCE(excluded.binding_reason, session_chat_bindings.binding_reason),
-        updated_at = excluded.updated_at
+      VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        NULL, NULL, 'actor', ?, NULL, NULL,
+        NULL, ?, ?, NULL, 1, 'created',
+        ?, NULL, NULL, ?, ?, ?
+      )
+      ON CONFLICT(chat_id, actor_id, client_message_id)
+        WHERE actor_id IS NOT NULL AND client_message_id IS NOT NULL
+        DO NOTHING
     `,
     )
     .run(
-      input.sessionKey,
-      input.chatId,
-      input.agentId ?? null,
-      input.routeId ?? null,
-      input.bindingReason ?? null,
+      id,
+      chatId,
+      chat.channel,
+      chat.instance_id,
+      providerMessageId,
+      clientMessageId,
+      chat.platform_chat_id,
+      actorId,
+      messageType,
+      contentJson,
+      now,
+      now,
       now,
       now,
     );
 
-  const row = database.prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(input.sessionKey) as
-    | SessionChatBindingRow
-    | undefined;
-  if (!row) throw new Error(`Session chat binding not found after upsert: ${input.sessionKey}`);
-  return rowToSessionChatBinding(row);
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_messages
+      WHERE chat_id = ? AND actor_id = ? AND client_message_id = ?
+    `,
+    )
+    .get(chatId, actorId, clientMessageId) as ChatMessageRow | undefined;
+  if (!row) throw new Error(`Canonical message create failed for chat ${chatId}`);
+  if (row.message_type !== messageType || row.content_json !== contentJson) {
+    throw new Error(
+      `clientMessageId ${clientMessageId} was already used with different message content in chat ${chatId}`,
+    );
+  }
+  if (inserted.changes > 0) {
+    database
+      .prepare("UPDATE chats SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+      .run(now, now, chatId);
+  }
+  return {
+    message: {
+      ...rowToChatMessage(row),
+      sortKey: chatMessageSortKey(row),
+    },
+    created: inserted.changes > 0,
+    canonicalMessageId: row.id,
+    clientMessageId,
+  };
+}
+
+function selectChannelBackendIngressReceipt(
+  database: Database,
+  channelInstanceId: string,
+  idempotencyKey: string,
+): ChannelBackendIngressReceiptRow | undefined {
+  return database
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_ingress_receipts
+      WHERE channel_instance_id = ? AND idempotency_key = ?
+    `,
+    )
+    .get(channelInstanceId, idempotencyKey) as ChannelBackendIngressReceiptRow | undefined;
+}
+
+function channelBackendMessageWithSortKey(database: Database, messageId: string): ChatMessageWithSortKey {
+  const row = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id)
+        AS message_sort_key
+      FROM chat_messages m
+      WHERE m.id = ?
+    `,
+    )
+    .get(messageId) as ChatMessageWithSortKeyRow | undefined;
+  if (!row) throw new Error(`Channel backend ingress message not found: ${messageId}`);
+  return rowToChatMessageWithSortKey(row);
+}
+
+function normalizeChannelBackendSessionKey(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 512 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error("sessionKey must be a non-empty control-free identifier of 512 characters or fewer");
+  }
+  return normalized;
+}
+
+function acceptChannelBackendIngress(
+  database: Database,
+  input: AcceptChannelBackendIngressInput,
+): AcceptChannelBackendIngressResult {
+  const channelInstanceId = normalizeOpaqueCanonicalId(input.channelInstanceId, "channelInstanceId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const requestFingerprint = normalizeOpaqueCanonicalId(input.requestFingerprint, "requestFingerprint");
+  const requestId = normalizeOpaqueCanonicalId(input.requestId, "requestId");
+  const localActorId = normalizeOpaqueCanonicalId(input.localActorId, "localActorId");
+  const agentId = normalizeOpaqueCanonicalId(input.agentId, "agentId");
+  const clientMessageId = normalizeOpaqueCanonicalId(input.clientMessageId, "clientMessageId");
+  const sessionKey = normalizeChannelBackendSessionKey(input.sessionKey);
+  const sessionName = normalizeOpaqueCanonicalId(input.sessionName, "sessionName");
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const receivedAt = input.receivedAt;
+  const acceptedAt = input.acceptedAt ?? Date.now();
+  if (!Number.isSafeInteger(receivedAt) || receivedAt < 0) {
+    throw new Error("receivedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(acceptedAt) || acceptedAt < 0) {
+    throw new Error("acceptedAt must be a non-negative Unix millisecond timestamp");
+  }
+
+  const existing = selectChannelBackendIngressReceipt(database, channelInstanceId, idempotencyKey);
+  if (existing) {
+    const receipt = rowToChannelBackendIngressReceipt(existing);
+    if (receipt.requestFingerprint !== requestFingerprint) {
+      return { status: "conflict", receipt };
+    }
+    return {
+      status: "duplicate",
+      receipt,
+      message: channelBackendMessageWithSortKey(database, receipt.messageId),
+    };
+  }
+
+  let chatId: string;
+  let message: ChatMessageWithSortKey;
+  if (input.canonical) {
+    chatId = normalizeCanonicalChatId(input.canonical.chatId);
+    const messageId = normalizeOpaqueCanonicalId(input.canonical.messageId, "canonical.messageId");
+    message = channelBackendMessageWithSortKey(database, messageId);
+    if (message.chatId !== chatId) {
+      throw new Error("Canonical Channel ingress Message does not belong to its Chat");
+    }
+    if (message.channel !== input.external.channelKind || message.instanceId !== channelInstanceId) {
+      throw new Error("Canonical Channel ingress Message does not match provider scope");
+    }
+  } else {
+    const chatResult = ensureActorAgentChat(database, {
+      actorId: localActorId,
+      agentId,
+      clientRequestId: requestId,
+      seenAt: receivedAt,
+    });
+    const messageResult = createCanonicalActorMessage(database, {
+      chatId: chatResult.chat.id,
+      actorId: localActorId,
+      clientMessageId,
+      content: input.content,
+      messageType: "channel",
+      createdAt: receivedAt,
+    });
+    chatId = chatResult.chat.id;
+    message = messageResult.message;
+  }
+  const receiptId = semanticId("channel_ingress", [channelInstanceId, idempotencyKey]);
+  database
+    .prepare(
+      `
+      INSERT INTO channel_backend_ingress_receipts (
+        id, channel_instance_id, idempotency_key, request_fingerprint,
+        initial_request_id, local_actor_id, agent_id, chat_id, message_id,
+        session_key, session_name, turn_id, external_json, state,
+        prompt_json,
+        publish_claim_id, publish_claim_expires_at, published_at,
+        accepted_at, updated_at
+      )
+      VALUES (
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, 'accepted',
+        ?,
+        NULL, NULL, NULL,
+        ?, ?
+      )
+    `,
+    )
+    .run(
+      receiptId,
+      channelInstanceId,
+      idempotencyKey,
+      requestFingerprint,
+      requestId,
+      localActorId,
+      agentId,
+      chatId,
+      message.id,
+      sessionKey,
+      sessionName,
+      turnId,
+      canonicalJsonRecord({ ...input.external }),
+      input.prompt === undefined ? null : canonicalJsonRecord(input.prompt),
+      acceptedAt,
+      acceptedAt,
+    );
+
+  const row = selectChannelBackendIngressReceipt(database, channelInstanceId, idempotencyKey);
+  if (!row) throw new Error(`Channel backend ingress receipt not found after insert: ${receiptId}`);
+  return {
+    status: "accepted",
+    receipt: rowToChannelBackendIngressReceipt(row),
+    message,
+  };
 }
 
 interface ExistingSessionParticipantMatches {
@@ -4546,6 +5533,37 @@ function upsertSessionParticipant(database: Database, input: UpsertSessionPartic
   return rowToSessionParticipant(row);
 }
 
+function ensureBackfillSessionChatSubscription(
+  database: Database,
+  input: { sessionKey: string; chatId: string; seenAt: number },
+): void {
+  const activeChat = database
+    .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
+    .get(input.chatId);
+  if (activeChat) return;
+  const existingPair = database
+    .prepare("SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ?")
+    .get(input.sessionKey, input.chatId);
+  if (existingPair) return;
+  const hasOutput = database
+    .prepare(
+      "SELECT 1 FROM session_chat_subscriptions WHERE session_key = ? AND detached_at IS NULL AND output_attached_at IS NOT NULL",
+    )
+    .get(input.sessionKey);
+  database
+    .prepare(
+      `
+      INSERT INTO session_chat_subscriptions (
+        session_key, chat_id, role, attached_by_type, attached_by_id,
+        attached_reason, context_snapshot_at_attach_json,
+        output_attached_at, created_at, updated_at, detached_at
+      )
+      VALUES (?, ?, 'primary', 'system', NULL, 'legacy-session-backfill', NULL, ?, ?, ?, NULL)
+    `,
+    )
+    .run(input.sessionKey, input.chatId, hasOutput ? null : input.seenAt, input.seenAt, input.seenAt);
+}
+
 function backfillChatModel(database: Database): void {
   const now = Date.now();
   executeWrite(
@@ -4654,11 +5672,9 @@ function backfillChatModel(database: Database): void {
           },
           seenAt: row.updated_at || row.created_at || now,
         });
-        bindSessionToChat(database, {
+        ensureBackfillSessionChatSubscription(database, {
           sessionKey: row.session_key,
           chatId: chat.id,
-          agentId: row.agent_id,
-          bindingReason: "legacy_session_backfill",
           seenAt: row.updated_at || now,
         });
       }
@@ -5529,6 +6545,16 @@ export function dbListEligibleDaemonRestartSessionSnapshots(input: {
   return rows.map(rowToDaemonRestartSessionSnapshot);
 }
 
+export function dbGetDaemonRestartSessionSnapshot(
+  restartEpoch: string,
+  sessionKey: string,
+): DaemonRestartSessionSnapshotRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?")
+    .get(restartEpoch, sessionKey) as DaemonRestartSessionSnapshotRow | undefined;
+  return row ? rowToDaemonRestartSessionSnapshot(row) : null;
+}
+
 export function dbGetDaemonRestartPendingMessages(restartEpoch: string, sessionKey: string): unknown[] {
   const row = getDb()
     .prepare(
@@ -5573,6 +6599,12 @@ export function dbMarkDaemonRestartResumeDelivered(input: {
 
 export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
   return upsertChat(getDb(), input);
+}
+
+export function dbEnsureActorAgentChat(input: EnsureActorAgentChatInput): EnsureActorAgentChatResult {
+  return executeWrite(getDb(), (database) => ensureActorAgentChat(database, input), {
+    label: "ensure_actor_agent_chat",
+  });
 }
 
 export function dbCanonicalizeDmChatForContact(input: CanonicalizeDmChatForContactInput): ChatRecord {
@@ -5839,6 +6871,614 @@ export function dbUpsertChatMessage(input: UpsertChatMessageInput): UpsertChatMe
   return upsertChatMessage(getDb(), input);
 }
 
+export function dbCreateCanonicalActorMessage(
+  input: CreateCanonicalActorMessageInput,
+): CreateCanonicalActorMessageResult {
+  return executeWrite(getDb(), (database) => createCanonicalActorMessage(database, input), {
+    label: "create_canonical_actor_message",
+  });
+}
+
+export function dbAcceptChannelBackendIngress(
+  input: AcceptChannelBackendIngressInput,
+): AcceptChannelBackendIngressResult {
+  return executeWrite(getDb(), (database) => acceptChannelBackendIngress(database, input), {
+    label: "accept_channel_backend_ingress",
+  });
+}
+
+export function dbGetChannelBackendIngressReceipt(
+  channelInstanceId: string,
+  idempotencyKey: string,
+): ChannelBackendIngressReceiptRecord | null {
+  const row = selectChannelBackendIngressReceipt(
+    getDb(),
+    normalizeOpaqueCanonicalId(channelInstanceId, "channelInstanceId"),
+    normalizeOpaqueCanonicalId(idempotencyKey, "idempotencyKey"),
+  );
+  return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbGetChannelBackendIngressReceiptByTurnId(turnId: string): ChannelBackendIngressReceiptRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendIngressReceiptRow | undefined;
+  return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbListPendingChannelBackendIngressReceipts(
+  input: { limit?: number; now?: number } = {},
+): ChannelBackendIngressReceiptRecord[] {
+  const limit = input.limit ?? 100;
+  const now = input.now ?? Date.now();
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new Error("limit must be an integer between 1 and 1000");
+  }
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new Error("now must be a non-negative Unix millisecond timestamp");
+  }
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_ingress_receipts
+      WHERE state = 'accepted'
+         OR (
+           state = 'publishing'
+           AND (
+             publish_claim_id IS NULL
+             OR publish_claim_expires_at IS NULL
+             OR publish_claim_expires_at <= ?
+           )
+         )
+      ORDER BY accepted_at ASC, id ASC
+      LIMIT ?
+    `,
+    )
+    .all(now, limit) as ChannelBackendIngressReceiptRow[];
+  return rows.map(rowToChannelBackendIngressReceipt);
+}
+
+export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendRuntimeStateRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendRuntimeStateRow | undefined;
+  return row ? rowToChannelBackendRuntimeState(row) : null;
+}
+
+export function dbRecordChannelBackendRuntimeEvent(
+  input: RecordChannelBackendRuntimeEventInput,
+): RecordChannelBackendRuntimeEventResult {
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+      const runtimeGenerationId = normalizeOpaqueCanonicalId(input.runtimeGenerationId, "runtimeGenerationId");
+      const occurredAt = input.occurredAt ?? Date.now();
+      if (!Number.isSafeInteger(occurredAt) || occurredAt < 0) {
+        throw new Error("occurredAt must be a non-negative Unix millisecond timestamp");
+      }
+      const receiptRow = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendIngressReceiptRow | undefined;
+      if (!receiptRow) {
+        throw new Error(`Channel backend ingress receipt not found for turn ${turnId}`);
+      }
+      const receipt = rowToChannelBackendIngressReceipt(receiptRow);
+      const currentRow = database
+        .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendRuntimeStateRow | undefined;
+      const current = currentRow
+        ? rowToChannelBackendRuntimeState(currentRow)
+        : {
+            turnId,
+            state: "accepted" as const,
+            lastSequence: 0,
+            lastDeltaSequence: 0,
+            updatedAt: receipt.acceptedAt,
+          };
+      const nextState = input.state ?? current.state;
+      assertChannelBackendRuntimeTransition(current.state, nextState);
+
+      let assistantMessageId = current.assistantMessageId;
+      if (input.assistantText !== undefined) {
+        if (nextState !== "completed") {
+          throw new Error("assistantText is valid only for a completed channel runtime turn");
+        }
+        const assistantText = input.assistantText.trim();
+        if (!assistantText) {
+          throw new Error("assistantText must not be empty");
+        }
+        const messageResult = upsertChatMessage(database, {
+          chatId: receipt.chatId,
+          channel: receipt.external.channelKind,
+          instanceId: receipt.channelInstanceId,
+          providerMessageId: semanticId("channel_runtime_assistant", [turnId]),
+          rawChatId: receipt.external.conversationId,
+          rawSenderId: receipt.agentId,
+          normalizedSenderId: receipt.agentId,
+          actorType: "agent",
+          agentId: receipt.agentId,
+          originSessionKey: receipt.sessionKey,
+          messageType: "text",
+          content: {
+            blocks: [{ type: "text", text: assistantText }],
+          },
+          rawProvenance: {
+            source: "channel.runtime",
+            turnId,
+          },
+          providerTimestamp: occurredAt,
+          ingestedAt: occurredAt,
+        });
+        assistantMessageId = messageResult.canonicalMessageId;
+      }
+
+      const nextSequence = current.lastSequence + 1;
+      const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
+      const terminalErrorJson = input.terminalError === undefined ? undefined : JSON.stringify(input.terminalError);
+      database
+        .prepare(
+          `
+          INSERT INTO channel_backend_runtime_state (
+            turn_id,
+            state,
+            last_sequence,
+            last_delta_sequence,
+            assistant_message_id,
+            runtime_generation_id,
+            terminal_error_json,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(turn_id) DO UPDATE SET
+            state = excluded.state,
+            last_sequence = excluded.last_sequence,
+            last_delta_sequence = excluded.last_delta_sequence,
+            assistant_message_id = COALESCE(
+              excluded.assistant_message_id,
+              channel_backend_runtime_state.assistant_message_id
+            ),
+            runtime_generation_id = excluded.runtime_generation_id,
+            terminal_error_json = COALESCE(
+              excluded.terminal_error_json,
+              channel_backend_runtime_state.terminal_error_json
+            ),
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(
+          turnId,
+          nextState,
+          nextSequence,
+          nextDeltaSequence,
+          assistantMessageId ?? null,
+          runtimeGenerationId,
+          terminalErrorJson ?? null,
+          occurredAt,
+        );
+      const runtimeRow = database
+        .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendRuntimeStateRow | undefined;
+      if (!runtimeRow) {
+        throw new Error(`Channel backend runtime state not found after update for turn ${turnId}`);
+      }
+      return {
+        receipt,
+        runtime: rowToChannelBackendRuntimeState(runtimeRow),
+      };
+    },
+    { label: "record_channel_backend_runtime_event" },
+  );
+}
+
+export function dbRecordChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  requestId: string;
+  requestedAt?: number;
+}): { created: boolean; record: ChannelBackendRuntimeInterruptRecord } {
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+      const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+      const requestId = normalizeOpaqueCanonicalId(input.requestId, "requestId");
+      const requestedAt = input.requestedAt ?? Date.now();
+      if (!Number.isSafeInteger(requestedAt) || requestedAt < 0) {
+        throw new Error("requestedAt must be a non-negative Unix millisecond timestamp");
+      }
+      const receipt = database.prepare("SELECT 1 FROM channel_backend_ingress_receipts WHERE turn_id = ?").get(turnId);
+      if (!receipt) {
+        throw new Error(`Channel backend ingress receipt not found for turn ${turnId}`);
+      }
+      const inserted = database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO channel_backend_runtime_interrupts (
+            turn_id,
+            idempotency_key,
+            request_id,
+            state,
+            requested_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, 'accepted', ?, ?)
+        `,
+        )
+        .run(turnId, idempotencyKey, requestId, requestedAt, requestedAt);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!row) {
+        throw new Error(`Channel backend runtime interrupt not found after insert for turn ${turnId}`);
+      }
+      return {
+        created: inserted.changes > 0,
+        record: rowToChannelBackendRuntimeInterrupt(row),
+      };
+    },
+    { label: "record_channel_backend_runtime_interrupt" },
+  );
+}
+
+export function dbGetChannelBackendRuntimeInterrupt(
+  turnId: string,
+  idempotencyKey: string,
+): ChannelBackendRuntimeInterruptRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_runtime_interrupts
+      WHERE turn_id = ? AND idempotency_key = ?
+    `,
+    )
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId"), normalizeOpaqueCanonicalId(idempotencyKey, "idempotencyKey")) as
+    | ChannelBackendRuntimeInterruptRow
+    | undefined;
+  return row ? rowToChannelBackendRuntimeInterrupt(row) : null;
+}
+
+export function dbClaimChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  claimedAt?: number;
+  leaseMs?: number;
+}): ChannelBackendRuntimeInterruptClaimResult {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const claimedAt = input.claimedAt ?? Date.now();
+  const leaseMs = input.leaseMs ?? 60_000;
+  if (!Number.isSafeInteger(claimedAt) || claimedAt < 0) {
+    throw new Error("claimedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 300_000) {
+    throw new Error("leaseMs must be an integer between 1000 and 300000");
+  }
+
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const current = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!current) {
+        throw new Error(`Channel backend runtime interrupt not found for turn ${turnId}`);
+      }
+      if (current.state === "published") {
+        return { status: "published", record: rowToChannelBackendRuntimeInterrupt(current) };
+      }
+      if (
+        current.state === "publishing" &&
+        current.publish_claim_id !== claimId &&
+        (current.publish_claim_expires_at ?? 0) > claimedAt
+      ) {
+        return { status: "busy", record: rowToChannelBackendRuntimeInterrupt(current) };
+      }
+
+      const claimExpiresAt = claimedAt + leaseMs;
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = 'publishing',
+              publish_claim_id = ?,
+              publish_claim_expires_at = ?,
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state IN ('accepted', 'publishing')
+            AND (
+              publish_claim_id IS NULL
+              OR publish_claim_id = ?
+              OR publish_claim_expires_at IS NULL
+              OR publish_claim_expires_at <= ?
+            )
+        `,
+        )
+        .run(claimId, claimExpiresAt, claimedAt, turnId, idempotencyKey, claimId, claimedAt);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow;
+      if (result.changes > 0 && row.publish_claim_id === claimId) {
+        return { status: "acquired", record: rowToChannelBackendRuntimeInterrupt(row) };
+      }
+      return row.state === "published"
+        ? { status: "published", record: rowToChannelBackendRuntimeInterrupt(row) }
+        : { status: "busy", record: rowToChannelBackendRuntimeInterrupt(row) };
+    },
+    { label: "claim_channel_backend_runtime_interrupt" },
+  );
+}
+
+export function dbMarkChannelBackendRuntimeInterruptPublished(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  publishedAt?: number;
+}): ChannelBackendRuntimeInterruptRecord {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const publishedAt = input.publishedAt ?? Date.now();
+  if (!Number.isSafeInteger(publishedAt) || publishedAt < 0) {
+    throw new Error("publishedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = 'published',
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              published_at = COALESCE(published_at, ?),
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(publishedAt, publishedAt, turnId, idempotencyKey, claimId);
+      if (result.changes === 0) {
+        throw new Error(`Channel backend runtime interrupt claim is no longer owned for turn ${turnId}`);
+      }
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow;
+      return rowToChannelBackendRuntimeInterrupt(row);
+    },
+    { label: "mark_channel_backend_runtime_interrupt_published" },
+  );
+}
+
+export function dbReleaseChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  releasedAt?: number;
+}): ChannelBackendRuntimeInterruptRecord {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const releasedAt = input.releasedAt ?? Date.now();
+  if (!Number.isSafeInteger(releasedAt) || releasedAt < 0) {
+    throw new Error("releasedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = CASE WHEN state = 'publishing' THEN 'accepted' ELSE state END,
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(releasedAt, turnId, idempotencyKey, claimId);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!row) {
+        throw new Error(`Channel backend runtime interrupt not found for turn ${turnId}`);
+      }
+      return rowToChannelBackendRuntimeInterrupt(row);
+    },
+    { label: "release_channel_backend_runtime_interrupt" },
+  );
+}
+
+export function dbClaimChannelBackendIngressPublication(input: {
+  receiptId: string;
+  claimId: string;
+  claimedAt?: number;
+  leaseMs?: number;
+}): ChannelBackendIngressPublicationClaimResult {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const claimedAt = input.claimedAt ?? Date.now();
+  const leaseMs = input.leaseMs ?? 60_000;
+  if (!Number.isSafeInteger(claimedAt) || claimedAt < 0) {
+    throw new Error("claimedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 300_000) {
+    throw new Error("leaseMs must be an integer between 1000 and 300000");
+  }
+
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const current = database.prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?").get(receiptId) as
+        | ChannelBackendIngressReceiptRow
+        | undefined;
+      if (!current) throw new Error(`Channel backend ingress receipt not found: ${receiptId}`);
+      if (current.state === "published") {
+        return { status: "published", receipt: rowToChannelBackendIngressReceipt(current) };
+      }
+      if (
+        current.state === "publishing" &&
+        current.publish_claim_id !== claimId &&
+        (current.publish_claim_expires_at ?? 0) > claimedAt
+      ) {
+        return { status: "busy", receipt: rowToChannelBackendIngressReceipt(current) };
+      }
+
+      const claimExpiresAt = claimedAt + leaseMs;
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = 'publishing',
+              publish_claim_id = ?,
+              publish_claim_expires_at = ?,
+              updated_at = ?
+          WHERE id = ?
+            AND state IN ('accepted', 'publishing')
+            AND (
+              publish_claim_id IS NULL
+              OR publish_claim_id = ?
+              OR publish_claim_expires_at IS NULL
+              OR publish_claim_expires_at <= ?
+            )
+        `,
+        )
+        .run(claimId, claimExpiresAt, claimedAt, receiptId, claimId, claimedAt);
+      const row = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?")
+        .get(receiptId) as ChannelBackendIngressReceiptRow;
+      if (result.changes > 0 && row.publish_claim_id === claimId) {
+        return { status: "acquired", receipt: rowToChannelBackendIngressReceipt(row) };
+      }
+      return row.state === "published"
+        ? { status: "published", receipt: rowToChannelBackendIngressReceipt(row) }
+        : { status: "busy", receipt: rowToChannelBackendIngressReceipt(row) };
+    },
+    { label: "claim_channel_backend_ingress_publication" },
+  );
+}
+
+export function dbMarkChannelBackendIngressPublished(input: {
+  receiptId: string;
+  claimId: string;
+  publishedAt?: number;
+}): ChannelBackendIngressReceiptRecord {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const publishedAt = input.publishedAt ?? Date.now();
+  if (!Number.isSafeInteger(publishedAt) || publishedAt < 0) {
+    throw new Error("publishedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = 'published',
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              published_at = COALESCE(published_at, ?),
+              updated_at = ?
+          WHERE id = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(publishedAt, publishedAt, receiptId, claimId);
+      if (result.changes === 0) {
+        throw new Error(`Channel backend ingress publication claim is no longer owned: ${receiptId}`);
+      }
+      const row = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?")
+        .get(receiptId) as ChannelBackendIngressReceiptRow;
+      return rowToChannelBackendIngressReceipt(row);
+    },
+    { label: "mark_channel_backend_ingress_published" },
+  );
+}
+
+export function dbReleaseChannelBackendIngressPublication(input: {
+  receiptId: string;
+  claimId: string;
+  releasedAt?: number;
+}): ChannelBackendIngressReceiptRecord {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const releasedAt = input.releasedAt ?? Date.now();
+  if (!Number.isSafeInteger(releasedAt) || releasedAt < 0) {
+    throw new Error("releasedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = CASE WHEN state = 'publishing' THEN 'accepted' ELSE state END,
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              updated_at = ?
+          WHERE id = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(releasedAt, receiptId, claimId);
+      const row = database.prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?").get(receiptId) as
+        | ChannelBackendIngressReceiptRow
+        | undefined;
+      if (!row) throw new Error(`Channel backend ingress receipt not found: ${receiptId}`);
+      return rowToChannelBackendIngressReceipt(row);
+    },
+    { label: "release_channel_backend_ingress_publication" },
+  );
+}
+
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {
   const row = getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow | undefined;
   return row ? rowToChatMessage(row) : null;
@@ -5884,6 +7524,7 @@ export function dbFindAgentChatMessageByRef(input: {
   agentId: string;
   messageRef: string;
   chatIds?: string[] | null;
+  originSessionKey?: string | null;
   includeDeleted?: boolean;
 }): ChatMessageRecord | null {
   const agentId = input.agentId.trim();
@@ -5893,9 +7534,15 @@ export function dbFindAgentChatMessageByRef(input: {
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?", "(m.id = ? OR m.provider_message_id = ?)"];
   const params: SQLQueryBindings[] = [agentId, messageRef, messageRef];
   const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (input.chatIds !== undefined && input.chatIds !== null && chatIds.length === 0) return null;
   if (chatIds.length > 0) {
     whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
     params.push(...chatIds);
+  }
+  const originSessionKey = input.originSessionKey?.trim();
+  if (originSessionKey) {
+    whereClauses.push("m.origin_session_key = ?");
+    params.push(originSessionKey);
   }
   if (!input.includeDeleted) {
     whereClauses.push("m.deleted_at IS NULL");
@@ -5918,6 +7565,7 @@ export function dbFindAgentChatMessageByRef(input: {
 export function dbListAgentChatMessagesPage(input: {
   agentId: string;
   chatIds?: string[] | null;
+  originSessionKey?: string | null;
   limit?: number | string | null;
   offset?: number | string | null;
   order?: "asc" | "desc";
@@ -5937,9 +7585,17 @@ export function dbListAgentChatMessagesPage(input: {
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
   const params: SQLQueryBindings[] = [agentId];
   const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (input.chatIds !== undefined && input.chatIds !== null && chatIds.length === 0) {
+    return { total: 0, limit, offset, items: [] };
+  }
   if (chatIds.length > 0) {
     whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
     params.push(...chatIds);
+  }
+  const originSessionKey = input.originSessionKey?.trim();
+  if (originSessionKey) {
+    whereClauses.push("m.origin_session_key = ?");
+    params.push(originSessionKey);
   }
   if (!input.includeDeleted) {
     whereClauses.push("m.deleted_at IS NULL");
@@ -5966,6 +7622,38 @@ export function dbListAgentChatMessagesPage(input: {
     limit,
     offset,
     items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbGetAgentChatActionCounts(input: { agentId: string; chatId: string; originSessionKey: string }): {
+  ownMessageCount: number;
+  ownTextMessageCount: number;
+} {
+  const agentId = input.agentId.trim();
+  const chatId = input.chatId.trim();
+  const originSessionKey = input.originSessionKey.trim();
+  if (!agentId || !chatId || !originSessionKey) {
+    return { ownMessageCount: 0, ownTextMessageCount: 0 };
+  }
+
+  const row = getDb()
+    .prepare(
+      `SELECT
+         COUNT(*) AS own_message_count,
+         SUM(CASE WHEN LOWER(COALESCE(message_type, '')) = 'text' THEN 1 ELSE 0 END) AS own_text_message_count
+       FROM chat_messages
+       WHERE actor_type = 'agent'
+         AND agent_id = ?
+         AND chat_id = ?
+         AND origin_session_key = ?
+         AND deleted_at IS NULL`,
+    )
+    .get(agentId, chatId, originSessionKey) as
+    | { own_message_count: number; own_text_message_count: number | null }
+    | undefined;
+  return {
+    ownMessageCount: Number(row?.own_message_count ?? 0),
+    ownTextMessageCount: Number(row?.own_text_message_count ?? 0),
   };
 }
 
@@ -6760,31 +8448,6 @@ export function dbListChatParticipants(chatId: string): ChatParticipantRecord[] 
   return rows.map(rowToChatParticipant);
 }
 
-export function dbBindSessionToChat(input: {
-  sessionKey: string;
-  chatId: string;
-  agentId?: string | null;
-  routeId?: number | null;
-  bindingReason?: string | null;
-  seenAt?: number;
-}): SessionChatBindingRecord {
-  return bindSessionToChat(getDb(), input);
-}
-
-export function dbGetSessionChatBinding(sessionKey: string): SessionChatBindingRecord | null {
-  const row = getDb().prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(sessionKey) as
-    | SessionChatBindingRow
-    | undefined;
-  return row ? rowToSessionChatBinding(row) : null;
-}
-
-export function dbListSessionChatBindings(chatId: string): SessionChatBindingRecord[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM session_chat_bindings WHERE chat_id = ? ORDER BY updated_at DESC")
-    .all(chatId) as SessionChatBindingRow[];
-  return rows.map(rowToSessionChatBinding);
-}
-
 export function dbUpsertSessionParticipant(input: UpsertSessionParticipantInput): SessionParticipantRecord {
   return upsertSessionParticipant(getDb(), input);
 }
@@ -6814,9 +8477,6 @@ interface SessionChatSubscriptionRow {
   attached_by_id: string | null;
   attached_reason: string | null;
   context_snapshot_at_attach_json: string | null;
-  speech_mode: string | null;
-  speech_updated_at: number | null;
-  speech_reason: string | null;
   output_attached_at: number | null;
   created_at: number;
   updated_at: number;
@@ -6833,9 +8493,6 @@ function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionC
     attachedById: row.attached_by_id ?? undefined,
     attachedReason: row.attached_reason ?? undefined,
     contextSnapshotAtAttach: parseJsonRecord(row.context_snapshot_at_attach_json),
-    speechMode: row.speech_mode === "muted" ? "muted" : "speak",
-    speechUpdatedAt: row.speech_updated_at ?? undefined,
-    speechReason: row.speech_reason ?? undefined,
     outputAttachedAt: row.output_attached_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -6854,8 +8511,6 @@ export function dbCreateSessionChatSubscription(
 ): SessionChatSubscriptionRecord {
   const db = getDb();
   const now = Date.now();
-  const speechMode = input.speechMode ?? "speak";
-  const speechUpdatedAt = input.speechUpdatedAt ?? now;
   const existingActive = db
     .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
     .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow | undefined;
@@ -6883,9 +8538,6 @@ export function dbCreateSessionChatSubscription(
             attached_by_id = ?,
             attached_reason = ?,
             context_snapshot_at_attach_json = ?,
-            speech_mode = ?,
-            speech_updated_at = ?,
-            speech_reason = ?,
             output_attached_at = ?,
             updated_at = ?
         WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
@@ -6897,9 +8549,6 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-        speechMode,
-        speechUpdatedAt,
-        input.speechReason ?? null,
         input.outputAttachedAt ?? null,
         now,
         input.sessionKey,
@@ -6924,10 +8573,9 @@ export function dbCreateSessionChatSubscription(
         INSERT INTO session_chat_subscriptions (
           session_key, chat_id, role, attached_by_type, attached_by_id,
           attached_reason, context_snapshot_at_attach_json,
-          speech_mode, speech_updated_at, speech_reason,
           output_attached_at, created_at, updated_at, detached_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         `,
       )
       .run(
@@ -6938,9 +8586,6 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-        speechMode,
-        speechUpdatedAt,
-        input.speechReason ?? null,
         input.outputAttachedAt ?? null,
         now,
         now,
@@ -7071,53 +8716,18 @@ export function dbSetSessionOutputAttachment(sessionKey: string, chatId: string)
         `
         UPDATE session_chat_subscriptions
         SET output_attached_at = ?,
-            speech_mode = 'speak',
-            speech_updated_at = ?,
-            speech_reason = 'output-attachment',
             updated_at = ?
         WHERE session_key = ?
           AND chat_id = ?
           AND detached_at IS NULL
       `,
       )
-      .run(now, now, now, sessionKey, chatId);
+      .run(now, now, sessionKey, chatId);
     if (result.changes === 0) {
       throw new Error(`Cannot attach output: chat ${chatId} is not active in session ${sessionKey}`);
     }
   })();
 
-  const row = db
-    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
-    .get(sessionKey, chatId) as SessionChatSubscriptionRow;
-  return rowToSessionChatSubscription(row);
-}
-
-export function dbSetSessionChatSpeechMode(
-  sessionKey: string,
-  chatId: string,
-  speechMode: SubscriptionSpeechMode,
-  reason?: string | null,
-): SessionChatSubscriptionRecord {
-  const db = getDb();
-  const now = Date.now();
-  const result = db
-    .prepare(
-      `
-      UPDATE session_chat_subscriptions
-      SET speech_mode = ?,
-          speech_updated_at = ?,
-          speech_reason = ?,
-          output_attached_at = CASE WHEN ? = 'muted' THEN NULL ELSE output_attached_at END,
-          updated_at = ?
-      WHERE session_key = ?
-        AND chat_id = ?
-        AND detached_at IS NULL
-    `,
-    )
-    .run(speechMode, now, reason ?? null, speechMode, now, sessionKey, chatId);
-  if (result.changes === 0) {
-    throw new Error(`Cannot set speech mode: chat ${chatId} is not active in session ${sessionKey}`);
-  }
   const row = db
     .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
     .get(sessionKey, chatId) as SessionChatSubscriptionRow;
@@ -7136,9 +8746,6 @@ export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: stri
           `
           UPDATE session_chat_subscriptions
           SET output_attached_at = NULL,
-              speech_mode = 'muted',
-              speech_updated_at = ?,
-              speech_reason = 'output-detached',
               updated_at = ?
           WHERE session_key = ?
             AND chat_id = ?
@@ -7146,22 +8753,19 @@ export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: stri
             AND output_attached_at IS NOT NULL
         `,
         )
-        .run(now, now, sessionKey, chatId)
+        .run(now, sessionKey, chatId)
     : getDb()
         .prepare(
           `
           UPDATE session_chat_subscriptions
           SET output_attached_at = NULL,
-              speech_mode = 'muted',
-              speech_updated_at = ?,
-              speech_reason = 'output-detached',
               updated_at = ?
           WHERE session_key = ?
             AND detached_at IS NULL
             AND output_attached_at IS NOT NULL
         `,
         )
-        .run(now, now, sessionKey);
+        .run(now, sessionKey);
   return result.changes > 0;
 }
 
@@ -7177,6 +8781,91 @@ export function dbDetachSessionChatSubscription(sessionKey: string, chatId: stri
     )
     .run(now, now, sessionKey, chatId);
   return result.changes > 0;
+}
+
+/**
+ * Default chat for a session: the active output attachment, otherwise the
+ * first remaining active subscription. Replaces the retired 1:1
+ * `session_chat_bindings` lookup.
+ */
+export function dbGetSessionDefaultChatId(sessionKey: string): string | null {
+  const output = dbGetSessionOutputAttachment(sessionKey);
+  if (output) return output.chatId;
+  return dbListSessionChatSubscriptions(sessionKey)[0]?.chatId ?? null;
+}
+
+/**
+ * Latest subscription row for a (session, chat) pair, including detached.
+ */
+export function dbGetSessionChatSubscription(sessionKey: string, chatId: string): SessionChatSubscriptionRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM session_chat_subscriptions
+      WHERE session_key = ? AND chat_id = ?
+      ORDER BY CASE WHEN detached_at IS NULL THEN 0 ELSE 1 END, updated_at DESC, id DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionKey, chatId) as SessionChatSubscriptionRow | undefined;
+  return row ? rowToSessionChatSubscription(row) : null;
+}
+
+export function dbLegacySessionChatBindingsTableExists(): boolean {
+  return tableExists(getDb(), "session_chat_bindings");
+}
+
+/**
+ * Test-only: recreate the retired `session_chat_bindings` table long enough
+ * to plant leftover rows and exercise the one-time migrate/drop path.
+ * Production schema never creates this table.
+ */
+export function dbPlantLegacySessionChatBindingForTests(input: {
+  sessionKey: string;
+  chatId: string;
+  agentId?: string | null;
+  routeId?: number | null;
+  bindingReason?: string | null;
+  seenAt?: number;
+}): void {
+  const database = getDb();
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS session_chat_bindings (
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      agent_id TEXT,
+      route_id INTEGER,
+      binding_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (session_key, chat_id)
+    );
+  `);
+  const now = input.seenAt ?? Date.now();
+  database
+    .prepare(
+      `
+      INSERT INTO session_chat_bindings (
+        session_key, chat_id, agent_id, route_id, binding_reason, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_key, chat_id) DO UPDATE SET
+        agent_id = excluded.agent_id,
+        route_id = excluded.route_id,
+        binding_reason = excluded.binding_reason,
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      input.sessionKey,
+      input.chatId,
+      input.agentId ?? null,
+      input.routeId ?? null,
+      input.bindingReason ?? null,
+      now,
+      now,
+    );
 }
 
 // ============================================================================
@@ -8641,25 +10330,6 @@ const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollu
 const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
-const TRACE_EXPORT_CURSOR_DOMAIN = "runtime_trace";
-const TRACE_EXPORT_SESSION_EVENTS_CURSOR = "session_events_enqueued";
-
-function getTraceExportSessionEventsCursor(db: Database): number | null {
-  const row = db
-    .prepare("SELECT cursor_value FROM sync_cursors WHERE domain = ? AND cursor_key = ?")
-    .get(TRACE_EXPORT_CURSOR_DOMAIN, TRACE_EXPORT_SESSION_EVENTS_CURSOR) as { cursor_value: string | null } | undefined;
-  if (!row?.cursor_value) return null;
-  const cursor = Number(row.cursor_value);
-  return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
-}
-
-function hasSessionEventsAtOrBeforeCursor(db: Database, cursor: number): boolean {
-  const row = db.prepare("SELECT 1 AS found FROM session_events WHERE id <= ? LIMIT 1").get(cursor) as
-    | { found: number }
-    | undefined;
-  return Boolean(row);
-}
-
 /**
  * Delete message metadata older than 7 days.
  * Returns number of rows deleted.
@@ -8713,7 +10383,6 @@ export interface DbPruneOptions {
 export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const db = getDb();
   const now = options.now ?? Date.now();
-  const traceExportCursor = getTraceExportSessionEventsCursor(db);
   const result: DbPruneResult = {
     messageMetadata: 0,
     sessionEvents: 0,
@@ -8728,28 +10397,18 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   if (options.dryRun) {
     const count = (sql: string, threshold: number): number =>
       Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
-    const countSessionEvents = (): number => {
-      if (traceExportCursor === null) {
-        return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
-      }
-      if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
-        return 0;
-      }
-      return Number(
-        (
-          db
-            .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
-            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as {
-            c: number;
-          }
-        ).c ?? 0,
-      );
-    };
     result.messageMetadata = count(
       "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
       now - MESSAGE_META_TTL_MS,
     );
-    result.sessionEvents = countSessionEvents();
+    // The local TTL is a hard retention boundary. An optional cloud-export
+    // cursor must not pin an unbounded local backlog when export is disabled,
+    // unlinked, or stale. The exporter already tolerates gaps and resumes from
+    // the first surviving id above its cursor.
+    result.sessionEvents = count(
+      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
+      now - SESSION_EVENTS_TTL_MS,
+    );
     result.sessionTraceBlobs = count(
       "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
       now - SESSION_TRACE_BLOBS_TTL_MS,
@@ -8770,22 +10429,8 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
     db.prepare(sql).run(threshold);
     return getDbChanges();
   };
-  const deleteSessionEvents = (): number => {
-    if (traceExportCursor === null) {
-      return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
-    }
-    if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
-      return 0;
-    }
-    db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
-      now - SESSION_EVENTS_TTL_MS,
-      traceExportCursor,
-    );
-    return getDbChanges();
-  };
-
   result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
-  result.sessionEvents = deleteSessionEvents();
+  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
   result.sessionTraceBlobs = runDelete(
     "DELETE FROM session_trace_blobs WHERE created_at < ?",
     now - SESSION_TRACE_BLOBS_TTL_MS,

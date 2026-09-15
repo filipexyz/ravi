@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const actualTasksIndexModule = await import("../../tasks/index.js");
 
@@ -21,6 +21,7 @@ const seedFixtureCalls: Array<Record<string, unknown>> = [];
 const ensuredSessionCalls: Array<Record<string, unknown>> = [];
 const emittedTaskEvents: Array<Record<string, unknown>> = [];
 const projectResourceLinks = new Map<string, Record<string, unknown>>();
+const unknownProjectRefs = new Set<string>();
 
 const projectDetails = {
   project: {
@@ -315,7 +316,7 @@ mock.module("../../projects/index.js", () => ({
   },
   getProjectDetails: (ref: string) => {
     getProjectDetailsCalls.push(ref);
-    return projectDetails;
+    return unknownProjectRefs.has(ref) ? null : projectDetails;
   },
   listProjects: (query: Record<string, unknown>) => {
     listProjectsCalls.push(query);
@@ -506,6 +507,16 @@ mock.module("../../tasks/index.js", () => ({
   },
 }));
 
+mock.module("../context.js", () => ({
+  getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
 const {
   ProjectCommands,
   ProjectFixtureCommands,
@@ -513,6 +524,7 @@ const {
   ProjectTaskCommands,
   ProjectWorkflowCommands,
 } = await import("./projects.js");
+const { ContractError } = await import("../agent-contract.js");
 
 afterAll(() => mock.restore());
 
@@ -533,6 +545,7 @@ describe("ProjectCommands", () => {
     seedFixtureCalls.length = 0;
     ensuredSessionCalls.length = 0;
     emittedTaskEvents.length = 0;
+    unknownProjectRefs.clear();
     projectResourceLinks.clear();
     projectResourceLinks.set(defaultProjectResourceLink.assetId, defaultProjectResourceLink);
     projectResourceLinks.set(defaultProjectResourceLink.id, defaultProjectResourceLink);
@@ -620,7 +633,9 @@ describe("ProjectCommands", () => {
         resources: [
           expect.objectContaining({
             type: "worktree",
-            assetId: "/workspace/ravi.bot",
+            // resolve(): the CLI normalizes locators with path.resolve, which is
+            // platform-dependent (POSIX passthrough, drive-letter on Windows).
+            assetId: resolve("/workspace/ravi.bot"),
             label: "ravi.bot worktree",
           }),
           expect.objectContaining({
@@ -674,7 +689,7 @@ describe("ProjectCommands", () => {
     console.log = () => {};
 
     try {
-      commands.start("ops-cadence", "wf-spec-1", "support", "wf-run-2", true);
+      commands.start("ops-cadence", "wf-spec-1", "support", "wf-run-2", true, true);
     } finally {
       console.log = originalLog;
     }
@@ -782,7 +797,7 @@ describe("ProjectCommands", () => {
     console.log = () => {};
 
     try {
-      await commands.dispatch("ops-cadence", "task-1", undefined, undefined, true);
+      await commands.dispatch("ops-cadence", "task-1", undefined, undefined, true, true);
     } finally {
       console.log = originalLog;
     }
@@ -821,14 +836,16 @@ describe("ProjectCommands", () => {
       expect.objectContaining({
         projectRef: "ops-cadence",
         assetType: "resource",
-        assetId: "/workspace/ravi.bot",
+        // resolve(): the CLI normalizes locators with path.resolve, which is
+        // platform-dependent (POSIX passthrough, drive-letter on Windows).
+        assetId: resolve("/workspace/ravi.bot"),
         role: "substrate",
         metadata: expect.objectContaining({
           lane: "core",
           type: "worktree",
           label: "ravi.bot",
-          locator: "/workspace/ravi.bot",
-          path: "/workspace/ravi.bot",
+          locator: resolve("/workspace/ravi.bot"),
+          path: resolve("/workspace/ravi.bot"),
           basename: "ravi.bot",
         }),
       }),
@@ -917,7 +934,7 @@ describe("ProjectCommands", () => {
     console.log = () => {};
 
     try {
-      await commands.seed(undefined, true);
+      await commands.seed(undefined, true, true);
     } finally {
       console.log = originalLog;
     }
@@ -1042,5 +1059,181 @@ describe("ProjectCommands", () => {
         }),
       }),
     ]);
+  });
+});
+
+describe("projects agent-first contract", () => {
+  beforeEach(() => {
+    createProjectCalls.length = 0;
+    linkProjectCalls.length = 0;
+    dispatchProjectTaskCalls.length = 0;
+    startProjectWorkflowRunCalls.length = 0;
+    listProjectsCalls.length = 0;
+    getProjectDetailsCalls.length = 0;
+    seedFixtureCalls.length = 0;
+    emittedTaskEvents.length = 0;
+    unknownProjectRefs.clear();
+    projectResourceLinks.clear();
+  });
+
+  async function expectContractError(
+    run: () => unknown | Promise<unknown>,
+  ): Promise<InstanceType<typeof ContractError>> {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await run();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  it("blocks projects tasks dispatch without --execute (dry-run, exit 3, no dispatch)", async () => {
+    const commands = new ProjectTaskCommands();
+    const error = await expectContractError(() =>
+      commands.dispatch("ops-cadence", "task-1", undefined, undefined, true),
+    );
+    expect(error.exitCode).toBe(3);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("projects tasks dispatch");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).taskId).toBe("task-1");
+    expect(dispatchProjectTaskCalls).toHaveLength(0);
+    expect(emittedTaskEvents).toHaveLength(0);
+  });
+
+  it("blocks projects workflows start without --execute (dry-run, exit 3, no run started)", async () => {
+    const commands = new ProjectWorkflowCommands();
+    const error = await expectContractError(() =>
+      commands.start("ops-cadence", "wf-spec-1", "support", undefined, true),
+    );
+    expect(error.exitCode).toBe(3);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("projects workflows start");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect((envelope.error.plan as Record<string, unknown>).workflowSpecId).toBe("wf-spec-1");
+    expect(startProjectWorkflowRunCalls).toHaveLength(0);
+  });
+
+  it("minimizes the fixtures seed effect to an operational flag", async () => {
+    const commands = new ProjectFixtureCommands();
+    const error = await expectContractError(() => commands.seed(undefined, true));
+    expect(error.exitCode).toBe(3);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("projects fixtures seed");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.plan).toEqual({
+      ownerAgentId: "main",
+      resetsCanonicalFixtures: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain(
+      "reset and reseed the canonical project/workflow/task fixtures",
+    );
+    expect(seedFixtureCalls).toHaveLength(0);
+  });
+
+  it("imports project resources immediately without --execute", () => {
+    const commands = new ProjectResourceCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.import(
+        "ops-cadence",
+        undefined,
+        undefined,
+        ["https://docs.example.com/runbook"],
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      expect(payload.total).toBe(1);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(linkProjectCalls).toHaveLength(1);
+    expect(linkProjectCalls[0]).toMatchObject({
+      projectRef: "ops-cadence",
+      assetType: "resource",
+      assetId: "https://docs.example.com/runbook",
+    });
+  });
+
+  it("performs the dispatch when --execute is passed", async () => {
+    const commands = new ProjectTaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.dispatch("ops-cadence", "task-1", undefined, undefined, true, true);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(dispatchProjectTaskCalls).toHaveLength(1);
+  });
+
+  it("emits PROJECT_NOT_FOUND envelope with suggestions on --json (exit 1)", async () => {
+    unknownProjectRefs.add("ops-cadenc");
+    const commands = new ProjectCommands();
+    const error = await expectContractError(() => commands.show("ops-cadenc", true));
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("projects show");
+    expect(envelope.error.code).toBe("PROJECT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("ops-cadence");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("emits PROJECT_NOT_FOUND before the brake on projects tasks dispatch", async () => {
+    unknownProjectRefs.add("ghost-project");
+    const commands = new ProjectTaskCommands();
+    const error = await expectContractError(() =>
+      commands.dispatch("ghost-project", "task-1", undefined, undefined, true),
+    );
+    expect(error.exitCode).toBe(1);
+    expect(error.envelope().error.code).toBe("PROJECT_NOT_FOUND");
+    expect(dispatchProjectTaskCalls).toHaveLength(0);
+  });
+
+  it("supports --fields compact mode on projects list", () => {
+    const commands = new ProjectCommands();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+    try {
+      commands.list(undefined, undefined, true, undefined, undefined, "slug,status");
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["slug", "status"]);
+  });
+
+  it("supports --fields compact mode on projects resources list", () => {
+    projectResourceLinks.set(defaultProjectResourceLink.assetId, defaultProjectResourceLink);
+    projectResourceLinks.set(defaultProjectResourceLink.id, defaultProjectResourceLink);
+    const commands = new ProjectResourceCommands();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+    try {
+      commands.list("ops-cadence", undefined, true, undefined, undefined, "id,locator");
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["id", "locator"]);
   });
 });
