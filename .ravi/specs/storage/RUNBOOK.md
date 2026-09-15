@@ -81,8 +81,13 @@ bun /home/ravi/.ravi/tasks/task-f3f39d9a/checker/storage-plan-checker.ts \
 
 ## Open items
 
-- Exact persisted location/semantics of Omni holds (must be resolved or the
-  restriction stated as bounded fail-closed).
+- Exact persisted location/semantics of Omni holds: no canonical hold surface was
+  found, so `omni-orphan` stays fail-closed (preserve all, record the limitation).
+- `tasks-terminal` reads task state read-only from `ravi.db` and delegates removal
+  to `git worktree remove`. A worktree is only a candidate when the task is
+  terminal and older than 20 days, the worktree is a clean, non-detached secondary
+  worktree with an upstream, zero unpushed commits and the recorded branch. Any
+  other result preserves it.
 - Final numeric thresholds (routine tmp age, Codex age, task age 20d) are frozen
   in the policy constants, not in this runbook.
 - Wire the checker into the independent verification task (task-67069d29) as its

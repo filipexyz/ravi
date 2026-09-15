@@ -23,6 +23,7 @@ import {
   type StorageEntry,
 } from "./eligibility.js";
 import { resolveStoragePolicy, tmpNameMatchesAllowlist, type StoragePolicy, type StorageTier } from "./policy.js";
+import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
 import {
   newStorageReceiptId,
   pruneStorageReceipts,
@@ -45,6 +46,8 @@ export interface StorageCleanupOptions {
   now?: number;
   /** Codex liveness probe; the default preserves every Codex artifact. */
   codexProbe?: CodexProbe;
+  /** Task worktree probe; absent means every worktree is preserved. */
+  taskProbe?: TaskProbe;
 }
 
 export interface StorageCleanupResult {
@@ -124,7 +127,12 @@ function isProcessAlive(pid: number): boolean {
 
 const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
 
-function canRemove(entry: StorageEntry, policy: StoragePolicy, probe?: CodexProbe): string | null {
+interface StorageProbes {
+  codexProbe?: CodexProbe;
+  taskProbe?: TaskProbe;
+}
+
+function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, probes: StorageProbes): string | null {
   let st;
   try {
     st = lstatSync(entry.path);
@@ -133,21 +141,41 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy, probe?: CodexProb
   }
   if (st.isSymbolicLink()) return "symlink not followed";
   if (isProtectedPath(entry.path, policy)) return "protected path";
-  if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
   if (entry.area === "tmp-ravi") {
+    if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
     if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
     return null;
   }
   if (entry.area === "codex-inactive") {
+    if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
     if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
-    if (probe?.processRunning()) return "a live codex process is running";
+    if (probes.codexProbe?.processRunning()) return "a live codex process is running";
     const sessionId = parseCodexSessionId(entry.path);
     if (!sessionId) return "session metadata unreadable (fail-closed)";
-    const liveness = probe?.sessionLiveness(sessionId) ?? "unknown";
+    const liveness = probes.codexProbe?.sessionLiveness(sessionId) ?? "unknown";
     if (liveness !== "not-live") return `session liveness is ${liveness}`;
     return null;
   }
+  if (entry.area === "tasks-terminal") {
+    const probe = probes.taskProbe;
+    if (!probe) return "no task source available";
+    const { records } = probe.listWorktreeTasks();
+    const record = records.find((candidate) => candidate.worktreePath === entry.path);
+    if (!record) return "task record not found or no longer a worktree task";
+    if (!isTerminalTask(record)) return `task is not terminal (${record.status})`;
+    if (now - taskTerminalStamp(record) < policy.taskMaxAgeMs) return "task is younger than the threshold";
+    const assessment = probe.assess(record);
+    return assessment.decision === "candidate" ? null : assessment.reason;
+  }
   return "area removal is not wired";
+}
+
+function removeTaskWorktree(entry: StorageEntry, probe?: TaskProbe): { ok: boolean; error?: string } {
+  if (!probe) return { ok: false, error: "no task source available" };
+  const { records } = probe.listWorktreeTasks();
+  const record = records.find((candidate) => candidate.worktreePath === entry.path);
+  if (!record) return { ok: false, error: "task record disappeared before removal" };
+  return probe.remove(record);
 }
 
 function isProtectedPath(target: string, policy: StoragePolicy): boolean {
@@ -171,7 +199,7 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
   let freedBytes = 0;
 
   try {
-    const scans = scanStorageAreas(policy, now, options.codexProbe);
+    const scans = scanStorageAreas(policy, now, options.codexProbe, options.taskProbe);
     const entries = scans.flatMap((scan) => scan.entries);
     const limitations = scans.flatMap((scan) => scan.limitations);
     const candidates = entries.filter((entry) => entry.decision === "candidate");
@@ -192,15 +220,24 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
     }
 
     if (execute) {
+      const probes: StorageProbes = { codexProbe: options.codexProbe, taskProbe: options.taskProbe };
       for (const entry of candidates) {
-        const blocked = canRemove(entry, policy, options.codexProbe);
+        const blocked = canRemove(entry, policy, now, probes);
         if (blocked) {
           errors.push(`preserved ${entry.path}: ${blocked}`);
           areaOf(entry).preserved += 1;
           continue;
         }
         try {
-          rmSync(entry.path, { recursive: true, force: false });
+          if (entry.area === "tasks-terminal") {
+            const outcome = removeTaskWorktree(entry, options.taskProbe);
+            if (!outcome.ok) {
+              errors.push(`failed to remove ${entry.path}: ${outcome.error}`);
+              continue;
+            }
+          } else {
+            rmSync(entry.path, { recursive: true, force: false });
+          }
           removed.push(entry.path);
           freedBytes += entry.bytes;
           areaOf(entry).removed += 1;

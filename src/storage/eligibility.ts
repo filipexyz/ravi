@@ -27,6 +27,7 @@ import {
 } from "node:fs";
 import { join, sep } from "node:path";
 import { tmpNameMatchesAllowlist, type StoragePolicy } from "./policy.js";
+import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
 
 export type StorageArea = "tmp-ravi" | "codex-inactive" | "omni-orphan" | "tasks-terminal";
 export type StorageDecision = "candidate" | "preserved";
@@ -324,18 +325,46 @@ export function scanOmniArea(policy: StoragePolicy): AreaScan {
   return { area: "omni-orphan", entries: [], limitations };
 }
 
-export function scanTasksArea(_policy: StoragePolicy): AreaScan {
-  return {
-    area: "tasks-terminal",
-    entries: [],
-    limitations: [
-      "tasks-terminal: removal is delegated to the canonical Task/Git lifecycle and is not wired in slice 1; all task worktrees preserved",
-    ],
-  };
+export function scanTasksArea(policy: StoragePolicy, now: number, probe?: TaskProbe): AreaScan {
+  const entries: StorageEntry[] = [];
+  const limitations: string[] = [];
+  if (!probe) {
+    limitations.push("tasks-terminal: no task source available; all task worktrees preserved (fail-closed)");
+    return { area: "tasks-terminal", entries, limitations };
+  }
+  const { records, error } = probe.listWorktreeTasks();
+  if (error) limitations.push(`tasks-terminal: ${error}; all task worktrees preserved`);
+  for (const record of records) {
+    const root = record.worktreePath;
+    if (!isTerminalTask(record)) {
+      entries.push(preserved("tasks-terminal", root, root, 0, `task is not terminal (${record.status})`));
+      continue;
+    }
+    const age = now - taskTerminalStamp(record);
+    if (age < policy.taskMaxAgeMs) {
+      entries.push(
+        preserved("tasks-terminal", root, root, 0, `task is younger than the ${policy.taskMaxAgeMs}ms threshold`),
+      );
+      continue;
+    }
+    const assessment = probe.assess(record);
+    const bytes = assessment.decision === "candidate" ? measureBytes(root) : 0;
+    entries.push(
+      assessment.decision === "candidate"
+        ? candidate("tasks-terminal", root, root, bytes, assessment.reason)
+        : preserved("tasks-terminal", root, root, bytes, assessment.reason),
+    );
+  }
+  return { area: "tasks-terminal", entries, limitations };
 }
 
-export function scanStorageAreas(policy: StoragePolicy, now: number, probe?: CodexProbe): AreaScan[] {
+export function scanStorageAreas(
+  policy: StoragePolicy,
+  now: number,
+  probe?: CodexProbe,
+  taskProbe?: TaskProbe,
+): AreaScan[] {
   return policy.tier === "routine"
     ? [scanTmpArea(policy, now), scanCodexArea(policy, now, probe)]
-    : [scanOmniArea(policy), scanTasksArea(policy)];
+    : [scanOmniArea(policy), scanTasksArea(policy, now, taskProbe)];
 }

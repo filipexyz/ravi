@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { StorageLockedError, runStorageCleanup } from "../../storage/cleanup.js";
 import type { CodexProbe } from "../../storage/eligibility.js";
 import { computeStoragePolicyHash, tmpNameMatchesAllowlist } from "../../storage/policy.js";
+import { createRaviTaskProbe } from "../../storage/task-worktrees.js";
+import type { TaskProbe, TaskWorktreeAssessment, TaskWorktreeRecord } from "../../storage/task-probe.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_30D_MS = 30 * ONE_DAY_MS;
@@ -265,5 +267,170 @@ describe("storage cleanup codex-inactive", () => {
     const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: flaky });
     expect(existsSync(file)).toBe(true);
     expect(result.errors.join(" ")).toContain("liveness");
+  });
+});
+
+function taskRecord(worktreePath: string, overrides: Partial<TaskWorktreeRecord> = {}): TaskWorktreeRecord {
+  const stamp = Date.now() - AGE_30D_MS;
+  return {
+    taskId: "task-x",
+    status: "done",
+    taskDir: null,
+    worktreePath,
+    worktreeBranch: "task-branch",
+    updatedAt: stamp,
+    completedAt: stamp,
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function fakeTaskProbe(
+  record: TaskWorktreeRecord,
+  assessment: TaskWorktreeAssessment,
+  removeResult: { ok: true } | { ok: false; error: string } = { ok: true },
+): { probe: TaskProbe; calls: { removed: number } } {
+  const calls = { removed: 0 };
+  return {
+    calls,
+    probe: {
+      listWorktreeTasks: () => ({ records: [record] }),
+      assess: () => assessment,
+      remove: () => {
+        calls.removed += 1;
+        return removeResult;
+      },
+    },
+  };
+}
+
+const CANDIDATE: TaskWorktreeAssessment = { decision: "candidate", reason: "safe" };
+const PRESERVED: TaskWorktreeAssessment = { decision: "preserved", reason: "dirty worktree" };
+
+describe("storage cleanup tasks-terminal", () => {
+  it("removes a terminal, aged, safe worktree through the probe", () => {
+    const fx = makeFixture();
+    const path = join(fx.root, "tasks", "wt");
+    mkdirSync(path, { recursive: true });
+    const { probe, calls } = fakeTaskProbe(taskRecord(path), CANDIDATE);
+    const result = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: probe });
+    expect(calls.removed).toBe(1);
+    expect(result.removed).toContain(path);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("preserves non-terminal and young tasks", () => {
+    const fx = makeFixture();
+    const path = join(fx.root, "tasks", "wt");
+    const active = fakeTaskProbe(taskRecord(path, { status: "in_progress", completedAt: null }), CANDIDATE);
+    const activeResult = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: active.probe });
+    expect(activeResult.areas["tasks-terminal"]?.candidates).toBe(0);
+    expect(active.calls.removed).toBe(0);
+
+    const young = fakeTaskProbe(taskRecord(path, { completedAt: Date.now() }), CANDIDATE);
+    const youngResult = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: young.probe });
+    expect(youngResult.areas["tasks-terminal"]?.candidates).toBe(0);
+    expect(young.calls.removed).toBe(0);
+  });
+
+  it("preserves a worktree the probe refuses (dirty/stashed/unpushed)", () => {
+    const fx = makeFixture();
+    const path = join(fx.root, "tasks", "wt");
+    const { probe, calls } = fakeTaskProbe(taskRecord(path), PRESERVED);
+    const result = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: probe });
+    expect(calls.removed).toBe(0);
+    expect(result.areas["tasks-terminal"]?.preserved).toBe(1);
+  });
+
+  it("reports a removal failure without masking it", () => {
+    const fx = makeFixture();
+    const path = join(fx.root, "tasks", "wt");
+    mkdirSync(path, { recursive: true });
+    const { probe } = fakeTaskProbe(taskRecord(path), CANDIDATE, { ok: false, error: "git refused" });
+    const result = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: probe });
+    expect(result.success).toBe(false);
+    expect(result.errors.join(" ")).toContain("git refused");
+  });
+
+  it("preserves everything when no task source is available", () => {
+    const fx = makeFixture();
+    const result = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env });
+    expect(result.removed).toEqual([]);
+    expect(result.limitations.join(" ")).toContain("tasks-terminal");
+  });
+});
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+function makeGitFixture(): { root: string; repo: string; worktree: string; env: NodeJS.ProcessEnv } {
+  const root = mkdtempSync(join(tmpdir(), "storage-git-"));
+  fixtures.push(root);
+  const tasksRoot = join(root, "tasks");
+  const repo = join(root, "repo");
+  const worktree = join(tasksRoot, "wt");
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(tasksRoot, { recursive: true });
+  git(repo, ["init", "-q", "-b", "main"]);
+  git(repo, ["config", "user.email", "test@example.com"]);
+  git(repo, ["config", "user.name", "Storage Test"]);
+  writeFileSync(join(repo, "file.txt"), "hello\n");
+  git(repo, ["add", "file.txt"]);
+  git(repo, ["commit", "-q", "-m", "init"]);
+  git(repo, ["worktree", "add", "-q", worktree, "-b", "task-branch"]);
+  return { root, repo, worktree, env: { ...process.env, RAVI_STATE_DIR: root } };
+}
+
+function pushWorktree(fx: { root: string; repo: string; worktree: string }): void {
+  const remote = join(fx.root, "remote.git");
+  git(fx.root, ["init", "-q", "--bare", remote]);
+  git(fx.repo, ["remote", "add", "origin", remote]);
+  git(fx.worktree, ["push", "-q", "-u", "origin", "task-branch"]);
+}
+
+describe("task worktree Git safety proof", () => {
+  it("preserves a worktree with no upstream (unpushed risk)", () => {
+    const fx = makeGitFixture();
+    const probe = createRaviTaskProbe(fx.env);
+    const assessment = probe.assess(taskRecord(fx.worktree));
+    expect(assessment.decision).toBe("preserved");
+    expect(assessment.reason).toContain("upstream");
+  });
+
+  it("accepts a clean, fully pushed secondary worktree", () => {
+    const fx = makeGitFixture();
+    pushWorktree(fx);
+    const probe = createRaviTaskProbe(fx.env);
+    expect(probe.assess(taskRecord(fx.worktree)).decision).toBe("candidate");
+  });
+
+  it("preserves dirty and stashed worktrees", () => {
+    const fx = makeGitFixture();
+    pushWorktree(fx);
+    const probe = createRaviTaskProbe(fx.env);
+    writeFileSync(join(fx.worktree, "file.txt"), "changed\n");
+    expect(probe.assess(taskRecord(fx.worktree)).reason).toContain("dirty");
+    git(fx.worktree, ["stash"]);
+    expect(probe.assess(taskRecord(fx.worktree)).reason).toContain("stash");
+  });
+
+  it("preserves a worktree with unpushed commits", () => {
+    const fx = makeGitFixture();
+    pushWorktree(fx);
+    writeFileSync(join(fx.worktree, "extra.txt"), "more\n");
+    git(fx.worktree, ["add", "extra.txt"]);
+    git(fx.worktree, ["commit", "-q", "-m", "wip"]);
+    const probe = createRaviTaskProbe(fx.env);
+    expect(probe.assess(taskRecord(fx.worktree)).reason).toContain("unpushed");
+  });
+
+  it("removes the worktree through git worktree remove", () => {
+    const fx = makeGitFixture();
+    pushWorktree(fx);
+    const probe = createRaviTaskProbe(fx.env);
+    const outcome = probe.remove(taskRecord(fx.worktree));
+    expect(outcome.ok).toBe(true);
+    expect(existsSync(fx.worktree)).toBe(false);
   });
 });
