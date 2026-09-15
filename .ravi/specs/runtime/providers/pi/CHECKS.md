@@ -7,7 +7,8 @@
 - Restricted agents are accepted because `tools.permissionMode` is `ravi-host` and `supportsToolHooks` is true.
 - Simulated extension load failure (missing `ravi.permission.hooks.ready` handshake) MUST fail the turn with `failureKind=transport`, MUST NOT send `prompt`, and MUST NOT emit `tool.started`. Capability advertisement staying `ravi-host` while tools run ungoverned is forbidden.
 - A pre-handshake `tool_execution_start` or a transport restart that comes back without the handshake MUST fail closed the same way.
-- A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with `confirmed: false` and blocks the tool.
+- A restricted `canUseTool` deny on the Pi path answers `extension_ui_response` with a decision value that carries the host sub-reason (capability / bash policy / skill / bridge / fence) and blocks the tool. The materialized extension MUST put that reason on `{ block: true, reason }`. A boolean-only `confirm` response that collapses every deny to a fixed string is forbidden.
+- Parallel permission UI requests MUST stay correlated by `id`. The extension MUST serialize overlapping `tool_call` dialogs so a single-outstanding-dialog UI cannot cancel a sibling as an unexplained deny.
 - The same path allows a granted Read/tool call.
 - Bash requires both `canUseTool("Bash")` and `authorizeCommandExecution`. Missing handlers, thrown authorization, and unconditional/observation denials fail closed.
 - Unauthorized skill use (Read/`Skill`/`ravi skills show` of a skill outside `allowedSkills`) MUST be denied on the extension authorize path with `SKILL_NOT_AUTHORIZED`, even when `canUseTool` would otherwise allow the tool.

