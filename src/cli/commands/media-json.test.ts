@@ -176,6 +176,7 @@ const { AudioCommands } = await import("./audio.js");
 const { MediaCommands } = await import("./media.js");
 const { ReactCommands } = await import("./react.js");
 const { ContractError } = await import("../agent-contract.js");
+const { MediaSendAuthError, OMNI_AUTH_FAILED_SUGGESTED_ACTION } = await import("../media-send-auth.js");
 
 type ContractErrorInstance = InstanceType<typeof ContractError>;
 
@@ -589,6 +590,30 @@ describe("media send contract", () => {
       expect(error.details.retryable).toBe(true);
       expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
       expect(JSON.stringify(error.envelope())).not.toContain("sk-abcdefghijklmnop");
+      expect(mediaSendCalls).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("maps Omni 401 / Invalid API key to OMNI_AUTH_FAILED with a config-divergence action", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-auth-failure-"));
+    const filePath = join(dir, "sample.png");
+    writeFileSync(filePath, "png");
+    mediaSendError = new MediaSendAuthError();
+    try {
+      const error = await expectContractError(
+        () =>
+          new MediaCommands().send(filePath, undefined, undefined, undefined, undefined, undefined, false, true, true),
+        "OMNI_AUTH_FAILED",
+        1,
+      );
+
+      expect(error.message).toBe("Omni rejected the API key used to send media.");
+      expect(error.details.retryable).toBe(false);
+      expect(error.details.suggestedAction).toBe(OMNI_AUTH_FAILED_SUGGESTED_ACTION);
+      expect(error.details.suggestedAction).toContain("servers.list.<active>.apiKey");
+      expect(JSON.stringify(error.envelope())).not.toContain("runtime-primary-key");
       expect(mediaSendCalls).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

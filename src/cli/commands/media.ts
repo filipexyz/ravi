@@ -11,6 +11,7 @@ import { getContext } from "../context.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import { inferMediaMimeType, inferMediaType, sendMediaWithOmniCli } from "../media-send.js";
+import { mapMediaSendFailure } from "../media-send-auth.js";
 
 const mediaSendReturnSchema = z.object({
   success: z.literal(true),
@@ -147,12 +148,13 @@ export class MediaCommands {
       }
 
       return payload;
-    } catch {
-      contractFail("media send", "MEDIA_SEND_FAILED", "Media delivery failed.", {
+    } catch (error) {
+      const mapped = mapMediaSendFailure(error);
+      contractFail("media send", mapped.code, mapped.message, {
         asJson,
         details: {
-          retryable: true,
-          suggestedAction: "Check the target (--account/--to or session context) and channel availability, then retry",
+          retryable: mapped.retryable,
+          suggestedAction: mapped.suggestedAction,
         },
       });
     }

@@ -15,6 +15,8 @@ tags:
 applies_to:
   - src/cli/commands/media.ts
   - src/cli/media-send.ts
+  - src/cli/media-send-auth.ts
+  - src/omni-config.ts
   - src/cli/commands/sessions.ts
   - src/cli/agent-contract.ts
 owners:
@@ -47,8 +49,17 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 4. A missing local file MUST exit 1 with `FILE_NOT_FOUND` BEFORE the brake — no
    plan is shown for a send that could never happen.
 5. Delivery failures after `--execute` MUST exit 1 with `MEDIA_SEND_FAILED`
-   (`retryable: true`).
-6. When invoked from an agent context (`RAVI_*` envs present), a thrown
+   (`retryable: true`), except Omni `401` / `Invalid API key` which MUST exit 1
+   with `OMNI_AUTH_FAILED` (`retryable: false`) and a `suggestedAction` that
+   names the `servers.list.<active>.apiKey` vs top-level `apiKey` /
+   `OMNI_API_KEY` divergence without echoing the key or raw provider payload.
+6. `media send --execute` MUST authenticate the spawned Omni CLI with the same
+   `apiUrl`/`apiKey` `resolveOmniConnection()` gives the Ravi Omni
+   client/runtime. Because the Omni CLI prefers `servers.list.<active>.apiKey`
+   over the flat / env key, the child process MUST receive an isolated
+   `OMNI_CONFIG_DIR` whose `servers.list.default` mirrors that resolved
+   connection (plus `OMNI_API_URL` / `OMNI_API_KEY`).
+7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 
 ## Write classification (brake decision per op)
@@ -63,6 +74,7 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 |---|---|---|
 | local file missing | `FILE_NOT_FOUND` | 1 |
 | delivery failure | `MEDIA_SEND_FAILED` (retryable) | 1 |
+| Omni 401 / invalid API key | `OMNI_AUTH_FAILED` (not retryable) + config-divergence suggestedAction | 1 |
 | braked send without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
@@ -85,7 +97,9 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 ## Validation
 
 - `bun test src/cli/commands/media-json.test.ts` green (the `media send
-  contract` block included).
+  contract` block included, including `OMNI_AUTH_FAILED`).
+- `bun test src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts`
+  green (credential wiring + 401 classification).
 - Live checks: `ravi media send /tmp/img.png --json` → exit 3 + plan; adding
   `--execute` delivers; `ravi media send /tmp/nope.png --json` →
   `FILE_NOT_FOUND`, exit 1.

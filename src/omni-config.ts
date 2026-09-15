@@ -6,7 +6,7 @@
  * 2. ~/.omni/config.json (omni's own config)
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "./utils/logger.js";
@@ -15,10 +15,19 @@ const log = logger.child("omni-config");
 
 const OMNI_CONFIG_PATH = join(homedir(), ".omni", "config.json");
 
+/** Server name the Omni CLI treats as the local/default remote target. */
+export const OMNI_CLI_DEFAULT_SERVER = "default";
+
 export interface OmniConnection {
   apiUrl: string;
   apiKey: string;
   source: "env" | "omni-config";
+}
+
+export interface OmniCliAuthEnv {
+  OMNI_API_URL: string;
+  OMNI_API_KEY: string;
+  OMNI_CONFIG_DIR: string;
 }
 
 interface OmniConfig {
@@ -67,6 +76,48 @@ export function resolveOmniConnection(): OmniConnection | null {
   }
 
   return null;
+}
+
+/**
+ * Write an isolated Omni CLI config that projects the Ravi-resolved
+ * connection onto both the legacy flat fields and `servers.list.default`.
+ *
+ * The Omni CLI (`@automagik/omni`) authenticates client commands from
+ * `servers.list.<active>.apiKey` via `OMNI_CONFIG_DIR` / `~/.omni/config.json`.
+ * That server entry can be stale while the top-level `apiKey` / `OMNI_API_KEY`
+ * (what {@link resolveOmniConnection} returns) is still valid. A child `omni`
+ * process pointed at this directory cannot prefer the stale server key.
+ */
+export function materializeOmniCliAuthConfig(connection: OmniConnection, configDir: string): string {
+  mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  const configPath = join(configDir, "config.json");
+  const config = {
+    apiUrl: connection.apiUrl,
+    apiKey: connection.apiKey,
+    servers: {
+      active: OMNI_CLI_DEFAULT_SERVER,
+      list: {
+        [OMNI_CLI_DEFAULT_SERVER]: {
+          url: connection.apiUrl,
+          apiKey: connection.apiKey,
+        },
+      },
+    },
+  };
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  return configPath;
+}
+
+/**
+ * Env overlay that forces a spawned Omni CLI to use the same credentials as
+ * the Ravi Omni client/runtime.
+ */
+export function buildOmniCliAuthEnv(connection: OmniConnection, configDir: string): OmniCliAuthEnv {
+  return {
+    OMNI_API_URL: connection.apiUrl,
+    OMNI_API_KEY: connection.apiKey,
+    OMNI_CONFIG_DIR: configDir,
+  };
 }
 
 /**

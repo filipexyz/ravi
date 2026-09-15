@@ -13,10 +13,17 @@
 - `media send /path/that/does/not/exist --json` MUST exit 1 with the
   `FILE_NOT_FOUND` envelope BEFORE any brake output.
 - A delivery failure after `--execute` MUST exit 1 with `MEDIA_SEND_FAILED` and
-  `retryable: true` in the envelope.
+  `retryable: true` in the envelope, except Omni `401` / `Invalid API key`
+  which MUST exit 1 with `OMNI_AUTH_FAILED`, `retryable: false`, and a
+  `suggestedAction` that names the `servers.list.<active>.apiKey` vs
+  top-level / `OMNI_API_KEY` divergence without echoing the key.
+- `media send --execute` MUST authenticate the spawned Omni CLI with the same
+  `apiUrl`/`apiKey` `resolveOmniConnection()` would give the Ravi Omni client,
+  including writing that key into `servers.list.default` via `OMNI_CONFIG_DIR`
+  so a stale server entry cannot win.
 - The sessions builder `buildCurrentSessionMediaSendCommand` MUST render
   `ravi media send "<file-path>" --execute`.
 - The `sendCommand` field returned by `image generate` and `audio generate`
   MUST include `--execute`.
-- `bun test src/cli/commands/media-json.test.ts` SHOULD pass after any change
-  to the media contract surface.
+- `bun test src/cli/commands/media-json.test.ts src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts`
+  SHOULD pass after any change to the media contract or Omni CLI auth wiring.
