@@ -20,7 +20,12 @@ import {
 } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
-import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
+import {
+  DaemonCommands,
+  findSourceProjectRoot,
+  isInsideDaemonProcessTree,
+  resolveDaemonRuntimeTarget,
+} from "./daemon.js";
 
 const tempDirs: string[] = [];
 
@@ -420,5 +425,51 @@ describe("DaemonCommands init-admin-key negated storage", () => {
 
     expect(failure).toBeInstanceOf(ContractError);
     expect(failure).toMatchObject({ code: "ADMIN_CONTEXT_EXISTS", exitCode: 3, op: "daemon init-admin-key" });
+  });
+});
+
+describe("daemon restart process-tree guard", () => {
+  // Chain helper: pid -> parent, so tests do not depend on the real process tree.
+  function chainFrom(map: Record<number, number>) {
+    return (pid: number): number | null => (pid in map ? map[pid]! : null);
+  }
+
+  it("detects a caller that descends from the daemon", () => {
+    // 900 (cli) -> 800 (shell) -> 700 (cron runner) -> 500 (daemon)
+    expect(
+      isInsideDaemonProcessTree({
+        daemonPid: 500,
+        startPid: 900,
+        readParentPid: chainFrom({ 900: 800, 800: 700, 700: 500 }),
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores callers outside the daemon tree", () => {
+    expect(
+      isInsideDaemonProcessTree({
+        daemonPid: 500,
+        startPid: 900,
+        readParentPid: chainFrom({ 900: 800, 800: 1 }),
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false when the daemon is not running", () => {
+    expect(isInsideDaemonProcessTree({ daemonPid: null, startPid: 900, readParentPid: () => 800 })).toBe(false);
+  });
+
+  it("terminates on a cyclic parent chain", () => {
+    expect(
+      isInsideDaemonProcessTree({
+        daemonPid: 500,
+        startPid: 900,
+        readParentPid: chainFrom({ 900: 800, 800: 900 }),
+      }),
+    ).toBe(false);
+  });
+
+  it("gives up when the parent lookup fails", () => {
+    expect(isInsideDaemonProcessTree({ daemonPid: 500, startPid: 900, readParentPid: () => null })).toBe(false);
   });
 });
