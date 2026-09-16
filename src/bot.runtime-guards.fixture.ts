@@ -601,6 +601,7 @@ mock.module("./runtime/runtime-context-store.js", () => ({
     metadata: input.metadata,
     createdAt: Date.now(),
   }),
+  revokeAgentRuntimeContextsForSession: () => [],
   revokeRuntimeContext: () => true,
   snapshotAgentCapabilities: () => snapshotAgentCapabilitiesImpl(),
 }));

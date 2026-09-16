@@ -14,8 +14,15 @@ import {
   type RevokeContextResult,
 } from "../router/router-db.js";
 import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { TURN_SCOPED_AUTHORITY_KIND } from "../permissions/delegation.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
+/**
+ * Legacy kind for the per-session authority slot that `turn-runtime` now owns.
+ * Kept so rows written before the agent-identity cutover are still reclaimed;
+ * see the live authority-root inventory in `ravi doctor`.
+ */
+export const LEGACY_AGENT_RUNTIME_CONTEXT_KIND = "agent-runtime";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_DERIVED_CONTEXT_TTL_MS = 60 * 60 * 1000;
 export const DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -130,16 +137,36 @@ export function findLiveAgentRuntimeContext(input: {
   return contexts[0] ?? null;
 }
 
+/**
+ * Authority kinds that occupy a single runtime session slot.
+ *
+ * Only one of these may be live per session: turn-scoped authority is issued per
+ * turn and each turn supersedes the previous one. Anything still live for the
+ * session is therefore stale by definition.
+ */
+function sessionSlotAuthorityKinds(): string[] {
+  // Resolved per call instead of at module scope: this module already sits in an
+  // import cycle with the permission runtime, so the constant is read lazily.
+  return [TURN_SCOPED_AUTHORITY_KIND, LEGACY_AGENT_RUNTIME_CONTEXT_KIND];
+}
+
+/**
+ * Revoke every live authority context bound to a runtime session.
+ *
+ * Used by every path that hands the session's authority slot back: turn abort,
+ * provider-policy recovery, prompt-too-long reset, context-window recovery and
+ * explicit session resets. The lookup covers both the current `turn-runtime`
+ * kind and the legacy `agent-runtime` kind, and is done per kind so the
+ * `(session_key, kind)` index stays usable.
+ */
 export function revokeAgentRuntimeContextsForSession(
   sessionKey: string,
   options: RevokeRuntimeContextOptions = {},
 ): RevokeContextResult[] {
   const now = Date.now();
-  const contexts = dbListContexts({
-    sessionKey,
-    kind: "agent-runtime",
-    includeInactive: false,
-  }).filter((ctx) => isContextLive(ctx, now));
+  const contexts = sessionSlotAuthorityKinds()
+    .flatMap((kind) => dbListContexts({ sessionKey, kind, includeInactive: false }))
+    .filter((ctx) => isContextLive(ctx, now));
 
   return contexts.map((ctx) =>
     revokeRuntimeContext(ctx.contextId, {
