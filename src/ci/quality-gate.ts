@@ -81,6 +81,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Closed-box provider auth: allowlisted env file + Codex/Grok device login.
     "src/runtime/ravi-env-file.test.ts",
     "src/runtime/provider-device-login.test.ts",
+    // Provider auth-stub detection on the assistant-message path.
+    "src/runtime/provider-login-stub.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],

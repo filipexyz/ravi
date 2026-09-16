@@ -52,7 +52,7 @@ export function classifyRuntimeCredentialFailure(
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
 
-  const classified = classifyKind({ status, providerCode, providerType, text });
+  const classified = classifyKind({ status, providerCode, providerType, text, provider: input.runtimeProvider });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
@@ -108,7 +108,13 @@ export function evaluateCredentialLimitPressure(
   };
 }
 
-function classifyKind(input: { status?: number; providerCode?: string; providerType?: string; text: string }): {
+function classifyKind(input: {
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+  text: string;
+  provider?: RuntimeProviderId;
+}): {
   kind: RuntimeCredentialFailureKind;
   confidence: RuntimeCredentialFailureConfidence;
   scope: RuntimeCredentialFailureScope;
@@ -125,7 +131,7 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
     input.status === 401 ||
     code === "authentication_error" ||
     type === "authentication_error" ||
-    isRuntimeProviderLoginStub(text)
+    isRuntimeProviderLoginStub(text, { provider: input.provider })
   ) {
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }
