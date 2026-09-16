@@ -70,12 +70,15 @@ describe("ravi link ambient identity", () => {
         actorPrincipal: "contact:luis",
       },
     });
-    expect(upsert.mock.calls[0]?.[0]).toMatchObject({
-      contactId: "luis",
-      actorPrincipal: "contact:luis",
-      orgId: "org_123",
-      installationId: "ins_123",
-    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactId: "luis",
+        actorPrincipal: "contact:luis",
+        orgId: "org_123",
+        installationId: "ins_123",
+      }),
+      "access-secret",
+    );
     expect(readCachedActorBinding("luis")?.consoleUserId).toBe("user_alice");
     expect(dbGetContext(context.contextId)?.metadata).toMatchObject({
       consoleUserId: "user_alice",
@@ -225,7 +228,7 @@ describe("ravi link ambient identity", () => {
       contactId: "luis",
       actorPrincipal: "contact:luis",
     });
-    expect(unlink.mock.calls[0]?.[0]).toEqual({ contactId: "luis", installationId: "ins_123" });
+    expect(unlink).toHaveBeenCalledWith({ contactId: "luis", installationId: "ins_123" }, "access-secret");
     expect(readCachedActorBinding("luis")).toBeNull();
   });
 });
