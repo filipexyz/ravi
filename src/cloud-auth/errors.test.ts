@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
-import { CloudAuthError, classifyConsoleNetworkError, cloudAuthErrorFromUnknown } from "./errors.js";
+import {
+  CloudAuthError,
+  classifyConsoleNetworkError,
+  cloudAuthErrorFromUnknown,
+  normalizeCloudAuthErrorCode,
+} from "./errors.js";
 
 describe("cloudAuthErrorFromUnknown", () => {
   it("preserves an already classified cloud error", () => {
@@ -19,6 +24,16 @@ describe("cloudAuthErrorFromUnknown", () => {
       cause,
     });
     expect(JSON.stringify(normalized.toJSON())).not.toContain("private-provider-secret");
+  });
+});
+
+describe("normalizeCloudAuthErrorCode", () => {
+  it("maps Console /api/cli/link codes onto existing CLI codes", () => {
+    expect(normalizeCloudAuthErrorCode("CONFLICT", "PAYLOAD_INVALID")).toBe("ACTOR_BINDING_CONFLICT");
+    expect(normalizeCloudAuthErrorCode("NOT_MEMBER", "PAYLOAD_INVALID")).toBe("ORG_ACCESS_DENIED");
+    expect(normalizeCloudAuthErrorCode("INSTALLATION_ORG_MISMATCH", "PAYLOAD_INVALID")).toBe("ORG_ACCESS_DENIED");
+    expect(normalizeCloudAuthErrorCode("CONTACT_REQUIRED", "PAYLOAD_INVALID")).toBe("CONTACT_REQUIRED");
+    expect(normalizeCloudAuthErrorCode("AUTH_REQUIRED", "PAYLOAD_INVALID")).toBe("AUTH_REQUIRED");
   });
 });
 

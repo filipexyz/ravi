@@ -67,20 +67,24 @@ export interface ActorBindingCacheRecord {
 
 export interface ActorBindingUpsertInput {
   contactId: string;
-  actorPrincipal: string;
-  installationId: string;
-  orgId: string;
-  platformIdentity?: ActorPlatformIdentity | null;
+  installationId?: string;
+  organizationId?: string;
+  consoleUserId?: string;
+  platformIdentities?: ActorPlatformIdentity | Record<string, unknown> | null;
 }
 
 export interface ActorBindingUnlinkInput {
-  contactId: string;
-  installationId: string;
+  contactId?: string;
+  bindingId?: string;
+  installationId?: string;
+  organizationId?: string;
 }
 
 export interface ActorBindingResolveQuery {
-  contactId: string;
+  contactId?: string;
+  consoleUserId?: string;
   installationId?: string;
+  organizationId?: string;
 }
 
 export interface SafeCloudAuthSession {

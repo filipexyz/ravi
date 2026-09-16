@@ -111,7 +111,8 @@ export function parseActorBinding(value: unknown): ActorBinding {
     consoleUserId,
     orgId,
     installationId,
-    platformIdentity: parsePlatformIdentity(source?.platformIdentity),
+    platformIdentity:
+      parsePlatformIdentity(source?.platformIdentity) ?? parsePlatformIdentity(source?.platformIdentities),
     createdAt: asString(source?.createdAt) ?? undefined,
     updatedAt: asString(source?.updatedAt) ?? undefined,
   };

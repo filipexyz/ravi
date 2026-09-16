@@ -25,8 +25,8 @@ ravi link --json
 
 Expected:
 
-- Console `PUT /api/cli/actor-bindings` is called with contact, org,
-  installation, and platform identity when present;
+- Console `POST /api/cli/link` is called with contact, organizationId,
+  installation, and `platformIdentities` when present;
 - JSON includes `binding.consoleUserId` and `local.actorPrincipal`;
 - local cache can resolve the binding;
 - turn metadata can carry `consoleUserId`.
@@ -54,7 +54,7 @@ turn/session with a contact and MUST NOT suggest a contact flag.
 
 ## Conflict
 
-Console returns `ACTOR_BINDING_CONFLICT` for a different user:
+Console returns `CONFLICT` (CLI `ACTOR_BINDING_CONFLICT`) for a different user:
 
 Expected: error code preserved, no cache overwrite.
 

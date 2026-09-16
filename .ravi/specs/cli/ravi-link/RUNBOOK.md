@@ -27,11 +27,11 @@ After a successful link, `~/.ravi/cloud-auth/bindings/<contactId>.json` should
 exist with mode `0600` and no access/refresh tokens. The next turn for that
 contact should show `consoleUserId` / `consoleOrgId` in context metadata.
 
-## Console Contract Not Merged
+## Console Contract
 
-If `PUT /api/cli/actor-bindings` is 404, the sibling Console PR is not
-deployed. CLI unit tests still cover storage, ambient errors, and the
-negotiated client paths. Do not invent a local-only binding as a substitute.
+Console owns `POST/GET/DELETE /api/cli/link` and `POST /api/cli/link/unlink`
+(ravi-console#18). A 404 on those paths is a deploy/version mismatch, not a
+reason to invent `/api/cli/actor-bindings`.
 
 ## Unlink
 
@@ -39,5 +39,5 @@ negotiated client paths. Do not invent a local-only binding as a substitute.
 ravi unlink --json
 ```
 
-Expected: Console `DELETE /api/cli/actor-bindings`, local cache removed,
+Expected: Console `POST /api/cli/link/unlink`, local cache removed,
 context metadata `consoleUserId` cleared when a context is present.

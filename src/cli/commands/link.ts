@@ -62,7 +62,11 @@ export async function runUnlink(options: LinkCommandOptions = {}, deps: LinkComm
 
   try {
     await client.unlinkActorBinding(
-      { contactId: local.contactId, installationId: session.credentials.installationId },
+      {
+        contactId: local.contactId,
+        installationId: session.credentials.installationId,
+        organizationId: session.me.organization?.id ?? session.credentials.organization?.id ?? undefined,
+      },
       session.credentials.accessToken,
     );
   } catch (error) {
@@ -104,20 +108,26 @@ async function upsertAmbientBinding(deps: LinkCommandDeps): Promise<{
 
   const input = {
     contactId: local.contactId,
-    actorPrincipal: local.actorPrincipal,
     installationId: session.credentials.installationId,
-    orgId,
-    platformIdentity: local.platformIdentity,
+    organizationId: orgId,
+    consoleUserId,
+    ...(local.platformIdentity ? { platformIdentities: local.platformIdentity } : {}),
   };
 
   let binding: ActorBinding;
   let idempotent = false;
   try {
-    binding = await client.upsertActorBinding(input, session.credentials.accessToken);
+    const result = await client.upsertActorBinding(input, session.credentials.accessToken);
+    binding = result.binding;
+    idempotent = result.created === false;
   } catch (error) {
     if (isCloudAuthError(error) && error.code === "ACTOR_BINDING_CONFLICT") {
       const existing = await client.resolveActorBinding(
-        { contactId: local.contactId, installationId: session.credentials.installationId },
+        {
+          contactId: local.contactId,
+          installationId: session.credentials.installationId,
+          organizationId: orgId,
+        },
         session.credentials.accessToken,
       );
       if (existing && existing.consoleUserId === consoleUserId) {

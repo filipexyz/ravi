@@ -26,13 +26,16 @@ describe("ravi link ambient identity", () => {
     process.env.RAVI_CONTEXT_KEY = context.contextKey;
     const credentials = makeCredentials();
     const upsert = mock(async () => ({
-      id: "bind_1",
-      contactId: "luis",
-      actorPrincipal: "contact:luis",
-      consoleUserId: "user_alice",
-      orgId: "org_123",
-      installationId: "ins_123",
-      platformIdentity: { platformIdentityId: "wa:5511", channel: "whatsapp" },
+      created: true,
+      binding: {
+        id: "bind_1",
+        contactId: "luis",
+        actorPrincipal: "contact:luis",
+        consoleUserId: "user_alice",
+        orgId: "org_123",
+        installationId: "ins_123",
+        platformIdentity: { platformIdentityId: "wa:5511", channel: "whatsapp" },
+      },
     }));
     const client = {
       me: mock(async () => ({
@@ -73,9 +76,10 @@ describe("ravi link ambient identity", () => {
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         contactId: "luis",
-        actorPrincipal: "contact:luis",
-        orgId: "org_123",
+        organizationId: "org_123",
         installationId: "ins_123",
+        consoleUserId: "user_alice",
+        platformIdentities: expect.objectContaining({ platformIdentityId: "wa:5511" }),
       }),
       "access-secret",
     );
@@ -86,7 +90,42 @@ describe("ravi link ambient identity", () => {
     });
   });
 
-  it("is idempotent when the contact is already bound to the same Console user", async () => {
+  it("is idempotent when Console returns the existing same-user binding", async () => {
+    const context = createContactContext("luis");
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+    const client = {
+      me: mock(async () => ({
+        user: { id: "user_alice" },
+        organization: { id: "org_123" },
+      })),
+      upsertActorBinding: mock(async () => ({
+        created: false,
+        binding: {
+          contactId: "luis",
+          actorPrincipal: "contact:luis",
+          consoleUserId: "user_alice",
+          orgId: "org_123",
+          installationId: "ins_123",
+        },
+      })),
+    };
+
+    const { result } = await captureConsole(() =>
+      runLink(
+        { json: true },
+        {
+          client: client as never,
+          readCredentials: () => makeCredentials(),
+          writeCredentials: () => {},
+          deleteCredentials: () => {},
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({ success: true, linked: true, idempotent: true });
+  });
+
+  it("treats a same-user CONFLICT as an idempotent link", async () => {
     const context = createContactContext("luis");
     process.env.RAVI_CONTEXT_KEY = context.contextKey;
     const client = {
@@ -228,7 +267,10 @@ describe("ravi link ambient identity", () => {
       contactId: "luis",
       actorPrincipal: "contact:luis",
     });
-    expect(unlink).toHaveBeenCalledWith({ contactId: "luis", installationId: "ins_123" }, "access-secret");
+    expect(unlink).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: "luis", installationId: "ins_123", organizationId: "org_123" }),
+      "access-secret",
+    );
     expect(readCachedActorBinding("luis")).toBeNull();
   });
 });

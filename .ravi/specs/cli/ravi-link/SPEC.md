@@ -77,24 +77,26 @@ exposes it.
 
 ## Console API contract
 
-Sibling Console work owns the server. The CLI calls this negotiated contract
-and feature-flags / skips live e2e until Console merges it:
+The CLI calls the merged Console surface from ravi-console#18. Do not invent a
+parallel path such as `/api/cli/actor-bindings`.
 
 ```
-PUT    /api/cli/actor-bindings
-DELETE /api/cli/actor-bindings
-GET    /api/cli/actor-bindings/resolve?contactId=&installationId=
+POST   /api/cli/link
+GET    /api/cli/link?contactId=… or ?consoleUserId=…
+DELETE /api/cli/link
+POST   /api/cli/link/unlink
 ```
 
-`PUT` body:
+`POST /api/cli/link` body (camelCase; Console also accepts snake_case aliases).
+The schema is strict — do not send `actorPrincipal` or `orgId`:
 
 ```ts
 {
   contactId: string
-  actorPrincipal: "contact:<id>"
-  installationId: string
-  orgId: string
-  platformIdentity?: {
+  installationId?: string
+  organizationId?: string
+  consoleUserId?: string   // v1 must equal the caller
+  platformIdentities?: {
     channel?: string
     accountId?: string
     platformUserId?: string
@@ -103,26 +105,40 @@ GET    /api/cli/actor-bindings/resolve?contactId=&installationId=
 }
 ```
 
-Response is a binding of IDs only (no tokens):
+Success:
 
 ```ts
 {
+  version: 1
+  created: boolean
   binding: {
-    id?: string
+    id: string
     contactId: string
-    actorPrincipal: string
     consoleUserId: string
-    orgId: string
+    organizationId: string
     installationId: string
-    platformIdentity?: object | null
+    platformIdentities?: object
+    status: "active" | "revoked"
   }
 }
 ```
 
-Conflict (`409`, `ACTOR_BINDING_CONFLICT`): contact already bound to a
-different Console user, or this user already bound to a different contact.
+`created` is false when the active row already belongs to the same Console
+user (idempotent upsert). The CLI maps that to `idempotent: true`.
+
+Console error codes map to existing CLI codes:
+
+| Console | CLI |
+| --- | --- |
+| `CONTACT_REQUIRED` | `CONTACT_REQUIRED` |
+| `CONFLICT` | `ACTOR_BINDING_CONFLICT` |
+| `NOT_MEMBER` | `ORG_ACCESS_DENIED` |
+| `INSTALLATION_ORG_MISMATCH` | `ORG_ACCESS_DENIED` |
+| `AUTH_REQUIRED` / `AUTH_EXPIRED` | same |
+| `INSTALLATION_REVOKED` | `INSTALLATION_REVOKED` |
+
 If the existing binding is the same Console user, `ravi link` MUST succeed
-idempotently.
+idempotently (`created: false`, or a same-user `CONFLICT` resolved locally).
 
 ## Local cache
 

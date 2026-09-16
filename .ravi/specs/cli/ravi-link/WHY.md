@@ -34,4 +34,4 @@ per-user cloud-auth slot. Console remains the source of truth.
 
 - Installation enrollment org split: require session org == enrolled org.
 - Full user-scoped connector vault on the `link.ravi.so` Worker.
-- Live e2e against merged Console actor-binding routes.
+- Live e2e against merged Console `/api/cli/link` routes.

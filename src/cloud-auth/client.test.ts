@@ -487,47 +487,65 @@ describe("ConsoleApiClient", () => {
     expect(deleted).toBe(true);
   });
 
-  it("calls the negotiated Console actor-binding API", async () => {
+  it("calls the merged Console /api/cli/link contract", async () => {
     const calls: FetchCall[] = [];
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",
       fetch: mock(async (url: string, init?: RequestInit) => {
         calls.push(recordFetchCall(url, init));
         const path = new URL(url).pathname;
-        if (path === "/api/cli/actor-bindings" && init?.method === "PUT") {
+        if (path === "/api/cli/link" && init?.method === "POST") {
+          return jsonResponse(
+            {
+              version: 1,
+              created: true,
+              binding: {
+                id: "bind_1",
+                contactId: "luis",
+                consoleUserId: "user_alice",
+                organizationId: "org_123",
+                installationId: "ins_123",
+                platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
+                status: "active",
+              },
+            },
+            201,
+          );
+        }
+        if (path === "/api/cli/link" && init?.method === "GET") {
           return jsonResponse({
+            version: 1,
             binding: {
-              id: "bind_1",
               contactId: "luis",
-              actorPrincipal: "contact:luis",
               consoleUserId: "user_alice",
-              orgId: "org_123",
+              organizationId: "org_123",
               installationId: "ins_123",
+              status: "active",
             },
           });
         }
-        if (path === "/api/cli/actor-bindings/resolve") {
+        if (path === "/api/cli/link/unlink" && init?.method === "POST") {
           return jsonResponse({
-            contactId: "luis",
-            actorPrincipal: "contact:luis",
-            consoleUserId: "user_alice",
-            orgId: "org_123",
-            installationId: "ins_123",
+            version: 1,
+            binding: {
+              contactId: "luis",
+              consoleUserId: "user_alice",
+              organizationId: "org_123",
+              installationId: "ins_123",
+              status: "revoked",
+            },
           });
-        }
-        if (path === "/api/cli/actor-bindings" && init?.method === "DELETE") {
-          return jsonResponse({ unlinked: true });
         }
         return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
       }),
     });
 
-    const binding = await client.upsertActorBinding(
+    const upserted = await client.upsertActorBinding(
       {
         contactId: "luis",
-        actorPrincipal: "contact:luis",
         installationId: "ins_123",
-        orgId: "org_123",
+        organizationId: "org_123",
+        platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
       },
       "access-secret",
     );
@@ -537,13 +555,73 @@ describe("ConsoleApiClient", () => {
     );
     await client.unlinkActorBinding({ contactId: "luis", installationId: "ins_123" }, "access-secret");
 
-    expect(binding.consoleUserId).toBe("user_alice");
+    expect(upserted.created).toBe(true);
+    expect(upserted.binding.consoleUserId).toBe("user_alice");
+    expect(upserted.binding.platformIdentity).toEqual({
+      channel: "whatsapp",
+      platformIdentityId: "wa:5511",
+    });
     expect(resolved?.contactId).toBe("luis");
     expect(calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
-      "PUT /api/cli/actor-bindings",
-      "GET /api/cli/actor-bindings/resolve",
-      "DELETE /api/cli/actor-bindings",
+      "POST /api/cli/link",
+      "GET /api/cli/link",
+      "POST /api/cli/link/unlink",
     ]);
+    expect(calls[0]?.body).toEqual({
+      contactId: "luis",
+      installationId: "ins_123",
+      organizationId: "org_123",
+      platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
+    });
+  });
+
+  it("maps Console link error codes onto existing CLI codes", async () => {
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: mock(async (url: string) => {
+        const path = new URL(url).pathname;
+        if (path === "/api/cli/link") {
+          return jsonResponse({ error: { code: "CONFLICT", message: "already bound" } }, 409);
+        }
+        return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+      }),
+    });
+
+    await expect(
+      client.upsertActorBinding({ contactId: "luis", organizationId: "org_123" }, "access-secret"),
+    ).rejects.toMatchObject({
+      code: "ACTOR_BINDING_CONFLICT",
+      status: 409,
+    });
+  });
+
+  it("maps NOT_MEMBER and INSTALLATION_ORG_MISMATCH to ORG_ACCESS_DENIED", async () => {
+    const responses = [
+      jsonResponse({ error: { code: "NOT_MEMBER" } }, 403),
+      jsonResponse({ error: { code: "INSTALLATION_ORG_MISMATCH" } }, 409),
+    ];
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: mock(async () => responses.shift() ?? jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500)),
+    });
+
+    await expect(client.upsertActorBinding({ contactId: "luis" }, "access-secret")).rejects.toMatchObject({
+      code: "ORG_ACCESS_DENIED",
+      status: 403,
+    });
+    await expect(client.upsertActorBinding({ contactId: "luis" }, "access-secret")).rejects.toMatchObject({
+      code: "ORG_ACCESS_DENIED",
+      status: 409,
+    });
+  });
+
+  it("treats a null Console binding as unresolved", async () => {
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: mock(async () => jsonResponse({ version: 1, binding: null })),
+    });
+
+    await expect(client.resolveActorBinding({ contactId: "missing" }, "access-secret")).resolves.toBeNull();
   });
 });
 

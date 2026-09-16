@@ -92,31 +92,53 @@ export class ConsoleApiClient {
   }
 
   /**
-   * Negotiated Console contract (sibling Console PR):
-   * `PUT /api/cli/actor-bindings` upserts the ambient contact↔user binding.
-   * Live e2e is skipped until Console merges this path.
+   * Merged Console contract (ravi-console#18):
+   * `POST /api/cli/link` upserts the ambient contact↔user binding.
    */
-  async upsertActorBinding(input: ActorBindingUpsertInput, accessToken: string): Promise<ActorBinding> {
-    const payload = await this.requestJson<unknown>("PUT", "/api/cli/actor-bindings", input, accessToken);
-    return parseActorBinding(payload);
+  async upsertActorBinding(
+    input: ActorBindingUpsertInput,
+    accessToken: string,
+  ): Promise<{ binding: ActorBinding; created: boolean }> {
+    const payload = await this.requestJson<unknown>(
+      "POST",
+      "/api/cli/link",
+      toConsoleLinkUpsertBody(input),
+      accessToken,
+    );
+    const root = objectValue(payload);
+    return {
+      binding: parseActorBinding(payload),
+      created: root?.created === true,
+    };
   }
 
-  async unlinkActorBinding(input: ActorBindingUnlinkInput, accessToken: string): Promise<{ unlinked: true }> {
-    await this.requestJson<unknown>("DELETE", "/api/cli/actor-bindings", input, accessToken);
-    return { unlinked: true };
+  async unlinkActorBinding(
+    input: ActorBindingUnlinkInput,
+    accessToken: string,
+  ): Promise<{ unlinked: true; binding: ActorBinding | null }> {
+    const payload = await this.requestJson<unknown>(
+      "POST",
+      "/api/cli/link/unlink",
+      toConsoleLinkUnlinkBody(input),
+      accessToken,
+    );
+    return { unlinked: true, binding: parseOptionalActorBinding(payload) };
   }
 
   async resolveActorBinding(query: ActorBindingResolveQuery, accessToken: string): Promise<ActorBinding | null> {
-    const params = new URLSearchParams({ contactId: query.contactId });
+    const params = new URLSearchParams();
+    if (query.contactId) params.set("contactId", query.contactId);
+    if (query.consoleUserId) params.set("consoleUserId", query.consoleUserId);
     if (query.installationId) params.set("installationId", query.installationId);
+    if (query.organizationId) params.set("organizationId", query.organizationId);
     try {
       const payload = await this.requestJson<unknown>(
         "GET",
-        `/api/cli/actor-bindings/resolve?${params.toString()}`,
+        `/api/cli/link?${params.toString()}`,
         undefined,
         accessToken,
       );
-      return parseActorBinding(payload);
+      return parseOptionalActorBinding(payload);
     } catch (error) {
       if (error instanceof CloudAuthError && (error.status === 404 || error.code === "PAYLOAD_INVALID")) {
         return null;
@@ -447,6 +469,37 @@ async function readJsonBody(response: Response): Promise<unknown> {
       throw new CloudAuthError("PAYLOAD_INVALID", "Console returned invalid JSON.");
     }
     return { message: text };
+  }
+}
+
+function toConsoleLinkUpsertBody(input: ActorBindingUpsertInput): Record<string, unknown> {
+  return {
+    contactId: input.contactId,
+    ...(input.installationId ? { installationId: input.installationId } : {}),
+    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+    ...(input.consoleUserId ? { consoleUserId: input.consoleUserId } : {}),
+    ...(input.platformIdentities ? { platformIdentities: input.platformIdentities } : {}),
+  };
+}
+
+function toConsoleLinkUnlinkBody(input: ActorBindingUnlinkInput): Record<string, unknown> {
+  return {
+    ...(input.contactId ? { contactId: input.contactId } : {}),
+    ...(input.bindingId ? { bindingId: input.bindingId } : {}),
+    ...(input.installationId ? { installationId: input.installationId } : {}),
+    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+  };
+}
+
+function parseOptionalActorBinding(payload: unknown): ActorBinding | null {
+  const root = objectValue(payload);
+  if (!root) return null;
+  if ("binding" in root && root.binding == null) return null;
+  try {
+    return parseActorBinding(payload);
+  } catch (error) {
+    if (error instanceof CloudAuthError && error.code === "PAYLOAD_INVALID") return null;
+    throw error;
   }
 }
 
