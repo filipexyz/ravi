@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Command as CommanderCommand } from "commander";
 import { z } from "zod";
 import { CloudAuthError } from "../cloud-auth/errors.js";
@@ -74,6 +74,22 @@ const deniedContext: ContextRecord = {
   capabilities: [],
   createdAt: Date.now(),
 };
+
+const previousHostCliGateway = process.env.RAVI_HOST_CLI_GATEWAY;
+
+// This suite asserts *local* transport behavior. When a Ravi daemon runs on the
+// same machine it exposes the host CLI gateway socket, and any CLI invocation
+// carrying RAVI_CONTEXT_KEY is routed to that daemon instead of executing
+// locally -- which turned the PERMISSION_DENIED case into a transport failure
+// and made the suite fail only on developer machines with a live daemon.
+beforeAll(() => {
+  process.env.RAVI_HOST_CLI_GATEWAY = "0";
+});
+
+afterAll(() => {
+  if (previousHostCliGateway === undefined) delete process.env.RAVI_HOST_CLI_GATEWAY;
+  else process.env.RAVI_HOST_CLI_GATEWAY = previousHostCliGateway;
+});
 
 describe("global cloud failure contract", () => {
   it("keeps custom CliExpectedError messages out of the internal contract error", () => {
