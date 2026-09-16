@@ -9,7 +9,7 @@ import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { resolveRuntimeContext } from "./context-registry.js";
+import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
@@ -72,6 +72,36 @@ describe("runtime request context authority", () => {
     } else {
       process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
     }
+  });
+
+  it("reclaims stale turn-scoped contexts when a fresh runtime launches for the session", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    // A previous runtime for this session died without rotating its last context.
+    const stale = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      sessionName,
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: { prompt: "novo turno" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.contextId).not.toBe(stale.contextId);
+    expect(dbGetContext(stale.contextId)?.metadata?.revocationReason).toBe("stale_turn_context_reclaimed");
+    expect(resolveRuntimeContext(stale.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(runtimeContext.contextKey, { touch: false })).not.toBeNull();
   });
 
   it("ignores the retired turn-scoped env flag and still issues workspace agent identity contexts", () => {

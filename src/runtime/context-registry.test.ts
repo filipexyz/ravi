@@ -174,6 +174,40 @@ describe("runtime context registry", () => {
     expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
   });
 
+  it("revokes live turn-runtime contexts for a session without touching other sessions", () => {
+    const sessionKey = "agent:test-context-agent:turn-reset";
+    const otherSessionKey = "agent:test-context-agent:turn-other";
+    createTestSession(sessionKey);
+    createTestSession(otherSessionKey);
+    const turnContext = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-turn-reset",
+      capabilities: [],
+    });
+    const child = issueRuntimeContext({
+      parent: turnContext,
+      cliName: "child-cli",
+      capabilities: [],
+    });
+    const otherSession = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      sessionKey: otherSessionKey,
+      sessionName: "test-turn-other",
+      capabilities: [],
+    });
+
+    const result = revokeAgentRuntimeContextsForSession(sessionKey, { reason: "turn_reset_test" });
+
+    expect(result.map((entry) => entry.context.contextId)).toEqual([turnContext.contextId]);
+    expect(resolveRuntimeContext(turnContext.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
+    expect(dbGetContext(turnContext.contextId)?.metadata?.revocationReason).toBe("turn_reset_test");
+    expect(resolveRuntimeContext(otherSession.contextKey, { touch: false })).not.toBeNull();
+  });
+
   it("revokes every live authority snapshot when agent permissions change", () => {
     const agentRuntime = createRuntimeContext({
       kind: "agent-runtime",

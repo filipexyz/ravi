@@ -29,6 +29,7 @@ import type { MessageActorMetadata, RuntimeLaunchPrompt, RuntimeTurnOriginMetada
 import {
   createRuntimeContext,
   DEFAULT_DERIVED_CONTEXT_TTL_MS,
+  revokeAgentRuntimeContextsForSession,
   revokeRuntimeContext,
   snapshotAgentCapabilities,
 } from "./runtime-context-store.js";
@@ -64,6 +65,16 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
   } = options;
 
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
+  // A fresh runtime launch owns the session's authority slot. Any turn-scoped
+  // context still live here belongs to a runtime that is already gone: idle
+  // eviction, model/settings restart, crash or daemon shutdown all tear the
+  // session down without necessarily rotating its last context. Reclaiming it on
+  // launch keeps the slot singleton instead of leaving the row to rot until TTL.
+  // Children keep their own derived TTL, matching turn rotation's blast radius.
+  revokeAgentRuntimeContextsForSession(dbSessionKey, {
+    cascade: false,
+    reason: "stale_turn_context_reclaimed",
+  });
   const runtimeContext = createRuntimeContextForPrompt({
     agentId: agent.id,
     sessionKey: dbSessionKey,
