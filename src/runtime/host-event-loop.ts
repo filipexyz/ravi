@@ -2106,7 +2106,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       if (
         event.type === "turn.complete" &&
-        (streaming._providerAuthFailure || isRuntimeProviderLoginStub(responseText))
+        (streaming._providerAuthFailure ||
+          isRuntimeProviderLoginStub(responseText, { provider: runtimeSession.provider }))
       ) {
         const error = streaming._providerAuthFailure ?? responseText.trim();
         streaming._providerAuthFailure = undefined;
@@ -2573,7 +2574,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else if (isRuntimeProviderLoginStub(messageText)) {
+            } else if (isRuntimeProviderLoginStub(messageText, { provider: runtimeSession.provider })) {
               suppressProviderRawForCurrentTurn = true;
               streaming._providerAuthFailure = messageText.trim();
               log.warn("Provider login stub classified as auth failure", {
@@ -3438,7 +3439,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         const channelBackendFailure = streaming.currentChannelBackend !== undefined;
-        const loginStubFailure = isRuntimeProviderLoginStub(event.error);
+        const loginStubFailure = isRuntimeProviderLoginStub(event.error, { provider: runtimeSession.provider });
         if (!loginStubFailure) {
           await projectRuntimeEventToChannel(event);
         }
