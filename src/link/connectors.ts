@@ -8,6 +8,7 @@
  */
 
 import { ConsoleApiClient, getMeWithAutoRefresh } from "../cloud-auth/client.js";
+import { resolveConnectorCloudCredentials } from "../cloud-auth/connector-auth.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
@@ -69,9 +70,15 @@ async function authenticate(deps: ConnectorHelperDeps): Promise<AuthenticatedLin
   const read = deps.readCredentials ?? readCloudCredentials;
   const write = deps.writeCredentials ?? writeCloudCredentials;
   const remove = deps.deleteCredentials ?? deleteCloudCredentials;
-  const credentials = read();
+  // Installation/operator tools keep the active session. User-scoped connector
+  // tools must call resolveConnectorCloudCredentials({ requireBoundUser: true })
+  // instead — there is no operator JWT fallback for those tools.
+  const credentials =
+    deps.readCredentials || deps.writeCredentials || deps.deleteCredentials
+      ? read()
+      : resolveConnectorCloudCredentials({ requireBoundUser: false, readActive: read });
   if (!credentials) {
-    throw new CloudAuthError("AUTH_REQUIRED", "Ravi Cloud login required. Run `ravi cloud login`.");
+    throw new CloudAuthError("AUTH_REQUIRED", "Ravi Cloud login required. Run `ravi login`.");
   }
   const consoleClient = deps.consoleClient ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
   const { credentials: fresh } = await getMeWithAutoRefresh({

@@ -1,7 +1,12 @@
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { fetchWithTimeout } from "../utils/paths.js";
 import { CloudAuthError, classifyConsoleNetworkError, normalizeCloudAuthErrorCode } from "./errors.js";
+import { parseActorBinding } from "./actor-bindings.js";
 import type {
+  ActorBinding,
+  ActorBindingResolveQuery,
+  ActorBindingUnlinkInput,
+  ActorBindingUpsertInput,
   CloudAuthOrganization,
   CloudAuthUser,
   CloudCredentials,
@@ -84,6 +89,40 @@ export class ConsoleApiClient {
 
   async me(accessToken: string): Promise<ConsoleMeResponse> {
     return this.requestJson<ConsoleMeResponse>("GET", "/api/cli/me", undefined, accessToken);
+  }
+
+  /**
+   * Negotiated Console contract (sibling Console PR):
+   * `PUT /api/cli/actor-bindings` upserts the ambient contact↔user binding.
+   * Live e2e is skipped until Console merges this path.
+   */
+  async upsertActorBinding(input: ActorBindingUpsertInput, accessToken: string): Promise<ActorBinding> {
+    const payload = await this.requestJson<unknown>("PUT", "/api/cli/actor-bindings", input, accessToken);
+    return parseActorBinding(payload);
+  }
+
+  async unlinkActorBinding(input: ActorBindingUnlinkInput, accessToken: string): Promise<{ unlinked: true }> {
+    await this.requestJson<unknown>("DELETE", "/api/cli/actor-bindings", input, accessToken);
+    return { unlinked: true };
+  }
+
+  async resolveActorBinding(query: ActorBindingResolveQuery, accessToken: string): Promise<ActorBinding | null> {
+    const params = new URLSearchParams({ contactId: query.contactId });
+    if (query.installationId) params.set("installationId", query.installationId);
+    try {
+      const payload = await this.requestJson<unknown>(
+        "GET",
+        `/api/cli/actor-bindings/resolve?${params.toString()}`,
+        undefined,
+        accessToken,
+      );
+      return parseActorBinding(payload);
+    } catch (error) {
+      if (error instanceof CloudAuthError && (error.status === 404 || error.code === "PAYLOAD_INVALID")) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async createPageUploadSession(

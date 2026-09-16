@@ -28,6 +28,61 @@ export interface CloudCredentials {
   updatedAt: string;
 }
 
+export const CLOUD_AUTH_BACKENDS = ["file", "libsecret", "keychain"] as const;
+export type CloudAuthBackendName = (typeof CLOUD_AUTH_BACKENDS)[number];
+
+export const LEGACY_CLOUD_AUTH_USER_ID = "_legacy";
+
+export interface CloudAuthStorePointer {
+  version: 1;
+  activeUserId: string;
+  backend: CloudAuthBackendName;
+}
+
+export interface ActorPlatformIdentity {
+  channel?: string;
+  accountId?: string;
+  platformUserId?: string;
+  platformIdentityId?: string;
+}
+
+export interface ActorBinding {
+  id?: string;
+  contactId: string;
+  actorPrincipal: string;
+  consoleUserId: string;
+  orgId: string;
+  installationId: string;
+  platformIdentity?: ActorPlatformIdentity | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ActorBindingCacheRecord {
+  version: 1;
+  binding: ActorBinding;
+  expiresAt: string;
+  updatedAt: string;
+}
+
+export interface ActorBindingUpsertInput {
+  contactId: string;
+  actorPrincipal: string;
+  installationId: string;
+  orgId: string;
+  platformIdentity?: ActorPlatformIdentity | null;
+}
+
+export interface ActorBindingUnlinkInput {
+  contactId: string;
+  installationId: string;
+}
+
+export interface ActorBindingResolveQuery {
+  contactId: string;
+  installationId?: string;
+}
+
 export interface SafeCloudAuthSession {
   consoleUrl: string;
   user: CloudAuthUser | null;

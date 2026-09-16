@@ -21,6 +21,7 @@ import {
   type AgentIdentityCompartment,
 } from "../permissions/agent-identity-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
@@ -313,6 +314,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   const actorMetadata = resolveAuthorityActorMetadata(options.prompt, options.resolvedSource);
   const actorPrincipal = resolveActorPrincipal(actorMetadata);
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
+  const consoleBinding = resolveConsoleBindingMetadata(actorPrincipal);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
   const actorResolution = resolveActorResolution(
@@ -330,6 +332,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     surfacePrincipal,
     actorDisplayName,
     surfaceDisplayName,
+    consoleBinding,
   });
 }
 
@@ -342,6 +345,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
   surfacePrincipal: AuthorityPrincipal | null;
   actorDisplayName?: string;
   surfaceDisplayName?: string;
+  consoleBinding?: { consoleUserId?: string; consoleOrgId?: string };
 }): {
   capabilities: ContextCapability[];
   metadata: Record<string, unknown>;
@@ -394,8 +398,22 @@ function buildAgentIdentityRuntimeContextInput(options: {
       turnCapabilityCount: observationCapabilities.length,
       ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
+      ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),
+      ...(options.consoleBinding?.consoleOrgId ? { consoleOrgId: options.consoleBinding.consoleOrgId } : {}),
     },
   };
+}
+
+function resolveConsoleBindingMetadata(actorPrincipal: AuthorityPrincipal | null): {
+  consoleUserId?: string;
+  consoleOrgId?: string;
+} {
+  if (actorPrincipal?.subjectType !== "contact") return {};
+  try {
+    return consoleIdentityFromBinding(readCachedActorBinding(actorPrincipal.subjectId));
+  } catch {
+    return {};
+  }
 }
 
 function countTaskSelfCapabilities(capabilities: ContextCapability[]): number {

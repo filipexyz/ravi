@@ -15,6 +15,8 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "HOST_UNREACHABLE",
   "CREDENTIALS_INVALID",
   "CLOUD_PUBLISH_NOT_IMPLEMENTED",
+  "CONTACT_REQUIRED",
+  "ACTOR_BINDING_CONFLICT",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];

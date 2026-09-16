@@ -486,6 +486,65 @@ describe("ConsoleApiClient", () => {
     expect(wrote).toBe(false);
     expect(deleted).toBe(true);
   });
+
+  it("calls the negotiated Console actor-binding API", async () => {
+    const calls: FetchCall[] = [];
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: mock(async (url: string, init?: RequestInit) => {
+        calls.push(recordFetchCall(url, init));
+        const path = new URL(url).pathname;
+        if (path === "/api/cli/actor-bindings" && init?.method === "PUT") {
+          return jsonResponse({
+            binding: {
+              id: "bind_1",
+              contactId: "luis",
+              actorPrincipal: "contact:luis",
+              consoleUserId: "user_alice",
+              orgId: "org_123",
+              installationId: "ins_123",
+            },
+          });
+        }
+        if (path === "/api/cli/actor-bindings/resolve") {
+          return jsonResponse({
+            contactId: "luis",
+            actorPrincipal: "contact:luis",
+            consoleUserId: "user_alice",
+            orgId: "org_123",
+            installationId: "ins_123",
+          });
+        }
+        if (path === "/api/cli/actor-bindings" && init?.method === "DELETE") {
+          return jsonResponse({ unlinked: true });
+        }
+        return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
+      }),
+    });
+
+    const binding = await client.upsertActorBinding(
+      {
+        contactId: "luis",
+        actorPrincipal: "contact:luis",
+        installationId: "ins_123",
+        orgId: "org_123",
+      },
+      "access-secret",
+    );
+    const resolved = await client.resolveActorBinding(
+      { contactId: "luis", installationId: "ins_123" },
+      "access-secret",
+    );
+    await client.unlinkActorBinding({ contactId: "luis", installationId: "ins_123" }, "access-secret");
+
+    expect(binding.consoleUserId).toBe("user_alice");
+    expect(resolved?.contactId).toBe("luis");
+    expect(calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+      "PUT /api/cli/actor-bindings",
+      "GET /api/cli/actor-bindings/resolve",
+      "DELETE /api/cli/actor-bindings",
+    ]);
+  });
 });
 
 function jsonResponse(payload: unknown, status = 200): Response {

@@ -5,12 +5,19 @@
 - CLI code contains no WorkOS client secret.
 - CLI code contains no Ravi Cloud server secret.
 - JSON output does not print access tokens or refresh tokens.
-- File credential fallback is written with current-user-only permissions.
-- `ravi logout` deletes local credentials.
+- File credential fallback is written with current-user-only permissions
+  (`0600` file, `0700` directories) under
+  `~/.ravi/cloud-auth/users/<consoleUserId>/`.
+- `active.json` points at the active `consoleUserId`.
+- `ravi logout` deletes only the active user's credentials.
 - `ravi login --help` exposes `--console <url>` with
   `https://console.ravi.bot` as the default.
 - `ravi login --help` does not expose `--endpoint`.
-- Root help does not expose a product-specific identity-linking command.
+- Root help exposes ambient `ravi link` / `ravi unlink` (Console
+  contact↔user binding) and MUST NOT expose product-specific installation
+  enrollment or `--endpoint`.
+- Default secret backend is the portable file store. Keychain is optional
+  and never required.
 - No remote-login discovery, post-login provider, or remote installation
   credential module is present in the root auth implementation.
 

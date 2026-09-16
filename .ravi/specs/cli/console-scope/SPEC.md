@@ -84,10 +84,10 @@ The current OSS implementation is not yet centralized:
   shared resolver.
 - `src/projects/*` owns local Ravi Projects. Those objects are alignment and
   workflow context, not remote Console Projects.
-- `src/cloud-auth/storage.ts` currently stores a single
-  `~/.ravi/cloud-auth/credentials.json`; this is not enough for complete
-  multi-org operation because it can represent only one active organization at
-  a time.
+- `src/cloud-auth/storage.ts` stores Console sessions keyed by
+  `consoleUserId` under `~/.ravi/cloud-auth/users/<userId>/` with an
+  `activeUserId` pointer. That is enough for multi-user hosts. Multi-org
+  **profiles** for the same user (one slot per org) remain a follow-up.
 
 Until a shared resolver exists, project-scoped commands MUST keep requiring
 explicit project args or command-specific compatibility env. They MUST NOT
