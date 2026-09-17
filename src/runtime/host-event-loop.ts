@@ -111,7 +111,11 @@ import type {
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
-import { createToolLivenessLease, DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS } from "./tool-liveness.js";
+import {
+  createToolLivenessLease,
+  DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+  resolveDeclaredToolTimeoutMs,
+} from "./tool-liveness.js";
 
 const log = logger.child("bot");
 
@@ -1210,6 +1214,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       providerInactivityWatchArmed = false;
       if (streaming.done || !streaming.turnActive || streaming.compacting || streaming.abortController.signal.aborted)
         return;
+      // A running tool owns its own window: the provider is not the one being
+      // waited on, so tool time must not be charged to the provider.
+      if (streaming.toolRunning) {
+        armProviderInactivityWatch();
+        return;
+      }
       log.warn("Provider inactive after tool result — aborting session", {
         sessionName,
         timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
@@ -2412,7 +2422,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         // Expire only after a full inactivity window. Provider progress events
         // renew this lease without exposing their output to channels or traces.
-        toolLivenessLease.start(event.toolUse.id);
+        // Tools that declare their own `timeout` keep ownership of it: a long
+        // scan or build must not be killed by the generic inactivity window.
+        toolLivenessLease.start(event.toolUse.id, resolveDeclaredToolTimeoutMs(event.toolUse.input));
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
