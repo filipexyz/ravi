@@ -189,11 +189,11 @@ export function renderContractError(error: ContractError, asJson: boolean | unde
     return;
   }
   console.error(envelope.error.message);
+  const issues = envelope.error.issues;
+  if (!Array.isArray(issues) || issues.length === 0) return;
   if (typeof envelope.error.status === "number") {
     console.error(`status: ${envelope.error.status}`);
   }
-  const issues = envelope.error.issues;
-  if (!Array.isArray(issues)) return;
   for (const issue of issues) {
     if (!issue || typeof issue !== "object") continue;
     const record = issue as Record<string, unknown>;
