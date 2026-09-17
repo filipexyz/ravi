@@ -62,6 +62,67 @@ function parentNamesSecret(parent: Readonly<Record<string, unknown>> | undefined
   return typeof parent?.key === "string" && isSecretKey(parent.key) && !isTypedSecretMetadata(parent.key, value);
 }
 
+const ISSUE_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const ISSUE_PATH_STRING_PATTERN = /^(?:[A-Za-z0-9_<>-]{1,64}|<unknown>)$/;
+const ISSUE_MESSAGE_MAX_LENGTH = 200;
+
+export interface PublicValidationIssue {
+  path: (string | number)[];
+  code: string;
+  message: string;
+}
+
+function isValidationIssue(value: Readonly<Record<string, unknown>> | undefined): boolean {
+  return Boolean(value && Array.isArray(value.path) && typeof value.code === "string" && typeof value.message === "string");
+}
+
+function isValidationIssueMessage(key: string, parent: Readonly<Record<string, unknown>> | undefined): boolean {
+  return key === "message" && isValidationIssue(parent);
+}
+
+function projectIssuePath(value: unknown): Array<string | number> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const path = value
+    .filter((item): item is string | number => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
+    .slice(0, 16)
+    .flatMap((item) => {
+      if (typeof item === "number") return Number.isInteger(item) ? [item] : [];
+      const sanitized = sanitizePublicValue(item);
+      return typeof sanitized === "string" && ISSUE_PATH_STRING_PATTERN.test(sanitized) ? [sanitized] : [];
+    });
+  return path;
+}
+
+function projectIssueMessage(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim();
+  if (!trimmed || isStandalonePath(trimmed)) return undefined;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "file:") return undefined;
+  } catch {
+    // Validation copy is not a URL.
+  }
+  const sanitized = sanitizePublicString(trimmed);
+  if (!sanitized) return undefined;
+  return sanitized.length > ISSUE_MESSAGE_MAX_LENGTH ? `${sanitized.slice(0, ISSUE_MESSAGE_MAX_LENGTH - 3)}...` : sanitized;
+}
+
+/** Project gateway/console validation issues without treating `message` as free-form content. */
+export function projectPublicIssues(value: unknown): PublicValidationIssue[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const issues = value.slice(0, 32).flatMap((item): PublicValidationIssue[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.code !== "string" || !ISSUE_CODE_PATTERN.test(record.code)) return [];
+    const path = projectIssuePath(record.path);
+    const message = projectIssueMessage(record.message);
+    if (!path || !message) return [];
+    return [{ path, code: record.code, message }];
+  });
+  return issues.length > 0 ? issues : undefined;
+}
+
 /** Sanitize values before they can cross CLI, tool, gateway or audit boundaries. */
 export function sanitizePublicValue(value: unknown, key?: string, parent?: Readonly<Record<string, unknown>>): unknown {
   if (typeof value === "string" && REDACTION_MARKER_PATTERN.test(value)) return value;
@@ -80,7 +141,7 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
   if (normalizedKey && SAFE_PUBLIC_PATH_KEYS.has(normalizedKey) && typeof value === "string") {
     return sanitizePublicString(value);
   }
-  if (key && CONTENT_KEY_PATTERN.test(key)) {
+  if (key && CONTENT_KEY_PATTERN.test(key) && !isValidationIssueMessage(key, parent)) {
     if (typeof value === "string") return `[REDACTED:content length=${value.length}]`;
     return "[REDACTED:content]";
   }

@@ -183,10 +183,24 @@ export function binaryResponseToContractError(op: string, status: number): Contr
 
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
   if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
+  const envelope = error.envelope();
   if (asJson) {
-    console.log(JSON.stringify(error.envelope(), null, 2));
-  } else {
-    console.error(error.envelope().error.message);
+    console.log(JSON.stringify(envelope, null, 2));
+    return;
+  }
+  console.error(envelope.error.message);
+  if (typeof envelope.error.status === "number") {
+    console.error(`status: ${envelope.error.status}`);
+  }
+  const issues = envelope.error.issues;
+  if (!Array.isArray(issues)) return;
+  for (const issue of issues) {
+    if (!issue || typeof issue !== "object") continue;
+    const record = issue as Record<string, unknown>;
+    const message = typeof record.message === "string" ? record.message : "";
+    const path = Array.isArray(record.path) ? record.path.map(String).filter(Boolean).join(".") : "";
+    const line = path && message ? `${path}: ${message}` : message || path;
+    if (line && line !== envelope.error.message) console.error(line);
   }
 }
 

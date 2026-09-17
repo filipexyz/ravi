@@ -1,4 +1,5 @@
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
+import { projectPublicIssues } from "../cli/redaction.js";
 import { fetchWithTimeout } from "../utils/paths.js";
 import { CloudAuthError, classifyConsoleNetworkError, normalizeCloudAuthErrorCode } from "./errors.js";
 import type {
@@ -422,7 +423,8 @@ function mapConsoleError(status: number, payload: unknown): CloudAuthError {
     stringValue(nested?.message) ??
     stringValue(data?.error_description) ??
     defaultErrorMessage(code);
-  return new CloudAuthError(code, message, { status });
+  const issues = projectPublicIssues(data?.issues ?? nested?.issues);
+  return new CloudAuthError(code, message, { status, ...(issues ? { issues } : {}) });
 }
 
 function mapOAuthDeviceError(status: number, payload: unknown): CloudAuthError {

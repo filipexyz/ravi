@@ -324,6 +324,33 @@ describe("ConsoleApiClient", () => {
     }
   });
 
+  it("keeps Console 422 validation issues on the mapped error", async () => {
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () =>
+        jsonResponse(
+          {
+            error: "ValidationError",
+            message: "Invalid create body",
+            issues: [{ path: ["title"], code: "invalid_type", message: "Expected string, received undefined" }],
+          },
+          422,
+        ),
+    });
+
+    try {
+      await client.requestJson("POST", "/api/cli/credentials", { title: 1 });
+      throw new Error("Expected console validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudAuthError);
+      expect(error).toMatchObject({
+        code: "PAYLOAD_INVALID",
+        status: 422,
+        issues: [{ path: ["title"], code: "invalid_type", message: "Expected string, received undefined" }],
+      });
+    }
+  });
+
   it("maps sandbox Console fetch failures to HOST_UNREACHABLE", async () => {
     const previousPlane = process.env.RAVI_EXECUTION_PLANE;
     process.env.RAVI_EXECUTION_PLANE = "provider-sandbox";

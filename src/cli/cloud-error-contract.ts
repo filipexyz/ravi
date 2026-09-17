@@ -20,6 +20,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
     {
       retryable: RETRYABLE_CODES.has(error.code),
       ...(error.status !== undefined ? { status: error.status } : {}),
+      ...(error.issues ? { issues: error.issues } : {}),
       suggestedAction: suggestedAction(error.code),
     },
   );

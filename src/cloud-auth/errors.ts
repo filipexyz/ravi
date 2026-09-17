@@ -1,4 +1,5 @@
 import { isNetworkIsolationError, type ExecutionPlaneSnapshot } from "../isolation/execution-plane.js";
+import type { PublicValidationIssue } from "../cli/redaction.js";
 
 export const CLOUD_AUTH_ERROR_CODES = [
   "AUTH_REQUIRED",
@@ -24,25 +25,28 @@ const KNOWN_CODES = new Set<string>(CLOUD_AUTH_ERROR_CODES);
 export class CloudAuthError extends Error {
   readonly code: CloudAuthErrorCode;
   readonly status?: number;
+  readonly issues?: PublicValidationIssue[];
   readonly exitCode: number;
 
   constructor(
     code: CloudAuthErrorCode,
     message: string,
-    options: { status?: number; exitCode?: number; cause?: unknown } = {},
+    options: { status?: number; exitCode?: number; cause?: unknown; issues?: PublicValidationIssue[] } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "CloudAuthError";
     this.code = code;
     this.status = options.status;
+    this.issues = options.issues;
     this.exitCode = options.exitCode ?? defaultExitCode(code);
   }
 
-  toJSON(): { code: CloudAuthErrorCode; message: string; status?: number } {
+  toJSON(): { code: CloudAuthErrorCode; message: string; status?: number; issues?: PublicValidationIssue[] } {
     return {
       code: this.code,
       message: this.message,
       ...(this.status !== undefined ? { status: this.status } : {}),
+      ...(this.issues ? { issues: this.issues } : {}),
     };
   }
 }
