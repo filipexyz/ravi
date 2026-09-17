@@ -92,6 +92,9 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - `get_state` reads session file/id/name, streaming state, model, thinking level, and queue state.
 - `set_steering_mode all` is sent during bootstrap unless `get_state` already reports `steeringMode=all`.
 - `set_model` backs `setModel` and must affect the next request even if no active request exists.
+- `setModel` before RPC start records the requested model and MUST apply it on spawn (`--model`) without reporting success for a command that was never sent.
+- After resume/`switch_session`, the adapter MUST send `set_model` before the next `prompt` when `get_state` omits the model or reports a model that differs from the requested session override.
+- A failed `set_model` RPC MUST throw. Hosts MUST NOT record `session.model_changed` as `applied` for that failure.
 - `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels.
 - `compact` is provider-native compaction and MUST emit `status: compacting` while active.
 - `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested and mapped to `runtime/session-continuity/forks`.
