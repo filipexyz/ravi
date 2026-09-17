@@ -20,7 +20,13 @@ import {
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_UI_TITLE,
 } from "./pi-tool-permissions.js";
-import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import type {
+  RuntimeEvent,
+  RuntimeHostServices,
+  RuntimePromptMessage,
+  RuntimeSessionHandle,
+  RuntimeStartRequest,
+} from "./types.js";
 
 interface TestQueue<T> extends AsyncIterable<T> {
   push(value: T): void;
@@ -1032,9 +1038,7 @@ describe("Pi runtime provider", () => {
       },
     });
 
-    expect(transport.commands).toEqual([
-      expect.objectContaining({ type: "set_thinking_level", level: "xhigh" }),
-    ]);
+    expect(transport.commands).toEqual([expect.objectContaining({ type: "set_thinking_level", level: "xhigh" })]);
   });
 
   it("applies setModel before the first Pi prompt via spawn model without session reset", async () => {
@@ -1076,12 +1080,13 @@ describe("Pi runtime provider", () => {
   it("applies live setModel to the next Pi turn without session reset", async () => {
     const transport = new FakePiRpcTransport();
     let liveModel = "gpt-5.5";
-    const handle = createPiRuntimeProvider({ transport }).startSession(
+    const session: { handle?: RuntimeSessionHandle } = {};
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
       createStartRequest("primeira", {
         model: "openai/gpt-5.5",
         prompt: (async function* () {
           yield promptMessage("primeira");
-          await handle.setModel?.("openai/gpt-4.1");
+          await session.handle?.setModel?.("openai/gpt-4.1");
           yield promptMessage("segunda");
         })(),
       }),
@@ -1105,7 +1110,7 @@ describe("Pi runtime provider", () => {
       return defaultResponse(command);
     };
 
-    const events = await collectRuntimeEvents(handle.events);
+    const events = await collectRuntimeEvents(session.handle!.events);
     const completed = events.filter((event) => event.type === "turn.complete");
 
     expect(transport.starts).toHaveLength(1);
@@ -1173,11 +1178,12 @@ describe("Pi runtime provider", () => {
 
   it("throws when live set_model RPC fails instead of reporting success", async () => {
     const transport = new FakePiRpcTransport();
-    const handle = createPiRuntimeProvider({ transport }).startSession(
+    const session: { handle?: RuntimeSessionHandle } = {};
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
       createStartRequest("primeira", {
         prompt: (async function* () {
           yield promptMessage("primeira");
-          await expect(handle.setModel?.("openai/gpt-4.1")).rejects.toThrow(/unknown model|set_model/);
+          await expect(session.handle?.setModel?.("openai/gpt-4.1")).rejects.toThrow(/unknown model|set_model/);
           yield promptMessage("segunda");
         })(),
       }),
@@ -1201,18 +1207,19 @@ describe("Pi runtime provider", () => {
       return defaultResponse(command);
     };
 
-    const events = await collectRuntimeEvents(handle.events);
+    const events = await collectRuntimeEvents(session.handle!.events);
     expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
     expect(transport.commands.filter((command) => command.type === "set_model")).toHaveLength(1);
   });
 
   it("throws when set_model succeeds but get_state still reports the previous model", async () => {
     const transport = new FakePiRpcTransport();
-    const handle = createPiRuntimeProvider({ transport }).startSession(
+    const session: { handle?: RuntimeSessionHandle } = {};
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
       createStartRequest("primeira", {
         prompt: (async function* () {
           yield promptMessage("primeira");
-          await expect(handle.setModel?.("openai/gpt-4.1")).rejects.toThrow(/did not apply/);
+          await expect(session.handle?.setModel?.("openai/gpt-4.1")).rejects.toThrow(/did not apply/);
           yield promptMessage("segunda");
         })(),
       }),
@@ -1232,7 +1239,7 @@ describe("Pi runtime provider", () => {
       return defaultResponse(command);
     };
 
-    const events = await collectRuntimeEvents(handle.events);
+    const events = await collectRuntimeEvents(session.handle!.events);
     expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
     expect(transport.commands).toContainEqual(
       expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
