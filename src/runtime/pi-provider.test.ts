@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   buildPiRpcProcessArgs,
   buildPiRpcSpawnEnv,
   createPiRuntimeProvider,
+  listPiManagedRuntimeEnvKeys,
   type PiRpcCommand,
   type PiRpcEvent,
   type PiRpcResponse,
@@ -106,6 +107,7 @@ describe("Pi runtime provider", () => {
 
     expect(buildPiManagedRuntimeEnvSignature(first)).not.toBe(buildPiManagedRuntimeEnvSignature(second));
     expect(buildPiManagedRuntimeEnvSignature(first)).toBe(buildPiManagedRuntimeEnvSignature(sameKey));
+    expect(listPiManagedRuntimeEnvKeys(first)).toEqual(["RAVI_CONTEXT_KEY", "RAVI_TASK_ID"]);
   });
 
   it("refreshes Ravi authority env between turns by respawning Pi when the context key rotates", async () => {
@@ -154,6 +156,125 @@ describe("Pi runtime provider", () => {
     expect(transports[1]?.commands).toContainEqual(
       expect.objectContaining({ type: "switch_session", sessionPath: "/tmp/pi-session.jsonl" }),
     );
+  });
+
+  it("retries a later-turn env respawn after a failed restart without an external kill", async () => {
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_first",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      transport.responseFor = (command) => {
+        if (command.type === "get_state") {
+          return piResponse(command, { sessionFile: "/tmp/pi-session.jsonl" });
+        }
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      if (transports.length === 2) {
+        const originalStart = transport.start.bind(transport);
+        transport.start = async (input) => {
+          await originalStart(input);
+          throw new Error("Pi RPC process exited with code 1. Stderr: session-launcher");
+        };
+      }
+      return transport;
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+        createStartRequest("first", {
+          env,
+          prompt: (async function* () {
+            yield promptMessage("first");
+            env.RAVI_CONTEXT_KEY = "rctx_second";
+            yield promptMessage("second");
+            yield promptMessage("third");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+      expect.objectContaining({
+        type: "turn.failed",
+        recoverable: true,
+        failureKind: "transport",
+      }),
+    ]);
+    expect(transports).toHaveLength(3);
+    expect(transports[0]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_first");
+    expect(transports[1]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(transports[2]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(transports[0]?.closed).toBe(true);
+    expect(transports[1]?.closed).toBe(true);
+    expect(transports[2]?.commands).toContainEqual(expect.objectContaining({ type: "prompt", message: "third" }));
+  });
+
+  it("rewrites the permission extension before respawn when the previous hook file disappeared", async () => {
+    const hookDir = mkdtempSync(join(tmpdir(), "ravi-pi-hooks-missing-"));
+    const env: Record<string, string> = {
+      PATH: "/usr/bin",
+      RAVI_CONTEXT_KEY: "rctx_first",
+    };
+    const transports: FakePiRpcTransport[] = [];
+    const seenExtensionPaths: string[] = [];
+    const createTransport = () => {
+      const transport = new FakePiRpcTransport();
+      transports.push(transport);
+      const originalStart = transport.start.bind(transport);
+      transport.start = async (input) => {
+        seenExtensionPaths.push(input.extensionPath ?? "");
+        if (input.extensionPath && transports.length === 1) {
+          rmSync(input.extensionPath, { force: true });
+        }
+        return originalStart(input);
+      };
+      transport.responseFor = (command) => {
+        if (command.type === "get_state") {
+          return piResponse(command, { sessionFile: "/tmp/pi-session.jsonl" });
+        }
+        if (command.type === "prompt") {
+          transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+        }
+        return defaultResponse(command);
+      };
+      return transport;
+    };
+    const previousStateDir = process.env.RAVI_STATE_DIR;
+    process.env.RAVI_STATE_DIR = hookDir;
+
+    try {
+      const events = await collectRuntimeEvents(
+        createPiRuntimeProvider({ transportFactory: createTransport }).startSession(
+          createStartRequest("first", {
+            env,
+            prompt: (async function* () {
+              yield promptMessage("first");
+              env.RAVI_CONTEXT_KEY = "rctx_second";
+              yield promptMessage("second");
+            })(),
+          }),
+        ).events,
+      );
+
+      expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+      expect(transports).toHaveLength(2);
+      expect(seenExtensionPaths).toHaveLength(2);
+      expect(seenExtensionPaths[0]).toContain("pi-hooks");
+      expect(seenExtensionPaths[1]).toBe(seenExtensionPaths[0]);
+      expect(existsSync(seenExtensionPaths[1]!)).toBe(true);
+      expect(transports[1]?.starts[0]?.env.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    } finally {
+      if (previousStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+      else process.env.RAVI_STATE_DIR = previousStateDir;
+    }
   });
 
   it("reuses the Pi RPC process when managed Ravi env is unchanged between turns", async () => {

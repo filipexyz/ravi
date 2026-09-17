@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getRaviStateDir } from "../utils/paths.js";
 import { extractRequestedSkillFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
@@ -423,7 +423,12 @@ export function createPiApprovalHandler(hostServices: RuntimeHostServices): Runt
   return async (request) => authorizePiHostApproval(hostServices, request);
 }
 
-export function materializePiPermissionExtensionFile(directory = join(tmpdir(), "ravi-pi-hooks")): string {
+/** Durable hook dir. `/tmp/ravi-pi-hooks` is cleaned by tmpwatch and breaks respawn. */
+export function resolvePiPermissionExtensionDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  return join(getRaviStateDir(env), "pi-hooks");
+}
+
+export function materializePiPermissionExtensionFile(directory = resolvePiPermissionExtensionDirectory()): string {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, PI_PERMISSION_EXTENSION_FILENAME);
   writeFileSync(path, PI_RAVI_PERMISSION_EXTENSION_SOURCE, "utf8");

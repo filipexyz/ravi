@@ -26,7 +26,7 @@ import {
   dbHasServingTaskForSession,
 } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
-import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import { resolveRuntimeContext, revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import {
@@ -2746,8 +2746,20 @@ export function canUseNativeRuntimeSteer(
     !session.starting &&
     !session.compacting &&
     !session.toolRunning &&
-    getPendingRuntimeTurnSuccessors(session).length === 0
+    getPendingRuntimeTurnSuccessors(session).length === 0 &&
+    canReuseLivePiSteerAuthority(session.currentRuntimeContextKey)
   );
+}
+
+/** Unset keys stay compatible. A published key must still resolve or steer is refused. */
+export function canReuseLivePiSteerAuthority(contextKey: string | undefined): boolean {
+  const trimmed = contextKey?.trim();
+  if (!trimmed) return true;
+  try {
+    return Boolean(resolveRuntimeContext(trimmed, { touch: false, readOnly: true }));
+  } catch {
+    return false;
+  }
 }
 
 function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt[] {

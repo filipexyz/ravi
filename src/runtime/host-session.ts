@@ -193,6 +193,11 @@ export interface RuntimeHostStreamingSession {
   durableTurnPreparationFailed?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
+  /**
+   * Live `RAVI_CONTEXT_KEY` published into the provider spawn/tool env.
+   * Native Pi steer must not keep a long-lived turn on a revoked/expired key.
+   */
+  currentRuntimeContextKey?: string;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
