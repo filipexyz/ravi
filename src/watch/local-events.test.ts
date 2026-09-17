@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { deriveLocalGitHubEvents, type LocalWatchSnapshot } from "./local-events.js";
 
 function snapshot(input: {
-  pullRequests?: Array<{ number: number; title?: string; draft?: boolean }>;
+  pullRequests?: Array<{ number: number; title?: string; draft?: boolean; headSha?: string }>;
   workflowRuns?: Array<{ id: number; status?: string; conclusion?: string | null }>;
 }): LocalWatchSnapshot {
   return {
@@ -15,6 +15,7 @@ function snapshot(input: {
           title: pr.title ?? `PR ${pr.number}`,
           url: `https://x/${pr.number}`,
           draft: pr.draft === true,
+          ...(pr.headSha ? { headSha: pr.headSha } : {}),
         },
       ]),
     ),
@@ -97,6 +98,29 @@ describe("local github watch events", () => {
       "pull_request.converted_to_draft",
       "pull_request.ready_for_review",
     ]);
+  });
+
+  it("emits synchronize when the head commit moves", () => {
+    const previous = snapshot({ pullRequests: [{ number: 1, headSha: "aaa" }] });
+    const current = snapshot({ pullRequests: [{ number: 1, headSha: "bbb" }] });
+
+    const result = deriveLocalGitHubEvents("o/r", { previous, current, departed: {} });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]!.eventType).toBe("pull_request.synchronize");
+    expect(result.events[0]!.payload).toMatchObject({ repository: "o/r", number: 1, headSha: "bbb" });
+
+    // Mesmo SHA: nada.
+    expect(deriveLocalGitHubEvents("o/r", { previous: current, current, departed: {} }).events).toEqual([]);
+  });
+
+  it("does not claim a push when either side has no head commit", () => {
+    const withoutSha = snapshot({ pullRequests: [{ number: 1 }] });
+    const withSha = snapshot({ pullRequests: [{ number: 1, headSha: "bbb" }] });
+
+    // Baseline sem SHA não é evidência de push: seria um falso synchronize.
+    expect(deriveLocalGitHubEvents("o/r", { previous: withoutSha, current: withSha, departed: {} }).events).toEqual([]);
+    expect(deriveLocalGitHubEvents("o/r", { previous: withSha, current: withoutSha, departed: {} }).events).toEqual([]);
   });
 
   it("emits a completed workflow run once, with the outcome and the completion", () => {

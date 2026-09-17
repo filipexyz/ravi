@@ -60,6 +60,7 @@ interface GhPullRequest {
   title?: string;
   url?: string;
   isDraft?: boolean;
+  headRefOid?: string;
 }
 
 interface GhWorkflowRun {
@@ -89,7 +90,7 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
             "--limit",
             String(MAX_PULL_REQUESTS),
             "--json",
-            "number,title,url,isDraft",
+            "number,title,url,isDraft,headRefOid",
           ]),
         ) ?? [];
       const runs =
@@ -114,6 +115,7 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
           title: pr.title ?? "",
           url: pr.url ?? "",
           draft: pr.isDraft === true,
+          ...(pr.headRefOid ? { headSha: pr.headRefOid } : {}),
         };
       }
 

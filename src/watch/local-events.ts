@@ -12,6 +12,8 @@ export interface LocalPullRequestState {
   title: string;
   url: string;
   draft: boolean;
+  /** SHA do commit de topo: é o que distingue "commits novos na PR". */
+  headSha?: string;
 }
 
 export interface LocalWorkflowRunState {
@@ -64,6 +66,7 @@ export const LOCAL_GITHUB_DERIVABLE_EVENTS = [
   "pull_request.merged",
   "pull_request.ready_for_review",
   "pull_request.converted_to_draft",
+  "pull_request.synchronize",
   "workflow_run.completed",
   "workflow_run.failed",
   "workflow_run.succeeded",
@@ -89,6 +92,7 @@ function pullRequestPayload(repo: string, pr: LocalPullRequestState): Record<str
     title: pr.title,
     url: pr.url,
     draft: pr.draft,
+    ...(pr.headSha ? { headSha: pr.headSha } : {}),
   };
 }
 
@@ -130,6 +134,11 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
         eventType: pr.draft ? "pull_request.converted_to_draft" : "pull_request.ready_for_review",
         payload: pullRequestPayload(repo, pr),
       });
+    }
+    // Commits novos na PR. Se qualquer um dos lados não tem SHA conhecido, não
+    // afirma nada: um estado de baseline incompleto não é evidência de push.
+    if (before.headSha && pr.headSha && before.headSha !== pr.headSha) {
+      events.push({ eventType: "pull_request.synchronize", payload: pullRequestPayload(repo, pr) });
     }
   }
 
