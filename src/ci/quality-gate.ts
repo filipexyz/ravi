@@ -83,6 +83,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/provider-device-login.test.ts",
     // Provider auth-stub detection on the assistant-message path.
     "src/runtime/provider-login-stub.test.ts",
+    // Inactivity windows for long-running tools and their declared timeouts.
+    "src/runtime/tool-liveness.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
