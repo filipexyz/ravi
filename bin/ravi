@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
-# Ravi CLI wrapper - runs the bundled CLI with bun
+# Ravi CLI wrapper - runs the built CLI, rebuilding it when the source moved on.
+#
+# There is exactly one execution path: dist/bundle/index.js. Staleness used to be
+# silent -- the wrapper kept running older code after `src/` changed, which is how
+# an SDK drift check reported "current" for artifacts that had actually changed on
+# 2026-09-16, and how a regeneration emitted from the wrong registry.
+#
+# The bundle is now rebuilt before use whenever it is missing or older than `src/`
+# or package.json, so the path stays single and never runs old code. A failed
+# rebuild refuses to run rather than falling back to a stale artifact.
+#
+# RAVI_ALLOW_STALE_BUNDLE=1 skips the freshness check and runs the bundle as is.
 
-# Resolve the actual script location (following symlinks)
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
   DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
@@ -11,4 +21,72 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-exec bun "$PROJECT_DIR/dist/bundle/index.js" "$@"
+BUNDLE="$PROJECT_DIR/dist/bundle/index.js"
+
+# Reports the first thing newer than the bundle, or nothing when it is current.
+stale_reason() {
+  if [ ! -f "$BUNDLE" ]; then
+    echo "no bundle at dist/bundle/index.js"
+    return
+  fi
+  local newer
+  newer="$(find "$PROJECT_DIR/src" -mindepth 1 -newer "$BUNDLE" -print -quit 2>/dev/null)"
+  if [ -z "$newer" ] && [ "$PROJECT_DIR/src" -nt "$BUNDLE" ]; then
+    newer="$PROJECT_DIR/src (tree changed)"
+  fi
+  if [ -z "$newer" ] && [ "$PROJECT_DIR/package.json" -nt "$BUNDLE" ]; then
+    newer="$PROJECT_DIR/package.json"
+  fi
+  if [ -n "$newer" ]; then
+    echo "bundle is older than $newer"
+  fi
+}
+
+if [ "${RAVI_ALLOW_STALE_BUNDLE:-}" != "1" ]; then
+  REASON="$(stale_reason)"
+
+  if [ -n "$REASON" ]; then
+    echo "ravi: $REASON; rebuilding dist/bundle." >&2
+
+    # `mkdir` is atomic, so it works as a build lock without extra tooling. Two
+    # concurrent CLI calls must not write the bundle at the same time.
+    LOCK="$PROJECT_DIR/dist/.build.lock"
+    mkdir -p "$PROJECT_DIR/dist" 2>/dev/null
+    LOCKED=""
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      if mkdir "$LOCK" 2>/dev/null; then
+        LOCKED=1
+        break
+      fi
+      sleep 0.3
+      # Another process may have rebuilt it while we waited.
+      if [ -z "$(stale_reason)" ]; then
+        exec bun "$BUNDLE" "$@"
+      fi
+    done
+
+    if [ -z "$LOCKED" ]; then
+      echo "ravi: another process is building and the bundle is still stale." >&2
+      echo "      Retry, or run: bun run build" >&2
+      exit 1
+    fi
+
+    cleanup_lock() { rmdir "$LOCK" 2>/dev/null || true; }
+    trap cleanup_lock EXIT
+
+    # Build output is only interesting when the build fails; keep a normal
+    # invocation quiet.
+    BUILD_LOG="$PROJECT_DIR/dist/.build.log"
+    if ! (cd "$PROJECT_DIR" && bun run build:cli && bun run gen:plugins) >"$BUILD_LOG" 2>&1; then
+      echo "ravi: build failed; refusing to run a stale bundle." >&2
+      tail -20 "$BUILD_LOG" >&2
+      exit 1
+    fi
+    rm -f "$BUILD_LOG"
+
+    cleanup_lock
+    trap - EXIT
+  fi
+fi
+
+exec bun "$BUNDLE" "$@"
