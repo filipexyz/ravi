@@ -2397,6 +2397,103 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("records session.model_changed applied only after a successful Pi direct-set", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-pi-direct-set-");
+    try {
+      const sessionKey = "agent:dev:test:pi-direct-set";
+      const sessionName = "pi-direct-set";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const dispatcher = createDispatcher(1);
+      const setModelCalls: string[] = [];
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          currentModel: "openai/gpt-5.5",
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+            setModel: async (model: string) => {
+              setModelCalls.push(model);
+            },
+          },
+        }),
+      );
+
+      const result = await dispatcher.applySessionModelChange(sessionName, "openai/gpt-4.1");
+
+      expect(result).toBe("applied");
+      expect(setModelCalls).toEqual(["openai/gpt-4.1"]);
+      expect(dispatcher.streamingSessions.get(sessionName)?.currentModel).toBe("openai/gpt-4.1");
+      expect(dispatcher.streamingSessions.has(sessionName)).toBe(true);
+
+      const trace = querySessionTrace({ sessionKey, sessionName });
+      const modelEvents = trace.events.filter((event) => event.eventType === "session.model_changed");
+      expect(modelEvents).toHaveLength(1);
+      expect(modelEvents[0]).toMatchObject({
+        status: "applied",
+        model: "openai/gpt-4.1",
+      });
+      expect(modelEvents[0]?.payloadJson).toMatchObject({
+        previousModel: "openai/gpt-5.5",
+        nextModel: "openai/gpt-4.1",
+        strategy: "direct-set",
+      });
+      expect(trace.events.filter((event) => event.eventType === "dispatch.restart_requested")).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not report applied when Pi set_model fails and falls back to next-turn restart", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-pi-set-model-fail-");
+    try {
+      const sessionKey = "agent:dev:test:pi-set-model-fail";
+      const sessionName = "pi-set-model-fail";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const dispatcher = createDispatcher(1);
+      let interrupted = false;
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          currentModel: "openai/gpt-5.5",
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: async () => {
+              interrupted = true;
+            },
+            setModel: async () => {
+              throw new Error("Pi RPC command set_model failed");
+            },
+          },
+        }),
+      );
+
+      const result = await dispatcher.applySessionModelChange(sessionName, "openai/gpt-4.1");
+
+      expect(result).toBe("restart-next-turn");
+      expect(interrupted).toBe(true);
+      expect(dispatcher.streamingSessions.has(sessionName)).toBe(false);
+
+      const trace = querySessionTrace({ sessionKey, sessionName });
+      const modelEvents = trace.events.filter((event) => event.eventType === "session.model_changed");
+      expect(modelEvents).toHaveLength(1);
+      expect(modelEvents[0]).toMatchObject({
+        status: "failed",
+        error: "Pi RPC command set_model failed",
+      });
+      expect(modelEvents[0]?.payloadJson).toMatchObject({
+        strategy: "direct-set",
+        fallback: "restart-next-turn",
+        nextModel: "openai/gpt-4.1",
+      });
+      expect(trace.events.filter((event) => event.eventType === "dispatch.restart_requested")).toHaveLength(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("drains queued runtime starts when an external model change restarts a live session", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-change-");
     try {

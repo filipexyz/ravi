@@ -632,28 +632,63 @@ export class RuntimeSessionDispatcher {
     };
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
-      recordRuntimeTraceEvent({
-        sessionKey,
-        sessionName,
-        agentId: streaming.agentId,
-        runId: streaming.traceRunId,
-        turnId: streaming.currentTraceTurnId,
-        provider: streaming.queryHandle.provider,
-        model,
-        eventType: "session.model_changed",
-        eventGroup: "session",
-        status: "applied",
-        source: streaming.currentSource,
-        payloadJson: {
-          previousModel: streaming.currentModel,
+      const previousModel = streaming.currentModel;
+      try {
+        const switched = await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
+        if (!switched) {
+          throw new Error("Runtime handle rejected live model switch");
+        }
+        recordRuntimeTraceEvent({
+          sessionKey,
+          sessionName,
+          agentId: streaming.agentId,
+          runId: streaming.traceRunId,
+          turnId: streaming.currentTraceTurnId,
+          provider: streaming.queryHandle.provider,
+          model,
+          eventType: "session.model_changed",
+          eventGroup: "session",
+          status: "applied",
+          source: streaming.currentSource,
+          payloadJson: {
+            previousModel,
+            nextModel: model,
+            strategy: "direct-set",
+            ...presetTrace,
+          },
+        });
+        streaming.currentModel = model;
+        return "applied";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.warn("Live model switch failed; restarting session on next turn", {
+          sessionName,
+          previousModel,
           nextModel: model,
-          strategy: "direct-set",
-          ...presetTrace,
-        },
-      });
-      await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
-      streaming.currentModel = model;
-      return "applied";
+          error: message,
+        });
+        recordRuntimeTraceEvent({
+          sessionKey,
+          sessionName,
+          agentId: streaming.agentId,
+          runId: streaming.traceRunId,
+          turnId: streaming.currentTraceTurnId,
+          provider: streaming.queryHandle.provider,
+          model,
+          eventType: "session.model_changed",
+          eventGroup: "session",
+          status: "failed",
+          error: message,
+          source: streaming.currentSource,
+          payloadJson: {
+            previousModel,
+            nextModel: model,
+            strategy: "direct-set",
+            fallback: "restart-next-turn",
+            ...presetTrace,
+          },
+        });
+      }
     }
 
     const hasStashedMessages = streaming.pendingMessages.length > 0;

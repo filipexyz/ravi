@@ -175,6 +175,7 @@ interface PiSessionRuntimeState {
   permissionHooksReady: boolean;
   currentState?: PiRpcSessionState;
   started: boolean;
+  requestedModel?: string;
   transport?: PiRpcTransport;
   pendingSteers: string[];
 }
@@ -291,6 +292,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         ignoreStaleTerminals: false,
         permissionHooksReady: false,
         started: false,
+        requestedModel: input.model,
         transport: initialTransport,
         pendingSteers: [],
       };
@@ -328,14 +330,13 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           if (input.modelBroker && model !== input.modelBroker.model) {
             throw new Error("Changing models requires resolving a matching model-broker route.");
           }
-          const parsed = parsePiModelSelector(model);
-          await sendPiCommand(requireTransport(), {
-            type: "set_model",
-            provider: input.modelBroker
-              ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)
-              : (parsed.provider ?? defaultPiModelProvider()),
-            modelId: parsed.modelId ?? model,
-          });
+          state.requestedModel = model;
+          input.model = model;
+          request.model = model;
+          if (!state.started) {
+            return;
+          }
+          await applyPiSetModel(requireTransport(), state, model, input.modelBroker, { verify: true });
         },
         control: (request) => controlPiRuntime(state, request, input.modelBroker),
       };
@@ -629,21 +630,16 @@ async function* runPiTurns(
     permissionHooksReadyTimeoutMs: number;
   },
 ): AsyncGenerator<RuntimeEvent> {
-  const modelSelector = parsePiModelSelector(input.model);
   const thinkingLevel = toPiThinkingLevel(input.effort, input.thinking);
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
     env: resolvePiRpcProcessEnv(input),
-    provider: input.modelBroker ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker) : modelSelector.provider,
-    model: modelSelector.modelId,
-    modelArg: input.modelBroker
-      ? `${resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)}/${resolveRuntimeModelBrokerProviderModel(input.modelBroker)}`
-      : modelSelector.modelArg,
     thinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
   };
+  refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
   let transport = state.transport ?? createTransport();
   state.transport = transport;
   let eventIterator = transport.events[Symbol.asyncIterator]();
@@ -672,12 +668,14 @@ async function* runPiTurns(
 
   const startTransport = async () => {
     const nextEnv = snapshotDesiredPiRpcSpawn();
+    refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
     try {
       await transport.start(startInput);
       state.permissionHooksReady = false;
       eventIterator = transport.events[Symbol.asyncIterator]();
-      await resumePiSessionIfNeeded(transport, input, state.currentState);
+      const resumed = await resumePiSessionIfNeeded(transport, input, state.currentState);
       state.currentState = await readPiState(transport, state.currentState);
+      await applyPiRequestedModelAfterStart(transport, state, input.modelBroker, { force: resumed });
       await configurePiQueueModes(transport, state);
       await flushPendingPiSteers(transport, state);
       if (!transport.writeMessage) {
@@ -1190,16 +1188,26 @@ async function controlPiRuntime(
             buildState(),
           );
         }
-        const parsed = parsePiModelSelector(model);
+        state.requestedModel = model;
+        if (!state.started) {
+          return okControl(
+            request,
+            {
+              type: "response",
+              command: "set_model",
+              success: true,
+              queued: true,
+              data: {
+                queued: true,
+                reason: "provider_starting",
+              },
+            },
+            buildState(),
+          );
+        }
         return okControl(
           request,
-          await sendPiCommand(transport, {
-            type: "set_model",
-            provider: modelBroker
-              ? resolveRuntimeModelBrokerLocalProviderId(modelBroker)
-              : (parsed.provider ?? defaultPiModelProvider()),
-            modelId: parsed.modelId ?? model,
-          }),
+          await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker)),
           buildState(),
         );
       }
@@ -1273,7 +1281,7 @@ async function resumePiSessionIfNeeded(
   transport: PiRpcTransport,
   input: RuntimeStartRequest,
   currentState?: PiRpcSessionState,
-): Promise<void> {
+): Promise<boolean> {
   const sessionFile = firstString(
     currentState?.sessionFile,
     input.resumeSession?.params?.sessionFile,
@@ -1282,9 +1290,10 @@ async function resumePiSessionIfNeeded(
     input.resume,
   );
   if (!sessionFile) {
-    return;
+    return false;
   }
   await sendPiCommand(transport, { type: "switch_session", sessionPath: sessionFile });
+  return true;
 }
 
 async function readPiState(
@@ -1328,6 +1337,101 @@ async function sendPiCommand(transport: PiRpcTransport, command: PiRpcCommand): 
     throw new Error(response.error ?? `Pi RPC command ${command.type} failed`);
   }
   return response;
+}
+
+function resolvePiSetModelCommand(
+  model: string,
+  modelBroker?: RuntimeStartRequest["modelBroker"],
+): { type: "set_model"; provider: string; modelId: string } {
+  const parsed = parsePiModelSelector(model);
+  return {
+    type: "set_model",
+    provider: modelBroker
+      ? resolveRuntimeModelBrokerLocalProviderId(modelBroker)
+      : (parsed.provider ?? defaultPiModelProvider()),
+    modelId: modelBroker ? resolveRuntimeModelBrokerProviderModel(modelBroker) : (parsed.modelId ?? model),
+  };
+}
+
+function refreshPiStartInputModel(
+  startInput: PiRpcStartInput,
+  requestedModel: string | undefined,
+  modelBroker?: RuntimeStartRequest["modelBroker"],
+): void {
+  const parsed = parsePiModelSelector(requestedModel);
+  startInput.provider = modelBroker ? resolveRuntimeModelBrokerLocalProviderId(modelBroker) : parsed.provider;
+  startInput.model = parsed.modelId;
+  startInput.modelArg = modelBroker
+    ? `${resolveRuntimeModelBrokerLocalProviderId(modelBroker)}/${resolveRuntimeModelBrokerProviderModel(modelBroker)}`
+    : parsed.modelArg;
+}
+
+function piSessionReportedModel(state?: PiRpcSessionState): { provider?: string; id: string } | null {
+  const model = isRecord(state?.model) ? state.model : undefined;
+  const id = firstString(model?.id, model?.name);
+  if (!id) {
+    return null;
+  }
+  return {
+    ...(firstString(model?.provider) ? { provider: firstString(model?.provider) } : {}),
+    id,
+  };
+}
+
+function piSessionMatchesRequestedModel(
+  state: PiRpcSessionState | undefined,
+  command: { provider: string; modelId: string },
+): boolean {
+  const reported = piSessionReportedModel(state);
+  if (!reported) {
+    return false;
+  }
+  const idMatches =
+    reported.id === command.modelId ||
+    reported.id === `${command.provider}/${command.modelId}` ||
+    reported.id.endsWith(`/${command.modelId}`);
+  const providerMatches = !reported.provider || reported.provider === command.provider;
+  return idMatches && providerMatches;
+}
+
+async function applyPiSetModel(
+  transport: PiRpcTransport,
+  state: PiSessionRuntimeState,
+  model: string,
+  modelBroker: RuntimeStartRequest["modelBroker"] | undefined,
+  options: { verify: boolean },
+): Promise<void> {
+  const command = resolvePiSetModelCommand(model, modelBroker);
+  await sendPiCommand(transport, command);
+  state.currentState = await readPiState(transport, state.currentState);
+  if (
+    options.verify &&
+    piSessionReportedModel(state.currentState) &&
+    !piSessionMatchesRequestedModel(state.currentState, command)
+  ) {
+    throw new Error(`Pi set_model did not apply ${model}`);
+  }
+}
+
+async function applyPiRequestedModelAfterStart(
+  transport: PiRpcTransport,
+  state: PiSessionRuntimeState,
+  modelBroker: RuntimeStartRequest["modelBroker"] | undefined,
+  options: { force: boolean },
+): Promise<void> {
+  const requested = state.requestedModel?.trim();
+  if (!requested) {
+    return;
+  }
+  const command = resolvePiSetModelCommand(requested, modelBroker);
+  const reported = piSessionReportedModel(state.currentState);
+  if (!options.force && !reported) {
+    return;
+  }
+  if (reported && piSessionMatchesRequestedModel(state.currentState, command)) {
+    return;
+  }
+  await applyPiSetModel(transport, state, requested, modelBroker, { verify: Boolean(reported) });
 }
 
 function sendPiPrompt(transport: PiRpcTransport, prompt: string): Promise<PiRpcResponse> {

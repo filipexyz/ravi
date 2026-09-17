@@ -938,6 +938,8 @@ describe("Pi runtime provider", () => {
     expect(transport.commands.map((command) => command.type)).toEqual([
       "switch_session",
       "get_state",
+      "set_model",
+      "get_state",
       "set_steering_mode",
       "prompt",
       "get_state",
@@ -946,6 +948,9 @@ describe("Pi runtime provider", () => {
       type: "switch_session",
       sessionPath: sessionFile,
     });
+    expect(transport.commands).toContainEqual(
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-5.5" }),
+    );
   });
 
   it("maps Pi aborted turns to a single interrupted terminal event", async () => {
@@ -972,7 +977,23 @@ describe("Pi runtime provider", () => {
     const transport = new FakePiRpcTransport();
     const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle"));
 
-    await expect(handle.setModel?.("openai/gpt-5.5")).resolves.toBeUndefined();
+    await expect(handle.setModel?.("openai/gpt-4.1")).resolves.toBeUndefined();
+    await expect(
+      handle.control?.({
+        operation: "model.set",
+        text: "openai/gpt-4.1",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        response: {
+          data: {
+            queued: true,
+            reason: "provider_starting",
+          },
+        },
+      },
+    });
     await expect(
       handle.control?.({
         operation: "thinking.set",
@@ -1012,9 +1033,210 @@ describe("Pi runtime provider", () => {
     });
 
     expect(transport.commands).toEqual([
-      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-5.5" }),
       expect.objectContaining({ type: "set_thinking_level", level: "xhigh" }),
     ]);
+  });
+
+  it("applies setModel before the first Pi prompt via spawn model without session reset", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        const started = transport.starts.at(-1);
+        return piResponse(command, {
+          model: {
+            provider: started?.provider ?? "openai",
+            id: started?.model ?? "gpt-5.5",
+          },
+        });
+      }
+      if (command.type === "prompt") {
+        const started = transport.starts.at(-1);
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("ok", { model: started?.model ?? "gpt-5.5" })],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("primeira", { model: "openai/gpt-5.5" }),
+    );
+    await handle.setModel?.("openai/gpt-4.1");
+    const events = await collectRuntimeEvents(handle.events);
+
+    expect(transport.starts[0]?.modelArg).toBe("openai/gpt-4.1");
+    expect(transport.commands.filter((command) => command.type === "set_model")).toEqual([]);
+    expect(transport.commands.map((command) => command.type)).not.toContain("new_session");
+    expect(events.find((event) => event.type === "turn.complete")).toMatchObject({
+      execution: { model: "gpt-4.1" },
+    });
+  });
+
+  it("applies live setModel to the next Pi turn without session reset", async () => {
+    const transport = new FakePiRpcTransport();
+    let liveModel = "gpt-5.5";
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("primeira", {
+        model: "openai/gpt-5.5",
+        prompt: (async function* () {
+          yield promptMessage("primeira");
+          await handle.setModel?.("openai/gpt-4.1");
+          yield promptMessage("segunda");
+        })(),
+      }),
+    );
+    transport.responseFor = (command) => {
+      if (command.type === "set_model") {
+        liveModel = String(command.modelId);
+        return defaultResponse(command);
+      }
+      if (command.type === "get_state") {
+        return piResponse(command, {
+          model: { provider: "openai", id: liveModel },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("ok", { model: liveModel })],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(handle.events);
+    const completed = events.filter((event) => event.type === "turn.complete");
+
+    expect(transport.starts).toHaveLength(1);
+    expect(transport.commands).toContainEqual(
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+    );
+    expect(completed).toHaveLength(2);
+    expect(completed[0]).toMatchObject({ execution: { model: "gpt-5.5" } });
+    expect(completed[1]).toMatchObject({ execution: { model: "gpt-4.1" } });
+  });
+
+  it("reapplies the requested model after resume when the session file still has the old model", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-pi-provider-model-resume-"));
+    const sessionFile = join(cwd, "session.jsonl");
+    writeFileSync(sessionFile, "{}");
+
+    const transport = new FakePiRpcTransport();
+    let liveModel = "gpt-5.5";
+    transport.responseFor = (command) => {
+      if (command.type === "set_model") {
+        liveModel = String(command.modelId);
+        return defaultResponse(command);
+      }
+      if (command.type === "get_state") {
+        return piResponse(command, {
+          sessionFile,
+          model: { provider: "openai", id: liveModel },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("ok", { model: liveModel })],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("continua", {
+          cwd,
+          model: "openai/gpt-4.1",
+          resumeSession: {
+            displayId: "session",
+            params: {
+              sessionFile,
+              cwd,
+            },
+          },
+        }),
+      ).events,
+    );
+
+    const commandTypes = transport.commands.map((command) => command.type);
+    expect(commandTypes.slice(0, 4)).toEqual(["switch_session", "get_state", "set_model", "get_state"]);
+    expect(transport.commands).toContainEqual(
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+    );
+    expect(commandTypes.indexOf("set_model")).toBeLessThan(commandTypes.indexOf("prompt"));
+    expect(events.find((event) => event.type === "turn.complete")).toMatchObject({
+      execution: { model: "gpt-4.1" },
+    });
+  });
+
+  it("throws when live set_model RPC fails instead of reporting success", async () => {
+    const transport = new FakePiRpcTransport();
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("primeira", {
+        prompt: (async function* () {
+          yield promptMessage("primeira");
+          await expect(handle.setModel?.("openai/gpt-4.1")).rejects.toThrow(/unknown model|set_model/);
+          yield promptMessage("segunda");
+        })(),
+      }),
+    );
+    transport.responseFor = (command) => {
+      if (command.type === "set_model") {
+        return {
+          id: command.id,
+          type: "response",
+          command: "set_model",
+          success: false,
+          error: "unknown model",
+        };
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("ok")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(handle.events);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transport.commands.filter((command) => command.type === "set_model")).toHaveLength(1);
+  });
+
+  it("throws when set_model succeeds but get_state still reports the previous model", async () => {
+    const transport = new FakePiRpcTransport();
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("primeira", {
+        prompt: (async function* () {
+          yield promptMessage("primeira");
+          await expect(handle.setModel?.("openai/gpt-4.1")).rejects.toThrow(/did not apply/);
+          yield promptMessage("segunda");
+        })(),
+      }),
+    );
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        return piResponse(command, {
+          model: { provider: "openai", id: "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({
+          type: "agent_end",
+          messages: [assistantMessage("ok")],
+        });
+      }
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(handle.events);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+    expect(transport.commands).toContainEqual(
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+    );
   });
 
   it("flushes pre-start steering through Pi before the first prompt instead of host prompt concatenation", async () => {

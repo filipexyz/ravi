@@ -130,7 +130,7 @@ The event types currently recorded by the Session Trace v1 implementation are:
 | `session.abort` | `session` | Session abort was requested, deferred, or executed. |
 | `session.stalled` | `session` | Legacy watchdog recovery event, kept only for historical traces. New runtime code must emit provider terminal events instead. |
 | `session.timeout` | `session` | Runtime idle timeout fired. |
-| `session.model_changed` | `session` | Live model change was applied without full restart. |
+| `session.model_changed` | `session` | Live model change was applied without full restart, or `failed` when the provider RPC rejected the switch. |
 
 `prompt.received` is still emitted as a live runtime audit event when the prompt
 stream consumer receives a message, but it is not currently a persisted SQLite

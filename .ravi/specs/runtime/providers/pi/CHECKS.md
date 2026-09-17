@@ -20,7 +20,10 @@
 - RPC steer, interrupt, busy-retry, and dead-transport restart still work with the permission bridge loaded.
 - `startSession` starts a fake RPC client and returns a valid runtime handle.
 - `interrupt()` sends `abort` and emits `turn.interrupted`.
-- `setModel()` sends `set_model` and affects subsequent prompt metadata.
+- `setModel()` before RPC start updates the spawn model and does not send `set_model` until the transport is live.
+- `setModel()` after start sends `set_model` and subsequent prompt metadata uses the new model without a session reset.
+- Resume/cold start reapplies the requested model with `set_model` when `get_state` still reports the previous session-file model.
+- A failed `set_model` RPC throws and is not treated as applied.
 - Resume validates cwd and session file before using Pi state.
 - Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
