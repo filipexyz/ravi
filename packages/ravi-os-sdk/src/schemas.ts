@@ -48845,7 +48845,7 @@ export const PagesCreateInputSchema = {
       "type": "boolean"
     },
     "execute": {
-      "description": "Unused compatibility no-op; pages create always writes the host record",
+      "description": "Write the host record. Without it, pages create only returns the planned host",
       "type": "boolean"
     },
     "project": {
@@ -49635,7 +49635,7 @@ export const PagesPublishInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Unused compatibility no-op; pages publish always uploads and publishes",
+      "description": "Upload and publish. Without it, pages publish only returns the planned publish",
       "type": "boolean"
     },
     "idempotencyKey": {
@@ -50101,7 +50101,7 @@ export const PagesShipInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Unused compatibility no-op; pages ship always ensures the host and publishes",
+      "description": "Perform the ship. Without it, pages ship only returns the planned publish",
       "type": "boolean"
     },
     "html": {

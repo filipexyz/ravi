@@ -59,6 +59,34 @@ describe("global confirmation policy metadata", () => {
     expect(invalid).toEqual([]);
   });
 
+  it("requires every braked command to reference its --execute flag", () => {
+    // A command can declare the brake, expose --execute, and still ignore it --
+    // `void execute;`. That is how `pages ship` created 29 real releases without
+    // ever being asked to confirm. Metadata alone cannot catch it, so read the
+    // implementation: the body must mention `execute` somewhere other than a
+    // no-op reference.
+    const offenders: string[] = [];
+
+    for (const command of commands.filter((candidate) => candidate.access?.requiresConfirmation === true)) {
+      if (executeOption(command) === undefined) continue;
+
+      const prototype = (command.cls as unknown as { prototype?: Record<string, unknown> }).prototype;
+      const method = prototype?.[command.method];
+      if (typeof method !== "function") {
+        offenders.push(`${command.fullName} (unreadable body)`);
+        continue;
+      }
+
+      const source = method.toString();
+      const body = source.slice(Math.max(source.indexOf("{"), 0)).replace(/void\s+execute\s*;/g, "");
+      if (!/\bexecute\b/.test(body)) {
+        offenders.push(`${command.fullName} (method ${command.method})`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps authority-reduction and containment operations immediate", () => {
     for (const fullName of ["context.revoke", "whatsapp.group.demote"]) {
       const command = commands.find((candidate) => candidate.fullName === fullName);

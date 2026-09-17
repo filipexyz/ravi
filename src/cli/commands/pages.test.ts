@@ -657,7 +657,7 @@ describe("pages CLI commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("pages agent-first contract", () => {
-  it("create without --execute writes the host immediately", async () => {
+  it("create is dry-run by default and only writes the host with --execute", async () => {
     const calls: Array<{ method: string; path: string; body: unknown }> = [];
     const client = makeClient(async (method, path, body) => {
       calls.push({ method, path, body });
@@ -670,8 +670,23 @@ describe("pages agent-first contract", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
+    const error = await expectContractError(
+      () => command.create(["proj", "demo"], undefined, "private", true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      slug: "demo",
+      visibility: "private",
+      isDefault: true,
+    });
+    // The brake runs before any Console call.
+    expect(calls).toEqual([]);
+
     const { output } = await captureConsole(() =>
-      command.create(["proj", "demo"], undefined, "private", true, undefined, true),
+      command.create(["proj", "demo"], undefined, "private", true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -716,7 +731,7 @@ describe("pages agent-first contract", () => {
     expect(calls).toEqual([]);
   });
 
-  it("publish without --execute uploads immediately", async () => {
+  it("publish is dry-run by default and only uploads with --execute", async () => {
     stateDir = await createIsolatedRaviState("ravi-pages-publish-unbraked-test-");
     const dir = await tempDir();
     await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
@@ -744,7 +759,7 @@ describe("pages agent-first contract", () => {
     } as unknown as ConsoleApiClient;
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() =>
+    const publish = (execute?: boolean) =>
       command.publish(
         ["proj", "demo", dir],
         undefined,
@@ -764,8 +779,26 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
-      ),
-    );
+        undefined,
+        execute,
+      );
+
+    const error = await expectContractError(() => publish(), "WRITE_REQUIRES_EXECUTE", 3);
+
+    expect(error.details.plan).toMatchObject({
+      project: "proj",
+      site: "demo",
+      route: "/guide",
+      visibility: "public",
+      entrypoint: "index.html",
+      artifactVersion: "latest",
+      activate: true,
+      replaceRelease: false,
+    });
+    // The brake runs before any Console call.
+    expect(calls).toEqual([]);
+
+    const { output } = await captureConsole(() => publish(true));
 
     expect(calls).toEqual(["createPageUploadSession", "finalizeArtifactPublish"]);
     expect(JSON.parse(output)).toMatchObject({
@@ -921,8 +954,8 @@ describe("pages agent-first contract", () => {
     expect(error.details.suggestedAction).toContain("ravi pages published");
   });
 
-  it("ship without --execute publishes immediately and leftover --execute is a no-op", async () => {
-    stateDir = await createIsolatedRaviState("ravi-pages-ship-unbraked-test-");
+  it("ship is dry-run by default and only publishes with --execute", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-brake-test-");
     const listAndCreate: Array<{ method: string; path: string; body: unknown }> = [];
     const client = {
       me: mock(async () => ({
@@ -975,22 +1008,30 @@ describe("pages agent-first contract", () => {
         execute,
       );
 
-    const withoutExecute = await captureConsole(() => ship());
-    const withExecuteNoop = await captureConsole(() => ship(true));
+    const error = await expectContractError(() => ship(), "WRITE_REQUIRES_EXECUTE", 3);
 
-    expect(listAndCreate).toEqual([
-      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
-      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
-    ]);
-    expect(JSON.parse(withoutExecute.output)).toMatchObject({
+    expect(error.details.plan).toMatchObject({
+      project: "proj",
+      slug: "weekly-report",
+      route: "/",
+      entrypoint: "index.html",
+      visibility: "private",
+      source: { kind: "body", bodyChars: 11 },
+    });
+    // The planned ship carries shape and size, never the content itself.
+    expect(JSON.stringify(error.details.plan)).not.toContain("Weekly report");
+    // The brake runs before any Console call: a dry-run ship must not create a
+    // host, an upload session or a release.
+    expect(listAndCreate).toEqual([]);
+
+    const withExecute = await captureConsole(() => ship(true));
+
+    expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
+    expect(JSON.parse(withExecute.output)).toMatchObject({
       artifactId: "cloud_art_unbraked_ship",
       slug: "weekly-report",
       success: true,
       url: "https://weekly-report.ravi.page/",
-    });
-    expect(JSON.parse(withExecuteNoop.output)).toMatchObject({
-      success: true,
-      slug: "weekly-report",
     });
   });
 

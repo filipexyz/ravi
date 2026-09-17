@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "5370c5fe17be7e62"
+    "version": "fa7ab5be1b427ed1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -59686,7 +59686,7 @@
                     "type": "boolean"
                   },
                   "execute": {
-                    "description": "Unused compatibility no-op; pages create always writes the host record",
+                    "description": "Write the host record. Without it, pages create only returns the planned host",
                     "type": "boolean"
                   },
                   "project": {
@@ -60616,7 +60616,7 @@
                     "type": "string"
                   },
                   "execute": {
-                    "description": "Unused compatibility no-op; pages publish always uploads and publishes",
+                    "description": "Upload and publish. Without it, pages publish only returns the planned publish",
                     "type": "boolean"
                   },
                   "idempotencyKey": {
@@ -61138,7 +61138,7 @@
                     "type": "string"
                   },
                   "execute": {
-                    "description": "Unused compatibility no-op; pages ship always ensures the host and publishes",
+                    "description": "Perform the ship. Without it, pages ship only returns the planned publish",
                     "type": "boolean"
                   },
                   "html": {

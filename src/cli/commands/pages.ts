@@ -66,8 +66,9 @@ Happy path:
   Public visibility is allowed in the same call.
 
 Write brake:
-  None. ship always ensures the host and publishes. --execute is accepted
-  and ignored for backwards compatibility.
+  Dry-run by default. Without --execute nothing is uploaded and no release is
+  created; the command returns exit 3 with the planned ship. Publishing creates
+  a real page with a reachable URL, so it is never implied.
 
 JSON:
   { url, site, slug, route, visibility, artifactId }
@@ -83,8 +84,9 @@ Examples:
   ravi pages create proj docs --visibility private --json
 
 Write brake:
-  None. create always writes the host record. --execute is accepted and ignored
-  for backwards compatibility.
+  Dry-run by default. Without --execute nothing is written; the command returns
+  exit 3 with the planned host record. Creating a host registers a real Pages
+  site, so it is never implied.
 `;
 
 const PAGES_PUBLISH_HELP = `
@@ -97,8 +99,9 @@ Examples:
   ravi pages publish proj demo art_demo_123 --route / --json
 
 Write brake:
-  None. publish always uploads. --execute is accepted and ignored for
-  backwards compatibility.
+  Dry-run by default. Without --execute nothing is uploaded and no release is
+  activated; the command returns exit 3 with the planned publish. Publishing
+  creates content on a reachable route, so it is never implied.
 `;
 
 @Group({
@@ -214,14 +217,27 @@ export class PagesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Unused compatibility no-op; pages create always writes the host record",
+      description: "Write the host record. Without it, pages create only returns the planned host",
     })
     execute?: boolean,
   ) {
-    void execute;
     return runPagesCommand("pages create", asJson, async () => {
       const parsed = parseCreateArgs(args, projectOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): creating a host registers a real Pages
+        // site. Dry-run by default and exit 3 before any Console call.
+        contractDryRun(
+          "pages create",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            slug: parsed.slug,
+            visibility: normalizedVisibility ?? "(provider default)",
+            isDefault: Boolean(isDefault),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await createPageSite(
         {
@@ -273,11 +289,10 @@ export class PagesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Unused compatibility no-op; pages ship always ensures the host and publishes",
+      description: "Perform the ship. Without it, pages ship only returns the planned publish",
     })
     execute?: boolean,
   ) {
-    void execute;
     return runPagesCommand("pages ship", asJson, async () => {
       const parsed = parseShipArgs(args, projectOption);
       const title = requireShipTitle(titleOption);
@@ -285,7 +300,27 @@ export class PagesCommands {
       const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
       const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
       const slug = parsed.slug ?? slugifyPageTitle(title);
+      // Validation stays BEFORE the brake: an invalid source is a payload error
+      // even on the dry-run path.
       await validateShipSourceInput({ body, dir, html });
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): a ship creates a real Pages release on a
+        // reachable URL. Dry-run by default and exit 3 before any Console call,
+        // so publishing cannot be used as a measurement or probing loop.
+        contractDryRun(
+          "pages ship",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            slug,
+            title,
+            route: resolvedRoute,
+            entrypoint: resolvedEntrypoint,
+            visibility: normalizedVisibility,
+            source: describeShipSource({ body, dir, html }),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const site = await ensurePageSite(
         {
@@ -382,15 +417,34 @@ export class PagesCommands {
     siteOption?: string,
     @Option({
       flags: "--execute",
-      description: "Unused compatibility no-op; pages publish always uploads and publishes",
+      description: "Upload and publish. Without it, pages publish only returns the planned publish",
     })
     execute?: boolean,
   ) {
-    void execute;
     return runPagesCommand("pages publish", asJson, async () => {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): publishing uploads content and can
+        // activate a release on a reachable route. Dry-run by default and exit 3
+        // before any Console call.
+        contractDryRun(
+          "pages publish",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            site: parsed.site ?? "(project Pages host)",
+            source: parsed.source,
+            route: route ?? "/",
+            visibility: normalizedVisibility ?? "(provider default)",
+            entrypoint: entrypoint ?? "index.html",
+            artifactVersion: parsedArtifactVersion ?? "latest",
+            activate: noActivate !== true,
+            replaceRelease: Boolean(replaceRelease),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await publishArtifactToConsole(
         parsed.source,
@@ -782,6 +836,16 @@ function brakePublicSiteVisibility(
     },
     { asJson },
   );
+}
+
+/**
+ * Safe descriptor for the ship source. The dry-run plan is printed and recorded,
+ * so it reports shape and size, never the body content itself.
+ */
+function describeShipSource(input: { body?: string; dir?: string; html?: string }): Record<string, unknown> {
+  if (input.dir) return { kind: "dir", path: input.dir };
+  if (input.html) return { kind: "html", path: input.html };
+  return { kind: "body", bodyChars: input.body?.length ?? 0 };
 }
 
 async function resolvePagesProject(
