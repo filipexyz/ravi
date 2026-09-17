@@ -126,6 +126,8 @@ export interface RuntimeHostStreamingSession {
     toolName?: string;
     output?: unknown;
     metadata?: RuntimeEventMetadata;
+    fatal?: boolean;
+    fatalReason?: string;
   };
   /** Activity tracking */
   lastActivity: number;

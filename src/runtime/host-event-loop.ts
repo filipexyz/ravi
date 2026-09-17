@@ -53,6 +53,7 @@ import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { classifyFatalToolFailure, FATAL_TOOL_FAILURE_REASON, type FatalToolFailure } from "./fatal-tool-failure.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
@@ -1457,6 +1458,96 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
     }
   };
+  const terminateTurnAfterFatalTool = (failure: FatalToolFailure) => {
+    if (streaming.done || streaming.abortController.signal.aborted) {
+      return;
+    }
+
+    streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+    const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    if (stashedCount > 0) {
+      restartStashedReason = FATAL_TOOL_FAILURE_REASON;
+    }
+
+    log.warn("Fatal tool failure — closing unterminated turn", {
+      runId,
+      sessionName,
+      tool: streaming.currentToolName ?? failure.summary,
+      reason: failure.reason,
+      exitCode: failure.exitCode,
+      pendingMessages: streaming.pendingMessages.length,
+      stashedMessages: stashedCount,
+    });
+    recordTraceEvent({
+      turnId: streaming.currentTraceTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.fatal_tool",
+      eventGroup: "session",
+      status: "failed",
+      source: streaming.currentSource,
+      payloadJson: {
+        reason: FATAL_TOOL_FAILURE_REASON,
+        signal: failure.reason ?? null,
+        exitCode: failure.exitCode ?? null,
+        toolId: streaming.currentToolId ?? streaming.lastToolFailure?.toolId ?? null,
+        toolName: streaming.currentToolName ?? streaming.lastToolFailure?.toolName ?? null,
+        pendingMessages: streaming.pendingMessages.length,
+        stashedMessages: stashedCount,
+        autoRecovered: stashedCount > 0,
+      },
+      preview: failure.reason ?? FATAL_TOOL_FAILURE_REASON,
+    });
+    recordTerminalTraceOnce({
+      status: "failed",
+      eventType: "turn.failed",
+      abortReason: FATAL_TOOL_FAILURE_REASON,
+      error: failure.summary,
+      payloadJson: {
+        reason: FATAL_TOOL_FAILURE_REASON,
+        signal: failure.reason ?? null,
+        exitCode: failure.exitCode ?? null,
+        autoRecovered: stashedCount > 0,
+      },
+    });
+    flushObservationEvents("turn.failed", {
+      provider: runtimeSession.provider,
+      reason: FATAL_TOOL_FAILURE_REASON,
+      signal: failure.reason ?? null,
+      exitCode: failure.exitCode ?? null,
+      autoRecovered: stashedCount > 0,
+    });
+    void emitHostRuntimeTerminal({
+      type: "turn.failed",
+      error: failure.summary,
+      recoverable: true,
+      reason: FATAL_TOOL_FAILURE_REASON,
+      signal: failure.reason ?? null,
+      exitCode: failure.exitCode ?? null,
+    });
+    void safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "tool.fatal",
+      reason: FATAL_TOOL_FAILURE_REASON,
+      signal: failure.reason ?? null,
+      exitCode: failure.exitCode ?? null,
+      tool: streaming.currentToolName ?? streaming.lastToolFailure?.toolName ?? null,
+      toolId: streaming.currentToolId ?? streaming.lastToolFailure?.toolId ?? null,
+      sessionName,
+    }).catch(() => {});
+
+    streaming.interrupted = true;
+    streaming.turnActive = false;
+    streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
+    clearActiveToolState();
+    markRuntimeLiveIdle(sessionName, "fatal tool failure");
+    signalTurnComplete();
+    clearTraceTurnState();
+    streaming.done = true;
+    if (!streaming.abortController.signal.aborted) {
+      streaming.abortController.abort();
+    }
+    void closeRuntimeSession();
+  };
   const signalTurnComplete = () => {
     clearProviderInactivityWatch();
     if (streaming.onTurnComplete) {
@@ -2783,6 +2874,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (streaming.toolResultDeliveryPending || streaming.toolRunning) {
           await finishActiveToolBarrier();
         }
+        const pendingFatal = streaming.lastToolFailure;
+        if (pendingFatal?.fatal) {
+          terminateTurnAfterFatalTool({
+            fatal: true,
+            reason: pendingFatal.fatalReason as FatalToolFailure["reason"],
+            summary:
+              typeof pendingFatal.output === "string" && pendingFatal.output.trim().length > 0
+                ? pendingFatal.output
+                : `${pendingFatal.toolName ?? "tool"} fatal ${pendingFatal.fatalReason ?? FATAL_TOOL_FAILURE_REASON}`,
+          });
+        }
         continue;
       }
 
@@ -2933,6 +3035,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
         }
 
+        const fatalToolFailure = classifyFatalToolFailure({
+          isError: event.isError,
+          content: event.content,
+          metadata: event.metadata,
+          toolName,
+        });
         streaming.lastToolFailure = event.isError
           ? {
               at: Date.now(),
@@ -2940,11 +3048,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               toolName,
               output,
               metadata: event.metadata,
+              fatal: fatalToolFailure.fatal,
+              ...(fatalToolFailure.reason ? { fatalReason: fatalToolFailure.reason } : {}),
             }
           : undefined;
         // Dynamic Codex callbacks finish on the later result-delivered marker.
         if (!awaitsToolResultDelivery) {
           await finishActiveToolBarrier();
+          if (fatalToolFailure.fatal) {
+            terminateTurnAfterFatalTool(fatalToolFailure);
+            continue;
+          }
           // Grok/Claude/Pi do not emit tool.result_delivered. After a mid-turn
           // utterance plus an in-process tool, session/prompt can stall with no
           // further events. Arm the after-tool inactivity watch so the turn

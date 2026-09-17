@@ -26,6 +26,7 @@
 - `after_task` never calls provider interrupt during text generation or active task work.
 - `after_tool` / `steer` waits for startup, compaction, and tool barriers before interrupting.
 - Provider tool-result delivery immediately re-evaluates queued `after_tool` / `steer` atoms; no later inbound message is required.
+- A fatal in-process tool failure (SIGKILL / exit 137) terminalizes the turn, releases `after_tool`, wakes the generator, and drains queued atoms FIFO without a daemon restart. Ordinary tool errors stay non-terminal so the provider can continue.
 - A pending provider callback write blocks every interrupt lane, including `immediate_interrupt`.
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
 

@@ -67,6 +67,7 @@ import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./mode
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { FATAL_TOOL_FAILURE_REASON } from "./fatal-tool-failure.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
 import {
   startRuntimeSession,
@@ -101,15 +102,26 @@ const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
 const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
 const MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS = 2;
+const MAX_FATAL_TOOL_FAILURE_RESTARTS = 1;
 const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
   [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
   [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
   [PROVIDER_TRANSPORT_FAILURE_REASON]: MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS,
+  [FATAL_TOOL_FAILURE_REASON]: MAX_FATAL_TOOL_FAILURE_RESTARTS,
 };
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
+const DEFAULT_BARRIER_STUCK_ALERT_MS = 30_000;
+
+function resolveBarrierStuckAlertMs(value = process.env.RAVI_RUNTIME_BARRIER_STUCK_MS): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.max(1, parsed);
+  }
+  return DEFAULT_BARRIER_STUCK_ALERT_MS;
+}
 
 interface DebounceState {
   messages: RuntimeLaunchPrompt[];
@@ -171,6 +183,8 @@ export class RuntimeSessionDispatcher {
   readonly startingSessions = new Set<string>();
   readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
   private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
+  private readonly barrierStuckTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly barrierStuckAlerted = new Set<string>();
   private reclaimTimer: ReturnType<typeof setInterval> | null = null;
   private reclaiming = false;
 
@@ -1101,6 +1115,7 @@ export class RuntimeSessionDispatcher {
               queueSize: existing.pendingMessages.length,
               barrier: describeDeliveryBarrier(barrier),
             });
+            this.clearBarrierStuckAlert(sessionName);
             const resolver = existing.pushMessage;
             existing.pushMessage = null;
             resolver(null);
@@ -1145,6 +1160,13 @@ export class RuntimeSessionDispatcher {
               .catch((error) => {
                 log.warn("Failed to emit dispatch.queued event", { sessionName, error });
               });
+            this.scheduleBarrierStuckAlert(
+              sessionName,
+              existing,
+              barrier,
+              sessionEntry?.sessionKey ?? sessionName,
+              prompt,
+            );
           }
         } else {
           const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
@@ -1703,11 +1725,94 @@ export class RuntimeSessionDispatcher {
   }
 
   private releaseRuntimeSessionSlot(sessionName: string, options: { drainPendingStarts?: boolean } = {}): boolean {
+    this.clearBarrierStuckAlert(sessionName);
     const released = this.streamingSessions.delete(sessionName);
     if (released && (options.drainPendingStarts ?? true)) {
       this.drainPendingStarts();
     }
     return released;
+  }
+
+  private scheduleBarrierStuckAlert(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    barrier: DeliveryBarrier,
+    sessionKey = sessionName,
+    prompt?: RuntimeLaunchPrompt,
+  ): void {
+    if (this.barrierStuckTimers.has(sessionName) || this.barrierStuckAlerted.has(sessionName)) {
+      return;
+    }
+    const timeoutMs = resolveBarrierStuckAlertMs();
+    const timer = setTimeout(() => {
+      this.barrierStuckTimers.delete(sessionName);
+      const current = this.streamingSessions.get(sessionName);
+      if (current !== session || current.done) {
+        return;
+      }
+      if (hasDeliverableRuntimeMessages(sessionName, current)) {
+        return;
+      }
+      this.barrierStuckAlerted.add(sessionName);
+      const blockedBarrier = describeDeliveryBarrier(barrier);
+      log.warn("Delivery barrier still blocking queued prompts", {
+        sessionName,
+        queueSize: current.pendingMessages.length,
+        barrier: blockedBarrier,
+        tool: current.currentToolName,
+        turnActive: current.turnActive,
+        toolRunning: current.toolRunning,
+        timeoutMs,
+      });
+      recordRuntimeTraceEvent({
+        sessionKey,
+        sessionName,
+        agentId: current.agentId,
+        runId: current.traceRunId,
+        turnId: current.currentTraceTurnId,
+        provider: current.queryHandle.provider,
+        model: current.currentModel,
+        eventType: "dispatch.barrier_stuck",
+        eventGroup: "dispatch",
+        status: "blocked",
+        source: prompt?.source ?? current.currentSource,
+        messageId: prompt?.context?.messageId,
+        payloadJson: {
+          reason: "waiting_for_barrier",
+          barrier: blockedBarrier,
+          barrierSource: prompt?.deliveryBarrierSource ?? null,
+          queueSize: current.pendingMessages.length,
+          timeoutMs,
+          sessionState: describeSessionState(current),
+        },
+      });
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.barrier_stuck",
+          provider: current.queryHandle.provider,
+          reason: "waiting_for_barrier",
+          barrier: blockedBarrier,
+          barrierSource: prompt?.deliveryBarrierSource ?? null,
+          queueSize: current.pendingMessages.length,
+          timeoutMs,
+          sessionState: describeSessionState(current),
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit dispatch.barrier_stuck event", { sessionName, error });
+        });
+    }, timeoutMs);
+    timer.unref?.();
+    this.barrierStuckTimers.set(sessionName, timer);
+  }
+
+  private clearBarrierStuckAlert(sessionName: string): void {
+    const timer = this.barrierStuckTimers.get(sessionName);
+    if (timer) {
+      clearTimeout(timer);
+      this.barrierStuckTimers.delete(sessionName);
+    }
+    this.barrierStuckAlerted.delete(sessionName);
   }
 
   private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
@@ -2268,6 +2373,7 @@ export class RuntimeSessionDispatcher {
   }
 
   private async releaseQueuedPromptsAfterTool(sessionName: string): Promise<void> {
+    this.clearBarrierStuckAlert(sessionName);
     const existing = this.streamingSessions.get(sessionName);
     if (
       !existing ||
@@ -2455,6 +2561,7 @@ export class RuntimeSessionDispatcher {
           queueSize: existing.pendingMessages.length,
           barrier: describeDeliveryBarrier(barrier),
         });
+        this.clearBarrierStuckAlert(sessionName);
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
         resolver(null);
@@ -2499,6 +2606,7 @@ export class RuntimeSessionDispatcher {
           .catch((error) => {
             log.warn("Failed to emit dispatch.queued event", { sessionName, error });
           });
+        this.scheduleBarrierStuckAlert(sessionName, existing, barrier, sessionEntry?.sessionKey ?? sessionName, prompt);
       }
       return;
     }

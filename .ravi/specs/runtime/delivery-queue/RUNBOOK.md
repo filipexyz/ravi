@@ -22,6 +22,8 @@ Check these fields in trace/logs:
 - queue size before/after;
 - `dispatch.queued_busy`;
 - `dispatch.interrupt_requested`;
+- `dispatch.barrier_stuck` if queued `after_tool` atoms never woke;
+- `session.fatal_tool` / `tool.fatal` after SIGKILL or exit 137;
 - provider terminal event for the previous turn.
 
 If an external session event interrupted a text response and did not carry explicit immediate intent, treat it as a bug.
@@ -29,7 +31,7 @@ If an external session event interrupted a text response and did not carry expli
 ## Barrier Diagnosis
 
 - `immediate_interrupt`: should interrupt only after startup, compaction, and unsafe tool barriers clear.
-- `after_tool` / `steer`: may interrupt text generation after tool barriers. This should mostly be human channel input or explicit steer behavior.
+- `after_tool` / `steer`: may interrupt text generation after tool barriers. This should mostly be human channel input or explicit steer behavior. A fatal in-process tool (SIGKILL / exit 137) must terminalize immediately; do not wait for a daemon restart. Ordinary tool errors should stay non-terminal.
 - `after_response` / `followup`: should wait for the current response to become terminal.
 - `after_task`: should wait for the current response and active task barrier to finish.
 

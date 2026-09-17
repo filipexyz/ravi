@@ -308,6 +308,46 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
+  it("wakes the generator and drains after_tool FIFO after a fatal tool barrier clears", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "run bash", deliveryBarrier: "after_tool" });
+    const first = createQueuedRuntimeUserMessage({ prompt: "first follow-up", deliveryBarrier: "after_tool" });
+    const second = createQueuedRuntimeUserMessage({ prompt: "second follow-up", deliveryBarrier: "after_tool" });
+    const session = makeStreamingSession({
+      pendingMessages: [active],
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    expect((await generator.next()).value).toMatchObject({
+      message: { content: "run bash" },
+    });
+
+    session.toolRunning = true;
+    session.pendingMessages.push(first, second);
+    expect(canReleaseRuntimeDeliveryBarrier("dev", session, "after_tool")).toBe(false);
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([]);
+
+    session.toolRunning = false;
+    session.turnActive = false;
+    expect(canReleaseRuntimeDeliveryBarrier("dev", session, "after_tool")).toBe(true);
+    session.onTurnComplete?.();
+
+    expect((await generator.next()).value).toMatchObject({
+      message: { content: "first follow-up\n\nsecond follow-up" },
+    });
+    expect(session.pendingMessages.map((message) => message.message.content)).toEqual([
+      "first follow-up",
+      "second follow-up",
+    ]);
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
   it("coalesces a compatible channel backlog behind the latest interrupting prompt", async () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("old active work", "turn-a"));
     const queued = createQueuedRuntimeUserMessage(channelPrompt("first steering detail", "turn-b"));

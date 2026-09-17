@@ -1930,6 +1930,64 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("emits dispatch.barrier_stuck when after_tool stays blocked without a wake", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_BARRIER_STUCK_MS;
+    process.env.RAVI_RUNTIME_BARRIER_STUCK_MS = "50";
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-barrier-stuck-");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    try {
+      getOrCreateSession("agent:main:test:barrier-stuck", "main", stateDir, { name: "barrier-stuck" });
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: crashRecoveryStub,
+      });
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: true,
+        currentToolName: "Bash",
+        pushMessage: () => {},
+        pendingMessages: [],
+        currentTurnPendingIds: ["active-1"],
+      });
+      dispatcher.streamingSessions.set("barrier-stuck", activeSession);
+
+      await dispatcher.handlePromptImmediate("barrier-stuck", {
+        prompt: "queued behind the killed tool",
+        _agentId: "main",
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "inferred",
+      });
+
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const stuck = emitted.find((entry) => entry.data.type === "dispatch.barrier_stuck");
+      expect(stuck?.data).toMatchObject({
+        type: "dispatch.barrier_stuck",
+        reason: "waiting_for_barrier",
+        barrier: "p1/after_tool",
+        queueSize: 1,
+      });
+      const trace = querySessionTrace({ sessionName: "barrier-stuck" });
+      expect(trace.events.some((event) => event.eventType === "dispatch.barrier_stuck")).toBe(true);
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_BARRIER_STUCK_MS;
+      } else {
+        process.env.RAVI_RUNTIME_BARRIER_STUCK_MS = previousTimeout;
+      }
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("does not record daemon restart snapshots for terminal task sessions", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-terminal-task-");
     try {
