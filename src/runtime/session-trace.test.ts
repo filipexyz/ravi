@@ -29,7 +29,11 @@ import {
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  canReleaseRuntimeDeliveryBarrier,
+  createQueuedRuntimeUserMessage,
+  createRuntimeMessageGenerator,
+} from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import {
   classifyUserFacingRuntimeLimitFailure,
@@ -4342,6 +4346,180 @@ describe("runtime session trace instrumentation", () => {
       abort_reason: "runtime_event_loop_closed",
       autoRecovered: false,
     });
+  });
+
+  it("terminalizes a SIGKILL/exit 137 tool failure and drains after_tool without a daemon restart", async () => {
+    const active = createQueuedRuntimeUserMessage({
+      prompt: "run the heavy bash job",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const firstQueued = createQueuedRuntimeUserMessage({
+      prompt: "first follow-up",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const secondQueued = createQueuedRuntimeUserMessage({
+      prompt: "second follow-up",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [active],
+      turnActive: false,
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: SESSION_NAME,
+      session: streaming,
+      stashedMessages: new Map(),
+    });
+    const firstYield = await generator.next();
+    expect(firstYield.value).toMatchObject({ message: { content: "run the heavy bash job" } });
+    expect(streaming.turnActive).toBe(true);
+    expect(streaming.onTurnComplete).not.toBeNull();
+
+    streaming.pendingMessages.push(firstQueued, secondQueued);
+    seedAdapterTrace(streaming, "turn-fatal-tool-sigkill");
+
+    let generatorWoken = false;
+    const previousOnTurnComplete = streaming.onTurnComplete;
+    streaming.onTurnComplete = () => {
+      generatorWoken = true;
+      previousOnTurnComplete?.();
+    };
+
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const barrierRelease: Array<{ toolRunning: boolean; afterToolReleasable: boolean }> = [];
+    const providerLifecycle: string[] = [];
+
+    const loop = runTraceLoop(
+      streaming,
+      makeRuntimeSessionThenHang(
+        [
+          {
+            type: "tool.started",
+            toolUse: { id: "bash-oom", name: "Bash", input: { command: "heavy" } },
+          },
+          {
+            type: "tool.completed",
+            toolUseId: "bash-oom",
+            toolName: "Bash",
+            content: "Command failed with exit code 137\nKilled",
+            isError: true,
+          },
+        ],
+        providerLifecycle,
+      ),
+      {
+        onToolBarrierReleased: () => {
+          barrierRelease.push({
+            toolRunning: streaming.toolRunning,
+            afterToolReleasable: canReleaseRuntimeDeliveryBarrier(SESSION_NAME, streaming, "after_tool"),
+          });
+        },
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    const outcome = await Promise.race([
+      loop.then(() => "completed" as const),
+      new Promise<"hung">((resolve) => {
+        setTimeout(() => resolve("hung"), 2_500);
+      }),
+    ]);
+    if (outcome === "hung") {
+      streaming.abortController.abort();
+      await loop;
+    }
+
+    expect(outcome).toBe("completed");
+    expect(generatorWoken).toBe(true);
+    expect(streaming.toolRunning).toBe(false);
+    expect(streaming.turnActive).toBe(false);
+    expect(canReleaseRuntimeDeliveryBarrier(SESSION_NAME, streaming, "after_tool")).toBe(true);
+    expect(barrierRelease).toEqual([{ toolRunning: false, afterToolReleasable: true }]);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "first follow-up",
+      "second follow-up",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "fatal_tool_failure" }]);
+    expect(emitted.some((event) => event.data.type === "tool.fatal")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
+    expect(providerLifecycle).toContain("close");
+
+    const events = listSessionEvents(SESSION_KEY);
+    expect(events.some((event) => event.eventType === "session.fatal_tool")).toBe(true);
+    const terminal = events.find((event) => event.eventType === "turn.failed");
+    expect(terminal?.status).toBe("failed");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "fatal_tool_failure",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-fatal-tool-sigkill")?.status).toBe("failed");
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("does not close the turn for an ordinary tool error while the provider stream is still open", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry the listing",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-ordinary-tool-error");
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const loop = runTraceLoop(
+      streaming,
+      makeRuntimeSessionThenHang([
+        {
+          type: "tool.started",
+          toolUse: { id: "bash-ls", name: "Bash", input: { command: "ls missing" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "bash-ls",
+          toolName: "Bash",
+          content: "ls: missing: No such file or directory\nExit code 1",
+          isError: true,
+        },
+      ]),
+      {
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    const outcome = await Promise.race([
+      loop.then(() => "completed" as const),
+      new Promise<"open">((resolve) => {
+        setTimeout(() => resolve("open"), 400);
+      }),
+    ]);
+    streaming.abortController.abort();
+    await loop;
+
+    expect(outcome).toBe("open");
+    expect(restartRequests).toEqual([]);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "session.fatal_tool")).toBe(false);
   });
 
   it("records failed turns with error details", async () => {
