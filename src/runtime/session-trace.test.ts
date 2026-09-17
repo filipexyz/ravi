@@ -3164,20 +3164,23 @@ describe("runtime session trace instrumentation", () => {
       ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.eventType),
     );
     expect(terminals).toHaveLength(1);
-    expect(terminals[0]?.eventType).toBe(hangsAfterCompaction ? "turn.failed" : "turn.complete");
-    expect(getSessionTurn(turnId)?.status).toBe(hangsAfterCompaction ? "timeout" : "complete");
+    // A provider that goes silent is interrupted and auto-recovered, never failed:
+    // the session is told what happened and continues instead of dying in the dark.
+    expect(terminals[0]?.eventType).toBe(hangsAfterCompaction ? "turn.interrupted" : "turn.complete");
+    expect(getSessionTurn(turnId)?.status).toBe(hangsAfterCompaction ? "interrupted" : "complete");
     if (hangsAfterCompaction) {
       expect(terminals[0]!.timestamp - compactionCompletedAt).toBeGreaterThanOrEqual(1_000);
       expect(terminals[0]?.payloadJson).toMatchObject({ abort_reason: "provider_inactive" });
     }
   });
 
-  it("terminalizes a mid-turn utterance plus tool hang instead of leaving only the mid row", async () => {
+  it("recovers a mid-turn utterance plus tool hang by interrupting and continuing", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-mid-then-tool-hang");
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const stashed = new Map<string, RuntimeUserMessage[]>();
     const providerLifecycle: string[] = [];
     const started = Date.now();
 
@@ -3204,6 +3207,7 @@ describe("runtime session trace instrumentation", () => {
           safeEmit: async (topic, data) => {
             emitted.push({ topic, data });
           },
+          stashedMessages: stashed,
         },
       );
     } finally {
@@ -3214,6 +3218,13 @@ describe("runtime session trace instrumentation", () => {
       }
     }
 
+    // The promise to the caller is that the session is TOLD what happened, so
+    // assert the notice itself and not only the terminal state.
+    const queued = stashed.get(SESSION_NAME) ?? [];
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.message.content).toContain("Inatividade");
+    expect(queued[0]?.message.content).toContain("O turno nao foi encerrado");
+
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(providerLifecycle).toEqual(["close"]);
     expect(
@@ -3222,16 +3233,23 @@ describe("runtime session trace instrumentation", () => {
         .map(({ content }) => content),
     ).toEqual(["Vou listar os agentes deste Ravi."]);
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
-    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
+    // Interrupted and auto-recovered, not failed: the runtime tells the session
+    // what happened and keeps it alive instead of ending the turn in the dark.
+    expect(emitted.some((event) => event.data.type === "turn.interrupted")).toBe(true);
+    expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(false);
 
     const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
-    expect(lastTurn?.status).toBe("timeout");
+    expect(lastTurn?.status).toBe("interrupted");
     expect(lastTurn?.completedAt).toBeGreaterThan(0);
-    expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("timeout");
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("interrupted");
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "provider_inactive",
+      autoRecovered: true,
     });
+    // Nothing about this turn is recorded as a failure: it was interrupted and
+    // the session continues with a notice.
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
   });
 
   it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {

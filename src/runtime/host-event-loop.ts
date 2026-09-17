@@ -1151,23 +1151,136 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityWatchArmed = false;
+  /**
+   * Continue the session after an inactivity watchdog fires.
+   *
+   * Ending the runtime here is what made a silent tool or provider look like a
+   * dead agent: the turn died with no message, no reason, and the work in flight
+   * was gone. Preserve what was queued, tell the session what happened, and let
+   * it carry on.
+   *
+   * The terminal record MUST come before the teardown: it is what terminalizes
+   * the durable crash-recovery attempt, and `clearTraceTurnState` refuses to run
+   * while that attempt is still bound.
+   */
+  const recoverTurnAfterInactivity = (input: {
+    reason: string;
+    kind: "tool" | "provider";
+    name: string;
+    timeoutMs: number;
+  }): void => {
+    const seconds = Math.round(input.timeoutMs / 1000);
+    const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
+    const notice = createQueuedRuntimeUserMessage({
+      prompt: [
+        `[System] Inatividade: ${subject} ficou ${seconds}s sem produzir evento.`,
+        "O turno nao foi encerrado: ele continua agora, a partir daqui.",
+        "Se a tarefa e demorada, rode em background (nohup) e consulte em fatias curtas, declarando `timeout` no comando.",
+      ].join("\n"),
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "inferred",
+      source: streaming.currentSource,
+      taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+      _agentId: agent.id,
+      _runtimeProviderId: runtimeSession.provider,
+    });
+
+    stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    const queued = stashedMessages.get(sessionName) ?? [];
+    const deduped = notice.clientMessageId
+      ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
+      : queued;
+    stashedMessages.set(sessionName, [notice, ...deduped]);
+    restartStashedReason = input.reason;
+
+    log.warn("Continuing session after inactivity instead of ending it", {
+      runId,
+      sessionName,
+      reason: input.reason,
+      kind: input.kind,
+      name: input.name,
+      timeoutMs: input.timeoutMs,
+      stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
+    });
+
+    recordTerminalTraceOnce({
+      status: "interrupted",
+      eventType: "turn.interrupted",
+      abortReason: input.reason,
+      payloadJson: {
+        autoRecovered: true,
+        kind: input.kind,
+        name: input.name,
+        timeoutMs: input.timeoutMs,
+      },
+    });
+    // The session and its observers must see the interruption; a terminal that
+    // only lands in the trace ledger leaves the channel with a dead turn.
+    void emitHostRuntimeTerminal({
+      type: "turn.interrupted",
+      reason: input.reason,
+      phase: "runtime.inactivity_recovery",
+      autoRecovered: true,
+      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+    });
+    recordTraceEvent({
+      turnId: streaming.currentTraceTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.inactivity_recovered",
+      eventGroup: "session",
+      status: "recovering",
+      source: streaming.currentSource,
+      payloadJson: {
+        reason: input.reason,
+        kind: input.kind,
+        name: input.name,
+        timeoutMs: input.timeoutMs,
+        stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
+      },
+    });
+    updateRuntimeLiveState(sessionName, {
+      activity: "thinking",
+      summary: "continuando apos inatividade",
+      agentId: agent.id,
+      runId,
+      provider: runtimeSession.provider,
+      model,
+      source: streaming.currentSource,
+    });
+
+    streaming.currentTurnToolStarted = false;
+    resetTurnToolContinuationLedger(turnToolContinuation);
+    streaming.currentTurnInputMutated = false;
+    streaming.internalAbortReason = input.reason;
+    streaming.interrupted = true;
+    signalTurnComplete();
+    clearTraceTurnState();
+    streaming.done = true;
+    streaming.currentChannelBackend = undefined;
+    if (!streaming.abortController.signal.aborted) {
+      streaming.abortController.abort();
+    }
+    void closeRuntimeSession();
+  };
+
   const toolLivenessLease = createToolLivenessLease({
     inactivityTimeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
-    onInactive: (toolUseId) => {
+    onInactive: (toolUseId, timeoutMs) => {
       if (!streaming.toolRunning || streaming.currentToolId !== toolUseId) return;
       const inactiveTool = streaming.currentToolName ?? "unknown";
-      log.warn("Tool inactive — aborting session", {
+      log.warn("Tool inactive - continuing session", {
         sessionName,
         tool: inactiveTool,
         toolId: toolUseId,
-        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        timeoutMs,
       });
       pushObservationEvent("tool.inactive", {
         preview: inactiveTool,
         payload: {
           toolId: toolUseId,
           toolName: inactiveTool,
-          timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+          timeoutMs,
         },
       });
       safeEmit(`ravi.session.${sessionName}.runtime`, {
@@ -1175,23 +1288,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         reason: TOOL_INACTIVITY_REASON,
         tool: inactiveTool,
         toolId: toolUseId,
-        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        timeoutMs,
         sessionName,
       }).catch(() => {});
-      updateRuntimeLiveState(sessionName, {
-        activity: "blocked",
-        summary: `${inactiveTool} inactive`,
-        agentId: agent.id,
-        runId,
-        provider: runtimeSession.provider,
-        model,
-        toolName: inactiveTool,
-        source: streaming.currentSource,
+      // A stuck tool is not an answer, but it is also not a reason to end the
+      // session in the dark. Tell the session and keep going.
+      recoverTurnAfterInactivity({
+        reason: TOOL_INACTIVITY_REASON,
+        kind: "tool",
+        name: inactiveTool,
+        timeoutMs,
       });
-      if (!streaming.abortController.signal.aborted) {
-        streaming.internalAbortReason = TOOL_INACTIVITY_REASON;
-        streaming.abortController.abort();
-      }
     },
   });
   const clearProviderInactivityWatch = () => {
@@ -1220,7 +1327,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         armProviderInactivityWatch();
         return;
       }
-      log.warn("Provider inactive after tool result — aborting session", {
+      log.warn("Provider inactive - continuing session", {
         sessionName,
         timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
       });
@@ -1229,10 +1336,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
         sessionName,
       }).catch(() => {});
-      if (!streaming.abortController.signal.aborted) {
-        streaming.internalAbortReason = PROVIDER_INACTIVE_AFTER_TOOL_REASON;
-        streaming.abortController.abort();
-      }
+      recoverTurnAfterInactivity({
+        reason: PROVIDER_INACTIVE_AFTER_TOOL_REASON,
+        kind: "provider",
+        name: runtimeSession.provider,
+        timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
+      });
     }, PROVIDER_INACTIVITY_TIMEOUT_MS);
   };
   const clearIdleSessionEvictionTimer = () => {
