@@ -33,7 +33,7 @@ import {
   permissionDeniedToContractError,
   type ContractErrorDetails,
 } from "./agent-contract.js";
-import { sanitizePublicValue } from "./redaction.js";
+import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
@@ -277,22 +277,38 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         return new ContractError(
           op,
           body.error.code,
-          remoteContractFailureMessage(body.outcome),
+          remoteContractFailureMessage(body.outcome, projectPublicIssues(body.error.issues)),
           body.exitCode,
-          projectRemoteContractDetails(op, body),
+          projectRemoteContractDetails(op, body, result.status),
         );
       }
       if (body.error === "PermissionDenied") {
-        return permissionDeniedToContractError(op, "Remote gateway denied the command.");
+        const denied = permissionDeniedToContractError(op, "Remote gateway denied the command.");
+        return new ContractError(denied.op, denied.code, denied.message, denied.exitCode, {
+          ...denied.details,
+          status: result.status,
+        });
       }
       if (body.error === "Unauthorized") {
         return new ContractError(op, "AUTH_REQUIRED", "Remote gateway authentication failed.", 1, {
           suggestedAction: "Refresh the runtime context credential and retry",
+          status: result.status,
         });
       }
-      if (body.error === "ValidationError" || body.error === "BadRequest") {
-        return new ContractError(op, "USAGE_ERROR", "Remote gateway rejected the command input.", 2, {
+      const nestedError =
+        body.error && typeof body.error === "object" && !Array.isArray(body.error)
+          ? (body.error as Record<string, unknown>)
+          : null;
+      const issues = projectPublicIssues(body.issues ?? nestedError?.issues);
+      if (
+        body.error === "ValidationError" ||
+        body.error === "BadRequest" ||
+        (issues && result.status >= 400 && result.status < 500)
+      ) {
+        return new ContractError(op, "USAGE_ERROR", remoteValidationFailureMessage(issues), CONTRACT_EXIT_USAGE, {
           suggestedAction: `Inspect '${op} --help' and retry with valid input`,
+          status: result.status,
+          ...(issues ? { issues } : {}),
         });
       }
     } catch {
@@ -302,6 +318,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   return new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
     retryable: result.status >= 500,
     suggestedAction: "Check gateway availability and retry",
+    status: result.status,
   });
 }
 
@@ -313,11 +330,21 @@ interface CompleteContractErrorBody {
   error: { code: string; message: string; retryable: boolean; [key: string]: unknown };
 }
 
-function remoteContractFailureMessage(outcome: CompleteContractErrorBody["outcome"]): string {
+function remoteContractFailureMessage(
+  outcome: CompleteContractErrorBody["outcome"],
+  issues?: ReturnType<typeof projectPublicIssues>,
+): string {
   if (outcome === "denied") return "Remote gateway denied the command.";
-  if (outcome === "usage_error") return "Remote gateway rejected the command input.";
+  if (outcome === "usage_error") return remoteValidationFailureMessage(issues);
   if (outcome === "blocked") return "Remote command was blocked by policy.";
-  return "Remote command failed.";
+  return issues?.[0] ? remoteValidationFailureMessage(issues) : "Remote command failed.";
+}
+
+function remoteValidationFailureMessage(issues?: ReturnType<typeof projectPublicIssues>): string {
+  const first = issues?.[0];
+  if (!first) return "Remote gateway rejected the command input.";
+  const path = first.path.filter((item) => item !== "<unknown>").join(".");
+  return path ? `${path}: ${first.message}` : first.message;
 }
 
 function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"]): string {
@@ -337,9 +364,13 @@ function boundedStringList(value: unknown, pattern: RegExp): string[] | undefine
   return items.length > 0 ? items : undefined;
 }
 
-function projectRemoteContractDetails(op: string, body: CompleteContractErrorBody): ContractErrorDetails {
+function projectRemoteContractDetails(
+  op: string,
+  body: CompleteContractErrorBody,
+  status: number,
+): ContractErrorDetails {
   const remote = body.error;
-  const details: ContractErrorDetails = { retryable: remote.retryable };
+  const details: ContractErrorDetails = { retryable: remote.retryable, status };
   if (typeof remote.suggestedAction === "string") {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome);
   }
@@ -350,6 +381,8 @@ function projectRemoteContractDetails(op: string, body: CompleteContractErrorBod
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
   if (acceptedPositionals) details.acceptedPositionals = acceptedPositionals;
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
+  const issues = projectPublicIssues(remote.issues);
+  if (issues) details.issues = issues;
   const plan = projectRemotePlan(remote.plan);
   if (plan) details.plan = plan;
   return details;

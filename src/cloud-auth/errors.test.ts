@@ -80,6 +80,27 @@ describe("cloudErrorToContractError", () => {
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
 
+  it("projects Console validation issues into the public contract", () => {
+    const source = new CloudAuthError("PAYLOAD_INVALID", "PRIVATE_PROVIDER_BODY_8K2R:PAYLOAD_INVALID", {
+      status: 422,
+      issues: [{ path: ["name"], code: "too_small", message: "Required" }],
+    });
+    const contract = cloudErrorToContractError("credentials create", source);
+
+    expect(contract).toMatchObject({
+      code: "PAYLOAD_INVALID",
+      message: "Console request input was invalid.",
+      exitCode: 2,
+      details: {
+        retryable: false,
+        status: 422,
+        issues: [{ path: ["name"], code: "too_small", message: "Required" }],
+      },
+    });
+    expect(JSON.stringify(contract.envelope())).toContain("Required");
+    expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
+  });
+
   it("surfaces the sanitized DNS instruction for Pages domain setup", () => {
     const source = new CloudAuthError(
       "DOMAIN_SETUP_REQUIRED",

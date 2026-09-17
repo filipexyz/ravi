@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { ContractError } from "./agent-contract.js";
-import { sanitizePublicValue } from "./redaction.js";
+import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 
 describe("public contract redaction", () => {
   it("sanitizes content, contextual secrets and paths without mutating safe metadata", () => {
@@ -31,27 +31,47 @@ describe("public contract redaction", () => {
     });
   });
 
-  it("preserves structured validation issue paths without exempting messages", () => {
+  it("keeps structured validation issue messages after token sanitization", () => {
     const issues = [
       {
-        path: ["content", 0],
-        code: "custom",
-        message: "Invalid redacted value.",
+        path: ["title"],
+        code: "invalid_type",
+        message: "Expected string, received undefined",
       },
     ];
 
     expect(sanitizePublicValue({ issues })).toEqual({
       issues: [
         {
-          path: ["content", 0],
-          code: "custom",
-          message: "[REDACTED:content length=23]",
+          path: ["title"],
+          code: "invalid_type",
+          message: "Expected string, received undefined",
         },
       ],
     });
-    expect(sanitizePublicValue({ payload: { path: [], code: "custom", message: "PRIVATE_MESSAGE_8K2R" } })).toEqual({
-      payload: { path: [], code: "custom", message: "[REDACTED:content length=20]" },
+    expect(
+      sanitizePublicValue({
+        issues: [{ path: ["token"], code: "custom", message: "sk-abcdefghijklmnop is not allowed" }],
+      }),
+    ).toEqual({
+      issues: [{ path: ["token"], code: "custom", message: "[REDACTED:token] is not allowed" }],
     });
+    expect(sanitizePublicValue({ payload: { message: "PRIVATE_MESSAGE_8K2R" } })).toEqual({
+      payload: { message: "[REDACTED:content length=20]" },
+    });
+  });
+
+  it("projects only structured validation issues", () => {
+    expect(
+      projectPublicIssues([
+        { path: ["title"], code: "invalid_type", message: "Expected string, received undefined" },
+        { providerBody: "PRIVATE_MESSAGE_8K2R" },
+        { path: ["https://evil.example"], code: "custom", message: "https://evil.example/secret" },
+      ]),
+    ).toEqual([{ path: ["title"], code: "invalid_type", message: "Expected string, received undefined" }]);
+    expect(projectPublicIssues([{ path: ["token"], code: "custom", message: "sk-abcdefghijklmnop leaked" }])).toEqual([
+      { path: ["token"], code: "custom", message: "[REDACTED:token] leaked" },
+    ]);
   });
 
   it("redacts compound secret keys without matching unrelated words", () => {

@@ -131,9 +131,11 @@ details and policy outcome:
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags
   and positionals must match their canonical grammars, and `suggestedAction`
-  is replaced by a safe local action. This privacy projection is the permitted
-  exception to byte-for-byte detail parity; semantic fields and taxonomy still
-  remain equivalent.
+  is replaced by a safe local action. HTTP `status` and structured `issues`
+  (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
+  be projected so CLI text and `--json` stay actionable. This privacy
+  projection is the permitted exception to byte-for-byte detail parity;
+  semantic fields and taxonomy still remain equivalent.
 
 ## Authorization and confirmation are different controls
 

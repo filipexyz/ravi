@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { renderContractError } from "./agent-contract.js";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
@@ -187,8 +188,107 @@ describe("remote gateway exit taxonomy", () => {
       result({ status: 503, contentType: "text/plain", body: "private upstream response" }),
     );
 
-    expect(error).toMatchObject({ op: "commands list", code: "SERVER_UNAVAILABLE", exitCode: 1 });
+    expect(error).toMatchObject({
+      op: "commands list",
+      code: "SERVER_UNAVAILABLE",
+      exitCode: 1,
+      details: { status: 503, retryable: true },
+    });
     expect(JSON.stringify(error?.envelope())).not.toContain("private upstream response");
+  });
+
+  it("projects 400 validation issues into a usage error", () => {
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          error: "ValidationError",
+          issues: [
+            { path: ["title"], code: "invalid_type", message: "Expected string, received undefined" },
+            { providerBody: "PRIVATE_MESSAGE_8K2R" },
+          ],
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "tasks create",
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      message: "title: Expected string, received undefined",
+      details: {
+        status: 400,
+        issues: [{ path: ["title"], code: "invalid_type", message: "Expected string, received undefined" }],
+      },
+    });
+    expect(JSON.stringify(error?.envelope())).toContain("Expected string, received undefined");
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+  });
+
+  it("projects 422 contract issues without changing the remote taxonomy", () => {
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "COMMAND_FAILED",
+            message: "Command could not be completed.",
+            retryable: false,
+            issues: [{ path: ["instructions"], code: "too_small", message: "Required" }],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "tasks create",
+      code: "COMMAND_FAILED",
+      exitCode: 1,
+      details: {
+        status: 422,
+        retryable: false,
+        issues: [{ path: ["instructions"], code: "too_small", message: "Required" }],
+      },
+    });
+    expect(error?.envelope()).toMatchObject({
+      error: {
+        code: "COMMAND_FAILED",
+        message: "Command could not be completed.",
+        status: 422,
+        issues: [{ path: ["instructions"], code: "too_small", message: "Required" }],
+      },
+    });
+  });
+
+  it("prints HTTP status and issues in text CLI output", () => {
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          error: "ValidationError",
+          issues: [{ path: ["title"], code: "invalid_type", message: "Expected string, received undefined" }],
+        }),
+      }),
+    );
+    expect(error).not.toBeNull();
+    const lines: string[] = [];
+    const originalError = console.error;
+    console.error = ((line?: unknown) => {
+      lines.push(String(line ?? ""));
+    }) as typeof console.error;
+    try {
+      renderContractError(error!, false);
+    } finally {
+      console.error = originalError;
+    }
+    expect(lines).toEqual(["title: Expected string, received undefined", "status: 400"]);
   });
 
   it("rejects partial or incoherent contract-looking responses", () => {

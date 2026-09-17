@@ -499,7 +499,9 @@ describe("dispatch — validation", () => {
         message: "Invalid input for demo echo.",
         retryable: false,
         suggestedAction: "Correct the request body and retry demo echo",
-        issues: [{ path: ["name"], code: "invalid_type", message: "[REDACTED:content length=50]" }],
+        issues: [
+          { path: ["name"], code: "invalid_type", message: "Invalid input: expected string, received undefined" },
+        ],
       },
     });
     expect(result.audit).not.toBeNull();
@@ -531,7 +533,7 @@ describe("dispatch — validation", () => {
     expect(body).toMatchObject({
       error: {
         code: "USAGE_ERROR",
-        issues: [{ path: ["content"], code: "custom", message: "[REDACTED:content length=23]" }],
+        issues: [{ path: ["content"], code: "custom", message: "Invalid redacted value." }],
       },
     });
     expect(JSON.stringify(body)).not.toContain(secret);
@@ -729,38 +731,41 @@ describe("dispatch — error path", () => {
     ["1", 422, "DEMO_NOT_FOUND", "failed", true],
     ["2", 400, "USAGE_ERROR", "usage_error", true],
     ["3", 409, "WRITE_REQUIRES_EXECUTE", "blocked", false],
-  ])("preserves ContractError exit %s as a non-500 structured response", async (exitCode, status, code, outcome, isError) => {
-    const audits = captureAudits();
-    const result = await dispatch(
-      findCmd("demo.contract"),
-      { exitCode },
-      {},
-      { contextRecord: demoContext, emitAudit: audits.emit },
-    );
+  ])(
+    "preserves ContractError exit %s as a non-500 structured response",
+    async (exitCode, status, code, outcome, isError) => {
+      const audits = captureAudits();
+      const result = await dispatch(
+        findCmd("demo.contract"),
+        { exitCode },
+        {},
+        { contextRecord: demoContext, emitAudit: audits.emit },
+      );
 
-    expect(result.response.status).toBe(status);
-    const body = (await result.response.json()) as {
-      success: boolean;
-      op: string;
-      exitCode: number;
-      outcome: string;
-      error: { code: string; message: string; retryable: boolean; suggestedAction: string };
-    };
-    expect(body).toEqual({
-      success: false,
-      op: "demo contract",
-      exitCode: Number(exitCode),
-      outcome,
-      error: {
-        code,
-        message: "contract stopped execution",
-        retryable: false,
-        suggestedAction: "inspect the structured response",
-      },
-    });
-    expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]).toMatchObject({ isError, outcome, exitCode: Number(exitCode), errorCode: code });
-  });
+      expect(result.response.status).toBe(status);
+      const body = (await result.response.json()) as {
+        success: boolean;
+        op: string;
+        exitCode: number;
+        outcome: string;
+        error: { code: string; message: string; retryable: boolean; suggestedAction: string };
+      };
+      expect(body).toEqual({
+        success: false,
+        op: "demo contract",
+        exitCode: Number(exitCode),
+        outcome,
+        error: {
+          code,
+          message: "contract stopped execution",
+          retryable: false,
+          suggestedAction: "inspect the structured response",
+        },
+      });
+      expect(audits.events).toHaveLength(1);
+      expect(audits.events[0]).toMatchObject({ isError, outcome, exitCode: Number(exitCode), errorCode: code });
+    },
+  );
 
   it("returns 200 with empty object when handler returns undefined and no @Returns", async () => {
     const audits = captureAudits();
@@ -1058,7 +1063,9 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
       outcome: "failed",
       error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
     });
-    expect(body.error.issues[0]?.message).toBe("[REDACTED:content length=106]");
+    expect(body.error.issues[0]?.message).toBe(
+      'Command "demo.wrong-blob" is declared @Returns.binary() but handler returned object instead of a Response.',
+    );
 
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]).toMatchObject({

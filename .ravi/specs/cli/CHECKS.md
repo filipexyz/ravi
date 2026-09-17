@@ -25,9 +25,11 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
 - Remote detail projection preserves only bounded stable identifiers,
-  canonical flag/positional shapes and explicitly projected typed plan
-  metadata; sentinel free text, paths, URLs, tokens and arbitrary nested
-  objects MUST be absent from the resulting envelope.
+  canonical flag/positional shapes, HTTP `status`, sanitized validation
+  `issues`, and explicitly projected typed plan metadata; sentinel free text,
+  paths, URLs, tokens and arbitrary nested objects MUST be absent from the
+  resulting envelope. 400/422 gateway validation failures MUST keep `status`
+  and `issues` visible in both CLI text and `--json`.
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
