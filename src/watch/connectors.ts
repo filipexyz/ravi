@@ -1,3 +1,4 @@
+import { LOCAL_GITHUB_DERIVABLE_EVENTS } from "./local-events.js";
 import type { WatchConnectorDefinition, WatchConnectorEventType, WatchProvider } from "./types.js";
 
 const GITHUB_CONSOLE_SUPPORTED_NOW = new Set([
@@ -12,6 +13,16 @@ const GITHUB_CONSOLE_SUPPORTED_NOW = new Set([
   "issue.closed",
   "workflow_run.completed",
 ]);
+
+/**
+ * Eventos que o poller local do GitHub deriva de verdade (src/watch/local-runner.ts).
+ *
+ * O placement local era anunciado como roadmap e o CLI sugeria usá-lo como
+ * fallback, mas nada publicava `ravi.watch.github.*`: o watch era criado e nunca
+ * disparava nada. A lista vem da própria derivação para que declaração e
+ * implementação não possam divergir de novo.
+ */
+const GITHUB_LOCAL_SUPPORTED_NOW = new Set<string>(LOCAL_GITHUB_DERIVABLE_EVENTS);
 
 const GITHUB_EVENT_TYPES: WatchConnectorEventType[] = [
   githubEvent("release.published", "Release published", "console", "full"),
@@ -123,7 +134,7 @@ function githubEvent(
 ): WatchConnectorEventType {
   return event(eventType, label, recommendedPlacement, fidelity, {
     consoleSupport: GITHUB_CONSOLE_SUPPORTED_NOW.has(eventType) ? "supported" : "roadmap",
-    localSupport: "roadmap",
+    localSupport: GITHUB_LOCAL_SUPPORTED_NOW.has(eventType) ? "supported" : "roadmap",
   });
 }
 

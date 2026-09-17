@@ -41,3 +41,12 @@ export {
 } from "./operations.js";
 export { deleteWatch, getWatch, listWatches, updateWatchStatus, upsertWatch } from "./watch-db.js";
 export { watchEventFromInboxPayload } from "./events.js";
+export { createGhLocalWatchSource, LocalWatchRunner, resolveLocalWatchIntervalMs } from "./local-runner.js";
+export { deriveLocalGitHubEvents } from "./local-events.js";
+export type {
+  DepartedPullRequest,
+  DerivedLocalEvent,
+  LocalPullRequestState,
+  LocalWatchSnapshot,
+  LocalWorkflowRunState,
+} from "./local-events.js";
