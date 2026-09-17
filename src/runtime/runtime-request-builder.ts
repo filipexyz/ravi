@@ -856,6 +856,7 @@ async function buildRuntimeStartRequestInternal(
         approvalSource,
       });
       turnRuntimeContextActivated = true;
+      streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
     },
     traceTurnStart,
   });

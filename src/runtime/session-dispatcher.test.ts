@@ -4,6 +4,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
   buildStashedRestartPrompt,
+  canReuseLivePiSteerAuthority,
   canUseNativeRuntimeSteer,
   fenceRuntimeNativeSteerInput,
   runtimeModelBrokerConfigurationRequiresRestart,
@@ -889,6 +890,15 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         }),
         "after_tool",
       ),
+    ).toBe(false);
+  });
+
+  it("refuses native steer when the published runtime context key is no longer live", () => {
+    expect(canReuseLivePiSteerAuthority(undefined)).toBe(true);
+    expect(canReuseLivePiSteerAuthority("")).toBe(true);
+    expect(canReuseLivePiSteerAuthority("rctx_revoked")).toBe(false);
+    expect(
+      canUseNativeRuntimeSteer(createStreamingSession({ currentRuntimeContextKey: "rctx_revoked" }), "after_tool"),
     ).toBe(false);
   });
 });

@@ -50,7 +50,7 @@ The MVP MUST use RPC JSONL. The SDK path MAY replace or complement RPC after the
 - Process boundary: one Pi RPC process per Ravi runtime session handle.
 - Prompt submission: `prompt` for normal Ravi prompt delivery; `steer` for active runs and the pre-first-turn bootstrap gap through explicit runtime control; `follow_up` for active runs only.
 - Steering queue mode: Ravi MUST set Pi `steeringMode=all` at session bootstrap so multiple channel messages steered during one active turn are drained together by Pi instead of becoming one assistant turn per queued message. This is not Ravi debounce; every incoming message is still sent to Pi.
-- Host queue bypass: once a Ravi Pi session handle exists, interactive `after_tool` messages MUST prefer Pi native `steer` over Ravi `pendingMessages` whenever the Pi turn is active or the first prompt is still waiting to be yielded. This prevents Ravi's generator from concatenating pending human messages before Pi can apply its native steering queue.
+- Host queue bypass: once a Ravi Pi session handle exists, interactive `after_tool` messages MUST prefer Pi native `steer` over Ravi `pendingMessages` whenever the Pi turn is active or the first prompt is still waiting to be yielded. This prevents Ravi's generator from concatenating pending human messages before Pi can apply its native steering queue. Steer MUST be refused when the published `RAVI_CONTEXT_KEY` no longer resolves, so the host yields a new turn that remints authority and respawns Pi. #489 only compared env at the next yielded prompt and committed the new signature even when respawn failed; #490 only kept the first-turn key live. Long-lived native-steer sessions could keep a revoked key in the Pi process env until a manual kill.
 - Session state: Pi `sessionFile`, `sessionId`, `sessionName`, cwd, model provider/id, thinking level, agent dir, and integration mode stored in `RuntimeSessionState.params`.
 - Display id: `sessionName` when available, otherwise `sessionId`.
 - System prompt mode: append Ravi instructions to Pi's coding-agent prompt; do not replace Pi's base prompt in the MVP.
@@ -213,7 +213,7 @@ Implement these generic Ravi changes before building the Pi adapter:
 
 This slice keeps the RPC JSONL execution path (prompt, steer, interrupt, resume). It does not migrate sessions onto `createAgentSession`.
 
-Ravi MUST materialize a Pi extension and spawn RPC with `--extension <path>`. That extension:
+Ravi MUST materialize a Pi extension and spawn RPC with `--extension <path>`. The extension file MUST be rewritten on every start/respawn under the durable Ravi state directory (`$RAVI_STATE_DIR/pi-hooks`). A one-shot path under `/tmp/ravi-pi-hooks` is forbidden: tmp cleaners delete it and the next spawn exits 1. That extension:
 
 - emits `ctx.ui.notify("ravi.permission.hooks.ready", "info")` on `session_start` so the host can prove the bridge is live;
 - listens for `tool_call` (blocking, before execution) and `tool_result` (observational after);

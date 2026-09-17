@@ -17,6 +17,7 @@ import {
   isPiPermissionHooksReadyEvent,
   mapPiToolNameToRavi,
   materializePiPermissionExtensionFile,
+  resolvePiPermissionExtensionDirectory,
   parsePiPermissionUiDecisionValue,
   parsePiPermissionUiRequest,
   PiPermissionBridgeError,
@@ -429,6 +430,22 @@ describe("Pi tool permission bridge", () => {
       }),
     ).resolves.toEqual({ approved: false });
     expect(authorized).toEqual(["tool:Read", "command:rm -rf /"]);
+  });
+
+  it("materializes the default permission extension under the Ravi state dir, not /tmp", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-state-pi-hooks-"));
+    const previous = process.env.RAVI_STATE_DIR;
+    process.env.RAVI_STATE_DIR = stateDir;
+    try {
+      expect(resolvePiPermissionExtensionDirectory()).toBe(join(stateDir, "pi-hooks"));
+      expect(resolvePiPermissionExtensionDirectory()).not.toContain("/tmp/ravi-pi-hooks");
+      const path = materializePiPermissionExtensionFile();
+      expect(path.startsWith(join(stateDir, "pi-hooks"))).toBe(true);
+      expect(readFileSync(path, "utf8")).toBe(PI_RAVI_PERMISSION_EXTENSION_SOURCE);
+    } finally {
+      if (previous === undefined) delete process.env.RAVI_STATE_DIR;
+      else process.env.RAVI_STATE_DIR = previous;
+    }
   });
 
   it("materializes a Pi extension that gates tool_call before execution", () => {

@@ -14,6 +14,9 @@
 - Unauthorized skill use (Read/`Skill`/`ravi skills show` of a skill outside `allowedSkills`) MUST be denied on the extension authorize path with `SKILL_NOT_AUTHORIZED`, even when `canUseTool` would otherwise allow the tool.
 - Authorized skill use and ordinary non-skill file reads MUST still be allowed when the tool itself is granted.
 - The advertised Pi skill catalog MUST remain filtered by the same allowlist. Catalog text is not a substitute for the tool-time gate.
+- Rotating `RAVI_CONTEXT_KEY` (or another managed `RAVI_*` spawn key) between yielded prompts MUST respawn Pi with the new env without an external process kill. A failed respawn MUST NOT commit the new signature; the next prompt retries. Unchanged managed env reuses the live process.
+- Every spawn/respawn MUST rewrite the Ravi permission extension under the Ravi state dir (`$RAVI_STATE_DIR/pi-hooks`, not `/tmp/ravi-pi-hooks`). A deleted previous hook file MUST NOT prevent the next respawn.
+- Native `after_tool` steer MUST be refused when the session's published `RAVI_CONTEXT_KEY` is revoked or expired, so the host can yield a new turn that rotates/respawns instead of keeping a long-lived Pi process on a dead key.
 - RPC steer, interrupt, busy-retry, and dead-transport restart still work with the permission bridge loaded.
 - `startSession` starts a fake RPC client and returns a valid runtime handle.
 - `interrupt()` sends `abort` and emits `turn.interrupted`.

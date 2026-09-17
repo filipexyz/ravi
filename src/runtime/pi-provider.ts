@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { logger } from "../utils/logger.js";
 import type {
   RuntimeControlOperation,
   RuntimeControlRequest,
@@ -41,6 +42,7 @@ import {
   resolvePiExtensionUiResponse,
 } from "./pi-tool-permissions.js";
 
+const log = logger.child("runtime:pi");
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
 const PI_INTERRUPT_GRACE_MS = 1_000;
@@ -611,8 +613,10 @@ export function buildPiManagedRuntimeEnvSignature(env: NodeJS.ProcessEnv): strin
   );
 }
 
-function piManagedRuntimeEnvChanged(current: NodeJS.ProcessEnv, next: NodeJS.ProcessEnv): boolean {
-  return buildPiManagedRuntimeEnvSignature(current) !== buildPiManagedRuntimeEnvSignature(next);
+export function listPiManagedRuntimeEnvKeys(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env)
+    .filter((key) => key.startsWith("RAVI_"))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 async function* runPiTurns(
@@ -644,6 +648,9 @@ async function* runPiTurns(
   state.transport = transport;
   let eventIterator = transport.events[Symbol.asyncIterator]();
   let pendingStartupEvents: PiRpcEvent[] = [];
+  // Last env that actually reached a live Pi process. Do not update this until
+  // start/handshake succeeds — a failed respawn must retry the new key.
+  let appliedManagedEnvSignature: string | undefined;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -652,31 +659,30 @@ async function* runPiTurns(
     return eventIterator.next();
   };
 
-  // The host rotates `input.env` (RAVI_CONTEXT_KEY and related managed Ravi
-  // keys) before yielding each turn. Snapshot at start/restart so the long-lived
-  // Pi process never keeps a revoked context key.
-  const applyCurrentPiRpcSpawnEnv = (): boolean => {
+  const snapshotDesiredPiRpcSpawn = (): NodeJS.ProcessEnv => {
     const nextEnv = resolvePiRpcProcessEnv(input);
-    const changed = piManagedRuntimeEnvChanged(startInput.env, nextEnv);
     startInput.env = nextEnv;
-    return changed;
+    // Rewrite on every spawn. A stale `/tmp` (or deleted state-dir) path is why
+    // Pi session-launcher exits 1 after Codex-style env respawn.
+    startInput.extensionPath = materializePiPermissionExtensionFile();
+    return nextEnv;
   };
 
+  const desiredManagedEnvSignature = (): string => buildPiManagedRuntimeEnvSignature(resolvePiRpcProcessEnv(input));
+
   const startTransport = async () => {
-    applyCurrentPiRpcSpawnEnv();
-    await transport.start(startInput);
-    state.started = true;
-    state.permissionHooksReady = false;
-    eventIterator = transport.events[Symbol.asyncIterator]();
-    await resumePiSessionIfNeeded(transport, input, state.currentState);
-    state.currentState = await readPiState(transport, state.currentState);
-    await configurePiQueueModes(transport, state);
-    await flushPendingPiSteers(transport, state);
-    if (!transport.writeMessage) {
-      await transport.close().catch(() => {});
-      throw new PiPermissionBridgeError("Pi RPC transport cannot answer extension UI permission requests");
-    }
+    const nextEnv = snapshotDesiredPiRpcSpawn();
     try {
+      await transport.start(startInput);
+      state.permissionHooksReady = false;
+      eventIterator = transport.events[Symbol.asyncIterator]();
+      await resumePiSessionIfNeeded(transport, input, state.currentState);
+      state.currentState = await readPiState(transport, state.currentState);
+      await configurePiQueueModes(transport, state);
+      await flushPendingPiSteers(transport, state);
+      if (!transport.writeMessage) {
+        throw new PiPermissionBridgeError("Pi RPC transport cannot answer extension UI permission requests");
+      }
       pendingStartupEvents = await awaitPiPermissionHooksReady(
         transport,
         eventIterator,
@@ -688,6 +694,8 @@ async function* runPiTurns(
       await transport.close().catch(() => {});
       throw error;
     }
+    appliedManagedEnvSignature = buildPiManagedRuntimeEnvSignature(nextEnv);
+    state.started = true;
   };
 
   const restartTransport = async (): Promise<boolean> => {
@@ -697,6 +705,28 @@ async function* runPiTurns(
     await transport.close().catch(() => {});
     transport = createTransport();
     state.transport = transport;
+    await startTransport();
+    return true;
+  };
+
+  // Codex-parity ensure: compare against the last *successful* spawn, rematerialize
+  // hooks, and respawn when managed RAVI_* (including RAVI_CONTEXT_KEY) changed.
+  const ensurePiRpcReady = async (): Promise<boolean> => {
+    const nextSignature = desiredManagedEnvSignature();
+    const envChanged = appliedManagedEnvSignature !== undefined && appliedManagedEnvSignature !== nextSignature;
+    if (state.started && !envChanged) {
+      return false;
+    }
+    if (state.started && envChanged) {
+      log.info("pi env changed; respawning", {
+        envKeys: listPiManagedRuntimeEnvKeys(resolvePiRpcProcessEnv(input)),
+      });
+      const restarted = await restartTransport();
+      if (!restarted) {
+        throw new Error("Pi RPC transport cannot respawn after Ravi runtime env changed");
+      }
+      return true;
+    }
     await startTransport();
     return true;
   };
@@ -717,24 +747,28 @@ async function* runPiTurns(
       // Start (or respawn) after the host has applied this turn's runtime env.
       // Eager spawn at session open would bake the pre-rotation context key,
       // which refreshRuntimeRequestContextForTurn then revokes.
-      if (!state.started) {
-        try {
-          await startTransport();
-        } catch (error) {
-          if (!isPiPermissionBridgeError(error)) {
-            throw error;
-          }
-          yield {
-            type: "turn.failed",
-            error: error.message,
-            recoverable: true,
-            failureKind: "transport",
-            rawEvent: { type: "permission.bridge_unavailable" },
-          };
+      try {
+        await ensurePiRpcReady();
+      } catch (error) {
+        const firstStart = !state.started;
+        if (!isPiPermissionBridgeError(error) && firstStart) {
+          throw error;
+        }
+        yield {
+          type: "turn.failed",
+          error: error instanceof Error ? error.message : String(error),
+          recoverable: true,
+          failureKind: "transport",
+          rawEvent: isPiPermissionBridgeError(error)
+            ? { type: "permission.bridge_unavailable" }
+            : { type: "transport.respawn_failed" },
+        };
+        // First start without a live bridge cannot recover in-process.
+        // A failed env-respawn must not stick the revoked key: retry next prompt.
+        if (firstStart) {
           return;
         }
-      } else if (applyCurrentPiRpcSpawnEnv()) {
-        await restartTransport();
+        continue;
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();

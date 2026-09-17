@@ -10,14 +10,15 @@
 
 ## Start A Session
 
-1. Spawn Pi in RPC mode with the Ravi permission extension.
-2. Attach a strict JSONL reader to stdout.
-3. Capture stderr for logs only.
-4. Send `get_state` after startup.
-5. If resuming, validate `sessionFile` and cwd before `switch_session`.
-6. Wait for `extension_ui_request` notify `ravi.permission.hooks.ready` before sending any `prompt`. If it never arrives, or a tool starts first, fail the turn (`failureKind=transport`) and do not run an ungoverned ravi-host session.
-7. Emit synthetic `thread.started` metadata from `get_state` when available.
-8. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Return a structured decision value (not only `confirmed: false`) so the extension can show the host sub-reason. Cancel any other dialog. Do not wait for a command `response` on those writes.
+1. Spawn Pi in RPC mode with the Ravi permission extension. Rewrite the extension file on every start/respawn (`$RAVI_STATE_DIR/pi-hooks`). If the previous file is gone, rematerialize; do not reuse a stale `/tmp/ravi-pi-hooks` path.
+2. Before each yielded prompt, compare the last *successfully spawned* managed `RAVI_*` signature with the current `input.env`. If `RAVI_CONTEXT_KEY` (or another managed `RAVI_*` key) changed, log `pi env changed; respawning` and restart the RPC process with the new env. Do not treat a failed restart as applied.
+3. Attach a strict JSONL reader to stdout.
+4. Capture stderr for logs only.
+5. Send `get_state` after startup.
+6. If resuming, validate `sessionFile` and cwd before `switch_session`.
+7. Wait for `extension_ui_request` notify `ravi.permission.hooks.ready` before sending any `prompt`. If it never arrives, or a tool starts first, fail the turn (`failureKind=transport`) and do not run an ungoverned ravi-host session.
+8. Emit synthetic `thread.started` metadata from `get_state` when available.
+9. Answer `extension_ui_request` with title `ravi.permission.request` through Ravi host services. Return a structured decision value (not only `confirmed: false`) so the extension can show the host sub-reason. Cancel any other dialog. Do not wait for a command `response` on those writes.
 
 ## Run A Prompt
 
@@ -31,7 +32,7 @@
 ## Handle Multiple Incoming Chat Messages
 
 1. Keep Ravi agent/channel debounce behavior unchanged. Debounce happens before runtime dispatch.
-2. After a Pi session handle exists, do not route interactive `after_tool` messages through Ravi `pendingMessages` when Pi native steer is available.
+2. After a Pi session handle exists, do not route interactive `after_tool` messages through Ravi `pendingMessages` when Pi native steer is available. If the published `RAVI_CONTEXT_KEY` is revoked or expired, refuse steer so the host can start a new turn and respawn Pi.
 3. If the Pi turn is already active, call runtime control `turn.steer` immediately.
 4. If the first Pi prompt has not been yielded yet but the handle exists, accept `turn.steer` into the Pi provider's pre-start steer buffer.
 5. On Pi startup, send `set_steering_mode all` unless Pi already reports that mode.

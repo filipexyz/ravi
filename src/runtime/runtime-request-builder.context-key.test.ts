@@ -164,6 +164,7 @@ describe("runtime request first-turn context key", () => {
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
     expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(streaming.currentRuntimeContextKey).toBe(publishedKey);
     expect(toolSpawnEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
     expect(resolveRuntimeContext(toolSpawnEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextKey).toBe(publishedKey);
     expect(
@@ -177,6 +178,7 @@ describe("runtime request first-turn context key", () => {
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
     expect(runtimeEnv.RAVI_CONTEXT_KEY).not.toBe(publishedKey);
+    expect(streaming.currentRuntimeContextKey).toBe(runtimeEnv.RAVI_CONTEXT_KEY);
     expect(resolveRuntimeContext(publishedKey, { touch: false })).toBeNull();
     expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })).not.toBeNull();
 
