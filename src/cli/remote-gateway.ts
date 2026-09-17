@@ -295,7 +295,10 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           status: result.status,
         });
       }
-      const nestedError = body.error && typeof body.error === "object" && !Array.isArray(body.error) ? body.error : null;
+      const nestedError =
+        body.error && typeof body.error === "object" && !Array.isArray(body.error)
+          ? (body.error as Record<string, unknown>)
+          : null;
       const issues = projectPublicIssues(body.issues ?? nestedError?.issues);
       if (
         body.error === "ValidationError" ||

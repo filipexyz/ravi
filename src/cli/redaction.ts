@@ -73,7 +73,9 @@ export interface PublicValidationIssue {
 }
 
 function isValidationIssue(value: Readonly<Record<string, unknown>> | undefined): boolean {
-  return Boolean(value && Array.isArray(value.path) && typeof value.code === "string" && typeof value.message === "string");
+  return Boolean(
+    value && Array.isArray(value.path) && typeof value.code === "string" && typeof value.message === "string",
+  );
 }
 
 function isValidationIssueMessage(key: string, parent: Readonly<Record<string, unknown>> | undefined): boolean {
@@ -82,14 +84,16 @@ function isValidationIssueMessage(key: string, parent: Readonly<Record<string, u
 
 function projectIssuePath(value: unknown): Array<string | number> | undefined {
   if (!Array.isArray(value)) return undefined;
-  const path = value
-    .filter((item): item is string | number => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
-    .slice(0, 16)
-    .flatMap((item) => {
-      if (typeof item === "number") return Number.isInteger(item) ? [item] : [];
-      const sanitized = sanitizePublicValue(item);
-      return typeof sanitized === "string" && ISSUE_PATH_STRING_PATTERN.test(sanitized) ? [sanitized] : [];
-    });
+  const path: Array<string | number> = [];
+  for (const item of value.slice(0, 16)) {
+    if (typeof item === "number" && Number.isInteger(item)) {
+      path.push(item);
+      continue;
+    }
+    if (typeof item !== "string") continue;
+    const sanitized = sanitizePublicValue(item);
+    if (typeof sanitized === "string" && ISSUE_PATH_STRING_PATTERN.test(sanitized)) path.push(sanitized);
+  }
   return path;
 }
 
@@ -105,7 +109,9 @@ function projectIssueMessage(value: unknown): string | undefined {
   }
   const sanitized = sanitizePublicString(trimmed);
   if (!sanitized) return undefined;
-  return sanitized.length > ISSUE_MESSAGE_MAX_LENGTH ? `${sanitized.slice(0, ISSUE_MESSAGE_MAX_LENGTH - 3)}...` : sanitized;
+  return sanitized.length > ISSUE_MESSAGE_MAX_LENGTH
+    ? `${sanitized.slice(0, ISSUE_MESSAGE_MAX_LENGTH - 3)}...`
+    : sanitized;
 }
 
 /** Project gateway/console validation issues without treating `message` as free-form content. */
