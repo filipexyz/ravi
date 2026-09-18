@@ -960,6 +960,172 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("cancels a running unsafe tool immediately instead of deferring the abort until the tool barrier releases", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-unsafe-tool-abort-");
+    try {
+      const sessionKey = "agent:main:test:unsafe-tool-abort";
+      const sessionName = "unsafe-tool-abort";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async (topic, data) => {
+          runtimeEvents.push({ topic, data });
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: crashRecoveryStub,
+      });
+      const interrupt = mock(async () => {});
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: true,
+        currentToolSafety: "unsafe",
+        currentToolId: "tool-bash-long",
+        currentToolName: "Bash",
+        currentToolInput: { command: "npm run build" },
+        toolStartTime: Date.now() - 5_000,
+        queryHandle: {
+          provider: "pi",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      expect(dispatcher.abortSession(sessionName)).toBe(true);
+
+      // The abort is applied now, not parked behind the tool barrier.
+      expect(activeSession.pendingAbort).toBe(false);
+      expect(activeSession.internalAbortReason).toBe("explicit_abort");
+      expect(activeSession.done).toBe(true);
+      expect(activeSession.abortController.signal.aborted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(dispatcher.streamingSessions.has(sessionName)).toBe(false);
+
+      const abortEvents = querySessionTrace({ sessionKey, sessionName }).events.filter(
+        (event) => event.eventType === "session.abort",
+      );
+      expect(abortEvents.map((event) => event.status)).toEqual(["requested"]);
+      expect(abortEvents[0]?.payloadJson).toMatchObject({
+        reason: "explicit_abort",
+        toolRunning: true,
+        tool: "Bash",
+        toolSafety: "unsafe",
+        toolCancelled: true,
+        cancelledTool: {
+          toolId: "tool-bash-long",
+          toolName: "Bash",
+          toolSafety: "unsafe",
+          elapsedMs: expect.any(Number),
+        },
+      });
+
+      const interrupted = runtimeEvents.find(
+        (entry) => entry.topic === `ravi.session.${sessionName}.runtime` && entry.data.type === "turn.interrupted",
+      );
+      expect(interrupted?.data).toMatchObject({
+        reason: "explicit_abort",
+        cancelledTool: { toolName: "Bash", toolSafety: "unsafe" },
+      });
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps a killed tool turn out of the stash while preserving its queued successor", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-unsafe-tool-abort-stash-");
+    try {
+      const sessionKey = "agent:main:test:unsafe-tool-abort-stash";
+      const sessionName = "unsafe-tool-abort-stash";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      const terminalizeTurnAttempt = mock((input: { attemptId: string; status: "aborted"; completedAt: number }) => ({
+        ...input,
+        startedTool: true,
+        materializedOutput: false,
+      }));
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        ownershipFailure: null,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: true,
+          materializedOutput: false,
+        }),
+        terminalizeTurnAttempt,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(2, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "run the long build" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "actually, stop and summarize" });
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: true,
+        currentToolSafety: "unsafe",
+        currentToolId: "tool-bash-build",
+        currentToolName: "Bash",
+        toolStartTime: Date.now() - 60_000,
+        currentTurnToolStarted: true,
+        currentCrashRecoveryAttemptId: "attempt-killed-tool",
+        pendingMessages: [active, successor],
+        currentTurnPendingIds: [active.pendingId!],
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      expect(dispatcher.abortSession(sessionName, { source: "cli", reason: "cli_session_reset" })).toBe(true);
+
+      expect(terminalizeTurnAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ attemptId: "attempt-killed-tool", status: "aborted" }),
+      );
+      expect(activeSession.pendingAbort).toBe(false);
+      expect(activeSession.done).toBe(true);
+      expect(activeSession.currentCrashRecoveryTerminal).toMatchObject({ status: "aborted", startedTool: true });
+      // The turn that already ran a tool is not replayed; the successor survives.
+      expect(dispatcher.stashedMessages.get(sessionName)?.map((message) => message.message.content)).toEqual([
+        "actually, stop and summarize",
+      ]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps deferring an explicit abort only while a completed tool result is still being delivered", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-delivery-vs-running-");
+    try {
+      getOrCreateSession("agent:main:test:delivery-vs-running", "main", stateDir, {
+        name: "delivery-vs-running",
+      });
+      const dispatcher = createDispatcher(2);
+      const interrupt = mock(async () => {});
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: true,
+        toolResultDeliveryPending: true,
+        currentToolSafety: "unsafe",
+        currentToolName: "tools_invoke",
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("delivery-vs-running", activeSession);
+
+      expect(dispatcher.abortSession("delivery-vs-running")).toBe(true);
+
+      expect(activeSession.pendingAbort).toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.abortController.signal.aborted).toBe(false);
+      expect(dispatcher.streamingSessions.get("delivery-vs-running")).toBe(activeSession);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("continues closing every provider when one shutdown terminal fence fails", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-shutdown-cleanup-");
     try {

@@ -533,11 +533,15 @@ export class RuntimeSessionDispatcher {
       getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
     const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
 
-    if (session.toolResultDeliveryPending || (session.toolRunning && session.currentToolSafety === "unsafe")) {
-      log.info("Deferring abort - tool barrier active", {
+    // A completed tool result whose provider callback write is still in flight
+    // is an atomic barrier: closing the provider mid-write leaves its thread
+    // with a tool call and no result. That window is measured in milliseconds
+    // and releases on `tool.result_delivered`, so the abort waits for it.
+    if (session.toolResultDeliveryPending) {
+      log.info("Deferring abort - tool result delivery pending", {
         sessionName,
         tool: session.currentToolName,
-        toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
+        toolResultDeliveryPending: true,
         provenance,
       });
       session.internalAbortReason = `${abortReason}_deferred`;
@@ -559,11 +563,20 @@ export class RuntimeSessionDispatcher {
           provenance,
           tool: session.currentToolName ?? null,
           toolSafety: session.currentToolSafety,
-          toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
+          toolResultDeliveryPending: true,
         },
       });
       return true;
     }
+
+    // A tool that is still executing does not hold the abort. Waiting for the
+    // barrier made long commands survive the kill, which from outside looked
+    // like a no-op. The provider's native interrupt cancels the in-flight tool
+    // (Pi `abort`, Codex `turn/interrupt`, Claude `interrupt`, Grok
+    // `session/cancel`), and the turn ends now. Prompt-lane interrupts still
+    // respect unsafe tools through the delivery queue; this path is the
+    // explicit abort only.
+    const cancelledTool = describeCancelledRuntimeTool(session);
 
     if (session.pendingMessages.length > 0) {
       log.info("Stashing aborted messages", { sessionName, count: session.pendingMessages.length });
@@ -572,8 +585,25 @@ export class RuntimeSessionDispatcher {
       });
     }
 
-    log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
-    recordStreamingAbortTrace(this.options.crashRecovery, sessionName, session, abortReason, sessionKey, provenance);
+    if (cancelledTool) {
+      log.info("Aborting streaming session - cancelling running tool", {
+        sessionName,
+        done: session.done,
+        provenance,
+        ...cancelledTool,
+      });
+    } else {
+      log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
+    }
+    recordStreamingAbortTrace(
+      this.options.crashRecovery,
+      sessionName,
+      session,
+      abortReason,
+      sessionKey,
+      provenance,
+      cancelledTool,
+    );
     if (sessionKey) {
       revokeAgentRuntimeContextsForSession(sessionKey, {
         reason: abortReason,
@@ -585,6 +615,7 @@ export class RuntimeSessionDispatcher {
         provider: session.queryHandle.provider,
         reason: abortReason,
         sessionName,
+        ...(cancelledTool ? { cancelledTool } : {}),
         ...(session.currentSource ? { _source: session.currentSource } : {}),
         timestamp: new Date().toISOString(),
       })
@@ -3231,6 +3262,32 @@ function isRuntimeUserMessage(value: unknown): value is RuntimeUserMessage {
   );
 }
 
+/** Tool that an explicit abort cancels mid-flight, for logs, traces, and runtime events. */
+export interface RuntimeCancelledToolDescriptor {
+  toolId: string | null;
+  toolName: string | null;
+  toolSafety: "safe" | "unsafe" | null;
+  elapsedMs: number | null;
+}
+
+export function describeCancelledRuntimeTool(
+  session: Pick<
+    RuntimeHostStreamingSession,
+    "toolRunning" | "currentToolId" | "currentToolName" | "currentToolSafety" | "toolStartTime"
+  >,
+  now = Date.now(),
+): RuntimeCancelledToolDescriptor | null {
+  if (!session.toolRunning) {
+    return null;
+  }
+  return {
+    toolId: session.currentToolId ?? null,
+    toolName: session.currentToolName ?? null,
+    toolSafety: session.currentToolSafety,
+    elapsedMs: session.toolStartTime ? Math.max(0, now - session.toolStartTime) : null,
+  };
+}
+
 function recordStreamingAbortTrace(
   crashRecovery: RuntimeCrashRecoveryCoordinator,
   sessionName: string,
@@ -3238,6 +3295,7 @@ function recordStreamingAbortTrace(
   reason: string,
   sessionKey = sessionName,
   provenance: RuntimeAbortProvenance = {},
+  cancelledTool: RuntimeCancelledToolDescriptor | null = describeCancelledRuntimeTool(session),
 ): void {
   recordRuntimeTraceEvent({
     sessionKey,
@@ -3257,6 +3315,9 @@ function recordStreamingAbortTrace(
       queueSize: session.pendingMessages.length,
       toolRunning: session.toolRunning,
       tool: session.currentToolName ?? null,
+      toolSafety: session.currentToolSafety,
+      toolCancelled: cancelledTool !== null,
+      ...(cancelledTool ? { cancelledTool } : {}),
     },
   });
   recordStreamingTurnInterruptedTrace(crashRecovery, sessionName, session, reason, sessionKey, "aborted");

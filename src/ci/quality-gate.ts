@@ -87,6 +87,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/tool-liveness.test.ts",
     // Aviso de tool demorada: o runtime conta que está ocupado em vez de ficar mudo.
     "src/runtime/slow-tool-notice.test.ts",
+    // Dispatcher abort semantics: an explicit abort cancels the running tool
+    // instead of parking behind the tool barrier; only tool-result delivery defers.
+    "src/runtime/session-dispatcher.test.ts",
     // O observer de intenção é chamado de host-services.ts, e o comportamento que
     // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
     // O call site em si ainda não tem teste de integração — está declarado como
@@ -103,7 +106,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/watch/local-state.test.ts",
     "src/watch/operations.test.ts",
   ],
-  "src/hooks/": ["src/hooks/gh-watch.test.ts", "src/hooks/gh-follow-sweep.test.ts", "src/hooks/rtk-rewrite.test.ts"],
+  "src/hooks/": [
+    "src/hooks/gh-watch.test.ts",
+    "src/hooks/gh-follow-sweep.test.ts",
+    "src/hooks/rtk-rewrite.test.ts",
+    // Safe/unsafe classification that gates prompt-lane interrupts while a tool runs.
+    "src/hooks/tool-safety.test.ts",
+  ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
   "src/approval/": ["src/approval/service.test.ts"],
