@@ -127,6 +127,30 @@ const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
+
+/**
+ * How many times one session may be recovered from inactivity before the runtime
+ * stops retrying and says so out loud.
+ *
+ * "Never end the turn in the dark" cannot mean "retry forever": a provider that
+ * is genuinely gone would loop without ever producing anything. Past this budget
+ * the turn ends as failed with a reason a human can read, which is still not a
+ * silent death.
+ */
+export const MAX_INACTIVITY_RECOVERIES = 3;
+
+/**
+ * Consecutive inactivity recoveries per session.
+ *
+ * Module scope on purpose: a recovery restarts the runtime, so a counter kept on
+ * the streaming session would reset on every attempt and could never bound the
+ * loop. It is cleared when a turn completes, because that is real progress.
+ */
+const inactivityRecoveryAttempts = new Map<string, number>();
+
+export function resetInactivityRecoveryBudget(sessionName: string): void {
+  inactivityRecoveryAttempts.delete(sessionName);
+}
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
@@ -1172,12 +1196,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   }): void => {
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
-    const notice = createQueuedRuntimeUserMessage({
-      prompt: [
+    const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
+    const exhausted = attempts > MAX_INACTIVITY_RECOVERIES;
+
+    const explain = (lines: string[]): string =>
+      [
         `[System] Inatividade: ${subject} ficou ${seconds}s sem produzir evento.`,
-        "O turno nao foi encerrado: ele continua agora, a partir daqui.",
+        ...lines,
         "Se a tarefa e demorada, rode em background (nohup) e consulte em fatias curtas, declarando `timeout` no comando.",
-      ].join("\n"),
+      ].join("\n");
+
+    const notice = createQueuedRuntimeUserMessage({
+      prompt: exhausted
+        ? explain([
+            `Ja recuperei esta sessao ${attempts - 1} vezes seguidas sem progresso real.`,
+            "Nao vou continuar tentando sozinho: preciso de intervencao.",
+          ])
+        : explain(["O turno nao foi encerrado: ele continua agora, a partir daqui."]),
       deliveryBarrier: "after_tool",
       deliveryBarrierSource: "inferred",
       source: streaming.currentSource,
@@ -1191,39 +1226,83 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const deduped = notice.clientMessageId
       ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
       : queued;
-    stashedMessages.set(sessionName, [notice, ...deduped]);
-    restartStashedReason = input.reason;
 
-    log.warn("Continuing session after inactivity instead of ending it", {
-      runId,
-      sessionName,
-      reason: input.reason,
-      kind: input.kind,
-      name: input.name,
-      timeoutMs: input.timeoutMs,
-      stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
-    });
+    if (exhausted) {
+      // Stop retrying, but never silently: the terminal carries a reason a human
+      // can act on, and the notice is still delivered to the session.
+      inactivityRecoveryAttempts.set(sessionName, attempts);
+      stashedMessages.set(sessionName, [notice, ...deduped]);
+      log.error("Inactivity recovery budget exhausted", {
+        runId,
+        sessionName,
+        reason: input.reason,
+        kind: input.kind,
+        name: input.name,
+        attempts,
+        budget: MAX_INACTIVITY_RECOVERIES,
+      });
+      recordTerminalTraceOnce({
+        status: "failed",
+        eventType: "turn.failed",
+        abortReason: "inactivity_recovery_exhausted",
+        error: `${attempts - 1} tentativas seguidas de recuperacao por inatividade (${input.kind}: ${input.name}) sem progresso real.`,
+        payloadJson: {
+          autoRecovered: false,
+          kind: input.kind,
+          name: input.name,
+          timeoutMs: input.timeoutMs,
+          attempts,
+          budget: MAX_INACTIVITY_RECOVERIES,
+        },
+      });
+      void emitHostRuntimeTerminal({
+        type: "turn.failed",
+        error: `${attempts - 1} tentativas seguidas de recuperacao por inatividade (${input.kind}: ${input.name}) sem progresso real.`,
+        reason: "inactivity_recovery_exhausted",
+        phase: "runtime.inactivity_recovery",
+        autoRecovered: false,
+        ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      });
+    } else {
+      inactivityRecoveryAttempts.set(sessionName, attempts);
+      stashedMessages.set(sessionName, [notice, ...deduped]);
+      restartStashedReason = input.reason;
 
-    recordTerminalTraceOnce({
-      status: "interrupted",
-      eventType: "turn.interrupted",
-      abortReason: input.reason,
-      payloadJson: {
-        autoRecovered: true,
+      log.warn("Continuing session after inactivity instead of ending it", {
+        runId,
+        sessionName,
+        reason: input.reason,
         kind: input.kind,
         name: input.name,
         timeoutMs: input.timeoutMs,
-      },
-    });
-    // The session and its observers must see the interruption; a terminal that
-    // only lands in the trace ledger leaves the channel with a dead turn.
-    void emitHostRuntimeTerminal({
-      type: "turn.interrupted",
-      reason: input.reason,
-      phase: "runtime.inactivity_recovery",
-      autoRecovered: true,
-      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
-    });
+        attempt: attempts,
+        budget: MAX_INACTIVITY_RECOVERIES,
+        stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
+      });
+
+      recordTerminalTraceOnce({
+        status: "interrupted",
+        eventType: "turn.interrupted",
+        abortReason: input.reason,
+        payloadJson: {
+          autoRecovered: true,
+          kind: input.kind,
+          name: input.name,
+          timeoutMs: input.timeoutMs,
+          attempt: attempts,
+          budget: MAX_INACTIVITY_RECOVERIES,
+        },
+      });
+      // The session and its observers must see the interruption; a terminal that
+      // only lands in the trace ledger leaves the channel with a dead turn.
+      void emitHostRuntimeTerminal({
+        type: "turn.interrupted",
+        reason: input.reason,
+        phase: "runtime.inactivity_recovery",
+        autoRecovered: true,
+        ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      });
+    }
     recordTraceEvent({
       turnId: streaming.currentTraceTurnId,
       provider: runtimeSession.provider,
@@ -3086,6 +3165,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        // A completed turn is real progress: the inactivity budget starts over.
+        resetInactivityRecoveryBudget(sessionName);
         await recordRuntimeCredentialTurnSuccess(
           streaming,
           resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
