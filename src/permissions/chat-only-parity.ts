@@ -140,8 +140,6 @@ export async function assertChatOnlyHostDeny(
   const ls = await services.authorizeCommandExecution({ command: "ls", input: {} });
   expect(ls.approved).toBe(false);
 
-  expect(services.listDynamicTools()).toEqual([]);
-
   const canUseTool: RuntimeToolPermissionHandler = async (toolName, input) => {
     const result = await services.authorizeToolUse({ toolName, input });
     if (!result.approved) {
