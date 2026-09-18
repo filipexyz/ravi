@@ -598,6 +598,19 @@ async function authorizeRuntimeCommandExecution(
     };
   }
 
+  // Observação de intenção (ex.: uso de `gh` vira acompanhamento de PR). Este é
+  // o caminho por onde pi e grok autorizam comando, e roda depois do "pode
+  // rodar": comando negado não deve virar subscrição.
+  if (command.includes("gh")) {
+    const { observeGhBashCommand } = await import("../hooks/gh-watch.js");
+    await observeGhBashCommand(command, {
+      agentId: options.agentId,
+      sessionKey: options.context.sessionKey,
+      sessionName: options.context.sessionName ?? options.sessionName,
+      source: options.context.source,
+    });
+  }
+
   return { approved: true, inherited, updatedInput: request.input };
 }
 

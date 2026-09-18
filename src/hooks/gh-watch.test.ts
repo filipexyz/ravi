@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
-  createGhWatchHook,
   ensureGhWatchFollow,
   ensureRepoWatch,
   findExistingGhFollowTrigger,
   ghFollowFilter,
+  observeGhBashCommand,
   parseGhWatchIntent,
-  resetGhWatchHookCaches,
+  resetGhWatchCaches,
   tokenizeShellCommand,
 } from "./gh-watch.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
@@ -94,7 +94,6 @@ describe("gh watch intent", () => {
     expect(parseGhWatchIntent("gh")).toBeNull();
     expect(parseGhWatchIntent("git log gh")).toBeNull();
     expect(parseGhWatchIntent("echo gh pr view 1")).toBeNull();
-    // `gh` de passagem no meio de outro comando não deve disparar.
     expect(parseGhWatchIntent("cat gh something")).toBeNull();
   });
 });
@@ -184,71 +183,106 @@ describe("gh watch follow", () => {
     expect(findExistingGhFollowTrigger("o/r", 7, [trigger()])?.id).toBe("trig_1");
     expect(findExistingGhFollowTrigger("o/r", 8, [trigger()])).toBeUndefined();
   });
-
-  it("resets caches between runs", () => {
-    resetGhWatchHookCaches();
-    expect(true).toBe(true);
-  });
 });
 
-describe("gh watch hook", () => {
-  function hookWith(deps: NonNullable<Parameters<typeof createGhWatchHook>[0]>["deps"]) {
-    resetGhWatchHookCaches();
-    const hook = createGhWatchHook({ deps, context: { sessionName: "main" }, resolveRepoFromCwd: () => null });
-    const run = hook.hooks![0]! as unknown as (input: unknown) => Promise<unknown>;
-    return run;
+describe("gh watch observation", () => {
+  function deps(overrides: Partial<Parameters<typeof observeGhBashCommand>[2]> = {}) {
+    return {
+      listWatches: () => ({ items: [watch()] }) as never,
+      listTriggers: () => [] as Trigger[],
+      createTrigger: () => trigger(),
+      emitTriggersRefresh: async () => {},
+      resolveRepoFromCwd: () => null,
+      ...overrides,
+    };
   }
 
   it("subscribes once and then stays quiet for the same PR", async () => {
+    resetGhWatchCaches();
     let created = 0;
-    const run = hookWith({
-      listWatches: () => ({ items: [watch()] }) as never,
-      listTriggers: () => [],
+    const d = deps({
       createTrigger: () => {
         created += 1;
         return trigger();
       },
-      emitTriggersRefresh: async () => {},
     });
 
-    await run({ tool_input: { command: "gh pr view 7 --repo o/r" } });
-    await run({ tool_input: { command: "gh pr checks 7 --repo o/r" } });
-    await run({ tool_input: { command: "gh pr diff 7 --repo o/r" } });
+    await observeGhBashCommand("gh pr view 7 --repo o/r", {}, d);
+    await observeGhBashCommand("gh pr checks 7 --repo o/r", {}, d);
+    await observeGhBashCommand("gh pr diff 7 --repo o/r", {}, d);
 
     expect(created).toBe(1);
   });
 
+  it("resolves the repo from the session cwd when the command omits it", async () => {
+    resetGhWatchCaches();
+    const created: string[] = [];
+    await observeGhBashCommand(
+      "gh pr view 7",
+      { cwd: "/tmp/repo" },
+      deps({
+        resolveRepoFromCwd: (cwd) => (cwd === "/tmp/repo" ? "o/r" : null),
+        createTrigger: (input) => {
+          created.push(input.name);
+          return trigger();
+        },
+      }),
+    );
+
+    expect(created).toEqual(["gh-follow:o/r#7"]);
+  });
+
+  it("does not use the process cwd when the session cwd is unknown", async () => {
+    resetGhWatchCaches();
+    let asked = 0;
+    let created = 0;
+    await observeGhBashCommand(
+      "gh pr view 7",
+      {},
+      deps({
+        resolveRepoFromCwd: () => {
+          asked += 1;
+          return "daemon/repo";
+        },
+        createTrigger: () => {
+          created += 1;
+          return trigger();
+        },
+      }),
+    );
+
+    // Sem cwd de sessão, criar watch pro repo errado seria pior que não criar.
+    expect(asked).toBe(0);
+    expect(created).toBe(0);
+  });
+
   it("never throws, even when the subscription cannot be written", async () => {
-    const run = hookWith({
+    resetGhWatchCaches();
+    const d = deps({
       listWatches: () => {
         throw new Error("db down");
       },
-      listTriggers: () => [],
       createTrigger: () => {
         throw new Error("db down");
       },
-      emitTriggersRefresh: async () => {},
     });
 
     // Um observador que derruba a tool call seria pior que não existir.
-    await expect(run({ tool_input: { command: "gh pr view 7 --repo o/r" } })).resolves.toEqual({});
+    await expect(observeGhBashCommand("gh pr view 7 --repo o/r", {}, d)).resolves.toBeUndefined();
   });
 
-  it("does nothing for commands without a gh intent", async () => {
+  it("does no work for commands without a gh intent", async () => {
+    resetGhWatchCaches();
     let listed = 0;
-    const run = hookWith({
+    const d = deps({
       listWatches: () => {
         listed += 1;
         return { items: [] } as never;
       },
-      listTriggers: () => [],
-      createTrigger: () => trigger(),
-      emitTriggersRefresh: async () => {},
     });
 
-    await run({ tool_input: { command: "ls -la" } });
-    await run({ tool_input: { command: "gh auth status" } });
-    await run({ tool_input: {} });
+    await observeGhBashCommand("ls -la", {}, d);
+    await observeGhBashCommand("gh auth status", {}, d);
 
     expect(listed).toBe(0);
   });

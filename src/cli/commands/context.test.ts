@@ -268,8 +268,8 @@ const { ContextCommands, ContextCredentialsCommands } = await import("./context.
 const { ContractError } = await import("../agent-contract.js");
 const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
-function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
-  return (new ContextCommands() as any).handleCodexBashHook(payload);
+async function callCodexBashHook(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return await (new ContextCommands() as any).handleCodexBashHook(payload);
 }
 
 describe("ContextCommands", () => {
@@ -859,8 +859,8 @@ describe("ContextCommands", () => {
       listedContexts = [resolvedContext];
     });
 
-    it("resolves context without rewriting the shell command from the Bash hook path", () => {
-      const result = callCodexBashHook({
+    it("resolves context without rewriting the shell command from the Bash hook path", async () => {
+      const result = await callCodexBashHook({
         tool_input: {
           command: "ravi context whoami",
         },
@@ -870,7 +870,7 @@ describe("ContextCommands", () => {
       expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
     });
 
-    it("runs runtime skill gates from the Codex Bash hook path", () => {
+    it("runs runtime skill gates from the Codex Bash hook path", async () => {
       commandSkillGateDecision = {
         allowed: false,
         code: "RAVI_SKILL_REQUIRED",
@@ -878,7 +878,7 @@ describe("ContextCommands", () => {
         reason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
       };
 
-      const result = callCodexBashHook({
+      const result = await callCodexBashHook({
         tool_input: {
           command: "ravi skill-gates list",
         },
@@ -900,7 +900,7 @@ describe("ContextCommands", () => {
       ]);
     });
 
-    it("skips runtime skill gates for raw CLI contexts without a bound session", () => {
+    it("skips runtime skill gates for raw CLI contexts without a bound session", async () => {
       resolvedContext = {
         ...resolvedContext!,
         sessionKey: undefined,
@@ -914,7 +914,7 @@ describe("ContextCommands", () => {
           "RAVI_SKILL_GATE_CONFIG_ERROR: Bash requires skill ravi-system-sessions, but no runtime session is bound to this context.",
       };
 
-      const result = callCodexBashHook({
+      const result = await callCodexBashHook({
         tool_input: {
           command: "ravi sessions list",
         },
@@ -924,8 +924,8 @@ describe("ContextCommands", () => {
       expect(commandSkillGateCalls).toEqual([]);
     });
 
-    it("publishes executable deny audit events for non-bootstrap executables", () => {
-      const result = callCodexBashHook({
+    it("publishes executable deny audit events for non-bootstrap executables", async () => {
+      const result = await callCodexBashHook({
         tool_input: {
           command: "node -v",
         },
@@ -963,8 +963,8 @@ describe("ContextCommands", () => {
       expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("node -v");
     });
 
-    it("publishes env spoofing audit events", () => {
-      const result = callCodexBashHook({
+    it("publishes env spoofing audit events", async () => {
+      const result = await callCodexBashHook({
         tool_input: {
           command: "RAVI_AGENT_ID=main ravi sessions list",
         },
@@ -1000,8 +1000,8 @@ describe("ContextCommands", () => {
       expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("RAVI_AGENT_ID=main");
     });
 
-    it("publishes session scope audit events", () => {
-      const result = callCodexBashHook({
+    it("publishes session scope audit events", async () => {
+      const result = await callCodexBashHook({
         tool_input: {
           command: "ravi sessions send main 'hello'",
         },
@@ -1041,14 +1041,14 @@ describe("ContextCommands", () => {
   describe("return schema conformance", () => {
     it("codex-bash-hook allow payload conforms to contextCodexBashHookReturnSchema", async () => {
       const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
-      const result = callCodexBashHook({ tool_input: { command: "ravi context whoami" } });
+      const result = await callCodexBashHook({ tool_input: { command: "ravi context whoami" } });
       const parsed = contextCodexBashHookReturnSchema.safeParse(result);
       expect(parsed.success).toBe(true);
     });
 
     it("codex-bash-hook deny payload conforms to contextCodexBashHookReturnSchema", async () => {
       const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
-      const result = callCodexBashHook({ tool_input: { command: "node -v" } });
+      const result = await callCodexBashHook({ tool_input: { command: "node -v" } });
       const parsed = contextCodexBashHookReturnSchema.safeParse(result);
       expect(parsed.success).toBe(true);
     });

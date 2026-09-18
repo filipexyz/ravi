@@ -8,7 +8,6 @@ import {
 } from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
 import { createPreCompactHook } from "../hooks/index.js";
-import { createGhWatchHook } from "../hooks/gh-watch.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createSanitizeBashHook } from "../hooks/sanitize-bash.js";
 import { nats } from "../nats.js";
@@ -80,25 +79,12 @@ export function createRuntimeHostHooks({
 
   const attemptSafety = { streamingSession, crashRecovery };
   const hookOpts = { getAgentId: () => agent.id };
-  // O hook roda no daemon, onde o contexto de CLI do turno não existe: a origem
-  // vem daqui, explícita, senão o trigger nasceria sem destino de resposta.
-  const ghWatchSource = resolvedSource ?? approvalSource;
-  const ghWatchHook = createGhWatchHook({
-    cwd: sessionCwd,
-    context: {
-      agentId: agent.id,
-      accountId: ghWatchSource?.accountId,
-      sessionName,
-      source: ghWatchSource,
-    },
-  });
   const hooks: Record<string, RuntimeHookMatcher[]> = {
     PreToolUse: [
       createToolPermissionHook(hookOpts),
       createBashPermissionHook(hookOpts),
       createSanitizeBashHook(),
       createRtkRewriteHook(),
-      ghWatchHook,
     ],
     PermissionRequest: [
       {
