@@ -452,6 +452,19 @@ export function resetLoadedSkillVisibilitySnapshot(
   return buildSkillVisibilitySnapshot(records, now);
 }
 
+/**
+ * Merge the persisted session snapshot with a provider's freshly announced
+ * catalog (delivered on every `turn.complete`).
+ *
+ * The incoming catalog is authoritative for catalog membership: stored
+ * advertised/declared entries the provider no longer announces are dropped, so
+ * a revoked skill disappears from the session view. It has no authority over
+ * load state. A `loaded` record leaves the vector only through an explicit
+ * reset (compaction, session reset); it MUST survive a per-turn re-announce
+ * even when the provider lists the same skill under a different alias
+ * (Claude/Pi advertise the frontmatter name `routes-manager`, the skill gate
+ * marks `ravi-system-routes-manager`). Spec: runtime/skill-loading.
+ */
 export function mergeSkillVisibilitySnapshots(
   stored: RuntimeSkillVisibilitySnapshot | null | undefined,
   incoming: RuntimeSkillVisibilitySnapshot | null | undefined,
@@ -466,13 +479,22 @@ export function mergeSkillVisibilitySnapshots(
 
   const incomingIds = new Set(incoming.skills.map((skill) => slugifySkillName(skill.id)));
   const retainedStored = incomingIds.size
-    ? stored.skills.filter((skill) => incomingIds.has(slugifySkillName(skill.id)))
+    ? stored.skills.filter((skill) => skill.state === "loaded" || incomingIds.has(slugifySkillName(skill.id)))
     : stored.skills;
 
   return buildSkillVisibilitySnapshot(
     [...retainedStored, ...incoming.skills],
     Math.max(stored.updatedAt ?? 0, incoming.updatedAt ?? 0, now),
   );
+}
+
+/** Skill ids that entered the loaded vector between two snapshots. */
+export function diffLoadedSkills(
+  previous: RuntimeSkillVisibilitySnapshot | null | undefined,
+  next: RuntimeSkillVisibilitySnapshot,
+): string[] {
+  const seen = new Set(previous?.loadedSkills ?? []);
+  return next.loadedSkills.filter((skill) => !seen.has(skill));
 }
 
 export function readSkillVisibilityFromParams(params: Record<string, unknown> | null | undefined) {
@@ -1017,15 +1039,18 @@ function isSkillConfidence(value: string): value is RuntimeSkillVisibilityConfid
   return ["observed", "inferred", "declared", "unknown"].includes(value);
 }
 
-function isEvidenceKind(value: string): value is RuntimeSkillVisibilityEvidence["kind"] {
-  return [
-    "provider-event",
-    "tool-call",
-    "sync-manifest",
-    "system-prompt",
-    "control-api",
-    "rpc-state",
-    "plugin-bootstrap",
-    "instruction-source",
-  ].includes(value);
+const EVIDENCE_KINDS: readonly RuntimeSkillVisibilityEvidenceKind[] = [
+  "provider-event",
+  "tool-call",
+  "sync-manifest",
+  "system-prompt",
+  "control-api",
+  "rpc-state",
+  "plugin-bootstrap",
+  "instruction-source",
+  "skill-gate",
+];
+
+function isEvidenceKind(value: string): value is RuntimeSkillVisibilityEvidenceKind {
+  return (EVIDENCE_KINDS as readonly string[]).includes(value);
 }
