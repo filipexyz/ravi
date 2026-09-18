@@ -56,6 +56,10 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Console credentials are invalid.";
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "Console publishing is unavailable for this command.";
+    case "CONTACT_REQUIRED":
+      return "A resolved contact is required in the current turn or session.";
+    case "ACTOR_BINDING_CONFLICT":
+      return "This contact is already linked to a different Console user.";
   }
 }
 
@@ -97,6 +101,10 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "run the same `ravi pages` command on the host, or retry after the host CLI gateway socket is available";
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "use a supported publish path";
+    case "CONTACT_REQUIRED":
+      return "run `ravi link` from a turn or session with a resolved contact; do not pass a contact flag";
+    case "ACTOR_BINDING_CONFLICT":
+      return "run `ravi unlink` on the existing binding, or login as the already-linked Console user";
   }
 }
 

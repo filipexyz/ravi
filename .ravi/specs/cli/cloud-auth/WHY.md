@@ -26,6 +26,24 @@ Printing the code on a separate line is not enough: operators and agents copy
 the first URL they see. If Console omits `verification_uri_complete`, the CLI
 must add `user_code` itself rather than falling back to the bare URI.
 
+## Why A Multi-User Store
+
+A shared host can have more than one Console user. Overwriting
+`credentials.json` makes `ravi whoami` lie and lets one login clobber another.
+Keying slots by `consoleUserId` plus an `activeUserId` pointer keeps
+`ravi whoami` working for the current user without losing the others.
+
+Linux is the default host. Keychain-only storage would lock the product to
+macOS. The portable `0600` file is the default; libsecret and Keychain are
+optional backends with capability detection.
+
+## Why Console Session Tokens Are Not Provider Tokens
+
+`ravi login` stores Ravi-owned Console JWTs so the CLI can call Console and
+Link. Gmail/Slack/provider OAuth tokens stay on `link.ravi.so`. Mixing those
+classes would put third-party plaintext on disk and break the Worker vault
+boundary.
+
 ## Why Keep Local Artifacts Offline-Capable
 
 Artifacts are a Ravi primitive. Cloud publishing is an extension of that

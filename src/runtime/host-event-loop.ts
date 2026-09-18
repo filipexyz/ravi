@@ -117,6 +117,13 @@ import {
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   resolveDeclaredToolTimeoutMs,
 } from "./tool-liveness.js";
+import {
+  buildSlowToolNoticeText,
+  decideSlowToolNotice,
+  initialSlowToolNoticeState,
+  resolveSlowToolNoticeConfig,
+  type SlowToolNoticeState,
+} from "./slow-tool-notice.js";
 
 const log = logger.child("bot");
 
@@ -127,6 +134,30 @@ const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
 const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
+
+/**
+ * How many times one session may be recovered from inactivity before the runtime
+ * stops retrying and says so out loud.
+ *
+ * "Never end the turn in the dark" cannot mean "retry forever": a provider that
+ * is genuinely gone would loop without ever producing anything. Past this budget
+ * the turn ends as failed with a reason a human can read, which is still not a
+ * silent death.
+ */
+export const MAX_INACTIVITY_RECOVERIES = 3;
+
+/**
+ * Consecutive inactivity recoveries per session.
+ *
+ * Module scope on purpose: a recovery restarts the runtime, so a counter kept on
+ * the streaming session would reset on every attempt and could never bound the
+ * loop. It is cleared when a turn completes, because that is real progress.
+ */
+const inactivityRecoveryAttempts = new Map<string, number>();
+
+export function resetInactivityRecoveryBudget(sessionName: string): void {
+  inactivityRecoveryAttempts.delete(sessionName);
+}
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
@@ -1172,12 +1203,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   }): void => {
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
-    const notice = createQueuedRuntimeUserMessage({
-      prompt: [
+    const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
+    const exhausted = attempts > MAX_INACTIVITY_RECOVERIES;
+
+    const explain = (lines: string[]): string =>
+      [
         `[System] Inatividade: ${subject} ficou ${seconds}s sem produzir evento.`,
-        "O turno nao foi encerrado: ele continua agora, a partir daqui.",
+        ...lines,
         "Se a tarefa e demorada, rode em background (nohup) e consulte em fatias curtas, declarando `timeout` no comando.",
-      ].join("\n"),
+      ].join("\n");
+
+    const notice = createQueuedRuntimeUserMessage({
+      prompt: exhausted
+        ? explain([
+            `Ja recuperei esta sessao ${attempts - 1} vezes seguidas sem progresso real.`,
+            "Nao vou continuar tentando sozinho: preciso de intervencao.",
+          ])
+        : explain(["O turno nao foi encerrado: ele continua agora, a partir daqui."]),
       deliveryBarrier: "after_tool",
       deliveryBarrierSource: "inferred",
       source: streaming.currentSource,
@@ -1191,39 +1233,83 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const deduped = notice.clientMessageId
       ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
       : queued;
-    stashedMessages.set(sessionName, [notice, ...deduped]);
-    restartStashedReason = input.reason;
 
-    log.warn("Continuing session after inactivity instead of ending it", {
-      runId,
-      sessionName,
-      reason: input.reason,
-      kind: input.kind,
-      name: input.name,
-      timeoutMs: input.timeoutMs,
-      stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
-    });
+    if (exhausted) {
+      // Stop retrying, but never silently: the terminal carries a reason a human
+      // can act on, and the notice is still delivered to the session.
+      inactivityRecoveryAttempts.set(sessionName, attempts);
+      stashedMessages.set(sessionName, [notice, ...deduped]);
+      log.error("Inactivity recovery budget exhausted", {
+        runId,
+        sessionName,
+        reason: input.reason,
+        kind: input.kind,
+        name: input.name,
+        attempts,
+        budget: MAX_INACTIVITY_RECOVERIES,
+      });
+      recordTerminalTraceOnce({
+        status: "failed",
+        eventType: "turn.failed",
+        abortReason: "inactivity_recovery_exhausted",
+        error: `${attempts - 1} tentativas seguidas de recuperacao por inatividade (${input.kind}: ${input.name}) sem progresso real.`,
+        payloadJson: {
+          autoRecovered: false,
+          kind: input.kind,
+          name: input.name,
+          timeoutMs: input.timeoutMs,
+          attempts,
+          budget: MAX_INACTIVITY_RECOVERIES,
+        },
+      });
+      void emitHostRuntimeTerminal({
+        type: "turn.failed",
+        error: `${attempts - 1} tentativas seguidas de recuperacao por inatividade (${input.kind}: ${input.name}) sem progresso real.`,
+        reason: "inactivity_recovery_exhausted",
+        phase: "runtime.inactivity_recovery",
+        autoRecovered: false,
+        ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      });
+    } else {
+      inactivityRecoveryAttempts.set(sessionName, attempts);
+      stashedMessages.set(sessionName, [notice, ...deduped]);
+      restartStashedReason = input.reason;
 
-    recordTerminalTraceOnce({
-      status: "interrupted",
-      eventType: "turn.interrupted",
-      abortReason: input.reason,
-      payloadJson: {
-        autoRecovered: true,
+      log.warn("Continuing session after inactivity instead of ending it", {
+        runId,
+        sessionName,
+        reason: input.reason,
         kind: input.kind,
         name: input.name,
         timeoutMs: input.timeoutMs,
-      },
-    });
-    // The session and its observers must see the interruption; a terminal that
-    // only lands in the trace ledger leaves the channel with a dead turn.
-    void emitHostRuntimeTerminal({
-      type: "turn.interrupted",
-      reason: input.reason,
-      phase: "runtime.inactivity_recovery",
-      autoRecovered: true,
-      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
-    });
+        attempt: attempts,
+        budget: MAX_INACTIVITY_RECOVERIES,
+        stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
+      });
+
+      recordTerminalTraceOnce({
+        status: "interrupted",
+        eventType: "turn.interrupted",
+        abortReason: input.reason,
+        payloadJson: {
+          autoRecovered: true,
+          kind: input.kind,
+          name: input.name,
+          timeoutMs: input.timeoutMs,
+          attempt: attempts,
+          budget: MAX_INACTIVITY_RECOVERIES,
+        },
+      });
+      // The session and its observers must see the interruption; a terminal that
+      // only lands in the trace ledger leaves the channel with a dead turn.
+      void emitHostRuntimeTerminal({
+        type: "turn.interrupted",
+        reason: input.reason,
+        phase: "runtime.inactivity_recovery",
+        autoRecovered: true,
+        ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      });
+    }
     recordTraceEvent({
       turnId: streaming.currentTraceTurnId,
       provider: runtimeSession.provider,
@@ -1302,6 +1388,136 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
     },
   });
+
+  /**
+   * Destino do chat para saída do turno, conforme `.ravi/specs/sessions/attach/SPEC.md`.
+   * Attach decide qual chat recebe a saída externa da sessão.
+   *
+   * Quatro casos distintos, e a diferença importa:
+   * - `target`: há chat resolvido.
+   * - `sentinel`: agente sentinela observa em silêncio; a emissão acontece sem
+   *   destino (comportamento histórico) e o gateway descarta.
+   * - `suppressed`: supressão do turno ou sessão observadora: nem emite.
+   * - `unresolved`: deveria haver destino e não há: não emite e avisa.
+   */
+  const resolveChatEmitTarget = ():
+    | { kind: "target"; target: NonNullable<ReturnType<typeof resolveSessionOutputTargetPreserving>["target"]> }
+    | { kind: "sentinel" | "suppressed" | "unresolved" } => {
+    if (streaming.suppressChatEmit || isObserverRuntimeSessionName(sessionName)) {
+      log.debug("Chat emit suppressed", {
+        sessionName,
+        reason: streaming.suppressChatEmit ? "turn_suppress" : "observer_session",
+      });
+      return { kind: "suppressed" };
+    }
+    if (streaming.currentReplyTarget) {
+      return { kind: "target", target: streaming.currentReplyTarget };
+    }
+    const resolution = resolveSessionOutputTargetPreserving({
+      sessionKey: session.sessionKey,
+      fallback: streaming.currentSource,
+      previous: streaming.lastBoundReplyTarget,
+    });
+    if (resolution.target) {
+      streaming.currentReplyTarget = { ...resolution.target };
+      streaming.lastBoundReplyTarget = { ...resolution.target };
+      return { kind: "target", target: resolution.target };
+    }
+    return { kind: streaming.agentMode === "sentinel" ? "sentinel" : "unresolved" };
+  };
+
+  const slowToolNoticeConfig = resolveSlowToolNoticeConfig();
+  let slowToolTimer: ReturnType<typeof setTimeout> | undefined;
+  let slowToolState: SlowToolNoticeState | undefined;
+
+  const clearSlowToolNotice = () => {
+    if (slowToolTimer !== undefined) {
+      clearTimeout(slowToolTimer);
+      slowToolTimer = undefined;
+    }
+    slowToolState = undefined;
+  };
+
+  /**
+   * Uma linha visível para quem está esperando.
+   *
+   * Não passa pela fila de mensagens do turno de propósito: mensagem enfileirada
+   * só é lida **depois** que a tool termina, que é exatamente quando o aviso deixa
+   * de ser útil. Vai direto para o chat.
+   */
+  const emitSlowToolNotice = async (toolName: string, elapsedMs: number) => {
+    // Só com destino real: aviso de "ainda rodando" só faz sentido para quem vê.
+    const resolved = resolveChatEmitTarget();
+    if (resolved.kind !== "target") {
+      log.debug("Slow tool notice skipped without a chat target", { sessionName, kind: resolved.kind });
+      return;
+    }
+    const text = buildSlowToolNoticeText(toolName, elapsedMs, streaming.pendingMessages.length);
+    log.info("Emitting slow tool notice", {
+      sessionName,
+      tool: toolName,
+      elapsedMs,
+      queueSize: streaming.pendingMessages.length,
+    });
+    await nats.emit(`ravi.session.${sessionName}.response`, {
+      response: text,
+      target: resolved.target,
+      _emitId: `slow-tool-${Math.random().toString(36).slice(2, 8)}`,
+      _instanceId: instanceId,
+      _pid: process.pid,
+      _v: 2,
+    });
+  };
+
+  /**
+   * Enquanto uma tool roda: mantém a presença viva e, passado o limiar, conta que
+   * ainda está rodando.
+   *
+   * O lease de inatividade continua respeitando o timeout declarado pela tool:
+   * paciência é uma coisa, silêncio é outra. Sem isso, uma tool que trava e declara
+   * timeout longo deixa a sessão muda pelo tempo inteiro do que declarou.
+   */
+  const armSlowToolNotice = (toolId: string, toolName: string) => {
+    clearSlowToolNotice();
+    slowToolState = initialSlowToolNoticeState(Date.now(), slowToolNoticeConfig);
+
+    const tick = () => {
+      slowToolTimer = undefined;
+      if (!streaming.toolRunning || streaming.currentToolId !== toolId) return;
+      const state = slowToolState;
+      if (!state) return;
+      const now = Date.now();
+      // Renova a presença: a sessão está ocupada, não morta.
+      void safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "tool.running",
+        tool: toolName,
+        toolId,
+        elapsedMs: now - (streaming.toolStartTime ?? now),
+        sessionName,
+      }).catch(() => {});
+
+      const decision = decideSlowToolNotice(state, now, slowToolNoticeConfig);
+      slowToolState = decision.state;
+      if (decision.notify) {
+        const elapsedMs = now - (streaming.toolStartTime ?? now);
+        // Fica no timeline do turno: quem depura "avisou?" não deveria precisar
+        // do log do daemon como única fonte.
+        pushObservationEvent("tool.slow_notice", {
+          preview: toolName,
+          payload: { tool: toolName, toolId, elapsedMs, queueSize: streaming.pendingMessages.length },
+        });
+        void emitSlowToolNotice(toolName, elapsedMs).catch((error) => {
+          log.warn("Failed to emit slow tool notice", { sessionName, tool: toolName, error });
+        });
+      }
+
+      slowToolTimer = setTimeout(tick, slowToolNoticeConfig.tickMs);
+      slowToolTimer.unref?.();
+    };
+
+    slowToolTimer = setTimeout(tick, slowToolNoticeConfig.tickMs);
+    slowToolTimer.unref?.();
+  };
   const clearProviderInactivityWatch = () => {
     providerInactivityWatchArmed = false;
     if (providerInactivityTimer !== undefined) {
@@ -1393,6 +1609,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const clearActiveToolState = () => {
     toolLivenessLease.clear();
+    clearSlowToolNotice();
     streaming.toolRunning = false;
     streaming.toolResultDeliveryPending = false;
     streaming.currentToolId = undefined;
@@ -2051,42 +2268,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
-    let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTargetPreserving>["target"] | undefined;
-    let resolvedSource: ReturnType<typeof resolveSessionOutputTargetPreserving>["source"] = "unresolved";
-    if (streaming.agentMode !== "sentinel") {
-      if (streaming.suppressChatEmit || isObserverRuntimeSessionName(sessionName)) {
-        log.debug("Chat emit suppressed", {
-          sessionName,
-          reason: streaming.suppressChatEmit ? "turn_suppress" : "observer_session",
-        });
-        clearPendingGeneratedMedia();
-        return;
-      }
-      if (streaming.currentReplyTarget) {
-        resolvedTarget = streaming.currentReplyTarget;
-        resolvedSource = streaming.currentSource ? "source-chat" : "attached-output";
-      } else {
-        const resolution = resolveSessionOutputTargetPreserving({
-          sessionKey: session.sessionKey,
-          fallback: streaming.currentSource,
-          previous: streaming.lastBoundReplyTarget,
-        });
-        resolvedTarget = resolution.target;
-        resolvedSource = resolution.source;
-        if (resolution.target) {
-          streaming.currentReplyTarget = { ...resolution.target };
-          streaming.lastBoundReplyTarget = { ...resolution.target };
-        }
-      }
-      if (!resolvedTarget) {
-        log.warn("Response target unresolved — dropping emit", {
-          sessionName,
-          source: resolvedSource,
-        });
-        clearPendingGeneratedMedia();
-        return;
-      }
+    const chatTarget = resolveChatEmitTarget();
+    if (chatTarget.kind === "suppressed") {
+      clearPendingGeneratedMedia();
+      return;
     }
+    if (chatTarget.kind === "unresolved") {
+      log.warn("Response target unresolved — dropping emit", {
+        sessionName,
+        source: "unresolved",
+      });
+      clearPendingGeneratedMedia();
+      return;
+    }
+    const resolvedTarget = chatTarget.kind === "target" ? chatTarget.target : undefined;
+    const resolvedSource = chatTarget.kind === "target" ? "resolved" : "sentinel";
     const content =
       mediaParts.length > 0
         ? ([
@@ -2625,6 +2821,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Tools that declare their own `timeout` keep ownership of it: a long
         // scan or build must not be killed by the generic inactivity window.
         toolLivenessLease.start(event.toolUse.id, resolveDeclaredToolTimeoutMs(event.toolUse.input));
+        // O lease cuida da paciência; este aviso cuida do silêncio.
+        armSlowToolNotice(event.toolUse.id, event.toolUse.name);
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
@@ -3086,6 +3284,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        // A completed turn is real progress: the inactivity budget starts over.
+        resetInactivityRecoveryBudget(sessionName);
         await recordRuntimeCredentialTurnSuccess(
           streaming,
           resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),

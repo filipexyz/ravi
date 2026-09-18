@@ -51,8 +51,10 @@ The bridge MUST NOT own:
 
 ## Authentication
 
-The bridge MUST reuse `src/cloud-auth/client.ts` and the existing credential
-store at `~/.ravi/cloud-auth/credentials.json`.
+The bridge MUST reuse `src/cloud-auth/client.ts` and the active cloud-auth
+session (`readCloudCredentials()`, keyed by `activeUserId` under
+`~/.ravi/cloud-auth/users/<consoleUserId>/`). Legacy
+`~/.ravi/cloud-auth/credentials.json` is migrated into that layout.
 
 It MUST NOT implement an independent token refresh flow.
 

@@ -252,6 +252,38 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "main")).toBe(false);
   });
 
+  it("sets consoleUserId on turn metadata when the contact has a cached binding", async () => {
+    const { writeCachedActorBinding } = await import("../cloud-auth/actor-bindings.js");
+    writeCachedActorBinding({
+      contactId: "luis",
+      actorPrincipal: "contact:luis",
+      consoleUserId: "user_alice",
+      orgId: "org_123",
+      installationId: "ins_123",
+    });
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "audit");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "contact:luis",
+      consoleUserId: "user_alice",
+      consoleOrgId: "org_123",
+    });
+  });
+
   it("does not materialize role authority without a provider-owned runtime config", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

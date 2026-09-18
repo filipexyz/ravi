@@ -28,6 +28,65 @@ export interface CloudCredentials {
   updatedAt: string;
 }
 
+export const CLOUD_AUTH_BACKENDS = ["file", "libsecret", "keychain"] as const;
+export type CloudAuthBackendName = (typeof CLOUD_AUTH_BACKENDS)[number];
+
+export const LEGACY_CLOUD_AUTH_USER_ID = "_legacy";
+
+export interface CloudAuthStorePointer {
+  version: 1;
+  activeUserId: string;
+  backend: CloudAuthBackendName;
+}
+
+export interface ActorPlatformIdentity {
+  channel?: string;
+  accountId?: string;
+  platformUserId?: string;
+  platformIdentityId?: string;
+}
+
+export interface ActorBinding {
+  id?: string;
+  contactId: string;
+  actorPrincipal: string;
+  consoleUserId: string;
+  orgId: string;
+  installationId: string;
+  platformIdentity?: ActorPlatformIdentity | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ActorBindingCacheRecord {
+  version: 1;
+  binding: ActorBinding;
+  expiresAt: string;
+  updatedAt: string;
+}
+
+export interface ActorBindingUpsertInput {
+  contactId: string;
+  installationId?: string;
+  organizationId?: string;
+  consoleUserId?: string;
+  platformIdentities?: ActorPlatformIdentity | Record<string, unknown> | null;
+}
+
+export interface ActorBindingUnlinkInput {
+  contactId?: string;
+  bindingId?: string;
+  installationId?: string;
+  organizationId?: string;
+}
+
+export interface ActorBindingResolveQuery {
+  contactId?: string;
+  consoleUserId?: string;
+  installationId?: string;
+  organizationId?: string;
+}
+
 export interface SafeCloudAuthSession {
   consoleUrl: string;
   user: CloudAuthUser | null;

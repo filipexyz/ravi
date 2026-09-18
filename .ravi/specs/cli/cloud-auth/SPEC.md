@@ -13,6 +13,8 @@ applies_to:
   - ravi login
   - ravi whoami
   - ravi logout
+  - ravi link
+  - ravi unlink
   - ravi artifacts publish
 tags:
   - cli
@@ -106,23 +108,70 @@ The CLI MUST NOT use browser session cookies as its API credential.
 
 ## Local Credential Storage
 
-The CLI SHOULD store refresh credentials in the OS keychain when available.
+The CLI MUST store Console session material (access/refresh JWT used to call
+Console and Link as that user) in a **multi-user** store keyed by
+`consoleUserId`. A single overwriteable file is not enough.
 
-If a file fallback is required, it MUST:
+Linux is the primary target. The store MUST NOT make macOS Keychain the only
+backend.
 
-- live under the user's Ravi config directory;
-- be readable and writable only by the current user;
-- avoid printing secrets in logs, errors, or JSON output;
-- support explicit deletion through `ravi logout`.
+Layout:
+
+```
+~/.ravi/cloud-auth/
+  active.json                         # { activeUserId, backend } mode 0600
+  users/<consoleUserId>/
+    credentials.json                  # Console session JWT only, mode 0600
+  bindings/<contactId>.json           # identity IDs + TTL, no tokens, mode 0600
+```
+
+Directories MUST be mode `0700`. Credential files MUST be mode `0600`.
+
+`ravi whoami` MUST read the **active** user (`activeUserId` pointer). `ravi
+login` MUST write that user's slot and update the pointer. `ravi logout` MUST
+delete only the active user and, when other users remain, point at another
+stored user.
+
+Legacy `~/.ravi/cloud-auth/credentials.json` MUST be migrated into
+`users/<consoleUserId>/` (or `users/_legacy/` when the user id is not yet
+known) and then removed.
+
+### Secret backends
+
+The CLI MUST use a capability-detected backend abstraction:
+
+1. **Default portable (Linux-first):** `users/<userId>/credentials.json` mode
+   `0600`, directory `0700`. This is the default on every OS.
+2. **Optional:** FreeDesktop Secret Service / libsecret when `secret-tool` is
+   available (`RAVI_CLOUD_AUTH_BACKEND=libsecret` or `auto` on Linux).
+3. **Optional:** macOS Keychain when `security` is available
+   (`RAVI_CLOUD_AUTH_BACKEND=keychain` or `auto` on Darwin).
+
+`auto` MAY prefer an optional backend when present. Unavailable optional
+backends MUST fall back to the portable file store. The CLI MUST never require
+macOS.
+
+### Threat model
+
+- The host operator can read local files, including `0600` credentials.
+- Connector / provider OAuth tokens (Gmail, Slack, etc.) MUST never be stored
+  on disk. Those stay on the `link.ravi.so` Worker.
+- Console session JWTs are not provider tokens. They are Ravi-owned CLI
+  credentials for Console/Link as that Console user.
+- There is no operator JWT fallback for user-scoped connector tools. If a turn
+  has a bound `consoleUserId`, those tools MUST use that user's stored
+  session (or fail). They MUST NOT silently use the installation operator
+  session. Full user-scoped connector vault on the Worker is a follow-up.
 
 The CLI MAY cache non-secret metadata such as:
 
 - Console base URL;
-- user email/display name;
+- user id/email/display name;
 - organization id/name;
 - local installation id;
 - token expiry;
-- granted scopes.
+- granted scopes;
+- TTL'd actor-binding IDs (contact, consoleUserId, orgId).
 
 ## Token Handling
 

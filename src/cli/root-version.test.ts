@@ -79,7 +79,39 @@ describe("CLI root version", () => {
     expect(login.stdout).toContain("https://console.ravi.bot");
     expect(login.stdout).not.toContain("--endpoint");
     expect(root.status).toBe(0);
-    expect(root.stdout).not.toContain("link [options]");
+    expect(root.stdout).not.toContain("--endpoint");
+  });
+
+  it("exposes ambient ravi link without identity flags", () => {
+    const stateDir = join(tmpdir(), `ravi-root-link-help-${process.pid}`);
+    const link = spawnSync("bun", ["src/cli/index.ts", "link", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    const unlink = spawnSync("bun", ["src/cli/index.ts", "unlink", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    const root = spawnSync("bun", ["src/cli/index.ts", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(link.status).toBe(0);
+    expect(link.stdout).toContain("--json");
+    expect(link.stdout).not.toContain("--contact");
+    expect(link.stdout).not.toContain("--user");
+    expect(link.stdout).not.toContain("--endpoint");
+    expect(unlink.status).toBe(0);
+    expect(unlink.stdout).toContain("--json");
+    expect(unlink.stdout).not.toContain("--contact");
+    expect(root.status).toBe(0);
+    expect(root.stdout).toContain("link [options]");
+    expect(root.stdout).toContain("unlink [options]");
   });
 
   it("suggests the plural tasks command for singular task help", () => {

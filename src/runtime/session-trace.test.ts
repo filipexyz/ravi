@@ -37,6 +37,8 @@ import {
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import {
   classifyUserFacingRuntimeLimitFailure,
+  MAX_INACTIVITY_RECOVERIES,
+  resetInactivityRecoveryBudget,
   resetUserFacingRuntimeLimitSuppressionsForTest,
   runRuntimeEventLoop,
   shouldSuppressUserFacingRuntimeLimitFailure,
@@ -3254,6 +3256,61 @@ describe("runtime session trace instrumentation", () => {
     // Nothing about this turn is recorded as a failure: it was interrupted and
     // the session continues with a notice.
     expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+  });
+
+  it("stops retrying and says so once inactivity recovery is exhausted", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    resetInactivityRecoveryBudget(SESSION_NAME);
+
+    const terminals: string[] = [];
+    const exhaustedNotices: string[] = [];
+
+    try {
+      for (let attempt = 0; attempt <= MAX_INACTIVITY_RECOVERIES; attempt += 1) {
+        const streaming = makeStreamingSession();
+        seedAdapterTrace(streaming, `turn-budget-${attempt}`);
+        const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+        const stashed = new Map<string, RuntimeUserMessage[]>();
+
+        await runTraceLoop(
+          streaming,
+          // Yield a completed tool so the after-tool provider watch is armed, then
+          // hang: this is the shape that reaches the inactivity recovery.
+          makeRuntimeSessionThenHang([
+            { type: "assistant.message", text: "trabalhando" },
+            { type: "tool.started", toolUse: { id: `tool-${attempt}`, name: "bash", input: {} } },
+            { type: "tool.completed", toolUseId: `tool-${attempt}`, toolName: "bash", content: "ok" },
+          ]),
+          {
+            safeEmit: async (topic, data) => {
+              emitted.push({ topic, data });
+            },
+            stashedMessages: stashed,
+          },
+        );
+
+        const terminal = emitted.find((entry) => String(entry.data.type).startsWith("turn."));
+        terminals.push(String(terminal?.data.type));
+        const notice = stashed.get(SESSION_NAME)?.[0]?.message.content;
+        if (notice?.includes("preciso de intervencao")) exhaustedNotices.push(notice);
+      }
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+      resetInactivityRecoveryBudget(SESSION_NAME);
+    }
+
+    // The budget is spent on recovery; the attempt past it stops retrying.
+    expect(terminals.slice(0, MAX_INACTIVITY_RECOVERIES)).toEqual(
+      new Array(MAX_INACTIVITY_RECOVERIES).fill("turn.interrupted"),
+    );
+    expect(terminals[MAX_INACTIVITY_RECOVERIES]).toBe("turn.failed");
+    // Never silently: the last attempt tells the session a human is needed.
+    expect(exhaustedNotices).toHaveLength(1);
   });
 
   it("does not persist silent heartbeat, no-response, or @@SILENT@@ assistant text", async () => {

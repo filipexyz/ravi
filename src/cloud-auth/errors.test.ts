@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
-import { CloudAuthError, classifyConsoleNetworkError, cloudAuthErrorFromUnknown } from "./errors.js";
+import {
+  CloudAuthError,
+  classifyConsoleNetworkError,
+  cloudAuthErrorFromUnknown,
+  normalizeCloudAuthErrorCode,
+} from "./errors.js";
 
 describe("cloudAuthErrorFromUnknown", () => {
   it("preserves an already classified cloud error", () => {
@@ -19,6 +24,16 @@ describe("cloudAuthErrorFromUnknown", () => {
       cause,
     });
     expect(JSON.stringify(normalized.toJSON())).not.toContain("private-provider-secret");
+  });
+});
+
+describe("normalizeCloudAuthErrorCode", () => {
+  it("maps Console /api/cli/link codes onto existing CLI codes", () => {
+    expect(normalizeCloudAuthErrorCode("CONFLICT", "PAYLOAD_INVALID")).toBe("ACTOR_BINDING_CONFLICT");
+    expect(normalizeCloudAuthErrorCode("NOT_MEMBER", "PAYLOAD_INVALID")).toBe("ORG_ACCESS_DENIED");
+    expect(normalizeCloudAuthErrorCode("INSTALLATION_ORG_MISMATCH", "PAYLOAD_INVALID")).toBe("ORG_ACCESS_DENIED");
+    expect(normalizeCloudAuthErrorCode("CONTACT_REQUIRED", "PAYLOAD_INVALID")).toBe("CONTACT_REQUIRED");
+    expect(normalizeCloudAuthErrorCode("AUTH_REQUIRED", "PAYLOAD_INVALID")).toBe("AUTH_REQUIRED");
   });
 });
 
@@ -63,6 +78,8 @@ describe("cloudErrorToContractError", () => {
     ["HOST_UNREACHABLE", "Console is unreachable from this provider sandbox. The host CLI can reach Console.", false],
     ["CREDENTIALS_INVALID", "Console credentials are invalid.", false],
     ["CLOUD_PUBLISH_NOT_IMPLEMENTED", "Console publishing is unavailable for this command.", false],
+    ["CONTACT_REQUIRED", "A resolved contact is required in the current turn or session.", false],
+    ["ACTOR_BINDING_CONFLICT", "This contact is already linked to a different Console user.", false],
   ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {
     const source = new CloudAuthError(code, `PRIVATE_PROVIDER_BODY_8K2R:${code}`, { status: 429 });
     const contract = cloudErrorToContractError("cloud fixture fail", source);
