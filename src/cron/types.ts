@@ -109,3 +109,23 @@ export interface JobStateUpdate {
   nextRunAt?: number;
   lastExitCode?: number;
 }
+
+/**
+ * State recorded when an agent job prompt has been dispatched but the agent
+ * turn has not reached a terminal state yet. Outcome fields are cleared so a
+ * run in flight is never reported with the previous run's result.
+ */
+export interface JobDispatchUpdate {
+  lastRunAt: number;
+  nextRunAt?: number;
+}
+
+/**
+ * Outcome recorded once the dispatched agent turn completes, fails, or is
+ * interrupted. Scheduling fields are left untouched.
+ */
+export interface JobOutcomeUpdate {
+  lastStatus: JobStatus;
+  lastError?: string;
+  lastDurationMs?: number;
+}

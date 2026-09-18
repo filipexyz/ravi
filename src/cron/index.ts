@@ -14,6 +14,8 @@ export type {
   CronJob,
   CronJobInput,
   JobStateUpdate,
+  JobDispatchUpdate,
+  JobOutcomeUpdate,
 } from "./types.js";
 
 // Database operations
@@ -26,7 +28,13 @@ export {
   dbGetDueJobs,
   dbGetNextDueJob,
   dbUpdateJobState,
+  dbMarkJobDispatched,
+  dbRecordJobOutcome,
 } from "./cron-db.js";
+
+// Turn outcome tracking
+export { parseCronTurnOutcome, buildCronTurnOutcomeState, CRON_RUNTIME_EVENTS_TOPIC } from "./turn-outcome.js";
+export type { CronTurnOutcome, CronTurnTerminalKind } from "./turn-outcome.js";
 
 export { createCronJobIdempotently } from "./idempotency.js";
 export type { CronCreationIdempotency, CronCreationResult } from "./idempotency.js";

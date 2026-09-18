@@ -204,6 +204,8 @@ Each cron job has the following properties:
 | `lastError` | Error message if last run failed |
 | `lastExitCode` | Shell exit code for shell jobs |
 
+For agent jobs, `lastStatus`, `lastError`, and `lastDurationMs` describe the agent turn, not the prompt dispatch. When the prompt is published, `lastRunAt` and `nextRunAt` advance and the outcome fields are cleared; they are filled in once the runtime reports the turn as complete (`ok`), failed, or interrupted (`error`, with the runtime error in `lastError`). A run still in progress therefore shows no status. If publishing the prompt itself fails, the job is marked `error` immediately.
+
 ## CLI Workflows
 
 ### Creating Jobs

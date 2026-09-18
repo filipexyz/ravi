@@ -232,6 +232,7 @@ ravi cron rm <id> --execute
 3. For isolated sessions, agent can use `cross_send` to deliver responses
 4. Next run time is calculated (with anti-drift for intervals)
 5. One-shot jobs (`--at`) are deleted after execution
+6. `lastStatus`/`lastError` are recorded from the agent turn outcome (`turn.complete` → `ok`, `turn.failed`/`turn.interrupted` → `error`), not from the prompt dispatch
 
 ## Event Triggers
 
