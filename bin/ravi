@@ -6,9 +6,17 @@
 # an SDK drift check reported "current" for artifacts that had actually changed on
 # 2026-09-16, and how a regeneration emitted from the wrong registry.
 #
-# The bundle is now rebuilt before use whenever it is missing or older than `src/`
-# or package.json, so the path stays single and never runs old code. A failed
-# rebuild refuses to run rather than falling back to a stale artifact.
+# In a source checkout the bundle is rebuilt before use whenever it is missing or
+# older than `src/` or package.json, so the path stays single and never runs old
+# code. A failed rebuild refuses to run rather than falling back to a stale artifact.
+#
+# The published package (bun/npm global install) ships bin/ravi, dist/ and
+# package.json but no src/, so there is nothing to rebuild from: the shipped bundle
+# is the release and runs as is. File mtimes in an extracted package say nothing
+# about freshness -- package.json can land after dist/ -- and comparing them once
+# made a global install try `bun run build:cli` without `src/cli`, fail, and refuse
+# to run `ravi update`, leaving the operator stuck. The freshness check therefore
+# only runs where the build entry exists.
 #
 # RAVI_ALLOW_STALE_BUNDLE=1 skips the freshness check and runs the bundle as is.
 
@@ -22,6 +30,18 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 BUNDLE="$PROJECT_DIR/dist/bundle/index.js"
+# What `bun run build:cli` compiles. Present in a source checkout, absent from the
+# published package (see the `files` whitelist in package.json).
+BUILD_ENTRY="$PROJECT_DIR/src/cli/index.ts"
+
+if [ ! -f "$BUILD_ENTRY" ]; then
+  if [ ! -f "$BUNDLE" ]; then
+    echo "ravi: no bundle at $BUNDLE and no source tree to rebuild it from." >&2
+    echo "      Reinstall: bun install -g ravi.bot  (or: npm install -g ravi.bot)" >&2
+    exit 1
+  fi
+  exec bun "$BUNDLE" "$@"
+fi
 
 # Reports the first thing newer than the bundle, or nothing when it is current.
 stale_reason() {
