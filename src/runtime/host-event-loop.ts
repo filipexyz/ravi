@@ -1484,6 +1484,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const tick = () => {
       slowToolTimer = undefined;
       if (!streaming.toolRunning || streaming.currentToolId !== toolId) return;
+      const state = slowToolState;
+      if (!state) return;
       const now = Date.now();
       // Renova a presença: a sessão está ocupada, não morta.
       void safeEmit(`ravi.session.${sessionName}.runtime`, {
@@ -1494,10 +1496,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       }).catch(() => {});
 
-      const decision = decideSlowToolNotice(slowToolState!, now, slowToolNoticeConfig);
+      const decision = decideSlowToolNotice(state, now, slowToolNoticeConfig);
       slowToolState = decision.state;
       if (decision.notify) {
-        void emitSlowToolNotice(toolName, now - (streaming.toolStartTime ?? now)).catch((error) => {
+        const elapsedMs = now - (streaming.toolStartTime ?? now);
+        // Fica no timeline do turno: quem depura "avisou?" não deveria precisar
+        // do log do daemon como única fonte.
+        pushObservationEvent("tool.slow_notice", {
+          preview: toolName,
+          payload: { tool: toolName, toolId, elapsedMs, queueSize: streaming.pendingMessages.length },
+        });
+        void emitSlowToolNotice(toolName, elapsedMs).catch((error) => {
           log.warn("Failed to emit slow tool notice", { sessionName, tool: toolName, error });
         });
       }
