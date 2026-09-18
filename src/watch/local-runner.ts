@@ -26,7 +26,7 @@ import {
   type LocalWorkflowRunState,
 } from "./local-events.js";
 import type { WatchNatsPayload, WatchRecord } from "./types.js";
-import { listWatches } from "./watch-db.js";
+import { listWatches, markWatchEventDelivered } from "./watch-db.js";
 
 const log = logger.child("watch:local-runner");
 
@@ -58,6 +58,8 @@ export interface LocalWatchRunnerOptions {
   source?: LocalWatchSource;
   listLocalWatches?: () => WatchRecord[];
   publish?: (subject: string, payload: WatchNatsPayload) => Promise<void>;
+  /** Injetável para teste: sem fake, o teste escreveria no banco de verdade. */
+  markEventDelivered?: (watchId: string) => void;
   stateDir?: string;
 }
 
@@ -206,6 +208,7 @@ export class LocalWatchRunner {
   private readonly source: LocalWatchSource;
   private readonly listLocalWatches: () => WatchRecord[];
   private readonly publish: (subject: string, payload: WatchNatsPayload) => Promise<void>;
+  private readonly markEventDelivered: (watchId: string) => void;
   private readonly stateDir: string;
 
   constructor(options: LocalWatchRunnerOptions = {}) {
@@ -214,6 +217,7 @@ export class LocalWatchRunner {
     this.listLocalWatches =
       options.listLocalWatches ?? (() => listWatches({ provider: "github", status: "active" }).items);
     this.publish = options.publish ?? ((subject, payload) => nats.emit(subject, { ...payload }));
+    this.markEventDelivered = options.markEventDelivered ?? markWatchEventDelivered;
     this.stateDir = join(options.stateDir ?? getRaviStateDir(), "watch-local");
   }
 
@@ -287,6 +291,7 @@ export class LocalWatchRunner {
       published += 1;
     }
     if (published > 0) {
+      this.markEventDelivered(watch.id);
       log.info("Local watch published events", { watchId: watch.id, resourceRef: repo, count: published });
     }
     return published;

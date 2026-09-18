@@ -175,6 +175,21 @@ export function listWatches(input: {
   };
 }
 
+/**
+ * Registra que o watch produziu um evento.
+ *
+ * O Console atualizava isso pela entrega remota; o poller local publicava e nunca
+ * marcava nada, então `ravi watch list` mostrava `lastEventAt: null` para um watch
+ * que estava publicando. A camada de cima mentia sobre a de baixo.
+ */
+export function markWatchEventDelivered(id: string, at: Date = new Date()): boolean {
+  ensureWatchSchema();
+  getDb()
+    .prepare("UPDATE watches SET last_event_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
+    .run(at.toISOString(), Date.now(), id);
+  return getDbChanges() > 0;
+}
+
 export function updateWatchStatus(id: string, status: Exclude<WatchStatus, "deleted">): WatchRecord {
   ensureWatchSchema();
   const now = Date.now();

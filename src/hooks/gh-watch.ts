@@ -114,7 +114,6 @@ export interface GhWatchFollowResult {
   triggerId?: string;
   triggerReused?: boolean;
   triggerSkipped?: "no_pr_number";
-  warning?: string;
 }
 
 export interface GhWatchFollowDeps {

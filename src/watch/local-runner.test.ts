@@ -57,6 +57,7 @@ function harness(options: {
   const dir = mkdtempSync(join(tmpdir(), "ravi-local-watch-"));
   const published: Array<{ subject: string; payload: WatchNatsPayload }> = [];
   const departedCalls: number[][] = [];
+  const deliveredMarks: string[] = [];
   let index = 0;
   const source: LocalWatchSource = {
     readSnapshot() {
@@ -74,12 +75,20 @@ function harness(options: {
     stateDir: dir,
     source,
     listLocalWatches: () => options.watches,
+    // Fake explícito: sem ele o teste escreveria `lastEventAt` no banco real.
+    markEventDelivered: (watchId) => deliveredMarks.push(watchId),
     publish: async (subject, payload) => {
       published.push({ subject, payload });
       await options.publish?.(subject, payload);
     },
   });
-  return { runner, published, departedCalls, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return {
+    runner,
+    published,
+    departedCalls,
+    deliveredMarks,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 describe("local watch runner", () => {
@@ -161,6 +170,8 @@ describe("local watch runner", () => {
         subject: "ravi.watch.github.pull_request.opened",
       });
       expect(published!.payload.payload).toMatchObject({ repository: "o/r", number: 2 });
+      // O watch registra que produziu: `lastEventAt` não pode ficar mentindo.
+      expect(h.deliveredMarks).toEqual(["watch_1"]);
     } finally {
       await h.runner.stop();
       h.cleanup();
@@ -180,6 +191,8 @@ describe("local watch runner", () => {
       // O run falhou, mas o watch só pediu pull_request.opened: nada é publicado.
       expect(result.eventsPublished).toBe(0);
       expect(h.published).toEqual([]);
+      // E nada é marcado como entregue.
+      expect(h.deliveredMarks).toEqual([]);
     } finally {
       await h.runner.stop();
       h.cleanup();
