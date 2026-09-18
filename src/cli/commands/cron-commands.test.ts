@@ -12,8 +12,11 @@ let cronJob: Record<string, unknown> | null = null;
 let cronJobs: Record<string, unknown>[] = [];
 let mockScopeContext: Record<string, unknown> | undefined;
 let mockScopeEnforced = false;
+// Cross-agent grants held by the mock caller, e.g. { permission: "view", objectType: "agent", objectId: "*" }.
+let mockGrants: Array<{ permission: string; objectType: string; objectId: string }> = [];
 let mockCliContext: Record<string, unknown> | undefined;
 let creationIdempotency: unknown;
+let recordedResourceDenials: Array<Record<string, unknown>> = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -66,11 +69,46 @@ mock.module("../../permissions/scope.js", () => ({
   canAccessSession: () => true,
   canModifySession: () => true,
   canAccessContact: () => true,
-  canAccessResource: (_ctx: unknown, resourceAgentId: string | undefined) => {
-    // When scope is enforced, only allow access to own agent's resources
+  // Mirrors the real check: operator/superadmin (scope not enforced) and own
+  // resources always pass; other agents' resources need `view agent:<owner>`
+  // for read and `modify agent:<owner>` for mutate.
+  canAccessResource: (_ctx: unknown, resourceAgentId: string | undefined, mode: "read" | "mutate") => {
     if (!mockScopeEnforced || !mockScopeContext?.agentId) return true;
     if (!resourceAgentId) return false;
-    return mockScopeContext.agentId === resourceAgentId;
+    if (mockScopeContext.agentId === resourceAgentId) return true;
+    const relation = mode === "mutate" ? "modify" : "view";
+    return mockGrants.some(
+      (grant) =>
+        grant.permission === relation &&
+        grant.objectType === "agent" &&
+        (grant.objectId === "*" || grant.objectId === resourceAgentId),
+    );
+  },
+  recordResourceAccessDenial: (input: {
+    ctx: { agentId?: string };
+    resourceAgentId: string;
+    mode: "read" | "mutate";
+    resourceLabel: string;
+    command: string;
+  }) => {
+    recordedResourceDenials.push(input);
+    const relation = input.mode === "mutate" ? "modify" : "view";
+    const verb = input.mode === "mutate" ? "modify" : "read";
+    const ownerVisible = mockGrants.some(
+      (grant) =>
+        grant.permission === "view" &&
+        grant.objectType === "agent" &&
+        (grant.objectId === "*" || grant.objectId === input.resourceAgentId),
+    );
+    return ownerVisible
+      ? {
+          message: `Permission denied: agent:${input.ctx.agentId} cannot ${verb} ${input.resourceLabel} owned by agent:${input.resourceAgentId}; requires ${relation} on agent:${input.resourceAgentId}`,
+          requiredCapability: `${relation}:agent:${input.resourceAgentId}`,
+          denialId: 7,
+        }
+      : {
+          message: `Permission denied: agent:${input.ctx.agentId} cannot ${verb} ${input.resourceLabel}; requires ${relation} authority on the owning agent`,
+        };
   },
   canViewAgent: () => true,
   canWriteContacts: () => true,
@@ -156,6 +194,29 @@ mock.module("../../cron/index.js", () => ({
 
 const { CronCommands } = await import("./cron.js");
 const { ContractError } = await import("../agent-contract.js");
+
+beforeEach(() => {
+  mockGrants = [];
+  recordedResourceDenials = [];
+});
+
+async function captureContractError(run: () => unknown): Promise<InstanceType<typeof ContractError>> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  let thrown: unknown;
+  try {
+    await run();
+  } catch (error) {
+    thrown = error;
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  expect(thrown).toBeInstanceOf(ContractError);
+  return thrown as InstanceType<typeof ContractError>;
+}
 
 async function captureJson(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
   const lines: string[] = [];
@@ -557,10 +618,105 @@ describe("CronCommands agent-scoped listing", () => {
     const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
 
     const items = payload.items as Array<Record<string, unknown>>;
-    // Only own agent's jobs visible when scope is enforced
+    // Without cross-agent grants only own jobs are visible when scope is enforced
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe("cron-own");
-    expect(payload.filters).toMatchObject({ scope: "all-agents" });
+    expect(payload.filters).toMatchObject({ scope: "all-agents", visibility: "scoped" });
+  });
+
+  it("--all-agents includes jobs of agents covered by view agent:<id>", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "ravi-dev" }];
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const ids = (payload.items as Array<Record<string, unknown>>).map((i) => i.id).sort();
+    expect(ids).toEqual(["cron-other", "cron-own"]);
+    expect(payload.filters).toMatchObject({ scope: "all-agents", visibility: "scoped" });
+  });
+
+  it("--all-agents with view agent:* lists every job, including default-agent jobs", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "*" }];
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const ids = (payload.items as Array<Record<string, unknown>>).map((i) => i.id).sort();
+    expect(ids).toEqual(["cron-default", "cron-other", "cron-own"]);
+    expect(payload.total).toBe(3);
+  });
+
+  it("treats unowned jobs as default-agent jobs for visibility", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "main" }];
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const ids = (payload.items as Array<Record<string, unknown>>).map((i) => i.id).sort();
+    expect(ids).toEqual(["cron-default", "cron-own"]);
+  });
+
+  it("modify agent:<id> alone does not grant listing visibility", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+    mockGrants = [{ permission: "modify", objectType: "agent", objectId: "*" }];
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    const ids = (payload.items as Array<Record<string, unknown>>).map((i) => i.id);
+    expect(ids).toEqual(["cron-own"]);
+  });
+
+  it("--agent <other> lists that agent's jobs once view agent:<other> is granted", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+
+    const hidden = await captureJson(async () =>
+      new CronCommands().list(true, undefined, undefined, undefined, undefined, "ravi-dev"),
+    );
+    expect(hidden.items).toEqual([]);
+
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "ravi-dev" }];
+    const visible = await captureJson(async () =>
+      new CronCommands().list(true, undefined, undefined, undefined, undefined, "ravi-dev"),
+    );
+    const items = visible.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("cron-other");
+    expect(visible.filters).toMatchObject({ scope: "agent", agentId: "ravi-dev", visibility: "scoped" });
+  });
+
+  it("reports visibility=full when scope is not enforced", async () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = false;
+
+    const payload = await captureJson(async () => new CronCommands().list(true, undefined, undefined, undefined, true));
+
+    expect(payload.total).toBe(3);
+    expect(payload.filters).toMatchObject({ scope: "all-agents", visibility: "full" });
+  });
+
+  it("text --all-agents output tells a scoped caller that hidden jobs are omitted", () => {
+    mockScopeContext = { agentId: "ravi-refinamento" };
+    mockScopeEnforced = true;
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    };
+    try {
+      new CronCommands().list(false, undefined, undefined, undefined, true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join("\n");
+    expect(output).toContain("Visibility: scoped to your grants");
+    expect(output).not.toContain("Other Job");
   });
 
   it("--agent filters to a specific agent", async () => {
@@ -621,6 +777,167 @@ describe("CronCommands agent-scoped listing", () => {
     if (pagination.nextCommand) {
       expect(pagination.nextCommand).toContain("--all-agents");
     }
+  });
+});
+
+describe("CronCommands cross-agent access", () => {
+  const OWNER_NAME = "SENTINEL_OWNER_JOB_NAME_4Q9Z";
+  const OWNER_MESSAGE = "SENTINEL_OWNER_PROMPT_4Q9Z";
+
+  beforeEach(() => {
+    emitMock.mockClear();
+    mockCliContext = undefined;
+    // Caller is `viewer`; the job under test belongs to `owner`.
+    mockScopeContext = { agentId: "viewer" };
+    mockScopeEnforced = true;
+    cronJob = {
+      id: "cron-owner",
+      name: OWNER_NAME,
+      enabled: true,
+      schedule: { type: "every", every: 1_800_000 },
+      executionType: "agent",
+      agentId: "owner",
+      message: OWNER_MESSAGE,
+      sessionTarget: "main",
+      deleteAfterRun: false,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    cronJobs = [
+      cronJob,
+      {
+        id: "cron-viewer",
+        name: "Viewer digest",
+        enabled: true,
+        schedule: { type: "every", every: 900_000 },
+        executionType: "agent",
+        agentId: "viewer",
+        message: "viewer prompt",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        fireCount: 0,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+  });
+
+  it("show keeps an unauthorized existing job indistinguishable from a missing one", async () => {
+    const error = await captureContractError(() => new CronCommands().show("cron-owner", true));
+
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.error.code).toBe("CRON_JOB_NOT_FOUND");
+    // Suggestions only draw from jobs the caller can read.
+    expect(envelope.error.suggestions).toEqual(["cron-viewer", "Viewer digest"]);
+    expect(JSON.stringify(envelope)).not.toContain(OWNER_NAME);
+    expect(JSON.stringify(envelope)).not.toContain("agent:owner");
+  });
+
+  it("show succeeds across agents with view agent:<owner>", async () => {
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "owner" }];
+
+    const payload = await captureJson(async () => new CronCommands().show("cron-owner", true));
+
+    expect(payload.job).toMatchObject({ id: "cron-owner", name: OWNER_NAME, agentId: "owner" });
+  });
+
+  it.each([
+    ["enable", (c: InstanceType<typeof CronCommands>) => c.enable("cron-owner", true)],
+    ["disable", (c: InstanceType<typeof CronCommands>) => c.disable("cron-owner", true)],
+    ["set", (c: InstanceType<typeof CronCommands>) => c.set("cron-owner", "name", "Renamed", true)],
+    ["run", (c: InstanceType<typeof CronCommands>) => c.run("cron-owner", true, true)],
+    ["rm", (c: InstanceType<typeof CronCommands>) => c.rm("cron-owner", true, true)],
+  ])("cron %s on another agent's job is PERMISSION_DENIED, not 'Job not found'", async (op, invoke) => {
+    const before = { ...cronJob };
+
+    const error = await captureContractError(() => invoke(new CronCommands()));
+
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe(`cron ${op}`);
+    expect(envelope.error.code).toBe("PERMISSION_DENIED");
+    expect(envelope.error.message).toContain("Permission denied: agent:viewer cannot modify cron job cron-owner");
+    expect(envelope.error.message).not.toContain("Job not found");
+    // Nothing about the job itself leaks, and nothing was written or emitted.
+    const serialized = JSON.stringify(envelope);
+    expect(serialized).not.toContain(OWNER_NAME);
+    expect(serialized).not.toContain(OWNER_MESSAGE);
+    expect(cronJob).toEqual(before);
+    expect(emitMock).not.toHaveBeenCalled();
+    expect(recordedResourceDenials).toEqual([
+      expect.objectContaining({
+        resourceAgentId: "owner",
+        mode: "mutate",
+        command: `cron ${op}`,
+        resourceLabel: "cron job cron-owner",
+      }),
+    ]);
+  });
+
+  it("denial does not disclose the owning agent when the caller cannot view it", async () => {
+    const error = await captureContractError(() => new CronCommands().disable("cron-owner", true));
+
+    const envelope = error.envelope();
+    expect(envelope.error.code).toBe("PERMISSION_DENIED");
+    expect(JSON.stringify(envelope)).not.toContain("agent:owner");
+    expect(envelope.error.requiredCapability).toBeUndefined();
+    expect(envelope.error.suggestedAction).toContain("modify authority on the owning agent");
+  });
+
+  it("view-only callers are told exactly which grant is missing", async () => {
+    mockGrants = [{ permission: "view", objectType: "agent", objectId: "owner" }];
+
+    const error = await captureContractError(() => new CronCommands().disable("cron-owner", true));
+
+    const envelope = error.envelope();
+    expect(envelope.error.code).toBe("PERMISSION_DENIED");
+    expect(envelope.error.message).toContain("requires modify on agent:owner");
+    expect(envelope.error.requiredCapability).toBe("modify:agent:owner");
+    expect(envelope.error.suggestedAction).toBe("Request modify:agent:owner from an operator and retry 'cron disable'");
+    expect(JSON.stringify(envelope)).not.toContain(OWNER_NAME);
+    expect(cronJob?.enabled).toBe(true);
+  });
+
+  it("disable succeeds across agents with modify agent:<owner>", async () => {
+    mockGrants = [{ permission: "modify", objectType: "agent", objectId: "owner" }];
+
+    const payload = await captureJson(() => new CronCommands().disable("cron-owner", true));
+
+    expect(payload).toMatchObject({ status: "disabled", target: { type: "cron", id: "cron-owner" }, changedCount: 1 });
+    expect(cronJob?.enabled).toBe(false);
+    expect(emitMock).toHaveBeenCalledWith("ravi.cron.refresh", {});
+  });
+
+  it("superadmin (scope not enforced) disables across agents", async () => {
+    mockScopeEnforced = false;
+
+    const payload = await captureJson(() => new CronCommands().disable("cron-owner", true));
+
+    expect(payload).toMatchObject({ status: "disabled", changedCount: 1 });
+    expect(cronJob?.enabled).toBe(false);
+  });
+
+  it("unowned jobs are mutable by whoever may modify the default agent", async () => {
+    cronJob = { ...cronJob, agentId: undefined };
+
+    const denied = await captureContractError(() => new CronCommands().disable("cron-owner", true));
+    expect(denied.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "main" });
+
+    mockGrants = [{ permission: "modify", objectType: "agent", objectId: "main" }];
+    const payload = await captureJson(() => new CronCommands().disable("cron-owner", true));
+    expect(payload).toMatchObject({ status: "disabled" });
+  });
+
+  it("a genuinely missing id is still CRON_JOB_NOT_FOUND", async () => {
+    cronJob = null;
+
+    const error = await captureContractError(() => new CronCommands().disable("cron-nope", true));
+
+    expect(error.envelope().error.code).toBe("CRON_JOB_NOT_FOUND");
+    expect(recordedResourceDenials).toEqual([]);
   });
 });
 

@@ -14,7 +14,13 @@ import {
   triggerTopicsReturnSchema,
 } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
-import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessResource,
+  recordResourceAccessDenial,
+  type ScopeContext,
+} from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
@@ -49,6 +55,18 @@ function printJson(payload: unknown): void {
 // ============================================================
 
 /**
+ * A trigger without an explicit agent fires as the default agent, so that
+ * agent is its effective owner for visibility and mutation checks.
+ */
+function triggerOwnerId(trigger: Pick<Trigger, "agentId">): string {
+  return trigger.agentId ?? getDefaultAgentId();
+}
+
+function canReadTrigger(scopeCtx: ScopeContext, trigger: Pick<Trigger, "agentId">): boolean {
+  return canAccessResource(scopeCtx, triggerOwnerId(trigger), "read");
+}
+
+/**
  * Trigger ids are public through `triggers list`, so TRIGGER_NOT_FOUND enriches
  * the envelope with real similar ids/names. Candidates keep the same REBAC
  * visibility filter as `triggers list`, so scope isolation stays intact.
@@ -56,13 +74,41 @@ function printJson(payload: unknown): void {
 function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
   const scopeCtx = getScopeContext();
   const candidates = dbListTriggers()
-    .filter((trigger) => canAccessResource(scopeCtx, trigger.agentId))
+    .filter((trigger) => canReadTrigger(scopeCtx, trigger))
     .flatMap((trigger) => [trigger.id, trigger.name]);
   contractFail(op, "TRIGGER_NOT_FOUND", `Trigger not found: ${id}`, {
     asJson,
     details: {
       suggestedAction: "Check the trigger id (see suggestions; list with: ravi triggers list --json)",
       suggestions: suggestSimilar(id, candidates),
+    },
+  });
+}
+
+/**
+ * Mutating an existing trigger the caller may not modify fails with an explicit
+ * PERMISSION_DENIED (exit 1) instead of masquerading as TRIGGER_NOT_FOUND. The
+ * envelope only echoes the id the caller supplied plus the missing grant.
+ */
+function assertTriggerMutable(op: string, id: string, trigger: Trigger, asJson?: boolean): void {
+  const scopeCtx = getScopeContext();
+  const ownerAgentId = triggerOwnerId(trigger);
+  if (canAccessResource(scopeCtx, ownerAgentId, "mutate")) return;
+
+  const denial = recordResourceAccessDenial({
+    ctx: scopeCtx,
+    resourceAgentId: ownerAgentId,
+    mode: "mutate",
+    resourceLabel: `trigger ${id}`,
+    command: op,
+  });
+  contractFail(op, "PERMISSION_DENIED", denial.message, {
+    asJson,
+    details: {
+      suggestedAction: denial.requiredCapability
+        ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
+        : `Request modify authority on the owning agent from an operator and retry '${op}'`,
+      ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
     },
   });
 }
@@ -216,10 +262,10 @@ export class TriggersCommands {
   ) {
     let triggers = dbListTriggers();
 
-    // Scope isolation: filter to own agent's triggers
+    // Scope isolation: own triggers plus those of agents the caller can view
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      triggers = triggers.filter((t) => canAccessResource(scopeCtx, t.agentId));
+      triggers = triggers.filter((t) => canReadTrigger(scopeCtx, t));
     }
     const tagFilter = tagSlug?.trim() || null;
     triggers = filterItemsByCanonicalTag(triggers, "trigger", tagFilter ?? undefined, (trigger) => trigger.id);
@@ -294,8 +340,10 @@ export class TriggersCommands {
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Lookups stay enumeration-resistant: an unauthorized existing trigger
+    // looks exactly like a missing one (permissions/resource-visibility).
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
+    if (!trigger || !canReadTrigger(getScopeContext(), trigger)) {
       failTriggerNotFound("triggers show", id, asJson);
     }
 
@@ -550,9 +598,8 @@ export class TriggersCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      failTriggerNotFound("triggers enable", id, asJson);
-    }
+    if (!trigger) failTriggerNotFound("triggers enable", id, asJson);
+    assertTriggerMutable("triggers enable", id, trigger, asJson);
 
     try {
       const updated = dbUpdateTrigger(id, { enabled: true });
@@ -582,9 +629,8 @@ export class TriggersCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      failTriggerNotFound("triggers disable", id, asJson);
-    }
+    if (!trigger) failTriggerNotFound("triggers disable", id, asJson);
+    assertTriggerMutable("triggers disable", id, trigger, asJson);
 
     try {
       const updated = dbUpdateTrigger(id, { enabled: false });
@@ -620,9 +666,8 @@ export class TriggersCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      failTriggerNotFound("triggers set", id, asJson);
-    }
+    if (!trigger) failTriggerNotFound("triggers set", id, asJson);
+    assertTriggerMutable("triggers set", id, trigger, asJson);
 
     try {
       let updated: Trigger | null = null;
@@ -822,9 +867,8 @@ export class TriggersCommands {
     execute?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      failTriggerNotFound("triggers test", id, asJson);
-    }
+    if (!trigger) failTriggerNotFound("triggers test", id, asJson);
+    assertTriggerMutable("triggers test", id, trigger, asJson);
 
     if (execute !== true) {
       contractDryRun(
@@ -885,9 +929,8 @@ export class TriggersCommands {
     execute?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
-      failTriggerNotFound("triggers rm", id, asJson);
-    }
+    if (!trigger) failTriggerNotFound("triggers rm", id, asJson);
+    assertTriggerMutable("triggers rm", id, trigger, asJson);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): deleting a trigger is destructive (topic

@@ -12,6 +12,7 @@ import {
   canAccessContact,
   canWriteContacts,
   canAccessResource,
+  recordResourceAccessDenial,
   enforceScopeCheck,
   type ScopeContext,
 } from "./scope.js";
@@ -684,24 +685,145 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("canAccessResource", () => {
-    it("allows when no agentId", () => {
-      expect(canAccessResource({}, "any")).toBe(true);
+    it("allows the local operator for read and mutate", () => {
+      expect(canAccessResource({}, "any", "read")).toBe(true);
+      expect(canAccessResource({}, "any", "mutate")).toBe(true);
+      expect(canAccessResource({}, undefined, "mutate")).toBe(true);
     });
 
-    it("allows superadmin", () => {
-      expect(canAccessResource(scopeCtx("main", [cap("admin", "system", "*")]), "dev")).toBe(true);
+    it("allows superadmin for read and mutate", () => {
+      const admin = scopeCtx("main", [cap("admin", "system", "*")]);
+      expect(canAccessResource(admin, "dev", "read")).toBe(true);
+      expect(canAccessResource(admin, "dev", "mutate")).toBe(true);
+      expect(canAccessResource(admin, undefined, "mutate")).toBe(true);
     });
 
-    it("allows own resource", () => {
-      expect(canAccessResource({ agentId: "dev" }, "dev")).toBe(true);
+    it("allows own resource for read and mutate", () => {
+      expect(canAccessResource({ agentId: "dev" }, "dev", "read")).toBe(true);
+      expect(canAccessResource({ agentId: "dev" }, "dev", "mutate")).toBe(true);
     });
 
-    it("denies other agent's resource", () => {
-      expect(canAccessResource({ agentId: "dev" }, "main")).toBe(false);
+    it("denies other agent's resource without a cross-agent grant", () => {
+      expect(canAccessResource({ agentId: "dev" }, "main", "read")).toBe(false);
+      expect(canAccessResource({ agentId: "dev" }, "main", "mutate")).toBe(false);
+      const unrelated = scopeCtx("dev", [cap("execute", "group", "cron")]);
+      expect(canAccessResource(unrelated, "main", "read")).toBe(false);
+      expect(canAccessResource(unrelated, "main", "mutate")).toBe(false);
     });
 
     it("denies unowned resource for non-superadmin", () => {
-      expect(canAccessResource({ agentId: "dev" }, undefined)).toBe(false);
+      expect(canAccessResource({ agentId: "dev" }, undefined, "read")).toBe(false);
+      expect(canAccessResource(scopeCtx("dev", [cap("view", "agent", "*")]), undefined, "read")).toBe(false);
+      expect(canAccessResource(scopeCtx("dev", [cap("modify", "agent", "*")]), undefined, "mutate")).toBe(false);
+    });
+
+    it("grants read (not mutate) through view agent:<owner>", () => {
+      const viewer = scopeCtx("dev", [cap("view", "agent", "main")]);
+      expect(canAccessResource(viewer, "main", "read")).toBe(true);
+      expect(canAccessResource(viewer, "main", "mutate")).toBe(false);
+      expect(canAccessResource(viewer, "other", "read")).toBe(false);
+    });
+
+    it("grants read through view agent:*", () => {
+      const viewer = scopeCtx("dev", [cap("view", "agent", "*")]);
+      expect(canAccessResource(viewer, "main", "read")).toBe(true);
+      expect(canAccessResource(viewer, "other", "read")).toBe(true);
+      expect(canAccessResource(viewer, "main", "mutate")).toBe(false);
+    });
+
+    it("grants mutate through modify agent:<owner> without implying read", () => {
+      const modifier = scopeCtx("dev", [cap("modify", "agent", "main")]);
+      expect(canAccessResource(modifier, "main", "mutate")).toBe(true);
+      expect(canAccessResource(modifier, "main", "read")).toBe(false);
+      expect(canAccessResource(modifier, "other", "mutate")).toBe(false);
+    });
+
+    it("grants mutate through modify agent:*", () => {
+      const modifier = scopeCtx("dev", [cap("modify", "agent", "*")]);
+      expect(canAccessResource(modifier, "main", "mutate")).toBe(true);
+      expect(canAccessResource(modifier, "other", "mutate")).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // recordResourceAccessDenial
+  // --------------------------------------------------------------------------
+
+  describe("recordResourceAccessDenial", () => {
+    it("names the owner and the missing grant when the caller can see the owner", () => {
+      const viewer = scopeCtx("dev", [cap("view", "agent", "main")]);
+
+      const denial = recordResourceAccessDenial({
+        ctx: viewer,
+        resourceAgentId: "main",
+        mode: "mutate",
+        resourceLabel: "cron job abc12345",
+        command: "cron disable",
+      });
+
+      expect(denial.requiredCapability).toBe("modify:agent:main");
+      const [reason, ...guidance] = denial.message.split("\n");
+      expect(reason).toBe(
+        "Permission denied: agent:dev cannot modify cron job abc12345 owned by agent:main; requires modify on agent:main",
+      );
+      expect(guidance[0]).toBe("Missing capability: modify:agent:main");
+      expect(denial.message).toContain("ravi permissions materialize --subject-type agent --subject-id dev");
+
+      const denials = listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false });
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({
+        agentId: "dev",
+        sessionKey: "agent:dev:dev-main",
+        relation: "modify",
+        objectType: "agent",
+        objectId: "main",
+      });
+      expect(denial.denialId).toBe(denials[0].id);
+    });
+
+    it("hides the owner when the caller cannot see that agent, but still records the real denial", () => {
+      const stranger = scopeCtx("dev", [cap("execute", "group", "cron")]);
+
+      const denial = recordResourceAccessDenial({
+        ctx: stranger,
+        resourceAgentId: "hidden-agent",
+        mode: "mutate",
+        resourceLabel: "cron job abc12345",
+        command: "cron rm",
+      });
+
+      expect(denial.requiredCapability).toBeUndefined();
+      expect(denial.message).toBe(
+        "Permission denied: agent:dev cannot modify cron job abc12345; requires modify authority on the owning agent",
+      );
+      expect(denial.message).not.toContain("hidden-agent");
+
+      const denials = listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false });
+      expect(denials).toHaveLength(1);
+      expect(denials[0]).toMatchObject({
+        relation: "modify",
+        objectType: "agent",
+        objectId: "hidden-agent",
+      });
+    });
+
+    it("describes read denials with the view relation", () => {
+      const denial = recordResourceAccessDenial({
+        ctx: scopeCtx("dev", []),
+        resourceAgentId: "main",
+        mode: "read",
+        resourceLabel: "trigger t1",
+        command: "triggers show",
+      });
+
+      expect(denial.message).toBe(
+        "Permission denied: agent:dev cannot read trigger t1; requires view authority on the owning agent",
+      );
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })[0]).toMatchObject({
+        relation: "view",
+        objectType: "agent",
+        objectId: "main",
+      });
     });
   });
 });
