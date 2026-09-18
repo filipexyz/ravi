@@ -14,6 +14,7 @@ import { closeInsightsDb } from "../insights/insight-db.js";
 import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
 import { closeSessionStore } from "../router/sessions.js";
 import { closeRouterDb } from "../router/router-db.js";
+import { closeSessionGoalStore } from "../runtime/session-goals.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("db:close-all");
@@ -24,10 +25,11 @@ interface CloseStep {
 }
 
 const CLOSE_STEPS: CloseStep[] = [
-  // Order: dependents first, then base router/chat DBs. closeSessionStore only
-  // clears cached prepared statements, so it has to run before closeRouterDb
-  // (which closes the underlying Database).
+  // Order: dependents first, then base router/chat DBs. closeSessionStore and
+  // closeSessionGoalStore only clear cached prepared statements, so they have
+  // to run before closeRouterDb (which closes the underlying Database).
   { name: "session-store", close: closeSessionStore },
+  { name: "session-goal-store", close: closeSessionGoalStore },
   { name: "session-adapter-store", close: closeSessionAdapterStore },
   { name: "contacts", close: closeContacts },
   { name: "credentials", close: closeCredentialsDb },

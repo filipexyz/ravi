@@ -1,11 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import type { Database, Statement } from "bun:sqlite";
+import { isSqliteCapacityError } from "../db/write-retry.js";
+import { closeRouterDb, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
 import {
+  SESSION_GOAL_PROMPT_UNAVAILABLE_NOTE,
   accountSessionGoalUsage,
   blockSessionGoal,
   buildSessionGoalPromptSection,
   clearSessionGoal,
+  closeSessionGoalStore,
   completeSessionGoal,
   createSessionGoal,
   getSessionGoal,
@@ -348,6 +354,171 @@ describe("session goals", () => {
       expect(section).not.toBeNull();
       expect(section!.length).toBeLessThan(700);
       expect(section).toContain("...");
+    });
+  });
+
+  describe("store hardening (SQLITE_NOMEM)", () => {
+    const GET_GOAL_SQL = /^\s*SELECT[\s\S]*FROM session_goals\s+WHERE session_key = \?\s*$/;
+
+    function sqliteOutOfMemory(): Error {
+      // Shape of the bun:sqlite error observed in production: SQLiteError
+      // "out of memory", code SQLITE_NOMEM, errno 7.
+      return Object.assign(new Error("out of memory"), { name: "SQLiteError", code: "SQLITE_NOMEM", errno: 7 });
+    }
+
+    /**
+     * Make `Statement.get` for the goal lookup throw `makeError()` until
+     * `remaining` failures are consumed; later calls hit the real statement.
+     */
+    function injectGoalReadFailures(db: Database, remaining: number, makeError: () => Error) {
+      const state = { remaining, thrown: 0, goalPrepares: 0 };
+      const originalPrepare = db.prepare.bind(db);
+      const prepareSpy = spyOn(db, "prepare").mockImplementation(((sql: string) => {
+        const statement = originalPrepare(sql);
+        if (!GET_GOAL_SQL.test(sql)) return statement;
+        state.goalPrepares++;
+        return new Proxy(statement, {
+          get(target, prop, receiver) {
+            if (prop === "get" && state.remaining > 0) {
+              return () => {
+                state.remaining--;
+                state.thrown++;
+                throw makeError();
+              };
+            }
+            const value = Reflect.get(target, prop, receiver);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        }) as Statement;
+      }) as typeof db.prepare);
+      return { state, prepareSpy };
+    }
+
+    function captureStderr() {
+      const lines: string[] = [];
+      const spy = spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+        lines.push(String(chunk));
+        return true;
+      }) as typeof process.stderr.write);
+      return { lines, spy };
+    }
+
+    it("survives an in-process router db close and reopen at the same path", () => {
+      replaceSessionGoal({ sessionKey: SESSION_KEY, objective: "Survive reconnect" });
+      expect(getSessionGoal(SESSION_KEY)?.objective).toBe("Survive reconnect");
+
+      // Control: a statement prepared on the connection that is about to be
+      // closed is exactly what a path-keyed cache would keep handing out.
+      const staleStatement = getDb().prepare("SELECT goal_id FROM session_goals WHERE session_key = ?");
+
+      // closeAllRaviDbs() / bot.stop() close the router db; the next getDb()
+      // lazily reopens it at the same path.
+      closeRouterDb();
+      const reopened = getDb();
+      // Any schema change forces SQLite to re-prepare cached statements.
+      reopened.exec("CREATE TABLE IF NOT EXISTS session_goal_reconnect_probe (id INTEGER PRIMARY KEY)");
+
+      // bun:sqlite surfaces the stale-handle failure as SQLITE_NOMEM "out of memory".
+      expect(() => staleStatement.get(SESSION_KEY)).toThrow(/out of memory|finalized|closed/i);
+
+      const stderr = captureStderr();
+      try {
+        expect(getSessionGoal(SESSION_KEY)?.objective).toBe("Survive reconnect");
+        expect(buildSessionGoalPromptSection(SESSION_KEY)).toContain("Survive reconnect");
+        expect(completeSessionGoal(SESSION_KEY)?.status).toBe("complete");
+        expect(clearSessionGoal(SESSION_KEY)).toBe(true);
+        expect(getSessionGoal(SESSION_KEY)).toBeNull();
+      } finally {
+        stderr.spy.mockRestore();
+      }
+      // The cache is keyed on the live connection, so the stale statements were
+      // never executed: no capacity error, no retry.
+      expect(stderr.lines.join("")).not.toContain("SQLite capacity error");
+    });
+
+    it("retries once on a SQLite capacity error and logs instrumentation", () => {
+      replaceSessionGoal({ sessionKey: SESSION_KEY, objective: "Recover after NOMEM" });
+      closeSessionGoalStore();
+      const { state, prepareSpy } = injectGoalReadFailures(getDb(), 1, sqliteOutOfMemory);
+      const stderr = captureStderr();
+      try {
+        expect(getSessionGoal(SESSION_KEY)?.objective).toBe("Recover after NOMEM");
+      } finally {
+        stderr.spy.mockRestore();
+        prepareSpy.mockRestore();
+        closeSessionGoalStore();
+      }
+
+      expect(state.thrown).toBe(1);
+      // First attempt used the poisoned statement; the retry re-prepared it.
+      expect(state.goalPrepares).toBe(2);
+
+      const output = stderr.lines.join("");
+      expect(output).toContain("session goal statement hit a SQLite capacity error");
+      expect(output).toContain(`session=${SESSION_KEY}`);
+      expect(output).toContain("operation=get");
+      expect(output).toContain("sqliteCode=SQLITE_NOMEM");
+      expect(output).toContain("sqliteErrno=7");
+      expect(output).toContain("willRetry=true");
+      expect(output).toContain("rssMb=");
+      expect(output).toContain("session goal statement recovered after re-preparing on the live connection");
+    });
+
+    it("degrades the prompt section instead of failing the turn when the store keeps failing", () => {
+      replaceSessionGoal({ sessionKey: SESSION_KEY, objective: "Hidden by NOMEM" });
+      closeSessionGoalStore();
+      const { state, prepareSpy } = injectGoalReadFailures(getDb(), Number.POSITIVE_INFINITY, sqliteOutOfMemory);
+      const stderr = captureStderr();
+      let thrown: unknown = null;
+      try {
+        expect(buildSessionGoalPromptSection(SESSION_KEY)).toBe(SESSION_GOAL_PROMPT_UNAVAILABLE_NOTE);
+        try {
+          getSessionGoal(SESSION_KEY);
+        } catch (error) {
+          thrown = error;
+        }
+      } finally {
+        stderr.spy.mockRestore();
+        prepareSpy.mockRestore();
+        closeSessionGoalStore();
+      }
+
+      // One retry per call: 2 attempts for the prompt section, 2 for the direct read.
+      expect(state.thrown).toBe(4);
+      expect(SESSION_GOAL_PROMPT_UNAVAILABLE_NOTE).not.toMatch(/sqlite|out of memory/i);
+
+      // Direct readers keep the original SQLite error so the CLI SQLITE_CAPACITY
+      // contract and prompt-intake ACK path still recognize it...
+      expect(thrown).toBeInstanceOf(Error);
+      expect(isSqliteCapacityError(thrown)).toBe(true);
+      // ...but chat delivery never sees the raw engine text.
+      expect(formatUserFacingTurnFailure(thrown)).toBe(
+        "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
+      );
+
+      const output = stderr.lines.join("");
+      expect(output).toContain("willRetry=false");
+      expect(output).toContain("session goal prompt section degraded after store capacity error");
+
+      // The store heals as soon as the connection serves reads again.
+      expect(getSessionGoal(SESSION_KEY)?.objective).toBe("Hidden by NOMEM");
+    });
+
+    it("propagates non-capacity errors without retrying", () => {
+      closeSessionGoalStore();
+      const { state, prepareSpy } = injectGoalReadFailures(getDb(), Number.POSITIVE_INFINITY, () =>
+        Object.assign(new Error("no such table: session_goals"), { name: "SQLiteError" }),
+      );
+      const stderr = captureStderr();
+      try {
+        expect(() => getSessionGoal(SESSION_KEY)).toThrow("no such table: session_goals");
+        expect(() => buildSessionGoalPromptSection(SESSION_KEY)).toThrow("no such table: session_goals");
+      } finally {
+        stderr.spy.mockRestore();
+        prepareSpy.mockRestore();
+        closeSessionGoalStore();
+      }
+      expect(state.thrown).toBe(2);
     });
   });
 });
