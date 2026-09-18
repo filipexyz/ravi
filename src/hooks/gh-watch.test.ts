@@ -128,33 +128,92 @@ describe("gh watch intent", () => {
 });
 
 describe("gh watch follow", () => {
-  it("reuses an existing repo watch instead of creating another", async () => {
+  const LOCAL_TYPES = ["pull_request.merged", "workflow_run.failed"];
+
+  function placementOf(input: { placement?: unknown }): "local" | "console" {
+    return input.placement === "local" ? "local" : "console";
+  }
+
+  it("reuses the existing watch and still adds the local one for CI", async () => {
     let created = 0;
     const result = await ensureRepoWatch("o/r", {
       listWatches: () => ({ items: [watch()], total: 1 }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        created += 1;
+        return {
+          watch: watch({ id: "new", placement: input.placement === "local" ? "local" : "console" }),
+          createdRemote: false,
+        };
+      },
+    });
+
+    // O Console entrega ciclo de vida; o local entrega CI. São dois produtores.
+    expect(result).toMatchObject({ watchId: "watch_1", reused: true, ciWatchReused: false });
+    expect(created).toBe(1);
+  });
+
+  it("does not create a second local watch when one is already there", async () => {
+    let created = 0;
+    const result = await ensureRepoWatch("o/r", {
+      listWatches: () => ({ items: [watch(), watch({ id: "local_1", placement: "local" })], total: 2 }) as never,
+      localEventTypes: () => LOCAL_TYPES,
       createWatch: async () => {
         created += 1;
         return { watch: watch({ id: "new" }), createdRemote: false };
       },
     });
 
-    expect(result).toEqual({ watchId: "watch_1", reused: true });
+    expect(result).toMatchObject({ ciWatchId: "local_1", ciWatchReused: true });
     expect(created).toBe(0);
   });
 
-  it("falls back to a local watch when creating the console watch fails", async () => {
+  it("requests exactly the locally supported event types for the CI watch", async () => {
+    const requested: string[][] = [];
+    await ensureRepoWatch("o/r", {
+      listWatches: () => ({ items: [] }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        requested.push(input.eventTypes ?? []);
+        return {
+          watch: watch({ id: "new", placement: input.placement === "local" ? "local" : "console" }),
+          createdRemote: false,
+        };
+      },
+    });
+
+    expect(requested[0]).toEqual(LOCAL_TYPES);
+  });
+
+  it("does not create a local watch when the catalog supports nothing locally", async () => {
+    const placements: string[] = [];
+    await ensureRepoWatch("o/r", {
+      listWatches: () => ({ items: [watch()] }) as never,
+      localEventTypes: () => [],
+      createWatch: async (input) => {
+        placements.push(placementOf(input));
+        return { watch: watch({ id: "new" }), createdRemote: false };
+      },
+    });
+
+    // Sem evento local suportado, um watch local só gastaria poll sem publicar nada.
+    expect(placements).toEqual([]);
+  });
+
+  it("falls back to local when creating the console watch fails", async () => {
     const placements: string[] = [];
     const result = await ensureRepoWatch("o/r", {
       listWatches: () => ({ items: [] }) as never,
+      localEventTypes: () => LOCAL_TYPES,
       createWatch: async (input) => {
-        placements.push(String(input.placement ?? "default"));
-        if (!input.placement) throw new Error("AUTH_REQUIRED");
+        placements.push(placementOf(input));
+        if (input.placement !== "local") throw new Error("AUTH_REQUIRED");
         return { watch: watch({ id: "local_1", placement: "local" }), createdRemote: false };
       },
     });
 
-    expect(placements).toEqual(["default", "local"]);
-    expect(result).toEqual({ watchId: "local_1", reused: false });
+    expect(placements).toEqual(["local", "console"]);
+    expect(result).toMatchObject({ watchId: "local_1", reused: false });
   });
 
   it("creates the PR trigger once and reuses it afterwards", async () => {
