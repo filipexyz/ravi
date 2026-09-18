@@ -20,6 +20,29 @@ ravi doctor --json | jq '.checks[] | select(.id == "cron.targets")'
 - Evidence MUST be bounded (max 20 findings). The check fails if the findings array exceeds the cap.
 - Fix hints MUST be safe read-only commands. The check fails if a fix hint suggests a destructive mutation.
 
+## Cross-Agent Visibility MUST Follow Agent Grants
+
+```bash
+RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron list --all-agents --json | jq '{visibility: .filters.visibility, owners: [.items[].agentId] | unique}'
+```
+
+- With no cross-agent grant, `owners` MUST contain only the caller's own agent id and `visibility` MUST be `scoped`. The check fails if another owner appears.
+- With `view agent:<owner>` (or `view agent:*`), the owner's jobs MUST appear. Jobs with no `agentId` MUST appear only when the caller may view the default agent.
+- With `modify agent:<owner>` but no `view`, the owner's jobs MUST NOT appear. The check fails if a write grant leaks read visibility.
+
+## Denied Mutation MUST Say Permission Denied, Not Not-Found
+
+```bash
+RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
+```
+
+- For an existing job the caller may not modify, `error.code` MUST be `PERMISSION_DENIED` and the exit code MUST be 1. The check fails on `CRON_JOB_NOT_FOUND`.
+- The envelope MUST NOT contain the job name, message, schedule, or shell command. It MUST NOT contain `agent:<owner>` unless the caller holds `view agent:<owner>`; when it does, `error.requiredCapability` MUST be `modify:agent:<owner>`.
+- `error.denialId` MUST resolve through `ravi permissions resolve <denialId> --json` to a plan whose `missingCapability` is `modify:agent:<owner>`.
+- The job MUST be unchanged afterwards (`cron show` from an authorized principal), and no `ravi.cron.refresh` MUST have been emitted.
+- `cron show <other-agent-job-id>` without `view agent:<owner>` MUST still return `CRON_JOB_NOT_FOUND`.
+- With `modify agent:<owner>` or `admin system:*`, the same `cron disable` MUST succeed with `status: "disabled"`.
+
 ## Cron Creation MUST Be Durably Idempotent
 
 - Repeating `cron add` with the same explicit idempotency key and the same normalized input MUST return the original target with `changedCount=0`.

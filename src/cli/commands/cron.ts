@@ -9,7 +9,13 @@ import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
-import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessResource,
+  recordResourceAccessDenial,
+  type ScopeContext,
+} from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
@@ -156,6 +162,18 @@ function getTargetResolverDeps() {
 // ============================================================
 
 /**
+ * A job without an explicit agent runs as the default agent, so that agent is
+ * its effective owner for visibility and mutation checks.
+ */
+function cronJobOwnerId(job: Pick<CronJob, "agentId">): string {
+  return job.agentId ?? getDefaultAgentId();
+}
+
+function canReadCronJob(scopeCtx: ScopeContext, job: Pick<CronJob, "agentId">): boolean {
+  return canAccessResource(scopeCtx, cronJobOwnerId(job), "read");
+}
+
+/**
  * Job ids are public through `cron list`, so CRON_JOB_NOT_FOUND enriches the
  * envelope with real similar ids/names. Candidates keep the same REBAC
  * visibility filter as `cron list`, so scope isolation stays intact.
@@ -163,13 +181,43 @@ function getTargetResolverDeps() {
 function failCronJobNotFound(op: string, id: string, asJson?: boolean): never {
   const scopeCtx = getScopeContext();
   const candidates = dbListCronJobs()
-    .filter((job) => canAccessResource(scopeCtx, job.agentId))
+    .filter((job) => canReadCronJob(scopeCtx, job))
     .flatMap((job) => [job.id, job.name]);
   contractFail(op, "CRON_JOB_NOT_FOUND", `Job not found: ${id}`, {
     asJson,
     details: {
       suggestedAction: "Check the job id (see suggestions; list with: ravi cron list --json)",
       suggestions: suggestSimilar(id, candidates),
+    },
+  });
+}
+
+/**
+ * Mutating an existing job the caller may not modify fails with an explicit
+ * PERMISSION_DENIED (exit 1) instead of masquerading as CRON_JOB_NOT_FOUND.
+ * The envelope only echoes the id the caller supplied plus the missing grant;
+ * name, message, schedule and shell command of the job never leave here.
+ */
+function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boolean): void {
+  const scopeCtx = getScopeContext();
+  const ownerAgentId = cronJobOwnerId(job);
+  if (canAccessResource(scopeCtx, ownerAgentId, "mutate")) return;
+
+  const denial = recordResourceAccessDenial({
+    ctx: scopeCtx,
+    resourceAgentId: ownerAgentId,
+    mode: "mutate",
+    resourceLabel: `cron job ${id}`,
+    command: op,
+  });
+  contractFail(op, "PERMISSION_DENIED", denial.message, {
+    asJson,
+    details: {
+      suggestedAction: denial.requiredCapability
+        ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
+        : `Request modify authority on the owning agent from an operator and retry '${op}'`,
+      ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
+      ...(denial.denialId ? { denialId: denial.denialId } : {}),
     },
   });
 }
@@ -214,6 +262,9 @@ export class CronCommands {
     // Resolve scope: agent-scoped by default when agentId is present
     const scopeCtx = getScopeContext() ?? {};
     const callerAgentId = scopeCtx.agentId;
+    // Cross-agent visibility follows `view agent:<owner>`; superadmin and the
+    // local operator see everything. Own jobs are always visible.
+    const scopeEnforced = isScopeEnforced(scopeCtx);
     let scopeLabel: string;
     let scopeAgentId: string | undefined;
 
@@ -222,28 +273,26 @@ export class CronCommands {
       scopeAgentId = filterAgentId;
       scopeLabel = "agent";
       // REBAC visibility still applies for non-own agents
-      if (isScopeEnforced(scopeCtx)) {
-        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      if (scopeEnforced) {
+        jobs = jobs.filter((j) => canReadCronJob(scopeCtx, j));
       }
-      const effectiveFilterId = filterAgentId;
-      jobs = jobs.filter((j) => (j.agentId ?? getDefaultAgentId()) === effectiveFilterId);
+      jobs = jobs.filter((j) => cronJobOwnerId(j) === filterAgentId);
     } else if (allAgents) {
       // Explicit --all-agents: global scope, still apply REBAC visibility
       scopeLabel = "all-agents";
-      if (isScopeEnforced(scopeCtx)) {
-        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      if (scopeEnforced) {
+        jobs = jobs.filter((j) => canReadCronJob(scopeCtx, j));
       }
     } else if (callerAgentId) {
       // Default: agent-scoped when running inside an agent context
       scopeAgentId = callerAgentId;
       scopeLabel = "agent";
-      const effectiveOwnerId = callerAgentId;
-      jobs = jobs.filter((j) => (j.agentId ?? getDefaultAgentId()) === effectiveOwnerId);
+      jobs = jobs.filter((j) => cronJobOwnerId(j) === callerAgentId);
     } else {
       // No agent context (direct CLI): show all accessible jobs
       scopeLabel = "all";
-      if (isScopeEnforced(scopeCtx)) {
-        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      if (scopeEnforced) {
+        jobs = jobs.filter((j) => canReadCronJob(scopeCtx, j));
       }
     }
 
@@ -267,7 +316,9 @@ export class CronCommands {
       ],
     });
 
-    const filters: Record<string, unknown> = { scope: scopeLabel };
+    // `scoped` tells the caller the listing may omit jobs it lacks visibility
+    // for, without revealing whether any were actually hidden.
+    const filters: Record<string, unknown> = { scope: scopeLabel, visibility: scopeEnforced ? "scoped" : "full" };
     if (scopeAgentId) filters.agentId = scopeAgentId;
     if (tagFilter) filters.tag = tagFilter;
 
@@ -324,6 +375,9 @@ export class CronCommands {
       console.log(
         `\n  Total: ${page.total} jobs (${pageJobs.length} returned, limit ${page.limit}, offset ${page.offset})`,
       );
+      if (scopeEnforced && (allAgents || filterAgentId)) {
+        console.log("  Visibility: scoped to your grants (jobs of agents you cannot view are omitted)");
+      }
       if (pagination.nextCommand) {
         console.log("\n  Next page:");
         console.log(`    ${pagination.nextCommand}`);
@@ -343,8 +397,10 @@ export class CronCommands {
     @Arg("id", { description: "Job ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Lookups stay enumeration-resistant: an unauthorized existing job looks
+    // exactly like a missing one (permissions/resource-visibility).
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
+    if (!job || !canReadCronJob(getScopeContext(), job)) {
       failCronJobNotFound("cron show", id, asJson);
     }
 
@@ -565,9 +621,8 @@ export class CronCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      failCronJobNotFound("cron enable", id, asJson);
-    }
+    if (!job) failCronJobNotFound("cron enable", id, asJson);
+    assertCronJobMutable("cron enable", id, job, asJson);
 
     try {
       // Recalculate nextRunAt in case job was disabled for a while
@@ -605,9 +660,8 @@ export class CronCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      failCronJobNotFound("cron disable", id, asJson);
-    }
+    if (!job) failCronJobNotFound("cron disable", id, asJson);
+    assertCronJobMutable("cron disable", id, job, asJson);
 
     try {
       dbUpdateCronJob(id, { enabled: false });
@@ -644,9 +698,8 @@ export class CronCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      failCronJobNotFound("cron set", id, asJson);
-    }
+    if (!job) failCronJobNotFound("cron set", id, asJson);
+    assertCronJobMutable("cron set", id, job, asJson);
 
     try {
       let normalizedValue: unknown = value;
@@ -860,9 +913,8 @@ export class CronCommands {
     execute?: boolean,
   ) {
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      failCronJobNotFound("cron run", id, asJson);
-    }
+    if (!job) failCronJobNotFound("cron run", id, asJson);
+    assertCronJobMutable("cron run", id, job, asJson);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): `cron run` fires the REAL job right now,
@@ -929,9 +981,8 @@ export class CronCommands {
     execute?: boolean,
   ) {
     const job = dbGetCronJob(id);
-    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      failCronJobNotFound("cron rm", id, asJson);
-    }
+    if (!job) failCronJobNotFound("cron rm", id, asJson);
+    assertCronJobMutable("cron rm", id, job, asJson);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): deleting a job is destructive (schedule

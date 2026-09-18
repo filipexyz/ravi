@@ -17,6 +17,8 @@ tags:
   - agents
   - sessions
   - contacts
+  - cron
+  - triggers
 applies_to:
   - src/permissions/scope.ts
   - src/cli/commands/apps.ts
@@ -24,6 +26,8 @@ applies_to:
   - src/cli/commands/sessions.ts
   - src/cli/commands/contacts.ts
   - src/cli/commands/crm.ts
+  - src/cli/commands/cron.ts
+  - src/cli/commands/triggers.ts
 owners:
   - ravi-dev
 status: active
@@ -66,6 +70,7 @@ These are the current resource visibility boundaries:
 
 ```text
 agent:<viewer> view agent:<target-agent>
+agent:<operator> modify agent:<target-agent>
 agent:<viewer> access session:<target-session>
 agent:<viewer> modify session:<target-session>
 agent:<viewer> use app:<app-id>
@@ -78,6 +83,12 @@ agent:<viewer> write_contacts system:*
 Rules:
 
 - An agent MAY always see itself.
+- `view agent:<id>` is read visibility into that agent and into the runtime
+  resources it owns (cron jobs, triggers). It MUST NOT confer write authority.
+- `modify agent:<id>` is the write boundary for that agent's owned runtime
+  resources. It MUST NOT by itself make those resources visible; operators
+  SHOULD grant both `view` and `modify` when a principal should discover and
+  mutate them.
 - A session owner MAY always access and modify its own current session.
 - `modify session:<id>` is write authority and MUST NOT be required for plain
   session visibility when `access session:<id>` is enough.
@@ -100,9 +111,17 @@ For lookup-style commands:
 - Unauthorized contacts SHOULD appear as missing contacts.
 - Unauthorized CRM entities SHOULD appear as missing when no visible backing
   contact/account/opportunity can be reached.
+- Unauthorized cron jobs and triggers SHOULD appear as missing on `show`.
 
 Audit ledgers MAY record the real denial internally, but user/runtime output
 MUST NOT help an untrusted principal enumerate ids.
+
+A mutation attempt on an existing resource the principal can look up by id
+(cron/trigger `enable/disable/set/run/test/rm`) MAY answer `PERMISSION_DENIED`
+instead of not-found, so a legitimate but under-granted caller is not told the
+resource is missing. That denial MUST NOT carry the resource's name, message,
+schedule, shell command, or any other metadata, and MUST NOT name the owning
+agent unless the caller already holds `view agent:<owner>`.
 
 ## Resource Families
 
@@ -163,6 +182,28 @@ CRM discovery MUST be contact-backed until explicit CRM object grants exist.
   `crm_account:<id>`, `crm_opportunity:<id>`, or `crm_task:<id>`, but they MUST
   not bypass contact privacy accidentally.
 
+### Owned Runtime Resources (cron jobs, triggers)
+
+Cron jobs and triggers are owned by the agent they run as. Access MUST be backed
+by `canAccessResource(ctx, ownerAgentId, mode)`:
+
+- A resource without an explicit `agentId` runs as the default agent, so the
+  default agent MUST be treated as its effective owner for both modes.
+- `read` (list/show, not-found suggestions) is allowed for the owner, a
+  superadmin, the local operator path, or a principal holding
+  `view agent:<owner>`.
+- `mutate` (enable/disable/set/run/test/rm) is allowed for the owner, a
+  superadmin, the local operator path, or a principal holding
+  `modify agent:<owner>`.
+- `cron list --all-agents`, `cron list --agent <id>`, and `triggers list` MUST
+  filter to readable resources and MUST report `filters.visibility` as
+  `scoped` when scope is enforced and `full` otherwise, without revealing
+  whether anything was actually hidden.
+- Every denied resource access MUST be recorded in the permission denial ledger
+  with the real missing grant (`modify agent:<owner>` / `view agent:<owner>`)
+  and emitted on `ravi.audit.denied`, so `ravi permissions resolve <denialId>`
+  can plan the fix.
+
 ## Acceptance Criteria
 
 - A non-granted runtime agent does not see hidden apps in `apps list`,
@@ -174,5 +215,14 @@ CRM discovery MUST be contact-backed until explicit CRM object grants exist.
   `contacts list/find/info/check/profile/timeline`.
 - A non-granted runtime agent does not recover hidden contacts through CRM read
   commands.
+- A non-granted runtime agent sees only its own cron jobs/triggers in
+  `cron list --all-agents` / `triggers list`, gets not-found on `show` for
+  another agent's resource, and gets `PERMISSION_DENIED` (no metadata, owner
+  not named) when it tries to mutate one.
+- A runtime agent holding `view agent:<owner>` sees and can `show` that agent's
+  cron jobs/triggers; mutating them still fails with `PERMISSION_DENIED`,
+  now naming `modify:agent:<owner>` as the missing grant.
+- A runtime agent holding `modify agent:<owner>` (or a superadmin) can
+  enable/disable/set/run/rm that agent's cron jobs and triggers.
 - Direct local CLI execution without a principal can still inspect resources as
   an operator path.

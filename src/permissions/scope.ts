@@ -9,6 +9,11 @@ import { getContext } from "../cli/context.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
 import { emitPermissionDeniedAudit, flushPermissionAuditEvents, recordPermissionDenial } from "./denials.js";
 import { buildAuditContextProvenance } from "./audit-provenance.js";
+import {
+  buildAuthorizationGuidance,
+  formatAuthorizationGuidanceLines,
+  formatCanonicalCapability,
+} from "./authorization-guidance.js";
 import { closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
@@ -434,12 +439,40 @@ export function canWriteContacts(ctx: ScopeContext): boolean {
 // Resource Access (owned runtime resources)
 // ============================================================================
 
+export type ResourceAccessMode = "read" | "mutate";
+
+/**
+ * Relation a principal needs on the owning agent to reach that agent's owned
+ * runtime resources (cron jobs, triggers). Read visibility rides on agent
+ * visibility (`view agent:<owner>`); mutation is the narrower write boundary
+ * (`modify agent:<owner>`), so a read grant never confers write authority.
+ */
+export function resourceAccessRelation(mode: ResourceAccessMode): "view" | "modify" {
+  return mode === "mutate" ? "modify" : "view";
+}
+
 /**
  * Check if the current context can access a resource owned by an agent.
- * Ownership is checked directly (agent_id match), not via relations.
+ *
+ * Allowed when:
+ * 1. No agent context (CLI direct) → explicit operator-control access
+ * 2. Agent is superadmin
+ * 3. Agent owns the resource
+ * 4. Agent holds the cross-agent relation on the owner
+ *    (`view agent:<owner>` for read, `modify agent:<owner>` for mutate)
+ *
+ * A resource with no owner is only reachable by superadmin/operator. Callers
+ * whose resources fall back to the default agent at execution time must
+ * resolve that effective owner before calling.
  */
-export function canAccessResource(ctx: ScopeContext, resourceAgentId: string | undefined): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "agent", resourceAgentId ?? "*");
+export function canAccessResource(
+  ctx: ScopeContext,
+  resourceAgentId: string | undefined,
+  mode: ResourceAccessMode,
+): boolean {
+  if (!ctx.agentId) {
+    return localOperatorCan(mode === "mutate" ? "modify" : "access", "agent", resourceAgentId ?? "*");
+  }
 
   // Superadmin
   if (scopeCan(ctx, "admin", "system", "*")) return true;
@@ -448,7 +481,83 @@ export function canAccessResource(ctx: ScopeContext, resourceAgentId: string | u
   if (!resourceAgentId) return false;
 
   // Own resource
-  return ctx.agentId === resourceAgentId;
+  if (ctx.agentId === resourceAgentId) return true;
+
+  return scopeCan(ctx, resourceAccessRelation(mode), "agent", resourceAgentId);
+}
+
+export interface ResourceAccessDenial {
+  /** Human-readable denial. Never carries metadata from the resource itself. */
+  message: string;
+  /** Canonical missing grant; present only when the owner may be disclosed. */
+  requiredCapability?: string;
+  denialId?: number;
+}
+
+/**
+ * Record and audit a denied access to an owned runtime resource, and build the
+ * user-facing denial for it.
+ *
+ * The ledger and audit event always carry the real missing grant. The message
+ * names the owning agent only when the caller can already see that agent;
+ * otherwise a hidden agent would be disclosed through the denial itself.
+ */
+export function recordResourceAccessDenial(input: {
+  ctx: ScopeContext;
+  resourceAgentId: string;
+  mode: ResourceAccessMode;
+  /** Resource label built from caller-supplied input only, e.g. `cron job abc123`. */
+  resourceLabel: string;
+  command: string;
+}): ResourceAccessDenial {
+  const { ctx, resourceAgentId, mode, resourceLabel, command } = input;
+  const relation = resourceAccessRelation(mode);
+  const verb = mode === "mutate" ? "modify" : "read";
+  const principal = ctx.agentId ? `agent:${ctx.agentId}` : "local operator";
+  const ownerDisclosable = canAccessResource(ctx, resourceAgentId, "read");
+  const capability = { permission: relation, objectType: "agent", objectId: resourceAgentId };
+  const canonicalCapability = formatCanonicalCapability(capability);
+
+  const reason = ownerDisclosable
+    ? `Permission denied: ${principal} cannot ${verb} ${resourceLabel} owned by agent:${resourceAgentId}; requires ${relation} on agent:${resourceAgentId}`
+    : `Permission denied: ${principal} cannot ${verb} ${resourceLabel}; requires ${relation} authority on the owning agent`;
+  const message = ownerDisclosable
+    ? [
+        reason,
+        ...formatAuthorizationGuidanceLines(
+          buildAuthorizationGuidance({
+            capability,
+            subject: ctx.agentId ? { type: "agent", id: ctx.agentId } : undefined,
+            scope: "recurring",
+            reason: `Needs ${canonicalCapability} to run '${command}' on resources owned by agent:${resourceAgentId}.`,
+            includeProviderOwnedTags: true,
+          }),
+        ),
+      ].join("\n")
+    : reason;
+
+  const denial = recordScopeDenial({
+    ctx,
+    relation,
+    objectType: "agent",
+    objectId: resourceAgentId,
+    reason,
+    command,
+  });
+  emitPermissionDeniedAudit({
+    type: "scope",
+    agentId: ctx.agentId,
+    denied: `${relation} agent:${resourceAgentId}`,
+    reason,
+    ...scopeAuditMetadata(ctx, denial, { relation, objectType: "agent", objectId: resourceAgentId }),
+    command,
+  });
+
+  return {
+    message,
+    ...(ownerDisclosable ? { requiredCapability: canonicalCapability } : {}),
+    ...(denial?.id ? { denialId: denial.id } : {}),
+  };
 }
 
 // ============================================================================
