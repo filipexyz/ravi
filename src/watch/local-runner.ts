@@ -67,6 +67,7 @@ interface GhPullRequest {
   url?: string;
   isDraft?: boolean;
   headRefOid?: string;
+  headRefName?: string;
 }
 
 interface GhWorkflowRun {
@@ -96,7 +97,7 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
             "--limit",
             String(MAX_PULL_REQUESTS),
             "--json",
-            "number,title,url,isDraft,headRefOid",
+            "number,title,url,isDraft,headRefOid,headRefName",
           ]),
         ) ?? [];
       const runs =
@@ -122,6 +123,7 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
           url: pr.url ?? "",
           draft: pr.isDraft === true,
           ...(pr.headRefOid ? { headSha: pr.headRefOid } : {}),
+          ...(pr.headRefName ? { headRefName: pr.headRefName } : {}),
         };
       }
 
@@ -133,6 +135,9 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
           name: run.name ?? "",
           status: run.status ?? "",
           conclusion: run.conclusion ?? null,
+          // `headBranch` era pedido ao gh e nunca gravado: a correlação run → PR
+          // dependia de um campo que ficava sempre vazio.
+          ...(run.headBranch ? { branch: run.headBranch } : {}),
         };
       }
 

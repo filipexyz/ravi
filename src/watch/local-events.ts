@@ -14,6 +14,11 @@ export interface LocalPullRequestState {
   draft: boolean;
   /** SHA do commit de topo: é o que distingue "commits novos na PR". */
   headSha?: string;
+  /**
+   * Branch de origem. É a ponte entre um run de CI e a PR: `gh run list` não diz
+   * a qual PR o run pertence, só em qual branch ele rodou.
+   */
+  headRefName?: string;
 }
 
 export interface LocalWorkflowRunState {
@@ -96,7 +101,11 @@ function pullRequestPayload(repo: string, pr: LocalPullRequestState): Record<str
   };
 }
 
-function workflowRunPayload(repo: string, run: LocalWorkflowRunState): Record<string, unknown> {
+function workflowRunPayload(
+  repo: string,
+  run: LocalWorkflowRunState,
+  pullRequestNumber?: number,
+): Record<string, unknown> {
   return {
     repository: repo,
     runId: run.id,
@@ -104,6 +113,8 @@ function workflowRunPayload(repo: string, run: LocalWorkflowRunState): Record<st
     status: run.status,
     conclusion: run.conclusion,
     ...(run.branch ? { branch: run.branch } : {}),
+    // Sem o número, um filtro de trigger por PR nunca casaria com evento de CI.
+    ...(pullRequestNumber !== undefined ? { number: pullRequestNumber } : {}),
   };
 }
 
@@ -158,6 +169,11 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
     });
   }
 
+  const pullRequestsByBranch = new Map<string, number>();
+  for (const pr of Object.values(currentPrs)) {
+    if (pr.headRefName) pullRequestsByBranch.set(pr.headRefName, pr.number);
+  }
+
   for (const [key, run] of Object.entries(input.current.workflowRuns)) {
     if (run.status !== "completed") continue;
     const before = input.previous.workflowRuns[key];
@@ -165,7 +181,7 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
     // não gera evento de novo em cada tick.
     if (before && before.status === "completed") continue;
 
-    const payload = workflowRunPayload(repo, run);
+    const payload = workflowRunPayload(repo, run, run.branch ? pullRequestsByBranch.get(run.branch) : undefined);
     const outcomeEvent = WORKFLOW_OUTCOME_EVENTS[run.conclusion ?? ""] ?? "workflow_run.completed";
     if (outcomeEvent !== "workflow_run.completed") {
       events.push({ eventType: outcomeEvent, payload });
