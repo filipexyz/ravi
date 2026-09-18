@@ -4,6 +4,7 @@ import {
   buildRaviAppProcessEnv,
   parseRaviAppCapability,
   parseRaviAppCommand,
+  RAVI_APP_GATEWAY_ENV_KEYS,
   resolveRaviAppCommand,
   tokenizeRaviAppCommand,
 } from "./command.js";
@@ -108,6 +109,54 @@ describe("Ravi App CLI command contract", () => {
     expect(env.RAVI_SESSION_KEY).toBeUndefined();
     expect(env.RAVI_AGENT_ID).toBeUndefined();
     expect(env.API_TOKEN).toBeUndefined();
+  });
+
+  it("forwards the non-secret Ravi gateway endpoint so the child key can reach Ravi", () => {
+    const source = {
+      PATH: "/bin",
+      RAVI_BASE_URL: "http://127.0.0.1:7777",
+      RAVI_HTTP_BASE_URL: "http://127.0.0.1:7778",
+      RAVI_GATEWAY_URL: "unix:///state/cli-gateway.sock",
+      RAVI_HTTP_HOST: "0.0.0.0",
+      RAVI_HTTP_PORT: "7777",
+      RAVI_WEBHOOK_HOST: "127.0.0.1",
+      RAVI_WEBHOOK_PORT: "7779",
+      RAVI_CONTEXT_KEY: "parent-secret",
+      RAVI_GATEWAY_NETWORK_AUTHORIZED: "1",
+      RAVI_SDK_GATEWAY_DISABLE: "1",
+      RAVI_CORS_ORIGINS: "http://127.0.0.1:8088",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-secret",
+      ANTHROPIC_API_KEY: "anthropic-secret",
+    };
+
+    const env = buildRaviAppProcessEnv(source, { contextKey: "child-secret" });
+
+    for (const key of RAVI_APP_GATEWAY_ENV_KEYS) {
+      expect(env[key]).toBe(source[key]);
+    }
+    expect(env).toEqual({
+      PATH: "/bin",
+      RAVI_BASE_URL: "http://127.0.0.1:7777",
+      RAVI_HTTP_BASE_URL: "http://127.0.0.1:7778",
+      RAVI_GATEWAY_URL: "unix:///state/cli-gateway.sock",
+      RAVI_HTTP_HOST: "0.0.0.0",
+      RAVI_HTTP_PORT: "7777",
+      RAVI_WEBHOOK_HOST: "127.0.0.1",
+      RAVI_WEBHOOK_PORT: "7779",
+      RAVI_CONTEXT_KEY: "child-secret",
+    });
+    expect(JSON.stringify(env)).not.toContain("parent-secret");
+    expect(JSON.stringify(env)).not.toContain("oauth-secret");
+    expect(JSON.stringify(env)).not.toContain("anthropic-secret");
+  });
+
+  it("does not synthesize a Ravi gateway endpoint when the parent has none", () => {
+    const env = buildRaviAppProcessEnv({ PATH: "/bin", RAVI_HTTP_PORT: undefined }, { contextKey: "child-secret" });
+
+    expect(env).toEqual({ PATH: "/bin", RAVI_CONTEXT_KEY: "child-secret" });
+    for (const key of RAVI_APP_GATEWAY_ENV_KEYS) {
+      expect(key in env).toBe(false);
+    }
   });
 
   it("parses explicit manifest capabilities", () => {
