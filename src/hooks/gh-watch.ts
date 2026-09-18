@@ -322,6 +322,20 @@ export function findExistingGhFollowTrigger(repo: string, prNumber: number, trig
 }
 
 /**
+ * Marca de propriedade nos watches que o follow cria.
+ *
+ * Sem isso o watch local de CI é indistinguível de um watch que a pessoa criou, e
+ * a manutenção nunca poderia removê-lo. Foi o que deixou um poller de duas
+ * chamadas `gh` por minuto vivo para sempre depois que a última PR do repo fechou.
+ */
+export const GH_FOLLOW_MANAGED_FILTER = { managedBy: "gh-follow" } as const;
+
+/** Um watch é nosso quando carrega a marca de propriedade. */
+export function isGhFollowManagedWatch(watch: { filters?: Record<string, unknown> | null }): boolean {
+  return watch.filters?.managedBy === GH_FOLLOW_MANAGED_FILTER.managedBy;
+}
+
+/**
  * Eventos que o placement local sabe produzir, lidos do próprio catálogo do
  * connector.
  *
@@ -374,6 +388,7 @@ export async function ensureRepoWatch(
           resourceRef: repo,
           placement: "local",
           eventTypes: localEventTypes,
+          filters: { ...GH_FOLLOW_MANAGED_FILTER },
         });
         ciWatchId = created.watch.id;
         ciWatchReused = false;

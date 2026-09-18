@@ -210,6 +210,7 @@ describe("gh follow maintenance", () => {
     const result = await runGhFollowMaintenance({
       readPending: () => [],
       listTriggers: () => [trigger("bug-follow:x", "a")],
+      listWatches: () => [],
       listPrStates: () => {
         stateCalls += 1;
         return new Map();
@@ -217,6 +218,112 @@ describe("gh follow maintenance", () => {
     });
 
     expect(stateCalls).toBe(0);
-    expect(result).toMatchObject({ pendingResolved: 0, triggersRemoved: 0, triggersKept: 0 });
+    expect(result).toMatchObject({ pendingResolved: 0, triggersRemoved: 0, triggersKept: 0, watchesRemoved: 0 });
+  });
+
+  it("removes the managed local watch once no subscription needs it", async () => {
+    const removed: string[] = [];
+    const result = await runGhFollowMaintenance({
+      readPending: () => [],
+      listTriggers: () => [],
+      listWatches: () =>
+        [
+          {
+            id: "w_managed",
+            placement: "local",
+            status: "active",
+            resourceRef: "o/r",
+            filters: { managedBy: "gh-follow" },
+          },
+          { id: "w_user", placement: "local", status: "active", resourceRef: "o/other", filters: {} },
+        ] as never,
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    // Sem isto o poller rodaria duas chamadas `gh` por minuto para sempre.
+    expect(removed).toEqual(["w_managed"]);
+    expect(result.watchesRemoved).toBe(1);
+  });
+
+  it("keeps the managed watch while a subscription or a pending still needs it", async () => {
+    const removed: string[] = [];
+    const watches = [
+      { id: "w_a", placement: "local", status: "active", resourceRef: "o/r", filters: { managedBy: "gh-follow" } },
+      {
+        id: "w_b",
+        placement: "local",
+        status: "active",
+        resourceRef: "o/pending",
+        filters: { managedBy: "gh-follow" },
+      },
+    ] as never;
+
+    const withTrigger = await runGhFollowMaintenance({
+      readPending: () => [],
+      listTriggers: () => [trigger("gh-follow:o/r#1", "t1")],
+      listWatches: () => watches,
+      listPrStates: () => new Map([[1, "OPEN"]]),
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+    expect(withTrigger.watchesRemoved).toBe(1);
+    expect(removed).toEqual(["w_b"]);
+
+    removed.length = 0;
+    // PR recém-criada: acompanhamento em formação, o watch ainda é necessário.
+    const withPending = await runGhFollowMaintenance({
+      readPending: () => [pending({ repo: "o/pending" })],
+      writePending: () => {},
+      listTriggers: () => [],
+      listWatches: () => watches,
+      resolvePrNumber: () => null,
+      // A pendência precisa estar fresca: vencida, ela é descartada e deixa de
+      // justificar o watch.
+      now: () => 2_000,
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+    expect(withPending.watchesRemoved).toBe(1);
+    expect(removed).toEqual(["w_a"]);
+  });
+
+  it("never removes a watch it did not create", async () => {
+    let removed = 0;
+    const result = await runGhFollowMaintenance({
+      readPending: () => [],
+      listTriggers: () => [],
+      listWatches: () =>
+        [
+          {
+            id: "w_console",
+            placement: "console",
+            status: "active",
+            resourceRef: "o/r",
+            filters: { managedBy: "gh-follow" },
+          },
+          { id: "w_user_local", placement: "local", status: "active", resourceRef: "o/r", filters: {} },
+          {
+            id: "w_disabled",
+            placement: "local",
+            status: "disabled",
+            resourceRef: "o/r",
+            filters: { managedBy: "gh-follow" },
+          },
+        ] as never,
+      removeWatch: async () => {
+        removed += 1;
+        return true;
+      },
+    });
+
+    expect(removed).toBe(0);
+    expect(result.watchesRemoved).toBe(0);
   });
 });

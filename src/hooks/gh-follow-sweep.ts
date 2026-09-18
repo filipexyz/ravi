@@ -16,9 +16,11 @@
 
 import { execFileSync } from "node:child_process";
 import { dbDeleteTrigger, dbListTriggers, type Trigger } from "../triggers/index.js";
+import { removeWatch as removeWatchOperation, listWatchRecords } from "../watch/index.js";
+import type { WatchRecord } from "../watch/types.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
-import { ensureGhWatchFollow } from "./gh-watch.js";
+import { ensureGhWatchFollow, isGhFollowManagedWatch } from "./gh-watch.js";
 import {
   addPendingGhFollow,
   dropExpiredPendingGhFollows,
@@ -37,6 +39,7 @@ export interface GhFollowMaintenanceResult {
   pendingDropped: number;
   triggersRemoved: number;
   triggersKept: number;
+  watchesRemoved: number;
   errors: number;
 }
 
@@ -45,11 +48,28 @@ export interface GhFollowMaintenanceDeps {
   writePending?: (entries: PendingGhFollow[]) => void;
   listTriggers?: () => Trigger[];
   deleteTrigger?: (id: string) => boolean;
+  listWatches?: () => WatchRecord[];
+  removeWatch?: (id: string) => Promise<boolean>;
   ensureFollow?: typeof ensureGhWatchFollow;
   resolvePrNumber?: (entry: PendingGhFollow) => number | null;
   listPrStates?: (repo: string) => Map<number, string> | null;
   emitTriggersRefresh?: () => Promise<void>;
   now?: () => number;
+}
+
+/**
+ * Watches locais que o follow criou e que não têm mais nenhuma PR acompanhada.
+ *
+ * Só removemos o que carrega a nossa marca: um watch criado pela pessoa não é
+ * nosso para apagar. E só quando o repo ficou sem nenhum `gh-follow:` — senão
+ * estaríamos derrubando o produtor de CI de um acompanhamento vivo.
+ */
+export function selectOrphanGhFollowWatches(watches: WatchRecord[], remainingTriggerRepos: Set<string>): WatchRecord[] {
+  return watches.filter((watch) => {
+    if (watch.placement !== "local" || watch.status !== "active") return false;
+    if (!isGhFollowManagedWatch(watch)) return false;
+    return !remainingTriggerRepos.has(watch.resourceRef);
+  });
 }
 
 /** `gh-follow:owner/repo#123` → partes. Formato inválido devolve null. */
@@ -141,6 +161,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     pendingDropped: 0,
     triggersRemoved: 0,
     triggersKept: 0,
+    watchesRemoved: 0,
     errors: 0,
   };
 
@@ -186,6 +207,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
 
   // 2. Triggers de PR morta.
   const triggers = listTriggers().filter((trigger) => parseGhFollowTriggerName(trigger.name ?? "") !== null);
+  const removedTriggerIds = new Set<string>();
   if (triggers.length > 0) {
     const repos = new Set(triggers.map((trigger) => parseGhFollowTriggerName(trigger.name ?? "")!.repo));
     const statesByRepo = new Map<string, Map<number, string>>();
@@ -203,7 +225,10 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     result.triggersKept = triggers.length - stale.length;
     for (const trigger of stale) {
       try {
-        if (deleteTrigger(trigger.id)) result.triggersRemoved += 1;
+        if (deleteTrigger(trigger.id)) {
+          result.triggersRemoved += 1;
+          removedTriggerIds.add(trigger.id);
+        }
       } catch (error) {
         log.warn("Could not delete stale follow trigger", { triggerId: trigger.id, error });
         result.errors += 1;
@@ -218,7 +243,37 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     }
   }
 
-  if (result.pendingResolved || result.triggersRemoved) {
+  // 3. Watches criados pelo follow que não têm mais acompanhamento.
+  //
+  // Sem isto o poller continua rodando duas chamadas `gh` por minuto para sempre
+  // depois que a última PR do repo fecha: o trigger morre, o watch não.
+  const inUseRepos = new Set<string>();
+  for (const trigger of triggers) {
+    if (removedTriggerIds.has(trigger.id)) continue;
+    const parsed = parseGhFollowTriggerName(trigger.name ?? "");
+    if (parsed) inUseRepos.add(parsed.repo);
+  }
+  // Pendência é acompanhamento em formação: o watch ainda é necessário.
+  for (const entry of remaining) inUseRepos.add(entry.repo);
+
+  const orphans = selectOrphanGhFollowWatches(
+    (deps.listWatches ?? (() => listWatchRecords({ status: "active", limit: 500 }).items))(),
+    inUseRepos,
+  );
+  const removeWatch = deps.removeWatch ?? removeWatchOperation;
+  for (const watch of orphans) {
+    try {
+      if (await removeWatch(watch.id)) result.watchesRemoved += 1;
+    } catch (error) {
+      log.warn("Could not remove orphan follow watch", { watchId: watch.id, error });
+      result.errors += 1;
+    }
+  }
+  if (result.watchesRemoved > 0) {
+    log.info("Removed follow watches with no remaining subscription", { count: result.watchesRemoved });
+  }
+
+  if (result.pendingResolved || result.triggersRemoved || result.watchesRemoved) {
     log.info("gh follow maintenance", result as unknown as Record<string, unknown>);
   }
   return result;
@@ -253,14 +308,28 @@ export class GhFollowMaintenanceRunner {
 
   async tick(): Promise<GhFollowMaintenanceResult> {
     if (!this.running || this.processing) {
-      return { pendingResolved: 0, pendingDropped: 0, triggersRemoved: 0, triggersKept: 0, errors: 0 };
+      return {
+        pendingResolved: 0,
+        pendingDropped: 0,
+        triggersRemoved: 0,
+        triggersKept: 0,
+        watchesRemoved: 0,
+        errors: 0,
+      };
     }
     this.processing = true;
     try {
       return await runGhFollowMaintenance();
     } catch (error) {
       log.error("gh follow maintenance tick failed", { error });
-      return { pendingResolved: 0, pendingDropped: 0, triggersRemoved: 0, triggersKept: 0, errors: 1 };
+      return {
+        pendingResolved: 0,
+        pendingDropped: 0,
+        triggersRemoved: 0,
+        triggersKept: 0,
+        watchesRemoved: 0,
+        errors: 1,
+      };
     } finally {
       this.processing = false;
       this.armTimer(this.intervalMs);
