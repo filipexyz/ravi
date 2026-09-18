@@ -11,12 +11,13 @@
  * Console, para que filtros e triggers funcionem igual.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { eventSubject } from "./connectors.js";
+import { readLocalWatchSnapshot, writeLocalWatchSnapshot } from "./local-state.js";
 import {
   deriveLocalGitHubEvents,
   type DepartedPullRequest,
@@ -41,10 +42,15 @@ export interface LocalWatchTickResult {
 }
 
 export interface LocalWatchSource {
-  readSnapshot(repo: string): {
-    snapshot: LocalWatchSnapshot;
-    departed: Record<string, DepartedPullRequest>;
-  };
+  readSnapshot(repo: string): LocalWatchSnapshot;
+  /**
+   * Estado final das PRs que saíram da lista de abertas desde a última leitura.
+   *
+   * Sem isso não dá pra distinguir merge de fechamento: as duas somem da lista de
+   * abertas, e o estado final só existe numa consulta específica. A interface
+   * separa de propósito — só consultamos quando alguma PR realmente saiu.
+   */
+  readDeparted(repo: string, numbers: number[]): Record<string, DepartedPullRequest>;
 }
 
 export interface LocalWatchRunnerOptions {
@@ -130,7 +136,28 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
         };
       }
 
-      return { snapshot: { version: 1, pullRequests, workflowRuns }, departed: {} };
+      return { version: 1, pullRequests, workflowRuns };
+    },
+
+    readDeparted(repo: string, numbers: number[]) {
+      const departed: Record<string, DepartedPullRequest> = {};
+      for (const number of numbers) {
+        try {
+          const parsed = parseJson<{ state?: string; title?: string; url?: string }>(
+            runner(["pr", "view", String(number), "--repo", repo, "--json", "state,title,url"]),
+          );
+          if (!parsed?.state) continue;
+          departed[String(number)] = {
+            state: parsed.state,
+            title: parsed.title ?? "",
+            url: parsed.url ?? "",
+          };
+        } catch {
+          // Sem estado final não afirmamos nada: a derivação cai em CLOSED, e um
+          // merge lido como fechamento é menos ruim que um evento inventado.
+        }
+      }
+      return departed;
     },
   };
 }
@@ -207,7 +234,13 @@ export class LocalWatchRunner {
     if (!repo) return 0;
 
     const previous = this.readSnapshotState(watch.id);
-    const { snapshot, departed } = this.source.readSnapshot(repo);
+    const snapshot = this.source.readSnapshot(repo);
+    // Só pergunta o estado final de quem de fato saiu da lista de abertas.
+    const departedNumbers = Object.keys(previous?.pullRequests ?? {})
+      .filter((key) => !(key in snapshot.pullRequests))
+      .map((key) => Number.parseInt(key, 10))
+      .filter((value) => Number.isFinite(value));
+    const departed = departedNumbers.length > 0 ? this.source.readDeparted(repo, departedNumbers) : {};
     const { events, snapshot: next } = deriveLocalGitHubEvents(repo, { previous, current: snapshot, departed });
     this.writeSnapshotState(watch.id, next);
 
@@ -247,19 +280,12 @@ export class LocalWatchRunner {
     };
   }
 
-  private snapshotPath(watchId: string): string {
-    return join(this.stateDir, `${watchId}.json`);
-  }
-
   private readSnapshotState(watchId: string): LocalWatchSnapshot | null {
-    const file = this.snapshotPath(watchId);
-    if (!existsSync(file)) return null;
-    return parseJson<LocalWatchSnapshot>(readFileSync(file, "utf8"));
+    return readLocalWatchSnapshot(watchId, this.stateDir);
   }
 
   private writeSnapshotState(watchId: string, snapshot: LocalWatchSnapshot): void {
-    mkdirSync(this.stateDir, { recursive: true });
-    writeFileSync(this.snapshotPath(watchId), `${JSON.stringify(snapshot)}\n`);
+    writeLocalWatchSnapshot(watchId, snapshot, this.stateDir);
   }
 
   private armTimer(delayMs: number): void {
@@ -276,8 +302,9 @@ export class LocalWatchRunner {
 }
 
 function defaultGhRunner(args: string[]): string {
-  // Import tardio para não arrastar node:child_process no load do módulo.
-  const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+  // `require` dentro de módulo ESM depende do bundler resolver: no bundle do
+  // daemon isso é bomba-relógio. Import estático de node:child_process é barato e
+  // não depende de shim.
   return execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) as string;
 }
 

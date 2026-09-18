@@ -9,6 +9,7 @@ import {
 } from "./console-client.js";
 import { WatchApiError } from "./errors.js";
 import { deleteWatch, getWatch, listWatches, updateWatchStatus, upsertWatch } from "./watch-db.js";
+import { clearLocalWatchSnapshot } from "./local-state.js";
 import type {
   ConsoleWatch,
   WatchCapabilities,
@@ -141,7 +142,12 @@ export async function removeWatch(id: string): Promise<boolean> {
   if (existing.placement === "console") {
     await deleteConsoleWatch(id);
   }
-  return deleteWatch(id);
+  const removed = deleteWatch(id);
+  // O snapshot do poller local não tem outra dona: se o watch sai, o estado dele
+  // sai junto. Como o id do watch local é determinístico, deixar o arquivo pra trás
+  // faria um watch recriado herdar a leitura de um período que ninguém lembra.
+  if (removed) clearLocalWatchSnapshot(id);
+  return removed;
 }
 
 function normalizePlacement(placement: WatchPlacement): WatchPlacement {

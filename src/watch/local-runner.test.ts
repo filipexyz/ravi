@@ -51,16 +51,22 @@ function snapshot(
 function harness(options: {
   watches: WatchRecord[];
   snapshots: LocalWatchSnapshot[];
+  departed?: (numbers: number[]) => Record<string, { state: string; title: string; url: string }>;
   publish?: (subject: string, payload: WatchNatsPayload) => Promise<void>;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "ravi-local-watch-"));
   const published: Array<{ subject: string; payload: WatchNatsPayload }> = [];
+  const departedCalls: number[][] = [];
   let index = 0;
   const source: LocalWatchSource = {
     readSnapshot() {
       const current = options.snapshots[Math.min(index, options.snapshots.length - 1)]!;
       index += 1;
-      return { snapshot: current, departed: {} };
+      return current;
+    },
+    readDeparted(_repo, numbers) {
+      departedCalls.push(numbers);
+      return options.departed?.(numbers) ?? {};
     },
   };
   const runner = new LocalWatchRunner({
@@ -73,10 +79,52 @@ function harness(options: {
       await options.publish?.(subject, payload);
     },
   });
-  return { runner, published, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { runner, published, departedCalls, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 describe("local watch runner", () => {
+  it("distinguishes merged from closed by asking for the final state", async () => {
+    const h = harness({
+      watches: [makeWatch({ eventTypes: ["pull_request.merged", "pull_request.closed"] })],
+      snapshots: [snapshot([{ number: 1 }, { number: 2 }]), snapshot([])],
+      departed: () => ({
+        "1": { state: "MERGED", title: "PR 1", url: "https://x/1" },
+        "2": { state: "CLOSED", title: "PR 2", url: "https://x/2" },
+      }),
+    });
+    try {
+      await h.runner.start();
+      await h.runner.tick(); // baseline
+      await h.runner.tick();
+
+      // Sem o estado final, as duas PRs virariam "closed" — foi o bug real que
+      // a revisão achou: `departed` era sempre vazio.
+      expect(h.departedCalls).toEqual([[1, 2]]);
+      const subjects = h.published.map((item) => item.payload.subject).sort();
+      expect(subjects).toEqual(["ravi.watch.github.pull_request.closed", "ravi.watch.github.pull_request.merged"]);
+    } finally {
+      await h.runner.stop();
+      h.cleanup();
+    }
+  });
+
+  it("does not ask for the final state when nothing left the open list", async () => {
+    const h = harness({
+      watches: [makeWatch()],
+      snapshots: [snapshot([{ number: 1 }]), snapshot([{ number: 1 }])],
+    });
+    try {
+      await h.runner.start();
+      await h.runner.tick();
+      await h.runner.tick();
+
+      expect(h.departedCalls).toEqual([]);
+    } finally {
+      await h.runner.stop();
+      h.cleanup();
+    }
+  });
+
   it("publishes nothing on the baseline tick", async () => {
     const h = harness({ watches: [makeWatch()], snapshots: [snapshot([{ number: 1 }])] });
     try {
