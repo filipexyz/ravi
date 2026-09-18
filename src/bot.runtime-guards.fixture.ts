@@ -1986,6 +1986,80 @@ describe("RaviBot runtime guards", () => {
     ).toBe(true);
   });
 
+  it("cancels a running unsafe tool on explicit abort instead of waiting for the tool barrier", async () => {
+    const sessionKey = "agent:main:explicit-abort-cancels-running-tool";
+    let releaseTool: (() => void) | undefined;
+    const toolCancelled = new Promise<void>((resolve) => {
+      releaseTool = resolve;
+    });
+    // Like Pi's `abort`, the provider interrupt is the only thing that ends the command.
+    const interrupt = mock(async () => {
+      releaseTool?.();
+    });
+
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        expect(first.value?.message.content).toBe(withWhatsAppSurfaceHint("first"));
+        yield {
+          type: "tool.started",
+          toolUse: { id: "tool-bash-long", name: "Bash", input: { command: "bun run build" } },
+        };
+        await toolCancelled;
+        yield {
+          type: "tool.completed",
+          toolUseId: "tool-bash-long",
+          toolName: "Bash",
+          content: "Command aborted",
+          isError: true,
+        };
+        yield { type: "turn.interrupted" };
+      })(),
+      interrupt,
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    await waitFor(() => {
+      const streaming = (bot as any).streamingSessions.get(sessionKey);
+      return Boolean(streaming?.toolRunning && streaming.currentToolSafety === "unsafe");
+    });
+    const streaming = (bot as any).streamingSessions.get(sessionKey);
+    expect(interrupt).not.toHaveBeenCalled();
+
+    expect(bot.abortSession(sessionKey)).toBe(true);
+
+    // The kill reaches the provider while the command is still running.
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(streaming.pendingAbort).toBe(false);
+    expect(streaming.done).toBe(true);
+    expect(streaming.abortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.has(sessionKey)).toBe(false);
+
+    await waitFor(() =>
+      emittedEvents.some(
+        (entry) =>
+          entry.topic === `ravi.session.${sessionKey}.runtime` &&
+          entry.data?.type === "turn.interrupted" &&
+          entry.data?.cancelledTool?.toolId === "tool-bash-long",
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const runtimeEvents = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.runtime`);
+    const interrupted = runtimeEvents.find((entry) => entry.data?.type === "turn.interrupted");
+    expect(interrupted?.data).toMatchObject({
+      reason: "explicit_abort",
+      cancelledTool: { toolId: "tool-bash-long", toolName: "Bash", toolSafety: "unsafe" },
+    });
+    expect(runtimeEvents.some((entry) => entry.data?.type === "turn.failed")).toBe(false);
+    const responses = emittedEvents
+      .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
+      .map((entry) => String(entry.data?.response ?? ""));
+    expect(responses.some((response) => /abort/i.test(response))).toBe(false);
+  });
+
   it("queues p2/after_response prompts until the current turn completes", async () => {
     const sessionKey = "agent:main:p2-after-response";
     const interrupt = mock(async () => {});
