@@ -22,7 +22,7 @@ import type { ContextSource } from "../router/router-db.js";
 import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
-import { createWatch, listWatchRecords } from "../watch/index.js";
+import { createWatch, listWatchConnectors, listWatchRecords } from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
 import { addPendingGhFollow, type PendingGhFollow } from "./gh-follow-pending.js";
 
@@ -76,7 +76,14 @@ const GH_ADMIN_SCOPES = new Set([
 ]);
 
 export const GH_FOLLOW_COOLDOWN_MS = 30_000;
-export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.pull_request.*";
+
+/**
+ * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
+ * de CI. `ravi.watch.github.*` cobre ambos (o filtro por repo+PR descarta o
+ * resto), enquanto um tópico só de `pull_request.*` deixaria "o CI quebrou" sem
+ * caminho até a sessão.
+ */
+export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.*";
 
 export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
@@ -295,7 +302,7 @@ export function buildGhFollowTriggerInput(
   return {
     name: ghFollowTriggerName(repo, prNumber),
     topic: GH_PR_FOLLOW_TOPIC,
-    message: `Activity on ${repo}#${prNumber}. Tell the user in one short line what changed (state, title, CI conclusion when present) and the url from this event.`,
+    message: `Activity on ${repo}#${prNumber} (PR lifecycle or CI result). Tell the user in one short line what changed — state and title, or the CI conclusion when present — and include the url from this event.`,
     agentId: context.agentId,
     accountId: context.accountId,
     replySession: context.sessionName ?? context.sessionKey,
@@ -312,38 +319,77 @@ export function findExistingGhFollowTrigger(repo: string, prNumber: number, trig
 }
 
 /**
+ * Eventos que o placement local sabe produzir, lidos do próprio catálogo do
+ * connector.
+ *
+ * Não é uma lista escrita à mão de propósito: se o poller passar a derivar mais
+ * eventos, o watch local criado aqui acompanha sozinho, e se um evento sair da
+ * lista o watch para de assinar o que não existe.
+ */
+export function locallySupportedEventTypes(provider = "github"): string[] {
+  const connector = listWatchConnectors(provider)[0];
+  return (connector?.eventTypes ?? [])
+    .filter((eventType) => eventType.localSupport === "supported")
+    .map((eventType) => eventType.eventType);
+}
+
+/**
  * Um watch por repo, reaproveitando o que já existe — inclusive watch de
  * Console, que é o caminho de entrega que hoje funciona sem depender de poller.
+ *
+ * Além dele, garante um watch **local** com os eventos que o Console não entrega
+ * (CI). São dois watches porque servem a dois produtores diferentes, e o filtro do
+ * trigger não se importa de onde o evento veio.
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> = {},
-): Promise<{ watchId: string | null; reused: boolean }> {
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & { localEventTypes?: () => string[] } = {},
+): Promise<{ watchId: string | null; reused: boolean; ciWatchId: string | null; ciWatchReused: boolean }> {
   const listWatches = deps.listWatches ?? listWatchRecords;
   const create = deps.createWatch ?? createWatch;
+  const localEventTypes = (deps.localEventTypes ?? locallySupportedEventTypes)();
 
+  let activeWatches: WatchRecord[] = [];
   try {
-    const existing = listWatches({ provider: "github", status: "active", limit: 200 }).items.find(
+    activeWatches = listWatches({ provider: "github", status: "active", limit: 200 }).items.filter(
       (watch) => watch.resourceRef === repo,
     );
-    if (existing) return { watchId: existing.id, reused: true };
   } catch (error) {
     log.warn("Could not list watches while ensuring repo watch", { repo, error });
   }
 
+  const anyWatch = activeWatches[0];
+  const localWatch = activeWatches.find((watch) => watch.placement === "local");
+
+  let ciWatchId: string | null = localWatch?.id ?? null;
+  let ciWatchReused = Boolean(localWatch);
+  if (!localWatch) {
+    if (localEventTypes.length > 0) {
+      try {
+        const created = await create({
+          provider: "github",
+          resourceRef: repo,
+          placement: "local",
+          eventTypes: localEventTypes,
+        });
+        ciWatchId = created.watch.id;
+        ciWatchReused = false;
+      } catch (error) {
+        log.warn("Could not create local CI watch", { repo, error });
+      }
+    }
+  }
+
+  if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
+
   try {
     const created = await create({ provider: "github", resourceRef: repo });
-    return { watchId: created.watch.id, reused: false };
+    return { watchId: created.watch.id, reused: false, ciWatchId, ciWatchReused };
   } catch (error) {
     // Sem login de Console, o único caminho restante é polling local: o watch
     // existe e passa a produzir assim que o runner local estiver ativo.
-    try {
-      const created = await create({ provider: "github", resourceRef: repo, placement: "local" });
-      return { watchId: created.watch.id, reused: false };
-    } catch (fallbackError) {
-      log.warn("Could not create repo watch", { repo, error, fallbackError });
-      return { watchId: null, reused: false };
-    }
+    log.warn("Could not create console watch, relying on local", { repo, error });
+    return { watchId: ciWatchId, reused: false, ciWatchId, ciWatchReused };
   }
 }
 
