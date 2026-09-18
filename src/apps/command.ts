@@ -45,6 +45,24 @@ const SAFE_APP_ENV_KEYS = [
   "RAVI_STATE_DIR",
 ] as const;
 
+/**
+ * Non-secret Ravi gateway endpoint variables. The child receives its own
+ * `RAVI_CONTEXT_KEY`, but that key can only reach Ravi (SDK
+ * `createInheritedClient`, remote `RAVI_GATEWAY_URL` dispatch) when the
+ * endpoint travels with it. Values are passed through verbatim, never
+ * synthesized, so an app launched by the router resolves the same endpoint as
+ * the same CLI invoked directly from the parent environment.
+ */
+export const RAVI_APP_GATEWAY_ENV_KEYS = [
+  "RAVI_BASE_URL",
+  "RAVI_HTTP_BASE_URL",
+  "RAVI_GATEWAY_URL",
+  "RAVI_HTTP_HOST",
+  "RAVI_HTTP_PORT",
+  "RAVI_WEBHOOK_HOST",
+  "RAVI_WEBHOOK_PORT",
+] as const;
+
 export function parseRaviAppCommand(command: string): RaviAppCommandTemplate {
   const tokens = tokenizeRaviAppCommand(command);
   const executable = tokens[0];
@@ -180,7 +198,7 @@ export function buildRaviAppProcessEnv(
   } = {},
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const key of SAFE_APP_ENV_KEYS) {
+  for (const key of [...SAFE_APP_ENV_KEYS, ...RAVI_APP_GATEWAY_ENV_KEYS]) {
     const value = source[key];
     if (typeof value === "string") env[key] = value;
   }

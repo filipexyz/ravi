@@ -4,9 +4,16 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
-import { createRuntimeContext, getContextLineage } from "../runtime/context-registry.js";
+import { createRuntimeContext, getContextLineage, resolveRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
+
+declare const Bun: {
+  serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): {
+    port: number;
+    stop(force?: boolean): void;
+  };
+};
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -249,6 +256,69 @@ console.log(JSON.stringify({
     },
   });
   return { appDir, scriptPath };
+}
+
+function writeSdkStatusApp(root: string): { appDir: string } {
+  const appDir = join(root, "src", "apps", "workspace-hub");
+  const inheritModule = resolve(originalCwd, "packages", "ravi-os-sdk", "src", "inherit.ts");
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(
+    join(appDir, "cli.mjs"),
+    `
+import { createInheritedClient } from ${JSON.stringify(inheritModule)};
+const inherited = await createInheritedClient();
+const whoami = await inherited.client.context.whoami();
+console.log(JSON.stringify({
+  schema: "workspace.sdk/v1",
+  argv: process.argv.slice(2),
+  baseUrl: inherited.baseUrl,
+  mode: inherited.mode,
+  whoami,
+  env: {
+    childContextPresent: Boolean(process.env.RAVI_CONTEXT_KEY),
+    RAVI_HTTP_HOST: process.env.RAVI_HTTP_HOST ?? null,
+    RAVI_HTTP_PORT: process.env.RAVI_HTTP_PORT ?? null,
+    RAVI_SESSION_KEY: process.env.RAVI_SESSION_KEY ?? null,
+    RAVI_AGENT_ID: process.env.RAVI_AGENT_ID ?? null,
+    APP_SECRET: process.env.APP_SECRET ?? null
+  }
+}));
+`,
+    "utf8",
+  );
+  writeManifest(root, "workspace-hub", {
+    schema: "ravi.app/v1",
+    id: "workspace-hub",
+    name: "Workspace Hub",
+    version: "0.1.0",
+    description: "Reach Ravi through the SDK from a router-launched app.",
+    interfaces: {
+      cli: {
+        command: "bun cli.mjs",
+        json: true,
+      },
+    },
+    context: {
+      allow: [],
+    },
+    operations: {
+      "workspace-hub.sdk-status": {
+        interface: "cli",
+        command: "bun cli.mjs sdk-status {args}",
+        json: true,
+        mutating: false,
+      },
+    },
+    permissions: {
+      required: [],
+      optional: [],
+      mutating: [],
+    },
+    health: {
+      checks: [{ type: "builtin", handler: "apps.manifest.check" }],
+    },
+  });
+  return { appDir };
 }
 
 function providerManifest(root: string, id: string, options: { timeoutMs?: number } = {}): Record<string, unknown> {
@@ -693,6 +763,100 @@ describe("Ravi app router", () => {
 
     const lineage = getContextLineage(parent.contextId);
     expect(lineage?.descendants.map((context) => context.contextId)).toContain(payload.childContextId);
+  }, 30_000);
+
+  it("lets a router-launched app reach the Ravi gateway through the SDK with its child key", async () => {
+    const root = makeRepo();
+    writeSdkStatusApp(root);
+    const parent = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      capabilities: [{ permission: "use", objectType: "app", objectId: "workspace-hub" }],
+    });
+    const requests: Array<{ path: string; authorization: string | null }> = [];
+    const gateway = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push({ path: url.pathname, authorization: request.headers.get("authorization") });
+        if (request.method === "POST" && url.pathname === "/api/v1/context/whoami") {
+          return Response.json({ kind: "app-runtime", issuedFor: "app:workspace-hub" });
+        }
+        return Response.json({ error: "NotFound" }, { status: 404 });
+      },
+    });
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+
+    try {
+      const payload = (await runWithContext({ agentId: "main", context: parent }, () =>
+        captureJson(() =>
+          maybeRunAppAliasRoute(["workspace-hub", "sdk-status", "--json"], {
+            cwd: root,
+            env: {
+              ...process.env,
+              RAVI_CONTEXT_KEY: parent.contextKey,
+              RAVI_BASE_URL: undefined,
+              RAVI_HTTP_BASE_URL: undefined,
+              RAVI_GATEWAY_URL: undefined,
+              RAVI_HTTP_HOST: "127.0.0.1",
+              RAVI_HTTP_PORT: String(gateway.port),
+              RAVI_SESSION_KEY: "legacy-session",
+              RAVI_AGENT_ID: "legacy-agent",
+              APP_SECRET: "must-not-leak",
+              RAVI_LOG_LEVEL: "error",
+              RAVI_CLI_LOG_LEVEL: "error",
+              RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+            },
+          }),
+        ),
+      )) as {
+        ok: boolean;
+        callerContextId: string;
+        childContextId: string;
+        result: {
+          schema: string;
+          argv: string[];
+          baseUrl: string;
+          mode: string;
+          whoami: Record<string, unknown>;
+          env: Record<string, unknown>;
+        };
+      };
+
+      expect(payload).toMatchObject({
+        ok: true,
+        callerContextId: parent.contextId,
+        result: {
+          schema: "workspace.sdk/v1",
+          argv: ["sdk-status"],
+          baseUrl: `http://127.0.0.1:${gateway.port}`,
+          mode: "current",
+          whoami: { kind: "app-runtime", issuedFor: "app:workspace-hub" },
+          env: {
+            childContextPresent: true,
+            RAVI_HTTP_HOST: "127.0.0.1",
+            RAVI_HTTP_PORT: String(gateway.port),
+            RAVI_SESSION_KEY: null,
+            RAVI_AGENT_ID: null,
+            APP_SECRET: null,
+          },
+        },
+      });
+      expect(payload.childContextId).not.toBe(parent.contextId);
+      expect(JSON.stringify(payload)).not.toContain(parent.contextKey);
+      expect(JSON.stringify(payload)).not.toContain("must-not-leak");
+
+      expect(requests).toHaveLength(1);
+      const [request] = requests;
+      expect(request?.path).toBe("/api/v1/context/whoami");
+      const bearer = request?.authorization?.replace(/^Bearer\s+/i, "") ?? "";
+      expect(bearer).not.toBe("");
+      expect(bearer).not.toBe(parent.contextKey);
+      expect(resolveRuntimeContext(bearer, { touch: false })?.contextId).toBe(payload.childContextId);
+    } finally {
+      gateway.stop(true);
+    }
   }, 30_000);
 
   it("fails before spawning when context.allow exceeds the caller context", async () => {
