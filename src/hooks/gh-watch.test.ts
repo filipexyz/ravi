@@ -189,6 +189,11 @@ describe("gh watch observation", () => {
   function deps(overrides: Partial<Parameters<typeof observeGhBashCommand>[2]> = {}) {
     return {
       listWatches: () => ({ items: [watch()] }) as never,
+      // Sem fake explícito, um caminho não coberto cairia no createWatch real e
+      // escreveria no banco de produção. Foi o que aconteceu uma vez.
+      createWatch: async () => {
+        throw new Error("createWatch real chamado do teste");
+      },
       listTriggers: () => [] as Trigger[],
       createTrigger: () => trigger(),
       emitTriggersRefresh: async () => {},
