@@ -77,6 +77,7 @@ import {
   formatUserFacingTurnFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   publicRuntimeFailureDetail,
+  shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
 import {
   createTurnToolContinuationLedger,
@@ -3913,24 +3914,47 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel" && !channelBackendFailure && !loginStubFailure) {
-          const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
-            error: event.error,
-            scope: buildUserFacingFailureSuppressionScope({
-              sessionKey: session.sessionKey,
-              provider: runtimeSession.provider,
-              source: streaming.currentSource,
-            }),
-          });
-          if (suppression.suppressed) {
-            log.info("Suppressing repeated user-facing runtime limit failure", {
+          // Open-tools / interrupt-class recoverable failures stay `turn.failed`
+          // in traces. Do not emit their Error line on the classic WhatsApp path;
+          // folding them into suppressedRecoverable would remap the terminal to
+          // interrupted. Channel-backend already projects an opaque safe error.
+          if (
+            !shouldEmitUserFacingTurnFailure({
+              error: event.error,
+              recoverable: event.recoverable,
+              suppressedRecoverable,
+              interrupted: streaming.interrupted,
+              internalAbortReason,
+            })
+          ) {
+            log.info("Suppressing user-facing recoverable open-tool or interrupt failure", {
               runId,
               sessionName,
-              provider: runtimeSession.provider,
-              windowKey: suppression.classified.windowKey,
-              previousExpiresAt: suppression.previousExpiresAt,
+              recoverable: event.recoverable ?? true,
+              interrupted: streaming.interrupted,
+              internalAbortReason,
+              error: event.error,
             });
           } else {
-            await emitResponse(formatUserFacingTurnFailure(event.error));
+            const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
+              error: event.error,
+              scope: buildUserFacingFailureSuppressionScope({
+                sessionKey: session.sessionKey,
+                provider: runtimeSession.provider,
+                source: streaming.currentSource,
+              }),
+            });
+            if (suppression.suppressed) {
+              log.info("Suppressing repeated user-facing runtime limit failure", {
+                runId,
+                sessionName,
+                provider: runtimeSession.provider,
+                windowKey: suppression.classified.windowKey,
+                previousExpiresAt: suppression.previousExpiresAt,
+              });
+            } else {
+              await emitResponse(formatUserFacingTurnFailure(event.error));
+            }
           }
         }
         updateRuntimeLiveState(sessionName, {

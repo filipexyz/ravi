@@ -51,6 +51,39 @@ export function formatUserFacingTurnFailure(error: unknown): string {
   return `Error: ${publicRuntimeFailureDetail(error)}`;
 }
 
+export function isOpenToolsTurnFailure(error: unknown): boolean {
+  return publicRuntimeFailureDetail(error) === PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE;
+}
+
+/**
+ * Classic WhatsApp/omni chat delivery policy for `turn.failed`.
+ * Recoverable open-tools / interrupt-class failures stay in traces as
+ * `turn.failed` but must not emit a user-facing `Error: …` line. This is
+ * separate from `suppressedRecoverable`, which remaps the terminal to
+ * `turn.interrupted`.
+ */
+export function shouldEmitUserFacingTurnFailure(input: {
+  error: unknown;
+  recoverable?: boolean;
+  suppressedRecoverable?: boolean;
+  interrupted?: boolean;
+  internalAbortReason?: string | null;
+}): boolean {
+  if (input.suppressedRecoverable) {
+    return false;
+  }
+  if (input.recoverable === false) {
+    return true;
+  }
+  if (isOpenToolsTurnFailure(input.error)) {
+    return false;
+  }
+  if (input.interrupted || Boolean(input.internalAbortReason)) {
+    return false;
+  }
+  return true;
+}
+
 function runtimeFailureText(error: unknown): string | null {
   if (typeof error === "string") {
     return error;

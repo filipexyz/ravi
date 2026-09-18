@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
   formatUserFacingTurnFailure,
+  isOpenToolsTurnFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
   publicRuntimeFailureDetail,
+  shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
 
 describe("public runtime failures", () => {
@@ -115,5 +117,67 @@ describe("public runtime failures", () => {
     expect(formatUserFacingTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE)).toBe(
       `Error: ${PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE}`,
     );
+  });
+
+  it("classifies the open-tools recovery string without changing the formatter", () => {
+    expect(isOpenToolsTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE)).toBe(true);
+    expect(isOpenToolsTurnFailure(`Error: ${PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE}`)).toBe(true);
+    expect(isOpenToolsTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE)).toBe(false);
+    expect(isOpenToolsTurnFailure("Usage limit reached. Try again later.")).toBe(false);
+  });
+
+  it("omits recoverable open-tools and interrupt-class failures from chat delivery", () => {
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+        recoverable: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: "Codex turn failed: item.started without item.completed",
+        recoverable: true,
+        interrupted: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: "request was aborted",
+        recoverable: true,
+        internalAbortReason: "recoverable_interrupt_failure",
+      }),
+    ).toBe(false);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+        recoverable: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: "Usage limit reached. Try again later.",
+        recoverable: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+        recoverable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: "model unavailable",
+        recoverable: false,
+        interrupted: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldEmitUserFacingTurnFailure({
+        error: "request was aborted",
+        recoverable: true,
+        suppressedRecoverable: true,
+      }),
+    ).toBe(false);
   });
 });
