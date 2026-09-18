@@ -2588,8 +2588,14 @@ export const AgentsPermissionsReturnSchema = {
         }
       ]
     },
+    "breakGlassCommand": {
+      "type": "string"
+    },
     "changed": {
       "type": "boolean"
+    },
+    "chatOnlyCommand": {
+      "type": "string"
     },
     "command": {
       "type": "string"
@@ -2610,7 +2616,16 @@ export const AgentsPermissionsReturnSchema = {
         }
       ]
     },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "leastPrivilegeExample": {
+      "type": "string"
+    },
     "profile": {
+      "type": "string"
+    },
+    "resetToBootstrapCommand": {
       "type": "string"
     },
     "runtimePermissions": {
@@ -50936,6 +50951,9 @@ export const PermissionsMaterializeReturnSchema = {
         "breakGlass": {
           "type": "string"
         },
+        "chatOnly": {
+          "type": "string"
+        },
         "recurringAccess": {
           "type": "string"
         }
@@ -50945,6 +50963,9 @@ export const PermissionsMaterializeReturnSchema = {
         "breakGlass"
       ],
       "type": "object"
+    },
+    "profile": {
+      "type": "string"
     },
     "subject": {
       "additionalProperties": false,

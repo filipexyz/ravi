@@ -467,10 +467,15 @@ export type AgentsPermissionsReturn = {
     })>;
     profile?: "bootstrap" | "chat-only" | "full-access";
   }) | null;
+  breakGlassCommand?: string;
   changed: boolean;
+  chatOnlyCommand?: string;
   command?: string;
   defaults?: (Record<string, unknown>) | null;
+  inspectCommand?: string;
+  leastPrivilegeExample?: string;
   profile?: string;
+  resetToBootstrapCommand?: string;
   runtimePermissions?: ({
     capabilities?: Array<string | ({
       objectId?: string;
@@ -9933,8 +9938,10 @@ export type PermissionsMaterializeReturn = {
   }>;
   guidance: {
     breakGlass: string;
+    chatOnly?: string;
     recurringAccess: string;
   };
+  profile?: string;
   subject: {
     id: string;
     type: string;
