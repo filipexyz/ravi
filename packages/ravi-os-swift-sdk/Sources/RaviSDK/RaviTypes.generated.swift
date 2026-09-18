@@ -423,22 +423,32 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var agent: RaviJSON?
   public var agentId: String
   public var before: RaviJSON?
+  public var breakGlassCommand: String?
   public var changed: Bool
+  public var chatOnlyCommand: String?
   public var command: String?
   public var defaults: RaviJSON?
+  public var inspectCommand: String?
+  public var leastPrivilegeExample: String?
   public var profile: String?
+  public var resetToBootstrapCommand: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, breakGlassCommand: String? = nil, changed: Bool, chatOnlyCommand: String? = nil, command: String? = nil, defaults: RaviJSON? = nil, inspectCommand: String? = nil, leastPrivilegeExample: String? = nil, profile: String? = nil, resetToBootstrapCommand: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
     self.agentId = agentId
     self.before = before
+    self.breakGlassCommand = breakGlassCommand
     self.changed = changed
+    self.chatOnlyCommand = chatOnlyCommand
     self.command = command
     self.defaults = defaults
+    self.inspectCommand = inspectCommand
+    self.leastPrivilegeExample = leastPrivilegeExample
     self.profile = profile
+    self.resetToBootstrapCommand = resetToBootstrapCommand
     self.runtimePermissions = runtimePermissions
   }
 
@@ -448,10 +458,15 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
     case agent = "agent"
     case agentId = "agentId"
     case before = "before"
+    case breakGlassCommand = "breakGlassCommand"
     case changed = "changed"
+    case chatOnlyCommand = "chatOnlyCommand"
     case command = "command"
     case defaults = "defaults"
+    case inspectCommand = "inspectCommand"
+    case leastPrivilegeExample = "leastPrivilegeExample"
     case profile = "profile"
+    case resetToBootstrapCommand = "resetToBootstrapCommand"
     case runtimePermissions = "runtimePermissions"
   }
 }
@@ -15297,17 +15312,20 @@ public struct PermissionsMaterializeOptions: Codable, Sendable {
 public struct PermissionsMaterializeReturn: Codable, Sendable {
   public var capabilities: [RaviJSON]
   public var guidance: RaviJSON
+  public var profile: String?
   public var subject: RaviJSON
 
-  public init(capabilities: [RaviJSON], guidance: RaviJSON, subject: RaviJSON) {
+  public init(capabilities: [RaviJSON], guidance: RaviJSON, profile: String? = nil, subject: RaviJSON) {
     self.capabilities = capabilities
     self.guidance = guidance
+    self.profile = profile
     self.subject = subject
   }
 
   enum CodingKeys: String, CodingKey {
     case capabilities = "capabilities"
     case guidance = "guidance"
+    case profile = "profile"
     case subject = "subject"
   }
 }

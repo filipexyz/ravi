@@ -68,6 +68,10 @@ Required capability materializers:
   direct agent-only `ravi agents permissions`.
 - The `agent.defaults.runtimePermissions` key is a compatibility storage name;
   the active materializer id is `agent-default-capabilities`.
+- Stored profile `chat-only` is an explicit sentinel. `runtime-bootstrap` and
+  `agent-identity-permissions` MUST suppress bootstrap (and any identity
+  re-injection of `use:tool:*` / execute groups/executables) for that executor.
+  `null` / absent / `none` remain the bootstrap floor.
 - External shared-surface turns MUST use `agent-identity-permissions` as the
   production authority projection. Contact and chat principals remain
   provenance/invocation context unless a future overlay provider explicitly

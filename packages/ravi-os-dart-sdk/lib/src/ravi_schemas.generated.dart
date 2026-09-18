@@ -2129,7 +2129,7 @@ class RaviSchemas {
       "type": "string"
     },
     "profile": {
-      "description": "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
+      "description": "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
       "type": "string"
     }
   },
@@ -2221,6 +2221,7 @@ class RaviSchemas {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2586,6 +2587,7 @@ class RaviSchemas {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2598,8 +2600,14 @@ class RaviSchemas {
         }
       ]
     },
+    "breakGlassCommand": {
+      "type": "string"
+    },
     "changed": {
       "type": "boolean"
+    },
+    "chatOnlyCommand": {
+      "type": "string"
     },
     "command": {
       "type": "string"
@@ -2620,7 +2628,16 @@ class RaviSchemas {
         }
       ]
     },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "leastPrivilegeExample": {
+      "type": "string"
+    },
     "profile": {
+      "type": "string"
+    },
+    "resetToBootstrapCommand": {
       "type": "string"
     },
     "runtimePermissions": {
@@ -2659,6 +2676,7 @@ class RaviSchemas {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -3315,6 +3333,7 @@ class RaviSchemas {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -51634,6 +51653,9 @@ class RaviSchemas {
         "breakGlass": {
           "type": "string"
         },
+        "chatOnly": {
+          "type": "string"
+        },
         "recurringAccess": {
           "type": "string"
         }
@@ -51643,6 +51665,9 @@ class RaviSchemas {
         "breakGlass"
       ],
       "type": "object"
+    },
+    "profile": {
+      "type": "string"
     },
     "subject": {
       "additionalProperties": false,

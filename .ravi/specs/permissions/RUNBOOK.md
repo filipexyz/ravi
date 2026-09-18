@@ -16,6 +16,20 @@ Expected baseline:
 - Subject authority materializes through registered providers.
 - Agent configuration is stored in `agent.defaults.runtimePermissions`.
 
+## Chat-only vs none
+
+```bash
+ravi agents permissions <id> chat-only
+ravi permissions materialize --subject-type agent --subject-id <id> --json
+ravi agents permissions <id> none
+ravi permissions materialize --subject-type agent --subject-id <id> --json
+```
+
+- `chat-only` stores `{ profile: "chat-only" }` and materializes no tool/exec
+  authority. Host deny applies on Codex, Pi, Claude, and Grok.
+- `none` / `clear` / `off` delete the overlay and restore the bootstrap floor.
+  That is not zero-authority.
+
 ## Validate Agent Visibility Migration
 
 1. Materialize the default agent:

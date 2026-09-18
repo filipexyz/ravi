@@ -729,6 +729,52 @@ describe("inspectDoctor", () => {
     expect(report.checks.find((check) => check.id === "permissions.provider_runtime_boundaries")?.status).toBe("skip");
   });
 
+  it("reports chat-only ceiling honestly", () => {
+    const deps = makeHealthyDeps();
+    const unused = inspectDoctor(deps);
+    expect(unused.checks.find((check) => check.id === "permissions.chat_only_ceiling")?.status).toBe("pass");
+    expect(unused.findings.find((finding) => finding.id === "permissions.chat_only_ceiling")?.summary).toContain(
+      "no chat-only agents configured",
+    );
+
+    const leaking = inspectDoctor({
+      ...deps,
+      dbListAgents: () =>
+        [
+          {
+            id: "reception",
+            cwd: "/agents/reception",
+            provider: "claude",
+            defaults: { runtimePermissions: { profile: "chat-only" } },
+          },
+        ] as any,
+      materializeSubjectCapabilities: (subjectType: string) =>
+        subjectType === "agent" ? [{ permission: "use", objectType: "tool", objectId: "*" }] : [],
+    });
+    expect(leaking.checks.find((check) => check.id === "permissions.chat_only_ceiling")?.status).toBe("fail");
+    expect(leaking.findings.find((finding) => finding.id === "permissions.chat_only_ceiling")?.summary).toContain(
+      "still materialize tool or exec authority",
+    );
+
+    const honest = inspectDoctor({
+      ...deps,
+      dbListAgents: () =>
+        [
+          {
+            id: "reception",
+            cwd: "/agents/reception",
+            provider: "claude",
+            defaults: { runtimePermissions: { profile: "chat-only" } },
+          },
+        ] as any,
+      materializeSubjectCapabilities: () => [],
+    });
+    expect(honest.checks.find((check) => check.id === "permissions.chat_only_ceiling")?.status).toBe("pass");
+    expect(honest.findings.find((finding) => finding.id === "permissions.chat_only_ceiling")?.summary).toContain(
+      "1 chat-only agent",
+    );
+  });
+
   it("fails provider-runtime boundaries only inside a Ravi source tree", () => {
     const deps = makeHealthyDeps();
     const report = inspectDoctor({

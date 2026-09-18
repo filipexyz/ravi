@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext } from "../router/router-db.js";
+import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
@@ -189,6 +189,73 @@ describe("approval service", () => {
     expect(emitted.filter((entry) => entry.topic === "ravi.approval.response")).toHaveLength(1);
     expect(emitted[0]?.data._emitId).toBeTruthy();
     expect(emitted[0]?.data.messageId).toBe("msg_approval_1");
+  });
+
+  it("denies chat-only tool and exec requests before approval escalation", async () => {
+    dbCreateAgent({ id: "reception", cwd: "/tmp/reception" });
+    dbUpdateAgent("reception", { defaults: { runtimePermissions: { profile: "chat-only" } } });
+    getOrCreateSession("agent:reception:main", "reception", "/tmp/reception", { name: "main" });
+    const context = dbCreateContext({
+      contextId: "ctx_chat_only",
+      contextKey: "rctx_chat_only",
+      kind: "agent-runtime",
+      agentId: "reception",
+      sessionKey: "agent:reception:main",
+      sessionName: "main",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+      metadata: {
+        approvalSource: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const tool = await authorizeRuntimeContext({
+      context,
+      permission: "use",
+      objectType: "tool",
+      objectId: "Read",
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
+    });
+    const exec = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
+    });
+
+    expect(tool).toMatchObject({
+      allowed: false,
+      approved: false,
+      inherited: false,
+    });
+    expect(tool.reason ?? "").toMatch(/chat-only/);
+    expect(exec.allowed).toBe(false);
+    expect(exec.reason ?? "").toMatch(/chat-only/);
+    expect(emitted).toHaveLength(0);
+    expect(deliveredRequests).toHaveLength(0);
+    expect(externalOrder).toEqual([]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "reception", resolved: false })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          agentId: "reception",
+          relation: "use",
+          objectType: "tool",
+          objectId: "Read",
+        }),
+        expect.objectContaining({
+          agentId: "reception",
+          relation: "execute",
+          objectType: "executable",
+          objectId: "curl",
+        }),
+      ]),
+    );
   });
 
   it("fails closed when no approval source is available", async () => {

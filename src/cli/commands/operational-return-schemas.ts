@@ -1956,7 +1956,7 @@ const runtimeCapabilityReturnSchema = z.object({
 
 const agentRuntimePermissionsConfigReturnSchema = z
   .object({
-    profile: z.enum(["bootstrap", "full-access"]).optional(),
+    profile: z.enum(["bootstrap", "chat-only", "full-access"]).optional(),
     capabilities: z.array(z.union([z.string(), runtimeCapabilityReturnSchema])).optional(),
   })
   .nullable();
@@ -2111,6 +2111,11 @@ export const agentPermissionsReturnSchema = z.object({
   after: agentRuntimePermissionsConfigReturnSchema.optional(),
   defaults: jsonObjectSchema.nullable().optional(),
   command: z.string().optional(),
+  inspectCommand: z.string().optional(),
+  leastPrivilegeExample: z.string().optional(),
+  chatOnlyCommand: z.string().optional(),
+  resetToBootstrapCommand: z.string().optional(),
+  breakGlassCommand: z.string().optional(),
   agent: agentJsonSummaryReturnSchema.optional(),
 });
 

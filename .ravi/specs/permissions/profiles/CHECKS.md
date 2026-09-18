@@ -13,6 +13,13 @@ capability: profiles
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
   "full-access"` and assert `admin system:*`, `execute executable:*`, and
   `use tool:*` appear with `agent-default-capabilities` provenance.
+- Persist `chat-only` as `{ profile: "chat-only" }` (never `null`). Materialize
+  of that agent and its `agent_identity` MUST have no `use:tool:*` and no
+  bootstrap execute groups/executables. `permissions <id> none` MUST still
+  restore the bootstrap floor.
+- CLI/help for `agents permissions` MUST list `chat-only` beside
+  bootstrap/full-access and MUST describe `none`/`clear`/`off` as reset to
+  bootstrap minimum, not zero-authority.
 - Materialize an agent with explicit runtime capabilities and assert only those
   capabilities are added beyond bootstrap.
 - Materialize a contact tagged `permission.admin` and assert admin authority
@@ -46,6 +53,7 @@ capability: profiles
 
 ```bash
 bun test src/permissions/provider-runtime.test.ts
+bun test src/permissions/chat-only-parity.test.ts
 bun test src/permissions/delegation.test.ts
 bun test src/cli/commands/agents.test.ts
 bun test src/cli/commands/permissions.test.ts src/cli/command-access.test.ts src/approval/service.test.ts

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -51,7 +51,9 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   }),
 }));
 
-const { buildClaudeCodeEnvironment, createClaudeRuntimeProvider } = await import("./claude-provider.js");
+const { buildClaudeCodeEnvironment, buildClaudeQueryOptions, createClaudeRuntimeProvider } = await import(
+  "./claude-provider.js"
+);
 
 function makeStartRequest(
   messages: RuntimeStartRequest["prompt"],
@@ -672,6 +674,62 @@ describe("createClaudeRuntimeProvider", () => {
     await collectEvents(handle.events);
     expect(queryCalls[0]?.options.settingSources).toEqual(["user"]);
     expect(queryCalls[0]?.options.settingSources).not.toContain("project");
+  });
+});
+
+describe("buildClaudeQueryOptions chat-only host deny", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    const { createIsolatedRaviState } = await import("../test/ravi-state.js");
+    stateDir = await createIsolatedRaviState("ravi-claude-chat-only-");
+  });
+
+  afterEach(async () => {
+    const { cleanupIsolatedRaviState } = await import("../test/ravi-state.js");
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("attaches canUseTool under bypassPermissions and host-denies tools for chat-only", async () => {
+    const { dbCreateAgent } = await import("../router/router-db.js");
+    const {
+      assertChatOnlyClaudeParity,
+      assertChatOnlyHostDeny,
+      materializeAgentAndIdentity,
+      persistAgentRuntimeProfile,
+    } = await import("../permissions/chat-only-parity.js");
+
+    dbCreateAgent({ id: "reception", cwd: "/tmp/reception" });
+    persistAgentRuntimeProfile("reception", "chat-only");
+    const { identity } = materializeAgentAndIdentity("reception");
+    const { canUseTool } = await assertChatOnlyHostDeny("reception", identity);
+
+    await assertChatOnlyClaudeParity(canUseTool);
+
+    const options = buildClaudeQueryOptions(
+      {
+        ...makeStartRequest((async function* () {})(), {
+          permissionOptions: { permissionMode: "bypassPermissions" },
+          canUseTool,
+        }),
+      },
+      {},
+      {},
+    );
+    expect(options.permissionMode).toBe("bypassPermissions");
+    expect(typeof options.canUseTool).toBe("function");
+    const denied = await options.canUseTool!(
+      "Bash",
+      { command: "curl https://example.com" },
+      {
+        signal: new AbortController().signal,
+        toolUseID: "claude-chat-only-bash",
+        requestId: "claude-chat-only-request",
+      },
+    );
+    expect(denied?.behavior).toBe("deny");
+    expect(String((denied as { message?: string })?.message ?? "")).toMatch(/chat-only|denied|permission/i);
   });
 });
 afterAll(() => mock.restore());

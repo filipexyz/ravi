@@ -72,9 +72,14 @@ Regras:
 - `ravi agents permissions` grava em `agent.defaults.runtimePermissions`.
   Use diretamente apenas para correção agent-only; para fluxos iniciados por
   humanos, prefira `ravi permissions allow/resolve`.
+- Profiles de runtime: `bootstrap` (piso de nascimento), `chat-only`
+  (conversation only; sentinel explícito `{ profile: "chat-only" }`),
+  `full-access` (break-glass), `none`/`clear`/`off` (apaga overlay e volta ao
+  piso bootstrap). `none` não é zero-authority.
 - `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
-  materializers padrão.
+  materializers padrão. `chat-only` suprime a injeção de `runtime-bootstrap`
+  no agent e no `agent_identity` derivado.
 - `operator-control` é o authorization provider explícito para operador local;
   ele não materializa capabilities de agent e não autoriza execução de tools.
 - O contexto efetivo de um turno externo usa `authorityMode=agent-identity`:

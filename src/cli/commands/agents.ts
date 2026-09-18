@@ -74,6 +74,7 @@ import type { TagBinding } from "../../tags/types.js";
 import {
   buildAgentRuntimePermissionsDefaults,
   ensureAgentCanViewAgent,
+  formatAgentRuntimePermissionProfileChoices,
   getAgentRuntimePermissionsConfigFromDefaults,
   normalizeAgentRuntimePermissionProfile,
   type AgentRuntimePermissionsConfig,
@@ -352,6 +353,15 @@ function expandsRuntimePermissionAuthority(
   before: AgentRuntimePermissionsConfig | null,
   after: AgentRuntimePermissionsConfig | null,
 ): boolean {
+  // chat-only is a zero-authority ceiling. Setting it is containment; leaving
+  // it restores the bootstrap floor or a higher profile and needs --execute.
+  if (after?.profile === "chat-only") {
+    return false;
+  }
+  if (before?.profile === "chat-only") {
+    return true;
+  }
+
   // full-access already materializes admin system:*; any later profile or
   // explicit-capability edit can only preserve or reduce effective authority.
   if (before?.profile === "full-access") {
@@ -777,6 +787,8 @@ export class AgentsCommands {
           configureCommand: `ravi agents permissions ${id}`,
           inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
           leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
+          chatOnlyCommand: `ravi agents permissions ${id} chat-only`,
+          resetToBootstrapCommand: `ravi agents permissions ${id} none`,
           breakGlassCommand: `ravi agents permissions ${id} full-access --execute`,
           visibility: {
             defaultAgent: config.defaultAgent,
@@ -804,6 +816,8 @@ export class AgentsCommands {
         console.log(
           `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
+        console.log(`  Reception only:    ravi agents permissions ${id} chat-only`);
+        console.log(`  Reset to bootstrap: ravi agents permissions ${id} none`);
         console.log(`  Break-glass only: ravi agents permissions ${id} full-access --execute`);
       }
       emitConfigChanged();
@@ -1250,7 +1264,8 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("profile", {
       required: false,
-      description: "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
+      description:
+        "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
     })
     profile?: string,
     @Option({
@@ -1293,6 +1308,8 @@ export class AgentsCommands {
         command: `ravi agents permissions ${id}`,
         inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
         leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
+        chatOnlyCommand: `ravi agents permissions ${id} chat-only`,
+        resetToBootstrapCommand: `ravi agents permissions ${id} none`,
         breakGlassCommand: `ravi agents permissions ${id} full-access --execute`,
         agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
       };
@@ -1304,7 +1321,8 @@ export class AgentsCommands {
         console.log(
           `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
-        console.log(`  Clear:             ravi agents permissions ${id} none`);
+        console.log(`  Reception only:    ravi agents permissions ${id} chat-only`);
+        console.log(`  Reset to bootstrap: ravi agents permissions ${id} none`);
         console.log(`  Break-glass only:  ravi agents permissions ${id} full-access --execute`);
       }
       return payload;
@@ -1312,16 +1330,20 @@ export class AgentsCommands {
 
     const normalizedProfile = profile === undefined ? before?.profile : normalizeAgentRuntimePermissionProfile(profile);
     if (profile !== undefined && normalizedProfile === null) {
-      fail(`Invalid runtime permission profile: ${profile}. Valid profiles: bootstrap, full-access, none`);
+      fail(
+        `Invalid runtime permission profile: ${profile}. Valid profiles: ${formatAgentRuntimePermissionProfileChoices()}`,
+      );
     }
 
     const nextConfig =
       normalizedProfile === "none"
         ? null
-        : {
-            ...(before ?? {}),
-            ...(normalizedProfile ? { profile: normalizedProfile } : {}),
-          };
+        : normalizedProfile === "chat-only"
+          ? ({ profile: "chat-only" } satisfies AgentRuntimePermissionsConfig)
+          : {
+              ...(before ?? {}),
+              ...(normalizedProfile ? { profile: normalizedProfile } : {}),
+            };
     if (nextConfig && explicitCapabilities !== undefined) {
       if (explicitCapabilities.length > 0) {
         nextConfig.capabilities = explicitCapabilities;
@@ -1382,6 +1404,10 @@ export class AgentsCommands {
         );
         console.log(
           "  Prefer replacing this with a provider-owned permission profile or narrow explicit capabilities.",
+        );
+      } else if (after?.profile === "chat-only") {
+        console.log(
+          "  Reception: conversation only. Host denies tools/shell/CLI groups on every runtime. none/clear/off resets to the bootstrap minimum, not zero-authority.",
         );
       }
     }

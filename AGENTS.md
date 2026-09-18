@@ -377,7 +377,8 @@ defaults:
 ```bash
 ravi agents permissions dev             # Show runtime profile
 ravi agents permissions dev full-access --execute # Full Ravi permissions (sem --execute e dry-run, exit 3)
-ravi agents permissions dev none                  # Reduce to bootstrap defaults immediately
+ravi agents permissions dev chat-only             # Reception agent: conversation only, no tools/shell/CLI groups
+ravi agents permissions dev none                  # Reset to bootstrap minimum immediately (not zero-authority)
 ```
 
 The legacy relation ledger remains available for audit/migration:
@@ -646,6 +647,8 @@ ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
 ravi permissions grant agent:main execute executable:git  # Allow CLI executable
 ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
 ravi agents permissions main full-access --execute        # Full Ravi runtime profile (dry-run sem --execute)
+ravi agents permissions main chat-only                    # Reception agent (conversation only)
+ravi agents permissions main none                         # Reset overlay to bootstrap minimum
 ```
 
 ## Emoji Reactions

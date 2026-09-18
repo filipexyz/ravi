@@ -2118,7 +2118,7 @@ export const AgentsPermissionsInputSchema = {
       "type": "string"
     },
     "profile": {
-      "description": "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
+      "description": "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
       "type": "string"
     }
   },
@@ -2209,6 +2209,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2574,6 +2575,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2586,8 +2588,14 @@ export const AgentsPermissionsReturnSchema = {
         }
       ]
     },
+    "breakGlassCommand": {
+      "type": "string"
+    },
     "changed": {
       "type": "boolean"
+    },
+    "chatOnlyCommand": {
+      "type": "string"
     },
     "command": {
       "type": "string"
@@ -2608,7 +2616,16 @@ export const AgentsPermissionsReturnSchema = {
         }
       ]
     },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "leastPrivilegeExample": {
+      "type": "string"
+    },
     "profile": {
+      "type": "string"
+    },
+    "resetToBootstrapCommand": {
       "type": "string"
     },
     "runtimePermissions": {
@@ -2647,6 +2664,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -3295,6 +3313,7 @@ export const AgentsShowReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -50932,6 +50951,9 @@ export const PermissionsMaterializeReturnSchema = {
         "breakGlass": {
           "type": "string"
         },
+        "chatOnly": {
+          "type": "string"
+        },
         "recurringAccess": {
           "type": "string"
         }
@@ -50941,6 +50963,9 @@ export const PermissionsMaterializeReturnSchema = {
         "breakGlass"
       ],
       "type": "object"
+    },
+    "profile": {
+      "type": "string"
     },
     "subject": {
       "additionalProperties": false,

@@ -302,7 +302,7 @@ async function* runClaudeTurns(
   }
 }
 
-function buildClaudeQueryOptions(
+export function buildClaudeQueryOptions(
   input: RuntimeStartRequest,
   env: Record<string, string>,
   runtime: {

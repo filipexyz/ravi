@@ -1,4 +1,5 @@
 import { nats as runtimeNats } from "../nats.js";
+import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
@@ -213,6 +214,39 @@ export async function requestCascadingApproval(
 
 export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions): Promise<ContextAuthorizationResult> {
   const { context, permission, objectType, objectId } = opts;
+
+  if (isChatOnlyAgent(context.agentId) && isToolOrExecCapability({ permission, objectType })) {
+    const reason = `Permission denied: agent:${context.agentId ?? "unknown"} is chat-only and cannot use ${permission} ${objectType}:${objectId}`;
+    const provenance = buildAuditContextProvenance({ context });
+    recordAndEmitPermissionDenial({
+      subjectType: "agent",
+      subjectId: context.agentId ?? undefined,
+      agentId: context.agentId,
+      sessionKey: context.sessionKey,
+      sessionName: context.sessionName,
+      contextId: context.contextId,
+      relation: permission,
+      objectType,
+      objectId,
+      reason,
+      detail: provenance ? { context: provenance } : undefined,
+      audit: {
+        type: permissionDeniedAuditType(objectType),
+        agentId: context.agentId ?? "unknown",
+        denied: `${objectType}:${objectId}`,
+        reason,
+        blockType: "runtime_chat_only_ceiling",
+        ...(provenance ? { context: provenance } : {}),
+      },
+    });
+    return {
+      allowed: false,
+      approved: false,
+      inherited: false,
+      reason,
+      context,
+    };
+  }
 
   if (canWithCapabilityContext(context, permission, objectType, objectId)) {
     return { allowed: true, approved: false, inherited: true, context };

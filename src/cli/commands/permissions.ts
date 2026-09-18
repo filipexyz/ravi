@@ -7,7 +7,11 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { addContactTag, getContact } from "../../contacts.js";
-import { ensureAgentRuntimeCapability } from "../../permissions/agent-default-capabilities-provider.js";
+import {
+  ensureAgentRuntimeCapability,
+  isChatOnlyRuntimePermissions,
+  readAgentRuntimePermissionsConfig,
+} from "../../permissions/agent-default-capabilities-provider.js";
 import {
   buildAuthorizationGuidance,
   formatCanonicalCapability,
@@ -136,9 +140,11 @@ const permissionsMaterializeReturnSchema = z.object({
       source: z.string().optional(),
     }),
   ),
+  profile: z.string().optional(),
   guidance: z.object({
     recurringAccess: z.string(),
     breakGlass: z.string(),
+    chatOnly: z.string().optional(),
   }),
 });
 
@@ -407,13 +413,27 @@ export class PermissionsCommands {
   ) {
     const normalizedSubjectType = requiredOption(subjectType, "--subject-type");
     const normalizedSubjectId = requiredOption(subjectId, "--subject-id");
+    const storedProfile =
+      normalizedSubjectType === "agent"
+        ? readAgentRuntimePermissionsConfig(normalizedSubjectId)
+        : normalizedSubjectType === "agent_identity"
+          ? readAgentRuntimePermissionsConfig(normalizedSubjectId.split(":")[0] ?? "")
+          : null;
+    const chatOnly = isChatOnlyRuntimePermissions(storedProfile);
     const payload = {
       subject: { type: normalizedSubjectType, id: normalizedSubjectId },
       capabilities: materializeSubjectCapabilities(normalizedSubjectType, normalizedSubjectId),
+      ...(storedProfile?.profile || chatOnly ? { profile: storedProfile?.profile ?? "chat-only" } : {}),
       guidance: {
         recurringAccess:
           "Recurring access should come from provider-owned agent identity profiles/tags, not ad-hoc capability lists.",
         breakGlass: "full-access is break-glass and should be explicit.",
+        ...(chatOnly
+          ? {
+              chatOnly:
+                "chat-only is conversation only (no tools/shell/CLI groups). none/clear/off resets to the bootstrap minimum; it is not zero-authority.",
+            }
+          : {}),
       },
     };
 
@@ -423,6 +443,13 @@ export class PermissionsCommands {
     }
 
     if (payload.capabilities.length === 0) {
+      if (chatOnly) {
+        console.log(
+          `${normalizedSubjectType}:${normalizedSubjectId} is chat-only: conversation only, no tools/shell/CLI groups.`,
+        );
+        console.log("none/clear/off resets to the bootstrap minimum; it is not zero-authority.");
+        return payload;
+      }
       console.log(`${normalizedSubjectType}:${normalizedSubjectId} has no materialized capabilities.`);
       console.log("next: attach a provider-owned permission profile/tag, or add the narrowest explicit capability");
       return payload;

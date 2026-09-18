@@ -157,6 +157,49 @@ describe("Permission Provider Runtime", () => {
     expect(canWithCapabilities(capabilities, "execute", "executable", "ssh")).toBe(true);
   });
 
+  it("suppresses bootstrap and identity re-injection when the stored profile is chat-only", () => {
+    dbCreateAgent({ id: "reception-agent", cwd: "/tmp/reception-agent" });
+    dbUpdateAgent("reception-agent", {
+      defaults: { runtimePermissions: { profile: "chat-only" } },
+    });
+
+    const capabilities = materializeSubjectCapabilities("agent", "reception-agent");
+    const identity = materializeSubjectCapabilities("agent_identity", "reception-agent:chat:room-1", {
+      executorAgentId: "reception-agent",
+      executorCapabilities: [
+        { permission: "use", objectType: "tool", objectId: "*", source: "stale-bootstrap" },
+        { permission: "execute", objectType: "group", objectId: "sessions", source: "stale-bootstrap" },
+      ],
+      compartmentType: "chat",
+      compartmentId: "room-1",
+    });
+
+    expect(capabilities.filter((capability) => capability.source?.startsWith("runtime-bootstrap:"))).toEqual([]);
+    expect(capabilities.some((capability) => capability.permission === "use" && capability.objectType === "tool")).toBe(
+      false,
+    );
+    expect(identity).toEqual([]);
+    expect(canWithCapabilities(capabilities, "use", "tool", "Read")).toBe(false);
+    expect(canWithCapabilities(identity, "execute", "group", "sessions")).toBe(false);
+  });
+
+  it("keeps none/absent as the bootstrap floor", () => {
+    dbCreateAgent({ id: "cleared-agent", cwd: "/tmp/cleared-agent" });
+    dbUpdateAgent("cleared-agent", {
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    });
+    dbUpdateAgent("cleared-agent", { defaults: null });
+
+    const capabilities = materializeSubjectCapabilities("agent", "cleared-agent");
+    expect(capabilities).toContainEqual({
+      permission: "use",
+      objectType: "tool",
+      objectId: "*",
+      source: "runtime-bootstrap:agent",
+    });
+    expect(canWithCapabilities(capabilities, "execute", "group", "sessions")).toBe(true);
+  });
+
   it("materializes explicit agent runtime capabilities without growing the bootstrap allowlist", () => {
     dbCreateAgent({ id: "omni-agent", cwd: "/tmp/omni-agent" });
     dbUpdateAgent("omni-agent", {
