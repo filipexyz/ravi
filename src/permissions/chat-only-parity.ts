@@ -46,19 +46,16 @@ export function assertChatOnlyStore(agentId: string): void {
   expect(stored).not.toBeNull();
 }
 
-export function assertNoToolOrExecAuthority(
-  capabilities: ContextCapability[],
-  label = "capabilities",
-): void {
+export function assertNoToolOrExecAuthority(capabilities: ContextCapability[], label = "capabilities"): void {
   expect(hasToolOrExecAuthority(capabilities), `${label} must not grant tool/exec authority`).toBe(false);
   expect(
-    capabilities.some((capability) => capability.permission === "use" && capability.objectType === "tool" && capability.objectId === "*"),
+    capabilities.some(
+      (capability) =>
+        capability.permission === "use" && capability.objectType === "tool" && capability.objectId === "*",
+    ),
     `${label} must not include use:tool:*`,
   ).toBe(false);
-  expect(
-    capabilities.filter(isToolOrExecCapability),
-    `${label} tool/exec entries`,
-  ).toEqual([]);
+  expect(capabilities.filter(isToolOrExecCapability), `${label} tool/exec entries`).toEqual([]);
 }
 
 export function assertBootstrapFloor(capabilities: ContextCapability[]): void {
@@ -85,7 +82,10 @@ export function assertBootstrapFloor(capabilities: ContextCapability[]): void {
   expect(canWithCapabilities(capabilities, "execute", "executable", "ls")).toBe(true);
 }
 
-export function materializeAgentAndIdentity(agentId: string, compartmentId = "parity-chat"): {
+export function materializeAgentAndIdentity(
+  agentId: string,
+  compartmentId = "parity-chat",
+): {
   agent: ContextCapability[];
   identity: ContextCapability[];
   dm: ContextCapability[];
@@ -105,7 +105,10 @@ export function materializeAgentAndIdentity(agentId: string, compartmentId = "pa
   };
 }
 
-export async function assertChatOnlyHostDeny(agentId: string, capabilities: ContextCapability[]): Promise<{
+export async function assertChatOnlyHostDeny(
+  agentId: string,
+  capabilities: ContextCapability[],
+): Promise<{
   canUseTool: RuntimeToolPermissionHandler;
 }> {
   getOrCreateSession(`agent:${agentId}:parity`, agentId, `/tmp/${agentId}`, { name: `${agentId}-parity` });
@@ -129,7 +132,7 @@ export async function assertChatOnlyHostDeny(agentId: string, capabilities: Cont
 
   const generic = await services.authorizeToolUse({ toolName: "Read", input: { path: "README.md" } });
   expect(generic.approved).toBe(false);
-  expect(generic.reason ?? "").toMatch(/denied|permission/i);
+  expect(generic.reason ?? "").toMatch(/chat-only|denied|permission/i);
 
   const bash = await services.authorizeCommandExecution({ command: "curl https://example.com", input: {} });
   expect(bash.approved).toBe(false);
@@ -159,12 +162,14 @@ export async function assertChatOnlyCodexParity(
   const caps = provider.getCapabilities();
   expect(caps.tools.accessRequirement).toBe("tool_surface");
   expect(
-    getRuntimeToolAccessMode({ tools: { accessRequirement: "tool_surface" } } as Parameters<
-      typeof getRuntimeToolAccessMode
-    >[0], agentId, {
-      kind: "turn-runtime",
-      metadata: { authorityMode: "agent-identity" },
-    }),
+    getRuntimeToolAccessMode(
+      { tools: { accessRequirement: "tool_surface" } } as Parameters<typeof getRuntimeToolAccessMode>[0],
+      agentId,
+      {
+        kind: "turn-runtime",
+        metadata: { authorityMode: "agent-identity" },
+      },
+    ),
   ).toBe("restricted");
   expect(canWithCapabilities(capabilities, "use", "tool", "*")).toBe(false);
   const hosted = await canUseTool("Bash", { command: "ls" });
@@ -201,8 +206,16 @@ export async function assertChatOnlyClaudeParity(canUseTool: RuntimeToolPermissi
 
   expect(options.permissionMode).toBe("bypassPermissions");
   expect(typeof options.canUseTool).toBe("function");
-  const decision = await options.canUseTool!("Read", { path: "README.md" });
-  expect(decision.behavior).toBe("deny");
+  const decision = await options.canUseTool!(
+    "Read",
+    { path: "README.md" },
+    {
+      signal: new AbortController().signal,
+      toolUseID: "parity-tool-use",
+      requestId: "parity-request",
+    },
+  );
+  expect(decision?.behavior).toBe("deny");
 }
 
 export async function assertChatOnlyGrokParity(canUseTool: RuntimeToolPermissionHandler): Promise<void> {

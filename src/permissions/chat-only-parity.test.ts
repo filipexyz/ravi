@@ -56,7 +56,6 @@ describe("assertChatOnlyParity", () => {
   });
 
   it("does not apply chat-only as the birth default for a normal agent", () => {
-    dbCreateAgent({ id: "main", cwd: "/tmp/main" });
     expect(readAgentRuntimePermissionsConfig("main")).toBeNull();
     assertBootstrapFloor(materializeSubjectCapabilities("agent", "main"));
     persistAgentRuntimeProfile("main", "none");

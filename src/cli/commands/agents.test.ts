@@ -877,11 +877,16 @@ describe("AgentsCommands permissions", () => {
         after: { profile: "chat-only" },
         defaults: { runtimePermissions: { profile: "chat-only" } },
       });
+      commands.permissions("dev", "chat-only");
     } finally {
       console.log = originalLog;
     }
 
     expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: { defaults: { runtimePermissions: { profile: "chat-only" } } },
+      },
       {
         id: "dev",
         partial: { defaults: { runtimePermissions: { profile: "chat-only" } } },
@@ -933,6 +938,7 @@ describe("AgentsCommands permissions", () => {
         chatOnlyCommand: "ravi agents permissions dev chat-only",
         resetToBootstrapCommand: "ravi agents permissions dev none",
       });
+      commands.permissions("dev");
     } finally {
       console.log = originalLog;
     }
