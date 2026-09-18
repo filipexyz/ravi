@@ -24,10 +24,22 @@ import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
 import { createWatch, listWatchRecords } from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
+import { addPendingGhFollow, type PendingGhFollow } from "./gh-follow-pending.js";
 
 const log = logger.child("gh-watch");
 
 /** Subcomandos de `gh` que caracterizam observação, não administração. */
+/**
+ * Subcomandos que expressam "essa PR é minha": comandos que criam ou mutam a
+ * própria PR. Só eles viram acompanhamento — visualizar uma PR não é intenção de
+ * acompanhar, é consulta.
+ *
+ * Ficam de fora os terminais (`merge`, `close`): acompanhar algo que está
+ * acabando não serve pra nada. E ficam de fora `review`/`comment`, que em geral
+ * são sobre PR de outra pessoa.
+ */
+const GH_FOLLOW_SUBCOMMANDS = new Set(["create", "ready", "edit"]);
+
 const GH_READ_SCOPES: Record<string, Set<string>> = {
   pr: new Set([
     "view",
@@ -70,6 +82,11 @@ export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
   repo: string | null;
   prNumber: number | null;
+  /**
+   * `true` quando o comando expressa intenção de acompanhar (criar/mutar a
+   * própria PR). Visualizar não acompanha.
+   */
+  follow: boolean;
 }
 
 export interface GhWatchFollowContext {
@@ -255,6 +272,7 @@ export function parseGhWatchIntent(command: string): GhWatchIntent | null {
     scope: scopeToken as GhWatchIntent["scope"],
     repo,
     prNumber,
+    follow: scopeToken === "pr" && !!subcommand && GH_FOLLOW_SUBCOMMANDS.has(subcommand),
   };
 }
 
@@ -426,11 +444,17 @@ function resolveCwd(ctx: GhBashObservationContext): string | null {
 
 export interface GhWatchObservationDeps extends GhWatchFollowDeps {
   resolveRepoFromCwd?: (cwd: string) => string | null;
+  addPending?: (entry: PendingGhFollow) => void;
 }
 
 /**
  * Ponto único de observação. Chamado pelos três caminhos que autorizam comando
  * no Ravi, depois do "pode rodar" e antes de devolver a decisão.
+ *
+ * Só comando que **cria ou muta a própria PR** vira acompanhamento. Visualizar
+ * uma PR é consulta, não intenção — e `gh pr create` ainda traz um problema
+ * próprio: o número da PR não está no comando, nasce durante a execução. Por isso
+ * a intenção é enfileirada e resolvida no tick seguinte.
  *
  * Nunca lança: um observador que derruba a tool call é pior que não existir.
  */
@@ -444,7 +468,7 @@ export async function observeGhBashCommand(
     if (!command.includes("gh")) return;
 
     const intent = parseGhWatchIntent(command);
-    if (!intent) return;
+    if (!intent?.follow) return;
 
     const cwd = resolveCwd(ctx);
     const repo = intent.repo ?? (cwd ? (deps.resolveRepoFromCwd ?? defaultResolveRepoFromCwd)(cwd) : null);
@@ -453,22 +477,34 @@ export async function observeGhBashCommand(
     const key = `${repo}#${intent.prNumber ?? "*"}`;
     if (ensured.has(key)) return;
 
-    const result = await ensureGhWatchFollow(
-      {
-        repo,
-        prNumber: intent.prNumber,
-        context: {
-          agentId: ctx.agentId,
-          sessionName: ctx.sessionName,
-          sessionKey: ctx.sessionKey,
-          source: ctx.source,
-        },
-      },
-      deps,
-    );
+    const context = {
+      agentId: ctx.agentId,
+      sessionName: ctx.sessionName,
+      sessionKey: ctx.sessionKey,
+      source: ctx.source,
+    };
+
+    // Sem número: registra a intenção e garante o watch. O tick de manutenção
+    // resolve a PR recém-criada pelo cwd.
+    if (intent.prNumber === null) {
+      const watch = await ensureRepoWatch(repo, deps);
+      if (watch.watchId) {
+        (deps.addPending ?? ((entry: PendingGhFollow) => addPendingGhFollow(entry)))({
+          repo,
+          cwd,
+          ...context,
+          createdAt: Date.now(),
+        });
+        ensured.add(key);
+      }
+      log.info("gh follow pending queued", { repo, cwd });
+      return;
+    }
+
+    const result = await ensureGhWatchFollow({ repo, prNumber: intent.prNumber, context }, deps);
     // Só memoriza quando algo foi de fato garantido: uma falha de DB não pode
     // virar "já tratei" para o resto da vida do processo.
-    if (result.watchId && (result.triggerId || result.triggerSkipped === "no_pr_number")) {
+    if (result.watchId && result.triggerId) {
       ensured.add(key);
     }
     log.info("gh watch follow ensured", { prNumber: intent.prNumber, ...result });

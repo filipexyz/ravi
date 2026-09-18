@@ -53,6 +53,7 @@ describe("gh watch intent", () => {
       scope: "pr",
       repo: "filipexyz/ravi",
       prNumber: 507,
+      follow: false,
     });
     expect(parseGhWatchIntent("gh pr view 507 -R filipexyz/ravi")).toMatchObject({
       repo: "filipexyz/ravi",
@@ -76,6 +77,34 @@ describe("gh watch intent", () => {
       repo: "filipexyz/ravi",
       prNumber: 507,
     });
+  });
+
+  it("follows only the commands that create or mutate your own PR", () => {
+    // Criar PR é a intenção de acompanhar. Visualizar é consulta.
+    expect(parseGhWatchIntent("gh pr create --title x --body y")).toMatchObject({ follow: true, prNumber: null });
+    expect(parseGhWatchIntent("gh pr ready 507 --repo o/r")).toMatchObject({ follow: true, prNumber: 507 });
+    expect(parseGhWatchIntent("gh pr edit 507 --repo o/r --title nova")).toMatchObject({ follow: true, prNumber: 507 });
+
+    for (const command of [
+      "gh pr view 507 --repo o/r",
+      "gh pr checks 507 --repo o/r",
+      "gh pr diff 507 --repo o/r",
+      "gh pr list --repo o/r",
+      "gh pr status",
+      "gh pr review 507 --approve",
+      "gh pr comment 507 --body ok",
+      "gh run list --repo o/r",
+      "gh repo view o/r",
+      "gh api repos/o/r/pulls/507",
+    ]) {
+      expect(parseGhWatchIntent(command)).toMatchObject({ follow: false });
+    }
+  });
+
+  it("does not follow a PR that is ending", () => {
+    // Acompanhar o que já está acabando não serve pra nada.
+    expect(parseGhWatchIntent("gh pr merge 507 --repo o/r")).toMatchObject({ follow: false });
+    expect(parseGhWatchIntent("gh pr close 507 --repo o/r")).toMatchObject({ follow: false });
   });
 
   it("keeps the repo even when the PR number is unknown", () => {
@@ -212,18 +241,61 @@ describe("gh watch observation", () => {
       },
     });
 
+    await observeGhBashCommand("gh pr ready 7 --repo o/r", {}, d);
+    await observeGhBashCommand("gh pr edit 7 --repo o/r --title nova", {}, d);
+    await observeGhBashCommand("gh pr ready 7 --repo o/r", {}, d);
+
+    expect(created).toBe(1);
+  });
+
+  it("viewing a PR never subscribes", async () => {
+    resetGhWatchCaches();
+    let listed = 0;
+    let created = 0;
+    const d = deps({
+      listWatches: () => {
+        listed += 1;
+        return { items: [watch()] } as never;
+      },
+      createTrigger: () => {
+        created += 1;
+        return trigger();
+      },
+    });
+
+    // Olhar uma PR não é intenção de acompanhar: é consulta.
     await observeGhBashCommand("gh pr view 7 --repo o/r", {}, d);
     await observeGhBashCommand("gh pr checks 7 --repo o/r", {}, d);
     await observeGhBashCommand("gh pr diff 7 --repo o/r", {}, d);
 
-    expect(created).toBe(1);
+    expect(listed).toBe(0);
+    expect(created).toBe(0);
+  });
+
+  it("queues a pending follow for gh pr create, which has no number yet", async () => {
+    resetGhWatchCaches();
+    const queued: Array<{ repo: string; cwd: string | null; sessionName?: string }> = [];
+
+    await observeGhBashCommand(
+      "gh pr create --title x --body y",
+      { cwd: "/repo", sessionName: "main", agentId: "main" },
+      deps({
+        resolveRepoFromCwd: (cwd) => (cwd === "/repo" ? "o/r" : null),
+        addPending: (entry) => {
+          queued.push({ repo: entry.repo, cwd: entry.cwd, sessionName: entry.sessionName });
+        },
+      }),
+    );
+
+    // O número nasce durante a execução: a PR é resolvida pelo cwd no tick seguinte.
+    expect(queued).toEqual([{ repo: "o/r", cwd: "/repo", sessionName: "main" }]);
   });
 
   it("resolves the repo from the session cwd when the command omits it", async () => {
     resetGhWatchCaches();
     const created: string[] = [];
     await observeGhBashCommand(
-      "gh pr view 7",
+      "gh pr ready 7",
       { cwd: "/tmp/repo" },
       deps({
         resolveRepoFromCwd: (cwd) => (cwd === "/tmp/repo" ? "o/r" : null),
@@ -242,7 +314,7 @@ describe("gh watch observation", () => {
     let asked = 0;
     let created = 0;
     await observeGhBashCommand(
-      "gh pr view 7",
+      "gh pr ready 7",
       {},
       deps({
         resolveRepoFromCwd: () => {
@@ -273,7 +345,7 @@ describe("gh watch observation", () => {
     });
 
     // Um observador que derruba a tool call seria pior que não existir.
-    await expect(observeGhBashCommand("gh pr view 7 --repo o/r", {}, d)).resolves.toBeUndefined();
+    await expect(observeGhBashCommand("gh pr ready 7 --repo o/r", {}, d)).resolves.toBeUndefined();
   });
 
   it("does no work for commands without a gh intent", async () => {
@@ -288,6 +360,7 @@ describe("gh watch observation", () => {
 
     await observeGhBashCommand("ls -la", {}, d);
     await observeGhBashCommand("gh auth status", {}, d);
+    await observeGhBashCommand("gh pr view 1 --repo o/r", {}, d);
 
     expect(listed).toBe(0);
   });
