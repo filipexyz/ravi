@@ -200,6 +200,20 @@ export function consoleCoveredEventTypes(watches: WatchRecord[], provider: strin
   return covered;
 }
 
+/**
+ * PRs que saíram da lista de abertas entre duas leituras.
+ *
+ * É a única razão pela qual o estado final precisa ser consultado, e é por isso que
+ * vive fora do runner: o teste de contrato do connector percorre o mesmo caminho em
+ * vez de reimplementá-lo.
+ */
+export function departedNumbersBetween(previous: LocalWatchSnapshot | null, current: LocalWatchSnapshot): number[] {
+  return Object.keys(previous?.pullRequests ?? {})
+    .filter((key) => !(key in current.pullRequests))
+    .map((key) => Number.parseInt(key, 10))
+    .filter((value) => Number.isFinite(value));
+}
+
 export class LocalWatchRunner {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -270,10 +284,7 @@ export class LocalWatchRunner {
     const previous = this.readSnapshotState(watch.id);
     const snapshot = this.source.readSnapshot(repo);
     // Só pergunta o estado final de quem de fato saiu da lista de abertas.
-    const departedNumbers = Object.keys(previous?.pullRequests ?? {})
-      .filter((key) => !(key in snapshot.pullRequests))
-      .map((key) => Number.parseInt(key, 10))
-      .filter((value) => Number.isFinite(value));
+    const departedNumbers = departedNumbersBetween(previous, snapshot);
     const departed = departedNumbers.length > 0 ? this.source.readDeparted(repo, departedNumbers) : {};
     const { events, snapshot: next } = deriveLocalGitHubEvents(repo, { previous, current: snapshot, departed });
     this.writeSnapshotState(watch.id, next);
