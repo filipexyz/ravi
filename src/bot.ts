@@ -228,7 +228,11 @@ export class RaviBot {
     if (shutdownError) throw shutdownError;
   }
 
-  /** Abort a streaming session by name. If an unsafe tool is running, defers until the tool completes. */
+  /**
+   * Abort a streaming session by name. A running tool is cancelled through the
+   * provider's native interrupt; the abort only waits while a completed tool
+   * result is still being delivered to the provider.
+   */
   public abortSession(sessionName: string, provenance?: RuntimeAbortProvenance): boolean {
     return this.sessionDispatcher.abortSession(sessionName, provenance);
   }

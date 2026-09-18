@@ -154,9 +154,12 @@ export interface RuntimeHostStreamingSession {
    * announcements. Internal compaction observability is unaffected.
    */
   currentTurnProvenance?: TurnProvenance;
-  /** Tool safety classification - "safe" tools can be interrupted, "unsafe" cannot */
+  /**
+   * Tool safety classification. Prompt-lane interrupts (steer/immediate) wait
+   * for "unsafe" tools to finish; an explicit abort cancels either kind.
+   */
   currentToolSafety: "safe" | "unsafe" | null;
-  /** Pending abort - set when abort is requested during an unsafe tool call */
+  /** Pending abort - set when abort is requested while a completed tool result is still being delivered */
   pendingAbort: boolean;
   /** Agent mode (e.g. "sentinel") - controls compaction announcements and system commands */
   agentMode?: string;
