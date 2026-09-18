@@ -29,6 +29,7 @@ import { getMainSession, getSession, getSessionByName } from "./router/sessions.
 import { closeAllRaviDbs } from "./db/close-all.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
+import { startGhFollowMaintenanceRunner, stopGhFollowMaintenanceRunner } from "./hooks/gh-follow-sweep.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
@@ -244,6 +245,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopHeartbeatRunner();
     await stopCronRunner();
     await stopSessionFollowupRunner();
+    await stopGhFollowMaintenanceRunner();
     await stopTaskCheckpointRunner();
     await releaseLeadership("runners");
 
@@ -390,6 +392,8 @@ export async function startDaemon() {
     log.info("Heartbeat runner started (leader)");
     await startCronRunner();
     log.info("Cron runner started (leader)");
+    await startGhFollowMaintenanceRunner();
+    log.info("gh follow maintenance runner started (leader)");
     await startSessionFollowupRunner();
     log.info("Session followup runner started (leader)");
     await startTaskCheckpointRunner({
@@ -403,6 +407,7 @@ export async function startDaemon() {
       await startHeartbeatRunner();
       await startCronRunner();
       await startSessionFollowupRunner();
+      await startGhFollowMaintenanceRunner();
       await startTaskCheckpointRunner({
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
       });
