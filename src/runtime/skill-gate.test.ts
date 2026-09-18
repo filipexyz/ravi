@@ -3,15 +3,27 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
-import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
+import {
+  dbUpsertSkillGateRule,
+  dbUpsertSkillGrant,
+  getOrCreateSession,
+  getSession,
+  updateProviderSession,
+} from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
   setPermissionAuditPublisherForTest,
 } from "../permissions/denials.js";
-import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
+import {
+  evaluateSkillGate,
+  loadedSkillMatchesGate,
+  runtimeSkillGateForCommand,
+  runtimeSkillGateForTool,
+} from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
+import { buildSkillVisibilitySnapshot, markLoadedFromRaviSkillToolCall } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 let stateDir: string | null = null;
@@ -165,6 +177,130 @@ describe("evaluateSkillGate", () => {
     expect(runtimeSkillGateForCommand("bin/ravi context codex-bash-hook")).toBeUndefined();
     expect(runtimeSkillGateForCommand("bin/ravi context codex-tool-hook")).toBeUndefined();
     expect(runtimeSkillGateForCommand('echo "ravi tasks list"')).toBeUndefined();
+  });
+});
+
+// Default gate rules name skills by their plugin-qualified catalog alias
+// (`ravi-system-pages`), while provider snapshots and `ravi skills show`
+// record the plugin short id (`pages`). Both must satisfy the same gate or the
+// agent is denied forever after following the RAVI_SKILL_REQUIRED instruction.
+describe("skill gate loaded-marker equivalence", () => {
+  it("treats the plugin short id and the catalog alias as the same skill", () => {
+    expect(loadedSkillMatchesGate("pages", "ravi-system-pages")).toBe(true);
+    expect(loadedSkillMatchesGate("ravi-system-pages", "pages")).toBe(true);
+    expect(loadedSkillMatchesGate("cron-manager", "ravi-system-cron-manager")).toBe(true);
+    expect(loadedSkillMatchesGate("projects", "ravi-system-projects")).toBe(true);
+    expect(loadedSkillMatchesGate("ravi-user-skills-pages", "ravi-system-pages")).toBe(true);
+    expect(loadedSkillMatchesGate("app-creator", "ravi-dev-app-creator")).toBe(true);
+    expect(loadedSkillMatchesGate("Ravi-System-Pages", "ravi-system-pages")).toBe(true);
+  });
+
+  it("keeps distinct skills apart", () => {
+    expect(loadedSkillMatchesGate("tasks", "ravi-system-tasks-eval")).toBe(false);
+    expect(loadedSkillMatchesGate("ravi-system-tasks", "ravi-system-tasks-eval")).toBe(false);
+    expect(loadedSkillMatchesGate("image", "ravi-system-pages")).toBe(false);
+    expect(loadedSkillMatchesGate("ravi-system-", "ravi-system-pages")).toBe(false);
+    // Unmanaged plugin prefixes are not guessed from the string alone.
+    expect(loadedSkillMatchesGate("acme-pages", "pages")).toBe(false);
+  });
+
+  it("accepts the physical aliases of a resolved skill from an unmanaged plugin", () => {
+    const resolved = { name: "pages", pluginName: "acme", path: "/plugins/acme/skills/pages" };
+    expect(loadedSkillMatchesGate("acme-pages", "pages", resolved)).toBe(true);
+    expect(loadedSkillMatchesGate("acme-pages", "ravi-system-pages", resolved)).toBe(true);
+    expect(loadedSkillMatchesGate("acme-image", "pages", resolved)).toBe(false);
+  });
+
+  it("allows the retry when the agent followed the denial through `ravi skills show <short-id>`", () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "ravi-system-pages" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-alias-test",
+      runtimeProvider: "grok",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-alias-test",
+    });
+    const gate = { skill: "ravi-system-pages", source: "inferred" as const, ruleId: "pages" };
+
+    const first = evaluateSkillGate({ gate, context, toolName: "Bash" });
+    expect(first.allowed).toBe(false);
+    expect(first.code).toBe("RAVI_SKILL_REQUIRED");
+
+    // The host records `ravi skills show pages --json` exactly as the runtime
+    // event loop does for a provider without a native skill catalog. On a
+    // snapshot that lost the gate marker this resolves to the short id.
+    const loaded = markLoadedFromRaviSkillToolCall(buildSkillVisibilitySnapshot([], 2), {
+      provider: "grok",
+      toolName: "Bash",
+      toolInput: { command: "ravi skills show pages --json" },
+      output: { skill: { name: "pages", pluginName: "ravi-system", source: "catalog:ravi-system/pages" } },
+      now: 3,
+    });
+    expect(loaded.loadedSkills).toEqual(["pages"]);
+    updateProviderSession("agent:main:main", "grok", "thread-1", {
+      runtimeSessionParams: { skillVisibility: loaded },
+    });
+
+    const retry = evaluateSkillGate({ gate, context, toolName: "Bash" });
+    expect(retry.allowed).toBe(true);
+    expect(retry.code).toBeUndefined();
+
+    const persisted = getSession("agent:main:main")?.runtimeSessionParams
+      ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["pages"]);
+    expect(persisted.skills.map((skill) => skill.id)).toEqual(["pages"]);
+  });
+
+  it("marks the advertised short id as loaded instead of duplicating the catalog alias", () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "ravi-system-pages" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-alias-test",
+      runtimeProvider: "claude",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+      runtimeSessionParams: {
+        skillVisibility: buildSkillVisibilitySnapshot(
+          [
+            {
+              id: "pages",
+              provider: "claude",
+              state: "advertised",
+              confidence: "declared",
+              source: "plugin:ravi-system/pages",
+              lastSeenAt: 1,
+            },
+          ],
+          1,
+        ),
+      },
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-alias-test",
+    });
+    const gate = { skill: "ravi-system-pages", source: "inferred" as const, ruleId: "pages" };
+
+    const first = evaluateSkillGate({ gate, context, toolName: "pages_ship" });
+    expect(first.allowed).toBe(false);
+    expect(first.code).toBe("RAVI_SKILL_REQUIRED");
+    expect(first.reason).toContain("name: pages");
+    expect(first.skillVisibility?.loadedSkills).toEqual(["pages"]);
+    expect(first.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["pages"]);
+
+    const persisted = getSession("agent:main:main")?.runtimeSessionParams
+      ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["pages"]);
+    expect(persisted.skills[0]?.evidence?.at(-1)?.kind).toBe("skill-gate");
+
+    const second = evaluateSkillGate({ gate, context, toolName: "pages_ship" });
+    expect(second.allowed).toBe(true);
   });
 });
 
