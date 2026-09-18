@@ -16,6 +16,8 @@ import type {
   SessionTarget,
   JobStatus,
   JobStateUpdate,
+  JobDispatchUpdate,
+  JobOutcomeUpdate,
 } from "./types.js";
 
 const log = logger.child("cron:db");
@@ -366,4 +368,51 @@ export function dbUpdateJobState(id: string, state: JobStateUpdate): void {
   );
 
   log.debug("Updated job state", { id, status: state.lastStatus });
+}
+
+/**
+ * Record that an agent job prompt was dispatched.
+ *
+ * Advances the schedule and clears the previous outcome; the turn result is
+ * written later by `dbRecordJobOutcome` once the agent turn terminates.
+ */
+export function dbMarkJobDispatched(id: string, state: JobDispatchUpdate): void {
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    UPDATE cron_jobs SET
+      last_run_at = ?,
+      next_run_at = ?,
+      last_status = NULL,
+      last_error = NULL,
+      last_duration_ms = NULL,
+      last_exit_code = NULL,
+      updated_at = ?
+    WHERE id = ?
+  `).run(state.lastRunAt, state.nextRunAt ?? null, now, id);
+
+  log.debug("Marked job dispatched", { id });
+}
+
+/**
+ * Record the terminal outcome of a dispatched agent turn.
+ * Returns false when the job no longer exists (e.g. deleted one-shot job).
+ */
+export function dbRecordJobOutcome(id: string, outcome: JobOutcomeUpdate): boolean {
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    UPDATE cron_jobs SET
+      last_status = ?,
+      last_error = ?,
+      last_duration_ms = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(outcome.lastStatus, outcome.lastError ?? null, outcome.lastDurationMs ?? null, now, id);
+
+  const updated = getDbChanges() > 0;
+  log.debug("Recorded job outcome", { id, status: outcome.lastStatus, updated });
+  return updated;
 }

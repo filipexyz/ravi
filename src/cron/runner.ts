@@ -20,15 +20,35 @@ import {
   expandHome,
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
-import { dbGetDueJobs, dbGetNextDueJob, dbUpdateJobState, dbDeleteCronJob, dbGetCronJob } from "./cron-db.js";
+import {
+  dbGetDueJobs,
+  dbGetNextDueJob,
+  dbUpdateJobState,
+  dbDeleteCronJob,
+  dbGetCronJob,
+  dbMarkJobDispatched,
+  dbRecordJobOutcome,
+} from "./cron-db.js";
 import { classifyDiskPressureHint } from "./disk-pressure.js";
 import { calculateNextRun } from "./schedule.js";
 import { markCronSourceAsBackground, type CronPromptSource } from "./source.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
+import {
+  CRON_RUNTIME_EVENTS_TOPIC,
+  buildCronTurnOutcomeState,
+  parseCronTurnOutcome,
+  type CronTurnOutcome,
+} from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
+
+/** Agent job dispatch whose turn has not reached a terminal runtime event yet. */
+interface PendingCronTurn {
+  sessionName: string;
+  dispatchedAt: number;
+}
 
 /**
  * CronRunner - manages scheduled job execution
@@ -37,6 +57,9 @@ export class CronRunner {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private processing = false;
+  /** Latest in-flight dispatch per agent job id. */
+  private pendingTurns = new Map<string, PendingCronTurn>();
+  private runtimeEventStream: ReturnType<typeof nats.subscribe> | null = null;
 
   /**
    * Start the cron runner.
@@ -56,6 +79,9 @@ export class CronRunner {
     // Subscribe to manual trigger signals
     this.subscribeToTriggerEvents();
 
+    // Subscribe to runtime terminal events so job state reflects turn outcomes
+    this.subscribeToRuntimeEvents();
+
     log.info("Cron runner started");
   }
 
@@ -72,6 +98,16 @@ export class CronRunner {
       clearTimeout(this.timer);
       this.timer = null;
     }
+
+    if (this.runtimeEventStream) {
+      try {
+        this.runtimeEventStream.return?.(undefined);
+      } catch {
+        // ignore close errors
+      }
+      this.runtimeEventStream = null;
+    }
+    this.pendingTurns.clear();
 
     log.info("Cron runner stopped");
   }
@@ -139,8 +175,12 @@ export class CronRunner {
 
   /**
    * Execute a single job.
-   * Note: This is fire-and-forget - we emit the prompt and mark as "ok".
-   * The actual agent processing happens asynchronously.
+   *
+   * Agent jobs are asynchronous: the prompt is published to the session work
+   * queue and the job is only marked as dispatched here. The ok/error outcome
+   * is recorded by `handleRuntimeEvent` when the agent turn terminates, so a
+   * turn that fails (e.g. provider rejects the model) surfaces as an error
+   * instead of a healthy run.
    */
   private async executeJob(job: CronJob): Promise<void> {
     const startTime = Date.now();
@@ -157,37 +197,29 @@ export class CronRunner {
     }
 
     try {
-      if (job.sessionTarget === "main") {
-        await this.executeMainJob(job);
-      } else {
-        await this.executeIsolatedJob(job);
-      }
+      const sessionName =
+        job.sessionTarget === "main" ? await this.executeMainJob(job) : await this.executeIsolatedJob(job);
 
       // Calculate next run from the scheduled time (not now) to prevent drift
       // For interval jobs, use the original nextRunAt as base
-      const baseTime = job.schedule.type === "every" && job.nextRunAt ? job.nextRunAt : startTime;
-      const nextRunAt = calculateNextRun(job.schedule, baseTime);
+      const nextRunAt = this.calculateFollowupRun(job, startTime);
 
-      dbUpdateJobState(job.id, {
-        lastRunAt: startTime,
-        lastStatus: "ok",
-        lastDurationMs: Date.now() - startTime,
-        nextRunAt,
-      });
+      dbMarkJobDispatched(job.id, { lastRunAt: startTime, nextRunAt });
+      this.pendingTurns.set(job.id, { sessionName, dispatchedAt: startTime });
 
-      log.info("Job triggered", { jobId: job.id, jobName: job.name });
+      log.info("Job dispatched", { jobId: job.id, jobName: job.name, sessionName });
 
-      // Delete one-shot jobs after successful trigger
+      // Delete one-shot jobs after successful dispatch
       if (job.deleteAfterRun || job.schedule.type === "at") {
         log.info("Deleting one-shot job", { jobId: job.id });
         dbDeleteCronJob(job.id);
+        this.pendingTurns.delete(job.id);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       // Calculate next run even on error so job can retry
-      const baseTime = job.schedule.type === "every" && job.nextRunAt ? job.nextRunAt : startTime;
-      const nextRunAt = calculateNextRun(job.schedule, baseTime);
+      const nextRunAt = this.calculateFollowupRun(job, startTime);
 
       dbUpdateJobState(job.id, {
         lastRunAt: startTime,
@@ -196,9 +228,74 @@ export class CronRunner {
         lastDurationMs: Date.now() - startTime,
         nextRunAt,
       });
+      this.pendingTurns.delete(job.id);
 
-      log.error("Job failed", { jobId: job.id, jobName: job.name, error: errorMessage });
+      log.error("Job dispatch failed", { jobId: job.id, jobName: job.name, error: errorMessage });
     }
+  }
+
+  /**
+   * Apply a runtime terminal event (`turn.complete` / `turn.failed` /
+   * `turn.interrupted`) to the cron job whose prompt caused the turn.
+   *
+   * Correlation prefers the canonical turn provenance (`cron:<jobId>`), which
+   * survives daemon restarts and works when another daemon ran the turn. Pre-turn
+   * failures (runtime launch, prompt dispatch) carry no provenance, so they are
+   * attributed to the dispatches still pending on that session.
+   *
+   * Public so the NATS subscription and tests share a single code path.
+   */
+  handleRuntimeEvent(event: { topic: string; data: unknown }): void {
+    const outcome = parseCronTurnOutcome(event);
+    if (!outcome) return;
+
+    if (outcome.provenance === "cron") {
+      if (!outcome.jobId) {
+        log.debug("Ignoring cron turn outcome without job id", { sessionName: outcome.sessionName });
+        return;
+      }
+      const pending = this.pendingTurns.get(outcome.jobId);
+      this.pendingTurns.delete(outcome.jobId);
+      this.recordTurnOutcome(outcome.jobId, outcome, pending);
+      return;
+    }
+
+    if (outcome.provenance === "none" && outcome.kind === "failed") {
+      for (const [jobId, pending] of this.pendingTurns) {
+        if (pending.sessionName !== outcome.sessionName) continue;
+        this.pendingTurns.delete(jobId);
+        this.recordTurnOutcome(jobId, outcome, pending);
+      }
+    }
+  }
+
+  private recordTurnOutcome(jobId: string, outcome: CronTurnOutcome, pending?: PendingCronTurn): void {
+    const job = dbGetCronJob(jobId);
+    if (!job) {
+      log.debug("Ignoring turn outcome for unknown cron job", { jobId, kind: outcome.kind });
+      return;
+    }
+    // Shell on-error notifications are published with the shell job id; their
+    // agent turn must not overwrite the shell command's recorded result.
+    if (job.executionType !== "agent") {
+      log.debug("Ignoring turn outcome for non-agent cron job", { jobId, kind: outcome.kind });
+      return;
+    }
+
+    const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending?.dispatchedAt ?? job.lastRunAt });
+    dbRecordJobOutcome(jobId, state);
+
+    log[state.lastStatus === "ok" ? "info" : "warn"]("Job turn finished", {
+      jobId,
+      jobName: job.name,
+      sessionName: outcome.sessionName,
+      outcome: outcome.kind,
+      status: state.lastStatus,
+      durationMs: state.lastDurationMs,
+      error: state.lastError,
+      reason: outcome.reason,
+      correlatedBy: outcome.provenance === "cron" ? "provenance" : "pending-session",
+    });
   }
 
   private calculateFollowupRun(job: CronJob, startTime: number): number | undefined {
@@ -410,8 +507,9 @@ export class CronRunner {
   /**
    * Execute a job in the main session (shared with TUI/WhatsApp/etc).
    * If replySession is set, uses that session instead of agent main.
+   * Returns the session name the prompt was published to.
    */
-  private async executeMainJob(job: CronJob): Promise<void> {
+  private async executeMainJob(job: CronJob): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
 
     let sessionName: string;
@@ -453,12 +551,14 @@ export class CronRunner {
       _cron: true,
       _jobId: job.id,
     });
+    return sessionName;
   }
 
   /**
    * Execute a job in an isolated session.
+   * Returns the session name the prompt was published to.
    */
-  private async executeIsolatedJob(job: CronJob): Promise<void> {
+  private async executeIsolatedJob(job: CronJob): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
@@ -509,6 +609,7 @@ export class CronRunner {
       _cron: true,
       _jobId: job.id,
     });
+    return sessionName;
   }
 
   /**
@@ -577,6 +678,35 @@ export class CronRunner {
       if (this.running) {
         setTimeout(() => this.subscribeToTriggerEvents(), 5000);
       }
+    }
+  }
+
+  /**
+   * Subscribe to runtime terminal events for every session. Runtime events are
+   * core pub/sub, so the leader daemon observes turns processed by any daemon.
+   */
+  private async subscribeToRuntimeEvents(): Promise<void> {
+    log.debug("Subscribing to runtime turn events", { topic: CRON_RUNTIME_EVENTS_TOPIC });
+    const stream = nats.subscribe(CRON_RUNTIME_EVENTS_TOPIC);
+    this.runtimeEventStream = stream;
+
+    try {
+      for await (const event of stream) {
+        if (!this.running) break;
+        try {
+          this.handleRuntimeEvent(event);
+        } catch (err) {
+          log.error("Failed to record cron turn outcome", { topic: event.topic, error: err });
+        }
+      }
+    } catch (err) {
+      // Stream closed by stop() is expected
+      if (!this.running || this.runtimeEventStream !== stream) return;
+      log.error("Runtime event subscription error", { error: err });
+      this.runtimeEventStream = null;
+      setTimeout(() => {
+        if (this.running && !this.runtimeEventStream) this.subscribeToRuntimeEvents();
+      }, 5000);
     }
   }
 }
