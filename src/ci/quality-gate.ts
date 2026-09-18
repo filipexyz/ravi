@@ -87,7 +87,23 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/tool-liveness.test.ts",
     // Aviso de tool demorada: o runtime conta que está ocupado em vez de ficar mudo.
     "src/runtime/slow-tool-notice.test.ts",
+    // O observer de intenção é chamado de host-services.ts, e o comportamento que
+    // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
+    // O call site em si ainda não tem teste de integração — está declarado como
+    // risco na PR da feature.
+    "src/hooks/gh-watch.test.ts",
   ],
+  "src/watch/": [
+    // Contrato: o que o connector declara suportado localmente é o que o poller
+    // consegue produzir. Foi o buraco que deixou `pull_request.merged` declarado e
+    // impossível de emitir.
+    "src/watch/connector-contract.test.ts",
+    "src/watch/local-events.test.ts",
+    "src/watch/local-runner.test.ts",
+    "src/watch/local-state.test.ts",
+    "src/watch/operations.test.ts",
+  ],
+  "src/hooks/": ["src/hooks/gh-watch.test.ts", "src/hooks/gh-follow-sweep.test.ts", "src/hooks/rtk-rewrite.test.ts"],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
   "src/approval/": ["src/approval/service.test.ts"],

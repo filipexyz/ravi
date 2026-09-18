@@ -549,6 +549,19 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
       raviTool: decision.toolName,
     });
 
+    // Observação de intenção (ex.: uso de `gh` vira acompanhamento de PR). Roda
+    // depois do "pode rodar", nunca decide nada, e é o mesmo ponto para todos os
+    // runtimes que passam pelo hook in-process.
+    if (command.includes("gh")) {
+      const { observeGhBashCommand } = await import("../hooks/gh-watch.js");
+      await observeGhBashCommand(command, {
+        agentId: bashContext.agentId,
+        sessionKey: bashContext.sessionKey,
+        sessionName: bashContext.sessionName,
+        source: bashContext.source,
+      });
+    }
+
     return {};
   };
 
