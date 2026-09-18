@@ -108,6 +108,9 @@ export interface GhWatchFollowResult {
   repo: string;
   watchId: string | null;
   watchReused: boolean;
+  /** Watch local que cobre CI. Sem ele o follow só vê ciclo de vida de PR. */
+  ciWatchId?: string | null;
+  ciWatchReused?: boolean;
   triggerId?: string;
   triggerReused?: boolean;
   triggerSkipped?: "no_pr_number";
@@ -403,6 +406,8 @@ export async function ensureGhWatchFollow(
     repo: input.repo,
     watchId: watch.watchId,
     watchReused: watch.reused,
+    ciWatchId: watch.ciWatchId,
+    ciWatchReused: watch.ciWatchReused,
   };
 
   if (input.prNumber === null) {
