@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -29,6 +30,7 @@ afterEach(() => {
 interface CheckoutOptions {
   withBundle?: boolean;
   staleSrc?: boolean;
+  stalePackageJson?: boolean;
   buildOutput?: string;
   buildFails?: boolean;
 }
@@ -72,16 +74,75 @@ function makeCheckout(options: CheckoutOptions = {}): string {
   utimesSync(join(root, "src", "cli", "index.ts"), options.staleSrc ? now : past, options.staleSrc ? now : past);
   utimesSync(join(root, "src", "cli"), past, past);
   utimesSync(join(root, "src"), past, past);
-  utimesSync(join(root, "package.json"), past, past);
+  const packageJsonTime = options.stalePackageJson ? now : past;
+  utimesSync(join(root, "package.json"), packageJsonTime, packageJsonTime);
 
   return root;
 }
 
-function runWrapper(root: string, env: Record<string, string> = {}) {
-  return spawnSync("bash", [join(root, "bin", "ravi"), "--version"], {
+interface GlobalInstallOptions {
+  withBundle?: boolean;
+}
+
+/**
+ * Throwaway `bun install -g ravi.bot` layout: the published tarball under
+ * `.bun/install/global/node_modules/ravi.bot` (only `bin/ravi`, `dist/bundle/` and
+ * package.json -- no `src/`, per the `files` whitelist) plus the `.bun/bin/ravi`
+ * symlink that ends up on PATH. package.json is deliberately newer than the bundle,
+ * which is the state a real extracted install was found in, and `build:cli` records
+ * that it ran so the test can prove the wrapper never invoked it.
+ */
+function makeGlobalInstall(options: GlobalInstallOptions = {}): { root: string; pathBin: string; pkg: string } {
+  const root = mkdtempSync(join(tmpdir(), "ravi-global-"));
+  tempDirs.push(root);
+
+  const pkg = join(root, ".bun", "install", "global", "node_modules", "ravi.bot");
+  mkdirSync(join(pkg, "bin"), { recursive: true });
+  copyFileSync(WRAPPER, join(pkg, "bin", "ravi"));
+  writeFileSync(
+    join(pkg, "package.json"),
+    JSON.stringify(
+      {
+        name: "ravi.bot",
+        version: "3.260918.5",
+        scripts: {
+          "build:cli": "mkdir -p dist && touch dist/.build-invoked && exit 1",
+          "gen:plugins": "exit 0",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  if (options.withBundle !== false) {
+    mkdirSync(join(pkg, "dist", "bundle"), { recursive: true });
+    writeFileSync(join(pkg, "dist", "bundle", "index.js"), 'console.log("BUNDLE-OK");\n');
+  }
+
+  mkdirSync(join(root, ".bun", "bin"), { recursive: true });
+  const pathBin = join(root, ".bun", "bin", "ravi");
+  symlinkSync(join(pkg, "bin", "ravi"), pathBin);
+
+  const past = new Date(Date.now() - 60_000);
+  const now = new Date();
+  if (options.withBundle !== false) {
+    utimesSync(join(pkg, "dist", "bundle", "index.js"), past, past);
+  }
+  utimesSync(join(pkg, "package.json"), now, now);
+
+  return { root, pathBin, pkg };
+}
+
+function runWrapperBinary(wrapper: string, env: Record<string, string> = {}) {
+  return spawnSync("bash", [wrapper, "--version"], {
     encoding: "utf8",
     env: { ...process.env, ...env },
   });
+}
+
+function runWrapper(root: string, env: Record<string, string> = {}) {
+  return runWrapperBinary(join(root, "bin", "ravi"), env);
 }
 
 describe("bin/ravi single execution path", () => {
@@ -103,6 +164,16 @@ describe("bin/ravi single execution path", () => {
     expect(result.stderr).toContain("rebuilding dist/bundle");
     // The artifact on disk is now current, not just what we ran.
     expect(readFileSync(join(root, "dist", "bundle", "index.js"), "utf8")).toContain("REBUILT-OK");
+  });
+
+  it("rebuilds when package.json moved on in a source checkout", () => {
+    const root = makeCheckout({ stalePackageJson: true });
+    const result = runWrapper(root);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("REBUILT-OK");
+    expect(result.stderr).toContain("bundle is older than");
+    expect(result.stderr).toContain("package.json");
   });
 
   it("rebuilds when there is no bundle at all", () => {
@@ -138,5 +209,32 @@ describe("bin/ravi single execution path", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("BUNDLE-OK");
     expect(result.stderr).not.toContain("rebuilding");
+  });
+});
+
+describe("bin/ravi from an installed package", () => {
+  it("runs the shipped bundle even when package.json is newer, without rebuilding", () => {
+    const install = makeGlobalInstall();
+    const result = runWrapperBinary(install.pathBin);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("BUNDLE-OK");
+    expect(result.stderr).toBe("");
+    // `build:cli` was never invoked: there is no src/ to build from in a global install.
+    expect(existsSync(join(install.pkg, "dist", ".build-invoked"))).toBe(false);
+    expect(existsSync(join(install.pkg, "dist", ".build.lock"))).toBe(false);
+  });
+
+  it("refuses with a reinstall hint when the package has no bundle, instead of trying to build", () => {
+    const install = makeGlobalInstall({ withBundle: false });
+    const result = runWrapperBinary(install.pathBin);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no bundle at");
+    expect(result.stderr).toContain("no source tree to rebuild it from");
+    expect(result.stderr).toContain("bun install -g ravi.bot");
+    expect(result.stderr).not.toContain("rebuilding");
+    expect(result.stdout).toBe("");
+    expect(existsSync(join(install.pkg, "dist", ".build-invoked"))).toBe(false);
   });
 });
