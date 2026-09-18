@@ -291,6 +291,24 @@ describe("gh watch observation", () => {
     expect(queued).toEqual([{ repo: "o/r", cwd: "/repo", sessionName: "main" }]);
   });
 
+  it("does not memoize the pending path, so a second PR is still followed", async () => {
+    resetGhWatchCaches();
+    const queued: string[] = [];
+
+    const d = deps({
+      resolveRepoFromCwd: () => "o/r",
+      addPending: (entry) => {
+        queued.push(`${entry.repo}#${entry.createdAt}`);
+      },
+    });
+
+    await observeGhBashCommand("gh pr create --title a", { cwd: "/repo" }, d);
+    await observeGhBashCommand("gh pr create --title b", { cwd: "/repo" }, d);
+
+    // Com memo aqui, a chave seria `o/r#*` e a segunda PR nunca entraria.
+    expect(queued).toHaveLength(2);
+  });
+
   it("resolves the repo from the session cwd when the command omits it", async () => {
     resetGhWatchCaches();
     const created: string[] = [];

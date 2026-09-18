@@ -475,7 +475,6 @@ export async function observeGhBashCommand(
     if (!repo) return;
 
     const key = `${repo}#${intent.prNumber ?? "*"}`;
-    if (ensured.has(key)) return;
 
     const context = {
       agentId: ctx.agentId,
@@ -486,6 +485,10 @@ export async function observeGhBashCommand(
 
     // Sem número: registra a intenção e garante o watch. O tick de manutenção
     // resolve a PR recém-criada pelo cwd.
+    //
+    // Este caminho **não** memoriza. A chave seria `repo#*`, então a primeira PR
+    // criada travaria o resto da vida do processo: a segunda PR do mesmo repo
+    // nunca entraria na fila. Quem deduplica aqui é a própria fila.
     if (intent.prNumber === null) {
       const watch = await ensureRepoWatch(repo, deps);
       if (watch.watchId) {
@@ -495,11 +498,12 @@ export async function observeGhBashCommand(
           ...context,
           createdAt: Date.now(),
         });
-        ensured.add(key);
       }
       log.info("gh follow pending queued", { repo, cwd });
       return;
     }
+
+    if (ensured.has(key)) return;
 
     const result = await ensureGhWatchFollow({ repo, prNumber: intent.prNumber, context }, deps);
     // Só memoriza quando algo foi de fato garantido: uma falha de DB não pode
