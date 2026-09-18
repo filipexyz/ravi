@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 
 /**
@@ -46,5 +48,36 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
     expect(materialize("user", "u1")).toEqual([]);
     expect(materialize("agent", "unknown")).toEqual([]);
     expect(materialize("agent", "")).toEqual([]);
+  });
+});
+
+describe("runtimeBootstrapProvider — chat-only ceiling", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-bootstrap-chat-only-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  test("suppresses the bootstrap floor when the agent profile is chat-only", () => {
+    dbCreateAgent({ id: "reception", cwd: "/tmp/reception" });
+    dbUpdateAgent("reception", { defaults: { runtimePermissions: { profile: "chat-only" } } });
+    expect(materialize("agent", "reception")).toEqual([]);
+  });
+
+  test("keeps birth bootstrap for an agent without a stored profile", () => {
+    dbCreateAgent({ id: "newborn", cwd: "/tmp/newborn" });
+    expect(groupIds(materialize("agent", "newborn")).sort()).toEqual([
+      "doctor",
+      "self",
+      "sessions",
+      "skills",
+      "specs",
+      "tasks",
+    ]);
   });
 });

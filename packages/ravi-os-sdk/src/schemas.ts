@@ -2118,7 +2118,7 @@ export const AgentsPermissionsInputSchema = {
       "type": "string"
     },
     "profile": {
-      "description": "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
+      "description": "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
       "type": "string"
     }
   },
@@ -2209,6 +2209,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2574,6 +2575,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -2647,6 +2649,7 @@ export const AgentsPermissionsReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"
@@ -3295,6 +3298,7 @@ export const AgentsShowReturnSchema = {
             "profile": {
               "enum": [
                 "bootstrap",
+                "chat-only",
                 "full-access"
               ],
               "type": "string"

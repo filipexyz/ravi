@@ -21,8 +21,10 @@
 - A permission delta that expands authority without `--execute` MUST exit 3
   with before/after presence, profile identifiers and capability counts; it
   MUST NOT carry raw permission configs/capability entries or write defaults.
-- Authority reduction, `none`, `--clear-capabilities` and no-op requests MUST
-  apply without `--execute`; the brake must not delay containment.
+- Authority reduction, `chat-only`, `--clear-capabilities` and no-op requests MUST
+  apply without `--execute`; the brake must not delay containment. Leaving
+  `chat-only` (restore bootstrap via `none`/`bootstrap`, or raise to
+  `full-access`) MUST require `--execute`.
 - The read-only form `agents permissions <id>` MUST keep exiting 0 without the
   brake.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
@@ -35,6 +37,8 @@
   skill MUST list them explicitly as unbraked.
 - Hint strings that teach mutating permission invocations
   (`leastPrivilegeExample`, `breakGlassCommand` and reset usage hints) MUST
-  carry `--execute`; `Clear:` and the read-only `permissionsCommand` MUST NOT.
+  carry `--execute`; `chat-only` / `Reset to bootstrap:` and the read-only
+  `permissionsCommand` MUST NOT. Help MUST list `chat-only` beside
+  bootstrap/full-access and MUST NOT call `none` zero-authority.
 - `bun test src/cli/commands/agents.test.ts` SHOULD pass after any change to
   the agents contract surface.

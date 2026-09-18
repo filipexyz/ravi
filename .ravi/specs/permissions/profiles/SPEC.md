@@ -71,6 +71,9 @@ for creating a new profile, not the normal approval interface.
   provider consumes it for invocation eligibility.
 - A profile assignment to a chat/surface is compartment policy or constraint;
   a missing chat profile MUST NOT zero agent identity authority.
+- Agent runtime profile `chat-only` is a zero-authority reception ceiling.
+  It MUST persist as `{ profile: "chat-only" }`. `none`/`clear`/`off` MUST
+  remain the bootstrap-floor reset and MUST NOT be redefined as zero-authority.
 
 ## Canonical Relations
 

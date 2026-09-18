@@ -27,7 +27,7 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `agents delete` (destrutivo), `agents reset` (inclusive `reset <id> all` — o contexto da sessão é irrecuperável) e `agents permissions` somente quando a mudança expande autoridade são dry-run por default e exigem `--execute`. Leitura, no-op e reduções (`none`, `--clear-capabilities`) continuam sem freio para não atrasar contenção. Todas as demais escritas gravam na hora: `create`, `set`, `sync-instructions`, `debounce`, `spec-mode`.
+Onde o freio existe hoje: `agents delete` (destrutivo), `agents reset` (inclusive `reset <id> all` — o contexto da sessão é irrecuperável) e `agents permissions` somente quando a mudança expande autoridade são dry-run por default e exigem `--execute`. Leitura, no-op e reduções (`chat-only`, `--clear-capabilities`, e `none` quando isso desce ao bootstrap a partir de um overlay maior) continuam sem freio para não atrasar contenção. Sair de `chat-only` (volta ao piso bootstrap ou sobe para full-access) é expansão e exige `--execute`. Todas as demais escritas gravam na hora: `create`, `set`, `sync-instructions`, `debounce`, `spec-mode`.
 
 Compact mode: `agents list` aceita `--fields a,b,c` (ex.: `--fields id,cwd,tags`) — use em varredura para não arrastar o objeto inteiro de cada agent.
 
@@ -239,12 +239,17 @@ ravi agents permissions <id>
 # Inspecionar materialização efetiva antes de pedir nova autoridade
 ravi permissions materialize --subject-type agent --subject-id <id> --json
 
-# Voltar ao bootstrap mínimo
+# Reception agent: só conversa, sem tools/shell/grupos CLI
+ravi agents permissions <id> chat-only
+
+# Resetar overlay para o piso bootstrap (~27 caps). Não é zero-authority.
 ravi agents permissions <id> none
 
 # Capability explícita de bootstrap quando ainda não existe profile agent-only
 ravi agents permissions <id> bootstrap --capabilities execute:executable:omni --execute
 ```
+
+`none` / `clear` / `off` apagam o overlay e voltam ao piso `runtime-bootstrap:agent`. Isso não zera autoridade. `chat-only` persiste `{ profile: "chat-only" }` e materializa teto vazio (sem `use:tool:*`, sem grupos/executáveis de bootstrap). Nascimento de agent continua bootstrap; não use chat-only como default de daemon/main/automação.
 
 Expandir autoridade sem `--execute` é dry-run (exit 3): o `plan` mostra `before`/`after` e nada é gravado. Leitura, no-op e redução não precisam de `--execute`.
 

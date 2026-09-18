@@ -19,6 +19,10 @@ import {
   getConfiguredPermissionProviders,
 } from "../../permissions/provider-registry.js";
 import {
+  getAgentRuntimePermissionsConfigFromDefaults,
+  isToolOrExecCapability,
+} from "../../permissions/agent-default-capabilities-provider.js";
+import {
   authorizePermission,
   canWithCapabilities,
   localOperatorCan,
@@ -569,6 +573,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildPermissionProviderRuntimeBoundaryCheck(deps));
   addCheck(checks, () => buildPermissionLocalOperatorExplicitCheck(deps));
   addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
+  addCheck(checks, () => buildPermissionChatOnlyCeilingCheck(deps));
   addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
@@ -2447,6 +2452,78 @@ function buildPermissionBootstrapScopeCheck(deps: DoctorDeps): LegacyDoctorCheck
       contactCapabilities: 0,
       chatCapabilities: 0,
       privilegedBootstrap: 0,
+    },
+  };
+}
+
+function buildPermissionChatOnlyCeilingCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  let agents: ReturnType<typeof dbListAgents> = [];
+  try {
+    agents = deps.dbListAgents();
+  } catch {
+    return {
+      id: "permissions.chat_only_ceiling",
+      domain: "permissions",
+      title: "Chat-only permission ceiling",
+      status: "skip",
+      severity: "info",
+      summary: "cannot inspect chat-only agents because the agent table is unavailable",
+      data: { skipped: true, reason: "agents_unavailable" },
+    };
+  }
+
+  const chatOnlyAgentIds: string[] = [];
+  const leaks: string[] = [];
+  for (const agent of agents) {
+    const config = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
+    if (config?.profile !== "chat-only") continue;
+    chatOnlyAgentIds.push(agent.id);
+    const capabilities = deps.materializeSubjectCapabilities("agent", agent.id);
+    const effectCaps = capabilities.filter(isToolOrExecCapability);
+    if (effectCaps.length > 0) {
+      leaks.push(`agent:${agent.id} materializes ${effectCaps.length} tool/exec capability`);
+    }
+    const identityCaps = deps.materializeSubjectCapabilities("agent_identity", `${agent.id}:chat:doctor-chat-only`, {
+      executorAgentId: agent.id,
+      compartmentType: "chat",
+      compartmentId: "doctor-chat-only",
+    });
+    const identityEffect = identityCaps.filter(isToolOrExecCapability);
+    if (identityEffect.length > 0) {
+      leaks.push(`agent_identity:${agent.id} materializes ${identityEffect.length} tool/exec capability`);
+    }
+  }
+
+  if (leaks.length > 0) {
+    return {
+      id: "permissions.chat_only_ceiling",
+      domain: "permissions",
+      title: "Chat-only permission ceiling",
+      status: "fail",
+      severity: "error",
+      summary: "chat-only agents still materialize tool or exec authority",
+      details: leaks,
+      fixHint:
+        "chat-only must persist { profile: \"chat-only\" } and suppress runtime-bootstrap for the agent and its identity",
+      data: {
+        chatOnlyAgents: chatOnlyAgentIds.length,
+        leaks: leaks.length,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.chat_only_ceiling",
+    domain: "permissions",
+    title: "Chat-only permission ceiling",
+    status: "ok",
+    summary:
+      chatOnlyAgentIds.length > 0
+        ? `${chatOnlyAgentIds.length} chat-only agent(s) materialize no tool/exec authority`
+        : "no chat-only agents configured; bootstrap birth default unchanged",
+    data: {
+      chatOnlyAgents: chatOnlyAgentIds.length,
+      leaks: 0,
     },
   };
 }

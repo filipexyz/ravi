@@ -1,5 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
-import { materializeAgentDefaultCapabilities } from "./agent-default-capabilities-provider.js";
+import { isChatOnlyAgent, materializeAgentDefaultCapabilities } from "./agent-default-capabilities-provider.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 import type {
   PermissionProvider,
@@ -37,6 +37,9 @@ export const agentIdentityPermissionsProvider: PermissionProvider = {
     const executorAgentId = cleanString(options?.executorAgentId) ?? parsed?.agentId;
     if (!executorAgentId) return [];
     if (parsed?.agentId && parsed.agentId !== executorAgentId) return [];
+    // chat-only is an executor ceiling. Do not project stale snapshot leftovers
+    // or re-inject runtime-bootstrap through the identity fallback path.
+    if (isChatOnlyAgent(executorAgentId)) return [];
 
     const executorCapabilities = options?.executorCapabilities?.length
       ? options.executorCapabilities
@@ -78,6 +81,7 @@ export function parseAgentIdentitySubjectId(
 }
 
 function materializeExecutorAgentCapabilities(agentId: string): ContextCapability[] {
+  if (isChatOnlyAgent(agentId)) return [];
   return dedupeCapabilities([
     ...(runtimeBootstrapProvider.materializeCapabilities?.({ type: "agent", id: agentId }) ?? []),
     ...materializeAgentDefaultCapabilities(agentId),

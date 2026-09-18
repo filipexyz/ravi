@@ -5,13 +5,46 @@ import { canWithCapabilities } from "./capability-snapshot.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
 
 export const AGENT_RUNTIME_PERMISSIONS_DEFAULTS_KEY = "runtimePermissions";
-export const AGENT_RUNTIME_PERMISSION_PROFILES = ["bootstrap", "full-access"] as const;
+export const AGENT_RUNTIME_PERMISSION_PROFILES = ["bootstrap", "chat-only", "full-access"] as const;
+export const AGENT_RUNTIME_PERMISSION_CLEAR_ALIASES = ["none", "clear", "off"] as const;
 
 export type AgentRuntimePermissionProfile = (typeof AGENT_RUNTIME_PERMISSION_PROFILES)[number];
 
 export interface AgentRuntimePermissionsConfig {
   profile?: AgentRuntimePermissionProfile;
   capabilities?: Array<string | Partial<ContextCapability>>;
+}
+
+export function formatAgentRuntimePermissionProfileChoices(): string {
+  return "bootstrap, chat-only, full-access, none";
+}
+
+export function isChatOnlyRuntimePermissions(
+  config: AgentRuntimePermissionsConfig | null | undefined,
+): boolean {
+  return config?.profile === "chat-only";
+}
+
+export function isChatOnlyAgent(agentId: string | null | undefined): boolean {
+  const id = agentId?.trim();
+  if (!id) return false;
+  return isChatOnlyRuntimePermissions(readAgentRuntimePermissionsConfig(id));
+}
+
+export function isToolOrExecCapability(capability: Pick<ContextCapability, "permission" | "objectType">): boolean {
+  if (capability.permission === "use" && (capability.objectType === "tool" || capability.objectType === "toolgroup")) {
+    return true;
+  }
+  return (
+    capability.permission === "execute" &&
+    (capability.objectType === "group" || capability.objectType === "executable")
+  );
+}
+
+export function hasToolOrExecAuthority(
+  capabilities: Array<Pick<ContextCapability, "permission" | "objectType">>,
+): boolean {
+  return capabilities.some(isToolOrExecCapability);
 }
 
 export const agentDefaultCapabilitiesProvider: PermissionProvider = {
@@ -45,7 +78,7 @@ export const agentDefaultCapabilitiesProvider: PermissionProvider = {
 export function normalizeAgentRuntimePermissionProfile(value: unknown): AgentRuntimePermissionProfile | "none" | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
-  if (normalized === "none" || normalized === "clear" || normalized === "off") return "none";
+  if ((AGENT_RUNTIME_PERMISSION_CLEAR_ALIASES as readonly string[]).includes(normalized)) return "none";
   return AGENT_RUNTIME_PERMISSION_PROFILES.includes(normalized as AgentRuntimePermissionProfile)
     ? (normalized as AgentRuntimePermissionProfile)
     : null;
@@ -83,6 +116,10 @@ export function materializeAgentDefaultCapabilities(
 ): ContextCapability[] {
   const config = readAgentRuntimePermissionsConfig(agentId);
   if (!config) return [];
+  // chat-only is a zero-authority ceiling. Persist the sentinel in store, but
+  // do not reintroduce tool/exec grants through explicit leftovers or profile
+  // expansion. Introspection-only leftovers stay out of the effective snapshot.
+  if (isChatOnlyRuntimePermissions(config)) return [];
 
   const source = options.source ?? `agent-default-capabilities:agent:${agentId}`;
   return dedupeCapabilities([

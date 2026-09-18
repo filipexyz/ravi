@@ -172,6 +172,12 @@ Agents MUST be guided toward explainable least-privilege requests.
   denial diagnosis.
 - Runtime providers MUST request authorization through the Permission Provider
   Runtime and MUST NOT read unrelated provider storage directly.
+- `ravi agents permissions <id> none` (aliases `clear`/`off`) MUST clear the
+  overlay and restore the `runtime-bootstrap:agent` floor. It MUST NOT mean
+  zero-authority. `chat-only` is the first-class reception profile: persist
+  `{ profile: "chat-only" }`, suppress bootstrap injection for that agent and
+  derived `agent_identity`, and host-deny tools on every runtime. Birth of
+  normal agents/daemon/main/automation stays bootstrap.
 - Discovery is disclosure. List, show, search, check, autocomplete, alias
   resolution, SDK discovery, and UI picker surfaces MUST filter to resources
   visible to the effective context.

@@ -1,5 +1,11 @@
 import type { ContextCapability } from "../router/router-db.js";
-import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
+import { isChatOnlyAgent } from "./agent-default-capabilities-provider.js";
+import type {
+  PermissionProvider,
+  PermissionProviderCapabilityOptions,
+  PermissionProviderDecision,
+  PermissionProviderRequest,
+} from "./provider-types.js";
 
 const TRUSTED_BOOTSTRAP_SUBJECT_TYPES = new Set(["agent", "automation"]);
 
@@ -50,8 +56,9 @@ export const runtimeBootstrapProvider: PermissionProvider = {
   authorize(request) {
     return notApplicableDecision(request);
   },
-  materializeCapabilities(subject) {
+  materializeCapabilities(subject, options) {
     if (!isTrustedBootstrapSubject(subject.type, subject.id)) return [];
+    if (shouldSuppressRuntimeBootstrap(subject.type, subject.id, options)) return [];
     return bootstrapCapabilitiesFor(subject.type);
   },
 };
@@ -59,6 +66,19 @@ export const runtimeBootstrapProvider: PermissionProvider = {
 function isTrustedBootstrapSubject(subjectType: string, subjectId: string): boolean {
   const normalizedId = subjectId.trim().toLowerCase();
   return TRUSTED_BOOTSTRAP_SUBJECT_TYPES.has(subjectType) && normalizedId.length > 0 && normalizedId !== "unknown";
+}
+
+function shouldSuppressRuntimeBootstrap(
+  subjectType: string,
+  subjectId: string,
+  options?: PermissionProviderCapabilityOptions,
+): boolean {
+  if (subjectType === "agent") return isChatOnlyAgent(subjectId);
+  if (subjectType === "automation") {
+    const executorAgentId = options?.executorAgentId?.trim();
+    return executorAgentId ? isChatOnlyAgent(executorAgentId) : false;
+  }
+  return false;
 }
 
 function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {

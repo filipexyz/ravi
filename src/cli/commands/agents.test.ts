@@ -848,9 +848,100 @@ describe("AgentsCommands permissions", () => {
     const commands = new AgentsCommands();
 
     expect(() => commands.permissions("dev", "superuser", undefined, true)).toThrow(
-      "Invalid runtime permission profile: superuser",
+      "Invalid runtime permission profile: superuser. Valid profiles: bootstrap, chat-only, full-access, none",
     );
     expect(updateAgentCalls).toEqual([]);
+  });
+
+  it("persists chat-only as an explicit sentinel without --execute", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", "chat-only", undefined, true);
+
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: true,
+        agentId: "dev",
+        before: { profile: "full-access" },
+        after: { profile: "chat-only" },
+        defaults: { runtimePermissions: { profile: "chat-only" } },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: { defaults: { runtimePermissions: { profile: "chat-only" } } },
+      },
+    ]);
+    expect(logCalls.join("\n")).toContain("conversation only");
+    expect(logCalls.join("\n")).not.toContain("Clear:");
+  });
+
+  it("requires --execute to leave chat-only because that restores bootstrap authority", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "chat-only" } },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      commands.permissions("dev", "none", undefined, true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.envelope().error.plan).toMatchObject({
+      beforeProfile: "chat-only",
+      afterPresent: false,
+      afterProfile: null,
+    });
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("lists chat-only beside bootstrap and full-access on the read-only permissions form", () => {
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true);
+      expect(payload).toMatchObject({
+        chatOnlyCommand: "ravi agents permissions dev chat-only",
+        resetToBootstrapCommand: "ravi agents permissions dev none",
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const text = logCalls.join("\n");
+    expect(text).toContain("Reception only:");
+    expect(text).toContain("chat-only");
+    expect(text).toContain("Reset to bootstrap:");
+    expect(text).not.toContain("Clear:");
   });
 
   it("narrows a wildcard capability to an already-covered exact capability without --execute", () => {

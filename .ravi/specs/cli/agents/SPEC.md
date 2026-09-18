@@ -55,7 +55,9 @@ those three carry the brake.
    uses the before/after presence, profile identifiers, and capability counts.
    Paths, display names, session names, and capability entries MUST NOT appear.
 5. The read-only form, no-op changes and authority reductions (including
-   `none` and `--clear-capabilities`) MUST execute without the brake.
+   `chat-only`, `--clear-capabilities`, and `none` when it lowers an overlay
+   back to the bootstrap floor) MUST execute without the brake. Leaving
+   `chat-only` restores bootstrap authority and MUST require `--execute`.
 6. `agents list` MUST accept `--fields a,b,c` for compact output.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —
@@ -96,7 +98,9 @@ permissions examples carry the flag). The `architect` skill teaches
 permission hint strings emitted by `agents create`, `agents show` and the
 read-only `agents permissions` output (`leastPrivilegeExample`,
 `breakGlassCommand`) MUST include `--execute` when they teach expansion;
-`Clear:` and the read-only `permissionsCommand` stay without it.
+`Reset to bootstrap:` / `chat-only` and the read-only `permissionsCommand` stay
+without it. `none`/`clear`/`off` MUST be described as reset to the bootstrap
+minimum, never as zero-authority or "Clear = safe".
 
 ## Validation
 
