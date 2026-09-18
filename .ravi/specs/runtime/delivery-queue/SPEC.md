@@ -92,6 +92,8 @@ CLI commands MAY expose these as `--barrier followup`, `--barrier steer`, `--ste
 
 Immediate delivery is a request, not permission to break safety. The runtime MUST still avoid interrupting startup, compaction, and unsafe tool execution.
 
+An explicit session abort (reset, delete, kill, `ravi.session.abort`) is not a delivery lane. It cancels the running tool through the provider's native interrupt and ends the turn; it waits only while a completed tool result is still being written back to the provider.
+
 ## Reply Surface Identity
 
 A source-less CLI resume uses its bound reply target as the active interrupt

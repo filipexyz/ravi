@@ -321,7 +321,7 @@ Current finding codes:
 | `runtime-stalled` | Historical trace contains a legacy watchdog recovery row. | Check whether an old daemon version produced the trace. |
 | `timeout` | Session idle timeout or turn timeout state was observed. | Check `session.timeout`, turn `abortReason`, and prior tool/runtime rows. |
 | `resume-disabled-with-provider-session` | Resume was false despite an existing provider session id. | Inspect provider continuity, reset/delete/model/provider changes. |
-| `tool-start-without-end` | Tool started but no matching `tool.end` was recorded. | Check interruption, unsafe deferred abort, adapter stream loss. |
+| `tool-start-without-end` | Tool started but no matching `tool.end` was recorded. | Check interruption, an explicit abort that cancelled the tool (`session.abort` with `toolCancelled=true`), adapter stream loss. |
 | `prompt-held-by-task-barrier` | A prompt/request carried `taskBarrierTaskId`. | Inspect the linked task and after-task delivery barrier. |
 | `debounce-merged-messages` | Debounce or queued message merge affected the prompt. | Read `queued_message_count`, `pending_ids`, and user prompt blob. |
 | `model-provider-changed` | Model/provider changed during the trace window. | Compare `runtime.start`, `adapter.request`, turn snapshots. |
@@ -478,8 +478,12 @@ Use these cues for context loss and abort reports:
   provider returns an updated session handle.
 - `system-prompt-changed` is informational. It means the Ravi-built system prompt
   hash changed across turns; compare only the specific turns that matter.
-- `session.abort` with `status=deferred` means an unsafe tool was running and the
-  abort was postponed until the tool completed.
+- `session.abort` with `status=requested` and `toolCancelled=true` means a tool
+  was running when the abort arrived and was cancelled mid-flight; `cancelledTool`
+  carries its id, name, safety classification, and elapsed time.
+- `session.abort` with `status=deferred` means a completed tool result was still
+  being delivered to the provider and the abort was postponed until that write
+  finished (`tool.result_delivered`). A running tool no longer defers the abort.
 - `turn.interrupted` with `abortReason=explicit_abort`, `model_change_restart`,
   `provider_change`, `agent_change`, `runtime_task_settings_change`, or
   `idle_timeout` explains why the turn stopped before normal completion.

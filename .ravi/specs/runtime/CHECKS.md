@@ -40,7 +40,8 @@
 - Messages yielded to a provider turn remain pending until terminal completion.
 - Interrupted turns keep pending messages.
 - Non-interrupted terminal turns clear yielded pending ids.
-- Unsafe tool abort defers until tool completion.
+- Explicit session abort cancels a running tool (safe or unsafe) through the provider interrupt and ends the turn immediately; it defers only while a completed tool result is still being delivered to the provider.
+- Prompt-lane interrupts (`immediate_interrupt`, `after_tool`) still wait for an unsafe tool to finish before superseding the turn.
 - After-task barriers remain blocked while an active task binding exists.
 - A pending start waiting for runtime pool capacity is tracked separately from an actual cold start.
 - Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
