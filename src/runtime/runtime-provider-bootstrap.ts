@@ -3,6 +3,7 @@ import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { RuntimeModelBrokerBinding } from "./model-broker.js";
+import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   RuntimeCapabilities,
   RuntimeHostServices,
@@ -23,6 +24,8 @@ export interface RuntimeProviderBootstrapOptions {
   context: Parameters<typeof createRuntimeHostServices>[0]["context"];
   session?: SessionEntry;
   modelBroker?: RuntimeModelBrokerBinding;
+  /** Observes skill-gate deliveries persisted in-process (Claude/Pi authorize path). */
+  onSkillGatePersisted?: SkillGatePersistedListener;
 }
 
 export interface RuntimeProviderBootstrap {
@@ -42,11 +45,15 @@ export async function prepareRuntimeProviderBootstrap(
     resolvedSource: options.resolvedSource,
     approvalSource: options.approvalSource,
     toolContext: options.toolContext,
-    onSkillGatePersisted: session
-      ? (skillVisibility) => {
-          session.runtimeSessionParams = { ...(session.runtimeSessionParams ?? {}), skillVisibility };
-        }
-      : undefined,
+    onSkillGatePersisted:
+      session || options.onSkillGatePersisted
+        ? (skillVisibility, info) => {
+            if (session) {
+              session.runtimeSessionParams = { ...(session.runtimeSessionParams ?? {}), skillVisibility };
+            }
+            options.onSkillGatePersisted?.(skillVisibility, info);
+          }
+        : undefined,
   });
   const discoveredPlugins = discoverPlugins();
   const providerBootstrap = await options.runtimeProvider.prepareSession?.({

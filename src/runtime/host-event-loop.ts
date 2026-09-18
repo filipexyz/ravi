@@ -99,10 +99,12 @@ import {
   type ObservationEvent,
 } from "./observation-plane.js";
 import {
+  diffLoadedSkills,
   markLoadedFromRaviSkillToolCall,
   mergeSkillVisibilitySnapshots,
   readSkillVisibilityFromParams,
   resetLoadedSkillVisibilitySnapshot,
+  skillIdentifiersMatch,
 } from "./skill-visibility.js";
 import type {
   RuntimeCapabilities,
@@ -1124,6 +1126,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const batch = observationEvents.splice(0, observationEvents.length);
     deliverObservationBatch(batch, ["end_of_turn"], "end_of_turn");
   };
+  // Seed the live view from the persisted vector merged with the provider's
+  // start-up catalog. The provider snapshot alone carries an empty
+  // `loadedSkills`, and the newer live `updatedAt` outranked the stored one in
+  // the visibility payload, so every process restart displayed nothing loaded.
+  const initialSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
+    ? mergeSkillVisibilitySnapshots(
+        readSkillVisibilityFromParams(session.runtimeSessionParams),
+        runtimeSession.skillVisibility,
+      )
+    : runtimeSession.skillVisibility;
   updateRuntimeLiveState(sessionName, {
     activity: "thinking",
     summary: "runtime active",
@@ -1132,8 +1144,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     provider: runtimeSession.provider,
     model,
     source: streaming.currentSource,
-    skills: runtimeSession.skillVisibility?.skills,
-    loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
+    skills: initialSkillVisibility?.skills,
+    loadedSkills: initialSkillVisibility?.loadedSkills,
   });
   // Tight timeout for the well-known codex bug: after we deliver a tool result,
   // codex's app-server occasionally drops the JSON-RPC callback and never asks
@@ -2200,6 +2212,71 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSessionParams;
   };
 
+  /**
+   * Publish a skill-load observation to the trace ledger and the runtime
+   * stream. `skill.visibility.loaded` is the event the telemetry counts; skill
+   * gate deliveries used to be persisted without ever reaching it, which is
+   * why the metric collapsed once the soft gate replaced `ravi skills show`.
+   */
+  const announceLoadedSkills = async (
+    skillVisibility: RuntimeSkillVisibilitySnapshot,
+    payload: Record<string, unknown>,
+  ) => {
+    recordTraceEvent({
+      turnId: streaming.currentTraceTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "skill.visibility.loaded",
+      eventGroup: "runtime",
+      status: "complete",
+      payloadJson: {
+        ...payload,
+        loadedSkills: skillVisibility.loadedSkills,
+        skillVisibility,
+      },
+      preview: skillVisibility.loadedSkills.join(", "),
+    });
+    await emitRuntimeEvent({
+      type: "skill.visibility.loaded",
+      provider: runtimeSession.provider,
+      skillVisibility,
+      loadedSkills: skillVisibility.loadedSkills,
+      ...payload,
+    });
+  };
+
+  // The gate already wrote the vector to the DB and refreshed
+  // `session.runtimeSessionParams`; this mirrors it into the live view and the
+  // telemetry inside the same turn instead of waiting for turn.complete.
+  streaming.onSkillGatePersisted = (skillVisibility, info) => {
+    runtimeSession.skillVisibility = skillVisibility;
+    // The gate names the catalog alias (`ravi-system-routes-manager`) but may
+    // have marked the record the provider advertises under the short id
+    // (`routes-manager`); report the ids that actually sit in the vector.
+    const markedSkills = skillVisibility.loadedSkills.filter((loadedSkill) =>
+      skillIdentifiersMatch(loadedSkill, info.skill),
+    );
+    patchLiveState(
+      {
+        activity: "thinking",
+        summary: `${info.skill} delivered by skill gate for ${info.toolName}`,
+        agentId: agent.id,
+        runId,
+        provider: runtimeSession.provider,
+        model,
+        toolName: info.toolName,
+        source: streaming.currentSource,
+      },
+      skillVisibility,
+    );
+    announceLoadedSkills(skillVisibility, {
+      origin: "skill-gate",
+      toolName: info.toolName,
+      skill: info.skill,
+      newlyLoaded: markedSkills.length > 0 ? markedSkills : [info.skill],
+    }).catch((err) => log.warn("Failed to announce skill-gate load", { sessionName, error: err }));
+  };
+
   const recentAssistantContents = (): string[] =>
     getRecentHistory(sessionName, 48)
       .filter((message) => message.role === "assistant")
@@ -3184,27 +3261,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               },
               nextSkillVisibility,
             );
-            recordTraceEvent({
-              turnId: streaming.currentTraceTurnId,
-              provider: runtimeSession.provider,
-              model,
-              eventType: "skill.visibility.loaded",
-              eventGroup: "runtime",
-              status: "complete",
-              payloadJson: {
-                toolId,
-                toolName,
-                loadedSkills: nextSkillVisibility.loadedSkills,
-                skillVisibility: nextSkillVisibility,
-                metadata: event.metadata,
-              },
-              preview: nextSkillVisibility.loadedSkills.join(", "),
-            });
-            await emitRuntimeEvent({
-              type: "skill.visibility.loaded",
-              provider: runtimeSession.provider,
-              skillVisibility: nextSkillVisibility,
-              loadedSkills: nextSkillVisibility.loadedSkills,
+            await announceLoadedSkills(nextSkillVisibility, {
+              origin: "ravi-skills-show",
+              toolId,
+              toolName,
+              newlyLoaded: diffLoadedSkills(previousSkillVisibility, nextSkillVisibility),
               metadata: event.metadata,
             });
           }
@@ -3271,12 +3332,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
         // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
+        const announcedSkillVisibility = runtimeSkillVisibilityFromParams(session.runtimeSessionParams);
         refreshRuntimeSessionParamsFromDb();
         const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
           mergeRuntimeSessionParams(event.session?.params ?? undefined),
           streaming.currentRuntimeCredential,
         );
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
+        // Loads this loop never saw (out-of-process gate, provider-reported
+        // instruction sources) still need their telemetry row.
+        const externallyLoadedSkills = terminalSkillVisibility
+          ? diffLoadedSkills(announcedSkillVisibility, terminalSkillVisibility)
+          : [];
+        if (terminalSkillVisibility && externallyLoadedSkills.length > 0) {
+          await announceLoadedSkills(terminalSkillVisibility, {
+            origin: "turn-complete",
+            newlyLoaded: externallyLoadedSkills,
+            metadata: event.metadata,
+          });
+        }
         const persistedSessionId =
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
@@ -3986,6 +4060,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
     }
     streaming.durableTurnPreparationFailed = false;
+    streaming.onSkillGatePersisted = undefined;
     clearProviderInactivityWatch();
     clearIdleSessionEvictionTimer();
     toolLivenessLease.clear();

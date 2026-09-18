@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildSkillVisibilitySnapshot,
+  diffLoadedSkills,
   extractRequestedSkillFromCommandLine,
   extractRequestedSkillFromToolCall,
   extractSkillNameFromFilesystemPath,
@@ -11,9 +12,30 @@ import {
   markLoadedFromRaviSkillToolCall,
   markLoadedFromSkillGate,
   mergeSkillVisibilitySnapshots,
+  readSkillVisibilityFromParams,
+  resetLoadedSkillVisibilitySnapshot,
   skillIdentifiersMatch,
   skillNameMatchesAllowlist,
 } from "./skill-visibility.js";
+import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
+
+/** Claude and Pi advertise plugin skills by frontmatter name, not by gate alias. */
+function claudeCatalog(now: number): RuntimeSkillVisibilitySnapshot {
+  return buildSkillVisibilitySnapshot(
+    [
+      {
+        id: "routes-manager",
+        provider: "claude",
+        state: "advertised",
+        confidence: "declared",
+        source: "plugin:ravi-system/routes",
+        lastSeenAt: now,
+      },
+      { id: "sessions", provider: "claude", state: "advertised", confidence: "declared", lastSeenAt: now },
+    ],
+    now,
+  );
+}
 
 describe("skill visibility policy", () => {
   it("matches only canonical names and managed provider aliases", () => {
@@ -166,6 +188,189 @@ describe("skill visibility policy", () => {
     const merged = mergeSkillVisibilitySnapshots(stored, incoming, 2);
     expect(merged.skills.map((skill) => skill.id)).toEqual(["allowed"]);
     expect(merged.loadedSkills).toEqual(["allowed"]);
+  });
+
+  it("keeps the gate-marked advertised record loaded across catalog re-announces", () => {
+    // Turn 1: the gate names the catalog alias, alias equivalence marks the
+    // record Claude advertises under the short id.
+    const afterGate = markLoadedFromSkillGate(claudeCatalog(1), {
+      provider: "claude",
+      skill: "ravi-system-routes-manager",
+      toolName: "Bash",
+      now: 2,
+    });
+    expect(afterGate.loadedSkills).toEqual(["routes-manager"]);
+    expect(skillIdentifiersMatch(afterGate.loadedSkills[0]!, "ravi-system-routes-manager")).toBe(true);
+
+    // turn.complete on turn 1 and on every later user turn: Claude re-attaches
+    // the same catalog with the record back at `advertised`. Loaded must win.
+    let snapshot = afterGate;
+    for (const now of [3, 4, 5]) {
+      snapshot = mergeSkillVisibilitySnapshots(snapshot, claudeCatalog(now), now);
+      expect(snapshot.loadedSkills).toEqual(["routes-manager"]);
+    }
+    expect(snapshot.skills.map((skill) => [skill.id, skill.state])).toEqual([
+      ["routes-manager", "loaded"],
+      ["sessions", "advertised"],
+    ]);
+    expect(snapshot.skills[0]?.loadedAt).toBe(2);
+    expect(snapshot.skills[0]?.evidence?.map((entry) => entry.kind)).toEqual(["skill-gate"]);
+  });
+
+  it("keeps a loaded record the provider never re-announces", () => {
+    // Sessions gated before alias equivalence persisted the loaded record
+    // under the gate alias, next to the advertised short id.
+    const legacy = buildSkillVisibilitySnapshot(
+      [
+        ...claudeCatalog(1).skills,
+        {
+          id: "ravi-system-routes-manager",
+          provider: "claude",
+          state: "loaded",
+          confidence: "observed",
+          source: "catalog:ravi-system/routes",
+          evidence: [{ kind: "skill-gate", observedAt: 2 }],
+          loadedAt: 2,
+          lastSeenAt: 2,
+        },
+      ],
+      2,
+    );
+
+    let snapshot = legacy;
+    for (const now of [3, 4]) {
+      snapshot = mergeSkillVisibilitySnapshots(snapshot, claudeCatalog(now), now);
+      expect(snapshot.loadedSkills).toEqual(["ravi-system-routes-manager"]);
+    }
+    expect(snapshot.skills.map((skill) => [skill.id, skill.state])).toEqual([
+      ["ravi-system-routes-manager", "loaded"],
+      ["routes-manager", "advertised"],
+      ["sessions", "advertised"],
+    ]);
+    expect(snapshot.skills[0]?.loadedAt).toBe(2);
+
+    // Plugins outside the managed prefixes have no alias equivalence, so the
+    // gate appends its own record; the catalog never lists that id either.
+    const acmeCatalog = (now: number) =>
+      buildSkillVisibilitySnapshot(
+        [{ id: "deploy", provider: "claude", state: "advertised", confidence: "declared", lastSeenAt: now }],
+        now,
+      );
+    const afterGate = markLoadedFromSkillGate(acmeCatalog(1), {
+      provider: "claude",
+      skill: "acme-tools-deploy",
+      toolName: "Bash",
+      now: 2,
+    });
+    expect(afterGate.loadedSkills).toEqual(["acme-tools-deploy"]);
+
+    const afterTurn = mergeSkillVisibilitySnapshots(afterGate, acmeCatalog(3), 3);
+    expect(afterTurn.loadedSkills).toEqual(["acme-tools-deploy"]);
+    expect(afterTurn.skills.map((skill) => [skill.id, skill.state])).toEqual([
+      ["acme-tools-deploy", "loaded"],
+      ["deploy", "advertised"],
+    ]);
+  });
+
+  it("still drops non-loaded stored entries the provider no longer announces", () => {
+    const stored = buildSkillVisibilitySnapshot(
+      [
+        ...claudeCatalog(1).skills,
+        { id: "revoked", provider: "claude", state: "advertised", confidence: "declared", lastSeenAt: 1 },
+        {
+          id: "ravi-system-tasks",
+          provider: "claude",
+          state: "loaded",
+          confidence: "observed",
+          loadedAt: 1,
+          lastSeenAt: 1,
+        },
+      ],
+      1,
+    );
+
+    const merged = mergeSkillVisibilitySnapshots(stored, claudeCatalog(2), 2);
+    expect(merged.skills.map((skill) => skill.id)).toEqual(["ravi-system-tasks", "routes-manager", "sessions"]);
+    expect(merged.loadedSkills).toEqual(["ravi-system-tasks"]);
+  });
+
+  it("clears a gate-loaded skill only through an explicit reset, not through a re-announce", () => {
+    const afterGate = markLoadedFromSkillGate(claudeCatalog(1), {
+      provider: "claude",
+      skill: "ravi-system-routes-manager",
+      toolName: "Bash",
+      now: 2,
+    });
+
+    const afterReset = resetLoadedSkillVisibilitySnapshot(afterGate, 3);
+    expect(afterReset.loadedSkills).toEqual([]);
+    expect(afterReset.skills.find((skill) => skill.id === "routes-manager")?.state).toBe("stale");
+
+    const afterTurn = mergeSkillVisibilitySnapshots(afterReset, claudeCatalog(4), 4);
+    expect(afterTurn.loadedSkills).toEqual([]);
+
+    // A record persisted under the gate alias is retained only while loaded;
+    // once reset, the next re-announce prunes it like any other stale entry.
+    const legacy = buildSkillVisibilitySnapshot(
+      [
+        ...claudeCatalog(1).skills,
+        {
+          id: "ravi-system-routes-manager",
+          provider: "claude",
+          state: "loaded",
+          confidence: "observed",
+          loadedAt: 2,
+          lastSeenAt: 2,
+        },
+      ],
+      2,
+    );
+    const legacyAfterReset = resetLoadedSkillVisibilitySnapshot(legacy, 3);
+    expect(legacyAfterReset.loadedSkills).toEqual([]);
+    const legacyAfterTurn = mergeSkillVisibilitySnapshots(legacyAfterReset, claudeCatalog(4), 4);
+    expect(legacyAfterTurn.loadedSkills).toEqual([]);
+    expect(legacyAfterTurn.skills.map((skill) => skill.id)).toEqual(["routes-manager", "sessions"]);
+  });
+
+  it("round-trips skill-gate evidence through persisted session params", () => {
+    const afterGate = markLoadedFromSkillGate(claudeCatalog(1), {
+      provider: "claude",
+      skill: "ravi-system-routes-manager",
+      source: "catalog:ravi-system/routes",
+      path: "/plugins/ravi-system/skills/routes/SKILL.md",
+      toolName: "Bash",
+      now: 2,
+    });
+
+    const reread = readSkillVisibilityFromParams({ skillVisibility: JSON.parse(JSON.stringify(afterGate)) });
+    const record = reread.skills.find((skill) => skill.id === "routes-manager");
+    expect(reread.loadedSkills).toEqual(["routes-manager"]);
+    expect(record?.evidence).toEqual([
+      expect.objectContaining({
+        kind: "skill-gate",
+        observedAt: 2,
+        path: "/plugins/ravi-system/skills/routes/SKILL.md",
+        eventType: "runtime.skill-gate.loaded",
+        detail: "delivered by skill gate for Bash",
+      }),
+    ]);
+  });
+
+  it("reports only the skills that entered the loaded vector", () => {
+    const before = markLoadedFromSkillGate(claudeCatalog(1), {
+      provider: "claude",
+      skill: "ravi-system-sessions",
+      now: 2,
+    });
+    const after = markLoadedFromSkillGate(before, {
+      provider: "claude",
+      skill: "ravi-system-routes-manager",
+      now: 3,
+    });
+
+    expect(diffLoadedSkills(before, after)).toEqual(["routes-manager"]);
+    expect(diffLoadedSkills(after, after)).toEqual([]);
+    expect(diffLoadedSkills(undefined, before)).toEqual(["sessions"]);
   });
 
   it("records a skill delivered through ravi skills show", () => {

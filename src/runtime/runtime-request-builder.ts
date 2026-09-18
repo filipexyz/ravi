@@ -477,6 +477,9 @@ async function buildRuntimeStartRequestInternal(
     context: runtimeContext,
     session,
     ...(modelBroker ? { modelBroker } : {}),
+    // Resolved lazily: the event loop installs its listener after this request
+    // is built, and the gate must observe whichever loop currently owns the stream.
+    onSkillGatePersisted: (skillVisibility, info) => streamingSession.onSkillGatePersisted?.(skillVisibility, info),
   });
   const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });

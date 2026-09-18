@@ -59,6 +59,8 @@ import {
 } from "./runtime-request-builder.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { loadedSkillMatchesGate } from "./skill-gate.js";
+import { markLoadedFromSkillGate, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type {
   RuntimeCapabilities,
@@ -295,6 +297,91 @@ function makeLoadedRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
     ],
     loadedSkills: ["ravi-system-tasks"],
     updatedAt: 100,
+  };
+}
+
+/**
+ * Claude re-attaches its plugin catalog to every turn.complete, keyed by the
+ * frontmatter `name` (`routes-manager`), never by the gate alias
+ * (`ravi-system-routes-manager`).
+ */
+function makeClaudeCatalogSkillVisibility(now = 100): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "routes-manager",
+        provider: "claude",
+        state: "advertised",
+        confidence: "declared",
+        source: "plugin:ravi-system/routes",
+        evidence: [{ kind: "plugin-bootstrap", observedAt: now }],
+        loadedAt: null,
+        lastSeenAt: now,
+      },
+      {
+        id: "sessions",
+        provider: "claude",
+        state: "advertised",
+        confidence: "declared",
+        source: "plugin:ravi-system/sessions",
+        evidence: [{ kind: "plugin-bootstrap", observedAt: now }],
+        loadedAt: null,
+        lastSeenAt: now,
+      },
+    ],
+    loadedSkills: [],
+    updatedAt: now,
+  };
+}
+
+/**
+ * What the gate persists for `ravi-system-routes-manager` today: alias
+ * equivalence marks the record Claude already advertises under the short id.
+ */
+function makeGateLoadedRoutesSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  return markLoadedFromSkillGate(makeClaudeCatalogSkillVisibility(100), {
+    provider: "claude",
+    skill: "ravi-system-routes-manager",
+    source: "catalog:ravi-system/routes",
+    toolName: "Bash",
+    now: 200,
+  });
+}
+
+/**
+ * What sessions gated before alias equivalence still carry: the loaded record
+ * sits under the gate alias, which no provider catalog ever re-announces.
+ */
+function makeLegacyGateAliasSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  const catalog = makeClaudeCatalogSkillVisibility(100);
+  return {
+    skills: [
+      {
+        id: "ravi-system-routes-manager",
+        provider: "claude",
+        state: "loaded",
+        confidence: "observed",
+        source: "catalog:ravi-system/routes",
+        evidence: [{ kind: "skill-gate", observedAt: 200, detail: "delivered by skill gate for Bash" }],
+        loadedAt: 200,
+        lastSeenAt: 200,
+      },
+      ...catalog.skills,
+    ],
+    loadedSkills: ["ravi-system-routes-manager"],
+    updatedAt: 200,
+  };
+}
+
+function makeClaudeTurnComplete(displayId: string): RuntimeEvent {
+  return {
+    type: "turn.complete",
+    providerSessionId: displayId,
+    session: {
+      displayId,
+      params: { sessionId: displayId, skillVisibility: makeClaudeCatalogSkillVisibility() },
+    },
+    usage: { inputTokens: 10, outputTokens: 4 },
   };
 }
 
@@ -1857,16 +1944,25 @@ describe("runtime session trace instrumentation", () => {
     );
 
     const events = listSessionEvents(SESSION_KEY);
+    // The provider reported `trace-skill` as loaded for the first time on this
+    // terminal, so the vector mutation gets its own telemetry row before the
+    // terminal is recorded.
     expect(events.map((event) => event.eventType)).toEqual([
       "adapter.request",
       "tool.start",
       "tool.end",
+      "skill.visibility.loaded",
       "turn.complete",
     ]);
     expect(emitted.some(({ data }) => data.type === "tool.progress")).toBe(false);
-    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
-    expect(events.map((event) => event.runId)).toEqual(["run-1", "run-1", "run-1", "run-1"]);
-    expect(events.map((event) => event.turnId)).toEqual(["turn-1", "turn-1", "turn-1", "turn-1"]);
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(events.map((event) => event.runId)).toEqual(["run-1", "run-1", "run-1", "run-1", "run-1"]);
+    expect(events.map((event) => event.turnId)).toEqual(["turn-1", "turn-1", "turn-1", "turn-1", "turn-1"]);
+    expect(events[3]?.payloadJson).toMatchObject({
+      origin: "turn-complete",
+      newlyLoaded: ["trace-skill"],
+      loadedSkills: ["trace-skill"],
+    });
     const turn = getSessionTurn("turn-1");
     expect(turn?.status).toBe("complete");
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
@@ -2569,6 +2665,168 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(persisted.skills).toEqual([expect.objectContaining({ id: "ravi-system-tasks", state: "loaded" })]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
+  });
+
+  /**
+   * Turn 1 already happened: `ravi routes --help` was gated, the skill was
+   * delivered, the vector was persisted, the retry ran. Turns 2 and 3 are later
+   * user messages whose turn.complete re-attaches Claude's advertised catalog
+   * (`routes-manager`, `sessions`) with the record back at `advertised`.
+   */
+  async function expectLoadedVectorSurvivesLaterTurns(
+    persistedAfterTurnOne: RuntimeSkillVisibilitySnapshot,
+    expectedSkills: Array<[string, string]>,
+  ) {
+    const [loadedId] = persistedAfterTurnOne.loadedSkills;
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "provider-turn-1",
+      runtimeSessionDisplayId: "provider-turn-1",
+      runtimeSessionParams: { sessionId: "provider-turn-1", skillVisibility: persistedAfterTurnOne },
+    });
+
+    for (const [index, displayId] of ["provider-turn-2", "provider-turn-3"].entries()) {
+      const streaming = makeStreamingSession();
+      seedAdapterTrace(streaming, `turn-${index + 2}`);
+      const session = getSession(SESSION_KEY)!;
+      const runtimeSession = makeRuntimeSession([makeClaudeTurnComplete(displayId)]);
+      runtimeSession.skillVisibility = makeClaudeCatalogSkillVisibility();
+
+      await runTraceLoop(streaming, runtimeSession, { session });
+
+      const persisted = getSession(SESSION_KEY)?.runtimeSessionParams
+        ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+      expect(persisted.loadedSkills).toEqual([loadedId]);
+      expect(persisted.skills.map((skill) => [skill.id, skill.state])).toEqual(expectedSkills);
+      const loadedRecord = persisted.skills.find((skill) => skill.id === loadedId);
+      expect(loadedRecord?.loadedAt).toBe(200);
+      expect(loadedRecord?.evidence).toContainEqual(expect.objectContaining({ kind: "skill-gate", observedAt: 200 }));
+      expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual([loadedId]);
+    }
+
+    // The gate reads the same persisted vector, so the retry stays unblocked.
+    const gateView = readSkillVisibilityFromParams(getSession(SESSION_KEY)?.runtimeSessionParams);
+    expect(gateView.loadedSkills.some((skill) => loadedSkillMatchesGate(skill, "ravi-system-routes-manager"))).toBe(
+      true,
+    );
+    // Nothing re-announced the load, so no duplicate telemetry rows either.
+    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "skill.visibility.loaded")).toEqual([]);
+  }
+
+  it("keeps the gate-marked short id loaded across later turns when Claude re-announces its catalog", async () => {
+    const persisted = makeGateLoadedRoutesSkillVisibility();
+    expect(persisted.loadedSkills).toEqual(["routes-manager"]);
+    await expectLoadedVectorSurvivesLaterTurns(persisted, [
+      ["routes-manager", "loaded"],
+      ["sessions", "advertised"],
+    ]);
+  });
+
+  it("keeps a pre-equivalence gate alias loaded across later turns even though no catalog re-announces it", async () => {
+    await expectLoadedVectorSurvivesLaterTurns(makeLegacyGateAliasSkillVisibility(), [
+      ["ravi-system-routes-manager", "loaded"],
+      ["routes-manager", "advertised"],
+      ["sessions", "advertised"],
+    ]);
+  });
+
+  it("mirrors an in-process skill-gate delivery into live state and skill.visibility.loaded telemetry", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeClaudeCatalogSkillVisibility(),
+    };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const gateSnapshot = makeGateLoadedRoutesSkillVisibility();
+
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        // The authorize path fires while the provider turn is in flight; the
+        // bootstrap closure has already refreshed the in-memory params.
+        session.runtimeSessionParams = { ...session.runtimeSessionParams, skillVisibility: gateSnapshot };
+        streaming.onSkillGatePersisted?.(gateSnapshot, { skill: "ravi-system-routes-manager", toolName: "Bash" });
+        expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["routes-manager"]);
+        yield makeClaudeTurnComplete("provider-after");
+      })(),
+      interrupt: async () => {},
+    };
+    runtimeSession.skillVisibility = makeClaudeCatalogSkillVisibility();
+
+    await runTraceLoop(streaming, runtimeSession, {
+      session,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    const loadedEvents = listSessionEvents(SESSION_KEY).filter(
+      (event) => event.eventType === "skill.visibility.loaded",
+    );
+    expect(loadedEvents).toHaveLength(1);
+    expect(loadedEvents[0]).toMatchObject({ turnId: "turn-1", runId: "run-1" });
+    // `skill` is the gate alias; `newlyLoaded` names the record alias
+    // equivalence actually marked in the vector.
+    expect(loadedEvents[0]?.payloadJson).toMatchObject({
+      origin: "skill-gate",
+      skill: "ravi-system-routes-manager",
+      toolName: "Bash",
+      newlyLoaded: ["routes-manager"],
+      loadedSkills: ["routes-manager"],
+    });
+    const runtimeLoaded = emitted.filter(
+      ({ topic, data }) => topic === `ravi.session.${SESSION_NAME}.runtime` && data.type === "skill.visibility.loaded",
+    );
+    expect(runtimeLoaded).toHaveLength(1);
+    expect(runtimeLoaded[0]?.data).toMatchObject({
+      origin: "skill-gate",
+      newlyLoaded: ["routes-manager"],
+      loadedSkills: ["routes-manager"],
+    });
+
+    // turn.complete re-announced `routes-manager` as advertised; loaded wins.
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["routes-manager"]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["routes-manager"]);
+    expect(streaming.onSkillGatePersisted).toBeUndefined();
+  });
+
+  it("seeds live state from the persisted loaded vector when a runtime process starts", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeGateLoadedRoutesSkillVisibility(),
+    };
+    let liveAtStart: string[] | undefined;
+
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        liveAtStart = getRuntimeLiveStateForSession(makeSession())?.loadedSkills;
+        yield makeClaudeTurnComplete("provider-after");
+      })(),
+      interrupt: async () => {},
+    };
+    // A fresh provider process only knows its advertised catalog.
+    runtimeSession.skillVisibility = makeClaudeCatalogSkillVisibility();
+
+    await runTraceLoop(streaming, runtimeSession, { session });
+
+    expect(liveAtStart).toEqual(["routes-manager"]);
+    const liveSkills = getRuntimeLiveStateForSession(makeSession())?.skills;
+    expect(liveSkills?.map((skill) => [skill.id, skill.state])).toEqual([
+      ["routes-manager", "loaded"],
+      ["sessions", "advertised"],
+    ]);
   });
 
   it("does not persist raw stream lifecycle events in the trace ledger", async () => {

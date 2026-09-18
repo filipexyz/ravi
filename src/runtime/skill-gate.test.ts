@@ -23,7 +23,11 @@ import {
   runtimeSkillGateForTool,
 } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
-import { buildSkillVisibilitySnapshot, markLoadedFromRaviSkillToolCall } from "./skill-visibility.js";
+import {
+  buildSkillVisibilitySnapshot,
+  markLoadedFromRaviSkillToolCall,
+  readSkillVisibilityFromParams,
+} from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 let stateDir: string | null = null;
@@ -452,13 +456,15 @@ describe("runtime host skill-gate enforcement", () => {
       capabilities: [{ permission: "use", objectType: "tool", objectId: "image_generate", source: "test" }],
     });
     let callbackSnapshot: RuntimeSkillVisibilitySnapshot | undefined;
+    let callbackInfo: { skill: string; toolName: string } | undefined;
     const services = createRuntimeHostServices({
       context,
       agentId: "main",
       sessionName: "skill-gate-test",
       toolContext: {},
-      onSkillGatePersisted: (skillVisibility) => {
+      onSkillGatePersisted: (skillVisibility, info) => {
         callbackSnapshot = skillVisibility;
+        callbackInfo = info;
       },
     });
 
@@ -476,10 +482,16 @@ describe("runtime host skill-gate enforcement", () => {
     expect(contentItem.text).toContain("RAVI_SKILL_REQUIRED: image_generate requires skill ravi-system-image");
     expect(contentItem.text).toContain("# ravi-system-image");
     expect(callbackSnapshot?.loadedSkills).toEqual(["ravi-system-image"]);
+    expect(callbackInfo).toEqual({ skill: "ravi-system-image", toolName: "image_generate" });
 
     const persisted = getSession("agent:main:main")?.runtimeSessionParams
       ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
     expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
+    // The skill-gate evidence must survive the persisted-params read path; it
+    // used to be filtered out, leaving the loaded record unexplained.
+    const reread = readSkillVisibilityFromParams(getSession("agent:main:main")?.runtimeSessionParams);
+    expect(reread.loadedSkills).toEqual(["ravi-system-image"]);
+    expect(reread.skills[0]?.evidence?.map((entry) => entry.kind)).toContain("skill-gate");
   }, 20_000);
 
   it("checks Bash permission before delivering a required skill", async () => {

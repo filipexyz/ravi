@@ -33,13 +33,16 @@ import type {
   RuntimeDynamicToolExecutionOptions,
   RuntimeDynamicToolSpec,
   RuntimeHostServices,
-  RuntimeSkillVisibilitySnapshot,
   RuntimeToolAccessMode,
   RuntimeToolUseAuthorizationRequest,
   RuntimeUserInputRequest,
   RuntimeCapabilities,
 } from "./types.js";
-import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
+import {
+  evaluateRuntimeCommandSkillGate,
+  evaluateRuntimeToolSkillGate,
+  type SkillGatePersistedListener,
+} from "./skill-gate.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
@@ -56,7 +59,7 @@ export interface RuntimeHostServicesOptions {
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
-  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+  onSkillGatePersisted?: SkillGatePersistedListener;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {

@@ -4,6 +4,7 @@ import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
   MessageActorMetadata,
@@ -207,6 +208,12 @@ export interface RuntimeHostStreamingSession {
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
   idleSessionEvictionTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Host-loop observer for skill-gate deliveries persisted in-process by the
+   * authorize path. Set while the event loop owns this stream so live state
+   * and `skill.visibility.loaded` telemetry reflect the load inside the turn.
+   */
+  onSkillGatePersisted?: SkillGatePersistedListener;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
