@@ -85,8 +85,6 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/provider-login-stub.test.ts",
     // Inactivity windows for long-running tools and their declared timeouts.
     "src/runtime/tool-liveness.test.ts",
-    // Aviso de tool demorada: o runtime conta que está ocupado em vez de ficar mudo.
-    "src/runtime/slow-tool-notice.test.ts",
   ],
   "src/watch/": [
     // Contrato: o que o connector declara suportado localmente é o que o poller
