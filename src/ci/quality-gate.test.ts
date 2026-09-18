@@ -426,6 +426,27 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the session dispatcher focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      ["src/runtime/session-dispatcher.ts", "src/runtime/session-dispatcher.test.ts"],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("passes when the tool safety focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/hooks/tool-safety.ts", "src/hooks/tool-safety.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/hooks/"]);
+  });
+
   it("passes when the Ravi env file focused test is in the diff", () => {
     const cwd = makeWorkspace();
 
