@@ -11,7 +11,9 @@ import { CloudAuthError, cloudAuthErrorFromUnknown, isCloudAuthError } from "../
 import { redactCloudAuthPayload } from "../../cloud-auth/redaction.js";
 import {
   deleteCloudCredentials,
+  persistMeIntoCredentials,
   readCloudCredentials,
+  shouldPersistHydratedIdentity,
   toSafeCloudAuthSession,
   writeCloudCredentials,
 } from "../../cloud-auth/storage.js";
@@ -90,16 +92,17 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
     installation: localInstallationMetadata(env),
     sleep: deps.sleep ?? sleep,
   });
-  write(credentials);
+  const hydrated = await hydrateLoginIdentity(client, credentials);
+  write(hydrated);
 
   const payload = {
     success: true,
-    session: toSafeCloudAuthSession(credentials),
+    session: toSafeCloudAuthSession(hydrated),
     auth: safeAuthConfig(config, deviceAuth),
   };
   printPayload(payload, options.json, () => {
-    const label = credentials.user?.email ?? credentials.user?.name ?? credentials.user?.displayName ?? "Ravi Cloud";
-    console.log(`✓ Logged in to ${credentials.consoleUrl} as ${label}`);
+    const label = hydrated.user?.email ?? hydrated.user?.name ?? hydrated.user?.displayName ?? "Ravi Cloud";
+    console.log(`✓ Logged in to ${hydrated.consoleUrl} as ${label}`);
     console.log("Run `ravi whoami` to inspect the linked CLI session.");
   });
   return payload;
@@ -117,7 +120,11 @@ export async function runWhoami(options: CloudWhoamiOptions = {}, deps: CloudAut
     write,
     delete: del,
   });
-  const session = mergeMeIntoSession(result.credentials, result.me);
+  const hydrated = persistMeIntoCredentials(result.credentials, result.me);
+  if (shouldPersistHydratedIdentity(result.credentials, hydrated)) {
+    write(hydrated);
+  }
+  const session = mergeMeIntoSession(hydrated, result.me);
   const payload = { success: true, authenticated: true, session };
   printPayload(payload, options.json, () => printWhoami(session));
   return payload;
@@ -220,6 +227,19 @@ function toSafeCloudLogoutError(error: unknown): { code: CloudAuthError["code"];
 
 export async function runCloudAuthRootCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
   return fn();
+}
+
+async function hydrateLoginIdentity(
+  client: ConsoleApiClient,
+  credentials: CloudCredentials,
+): Promise<CloudCredentials> {
+  if (credentials.user?.id && credentials.organization?.id) return credentials;
+  try {
+    const me = await client.me(credentials.accessToken);
+    return persistMeIntoCredentials(credentials, me);
+  } catch {
+    return credentials;
+  }
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

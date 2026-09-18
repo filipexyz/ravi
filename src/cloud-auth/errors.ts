@@ -16,11 +16,20 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "HOST_UNREACHABLE",
   "CREDENTIALS_INVALID",
   "CLOUD_PUBLISH_NOT_IMPLEMENTED",
+  "CONTACT_REQUIRED",
+  "ACTOR_BINDING_CONFLICT",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];
 
 const KNOWN_CODES = new Set<string>(CLOUD_AUTH_ERROR_CODES);
+
+/** Console `/api/cli/link` codes → CLI codes already exposed to agents. */
+const CONSOLE_LINK_ERROR_ALIASES: Record<string, CloudAuthErrorCode> = {
+  CONFLICT: "ACTOR_BINDING_CONFLICT",
+  NOT_MEMBER: "ORG_ACCESS_DENIED",
+  INSTALLATION_ORG_MISMATCH: "ORG_ACCESS_DENIED",
+};
 
 export class CloudAuthError extends Error {
   readonly code: CloudAuthErrorCode;
@@ -61,7 +70,8 @@ export function normalizeCloudAuthErrorCode(value: unknown, fallback: CloudAuthE
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9_]/g, "_");
-  return KNOWN_CODES.has(normalized) ? (normalized as CloudAuthErrorCode) : fallback;
+  const mapped = CONSOLE_LINK_ERROR_ALIASES[normalized] ?? normalized;
+  return KNOWN_CODES.has(mapped) ? (mapped as CloudAuthErrorCode) : fallback;
 }
 
 export function cloudAuthErrorFromUnknown(error: unknown): CloudAuthError {

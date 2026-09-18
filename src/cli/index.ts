@@ -34,6 +34,7 @@ import { runSetup } from "./commands/setup.js";
 import { maybeRunManagedRuntimeRebindFromEnv } from "../managed-runtime-rebind.js";
 import { runUpdate, type RaviUpdateOptions } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
+import { runLink, runUnlink } from "./commands/link.js";
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
@@ -264,6 +265,40 @@ program
         closeLazyConnection: true,
       },
       () => runCloudAuthRootCommand(options.json, () => runLogout(options)),
+    );
+  });
+
+program
+  .command("link")
+  .description("Bind the current contact to the active Console user (ambient; no identity flags)")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "link",
+        tool: "root_link",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runLink(options)),
+    );
+  });
+
+program
+  .command("unlink")
+  .description("Remove the ambient contact↔Console user binding for the current turn")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "unlink",
+        tool: "root_unlink",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runUnlink(options)),
     );
   });
 

@@ -42,6 +42,7 @@ export * from "./image.js";
 export * from "./inbox.js";
 export * from "./insights.js";
 export * from "./instances.js";
+export * from "./link.js";
 export * from "./mail.js";
 export * from "./media.js";
 export * from "./meetings.js";

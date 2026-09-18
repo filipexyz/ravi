@@ -17,7 +17,9 @@ Check:
   the pending device grant.
 - CLI does not require a client secret.
 - Exchange endpoint returns Ravi CLI credentials.
-- Credentials are stored outside stdout.
+- Credentials are stored outside stdout, keyed by `consoleUserId` under
+  `~/.ravi/cloud-auth/users/<userId>/credentials.json` (mode `0600`).
+- `active.json` points at that user so `ravi whoami` stays correct.
 
 ## Whoami Debug
 

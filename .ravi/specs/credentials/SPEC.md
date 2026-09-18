@@ -49,6 +49,11 @@ and runtime/model provider credential pools.
 ## Invariants
 
 - Provider secrets MUST NOT be stored in `~/.ravi/credentials.json`.
+- Provider OAuth tokens (Gmail, Slack, and other connectors) MUST NOT be
+  stored under `~/.ravi/cloud-auth/`. That tree holds Console session JWTs
+  and identity-binding IDs only. Connector plaintext stays on `link.ravi.so`.
+- Console session tokens are not provider tokens and MUST stay keyed by
+  `consoleUserId` (see `cli/cloud-auth`).
 - `~/.ravi/credentials.json` MUST remain scoped to runtime context keys.
 - `ravi context credentials` MUST remain scoped to `RAVI_CONTEXT_KEY` /
   `rctx_*` management.
