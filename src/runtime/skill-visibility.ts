@@ -461,9 +461,11 @@ export function resetLoadedSkillVisibilitySnapshot(
  * a revoked skill disappears from the session view. It has no authority over
  * load state. A `loaded` record leaves the vector only through an explicit
  * reset (compaction, session reset); it MUST survive a per-turn re-announce
- * even when the provider lists the same skill under a different alias
- * (Claude/Pi advertise the frontmatter name `routes-manager`, the skill gate
- * marks `ravi-system-routes-manager`). Spec: runtime/skill-loading.
+ * even when no incoming entry shares its id: records persisted under the gate
+ * alias (`ravi-system-routes-manager`) before alias equivalence marked the
+ * advertised short id (`routes-manager`), and gates for plugins outside the
+ * managed prefixes, which `skillIdentifiersMatch` cannot relate to the
+ * catalog entry. Spec: runtime/skill-loading.
  */
 export function mergeSkillVisibilitySnapshots(
   stored: RuntimeSkillVisibilitySnapshot | null | undefined,
