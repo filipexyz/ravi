@@ -14,6 +14,8 @@ tags:
 applies_to:
   - src/runtime/context-registry.ts
   - src/runtime/runtime-request-context.ts
+  - src/runtime/skill-gate.ts
+  - src/runtime/skill-visibility.ts
   - src/cli/commands/context.ts
   - src/skills/manager.ts
 owners:
@@ -77,7 +79,9 @@ Matcher fields are mutually additive but a single rule SHOULD use the narrowest 
 ## Rules
 
 - The gate MUST evaluate against the live `loadedSkills` vector held by `runtime/skill-loading`. It MUST NOT scan the filesystem on the hot path; if the skill is not in the vector it is treated as not loaded.
-- Skill identifiers in gate declarations MUST match the canonical skill name (frontmatter `name`). Aliases or paths MUST NOT be accepted at gate evaluation.
+- Skill identifiers in gate declarations MUST name the skill by its canonical skill name (frontmatter `name`, e.g. `pages`) or by its plugin-qualified catalog alias (`<plugin>-<name>`, e.g. `ravi-system-pages`, which is how the default Ravi group rules are declared). Paths MUST NOT be accepted.
+- A loaded marker satisfies a gate when both identify the same logical skill, not only when the strings are equal. Provider snapshots and `ravi skills show` record the plugin short id (`pages`) while gate rules carry the catalog alias (`ravi-system-pages`); the runtime MUST treat the canonical name, its managed plugin aliases (`ravi-system-*`, `ravi-dev-*`, `ravi-user-skills-*`) and the physical aliases of the resolved skill as equivalent at evaluation. Equivalence on the hot path MUST stay a pure string comparison; alias resolution through the catalog MAY only run on the denial path, where the skill is resolved anyway.
+- When the gate marks the delivered skill as loaded, it MUST mark the record the session already holds for that logical skill (e.g. the advertised `pages` record) instead of appending a second record under the gate alias, so one logical skill never splits into two visibility records.
 - A gate MUST be enforced before any side effect of the tool. Tools that already started external work when the gate fires are a violation of the contract.
 - A gate failure MUST emit a structured event on the runtime event stream tagged with the agent, session, tool, and missing skill.
 - Skill-gate declarations MUST NOT expose an operator-selectable enforcement variant. Soft auto-inject is the only supported behavior for this revision.
@@ -111,6 +115,7 @@ The transform pipeline is the orchestrator; `skill-gate` is one policy plugged i
 ## Failure Modes
 
 - **Skill exists but is unloaded** — the runtime delivers the skill content, marks it loaded, rejects the first call, and allows the retry.
+- **Skill loaded under another alias** — the session holds `pages` as loaded (plugin snapshot, `ravi skills show pages`) while the gate demands `ravi-system-pages`. The retry MUST be allowed; denying here re-delivers the skill on every attempt and the agent never gets past the gate.
 - **Skill does not exist anywhere** — the runtime MUST surface a clear error: "tool requires skill X, no plugin provides X". This is a configuration error, not a runtime gate failure, and MUST be reported distinctly.
 - **Mid-flight soft gate** — the runtime delivers the skill content; the agent's next attempt is allowed to invoke the tool only after the agent's context has acknowledged the skill. Acknowledgement is a turn boundary, not a free pass.
 - **Permission missing** — if the agent lacks permission to load the skill (no `toolgroup:navigate` or skill-specific deny), the gate MUST report the permission gap rather than silently auto-loading.
@@ -118,6 +123,7 @@ The transform pipeline is the orchestrator; `skill-gate` is one policy plugged i
 ## Acceptance Criteria
 
 - A tool declared with skill `foo` MUST return the skill content on the first call and allow the second call to proceed once the skill is in the vector.
+- A tool declared with skill `ravi-system-foo` MUST allow the call when the vector holds `foo` (and vice versa); `bun test src/runtime/skill-gate.test.ts` covers the equivalence and the retry.
 - Skill-gate metadata and flexible config MUST NOT require or honor a `variant` field in this revision.
 - Gate failures MUST appear in `ravi events` filtered by event type and carry sufficient context to debug the failure offline.
 - Disabling the gate for a tool (operator override) MUST be auditable and MUST NOT happen silently.
