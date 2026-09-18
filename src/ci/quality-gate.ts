@@ -85,6 +85,11 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/provider-login-stub.test.ts",
     // Inactivity windows for long-running tools and their declared timeouts.
     "src/runtime/tool-liveness.test.ts",
+    // O observer de intenção é chamado de host-services.ts, e o comportamento que
+    // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
+    // O call site em si ainda não tem teste de integração — está declarado como
+    // risco na PR da feature.
+    "src/hooks/gh-watch.test.ts",
   ],
   "src/watch/": [
     // Contrato: o que o connector declara suportado localmente é o que o poller
