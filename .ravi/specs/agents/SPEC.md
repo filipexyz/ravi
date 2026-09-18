@@ -64,10 +64,14 @@ An agent is not a human user, contact, chat, route, or permission profile.
 ## Canonical Relations
 
 ```text
-agent:<viewer> view agent:<target-agent>
-agent:<operator> modify agent:<target-agent>  # future/narrower write boundary
+agent:<viewer> view agent:<target-agent>      # also read visibility into the agent's cron jobs/triggers
+agent:<operator> modify agent:<target-agent>  # write boundary for the agent's owned runtime resources
 agent:<operator> admin system:*               # break-glass/admin
 ```
+
+`modify agent:<id>` currently authorizes mutating the cron jobs and triggers
+owned by that agent (see `permissions/resource-visibility`). It does not yet
+authorize changing the agent's own configuration.
 
 `admin system:*` MAY remain a break-glass operator capability, but delegated
 user-initiated contexts MUST still intersect actor and surface authority before

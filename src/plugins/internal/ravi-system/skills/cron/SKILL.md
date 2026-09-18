@@ -53,8 +53,20 @@ Checklist antes de responder sobre cron:
 
 ### Listar jobs
 ```bash
-ravi cron list
+ravi cron list                 # jobs do agent atual (default)
+ravi cron list --all-agents    # jobs de todos os agents que você pode ver
+ravi cron list --agent <id>    # jobs de um agent específico
 ```
+
+Visibilidade cross-agent segue grants no agent dono: `view agent:<id>` deixa
+listar/ver os jobs daquele agent; `modify agent:<id>` deixa
+`enable/disable/set/run/rm`. Superadmin vê e altera tudo. Jobs criados sem
+`--agent` pertencem ao agent default. Em `--json`, `filters.visibility`
+indica `scoped` (jobs de agents que você não pode ver foram omitidos) ou
+`full`. Sem autorização para alterar um job existente, o CLI responde
+`PERMISSION_DENIED` (com `requiredCapability` e `denialId` quando o dono é
+visível) — não `Job not found`; `Job not found` significa id errado ou job que
+você não pode ler.
 
 ### Ver detalhes
 ```bash
