@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
-import { dbCreateCronJob, dbGetCronJob, dbUpdateCronJob } from "./cron-db.js";
+import {
+  dbCreateCronJob,
+  dbGetCronJob,
+  dbMarkJobDispatched,
+  dbRecordJobOutcome,
+  dbUpdateCronJob,
+  dbUpdateJobState,
+} from "./cron-db.js";
 
 const createdJobIds: string[] = [];
 
@@ -75,5 +82,72 @@ describe("dbUpdateCronJob", () => {
     expect(reloaded?.shellTimeoutMs).toBeUndefined();
     expect(reloaded?.shellEnvFile).toBeUndefined();
     expect(reloaded?.onError).toBeUndefined();
+  });
+});
+
+describe("agent job dispatch and outcome state", () => {
+  it("dbMarkJobDispatched advances the schedule and clears the previous outcome", () => {
+    const created = dbCreateCronJob({
+      name: `test-dispatch-${Date.now()}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "noop",
+    });
+    createdJobIds.push(created.id);
+
+    dbUpdateJobState(created.id, {
+      lastRunAt: 1_000,
+      lastStatus: "ok",
+      lastDurationMs: 12,
+      nextRunAt: 61_000,
+      lastExitCode: 0,
+    });
+
+    dbMarkJobDispatched(created.id, { lastRunAt: 61_000, nextRunAt: 121_000 });
+
+    const job = dbGetCronJob(created.id);
+    expect(job?.lastRunAt).toBe(61_000);
+    expect(job?.nextRunAt).toBe(121_000);
+    expect(job?.lastStatus).toBeUndefined();
+    expect(job?.lastError).toBeUndefined();
+    expect(job?.lastDurationMs).toBeUndefined();
+    expect(job?.lastExitCode).toBeUndefined();
+  });
+
+  it("dbRecordJobOutcome writes the turn result without touching the schedule", () => {
+    const created = dbCreateCronJob({
+      name: `test-outcome-${Date.now()}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "noop",
+    });
+    createdJobIds.push(created.id);
+
+    dbMarkJobDispatched(created.id, { lastRunAt: 5_000, nextRunAt: 65_000 });
+
+    expect(
+      dbRecordJobOutcome(created.id, {
+        lastStatus: "error",
+        lastError: "400 model not supported",
+        lastDurationMs: 2_345,
+      }),
+    ).toBe(true);
+
+    const failed = dbGetCronJob(created.id);
+    expect(failed).toMatchObject({
+      lastRunAt: 5_000,
+      nextRunAt: 65_000,
+      lastStatus: "error",
+      lastError: "400 model not supported",
+      lastDurationMs: 2_345,
+    });
+
+    expect(dbRecordJobOutcome(created.id, { lastStatus: "ok", lastDurationMs: 900 })).toBe(true);
+    const recovered = dbGetCronJob(created.id);
+    expect(recovered?.lastStatus).toBe("ok");
+    expect(recovered?.lastError).toBeUndefined();
+    expect(recovered?.lastDurationMs).toBe(900);
+  });
+
+  it("dbRecordJobOutcome reports false for jobs that no longer exist", () => {
+    expect(dbRecordJobOutcome("missing-job", { lastStatus: "ok" })).toBe(false);
   });
 });
