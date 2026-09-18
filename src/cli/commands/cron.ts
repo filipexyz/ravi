@@ -217,6 +217,7 @@ function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boo
         ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
         : `Request modify authority on the owning agent from an operator and retry '${op}'`,
       ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
+      ...(denial.denialId ? { denialId: denial.denialId } : {}),
     },
   });
 }

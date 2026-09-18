@@ -895,6 +895,7 @@ describe("CronCommands cross-agent access", () => {
     expect(envelope.error.code).toBe("PERMISSION_DENIED");
     expect(envelope.error.message).toContain("requires modify on agent:owner");
     expect(envelope.error.requiredCapability).toBe("modify:agent:owner");
+    expect(envelope.error.denialId).toBe(7);
     expect(envelope.error.suggestedAction).toBe("Request modify:agent:owner from an operator and retry 'cron disable'");
     expect(JSON.stringify(envelope)).not.toContain(OWNER_NAME);
     expect(cronJob?.enabled).toBe(true);

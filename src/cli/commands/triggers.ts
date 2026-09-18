@@ -109,6 +109,7 @@ function assertTriggerMutable(op: string, id: string, trigger: Trigger, asJson?:
         ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
         : `Request modify authority on the owning agent from an operator and retry '${op}'`,
       ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
+      ...(denial.denialId ? { denialId: denial.denialId } : {}),
     },
   });
 }
