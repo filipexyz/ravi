@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "fa7ab5be1b427ed1"
+    "version": "94f53140e4d88bf4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2433,7 +2433,7 @@
                     "type": "string"
                   },
                   "profile": {
-                    "description": "Profile: bootstrap, full-access (Bash execute ceiling + admin), none",
+                    "description": "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
                     "type": "string"
                   }
                 },
@@ -2530,6 +2530,7 @@
                             "profile": {
                               "enum": [
                                 "bootstrap",
+                                "chat-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -2895,6 +2896,7 @@
                             "profile": {
                               "enum": [
                                 "bootstrap",
+                                "chat-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -2907,8 +2909,14 @@
                         }
                       ]
                     },
+                    "breakGlassCommand": {
+                      "type": "string"
+                    },
                     "changed": {
                       "type": "boolean"
+                    },
+                    "chatOnlyCommand": {
+                      "type": "string"
                     },
                     "command": {
                       "type": "string"
@@ -2929,7 +2937,16 @@
                         }
                       ]
                     },
+                    "inspectCommand": {
+                      "type": "string"
+                    },
+                    "leastPrivilegeExample": {
+                      "type": "string"
+                    },
                     "profile": {
+                      "type": "string"
+                    },
+                    "resetToBootstrapCommand": {
                       "type": "string"
                     },
                     "runtimePermissions": {
@@ -2968,6 +2985,7 @@
                             "profile": {
                               "enum": [
                                 "bootstrap",
+                                "chat-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -3768,6 +3786,7 @@
                             "profile": {
                               "enum": [
                                 "bootstrap",
+                                "chat-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -62115,6 +62134,9 @@
                         "breakGlass": {
                           "type": "string"
                         },
+                        "chatOnly": {
+                          "type": "string"
+                        },
                         "recurringAccess": {
                           "type": "string"
                         }
@@ -62124,6 +62146,9 @@
                         "breakGlass"
                       ],
                       "type": "object"
+                    },
+                    "profile": {
+                      "type": "string"
                     },
                     "subject": {
                       "additionalProperties": false,

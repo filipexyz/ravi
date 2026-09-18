@@ -354,17 +354,22 @@ class AgentsPermissionsOptions {
 }
 
 class AgentsPermissionsReturn {
-  const AgentsPermissionsReturn({required this.action, this.after, this.agent, required this.agentId, this.before, required this.changed, this.command, this.defaults, this.profile, this.runtimePermissions});
+  const AgentsPermissionsReturn({required this.action, this.after, this.agent, required this.agentId, this.before, this.breakGlassCommand, required this.changed, this.chatOnlyCommand, this.command, this.defaults, this.inspectCommand, this.leastPrivilegeExample, this.profile, this.resetToBootstrapCommand, this.runtimePermissions});
 
   final String action;
   final RaviJson? after;
   final RaviJson? agent;
   final String agentId;
   final RaviJson? before;
+  final String? breakGlassCommand;
   final bool changed;
+  final String? chatOnlyCommand;
   final String? command;
   final RaviJson? defaults;
+  final String? inspectCommand;
+  final String? leastPrivilegeExample;
   final String? profile;
+  final String? resetToBootstrapCommand;
   final RaviJson? runtimePermissions;
 
   factory AgentsPermissionsReturn.fromJson(Map<String, Object?> json) {
@@ -374,10 +379,15 @@ class AgentsPermissionsReturn {
       agent: json["agent"] == null ? null : RaviJson.from(json["agent"]),
       agentId: raviJsonAsString(json["agentId"]),
       before: json["before"] == null ? null : RaviJson.from(json["before"]),
+      breakGlassCommand: json["breakGlassCommand"] == null ? null : raviJsonAsString(json["breakGlassCommand"]),
       changed: raviJsonAsBool(json["changed"]),
+      chatOnlyCommand: json["chatOnlyCommand"] == null ? null : raviJsonAsString(json["chatOnlyCommand"]),
       command: json["command"] == null ? null : raviJsonAsString(json["command"]),
       defaults: json["defaults"] == null ? null : RaviJson.from(json["defaults"]),
+      inspectCommand: json["inspectCommand"] == null ? null : raviJsonAsString(json["inspectCommand"]),
+      leastPrivilegeExample: json["leastPrivilegeExample"] == null ? null : raviJsonAsString(json["leastPrivilegeExample"]),
       profile: json["profile"] == null ? null : raviJsonAsString(json["profile"]),
+      resetToBootstrapCommand: json["resetToBootstrapCommand"] == null ? null : raviJsonAsString(json["resetToBootstrapCommand"]),
       runtimePermissions: json["runtimePermissions"] == null ? null : RaviJson.from(json["runtimePermissions"]),
     );
   }
@@ -13142,16 +13152,18 @@ class PermissionsMaterializeOptions {
 }
 
 class PermissionsMaterializeReturn {
-  const PermissionsMaterializeReturn({required this.capabilities, required this.guidance, required this.subject});
+  const PermissionsMaterializeReturn({required this.capabilities, required this.guidance, this.profile, required this.subject});
 
   final List<RaviJson> capabilities;
   final RaviJson guidance;
+  final String? profile;
   final RaviJson subject;
 
   factory PermissionsMaterializeReturn.fromJson(Map<String, Object?> json) {
     return PermissionsMaterializeReturn(
       capabilities: raviJsonAsList(json["capabilities"], RaviJson.from),
       guidance: RaviJson.from(json["guidance"]),
+      profile: json["profile"] == null ? null : raviJsonAsString(json["profile"]),
       subject: RaviJson.from(json["subject"]),
     );
   }
