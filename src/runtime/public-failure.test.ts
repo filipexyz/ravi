@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
@@ -54,10 +55,40 @@ describe("public runtime failures", () => {
     'Config invalid: {"token":"secret-token-value"}',
     'Config invalid: {"apiKey":"secret-api-key-value"}',
     "Request failed with Authorization: Basic dXNlcjpzdXBlcnNlY3JldA==",
+    "SQLiteError: out of memory",
+    "out of memory",
+    "SQLITE_NOMEM",
+    "SQLITE_FULL: database or disk is full",
+    "database or disk is full",
+    "disk I/O error",
+    "database is locked",
+    "database disk image is malformed",
+    "unable to open database file",
+    "no such table: session_goals",
+    "UNIQUE constraint failed: session_goals.session_key",
   ])("hides technical or sensitive detail: %s", (raw) => {
     expect(publicRuntimeFailureDetail(raw)).toBe(
       "The agent could not complete this request because of an internal runtime error. Please try again.",
     );
+  });
+
+  it("never forwards raw bun:sqlite errors (SQLITE_NOMEM) to chat", () => {
+    const sqliteError = Object.assign(new Error("out of memory"), {
+      name: "SQLiteError",
+      code: "SQLITE_NOMEM",
+      errno: 7,
+    });
+    const formatted = formatUserFacingTurnFailure(sqliteError);
+
+    expect(formatted).toBe(
+      "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
+    );
+    expect(formatted).not.toContain("SQLite");
+    expect(formatted).not.toContain("out of memory");
+  });
+
+  it("keeps the curated sqlite capacity message user-visible", () => {
+    expect(formatUserFacingTurnFailure(SQLITE_CAPACITY_USER_MESSAGE)).toBe(`Error: ${SQLITE_CAPACITY_USER_MESSAGE}`);
   });
 
   it("preserves actionable provider errors", () => {

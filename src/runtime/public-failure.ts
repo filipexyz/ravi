@@ -4,6 +4,13 @@ const INTERNAL_RUNTIME_FAILURE_MESSAGE =
 
 const INTERNAL_ERROR_PATTERNS = [
   /\b(?:ENOENT|EACCES|EPERM|ENOTDIR|EISDIR|EMFILE|ENFILE|scandir|ERR_[A-Z0-9_]+)\b/i,
+  // Local SQLite storage failures (bun:sqlite `SQLiteError`, SQLITE_* codes,
+  // "out of memory", lock/disk/corruption messages) are operator problems and
+  // are never actionable in chat.
+  /\bSQLiteError\b/i,
+  /\bSQLITE_[A-Z][A-Z0-9_]*\b/,
+  /\bout of memory\b/i,
+  /\b(?:database (?:is locked|table is locked|or disk is full|disk image is malformed)|disk I\/O error|unable to open database file|no such (?:table|column)|(?:UNIQUE|NOT NULL|CHECK|FOREIGN KEY) constraint failed)\b/i,
   /\b(?:Type|Reference|Range|Syntax|Aggregate|URI|Eval|Internal|Invariant|Assertion)Error(?:\s+\[[^\]]+\])?:/i,
   /^(?:Cannot (?:read|set) properties of (?:undefined|null)|Cannot access [A-Za-z_$][\w$]* before initialization|(?:[A-Za-z_$][\w$]*|\([^)]+\)) is not (?:defined|a function)|Maximum call stack size exceeded|Cannot find (?:module|package)|Unexpected token|Invalid or unexpected token|require\(\) of ES Module|Cannot use import statement)\b/i,
   /\bfile:\/\/[^\s'"`]+/i,

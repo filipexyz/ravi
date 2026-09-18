@@ -7,6 +7,7 @@ import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
 import { closeDevinDb } from "../devin/store.js";
 import { closeRouterDb } from "../router/router-db.js";
 import { closeSessionStore } from "../router/sessions.js";
+import { closeSessionGoalStore } from "../runtime/session-goals.js";
 
 const RAVI_STATE_LOCK_DIR = join(tmpdir(), "ravi-test-state.lock");
 const RAVI_STATE_LOCK_RETRY_MS = 10;
@@ -104,6 +105,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   closeDevinDb();
   closeSessionAdapterStore();
   closeSessionStore();
+  closeSessionGoalStore();
   closeRouterDb();
   const stateDir = mkdtempSync(join(tmpdir(), prefix));
   pendingStateDirs.add(stateDir);
@@ -159,6 +161,7 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeDevinDb();
   closeSessionAdapterStore();
   closeSessionStore();
+  closeSessionGoalStore();
   closeRouterDb();
   delete process.env.RAVI_STATE_DIR;
   if (previousAuditSuppression === undefined) {

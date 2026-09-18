@@ -1,9 +1,23 @@
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
-import type { Statement } from "bun:sqlite";
+import type { Database, Statement } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { isSqliteCapacityError } from "../db/write-retry.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("runtime:session-goals");
 
 export const SESSION_GOAL_OBJECTIVE_MAX_CHARS = 4000;
+
+/**
+ * Prompt text used when the goal store itself is unavailable. The section is a
+ * snapshot; a store failure must not fail the turn or leak SQLite internals.
+ */
+export const SESSION_GOAL_PROMPT_UNAVAILABLE_NOTE =
+  "Session goal snapshot unavailable: the local goal store returned a database capacity error. " +
+  "A goal may still exist; run `ravi sessions goal get` to refresh before assuming there is none.";
+
+const SESSION_GOAL_STATEMENT_MAX_ATTEMPTS = 2;
 
 export type SessionGoalStatus = RuntimeGoalStatus;
 
@@ -47,6 +61,9 @@ const GOAL_COLUMNS = `session_key, goal_id, objective, status, token_budget, tok
              task_id, project_id, blocked_reason, created_at, updated_at`;
 
 interface SessionGoalStatements {
+  /** Connection the statements were prepared on. Statements die with it. */
+  db: Database;
+  preparedAt: number;
   get: Statement;
   replace: Statement;
   create: Statement;
@@ -57,16 +74,29 @@ interface SessionGoalStatements {
 }
 
 let stmts: SessionGoalStatements | null = null;
-let statementsDbPath: string | null = null;
 
+/**
+ * Statements are cached per live `Database` object, not per DB path.
+ *
+ * The router connection can be closed and lazily reopened at the same path
+ * inside one process (`closeRouterDb()` via `closeAllRaviDbs()`, `bot.stop()`).
+ * A path-keyed cache kept handing out statements prepared on the closed
+ * connection. Those keep "working" on the zombie handle until any schema change
+ * forces SQLite to re-prepare them, and bun:sqlite reports that failure through
+ * a NULL db handle, which SQLite renders as SQLITE_NOMEM "out of memory" even
+ * though the table is empty and the process has plenty of memory.
+ */
 function getStatements(): SessionGoalStatements {
-  const currentDbPath = getRaviDbPath();
-  if (stmts && statementsDbPath === currentDbPath) return stmts;
-  stmts = null;
-  statementsDbPath = currentDbPath;
-
   const db = getDb();
-  stmts = {
+  if (stmts && stmts.db === db) return stmts;
+  stmts = prepareStatements(db);
+  return stmts;
+}
+
+function prepareStatements(db: Database): SessionGoalStatements {
+  return {
+    db,
+    preparedAt: Date.now(),
     get: db.prepare(`
       SELECT ${GOAL_COLUMNS}
       FROM session_goals
@@ -140,13 +170,76 @@ function getStatements(): SessionGoalStatements {
       RETURNING ${GOAL_COLUMNS}
     `),
   };
-
-  return stmts;
 }
 
 export function closeSessionGoalStore(): void {
   stmts = null;
-  statementsDbPath = null;
+}
+
+function memorySnapshotMb(): Record<string, number> {
+  const usage = process.memoryUsage();
+  const toMb = (bytes: number) => Math.round(bytes / (1024 * 1024));
+  return {
+    rssMb: toMb(usage.rss),
+    heapUsedMb: toMb(usage.heapUsed),
+    heapTotalMb: toMb(usage.heapTotal),
+    externalMb: toMb(usage.external),
+  };
+}
+
+function describeSqliteError(error: unknown): Record<string, unknown> {
+  const details = error as { code?: unknown; errno?: unknown } | null;
+  return {
+    error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    sqliteCode: details?.code ?? null,
+    sqliteErrno: details?.errno ?? null,
+  };
+}
+
+/**
+ * Run one cached statement with SQLITE_NOMEM/SQLITE_FULL hardening.
+ *
+ * On a capacity error the cached statements are dropped and re-prepared once on
+ * the live connection (statements are atomic, so a failed write never partially
+ * applied). The error is instrumented either way; a second failure propagates
+ * the original SQLite error so callers keep their `isSqliteCapacityError`
+ * contract (CLI SQLITE_CAPACITY mapping, prompt intake ACK path).
+ */
+function runSessionGoalStatement<T>(
+  operation: string,
+  sessionKey: string,
+  run: (statements: SessionGoalStatements) => T,
+): T {
+  for (let attempt = 1; ; attempt++) {
+    let statements: SessionGoalStatements | null = null;
+    try {
+      statements = getStatements();
+      const value = run(statements);
+      if (attempt > 1) {
+        log.warn("session goal statement recovered after re-preparing on the live connection", {
+          operation,
+          sessionKey,
+          attempt,
+        });
+      }
+      return value;
+    } catch (error) {
+      if (!isSqliteCapacityError(error)) throw error;
+      const willRetry = attempt < SESSION_GOAL_STATEMENT_MAX_ATTEMPTS;
+      log.error("session goal statement hit a SQLite capacity error", {
+        operation,
+        sessionKey,
+        attempt,
+        willRetry,
+        dbPath: getRaviDbPath(),
+        statementsAgeMs: statements ? Date.now() - statements.preparedAt : null,
+        ...describeSqliteError(error),
+        ...memorySnapshotMb(),
+      });
+      stmts = null;
+      if (!willRetry) throw error;
+    }
+  }
 }
 
 function rowToGoal(row: SessionGoalRow): SessionGoal {
@@ -195,7 +288,7 @@ function statusAfterBudgetLimit(status: SessionGoalStatus, tokenBudget: number |
 }
 
 export function getSessionGoal(sessionKey: string): SessionGoal | null {
-  const row = getStatements().get.get(sessionKey) as SessionGoalRow | null;
+  const row = runSessionGoalStatement("get", sessionKey, (s) => s.get.get(sessionKey) as SessionGoalRow | null);
   return row ? rowToGoal(row) : null;
 }
 
@@ -209,18 +302,25 @@ export function replaceSessionGoal(input: {
 }): SessionGoal {
   const tokenBudget = normalizeBudget(input.tokenBudget);
   const status = statusAfterBudgetLimit(input.status ?? "active", tokenBudget);
+  const objective = normalizeObjective(input.objective);
+  const goalId = randomUUID();
   const now = Date.now();
-  const row = getStatements().replace.get(
+  const row = runSessionGoalStatement(
+    "replace",
     input.sessionKey,
-    randomUUID(),
-    normalizeObjective(input.objective),
-    status,
-    tokenBudget,
-    normalizeOptionalString(input.taskId),
-    normalizeOptionalString(input.projectId),
-    now,
-    now,
-  ) as SessionGoalRow | null;
+    (s) =>
+      s.replace.get(
+        input.sessionKey,
+        goalId,
+        objective,
+        status,
+        tokenBudget,
+        normalizeOptionalString(input.taskId),
+        normalizeOptionalString(input.projectId),
+        now,
+        now,
+      ) as SessionGoalRow | null,
+  );
   if (!row) throw new Error(`failed to replace goal for session: ${input.sessionKey}`);
   return rowToGoal(row);
 }
@@ -233,18 +333,25 @@ export function createSessionGoal(input: {
   projectId?: string | null;
 }): SessionGoal | null {
   const tokenBudget = normalizeBudget(input.tokenBudget);
+  const objective = normalizeObjective(input.objective);
+  const goalId = randomUUID();
   const now = Date.now();
-  const row = getStatements().create.get(
+  const row = runSessionGoalStatement(
+    "create",
     input.sessionKey,
-    randomUUID(),
-    normalizeObjective(input.objective),
-    statusAfterBudgetLimit("active", tokenBudget),
-    tokenBudget,
-    normalizeOptionalString(input.taskId),
-    normalizeOptionalString(input.projectId),
-    now,
-    now,
-  ) as SessionGoalRow | null;
+    (s) =>
+      s.create.get(
+        input.sessionKey,
+        goalId,
+        objective,
+        statusAfterBudgetLimit("active", tokenBudget),
+        tokenBudget,
+        normalizeOptionalString(input.taskId),
+        normalizeOptionalString(input.projectId),
+        now,
+        now,
+      ) as SessionGoalRow | null,
+  );
   return row ? rowToGoal(row) : null;
 }
 
@@ -255,17 +362,22 @@ export function updateSessionGoalStatus(
 ): SessionGoal | null {
   const now = Date.now();
   const expected = expectedGoalId ?? null;
-  const row = getStatements().updateStatus.get(
-    status,
-    status,
-    status,
-    status,
-    status,
-    now,
+  const row = runSessionGoalStatement(
+    "updateStatus",
     sessionKey,
-    expected,
-    expected,
-  ) as SessionGoalRow | null;
+    (s) =>
+      s.updateStatus.get(
+        status,
+        status,
+        status,
+        status,
+        status,
+        now,
+        sessionKey,
+        expected,
+        expected,
+      ) as SessionGoalRow | null,
+  );
   return row ? rowToGoal(row) : null;
 }
 
@@ -280,19 +392,22 @@ export function blockSessionGoal(
   }
   const now = Date.now();
   const expected = expectedGoalId ?? null;
-  const row = getStatements().blockGoal.get(
-    trimmedReason,
-    now,
+  const row = runSessionGoalStatement(
+    "block",
     sessionKey,
-    expected,
-    expected,
-  ) as SessionGoalRow | null;
+    (s) => s.blockGoal.get(trimmedReason, now, sessionKey, expected, expected) as SessionGoalRow | null,
+  );
   if (!row) return null;
   return rowToGoal(row);
 }
 
 export function pauseActiveSessionGoal(sessionKey: string): SessionGoal | null {
-  const row = getStatements().pauseActive.get(Date.now(), sessionKey) as SessionGoalRow | null;
+  const now = Date.now();
+  const row = runSessionGoalStatement(
+    "pauseActive",
+    sessionKey,
+    (s) => s.pauseActive.get(now, sessionKey) as SessionGoalRow | null,
+  );
   return row ? rowToGoal(row) : null;
 }
 
@@ -305,9 +420,11 @@ export function completeSessionGoal(sessionKey: string, expectedGoalId?: string 
 }
 
 export function clearSessionGoal(sessionKey: string): boolean {
-  getStatements().clear.run(sessionKey);
-  const row = getDb().prepare("SELECT changes() AS c").get() as { c: number } | null;
-  return (row?.c ?? 0) > 0;
+  return runSessionGoalStatement("clear", sessionKey, (s) => {
+    s.clear.run(sessionKey);
+    const row = s.db.prepare("SELECT changes() AS c").get() as { c: number } | null;
+    return (row?.c ?? 0) > 0;
+  });
 }
 
 function statusFiltersForMode(mode: SessionGoalAccountingMode): {
@@ -377,7 +494,17 @@ export function accountSessionGoalUsage(input: {
 }
 
 export function buildSessionGoalPromptSection(sessionKey: string): string | null {
-  const goal = getSessionGoal(sessionKey);
+  let goal: SessionGoal | null;
+  try {
+    goal = getSessionGoal(sessionKey);
+  } catch (error) {
+    // The section is a snapshot. A store capacity failure (already instrumented
+    // by runSessionGoalStatement) must not fail the turn before the provider
+    // starts, nor surface raw SQLite text to the chat.
+    if (!isSqliteCapacityError(error)) throw error;
+    log.warn("session goal prompt section degraded after store capacity error", { sessionKey });
+    return SESSION_GOAL_PROMPT_UNAVAILABLE_NOTE;
+  }
   if (!goal || goal.status === "complete") return null;
 
   const lines: string[] = [];
