@@ -7,8 +7,11 @@ import {
   filterSkillNamesByAllowlist,
   isSkillNameAuthorizedOnAllowlist,
   isStoredSkillVisibilityCompatible,
+  logicalSkillKey,
   markLoadedFromRaviSkillToolCall,
+  markLoadedFromSkillGate,
   mergeSkillVisibilitySnapshots,
+  skillIdentifiersMatch,
   skillNameMatchesAllowlist,
 } from "./skill-visibility.js";
 
@@ -19,6 +22,78 @@ describe("skill visibility policy", () => {
     expect(skillNameMatchesAllowlist("unmanaged-tiny", ["tiny"])).toBe(false);
     expect(skillNameMatchesAllowlist("ravi-user-skills-sessions", ["sessions", "ravi-system-sessions"])).toBe(true);
     expect(skillNameMatchesAllowlist("ravi-system-sessions", ["sessions", "ravi-system-sessions"])).toBe(true);
+  });
+
+  it("reduces managed plugin aliases to one logical skill key", () => {
+    expect(logicalSkillKey("pages")).toBe("pages");
+    expect(logicalSkillKey("ravi-system-pages")).toBe("pages");
+    expect(logicalSkillKey("ravi-user-skills-pages")).toBe("pages");
+    expect(logicalSkillKey("ravi-dev-app-creator")).toBe("app-creator");
+    expect(logicalSkillKey("Ravi-System-Cron-Manager")).toBe("cron-manager");
+    expect(logicalSkillKey("acme-pages")).toBe("acme-pages");
+    expect(logicalSkillKey("ravi-system-")).toBe("ravi-system");
+  });
+
+  it("matches skill identifiers across plugin short ids and catalog aliases", () => {
+    expect(skillIdentifiersMatch("pages", "pages")).toBe(true);
+    expect(skillIdentifiersMatch("pages", "ravi-system-pages")).toBe(true);
+    expect(skillIdentifiersMatch("ravi-system-pages", "pages")).toBe(true);
+    expect(skillIdentifiersMatch("ravi-system-sessions", "ravi-user-skills-sessions")).toBe(true);
+    expect(skillIdentifiersMatch("tasks", "ravi-system-tasks-eval")).toBe(false);
+    expect(skillIdentifiersMatch("acme-pages", "pages")).toBe(false);
+  });
+
+  it("marks the advertised short id when the gate names the catalog alias", () => {
+    const snapshot = buildSkillVisibilitySnapshot(
+      [
+        {
+          id: "pages",
+          provider: "claude",
+          state: "advertised",
+          confidence: "declared",
+          source: "plugin:ravi-system/pages",
+          lastSeenAt: 1,
+        },
+        {
+          id: "image",
+          provider: "claude",
+          state: "advertised",
+          confidence: "declared",
+          source: "plugin:ravi-system/image",
+          lastSeenAt: 1,
+        },
+      ],
+      1,
+    );
+
+    const loaded = markLoadedFromSkillGate(snapshot, {
+      provider: "claude",
+      skill: "ravi-system-pages",
+      source: "catalog:ravi-system/pages",
+      toolName: "pages_ship",
+      now: 2,
+    });
+
+    expect(loaded.skills.map((skill) => skill.id)).toEqual(["image", "pages"]);
+    expect(loaded.loadedSkills).toEqual(["pages"]);
+    expect(loaded.skills.find((skill) => skill.id === "pages")?.evidence?.at(-1)?.kind).toBe("skill-gate");
+  });
+
+  it("prefers the exact gate id over an alias and still appends unknown skills", () => {
+    const snapshot = buildSkillVisibilitySnapshot(
+      [
+        { id: "pages", provider: "codex", state: "advertised", confidence: "declared", lastSeenAt: 1 },
+        { id: "ravi-system-pages", provider: "codex", state: "advertised", confidence: "declared", lastSeenAt: 1 },
+      ],
+      1,
+    );
+
+    const exact = markLoadedFromSkillGate(snapshot, { provider: "codex", skill: "ravi-system-pages", now: 2 });
+    expect(exact.loadedSkills).toEqual(["ravi-system-pages"]);
+
+    const appended = markLoadedFromSkillGate(snapshot, { provider: "codex", skill: "ravi-system-image", now: 2 });
+    expect(appended.skills.map((skill) => skill.id)).toEqual(["pages", "ravi-system-image", "ravi-system-pages"]);
+    expect(appended.loadedSkills).toEqual(["ravi-system-image"]);
   });
 
   it("selects one provider alias per logical skill and falls back when the canonical alias is absent", () => {

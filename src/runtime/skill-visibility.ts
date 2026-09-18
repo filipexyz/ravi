@@ -154,6 +154,32 @@ function skillMatchesAllowlist(skill: PluginSkillDescriptor, allowlist: readonly
 
 const MANAGED_SKILL_PREFIXES = ["ravi-system-", "ravi-dev-", "ravi-user-skills-"] as const;
 
+/**
+ * Logical identity shared by every physical alias of a managed skill: the
+ * catalog frontmatter name (`pages`) and the provider-facing plugin aliases
+ * (`ravi-system-pages`, `ravi-user-skills-pages`) all reduce to `pages`.
+ */
+export function logicalSkillKey(name: string): string {
+  const slug = slugifySkillName(name);
+  const prefix = MANAGED_SKILL_PREFIXES.find(
+    (candidate) => slug.startsWith(candidate) && slug.length > candidate.length,
+  );
+  return prefix ? slug.slice(prefix.length) : slug;
+}
+
+/**
+ * Whether two skill identifiers name the same skill: literal, slug, or
+ * plugin-alias equivalence (`pages` ↔ `ravi-system-pages`). Pure string
+ * comparison — safe on hot paths that must not touch the filesystem.
+ */
+export function skillIdentifiersMatch(left: string, right: string): boolean {
+  if (left === right) return true;
+  const leftSlug = slugifySkillName(left);
+  const rightSlug = slugifySkillName(right);
+  if (leftSlug === rightSlug) return true;
+  return logicalSkillKey(leftSlug) === logicalSkillKey(rightSlug);
+}
+
 /** Match provider-native aliases such as `ravi-system-sessions` to the
  * canonical allowlist entry `sessions`. */
 export function skillNameMatchesAllowlist(name: string, allowlist: readonly string[]): boolean {
@@ -360,8 +386,17 @@ export function markLoadedFromSkillGate(
     lastSeenAt: now,
   });
 
+  // Prefer the exact id; otherwise mark the record the provider already
+  // advertises under another alias (`pages` for gate `ravi-system-pages`) so a
+  // single logical skill never ends up split across two records.
+  const matchesExactly = (skill: RuntimeSkillVisibilityRecord) =>
+    skill.id === input.skill || slugifySkillName(skill.id) === loadedSlug;
+  const matchesGateSkill = snapshot.skills.some(matchesExactly)
+    ? matchesExactly
+    : (skill: RuntimeSkillVisibilityRecord) => skillIdentifiersMatch(skill.id, input.skill);
+
   const records = snapshot.skills.map((skill) => {
-    if (skill.id === input.skill || slugifySkillName(skill.id) === loadedSlug) {
+    if (matchesGateSkill(skill)) {
       found = true;
       return loadedRecord(skill);
     }
