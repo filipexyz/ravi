@@ -186,6 +186,31 @@ describe("local watch runner", () => {
     }
   });
 
+  it("does not republish what the console watch already delivers", async () => {
+    const local = makeWatch({ eventTypes: ["pull_request.opened", "workflow_run.failed"] });
+    const console = makeWatch({
+      id: "watch_console",
+      placement: "console",
+      eventTypes: ["watch.github.pull_request.opened"],
+    });
+    const h = harness({
+      watches: [local, console],
+      snapshots: [snapshot([], []), snapshot([{ number: 3 }], [{ id: 11, conclusion: "failure" }])],
+    });
+    try {
+      await h.runner.start();
+      await h.runner.tick();
+      await h.runner.tick();
+
+      // A PR aberta seria entrega dupla (webhook + poll); o CI só o local tem.
+      // `workflow_run.completed` não está assinado por este watch, então não sai.
+      expect(h.published.map((item) => item.payload.eventType)).toEqual(["workflow_run.failed"]);
+    } finally {
+      await h.runner.stop();
+      h.cleanup();
+    }
+  });
+
   it("skips watches that are not local github", async () => {
     const h = harness({
       watches: [makeWatch({ id: "watch_console", placement: "console" })],

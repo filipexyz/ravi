@@ -175,6 +175,29 @@ function parseJson<T>(raw: string): T | null {
   }
 }
 
+/**
+ * Eventos que o Console já entrega para este repo.
+ *
+ * Console e local podem observar o mesmo repo, e aí o mesmo evento sairia duas
+ * vezes: o webhook chega na hora, o poll chega até um minuto depois, e o cooldown
+ * do trigger não cobre essa distância. Regra: **onde o Console cobre, o local não
+ * publica**. O local existe para preencher o que o Console não entrega — CI, hoje.
+ *
+ * Os eventTypes do Console vêm prefixados (`watch.github.pull_request.opened`); os
+ * do local são bare.
+ */
+export function consoleCoveredEventTypes(watches: WatchRecord[], provider: string, resourceRef: string): Set<string> {
+  const prefix = `watch.${provider}.`;
+  const covered = new Set<string>();
+  for (const watch of watches) {
+    if (watch.placement !== "console" || watch.provider !== provider || watch.resourceRef !== resourceRef) continue;
+    for (const eventType of watch.eventTypes) {
+      covered.add(eventType.startsWith(prefix) ? eventType.slice(prefix.length) : eventType);
+    }
+  }
+  return covered;
+}
+
 export class LocalWatchRunner {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -216,12 +239,14 @@ export class LocalWatchRunner {
     this.processing = true;
     const result: LocalWatchTickResult = { watchesScanned: 0, eventsPublished: 0, errors: 0 };
     try {
-      for (const watch of this.listLocalWatches()) {
+      const watches = this.listLocalWatches();
+      for (const watch of watches) {
         // Um watch local só é útil para provider que a gente sabe pollar.
         if (watch.placement !== "local" || watch.provider !== "github") continue;
         result.watchesScanned += 1;
         try {
-          result.eventsPublished += await this.pollWatch(watch);
+          const consoleCovered = consoleCoveredEventTypes(watches, watch.provider, watch.resourceRef);
+          result.eventsPublished += await this.pollWatch(watch, consoleCovered);
         } catch (error) {
           result.errors += 1;
           log.warn("Local watch poll failed", { watchId: watch.id, resourceRef: watch.resourceRef, error });
@@ -234,7 +259,7 @@ export class LocalWatchRunner {
     return result;
   }
 
-  private async pollWatch(watch: WatchRecord): Promise<number> {
+  private async pollWatch(watch: WatchRecord, consoleCovered: Set<string> = new Set()): Promise<number> {
     const repo = watch.resourceRef.trim();
     if (!repo) return 0;
 
@@ -249,7 +274,9 @@ export class LocalWatchRunner {
     const { events, snapshot: next } = deriveLocalGitHubEvents(repo, { previous, current: snapshot, departed });
     this.writeSnapshotState(watch.id, next);
 
-    const allowed = new Set(watch.eventTypes);
+    // O watch declara em quais eventos ele tem interesse; o que o Console já entrega
+    // e o resto são descartados aqui, antes de virar tráfego no barramento.
+    const allowed = new Set(watch.eventTypes.filter((eventType) => !consoleCovered.has(eventType)));
     let published = 0;
     for (const event of events) {
       // O watch declara em quais eventos ele tem interesse; o resto é descartado
