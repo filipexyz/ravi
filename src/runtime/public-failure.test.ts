@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
+  isRecoverableOpenToolsOrInterruptFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
   publicRuntimeFailureDetail,
@@ -124,6 +125,48 @@ describe("public runtime failures", () => {
     expect(isOpenToolsTurnFailure(`Error: ${PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE}`)).toBe(true);
     expect(isOpenToolsTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE)).toBe(false);
     expect(isOpenToolsTurnFailure("Usage limit reached. Try again later.")).toBe(false);
+  });
+
+  it("classifies recoverable open-tools and interrupt-class failures for auto-recovery", () => {
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+        recoverable: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: "Codex turn failed: item.started without item.completed",
+        recoverable: true,
+        interrupted: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: "request was aborted",
+        recoverable: true,
+        internalAbortReason: "recoverable_interrupt_failure",
+      }),
+    ).toBe(true);
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
+        recoverable: true,
+      }),
+    ).toBe(false);
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+        recoverable: false,
+      }),
+    ).toBe(false);
+    expect(
+      isRecoverableOpenToolsOrInterruptFailure({
+        error: "model unavailable",
+        recoverable: false,
+        interrupted: true,
+      }),
+    ).toBe(false);
   });
 
   it("omits recoverable open-tools and interrupt-class failures from chat delivery", () => {
