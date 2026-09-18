@@ -1,5 +1,5 @@
 /**
- * GH Watch Hook — transforma uso de `gh` em acompanhamento durável.
+ * GH Watch — transforma uso de `gh` em acompanhamento durável.
  *
  * O problema: a intenção de acompanhar uma PR nasce na conversa ("olha o CI
  * dessa PR"), mas o watch e o trigger só existiam se alguém digitasse
@@ -7,26 +7,25 @@
  * publicava no vazio, e o acompanhamento virava cron job por PR.
  *
  * Aqui a intenção vira subscrição: quando um `gh` de leitura sobre PR/repo passa
- * pelo Bash, o hook garante (a) um watch do repo e (b) um trigger filtrado
- * naquela PR, apontando para a sessão que olhou.
+ * pela execução de comando do Ravi, garantimos (a) um watch do repo e (b) um
+ * trigger filtrado naquela PR, apontando para a sessão que olhou.
  *
- * Regras de convivência:
- * - Nunca bloqueia a tool call: a decisão de permissão é de outro hook.
- * - Idempotente: um watch por repo, um trigger por (repo, PR). Ver 50 vezes a
- *   mesma PR cria exatamente uma subscrição.
- * - Silencioso quando não entende o comando. Erro aqui não vira erro do usuário.
+ * O ponto de entrada é `observeGhBashCommand`, chamado pelos três caminhos de
+ * aprovação de comando do Ravi (hook in-process, CLI do codex e host services do
+ * pi/grok). Não é um hook de runtime: é o próprio Ravi observando todo comando
+ * que ele autoriza a rodar, independente de qual provider está no turno.
  */
 
 import { execFileSync } from "node:child_process";
-import { getContext } from "../cli/context.js";
-import { getAccountForAgent } from "../router/router-db.js";
+import { dbGetAgent } from "../router/router-db.js";
+import type { ContextSource } from "../router/router-db.js";
 import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
 import { createWatch, listWatchRecords } from "../watch/index.js";
-import type { HookCallbackMatcher } from "../bash/hook.js";
+import type { WatchRecord } from "../watch/types.js";
 
-const log = logger.child("hooks:gh-watch");
+const log = logger.child("gh-watch");
 
 /** Subcomandos de `gh` que caracterizam observação, não administração. */
 const GH_READ_SCOPES: Record<string, Set<string>> = {
@@ -100,9 +99,18 @@ export interface GhWatchFollowDeps {
   resolveAccountForAgent?: (agentId: string) => string | undefined;
 }
 
+export interface GhBashObservationContext {
+  agentId?: string;
+  sessionName?: string;
+  sessionKey?: string;
+  source?: ContextSource | TriggerReplySource;
+  /** cwd autoritativo da sessão. Nunca `process.cwd()`. */
+  cwd?: string | null;
+}
+
 /**
  * Tokeniza o comando respeitando aspas. Não é um shell: só precisamos achar
- * argumentos inteiros, então aspas e espaços bastam.
+ * argumentos inteiros, então aspas, espaços e separadores bastam.
  */
 export function tokenizeShellCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -149,7 +157,6 @@ export function tokenizeShellCommand(command: string): string[] {
 
 const REPO_SLUG = /^[\w.-]+\/[\w.-]+$/;
 const PR_URL = /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/;
-
 const COMMAND_SEPARATORS = new Set(["&&", "||", ";", "|", "(", ")"]);
 
 /** Índices em que começa um comando: o início ou logo depois de um separador. */
@@ -177,14 +184,14 @@ function isGhExecutable(token: string | undefined): boolean {
  * Extrai uma intenção de observação de um comando Bash.
  *
  * Devolve `null` para tudo que não seja um `gh` de leitura sobre PR/repo/CI —
- * inclusive comandos encadeados que só mencionam `gh` de passagem.
+ * inclusive comandos que só mencionam `gh` de passagem.
  */
 export function parseGhWatchIntent(command: string): GhWatchIntent | null {
   const tokens = tokenizeShellCommand(command);
   // `gh` só conta no começo de um comando: `echo gh pr view 1` é texto, não
   // intenção de observar PR.
   const ghIndex = commandStartIndexes(tokens).find((index) => isGhExecutable(tokens[index]));
-  if (ghIndex === undefined) return null;
+  if (ghIndex === undefined || ghIndex === -1) return null;
 
   const args = tokens.slice(ghIndex + 1).filter((token) => !COMMAND_SEPARATORS.has(token));
   const scopeToken = args.find((token) => !token.startsWith("-"));
@@ -350,6 +357,7 @@ export async function ensureGhWatchFollow(
   const resolved: GhWatchFollowContext = { ...context };
   if (!resolved.accountId && resolved.agentId) {
     try {
+      const { getAccountForAgent } = await import("../router/router-db.js");
       resolved.accountId = (deps.resolveAccountForAgent ?? getAccountForAgent)(resolved.agentId);
     } catch {
       // Lookup opcional: o roteamento em fire-time ainda resolve a conta.
@@ -375,40 +383,10 @@ async function defaultEmitTriggersRefresh(): Promise<void> {
   await nats.emit("ravi.triggers.refresh", {});
 }
 
-function resolveFollowContext(): GhWatchFollowContext {
-  const ctx = getContext();
-  if (!ctx) return {};
-  const source =
-    ctx.source?.channel && ctx.source.accountId && ctx.source.chatId
-      ? {
-          channel: ctx.source.channel,
-          accountId: ctx.source.accountId,
-          chatId: ctx.source.chatId,
-          ...(ctx.source.threadId ? { threadId: ctx.source.threadId } : {}),
-        }
-      : undefined;
-  return {
-    agentId: ctx.agentId,
-    accountId: ctx.source?.accountId,
-    sessionName: ctx.sessionName,
-    sessionKey: ctx.sessionKey,
-    source,
-  };
-}
-
-export interface GhWatchHookOptions {
-  cwd?: string;
-  context?: GhWatchFollowContext;
-  deps?: GhWatchFollowDeps;
-  /** Resolve `owner/repo` quando o comando não diz qual repo. */
-  resolveRepoFromCwd?: (cwd: string) => string | null;
-  enabled?: boolean;
-}
-
 const repoCache = new Map<string, string | null>();
 const ensured = new Set<string>();
 
-export function resetGhWatchHookCaches(): void {
+export function resetGhWatchCaches(): void {
   repoCache.clear();
   ensured.clear();
 }
@@ -433,47 +411,71 @@ function defaultResolveRepoFromCwd(cwd: string): string | null {
 }
 
 /**
- * Hook PreToolUse: observa o comando, garante a subscrição, nunca altera nada.
+ * cwd da sessão, nunca o do processo: criar watch pro repo errado é pior que não
+ * criar nada.
  */
-export function createGhWatchHook(options: GhWatchHookOptions = {}): HookCallbackMatcher {
-  const enabled = options.enabled ?? process.env.RAVI_WATCH_GH_AUTODETECT !== "0";
-  const cwd = options.cwd ?? process.cwd();
-  const resolveRepo = options.resolveRepoFromCwd ?? defaultResolveRepoFromCwd;
-
-  return {
-    matcher: "Bash",
-    hooks: [
-      async (input) => {
-        try {
-          if (!enabled) return {};
-          const command = (input.tool_input as { command?: string } | undefined)?.command;
-          if (!command || !command.includes("gh")) return {};
-
-          const intent = parseGhWatchIntent(command);
-          if (!intent) return {};
-
-          const repo = intent.repo ?? resolveRepo(cwd);
-          if (!repo) return {};
-
-          const key = `${repo}#${intent.prNumber ?? "*"}`;
-          if (ensured.has(key)) return {};
-
-          const result = await ensureGhWatchFollow(
-            { repo, prNumber: intent.prNumber, context: options.context ?? resolveFollowContext() },
-            options.deps,
-          );
-          // Só memoriza quando algo foi de fato garantido: uma falha de DB não
-          // pode virar "já tratei" para o resto da vida do processo.
-          if (result.watchId && (result.triggerId || result.triggerSkipped === "no_pr_number")) {
-            ensured.add(key);
-          }
-          log.info("gh watch follow ensured", { prNumber: intent.prNumber, ...result });
-        } catch (error) {
-          // Um hook é observador: falhar aqui não pode derrubar a tool call.
-          log.warn("gh watch hook failed", { error });
-        }
-        return {};
-      },
-    ],
-  };
+function resolveCwd(ctx: GhBashObservationContext): string | null {
+  if (ctx.cwd) return ctx.cwd;
+  if (!ctx.agentId) return null;
+  try {
+    return dbGetAgent(ctx.agentId)?.cwd ?? null;
+  } catch {
+    return null;
+  }
 }
+
+export interface GhWatchObservationDeps extends GhWatchFollowDeps {
+  resolveRepoFromCwd?: (cwd: string) => string | null;
+}
+
+/**
+ * Ponto único de observação. Chamado pelos três caminhos que autorizam comando
+ * no Ravi, depois do "pode rodar" e antes de devolver a decisão.
+ *
+ * Nunca lança: um observador que derruba a tool call é pior que não existir.
+ */
+export async function observeGhBashCommand(
+  command: string,
+  ctx: GhBashObservationContext = {},
+  deps: GhWatchObservationDeps = {},
+): Promise<void> {
+  try {
+    if (process.env.RAVI_WATCH_GH_AUTODETECT === "0") return;
+    if (!command.includes("gh")) return;
+
+    const intent = parseGhWatchIntent(command);
+    if (!intent) return;
+
+    const cwd = resolveCwd(ctx);
+    const repo = intent.repo ?? (cwd ? (deps.resolveRepoFromCwd ?? defaultResolveRepoFromCwd)(cwd) : null);
+    if (!repo) return;
+
+    const key = `${repo}#${intent.prNumber ?? "*"}`;
+    if (ensured.has(key)) return;
+
+    const result = await ensureGhWatchFollow(
+      {
+        repo,
+        prNumber: intent.prNumber,
+        context: {
+          agentId: ctx.agentId,
+          sessionName: ctx.sessionName,
+          sessionKey: ctx.sessionKey,
+          source: ctx.source,
+        },
+      },
+      deps,
+    );
+    // Só memoriza quando algo foi de fato garantido: uma falha de DB não pode
+    // virar "já tratei" para o resto da vida do processo.
+    if (result.watchId && (result.triggerId || result.triggerSkipped === "no_pr_number")) {
+      ensured.add(key);
+    }
+    log.info("gh watch follow ensured", { prNumber: intent.prNumber, ...result });
+  } catch (error) {
+    log.warn("gh watch observation failed", { error });
+  }
+}
+
+/** Assinatura de watch usada só em teste: mantém o tipo explícito no lugar. */
+export type { WatchRecord };

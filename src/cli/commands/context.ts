@@ -618,12 +618,11 @@ export class ContextCommands {
       "codex-tool-hook is a deprecated compatibility alias for stale Codex sessions and hooks.json files. It uses the same access and payload as codex-bash-hook. Generated hooks must keep emitting codex-bash-hook.",
   })
   @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low" })
-  codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
-    const output = this.handleCodexBashHook();
+  async codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
+    const output = await this.handleCodexBashHook();
     console.log(JSON.stringify(output));
     return output;
   }
-
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
@@ -649,7 +648,7 @@ export class ContextCommands {
     console.log(JSON.stringify(payload, null, 2));
   }
 
-  private handleCodexBashHook(inputPayload?: Record<string, unknown>): Record<string, unknown> {
+  private async handleCodexBashHook(inputPayload?: Record<string, unknown>): Promise<Record<string, unknown>> {
     let payload: Record<string, unknown>;
     try {
       payload = inputPayload ?? parseCodexHookPayload();
@@ -694,6 +693,19 @@ export class ContextCommands {
         if (!gateDecision.allowed) {
           return buildPreToolUseDenyResult(gateDecision.reason ?? "Command requires a skill before execution.");
         }
+      }
+
+      // Observação de intenção (ex.: uso de `gh` vira acompanhamento de PR).
+      // Awaited de propósito: este hook roda num processo CLI curto, então
+      // fire-and-forget aqui simplesmente perderia o trabalho.
+      if (command.includes("gh")) {
+        const { observeGhBashCommand } = await import("../../hooks/gh-watch.js");
+        await observeGhBashCommand(command, {
+          agentId: context.agentId,
+          sessionKey: context.sessionKey,
+          sessionName: context.sessionName,
+          source: context.source,
+        });
       }
 
       return {};
