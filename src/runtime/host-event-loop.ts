@@ -75,8 +75,11 @@ import {
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
+  isOpenToolsTurnFailure,
+  isRecoverableOpenToolsOrInterruptFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   publicRuntimeFailureDetail,
+  shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
 import {
   createTurnToolContinuationLedger,
@@ -132,6 +135,7 @@ const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 const PROVIDER_TRANSPORT_FAILURE_REASON = "provider_transport_failure";
+const OPEN_TOOLS_RECOVERABLE_FAILURE_REASON = "open_tools_recoverable_failure";
 const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 
@@ -684,40 +688,6 @@ function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<s
     .join("\n")
     .toLowerCase();
   return details.includes("already processing");
-}
-
-function isRecoverableInterruptionFailure(event: {
-  error?: string;
-  recoverable?: boolean;
-  rawEvent?: Record<string, unknown>;
-}): boolean {
-  if (event.recoverable === false) return false;
-
-  const details = [
-    event.error,
-    event.rawEvent?.error,
-    event.rawEvent?.errors,
-    event.rawEvent?.message,
-    event.rawEvent?.result,
-  ]
-    .filter((value) => value !== undefined && value !== null)
-    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
-    .join("\n")
-    .toLowerCase();
-
-  const hasAbortMarker =
-    details.includes("request was aborted") ||
-    details.includes("operation was aborted") ||
-    details.includes("aborterror") ||
-    details.includes("aborted by user") ||
-    details.includes("process aborted");
-  const hasInterruptedDiagnostic =
-    details.includes("[ede_diagnostic]") &&
-    details.includes("result_type=user") &&
-    details.includes("last_content_type=n/a") &&
-    (details.includes("stop_reason=null") || details.includes("stop_reason=tool_use"));
-
-  return hasAbortMarker || hasInterruptedDiagnostic;
 }
 
 type UserFacingRuntimeLimitFailure = {
@@ -2589,20 +2559,27 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       const receivedFailureClassification =
         event.type === "turn.failed"
           ? (() => {
-              const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
               const internalAbortReason = streaming.internalAbortReason;
-              const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+              const openToolsOrInterruptRecoverable = isRecoverableOpenToolsOrInterruptFailure({
+                error: event.error,
+                recoverable: event.recoverable,
+                interrupted: streaming.interrupted,
+                internalAbortReason,
+              });
               const replayable = getRuntimeTurnReplaySafety(streaming, crashRecovery).replayable;
               const transportRecoverable =
                 event.recoverable !== false &&
                 replayable &&
                 (event.failureKind === "transport" || isAlreadyProcessingFailure(event));
+              const openToolsRecoverable = event.recoverable !== false && isOpenToolsTurnFailure(event.error);
               return {
                 internalAbortReason,
-                suppressedRecoverable: interruptedRecoverable || internalRecoverable || transportRecoverable,
+                suppressedRecoverable: openToolsOrInterruptRecoverable || transportRecoverable,
                 recoveryReason: transportRecoverable
                   ? PROVIDER_TRANSPORT_FAILURE_REASON
-                  : (internalAbortReason ?? "recoverable_interrupt_failure"),
+                  : openToolsRecoverable && !streaming.interrupted && !internalAbortReason
+                    ? OPEN_TOOLS_RECOVERABLE_FAILURE_REASON
+                    : (internalAbortReason ?? "recoverable_interrupt_failure"),
               };
             })()
           : undefined;
@@ -3913,24 +3890,46 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel" && !channelBackendFailure && !loginStubFailure) {
-          const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
-            error: event.error,
-            scope: buildUserFacingFailureSuppressionScope({
-              sessionKey: session.sessionKey,
-              provider: runtimeSession.provider,
-              source: streaming.currentSource,
-            }),
-          });
-          if (suppression.suppressed) {
-            log.info("Suppressing repeated user-facing runtime limit failure", {
+          // Defense in depth: open-tools / interrupt-class recoverables are
+          // folded into suppressedRecoverable above (stash + restart, no chat
+          // Error). Channel-backend already projects an opaque safe error.
+          if (
+            !shouldEmitUserFacingTurnFailure({
+              error: event.error,
+              recoverable: event.recoverable,
+              suppressedRecoverable,
+              interrupted: streaming.interrupted,
+              internalAbortReason,
+            })
+          ) {
+            log.info("Suppressing user-facing recoverable open-tool or interrupt failure", {
               runId,
               sessionName,
-              provider: runtimeSession.provider,
-              windowKey: suppression.classified.windowKey,
-              previousExpiresAt: suppression.previousExpiresAt,
+              recoverable: event.recoverable ?? true,
+              interrupted: streaming.interrupted,
+              internalAbortReason,
+              error: event.error,
             });
           } else {
-            await emitResponse(formatUserFacingTurnFailure(event.error));
+            const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
+              error: event.error,
+              scope: buildUserFacingFailureSuppressionScope({
+                sessionKey: session.sessionKey,
+                provider: runtimeSession.provider,
+                source: streaming.currentSource,
+              }),
+            });
+            if (suppression.suppressed) {
+              log.info("Suppressing repeated user-facing runtime limit failure", {
+                runId,
+                sessionName,
+                provider: runtimeSession.provider,
+                windowKey: suppression.classified.windowKey,
+                previousExpiresAt: suppression.previousExpiresAt,
+              });
+            } else {
+              await emitResponse(formatUserFacingTurnFailure(event.error));
+            }
           }
         }
         updateRuntimeLiveState(sessionName, {

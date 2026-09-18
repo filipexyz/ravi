@@ -3638,47 +3638,143 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "inspect env", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "follow-up inbound",
+      source,
+      _agentId: AGENT_ID,
+    });
     const streaming = makeStreamingSession({
       agentMode: "active",
       currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
     });
     seedAdapterTrace(streaming, "turn-grok-open-bash");
     const responses: Array<{ response?: string }> = [];
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
       if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
         responses.push(data as { response?: string });
       }
     });
 
-    await runTraceLoop(streaming, {
-      ...makeRuntimeSession([
-        { type: "assistant.message", text: "Vou inspecionar o ambiente." },
-        {
-          type: "tool.started",
-          toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+    await runTraceLoop(
+      streaming,
+      {
+        ...makeRuntimeSession([
+          { type: "assistant.message", text: "Vou inspecionar o ambiente." },
+          {
+            type: "tool.started",
+            toolUse: { id: "call_read", name: "Read", input: { path: "README.md" } },
+          },
+          {
+            type: "tool.completed",
+            toolUseId: "call_read",
+            toolName: "Read",
+            content: "ok",
+          },
+          {
+            type: "tool.started",
+            toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+          },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        provider: "grok",
+      },
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
         },
-        {
-          type: "tool.completed",
-          toolUseId: "call_read",
-          toolName: "Read",
-          content: "ok",
-        },
-        {
-          type: "tool.started",
-          toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
-        },
-        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
-      ]),
-      provider: "grok",
-    });
+      },
+    );
 
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain("turn.failed");
     expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.status).toBe("interrupted");
+    expect(terminal?.payloadJson).toMatchObject({
+      recoverable: true,
+      suppressedRecoverable: true,
+      abort_reason: "open_tools_recoverable_failure",
+    });
+    expect(responses.some((entry) => entry.response === "Vou inspecionar o ambiente.")).toBe(true);
     expect(
       responses.some(
         (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE),
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(responses.some((entry) => (entry.response ?? "").includes("The model stopped while a tool"))).toBe(false);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["follow-up inbound"]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "open_tools_recoverable_failure" }]);
+    expect(streaming.done).toBe(true);
+  });
+
+  it("does not deliver recoverable interrupt-class provider prose after an open tool", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "inspect env", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "follow-up inbound",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentReplyTarget: source,
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupt-open-tool");
+    const responses: Array<{ response?: string }> = [];
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: string });
+      }
+    });
+    const providerError = "Codex turn failed: item.started without item.completed";
+
+    await runTraceLoop(
+      streaming,
+      {
+        ...makeRuntimeSession([]),
+        events: (async function* () {
+          yield { type: "assistant.message" as const, text: "Vou inspecionar o ambiente." };
+          yield {
+            type: "tool.started" as const,
+            toolUse: { id: "call_bash", name: "Bash", input: { command: "uname" } },
+          };
+          streaming.interrupted = true;
+          yield {
+            type: "turn.failed" as const,
+            error: providerError,
+            recoverable: true,
+          };
+        })(),
+      },
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.status).toBe("interrupted");
+    expect(terminal?.payloadJson).toMatchObject({
+      recoverable: true,
+      suppressedRecoverable: true,
+      abort_reason: "recoverable_interrupt_failure",
+    });
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(responses.some((entry) => entry.response === "Vou inspecionar o ambiente.")).toBe(true);
+    expect(responses.some((entry) => (entry.response ?? "").includes(providerError))).toBe(false);
+    expect(responses.some((entry) => (entry.response ?? "").startsWith("Error:"))).toBe(false);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["follow-up inbound"]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "recoverable_interrupt_failure" }]);
+    expect(streaming.done).toBe(true);
   });
 
   it("refuses Grok turn.complete after tools with zero post-tool assistant text", async () => {

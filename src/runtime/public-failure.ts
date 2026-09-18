@@ -51,6 +51,46 @@ export function formatUserFacingTurnFailure(error: unknown): string {
   return `Error: ${publicRuntimeFailureDetail(error)}`;
 }
 
+export function isOpenToolsTurnFailure(error: unknown): boolean {
+  return publicRuntimeFailureDetail(error) === PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE;
+}
+
+/**
+ * Recoverable open-tools / interrupt-class failures belong on the existing
+ * `suppressedRecoverable` path: no chat `Error:`, stash pending inbound, and
+ * restart the session. Fatal (`recoverable: false`) stays user-visible.
+ */
+export function isRecoverableOpenToolsOrInterruptFailure(input: {
+  error: unknown;
+  recoverable?: boolean;
+  interrupted?: boolean;
+  internalAbortReason?: string | null;
+}): boolean {
+  if (input.recoverable === false) {
+    return false;
+  }
+  return isOpenToolsTurnFailure(input.error) || Boolean(input.interrupted) || Boolean(input.internalAbortReason);
+}
+
+/**
+ * Classic WhatsApp/omni chat delivery policy for `turn.failed`.
+ * Recoverable open-tools / interrupt-class failures must not emit a
+ * user-facing `Error: …` line. The host folds those into
+ * `suppressedRecoverable` so this is defense in depth at the emit site.
+ */
+export function shouldEmitUserFacingTurnFailure(input: {
+  error: unknown;
+  recoverable?: boolean;
+  suppressedRecoverable?: boolean;
+  interrupted?: boolean;
+  internalAbortReason?: string | null;
+}): boolean {
+  if (input.suppressedRecoverable) {
+    return false;
+  }
+  return !isRecoverableOpenToolsOrInterruptFailure(input);
+}
+
 function runtimeFailureText(error: unknown): string | null {
   if (typeof error === "string") {
     return error;
