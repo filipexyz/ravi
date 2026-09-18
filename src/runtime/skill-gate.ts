@@ -37,10 +37,20 @@ export interface EvaluateSkillGateInput {
   toolName: string;
 }
 
+export interface SkillGatePersistedInfo {
+  skill: string;
+  toolName: string;
+}
+
+export type SkillGatePersistedListener = (
+  skillVisibility: RuntimeSkillVisibilitySnapshot,
+  info: SkillGatePersistedInfo,
+) => void;
+
 export interface EvaluateRuntimeToolSkillGateInput {
   toolName: string;
   context?: ContextRecord | null;
-  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+  onSkillGatePersisted?: SkillGatePersistedListener;
 }
 
 export interface EvaluateRuntimeCommandSkillGateInput {
@@ -48,7 +58,7 @@ export interface EvaluateRuntimeCommandSkillGateInput {
   context?: ContextRecord | null;
   toolName?: string;
   executables?: readonly string[];
-  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+  onSkillGatePersisted?: SkillGatePersistedListener;
 }
 
 export function runtimeSkillGateForTool(toolName: string): SkillGateMetadata | undefined {
@@ -83,12 +93,15 @@ export function evaluateRuntimeCommandSkillGate(input: EvaluateRuntimeCommandSki
 
 function evaluateResolvedRuntimeSkillGate(
   input: EvaluateSkillGateInput & {
-    onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+    onSkillGatePersisted?: SkillGatePersistedListener;
   },
 ): SkillGateDecision {
   const decision = evaluateSkillGate(input);
   if (decision.skillVisibility) {
-    input.onSkillGatePersisted?.(decision.skillVisibility);
+    input.onSkillGatePersisted?.(decision.skillVisibility, {
+      skill: decision.skill ?? input.gate?.skill ?? "",
+      toolName: input.toolName,
+    });
   }
   return decision;
 }
