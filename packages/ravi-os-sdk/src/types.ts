@@ -7962,6 +7962,127 @@ export type InstancesTargetInput = {
 /** Return shape for `instances.target`. */
 export type InstancesTargetReturn = Record<string, unknown>;
 
+/** Input shape for `jobs.kill`. */
+export type JobsKillInput = {
+  id: string;
+};
+
+/** Return shape for `jobs.kill`. */
+export type JobsKillReturn = {
+  id: string;
+  killed: boolean;
+  status: string;
+};
+
+/** Input shape for `jobs.list`. */
+export type JobsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  session?: string;
+};
+
+/** Return shape for `jobs.list`. */
+export type JobsListReturn = {
+  items: Array<{
+    agentId: string | null;
+    command: string;
+    cwd: string | null;
+    exitCode: number | null;
+    finishedAt: number | null;
+    id: string;
+    logPath: string;
+    origin: string;
+    pid: number | null;
+    sessionName: string | null;
+    signal: string | null;
+    startedAt: number | null;
+    status: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `jobs.run`. */
+export type JobsRunInput = {
+  agent?: string;
+  command: string[];
+  cwd?: string;
+  session?: string;
+  wait?: boolean;
+};
+
+/** Return shape for `jobs.run`. */
+export type JobsRunReturn = {
+  command: string;
+  hint: string;
+  id: string;
+  logPath: string;
+  sessionName: string | null;
+  status: string;
+};
+
+/** Input shape for `jobs.show`. */
+export type JobsShowInput = {
+  id: string;
+};
+
+/** Return shape for `jobs.show`. */
+export type JobsShowReturn = {
+  job: {
+    agentId: string | null;
+    command: string;
+    cwd: string | null;
+    exitCode: number | null;
+    finishedAt: number | null;
+    id: string;
+    logPath: string;
+    origin: string;
+    pid: number | null;
+    sessionName: string | null;
+    signal: string | null;
+    startedAt: number | null;
+    status: string;
+  };
+};
+
+/** Input shape for `jobs.tail`. */
+export type JobsTailInput = {
+  id: string;
+  lines?: string;
+};
+
+/** Return shape for `jobs.tail`. */
+export type JobsTailReturn = {
+  id: string;
+  logPath: string;
+  status: string;
+  tail: string;
+};
+
+/** Input shape for `jobs.wait`. */
+export type JobsWaitInput = {
+  id: string;
+  timeout?: string;
+};
+
+/** Return shape for `jobs.wait`. */
+export type JobsWaitReturn = {
+  exitCode: number | null;
+  id: string;
+  logPath: string;
+  signal: string | null;
+  status: string;
+};
+
 /** Input shape for `mail.accounts.create`. */
 export type MailAccountsCreateInput = {
   credentialsRef?: string;
