@@ -363,6 +363,21 @@ export function hasDeliverableRuntimeMessages(sessionName: string, session: Runt
   return getDeliverableRuntimeMessages(sessionName, session).length > 0;
 }
 
+/**
+ * A partir de quanto tempo uma tool em execução deixa de segurar a próxima mensagem.
+ *
+ * Antes disso, enfileirar é melhor UX: uma tool de 2s termina e a mensagem é
+ * processada em seguida. Depois disso, a pessoa está esperando um comando que
+ * talvez dure minutos, e a mensagem dela não pode ficar presa atrás disso.
+ */
+const DEFAULT_LONG_TOOL_INTERRUPT_MS = 15_000;
+
+function resolveLongToolInterruptMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number.parseInt(String(env.RAVI_RUNTIME_LONG_TOOL_INTERRUPT_MS ?? ""), 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_LONG_TOOL_INTERRUPT_MS;
+}
+
 export function shouldInterruptRuntimeForIncoming(
   sessionName: string,
   session: RuntimeHostStreamingSession,
@@ -388,13 +403,18 @@ export function shouldInterruptRuntimeForIncoming(
     return { interrupt: false, reason: "tool_result_delivery" };
   }
   if (session.toolRunning) {
-    if (barrier !== "immediate_interrupt") {
-      return { interrupt: false, reason: "tool" };
+    // Interrupt explícito sempre vence. A restrição de tool "unsafe" saiu daqui: ela
+    // existia quando abortar uma tool em execução não era possível, e desde que o
+    // abort passou a matar o processo, a restrição só servia para deixar a mensagem
+    // da pessoa presa atrás de um comando longo.
+    if (barrier === "immediate_interrupt") {
+      return { interrupt: true, reason: "explicit_interrupt" };
     }
-    if (session.currentToolSafety === "unsafe") {
-      return { interrupt: false, reason: "unsafe_tool" };
+    const toolAgeMs = typeof session.toolStartTime === "number" ? Date.now() - session.toolStartTime : 0;
+    if (toolAgeMs >= resolveLongToolInterruptMs()) {
+      return { interrupt: true, reason: "long_running_tool" };
     }
-    return { interrupt: true, reason: "safe_tool" };
+    return { interrupt: false, reason: "tool" };
   }
   if (barrier === "after_response" || barrier === "after_task") {
     return { interrupt: false, reason: "response" };
