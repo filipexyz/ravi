@@ -10523,6 +10523,218 @@ typedef InstancesTargetReturn = Map<String, RaviJson>;
 
 InstancesTargetReturn instancesTargetReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class JobsKillReturn {
+  const JobsKillReturn({required this.id, required this.killed, required this.status});
+
+  final String id;
+  final bool killed;
+  final String status;
+
+  factory JobsKillReturn.fromJson(Map<String, Object?> json) {
+    return JobsKillReturn(
+      id: raviJsonAsString(json["id"]),
+      killed: raviJsonAsBool(json["killed"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static JobsKillReturn fromJsonValue(Object? json) {
+    return JobsKillReturn.fromJson(raviJsonObject(json, "JobsKillReturn"));
+  }
+}
+
+JobsKillReturn jobsKillReturnFromJson(Object? json) => JobsKillReturn.fromJsonValue(json);
+
+class JobsListOptions {
+  const JobsListOptions({this.all, this.limit, this.offset, this.session});
+
+  final bool? all;
+  final String? limit;
+  final String? offset;
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class JobsListReturn {
+  const JobsListReturn({required this.items, required this.pagination, required this.total});
+
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final double total;
+
+  factory JobsListReturn.fromJson(Map<String, Object?> json) {
+    return JobsListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static JobsListReturn fromJsonValue(Object? json) {
+    return JobsListReturn.fromJson(raviJsonObject(json, "JobsListReturn"));
+  }
+}
+
+JobsListReturn jobsListReturnFromJson(Object? json) => JobsListReturn.fromJsonValue(json);
+
+class JobsRunOptions {
+  const JobsRunOptions({this.agent, this.cwd, this.session, this.wait});
+
+  final String? agent;
+  final String? cwd;
+  final String? session;
+  final bool? wait;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (cwd != null) {
+      into["cwd"] = RaviJson.from(cwd);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (wait != null) {
+      into["wait"] = RaviJson.from(wait);
+    }
+  }
+}
+
+class JobsRunReturn {
+  const JobsRunReturn({required this.command, required this.hint, required this.id, required this.logPath, required this.sessionName, required this.status});
+
+  final String command;
+  final String hint;
+  final String id;
+  final String logPath;
+  final RaviJson sessionName;
+  final String status;
+
+  factory JobsRunReturn.fromJson(Map<String, Object?> json) {
+    return JobsRunReturn(
+      command: raviJsonAsString(json["command"]),
+      hint: raviJsonAsString(json["hint"]),
+      id: raviJsonAsString(json["id"]),
+      logPath: raviJsonAsString(json["logPath"]),
+      sessionName: RaviJson.from(json["sessionName"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static JobsRunReturn fromJsonValue(Object? json) {
+    return JobsRunReturn.fromJson(raviJsonObject(json, "JobsRunReturn"));
+  }
+}
+
+JobsRunReturn jobsRunReturnFromJson(Object? json) => JobsRunReturn.fromJsonValue(json);
+
+class JobsShowReturn {
+  const JobsShowReturn({required this.job});
+
+  final RaviJson job;
+
+  factory JobsShowReturn.fromJson(Map<String, Object?> json) {
+    return JobsShowReturn(
+      job: RaviJson.from(json["job"]),
+    );
+  }
+
+  static JobsShowReturn fromJsonValue(Object? json) {
+    return JobsShowReturn.fromJson(raviJsonObject(json, "JobsShowReturn"));
+  }
+}
+
+JobsShowReturn jobsShowReturnFromJson(Object? json) => JobsShowReturn.fromJsonValue(json);
+
+class JobsTailOptions {
+  const JobsTailOptions({this.lines});
+
+  final String? lines;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (lines != null) {
+      into["lines"] = RaviJson.from(lines);
+    }
+  }
+}
+
+class JobsTailReturn {
+  const JobsTailReturn({required this.id, required this.logPath, required this.status, required this.tail});
+
+  final String id;
+  final String logPath;
+  final String status;
+  final String tail;
+
+  factory JobsTailReturn.fromJson(Map<String, Object?> json) {
+    return JobsTailReturn(
+      id: raviJsonAsString(json["id"]),
+      logPath: raviJsonAsString(json["logPath"]),
+      status: raviJsonAsString(json["status"]),
+      tail: raviJsonAsString(json["tail"]),
+    );
+  }
+
+  static JobsTailReturn fromJsonValue(Object? json) {
+    return JobsTailReturn.fromJson(raviJsonObject(json, "JobsTailReturn"));
+  }
+}
+
+JobsTailReturn jobsTailReturnFromJson(Object? json) => JobsTailReturn.fromJsonValue(json);
+
+class JobsWaitOptions {
+  const JobsWaitOptions({this.timeout});
+
+  final String? timeout;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (timeout != null) {
+      into["timeout"] = RaviJson.from(timeout);
+    }
+  }
+}
+
+class JobsWaitReturn {
+  const JobsWaitReturn({required this.exitCode, required this.id, required this.logPath, required this.signal, required this.status});
+
+  final RaviJson exitCode;
+  final String id;
+  final String logPath;
+  final RaviJson signal;
+  final String status;
+
+  factory JobsWaitReturn.fromJson(Map<String, Object?> json) {
+    return JobsWaitReturn(
+      exitCode: RaviJson.from(json["exitCode"]),
+      id: raviJsonAsString(json["id"]),
+      logPath: raviJsonAsString(json["logPath"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static JobsWaitReturn fromJsonValue(Object? json) {
+    return JobsWaitReturn.fromJson(raviJsonObject(json, "JobsWaitReturn"));
+  }
+}
+
+JobsWaitReturn jobsWaitReturnFromJson(Object? json) => JobsWaitReturn.fromJsonValue(json);
+
 class MailAccountsCreateOptions {
   const MailAccountsCreateOptions({this.credentialsRef, this.id, this.name, this.provider});
 

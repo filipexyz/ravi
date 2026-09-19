@@ -131,6 +131,10 @@ public final class RaviClient {
     InstancesNamespace(transport: transport)
   }
 
+  public var jobs: JobsNamespace {
+    JobsNamespace(transport: transport)
+  }
+
   public var mail: MailNamespace {
     MailNamespace(transport: transport)
   }
@@ -2766,6 +2770,53 @@ public struct InstancesRoutesNamespace: Sendable {
     requestBody["name"] = try RaviJSON.fromEncodable(name)
     requestBody["pattern"] = try RaviJSON.fromEncodable(pattern)
     return try await transport.call(groupSegments: ["instances","routes"], command: "show", body: requestBody, as: InstancesRoutesShowReturn.self)
+  }
+}
+
+public struct JobsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func kill(_ id: String) async throws -> JobsKillReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["jobs"], command: "kill", body: requestBody, as: JobsKillReturn.self)
+  }
+
+  public func list(_ options: JobsListOptions = .init()) async throws -> JobsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["jobs"], command: "list", body: requestBody, as: JobsListReturn.self)
+  }
+
+  public func run(_ command: [String], _ options: JobsRunOptions = .init()) async throws -> JobsRunReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["command"] = try RaviJSON.fromEncodable(command)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["jobs"], command: "run", body: requestBody, as: JobsRunReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> JobsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["jobs"], command: "show", body: requestBody, as: JobsShowReturn.self)
+  }
+
+  public func tail(_ id: String, _ options: JobsTailOptions = .init()) async throws -> JobsTailReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["jobs"], command: "tail", body: requestBody, as: JobsTailReturn.self)
+  }
+
+  public func wait(_ id: String, _ options: JobsWaitOptions = .init()) async throws -> JobsWaitReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["jobs"], command: "wait", body: requestBody, as: JobsWaitReturn.self)
   }
 }
 
