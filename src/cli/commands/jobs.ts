@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { z } from "zod";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { getContext } from "../context.js";
@@ -36,6 +37,7 @@ const jobSchema = z.object({
 
 const jobsListReturnSchema = z.object({
   total: z.number(),
+  pagination: z.record(z.string(), z.unknown()).optional(),
   items: z.array(jobSchema),
 });
 
@@ -199,11 +201,30 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
   list(
     @Option({ flags: "--session <name>", description: "Filter by session" }) sessionName?: string,
     @Option({ flags: "--all", description: "All sessions" }) all?: boolean,
+    @Option({ flags: "--limit <n>", description: "Maximum jobs to return (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of jobs to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = all ? null : resolveSessionName(sessionName);
-    const items = dbListJobs({ sessionName: session });
-    const payload = { total: items.length, items: items.map(serializeJob) };
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 50;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+    const pageSize = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 50;
+    const skip = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+
+    const allJobs = dbListJobs({ sessionName: session, limit: 500 });
+    const items = allJobs.slice(skip, skip + pageSize);
+    const payload = {
+      total: allJobs.length,
+      pagination: buildCliOffsetPagination({
+        baseCommand: ["ravi", "jobs", "list"],
+        limit: pageSize,
+        offset: skip,
+        returned: items.length,
+        total: allJobs.length,
+        options: [sessionName ? "--session" : null, sessionName ?? null, all ? "--all" : null],
+      }),
+      items: items.map(serializeJob),
+    };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
       return payload;
