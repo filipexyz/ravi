@@ -43,8 +43,6 @@ import {
   evaluateRuntimeToolSkillGate,
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
-import { buildPromotedCommand, decideJobPromotion, resolveJobPromotionConfig } from "../jobs/promotion.js";
-import { resolveDeclaredToolTimeoutMs } from "./tool-liveness.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
@@ -616,21 +614,18 @@ async function authorizeRuntimeCommandExecution(
     });
   }
 
-  // Comando que se declara longo vira job em background. Este é o caminho por onde
-  // pi e grok autorizam comando, e o único ponto onde a reescrita ainda alcança o
-  // provider antes da execução.
-  const promotedCommand = promoteLongRunningCommand({
-    command,
-    declaredTimeoutMs: readDeclaredToolTimeoutMs(request.input),
-    sessionName: options.context.sessionName ?? options.sessionName,
-    agentId: options.agentId,
-  });
-
-  return {
-    approved: true,
-    inherited,
-    updatedInput: promotedCommand ? { ...request.input, command: promotedCommand } : request.input,
-  };
+  // Promoção automática de comando longo **não acontece aqui**.
+  //
+  // `updatedInput` só tem efeito onde o runtime aplica a reescrita, e nenhum dos
+  // providers que passam por este caminho (pi, codex, grok) faz isso: a extensão do
+  // pi lê apenas `{allowed, reason}` e não tem como trocar o comando. Promover aqui
+  // produzia um log dizendo "promovendo" e **nenhum job criado** — pior que não
+  // promover, porque mentia sobre o que estava acontecendo no turno.
+  //
+  // A promoção real vive no hook do caminho claude (`createJobPromotionHook`), onde o
+  // contrato de hook aceita `updatedInput` de verdade. Nos demais runtimes o agente
+  // usa `ravi jobs run` explícito.
+  return { approved: true, inherited, updatedInput: request.input };
 }
 
 async function authorizeRuntimeToolUse(
@@ -762,40 +757,6 @@ async function requestRuntimeUserInput(
   }).catch(() => {});
 
   return { approved: true, answers };
-}
-
-function promoteLongRunningCommand(input: {
-  command: string;
-  declaredTimeoutMs: number | null;
-  sessionName?: string | null;
-  agentId?: string | null;
-}): string | null {
-  const decision = decideJobPromotion(
-    { command: input.command, declaredTimeoutMs: input.declaredTimeoutMs },
-    resolveJobPromotionConfig(),
-  );
-  if (!decision.promote) return null;
-  log.info("Promoting long command to background job", {
-    sessionName: input.sessionName ?? null,
-    reason: decision.reason,
-    detail: decision.detail ?? null,
-  });
-  return buildPromotedCommand({
-    command: input.command,
-    sessionName: input.sessionName ?? null,
-    agentId: input.agentId ?? null,
-  });
-}
-
-/**
- * Timeout declarado, na semântica canônica (o mesmo parser do lease de inatividade).
- * `null` quando a tool não declarou nada: sem essa distinção, o default do lease
- * promoveria todo comando para job.
- */
-function readDeclaredToolTimeoutMs(input: Record<string, unknown> | undefined): number | null {
-  if (!input || !Object.prototype.hasOwnProperty.call(input, "timeout")) return null;
-  const resolved = resolveDeclaredToolTimeoutMs(input);
-  return Number.isFinite(resolved) && resolved > 0 ? resolved : null;
 }
 
 function extractRaviSessionTarget(command: string): string | null {

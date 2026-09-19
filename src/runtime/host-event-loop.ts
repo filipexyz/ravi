@@ -122,13 +122,7 @@ import {
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   resolveDeclaredToolTimeoutMs,
 } from "./tool-liveness.js";
-import {
-  buildSlowToolNoticeText,
-  decideSlowToolNotice,
-  initialSlowToolNoticeState,
-  resolveSlowToolNoticeConfig,
-  type SlowToolNoticeState,
-} from "./slow-tool-notice.js";
+import { buildSlowToolStatusText, resolveSlowToolWatchConfig } from "./slow-tool-notice.js";
 
 const log = logger.child("bot");
 
@@ -1408,96 +1402,58 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return { kind: streaming.agentMode === "sentinel" ? "sentinel" : "unresolved" };
   };
 
-  const slowToolNoticeConfig = resolveSlowToolNoticeConfig();
+  const slowToolWatchConfig = resolveSlowToolWatchConfig();
   let slowToolTimer: ReturnType<typeof setTimeout> | undefined;
-  let slowToolState: SlowToolNoticeState | undefined;
 
   const clearSlowToolNotice = () => {
     if (slowToolTimer !== undefined) {
       clearTimeout(slowToolTimer);
       slowToolTimer = undefined;
     }
-    slowToolState = undefined;
   };
 
   /**
-   * Uma linha visível para quem está esperando.
+   * Enquanto uma tool roda: mantém a presença viva e publica o estado ao vivo.
    *
-   * Não passa pela fila de mensagens do turno de propósito: mensagem enfileirada
-   * só é lida **depois** que a tool termina, que é exatamente quando o aviso deixa
-   * de ser útil. Vai direto para o chat.
-   */
-  const emitSlowToolNotice = async (toolName: string, elapsedMs: number) => {
-    // Só com destino real: aviso de "ainda rodando" só faz sentido para quem vê.
-    const resolved = resolveChatEmitTarget();
-    if (resolved.kind !== "target") {
-      log.debug("Slow tool notice skipped without a chat target", { sessionName, kind: resolved.kind });
-      return;
-    }
-    const text = buildSlowToolNoticeText(toolName, elapsedMs, streaming.pendingMessages.length);
-    log.info("Emitting slow tool notice", {
-      sessionName,
-      tool: toolName,
-      elapsedMs,
-      queueSize: streaming.pendingMessages.length,
-    });
-    await nats.emit(`ravi.session.${sessionName}.response`, {
-      response: text,
-      target: resolved.target,
-      _emitId: `slow-tool-${Math.random().toString(36).slice(2, 8)}`,
-      _instanceId: instanceId,
-      _pid: process.pid,
-      _v: 2,
-    });
-  };
-
-  /**
-   * Enquanto uma tool roda: mantém a presença viva e, passado o limiar, conta que
-   * ainda está rodando.
-   *
-   * O lease de inatividade continua respeitando o timeout declarado pela tool:
-   * paciência é uma coisa, silêncio é outra. Sem isso, uma tool que trava e declara
-   * timeout longo deixa a sessão muda pelo tempo inteiro do que declarou.
+   * Nada aqui vira mensagem no chat. Estado operacional é estado — contínuo,
+   * sobrescrito, visível no UI. Mensagem é discreta e acumula, e foi exatamente
+   * isso que transformou "transparência" em spam na primeira versão.
    */
   const armSlowToolNotice = (toolId: string, toolName: string) => {
     clearSlowToolNotice();
-    slowToolState = initialSlowToolNoticeState(Date.now(), slowToolNoticeConfig);
 
     const tick = () => {
       slowToolTimer = undefined;
       if (!streaming.toolRunning || streaming.currentToolId !== toolId) return;
-      const state = slowToolState;
-      if (!state) return;
       const now = Date.now();
+      const elapsedMs = now - (streaming.toolStartTime ?? now);
+
       // Renova a presença: a sessão está ocupada, não morta.
       void safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: "tool.running",
         tool: toolName,
         toolId,
-        elapsedMs: now - (streaming.toolStartTime ?? now),
+        elapsedMs,
         sessionName,
       }).catch(() => {});
 
-      const decision = decideSlowToolNotice(state, now, slowToolNoticeConfig);
-      slowToolState = decision.state;
-      if (decision.notify) {
-        const elapsedMs = now - (streaming.toolStartTime ?? now);
-        // Fica no timeline do turno: quem depura "avisou?" não deveria precisar
-        // do log do daemon como única fonte.
-        pushObservationEvent("tool.slow_notice", {
-          preview: toolName,
-          payload: { tool: toolName, toolId, elapsedMs, queueSize: streaming.pendingMessages.length },
-        });
-        void emitSlowToolNotice(toolName, elapsedMs).catch((error) => {
-          log.warn("Failed to emit slow tool notice", { sessionName, tool: toolName, error });
+      if (elapsedMs >= slowToolWatchConfig.announceAfterMs) {
+        updateRuntimeLiveState(sessionName, {
+          activity: "blocked",
+          toolName,
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          summary: buildSlowToolStatusText(toolName, elapsedMs, streaming.pendingMessages.length),
         });
       }
 
-      slowToolTimer = setTimeout(tick, slowToolNoticeConfig.tickMs);
+      slowToolTimer = setTimeout(tick, slowToolWatchConfig.tickMs);
       slowToolTimer.unref?.();
     };
 
-    slowToolTimer = setTimeout(tick, slowToolNoticeConfig.tickMs);
+    slowToolTimer = setTimeout(tick, slowToolWatchConfig.tickMs);
     slowToolTimer.unref?.();
   };
   const clearProviderInactivityWatch = () => {
