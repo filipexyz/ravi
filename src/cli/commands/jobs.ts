@@ -35,9 +35,19 @@ const jobSchema = z.object({
   finishedAt: z.number().nullable(),
 });
 
+const jobsPaginationSchema = z.object({
+  limit: z.number(),
+  offset: z.number(),
+  returned: z.number(),
+  total: z.number(),
+  hasMore: z.boolean(),
+  nextOffset: z.number().nullable(),
+  nextCommand: z.string().nullable(),
+});
+
 const jobsListReturnSchema = z.object({
   total: z.number(),
-  pagination: z.record(z.string(), z.unknown()).optional(),
+  pagination: jobsPaginationSchema,
   items: z.array(jobSchema),
 });
 
@@ -51,6 +61,27 @@ const jobsRunReturnSchema = z.object({
 });
 
 const jobsJobReturnSchema = z.object({ job: jobSchema });
+
+const jobsTailReturnSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  logPath: z.string(),
+  tail: z.string(),
+});
+
+const jobsWaitReturnSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  exitCode: z.number().nullable(),
+  signal: z.string().nullable(),
+  logPath: z.string(),
+});
+
+const jobsKillReturnSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  killed: z.boolean(),
+});
 
 function serializeJob(job: JobRecord) {
   return {
@@ -258,6 +289,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
 
   @Command({ name: "tail", description: "Print the job log tail" })
   @CommandAccess({ kind: "read", resource: "jobs", action: "tail", risk: "low" })
+  @Returns(jobsTailReturnSchema)
   tail(
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "-n, --lines <n>", description: "How many characters to keep (default 4000)" }) lines?: string,
@@ -282,6 +314,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
 
   @Command({ name: "wait", description: "Wait for a job to finish" })
   @CommandAccess({ kind: "read", resource: "jobs", action: "wait", risk: "low" })
+  @Returns(jobsWaitReturnSchema)
   async wait(
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--timeout <ms>", description: "Give up after this many ms (default: no limit)" })
@@ -312,6 +345,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
 
   @Command({ name: "kill", description: "Stop a running job" })
   @CommandAccess({ kind: "mutate", resource: "jobs", action: "kill", risk: "medium" })
+  @Returns(jobsKillReturnSchema)
   async kill(
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
