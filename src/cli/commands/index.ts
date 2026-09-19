@@ -87,6 +87,7 @@ export * from "./triggers.js";
 export * from "./update.js";
 export * from "./video.js";
 export * from "./watch.js";
+export * from "./jobs.js";
 export * from "./whatsapp-dm.js";
 export * from "./work-objects.js";
 export * from "./workflows.js";
