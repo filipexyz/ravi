@@ -28,6 +28,8 @@ export interface ToolContext {
   sessionName?: string;
   /** Agent ID */
   agentId?: string;
+  /** Caller working directory for resolving relative file arguments. */
+  cwd?: string;
   /** Channel info for response routing */
   source?: {
     channel: string;

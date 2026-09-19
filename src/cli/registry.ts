@@ -394,6 +394,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       body: omitRenderingFlags(input.input),
       config: input.config,
       contextKey,
+      cwd: process.cwd(),
     });
   } catch {
     const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {

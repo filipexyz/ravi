@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dispatchRemote } from "./remote-gateway.js";
+import { CALLER_CWD_HEADER, dispatchRemote } from "./remote-gateway.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./host-cli-gateway.js";
 
 const tempDirs: string[] = [];
@@ -37,6 +37,7 @@ describe("host CLI gateway", () => {
           ok: true,
           path: url.pathname,
           authorization: request.headers.get("authorization"),
+          cwd: request.headers.get(CALLER_CWD_HEADER),
           project: body.project,
         });
       },
@@ -51,6 +52,7 @@ describe("host CLI gateway", () => {
       body: { project: "rbbt-lab", json: true },
       config: { url: `unix://${socketPath}`, source: "host-socket", socketPath },
       contextKey: "rctx_test",
+      cwd: "/tmp/agent-workspace",
     });
 
     expect(result.ok).toBe(true);
@@ -58,6 +60,7 @@ describe("host CLI gateway", () => {
       ok: true,
       path: "/api/v1/pages/published",
       authorization: "Bearer rctx_test",
+      cwd: "/tmp/agent-workspace",
       project: "rbbt-lab",
     });
   });

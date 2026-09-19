@@ -12,10 +12,12 @@
  * MUST NOT auto-open raw loopback HTTP.
  *
  * The remote dispatcher is intentionally minimal: it builds a flat JSON body
- * (matching `src/sdk/gateway/dispatcher.ts`), forwards successful responses
- * and projects non-success responses into a local canonical contract before
- * rendering. Shell pipelines still receive the same non-zero exit taxonomy as
- * local mode without trusting arbitrary remote error fields.
+ * (matching `src/sdk/gateway/dispatcher.ts`), forwards the caller cwd as
+ * `x-ravi-cwd`, forwards successful responses and projects non-success
+ * responses into a local canonical contract before rendering. Shell pipelines
+ * still receive the same non-zero exit taxonomy as local mode without trusting
+ * arbitrary remote error fields. Safe local PAYLOAD_INVALID reasons (and
+ * structured issues) are preserved so file/project failures stay actionable.
  */
 
 import { request as httpRequest } from "node:http";
@@ -33,7 +35,11 @@ import {
   permissionDeniedToContractError,
   type ContractErrorDetails,
 } from "./agent-contract.js";
+import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
+import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+
+export { CALLER_CWD_HEADER } from "./caller-cwd.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
@@ -209,6 +215,8 @@ export interface RemoteDispatchInput {
   body: Record<string, unknown>;
   config: RemoteGatewayConfig;
   contextKey: string;
+  /** Caller's working directory; sent as `x-ravi-cwd` so relative file args resolve. */
+  cwd?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
@@ -277,7 +285,12 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         return new ContractError(
           op,
           body.error.code,
-          remoteContractFailureMessage(body.outcome, projectPublicIssues(body.error.issues)),
+          remoteContractFailureMessage(
+            body.outcome,
+            projectPublicIssues(body.error.issues),
+            body.error.message,
+            body.error.code,
+          ),
           body.exitCode,
           projectRemoteContractDetails(op, body, result.status),
         );
@@ -333,22 +346,42 @@ interface CompleteContractErrorBody {
 function remoteContractFailureMessage(
   outcome: CompleteContractErrorBody["outcome"],
   issues?: ReturnType<typeof projectPublicIssues>,
+  sourceMessage?: string,
+  code?: string,
 ): string {
   if (outcome === "denied") return "Remote gateway denied the command.";
-  if (outcome === "usage_error") return remoteValidationFailureMessage(issues);
+  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
   if (outcome === "blocked") return "Remote command was blocked by policy.";
-  return issues?.[0] ? remoteValidationFailureMessage(issues) : "Remote command failed.";
+  if (issues?.[0]) return remoteValidationFailureMessage(issues, sourceMessage);
+  if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
+  return "Remote command failed.";
 }
 
-function remoteValidationFailureMessage(issues?: ReturnType<typeof projectPublicIssues>): string {
+function remoteValidationFailureMessage(
+  issues?: ReturnType<typeof projectPublicIssues>,
+  sourceMessage?: string,
+): string {
   const first = issues?.[0];
-  if (!first) return "Remote gateway rejected the command input.";
-  const path = first.path.filter((item) => item !== "<unknown>").join(".");
-  return path ? `${path}: ${first.message}` : first.message;
+  if (first) {
+    const path = first.path.filter((item) => item !== "<unknown>").join(".");
+    return path ? `${path}: ${first.message}` : first.message;
+  }
+  const safe = safeRemotePayloadMessage(sourceMessage);
+  if (safe) return safe;
+  return "Remote gateway rejected the command input.";
 }
 
-function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"]): string {
+function safeRemotePayloadMessage(message?: string): string | undefined {
+  if (!message) return undefined;
+  const issues = projectPublicIssues([{ path: [], code: "invalid", message }]);
+  const projected = issues?.[0]?.message;
+  if (!projected || !isSafeLocalPayloadMessage(projected)) return undefined;
+  return projected;
+}
+
+function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"], code?: string): string {
   if (outcome === "denied") return "Request the required remote permission before retrying the command";
+  if (outcome === "usage_error" && code === "PAYLOAD_INVALID") return "Correct the command input and retry";
   if (outcome === "usage_error") return `Inspect '${op} --help' and retry with valid input`;
   if (outcome === "blocked") return "Review the remote policy block before retrying the command";
   return "Inspect redacted remote logs and retry when the underlying cause is resolved";
@@ -372,7 +405,7 @@ function projectRemoteContractDetails(
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
   if (typeof remote.suggestedAction === "string") {
-    details.suggestedAction = remoteSuggestedAction(op, body.outcome);
+    details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   }
   const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);
   if (suggestions) details.suggestions = suggestions;
@@ -486,6 +519,10 @@ export async function dispatchRemote(input: RemoteDispatchInput): Promise<Remote
     authorization: `Bearer ${input.contextKey}`,
     ...(socketPath ? { "x-ravi-gateway-internal": "1" } : {}),
   };
+  const parsedCwd = parseCallerCwd(input.cwd ?? process.cwd());
+  if (parsedCwd.ok && parsedCwd.cwd) {
+    headers[CALLER_CWD_HEADER] = parsedCwd.cwd;
+  }
   const body = JSON.stringify(input.body);
   const timeoutMs = input.timeoutMs ?? REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS;
 

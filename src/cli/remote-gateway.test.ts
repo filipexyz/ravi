@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { renderContractError } from "./agent-contract.js";
 import {
+  CALLER_CWD_HEADER,
   dispatchRemote,
   getRemoteGatewayConfig,
   resolveRemoteGatewayConfig,
@@ -19,11 +20,17 @@ describe("remote gateway response bytes", () => {
       body: { id: "artifact-1" },
       config: { url: "https://gateway.example", source: "env" },
       contextKey: "rctx_test",
-      fetchImpl: (async () =>
-        new Response(bytes, {
-          status: 200,
-          headers: { "content-type": "application/octet-stream" },
-        })) as unknown as typeof fetch,
+      cwd: "/tmp/agent-workspace",
+      fetchImpl: ((input: string, init?: { headers?: Record<string, string> }) => {
+        void input;
+        expect(new Headers(init?.headers).get(CALLER_CWD_HEADER)).toBe("/tmp/agent-workspace");
+        return Promise.resolve(
+          new Response(bytes, {
+            status: 200,
+            headers: { "content-type": "application/octet-stream" },
+          }),
+        );
+      }) as unknown as typeof fetch,
     });
 
     expect(response.ok).toBe(true);
@@ -195,6 +202,63 @@ describe("remote gateway exit taxonomy", () => {
       details: { status: 503, retryable: true },
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("private upstream response");
+  });
+
+  it("preserves a remote PAYLOAD_INVALID issue instead of the generic rejection", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages ship",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages ship",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "PAYLOAD_INVALID",
+            message: "--html file was not found: ./index.html",
+            retryable: false,
+            suggestedAction: "correct the command input and retry",
+            issues: [{ path: ["html"], code: "invalid", message: "--html file was not found: ./index.html" }],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "pages ship",
+      code: "PAYLOAD_INVALID",
+      exitCode: 2,
+      message: "html: --html file was not found: ./index.html",
+    });
+    expect(error?.details.suggestedAction).toBe("Correct the command input and retry");
+    expect(JSON.stringify(error?.envelope())).toContain("--html file was not found: ./index.html");
+  });
+
+  it("preserves a safe PAYLOAD_INVALID message when the remote omitted issues", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages ship",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages ship",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "PAYLOAD_INVALID",
+            message: "Missing Console project. Pass --project <project-ref>.",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "PAYLOAD_INVALID",
+      message: "Missing Console project. Pass --project <project-ref>.",
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain("Remote gateway rejected the command input");
   });
 
   it("projects 400 validation issues into a usage error", () => {

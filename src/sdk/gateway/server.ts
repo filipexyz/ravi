@@ -15,6 +15,7 @@ import { getRegistry, type RegistrySnapshot } from "../../cli/registry-snapshot.
 import { emitJson } from "../openapi/emit.js";
 import { buildRouteTable, buildMetaPayload, type RouteTable, API_PREFIX } from "./route-table.js";
 import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./auth.js";
+import { CALLER_CWD_HEADER, parseCallerCwd } from "../../cli/caller-cwd.js";
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
 import { corsHeaders, withCorsHeaders } from "./cors.js";
@@ -230,9 +231,14 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
     }
   }
 
+  const headerCwd = parseCallerCwd(request.headers.get(CALLER_CWD_HEADER));
+  if (!headerCwd.ok) {
+    return errorResponse(400, "BadRequest", { message: headerCwd.reason });
+  }
   const result = await dispatch(cmd, body, resolved.context, {
     allowSuperadmin: ctx.allowSuperadmin,
     contextRecord: resolved.contextRecord,
+    cwd: headerCwd.cwd,
   });
   return result.response;
 }
