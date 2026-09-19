@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
+import { CALLER_CWD_HEADER } from "../../cli/caller-cwd.js";
 import { startGateway, type GatewayHandle } from "./server.js";
 import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../../runtime/context-registry.js";
 import { getDb, type ContextRecord } from "../../router/router-db.js";
@@ -182,6 +183,34 @@ describe("gateway server — dispatch over HTTP", () => {
     expect(body).toEqual({ ok: true, name: "luis" });
   });
 
+  it("accepts an absolute caller cwd header and rejects a relative one", async () => {
+    const ok = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+        [CALLER_CWD_HEADER]: "/tmp/agent-workspace",
+      },
+      body: JSON.stringify({ name: "luis" }),
+    });
+    expect(ok.status).toBe(200);
+
+    const bad = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+        [CALLER_CWD_HEADER]: "./relative",
+      },
+      body: JSON.stringify({ name: "luis" }),
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({
+      error: "BadRequest",
+      message: "Caller cwd must be an absolute path.",
+    });
+  });
+
   it("POST to a command without runtime context fails closed", async () => {
     const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
       method: "POST",
@@ -329,8 +358,7 @@ describe("gateway server — CORS", () => {
       headers: {
         Origin: chromeOrigin,
         "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers":
-          "authorization,content-type,x-ravi-sdk-version,x-ravi-registry-hash",
+        "Access-Control-Request-Headers": "authorization,content-type,x-ravi-sdk-version,x-ravi-registry-hash",
       },
     });
     expect(res.status).toBe(204);

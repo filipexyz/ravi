@@ -97,6 +97,29 @@ describe("cloudErrorToContractError", () => {
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
 
+  it("preserves sanitized local PAYLOAD_INVALID reasons as the public message and issues", () => {
+    const source = new CloudAuthError("PAYLOAD_INVALID", "--html file was not found: ./index.html");
+    const contract = cloudErrorToContractError("pages ship", source);
+
+    expect(contract).toMatchObject({
+      code: "PAYLOAD_INVALID",
+      message: "--html file was not found: ./index.html",
+      exitCode: 2,
+      details: {
+        issues: [{ path: ["html"], code: "invalid", message: "--html file was not found: ./index.html" }],
+      },
+    });
+    expect(JSON.stringify(contract.envelope())).toContain("--html file was not found: ./index.html");
+  });
+
+  it("redacts absolute paths inside local PAYLOAD_INVALID reasons", () => {
+    const source = new CloudAuthError("PAYLOAD_INVALID", "--html file was not found: /home/user/secret/index.html");
+    const contract = cloudErrorToContractError("pages ship", source);
+
+    expect(contract.message).toBe("--html file was not found: [REDACTED:path]");
+    expect(JSON.stringify(contract.envelope())).not.toContain("/home/user/secret");
+  });
+
   it("projects Console validation issues into the public contract", () => {
     const source = new CloudAuthError("PAYLOAD_INVALID", "PRIVATE_PROVIDER_BODY_8K2R:PAYLOAD_INVALID", {
       status: 422,

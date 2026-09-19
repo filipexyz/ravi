@@ -1,6 +1,7 @@
 import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { resolveCallerPath } from "../cli/caller-cwd.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 
 export type ShipContentKind = "body" | "html" | "dir";
@@ -76,7 +77,7 @@ export async function materializeShipSource(input: ShipSourceInput): Promise<Shi
   if (kind === "dir") {
     const path = requireText(input.dir, "--dir");
     await assertDirectory(path);
-    return { kind, path };
+    return { kind, path: resolveCallerPath(path) };
   }
 
   const tempRoot = await mkdtemp(join(tmpdir(), "ravi-pages-ship-"));
@@ -95,7 +96,7 @@ export async function materializeShipSource(input: ShipSourceInput): Promise<Shi
     } else {
       const htmlPath = requireText(input.html, "--html");
       await assertFile(htmlPath);
-      await copyFile(htmlPath, dest);
+      await copyFile(resolveCallerPath(htmlPath), dest);
     }
     return { kind, path: tempRoot, cleanup };
   } catch (error) {
@@ -133,25 +134,35 @@ function requireText(value: string | undefined, label: string): string {
 }
 
 async function assertFile(path: string): Promise<void> {
+  const resolved = resolveCallerPath(path);
+  const display = displayCallerPath(path);
   try {
-    const info = await stat(path);
+    const info = await stat(resolved);
     if (!info.isFile()) {
-      throw new CloudAuthError("PAYLOAD_INVALID", `--html must be a file: ${path}`);
+      throw new CloudAuthError("PAYLOAD_INVALID", `--html must be a file: ${display}`);
     }
   } catch (error) {
     if (error instanceof CloudAuthError) throw error;
-    throw new CloudAuthError("PAYLOAD_INVALID", `--html file was not found: ${path}`);
+    throw new CloudAuthError("PAYLOAD_INVALID", `--html file was not found: ${display}`);
   }
 }
 
 async function assertDirectory(path: string): Promise<void> {
+  const resolved = resolveCallerPath(path);
+  const display = displayCallerPath(path);
   try {
-    const info = await stat(path);
+    const info = await stat(resolved);
     if (!info.isDirectory()) {
-      throw new CloudAuthError("PAYLOAD_INVALID", `--dir must be a directory: ${path}`);
+      throw new CloudAuthError("PAYLOAD_INVALID", `--dir must be a directory: ${display}`);
     }
   } catch (error) {
     if (error instanceof CloudAuthError) throw error;
-    throw new CloudAuthError("PAYLOAD_INVALID", `--dir was not found: ${path}`);
+    throw new CloudAuthError("PAYLOAD_INVALID", `--dir was not found: ${display}`);
   }
+}
+
+function displayCallerPath(path: string): string {
+  const trimmed = path.trim();
+  if (!isAbsolute(trimmed)) return trimmed;
+  return basename(trimmed) || "[REDACTED:path]";
 }

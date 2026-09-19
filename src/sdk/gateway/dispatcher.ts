@@ -7,6 +7,9 @@
  * Body shape: flat-only. Args and options are merged into top-level keys
  * (e.g. `{ id, limit }`). The wrapped CLI invocation form (`{ args, options }`)
  * is intentionally rejected because it leaks CLI grammar into the API surface.
+ * `cwd` is reserved protocol metadata when the command does not declare it:
+ * it is stripped before unknown-key validation and threaded into tool context
+ * so relative file arguments resolve against the caller, not the daemon.
  *
  * Gateway dispatches emit audits through the central audit path here. The
  * transport layer (server.ts) never emits command audits, so transport does
@@ -38,6 +41,7 @@ import {
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
+import { parseCallerCwd } from "../../cli/caller-cwd.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 export interface DispatchOptions {
@@ -47,6 +51,8 @@ export interface DispatchOptions {
   emitAudit?: (event: AuditEvent) => Promise<void> | void;
   /** Resolved runtime context record for audit lineage and contextId fields. */
   contextRecord?: ContextRecord | null;
+  /** Caller working directory for relative file arguments (from `x-ravi-cwd`). */
+  cwd?: string;
 }
 
 export interface AuditEvent {
@@ -109,7 +115,12 @@ export async function dispatch(
     return { response, audit: auditEmitted ? audit : null };
   }
 
-  const normalized = normalizeBody(cmd, body);
+  const protocol = takeProtocolFields(cmd, body);
+  if (!protocol.ok) {
+    return usageErrorResult(cmd, tool, group, protocol.issues, startedAt, lineage, opts.emitAudit);
+  }
+
+  const normalized = normalizeBody(cmd, protocol.commandBody);
   if (!normalized.ok) {
     return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, opts.emitAudit);
   }
@@ -120,7 +131,7 @@ export async function dispatch(
   }
   const auditInput = redactCommandAccessInput(cmd.access, validation.inputForAudit);
 
-  const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
+  const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null, opts.cwd ?? protocol.cwd);
   const accessResult = runWithContext(toolContext, () =>
     enforceCliCommandAuthorization({
       group,
@@ -338,6 +349,36 @@ function redactValidationIssues(cmd: CommandRegistryEntry, issues: JsonIssue[]):
   );
 }
 
+function commandFieldNames(cmd: CommandRegistryEntry): Set<string> {
+  const allowed = new Set<string>();
+  for (const arg of cmd.args) allowed.add(arg.name);
+  for (const option of cmd.options) allowed.add(option.name);
+  return allowed;
+}
+
+function takeProtocolFields(
+  cmd: CommandRegistryEntry,
+  body: unknown,
+): { ok: true; commandBody: unknown; cwd?: string } | { ok: false; issues: JsonIssue[] } {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: true, commandBody: body };
+  }
+  const record = body as Record<string, unknown>;
+  if (!("cwd" in record) || commandFieldNames(cmd).has("cwd")) {
+    return { ok: true, commandBody: body };
+  }
+  const parsed = parseCallerCwd(record.cwd);
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      issues: [{ path: ["cwd"], code: "invalid_type", message: parsed.reason }],
+    };
+  }
+  const commandBody = { ...record };
+  delete commandBody.cwd;
+  return { ok: true, commandBody, cwd: parsed.cwd };
+}
+
 function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResult {
   if (body === undefined || body === null) {
     return { ok: true, input: { positional: [], named: {} } };
@@ -479,8 +520,10 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
   return issues;
 }
 
-function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
+function asToolContext(scope: ScopeContext, record: ContextRecord | null, cwd?: string): ToolContext {
   const ctx: ToolContext = { suppressCliOutput: true, transport: "gateway" };
+  const parsedCwd = parseCallerCwd(cwd);
+  if (parsedCwd.ok && parsedCwd.cwd) ctx.cwd = parsedCwd.cwd;
   if (scope.agentId ?? record?.agentId) ctx.agentId = scope.agentId ?? record?.agentId;
   if (scope.sessionKey ?? record?.sessionKey) ctx.sessionKey = scope.sessionKey ?? record?.sessionKey;
   if (scope.sessionName ?? record?.sessionName) ctx.sessionName = scope.sessionName ?? record?.sessionName;

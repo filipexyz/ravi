@@ -107,6 +107,7 @@ class GatewayDemoCommands {
     const ctx = getContext();
     return {
       suppressCliOutput: ctx?.suppressCliOutput === true,
+      ...(ctx?.cwd ? { cwd: ctx.cwd } : {}),
       ...(ctx?.source ? { source: ctx.source } : {}),
     };
   }
@@ -958,6 +959,45 @@ describe("dispatch — audit", () => {
 });
 
 describe("dispatch — CLI output", () => {
+  it("threads caller cwd from dispatch options and reserved body field", async () => {
+    const fromOptions = await dispatch(
+      findCmd("demo.context"),
+      {},
+      {},
+      { contextRecord: demoContext, cwd: "/tmp/agent-from-header" },
+    );
+    expect(await fromOptions.response.json()).toMatchObject({
+      suppressCliOutput: true,
+      cwd: "/tmp/agent-from-header",
+    });
+
+    const fromBody = await dispatch(
+      findCmd("demo.context"),
+      { cwd: "/tmp/agent-from-body" },
+      {},
+      { contextRecord: demoContext },
+    );
+    expect(fromBody.response.status).toBe(200);
+    expect(await fromBody.response.json()).toMatchObject({ cwd: "/tmp/agent-from-body" });
+  });
+
+  it("rejects a relative protocol cwd without treating it as an unknown command field", async () => {
+    const result = await dispatch(
+      findCmd("demo.echo"),
+      { name: "rafa", cwd: "./relative" },
+      {},
+      { contextRecord: demoContext },
+    );
+    expect(result.response.status).toBe(400);
+    const body = (await result.response.json()) as {
+      error: { code: string; issues: { path: string[]; message: string }[] };
+    };
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues).toEqual([
+      expect.objectContaining({ path: ["cwd"], message: "Caller cwd must be an absolute path." }),
+    ]);
+  });
+
   it("marks gateway command context to suppress human CLI output", async () => {
     const audits = captureAudits();
     const result = await dispatch(

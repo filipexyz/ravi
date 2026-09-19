@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { ContractError, CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE } from "./agent-contract.js";
 import { getContext } from "./context.js";
+import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 const RETRYABLE_CODES = new Set(["AUTH_PENDING", "RATE_LIMITED", "SERVER_UNAVAILABLE"]);
 
@@ -12,6 +13,7 @@ export function commandOperation(group: string, command: string): string {
 
 /** Map provider/auth failures into the global CLI exit taxonomy without losing their stable code. */
 export function cloudErrorToContractError(op: string, error: CloudAuthError): ContractError {
+  const issues = error.code === "PAYLOAD_INVALID" ? payloadInvalidIssues(error.message, error.issues) : error.issues;
   return new ContractError(
     op,
     error.code,
@@ -20,7 +22,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
     {
       retryable: RETRYABLE_CODES.has(error.code),
       ...(error.status !== undefined ? { status: error.status } : {}),
-      ...(error.issues ? { issues: error.issues } : {}),
+      ...(issues ? { issues } : {}),
       suggestedAction: suggestedAction(error.code),
     },
   );
@@ -45,7 +47,7 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
     case "DOMAIN_SETUP_REQUIRED":
       return safeDomainSetupMessage(sourceMessage);
     case "PAYLOAD_INVALID":
-      return "Console request input was invalid.";
+      return sanitizePayloadInvalidMessage(sourceMessage) ?? "Console request input was invalid.";
     case "RATE_LIMITED":
       return "Console request was rate limited.";
     case "SERVER_UNAVAILABLE":

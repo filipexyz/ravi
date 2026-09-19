@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runWithContext } from "../cli/context.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import {
   materializeShipSource,
@@ -66,5 +67,23 @@ describe("pages ship helpers", () => {
     await expect(validateShipSourceInput({ dir })).resolves.toBe("dir");
     await expect(validateShipSourceInput({ html: join(dir, "missing.html") })).rejects.toBeInstanceOf(CloudAuthError);
     await expect(validateShipSourceInput({ body: "   " })).rejects.toBeInstanceOf(CloudAuthError);
+  });
+
+  it("resolves relative --html against the caller cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ravi-pages-ship-cwd-"));
+    tempDirs.push(dir);
+    await writeFile(join(dir, "index.html"), "<h1>Caller</h1>");
+
+    await expect(runWithContext({ cwd: dir }, () => validateShipSourceInput({ html: "./index.html" }))).resolves.toBe(
+      "html",
+    );
+
+    try {
+      await validateShipSourceInput({ html: "./ravi-pages-ship-missing-cwd.html" });
+      throw new Error("expected missing relative html to fail in the process cwd");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudAuthError);
+      expect((error as CloudAuthError).message).toBe("--html file was not found: ./ravi-pages-ship-missing-cwd.html");
+    }
   });
 });
