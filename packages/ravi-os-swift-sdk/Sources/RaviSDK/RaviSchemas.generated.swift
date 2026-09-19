@@ -39556,6 +39556,589 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let JobsKillInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Job id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsKillReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "killed": {
+        "type": "boolean"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status",
+      "killed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "All sessions",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum jobs to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of jobs to skip (default: 0)",
+        "type": "string"
+      },
+      "session": {
+        "description": "Filter by session",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let JobsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exitCode": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "logPath": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "sessionName",
+            "agentId",
+            "command",
+            "cwd",
+            "status",
+            "pid",
+            "exitCode",
+            "signal",
+            "logPath",
+            "origin",
+            "startedAt",
+            "finishedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsRunInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent that owns the job",
+        "type": "string"
+      },
+      "command": {
+        "description": "Command to run (after --)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "cwd": {
+        "description": "Working directory",
+        "type": "string"
+      },
+      "session": {
+        "description": "Session to notify when the job finishes",
+        "type": "string"
+      },
+      "wait": {
+        "description": "Block until the job finishes, then print the tail",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "command"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsRunReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "hint": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "logPath": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status",
+      "command",
+      "logPath",
+      "sessionName",
+      "hint"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Job id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "command": {
+            "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exitCode": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "logPath": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "agentId",
+          "command",
+          "cwd",
+          "status",
+          "pid",
+          "exitCode",
+          "signal",
+          "logPath",
+          "origin",
+          "startedAt",
+          "finishedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "job"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsTailInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Job id",
+        "type": "string"
+      },
+      "lines": {
+        "description": "How many characters to keep (default 4000)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsTailReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "logPath": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tail": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status",
+      "logPath",
+      "tail"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsWaitInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Job id",
+        "type": "string"
+      },
+      "timeout": {
+        "description": "Give up after this many ms (default: no limit)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let JobsWaitReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "exitCode": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "logPath": {
+        "type": "string"
+      },
+      "signal": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status",
+      "exitCode",
+      "signal",
+      "logPath"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let MailAccountsCreateInputSchema = #"""
   {
     "additionalProperties": false,

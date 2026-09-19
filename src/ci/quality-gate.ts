@@ -95,7 +95,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // O call site em si ainda não tem teste de integração — está declarado como
     // risco na PR da feature.
     "src/hooks/gh-watch.test.ts",
+    // Decisão de promoção de comando longo para job, aplicada por host-services.
+    "src/jobs/promotion.test.ts",
   ],
+  "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
   "src/watch/": [
     // Contrato: o que o connector declara suportado localmente é o que o poller
     // consegue produzir. Foi o buraco que deixou `pull_request.merged` declarado e
@@ -109,6 +112,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/hooks/": [
     "src/hooks/gh-watch.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",
+    // Promoção de comando longo para job: a reescrita que evita prender o turno.
+    "src/hooks/jobs-promote.test.ts",
     "src/hooks/rtk-rewrite.test.ts",
     // Safe/unsafe classification that gates prompt-lane interrupts while a tool runs.
     "src/hooks/tool-safety.test.ts",

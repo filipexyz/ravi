@@ -12229,6 +12229,234 @@ public struct InstancesTargetOptions: Codable, Sendable {
 
 public typealias InstancesTargetReturn = [String: RaviJSON]
 
+public struct JobsKillReturn: Codable, Sendable {
+  public var id: String
+  public var killed: Bool
+  public var status: String
+
+  public init(id: String, killed: Bool, status: String) {
+    self.id = id
+    self.killed = killed
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id = "id"
+    case killed = "killed"
+    case status = "status"
+  }
+}
+
+public struct JobsListOptions: Codable, Sendable {
+  public var all: Bool?
+  public var limit: String?
+  public var offset: String?
+  public var session: String?
+
+  public init(all: Bool? = nil, limit: String? = nil, offset: String? = nil, session: String? = nil) {
+    self.all = all
+    self.limit = limit
+    self.offset = offset
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case limit = "limit"
+    case offset = "offset"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct JobsListReturn: Codable, Sendable {
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(items: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.items = items
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case items = "items"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
+
+public struct JobsRunOptions: Codable, Sendable {
+  public var agent: String?
+  public var cwd: String?
+  public var session: String?
+  public var wait: Bool?
+
+  public init(agent: String? = nil, cwd: String? = nil, session: String? = nil, wait: Bool? = nil) {
+    self.agent = agent
+    self.cwd = cwd
+    self.session = session
+    self.wait = wait
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case cwd = "cwd"
+    case session = "session"
+    case wait = "wait"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cwd {
+      body["cwd"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.wait {
+      body["wait"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct JobsRunReturn: Codable, Sendable {
+  public var command: String
+  public var hint: String
+  public var id: String
+  public var logPath: String
+  public var sessionName: RaviJSON
+  public var status: String
+
+  public init(command: String, hint: String, id: String, logPath: String, sessionName: RaviJSON, status: String) {
+    self.command = command
+    self.hint = hint
+    self.id = id
+    self.logPath = logPath
+    self.sessionName = sessionName
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case command = "command"
+    case hint = "hint"
+    case id = "id"
+    case logPath = "logPath"
+    case sessionName = "sessionName"
+    case status = "status"
+  }
+}
+
+public struct JobsShowReturn: Codable, Sendable {
+  public var job: RaviJSON
+
+  public init(job: RaviJSON) {
+    self.job = job
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case job = "job"
+  }
+}
+
+public struct JobsTailOptions: Codable, Sendable {
+  public var lines: String?
+
+  public init(lines: String? = nil) {
+    self.lines = lines
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case lines = "lines"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.lines {
+      body["lines"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct JobsTailReturn: Codable, Sendable {
+  public var id: String
+  public var logPath: String
+  public var status: String
+  public var tail: String
+
+  public init(id: String, logPath: String, status: String, tail: String) {
+    self.id = id
+    self.logPath = logPath
+    self.status = status
+    self.tail = tail
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id = "id"
+    case logPath = "logPath"
+    case status = "status"
+    case tail = "tail"
+  }
+}
+
+public struct JobsWaitOptions: Codable, Sendable {
+  public var timeout: String?
+
+  public init(timeout: String? = nil) {
+    self.timeout = timeout
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case timeout = "timeout"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.timeout {
+      body["timeout"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct JobsWaitReturn: Codable, Sendable {
+  public var exitCode: RaviJSON
+  public var id: String
+  public var logPath: String
+  public var signal: RaviJSON
+  public var status: String
+
+  public init(exitCode: RaviJSON, id: String, logPath: String, signal: RaviJSON, status: String) {
+    self.exitCode = exitCode
+    self.id = id
+    self.logPath = logPath
+    self.signal = signal
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exitCode = "exitCode"
+    case id = "id"
+    case logPath = "logPath"
+    case signal = "signal"
+    case status = "status"
+  }
+}
+
 public struct MailAccountsCreateOptions: Codable, Sendable {
   public var credentialsRef: String?
   public var id: String?
