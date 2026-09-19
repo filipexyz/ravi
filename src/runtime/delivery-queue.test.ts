@@ -253,7 +253,51 @@ describe("runtime delivery queue", () => {
     });
   });
 
-  it("keeps every interrupt lane closed while a provider tool callback is being delivered", () => {
+  it("queues behind a short tool and interrupts behind a long one", () => {
+    const shortTool = makeStreamingSession({
+      turnActive: true,
+      toolRunning: true,
+      currentToolSafety: "unsafe",
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 2_000,
+    });
+    // 2s: enfileirar é melhor, a tool termina e a mensagem entra em seguida.
+    expect(shouldInterruptRuntimeForIncoming("dev", shortTool, "after_tool")).toEqual({
+      interrupt: false,
+      reason: "tool",
+    });
+
+    const longTool = makeStreamingSession({
+      turnActive: true,
+      toolRunning: true,
+      currentToolSafety: "unsafe",
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 30_000,
+    });
+    // 30s e unsafe: ainda assim interrompe. A mensagem da pessoa não fica presa.
+    expect(shouldInterruptRuntimeForIncoming("dev", longTool, "after_tool")).toEqual({
+      interrupt: true,
+      reason: "long_running_tool",
+    });
+  });
+
+  it("lets an explicit interrupt win over a running tool", () => {
+    const session = makeStreamingSession({
+      turnActive: true,
+      toolRunning: true,
+      currentToolSafety: "unsafe",
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 500,
+    });
+
+    // 500ms de tool: curto demais para o limiar, mas o pedido é explícito.
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "immediate_interrupt")).toEqual({
+      interrupt: true,
+      reason: "explicit_interrupt",
+    });
+  });
+
+  it("still keeps every interrupt lane closed while a provider tool callback is being delivered", () => {
     const session = makeStreamingSession({
       turnActive: true,
       toolRunning: false,
