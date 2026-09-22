@@ -17,6 +17,14 @@ describe("triggers native automation support", () => {
     stateDir = null;
   });
 
+  it("catalogs native Slack reaction_added as a producer of ravi.inbound.reaction", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbound.reaction");
+
+    expect(entry?.category).toBe("inbound");
+    expect(entry?.payload).toBe("{ targetMessageId, emoji, senderId }");
+    expect(entry?.notes.some((note) => note.includes("native Slack `reaction_added`"))).toBe(true);
+  });
+
   it("catalogs Slack Block Kit interactions as first-class trigger events", () => {
     const entry = findTriggerTopicCatalogEntry("ravi.inbound.interaction");
     const fields = new Set(entry?.schema?.fields.map((field) => field.path));
