@@ -6,6 +6,9 @@
  * daemon created it at `~/.ravi/cli-gateway.sock` (mode 0600) and the caller
  * presents a live `RAVI_CONTEXT_KEY`.
  *
+ * Handlers run in-process on the daemon. Do not block the event loop on
+ * `process.stdin` from this path (audit metadata, TTY probes, prompts).
+ *
  * The HTTP listener on `RAVI_HTTP_PORT` stays optional and loopback-bound.
  * This unix listener is independent of that port.
  */

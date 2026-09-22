@@ -2,6 +2,26 @@ import { describe, expect, it, spyOn } from "bun:test";
 import { ContractError } from "./agent-contract.js";
 import { buildCliAuditPayload, runWithCliAudit, sanitizeCliAuditValue, wasContractErrorAudited } from "./audit.js";
 
+function withForbiddenStdinAccess<T>(fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, "stdin");
+  let accessed = 0;
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessed += 1;
+      throw new Error("process.stdin must not be opened for audit TTY detection");
+    },
+  });
+  try {
+    const result = fn();
+    expect(accessed).toBe(0);
+    return result;
+  } finally {
+    if (original) Object.defineProperty(process, "stdin", original);
+  }
+}
+
 describe("CLI audit outcomes", () => {
   it("records a policy brake as blocked rather than an execution error", () => {
     const payload = buildCliAuditPayload({
@@ -204,6 +224,14 @@ describe("CLI audit redaction", () => {
     expect(serialized).not.toContain("PRIVATE_INSTRUCTIONS_8K2R");
     expect(serialized).not.toContain("PRIVATE_REASON_8K2R");
     expect(serialized).not.toContain("PRIVATE_QUERY_8K2R");
+  });
+
+  it("does not open process.stdin when building audit provenance", () => {
+    const payload = withForbiddenStdinAccess(() => buildCliAuditPayload({ group: "tasks", name: "list" }));
+    const invocation = payload.cliInvocation as { terminal?: { stdinIsTTY?: boolean } };
+
+    expect(typeof invocation.terminal?.stdinIsTTY).toBe("boolean");
+    expect(JSON.stringify(payload)).not.toContain("process.stdin must not be opened");
   });
 
   it("does not include process paths in CLI audit provenance", () => {

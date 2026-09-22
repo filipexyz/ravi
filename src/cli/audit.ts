@@ -83,6 +83,8 @@ export function buildCliAuditPayload(options: CliAuditEventOptions, explicitTool
 }
 
 function safeBuildCliInvocationMetadata(input: { group: string; name: string; tool: string }) {
+  // try/catch cannot rescue a blocking stdin read. TTY detection must use
+  // isatty(fd) and never instantiate process.stdin on the daemon/gateway path.
   try {
     return buildCliInvocationMetadata(input);
   } catch {
