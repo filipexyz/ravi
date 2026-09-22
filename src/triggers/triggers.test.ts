@@ -22,7 +22,7 @@ describe("triggers native automation support", () => {
 
     expect(entry?.category).toBe("inbound");
     expect(entry?.payload).toBe("{ targetMessageId, emoji, senderId }");
-    expect(entry?.notes.some((note) => note.includes("native Slack `reaction_added`"))).toBe(true);
+    expect(entry?.notes?.some((note) => note.includes("native Slack `reaction_added`"))).toBe(true);
   });
 
   it("catalogs Slack Block Kit interactions as first-class trigger events", () => {
