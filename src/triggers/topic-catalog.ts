@@ -82,6 +82,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     ],
     notes: [
       "This is the canonical reaction trigger subject.",
+      "Producers: Omni `reaction.received` and native Slack `reaction_added`.",
       "The payload identifies the reacted message as targetMessageId. Keep domain mappings keyed by external message id when a routine needs to recover business state.",
     ],
   },

@@ -623,6 +623,8 @@ type DirectSendTestRequest = {
   text?: string;
   poll?: { name: string; values: string[] };
   replyTopic?: string;
+  threadId?: string;
+  blocks?: readonly Record<string, unknown>[];
 };
 
 type ReactionTestRequest = {
@@ -714,6 +716,34 @@ describe("Gateway native channel account actions", () => {
       },
     ]);
     expect(emitted).toEqual([["ravi.reply.native-send", { success: true, messageId: "1784000000.000100" }]]);
+  });
+
+  it("forwards Slack Block Kit blocks on native direct send", async () => {
+    seedNativeSlack();
+    const { gateway, emitted, omniSend } = await createGateway();
+    const blocks = [{ type: "actions", elements: [{ type: "button", action_id: "ravi.approval.v1.approve" }] }];
+
+    await handleDirectSend(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      to: "C123",
+      text: "Permission requested",
+      threadId: "1783999999.000099",
+      blocks,
+      replyTopic: "ravi.reply.native-blocks",
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(slackTextSends).toEqual([
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        text: "Permission requested",
+        threadId: "1783999999.000099",
+        blocks,
+      },
+    ]);
+    expect(emitted).toEqual([["ravi.reply.native-blocks", { success: true, messageId: "1784000000.000100" }]]);
   });
 
   it("keeps Omni direct send for WhatsApp accounts", async () => {

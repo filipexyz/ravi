@@ -13,6 +13,8 @@ tags:
   - omni
 applies_to:
   - src/omni/consumer.ts
+  - src/channels/slack/socket-mode.ts
+  - src/channels/slack/reactions.ts
   - src/router/router-db.ts
   - src/sdk/gateway/streaming/channels.ts
   - src/triggers/topic-catalog.ts
@@ -97,14 +99,27 @@ REACTION stream (JetStream)
   -> build deterministic provider_message_id
   -> dbUpsertChatMessage(message_type = "reaction", ...)
   -> emit ravi.inbound.reaction { targetMessageId, emoji, senderId }
+
+Native Slack Socket Mode / gateway
+  -> handleEnvelope reaction_added
+  -> map Slack short name (+1, thumbsup, heart) to unicode
+  -> emit ravi.inbound.reaction { targetMessageId: item.ts, emoji, senderId }
 ```
 
 The flow MUST NOT touch route resolution, session dispatch, prompt building, or runtime turn creation.
 
+Native Slack MAY emit `ravi.inbound.reaction` for inbound `reaction_added`
+events so triggers can correlate without Omni. Slack short names that mean
+thumbs-up or heart MUST be published as unicode (`👍`, `❤️`). File and other
+non-message reaction items MUST be skipped. Slack approval MUST NOT depend on
+this emit.
+
 ## Compatibility
 
 - `ravi.inbound.reaction` payload remains `{ targetMessageId, emoji, senderId }`. No `chatId` or domain state is added to this event without updating specs, catalog, docs, and tests.
-- `src/approval/service.ts` continues to subscribe to `ravi.inbound.reaction` and match by `targetMessageId`.
+- `src/approval/service.ts` still consumes `ravi.inbound.reaction` for WhatsApp/Omni
+  approval only. Native Slack approval MUST use `ravi.inbound.interaction`
+  buttons from `channels/slack/approval` and MUST ignore Slack reactions.
 - `src/triggers/topic-catalog.ts` continues to document `ravi.inbound.reaction` as the canonical reaction trigger subject.
 - `src/sdk/gateway/streaming/channels.ts` continues to subscribe to `reaction.received.>` for `chats/<chatId>` streams and filter by `chatId`. The streaming channel receives the raw omni event envelope, not the `ravi.inbound.reaction` event.
 

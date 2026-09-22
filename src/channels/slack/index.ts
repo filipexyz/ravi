@@ -42,6 +42,8 @@ export {
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";
 export type { SlackCredentialConfig, SlackSecretPayload } from "./credentials.js";
+export { slackInboundReactionFromEnvelope } from "./reactions.js";
+export type { SlackInboundReaction } from "./reactions.js";
 export { SlackGatewayModeService } from "./gateway-mode.js";
 export type { SlackGatewayEnvelopeProcessor, SlackGatewayModeServiceOptions } from "./gateway-mode.js";
 export {
@@ -89,6 +91,7 @@ export type {
   SlackFilePayload,
   SlackNormalizedFile,
   SlackNormalizedMessage,
+  SlackReactionItem,
   SlackRootReplyMode,
   SlackRoutingPolicy,
   SlackSocketEnvelope,

@@ -278,6 +278,8 @@ type DirectSendRequest = {
   typingDelayMs?: number;
   pauseMs?: number;
   replyTopic?: string;
+  threadId?: string;
+  blocks?: readonly Record<string, unknown>[];
 };
 
 type ReactionRequest = {
@@ -1743,6 +1745,8 @@ export class Gateway {
         accountId: resolved.accountId,
         chatId: data.to,
         text,
+        ...(data.threadId ? { threadId: data.threadId } : {}),
+        ...(data.blocks ? { blocks: data.blocks } : {}),
       });
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,

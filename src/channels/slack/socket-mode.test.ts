@@ -1186,6 +1186,129 @@ describe("Slack Socket Mode routing", () => {
     expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.com");
   });
 
+  it("publishes Slack reaction_added as ravi.inbound.reaction without starting a turn", async () => {
+    const prompts: unknown[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishPrompt: async (_sessionName, payload) => {
+        prompts.push(payload);
+      },
+      publishInteraction: async (topic, payload) => {
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-reaction-1",
+        payload: {
+          team_id: "T1",
+          event_id: "EvReaction1",
+          event: {
+            type: "reaction_added",
+            user: "U123",
+            reaction: "+1",
+            item: {
+              type: "message",
+              channel: "C123",
+              ts: "1713000000.000100",
+            },
+          },
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    expect(prompts).toHaveLength(0);
+    expect(interactions).toEqual([
+      {
+        topic: "ravi.inbound.reaction",
+        payload: {
+          targetMessageId: "1713000000.000100",
+          emoji: "👍",
+          senderId: "U123",
+        },
+      },
+    ]);
+  });
+
+  it("publishes versioned approval button clicks as inbound interactions without a prompt", async () => {
+    const prompts: unknown[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishPrompt: async (_sessionName, payload) => {
+        prompts.push(payload);
+      },
+      publishInteraction: async (topic, payload) => {
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-approval-v1",
+        payload: {
+          type: "block_actions",
+          team: { id: "T1" },
+          user: { id: "U9" },
+          channel: { id: "C123" },
+          message: { ts: "1713000000.000100" },
+          actions: [
+            {
+              type: "button",
+              block_id: "ravi.approval.v1.actions",
+              action_id: "ravi.approval.v1.approve",
+              value: "req_opaque_only",
+            },
+          ],
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    expect(prompts).toHaveLength(0);
+    expect(interactions).toEqual([
+      {
+        topic: "ravi.inbound.interaction",
+        payload: expect.objectContaining({
+          actionId: "ravi.approval.v1.approve",
+          blockId: "ravi.approval.v1.actions",
+          value: "req_opaque_only",
+          userId: "U9",
+          messageTs: "1713000000.000100",
+        }),
+      },
+    ]);
+  });
+
   it("publishes Slack Work Object link and detail events as inbound interactions", async () => {
     const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const service = new SlackSocketModeService({
