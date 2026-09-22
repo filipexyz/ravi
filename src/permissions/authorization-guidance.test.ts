@@ -34,11 +34,7 @@ describe("authorization guidance", () => {
     });
 
     expect(guidance.canonicalCapability).toBe("mutate:pages:ship");
-    expect(guidance.candidateCapabilities).toEqual([
-      "mutate:pages:ship",
-      "mutate:pages:*",
-      "execute:group:pages",
-    ]);
+    expect(guidance.candidateCapabilities).toEqual(["mutate:pages:ship", "mutate:pages:*", "execute:group:pages"]);
     expect(guidance.preferredPath.allowCommand).toBe(
       "ravi permissions allow permission-mutate-pages-ship --to agent:dev --capabilities mutate:pages:ship --apply",
     );
@@ -88,8 +84,6 @@ describe("authorization guidance", () => {
       buildRecurringAllowCommand({
         capability: { permission: "execute", objectType: "group", objectId: "daemon" },
       }),
-    ).toBe(
-      "ravi permissions allow permission-execute-group-daemon --capabilities execute:group:daemon --apply",
-    );
+    ).toBe("ravi permissions allow permission-execute-group-daemon --capabilities execute:group:daemon --apply");
   });
 });

@@ -59,15 +59,11 @@ export function buildAuthorizationGuidance(input: {
   const canonicalCapability = formatCanonicalCapability(input.capability);
   const subject = normalizeSubject(input.subject);
   const inspectCommands = buildInspectCommands(subject);
-  const candidateCapabilities = dedupeAuthorizationCapabilities([
-    input.capability,
-    ...(input.candidates ?? []),
-  ]).map(formatCanonicalCapability);
+  const candidateCapabilities = dedupeAuthorizationCapabilities([input.capability, ...(input.candidates ?? [])]).map(
+    formatCanonicalCapability,
+  );
   const suggestedTags = input.includeProviderOwnedTags
-    ? findProviderOwnedPermissionTagsForCapabilities([
-        input.capability,
-        ...(input.candidates ?? []),
-      ])
+    ? findProviderOwnedPermissionTagsForCapabilities([input.capability, ...(input.candidates ?? [])])
     : [];
   const allowCommand = buildRecurringAllowCommand({
     capability: input.capability,

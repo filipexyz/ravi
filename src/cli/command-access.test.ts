@@ -593,9 +593,7 @@ describe("CLI command access enforcement", () => {
       "Required candidates: mutate:demo.items:create, mutate:demo.items:*, mutate:demo.items.create:*, execute:group:demo_create, execute:group:demo",
     );
     expect(result.errorMessage).toContain("permission-demo-writer");
-    expect(result.errorMessage).toContain(
-      "ravi permissions allow permission-demo-writer --to agent:dev --apply",
-    );
+    expect(result.errorMessage).toContain("ravi permissions allow permission-demo-writer --to agent:dev --apply");
     expect(result.errorMessage).toContain("full-access is break-glass");
   });
 
@@ -627,9 +625,7 @@ describe("CLI command access enforcement", () => {
     expect(result.errorMessage).toContain(
       "Required candidates: mutate:pages:ship, mutate:pages:*, mutate:pages.ship:*, execute:group:pages_ship, execute:group:pages",
     );
-    expect(result.errorMessage).toContain(
-      "ravi permissions allow permission-pages-publisher --to agent:dev --apply",
-    );
+    expect(result.errorMessage).toContain("ravi permissions allow permission-pages-publisher --to agent:dev --apply");
   });
 
   it("authorizes pages ship through a materialized execute:group:pages ceiling", () => {
