@@ -2303,6 +2303,76 @@ class BridgesRevokeReturn {
 
 BridgesRevokeReturn bridgesRevokeReturnFromJson(Object? json) => BridgesRevokeReturn.fromJsonValue(json);
 
+class BugCommentOptions {
+  const BugCommentOptions({this.console, this.dossierFile, this.dossierJson, this.evidenceFile, this.execute, this.idempotencyKey, this.text});
+
+  final String? console;
+  final String? dossierFile;
+  final String? dossierJson;
+  final String? evidenceFile;
+  final bool? execute;
+  final String? idempotencyKey;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (dossierFile != null) {
+      into["dossierFile"] = RaviJson.from(dossierFile);
+    }
+    if (dossierJson != null) {
+      into["dossierJson"] = RaviJson.from(dossierJson);
+    }
+    if (evidenceFile != null) {
+      into["evidenceFile"] = RaviJson.from(evidenceFile);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class BugCommentReturn {
+  const BugCommentReturn({required this.bug, required this.bugId, required this.comment, required this.consoleUrl, required this.id, required this.idempotencyKey, required this.reused, required this.success, required this.url});
+
+  final Map<String, RaviJson> bug;
+  final String bugId;
+  final Map<String, RaviJson> comment;
+  final String consoleUrl;
+  final String id;
+  final String idempotencyKey;
+  final bool reused;
+  final bool success;
+  final String url;
+
+  factory BugCommentReturn.fromJson(Map<String, Object?> json) {
+    return BugCommentReturn(
+      bug: raviJsonAsRaviJsonMap(json["bug"]),
+      bugId: raviJsonAsString(json["bugId"]),
+      comment: raviJsonAsRaviJsonMap(json["comment"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      id: raviJsonAsString(json["id"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      reused: raviJsonAsBool(json["reused"]),
+      success: raviJsonAsBool(json["success"]),
+      url: raviJsonAsString(json["url"]),
+    );
+  }
+
+  static BugCommentReturn fromJsonValue(Object? json) {
+    return BugCommentReturn.fromJson(raviJsonObject(json, "BugCommentReturn"));
+  }
+}
+
+BugCommentReturn bugCommentReturnFromJson(Object? json) => BugCommentReturn.fromJsonValue(json);
+
 class BugListOptions {
   const BugListOptions({this.console, this.fields, this.limit, this.offset});
 

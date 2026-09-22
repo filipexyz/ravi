@@ -1838,6 +1838,31 @@ export type BridgesRevokeReturn = {
   success: true;
 };
 
+/** Input shape for `bug.comment`. */
+export type BugCommentInput = {
+  console?: string;
+  dossierFile?: string;
+  dossierJson?: string;
+  evidenceFile?: string;
+  execute?: boolean;
+  id: string;
+  idempotencyKey?: string;
+  text?: string;
+};
+
+/** Return shape for `bug.comment`. */
+export type BugCommentReturn = {
+  bug: Record<string, unknown>;
+  bugId: string;
+  comment: Record<string, unknown>;
+  consoleUrl: string;
+  id: string;
+  idempotencyKey: string;
+  reused: boolean;
+  success: true;
+  url: string;
+};
+
 /** Input shape for `bug.list`. */
 export type BugListInput = {
   console?: string;

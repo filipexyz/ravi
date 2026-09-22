@@ -19,6 +19,7 @@ applies_to:
   - src/bug-report/client.ts
   - src/bug-report/follow.ts
   - src/bug-report/schema.ts
+  - src/bug-report/sanitize.ts
   - src/bug-report/prompt.ts
   - src/prompt-builder.ts
 owners:
@@ -51,6 +52,9 @@ The happy path is agent-first and two-step:
 
 Read ops `bug status <id>` and `bug list` return the caller's own reports.
 
+Follow-up diagnosis after the original filing MUST append to the same id
+with `bug comment <id>` (alias `append`). Do not file a second report.
+
 ## Schema (`ravi.bug_report/v1`)
 
 ```ts
@@ -71,6 +75,24 @@ Read ops `bug status <id>` and `bug list` return the caller's own reports.
 `title`, `summary`, and `severity` are required on `--execute` and on any
 supplied `--dossier-json` / `--dossier-file`. Flag-only dry-runs MAY be
 partial so the first call can be `ravi bug report` with no dossier.
+
+## Schema (`ravi.bug_comment/v1`)
+
+```ts
+{
+  schemaVersion: "ravi.bug_comment/v1",
+  text?: string,
+  evidence?: { logs?: string[]; notes?: string[]; redactions?: string[] },
+  sanitization?: { rulesApplied?: string[] }
+}
+```
+
+`--execute` on `bug comment` requires an existing bug id plus at least
+`text` or evidence `logs`/`notes`. The CLI sanitizes tokens, cookies,
+private keys, and common secret assignments before the brake plan and
+before POST, and records what it redacted. `--evidence-file` MAY be
+plain text (one note), a JSON evidence object, or a comment dossier.
+A create dossier (`ravi.bug_report/v1`) MUST be rejected.
 
 ## Invariants
 
@@ -121,14 +143,35 @@ partial so the first call can be `ravi bug report` with no dossier.
 10. Sessions MUST carry a short always-on prompt: if the session finds a
    product/runtime bug, ask the user whether to file a Ravi bug report; if
    yes, use `ravi bug report` (collect/sanitize first; only `--execute`
-   after the dossier is ready). Do not spam. Do not submit without
-   confirmation. Do not replace `ravi feedback`.
+   after the dossier is ready). If more evidence arrives after a report
+   already exists, use `ravi bug comment <id>` on that same id. Do not
+   spam. Do not submit without confirmation. Do not replace `ravi feedback`.
+   Do not file a second report for follow-up diagnosis.
+11. `bug comment <id>` (alias `append`) MUST default to dry-run and require
+    `--execute`. The dry-run MUST report `dryRun: true` and a
+    content-minimized plan (`schemaVersion`, presence/length/count
+    summaries, collection prompt). It MUST NOT read credentials nor
+    perform any network call. Raw `--text`, evidence bodies, file
+    contents, and Console override MUST NOT appear in the plan.
+12. `--execute` on `bug comment` MUST POST Console `commentBodySchema` to
+    `/api/cli/bugs/<id>/comments`: top-level `{schemaVersion, text?,
+    idempotencyKey}` plus required `payload` (the sanitized comment, with
+    `source` inside `payload` only). It MUST also send `Idempotency-Key`.
+    The default key is `sha256:` plus the hex digest of this bug id and
+    the sanitized `text`/`logs`/`notes`. An explicit `--idempotency-key`
+    overrides it. Retries with the same key MUST NOT create a duplicate
+    comment; Console is the idempotency ledger (`reused: true` on replay).
+    The CLI does not keep a local comment log.
+13. `bug comment` MUST NOT change title, severity, priority, or status.
+    It is append-only. The HITL / `--execute` barrier MUST stay as
+    strong as `bug report`.
 
 ## Write classification (brake decision per op)
 
 | op | class | brake |
 |---|---|---|
 | report (alias create) | publishes externally to Ravi Console; not retractable via CLI | dry-run + `--execute` |
+| comment (alias append) | publishes a follow-up onto an existing Console bug; not retractable via CLI | dry-run + `--execute` |
 | status | read of the caller's own report | none |
 | list | read of the caller's own reports | none |
 
@@ -136,8 +179,8 @@ partial so the first call can be `ravi bug report` with no dossier.
 
 | case | code | exit |
 |---|---|---|
-| braked report without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| invalid / incomplete dossier | `PAYLOAD_INVALID` | 2 |
+| braked report or comment without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| invalid / incomplete dossier or follow-up | `PAYLOAD_INVALID` | 2 |
 | missing/expired credentials on execute or reads | `AUTH_REQUIRED` / `AUTH_EXPIRED` | 1 |
 
 ## Console API assumption
@@ -157,27 +200,43 @@ The CLI client path is:
   `ravi.watch.*.*` / `ravi.watch.>`). Expected payload fields for the
   per-bug filter: `payload.bugId` on the normalized watch event, or
   flattened `bugId`.
+- `POST /api/cli/bugs/:id/comments` — append a sanitized follow-up.
+  Body is Console `commentBodySchema` (`schemaVersion`, optional `text`,
+  required `payload`, required `idempotencyKey`). Header `Idempotency-Key`
+  repeats that key. Console MUST treat the same caller + bug id + key as
+  a replay and return the original comment with `reused: true` instead of
+  inserting a duplicate. A 404 on this path means Console has not deployed
+  the append API yet; keep the id and do not file a second report.
 
 Tracking URL preference: response `url` or `trackingUrl`, else
 `<consoleUrl>/bugs/<id>`. A sibling `ravi-console` PR may land the HTTP
 handlers; this repo MUST keep the client path constants stable
-(`BUG_REPORT_API_PATH`, `bugReportSubscribeApiPath`).
+(`BUG_REPORT_API_PATH`, `bugReportSubscribeApiPath`,
+`bugReportCommentApiPath`). Production Console (2026-09-22) served
+create/status/list/subscribe but returned HTML 404 for `/comments`.
+A sibling `ravi-console` PR should land `POST /api/cli/bugs/:id/comments`.
 
 ## Internal consumers
 
 The default runtime system prompt (`src/prompt-builder.ts`, section
-`bug.report`) teaches the ask-then-`ravi bug report` flow. `--help` on
-`bug report` is the SSoT for dossier shape, sanitization, and the brake.
+`bug.report`) teaches the ask-then-`ravi bug report` flow and the
+append-to-same-id `ravi bug comment <id>` path. `--help` on
+`bug report` / `bug comment` is the SSoT for dossier shape, sanitization,
+and the brake.
 
 ## Validation
 
 - `bun test src/cli/commands/bug.test.ts` green (contract block included).
+- `bun test src/bug-report/client.test.ts` green (create + comment mappers).
+- `bun test src/bug-report/sanitize.test.ts` green (token/key redaction).
 - `bun test src/bug-report/follow.test.ts` green (per-bugId filter scope).
-- `bun test src/prompt-builder.test.ts` green (session prompt present).
+- `bun test src/prompt-builder.test.ts` green (session prompt present, including comment).
 - Live checks: `ravi bug report --json` → exit 3 + plan + collection prompt,
   no network; `ravi bug report --dossier-json '<valid>' --execute --json` →
   submits (requires login); `--severity bogus` → `PAYLOAD_INVALID` even
-  without `--execute`.
+  without `--execute`. `ravi bug comment <id> --json` → exit 3 + plan;
+  `ravi bug comment <id> --text '…' --execute --json` → appends (requires
+  login and the Console comment route).
 
 ## Known Failure Modes
 

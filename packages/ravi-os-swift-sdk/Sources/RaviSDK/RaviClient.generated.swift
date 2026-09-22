@@ -686,6 +686,13 @@ public struct BugNamespace: Sendable {
     self.transport = transport
   }
 
+  public func comment(_ id: String, _ options: BugCommentOptions = .init()) async throws -> BugCommentReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bug"], command: "comment", body: requestBody, as: BugCommentReturn.self)
+  }
+
   public func list(_ options: BugListOptions = .init()) async throws -> BugListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

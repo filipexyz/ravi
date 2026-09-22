@@ -1,6 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import { asUuid, bugReportSubscribeApiPath, toConsoleBugCreateBody } from "./client.js";
-import { BUG_REPORT_SCHEMA_ID, type BugReportDossier } from "./schema.js";
+import {
+  asUuid,
+  bugCommentIdempotencyKey,
+  bugReportCommentApiPath,
+  bugReportSubscribeApiPath,
+  toConsoleBugCommentBody,
+  toConsoleBugCreateBody,
+} from "./client.js";
+import {
+  BUG_COMMENT_SCHEMA_ID,
+  BUG_REPORT_SCHEMA_ID,
+  type BugCommentDossier,
+  type BugReportDossier,
+} from "./schema.js";
 
 const ORG_UUID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_UUID = "22222222-2222-4222-8222-222222222222";
@@ -63,6 +75,82 @@ describe("toConsoleBugCreateBody", () => {
 describe("bugReportSubscribeApiPath", () => {
   it("keeps the Console follow contract on /api/cli/bugs/:id/subscribe", () => {
     expect(bugReportSubscribeApiPath("bug_1")).toBe("/api/cli/bugs/bug_1/subscribe");
+  });
+});
+
+describe("toConsoleBugCommentBody", () => {
+  const comment: BugCommentDossier = {
+    schemaVersion: BUG_COMMENT_SCHEMA_ID,
+    text: "Root cause is idle stdin.",
+    evidence: { notes: ["reproduced on the second attach"] },
+  };
+
+  it("maps the sanitized comment onto commentBodySchema with payload + idempotencyKey", () => {
+    const body = toConsoleBugCommentBody(comment, "cli", "sha256:abc");
+    expect(body).toEqual({
+      schemaVersion: BUG_COMMENT_SCHEMA_ID,
+      text: comment.text,
+      payload: { ...comment, source: "cli" },
+      idempotencyKey: "sha256:abc",
+    });
+    expect(body).not.toHaveProperty("source");
+  });
+
+  it("redacts secrets before they enter the Console body", () => {
+    const body = toConsoleBugCommentBody(
+      {
+        schemaVersion: BUG_COMMENT_SCHEMA_ID,
+        text: "token=supersecretvalue",
+        evidence: { logs: ["Bearer abcdefghijklmnop"] },
+      },
+      "cli",
+      "idem_1",
+    );
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("supersecretvalue");
+    expect(serialized).not.toContain("abcdefghijklmnop");
+    expect(body.text).toContain("[REDACTED]");
+  });
+});
+
+describe("bugReportCommentApiPath", () => {
+  it("keeps the Console append contract on /api/cli/bugs/:id/comments", () => {
+    expect(bugReportCommentApiPath("bug_1")).toBe("/api/cli/bugs/bug_1/comments");
+    expect(bugReportCommentApiPath("bug/with spaces")).toBe("/api/cli/bugs/bug%2Fwith%20spaces/comments");
+  });
+});
+
+describe("bugCommentIdempotencyKey", () => {
+  const comment: BugCommentDossier = {
+    schemaVersion: BUG_COMMENT_SCHEMA_ID,
+    text: "Same follow-up",
+    evidence: { notes: ["one"] },
+  };
+
+  it("is stable for the same sanitized payload and bug id", () => {
+    expect(bugCommentIdempotencyKey("bug_1", comment)).toBe(bugCommentIdempotencyKey("bug_1", comment));
+    expect(bugCommentIdempotencyKey("bug_1", comment)).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("changes when the bug id or sanitized text changes", () => {
+    expect(bugCommentIdempotencyKey("bug_1", comment)).not.toBe(bugCommentIdempotencyKey("bug_2", comment));
+    expect(bugCommentIdempotencyKey("bug_1", comment)).not.toBe(
+      bugCommentIdempotencyKey("bug_1", { ...comment, text: "Different follow-up" }),
+    );
+  });
+
+  it("ignores redaction metadata so retries of the same body keep the key", () => {
+    const first = bugCommentIdempotencyKey("bug_1", comment);
+    const retry = bugCommentIdempotencyKey("bug_1", {
+      ...comment,
+      sanitization: { rulesApplied: ["redact-bearer-tokens"] },
+      evidence: { notes: ["one"], redactions: ["Bearer token"] },
+    });
+    expect(retry).toBe(first);
+  });
+
+  it("uses an explicit key when provided", () => {
+    expect(bugCommentIdempotencyKey("bug_1", comment, " idem_custom ")).toBe("idem_custom");
   });
 });
 
