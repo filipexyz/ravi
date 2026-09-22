@@ -700,6 +700,18 @@ class BugNamespace {
 
   final RaviTransport _transport;
 
+  Future<BugCommentReturn> comment(String id, [BugCommentOptions options = const BugCommentOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bug"],
+      command: "comment",
+      body: requestBody,
+      decode: bugCommentReturnFromJson,
+    );
+  }
+
   Future<BugListReturn> list([BugListOptions options = const BugListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);

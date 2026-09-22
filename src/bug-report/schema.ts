@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 
 export const BUG_REPORT_SCHEMA_ID = "ravi.bug_report/v1";
+export const BUG_COMMENT_SCHEMA_ID = "ravi.bug_comment/v1";
 export const BUG_REPORT_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
 export type BugReportSeverity = (typeof BUG_REPORT_SEVERITIES)[number];
@@ -46,6 +47,13 @@ export interface BugReportDossier {
   environment?: BugReportEnvironment;
   evidence?: BugReportEvidence;
   context?: BugReportContext;
+  sanitization?: BugReportSanitization;
+}
+
+export interface BugCommentDossier {
+  schemaVersion: typeof BUG_COMMENT_SCHEMA_ID;
+  text?: string;
+  evidence?: BugReportEvidence;
   sanitization?: BugReportSanitization;
 }
 
@@ -97,6 +105,25 @@ export const bugReportDossierSchema = z.object({
       organizationRef: optionalText,
       projectRef: optionalText,
       sessionHints: optionalText,
+    })
+    .strict()
+    .optional(),
+  sanitization: z
+    .object({
+      rulesApplied: optionalStringList,
+    })
+    .strict()
+    .optional(),
+});
+
+export const bugCommentDossierSchema = z.object({
+  schemaVersion: z.literal(BUG_COMMENT_SCHEMA_ID).default(BUG_COMMENT_SCHEMA_ID),
+  text: optionalText,
+  evidence: z
+    .object({
+      logs: optionalStringList,
+      notes: optionalStringList,
+      redactions: optionalStringList,
     })
     .strict()
     .optional(),
@@ -189,4 +216,78 @@ export function summarizeBugReportPlan(dossier: Partial<BugReportDossier> | unde
     sessionHintsPresent: Boolean(context?.sessionHints?.trim()),
     sanitizationRulesCount: dossier?.sanitization?.rulesApplied?.length ?? 0,
   };
+}
+
+export function parseBugCommentDossierJson(value: string, label = "--dossier-json"): unknown {
+  return parseBugReportDossierJson(value, label);
+}
+
+export function validateBugCommentDossier(value: unknown): BugCommentDossier {
+  const parsed = bugCommentDossierSchema.safeParse(normalizeIncomingComment(value));
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path.length ? issue.path.join(".") : "comment";
+    throw new CloudAuthError("PAYLOAD_INVALID", `Invalid bug comment (${path}): ${issue?.message ?? "invalid"}.`);
+  }
+  return parsed.data;
+}
+
+export function requireCompleteBugCommentDossier(comment: Partial<BugCommentDossier> | undefined): BugCommentDossier {
+  if (!comment) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Missing follow-up text or evidence. Collect and sanitize first (`ravi bug comment <id>`), then re-run with --text and/or --evidence-file plus --execute.",
+    );
+  }
+  const validated = validateBugCommentDossier(comment);
+  if (!bugCommentHasContent(validated)) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Missing follow-up text or evidence. Provide --text and/or --evidence-file (or a comment dossier with those fields).",
+    );
+  }
+  return validated;
+}
+
+export function bugCommentHasContent(comment: Partial<BugCommentDossier> | undefined): boolean {
+  if (comment?.text?.trim()) return true;
+  const evidence = comment?.evidence;
+  return Boolean(evidence?.logs?.length || evidence?.notes?.length);
+}
+
+export function summarizeBugCommentPlan(
+  comment: Partial<BugCommentDossier> | undefined,
+  extras: { evidenceFilePresent?: boolean; idempotencyKeyPresent?: boolean } = {},
+): Record<string, unknown> {
+  const evidence = comment?.evidence;
+  return {
+    schemaVersion: BUG_COMMENT_SCHEMA_ID,
+    textPresent: Boolean(comment?.text?.trim()),
+    textChars: comment?.text?.length ?? 0,
+    evidenceFilePresent: extras.evidenceFilePresent === true,
+    evidenceCounts: {
+      logs: evidence?.logs?.length ?? 0,
+      notes: evidence?.notes?.length ?? 0,
+      redactions: evidence?.redactions?.length ?? 0,
+    },
+    sanitizationRulesCount: comment?.sanitization?.rulesApplied?.length ?? 0,
+    idempotencyKeyPresent: extras.idempotencyKeyPresent === true,
+  };
+}
+
+function normalizeIncomingComment(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = { ...(value as Record<string, unknown>) };
+  const schemaVersion = typeof record.schemaVersion === "string" ? record.schemaVersion.trim() : "";
+  if (!schemaVersion) {
+    record.schemaVersion = BUG_COMMENT_SCHEMA_ID;
+  } else if (schemaVersion === BUG_REPORT_SCHEMA_ID) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `schemaVersion ${BUG_REPORT_SCHEMA_ID} is a create dossier. Use ${BUG_COMMENT_SCHEMA_ID} with --text/--evidence-file, or file a new report with ravi bug report.`,
+    );
+  } else if (schemaVersion !== BUG_COMMENT_SCHEMA_ID) {
+    throw new CloudAuthError("PAYLOAD_INVALID", `schemaVersion must be ${BUG_COMMENT_SCHEMA_ID}.`);
+  }
+  return record;
 }

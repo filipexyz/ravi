@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
@@ -10,7 +11,14 @@ import {
   bugReportSubscribeApiPath,
   ensureBugFollowTrigger,
 } from "./follow.js";
-import { type BugReportDossier, requireCompleteBugReportDossier } from "./schema.js";
+import {
+  BUG_COMMENT_SCHEMA_ID,
+  type BugCommentDossier,
+  type BugReportDossier,
+  requireCompleteBugCommentDossier,
+  requireCompleteBugReportDossier,
+} from "./schema.js";
+import { sanitizeBugCommentDossier } from "./sanitize.js";
 
 export const BUG_REPORT_API_PATH = "/api/cli/bugs";
 export { bugReportSubscribeApiPath } from "./follow.js";
@@ -52,6 +60,25 @@ export interface BugReportListResult {
   success: true;
   consoleUrl: string;
   bugs: Record<string, unknown>[];
+}
+
+export interface BugReportCommentOptions extends BugReportClientOptions {
+  id: string;
+  comment: BugCommentDossier;
+  source?: "cli" | "agent";
+  idempotencyKey?: string;
+}
+
+export interface BugReportCommentResult {
+  success: true;
+  consoleUrl: string;
+  bug: Record<string, unknown>;
+  comment: Record<string, unknown>;
+  id: string;
+  bugId: string;
+  url: string;
+  reused: boolean;
+  idempotencyKey: string;
 }
 
 export class RaviBugReportClient {
@@ -100,6 +127,24 @@ export class RaviBugReportClient {
       );
     } catch (error) {
       throw normalizeBugReportError(error);
+    }
+  }
+
+  async comment(accessToken: string, options: BugReportCommentOptions): Promise<Record<string, unknown>> {
+    const bugId = requireBugId(options.id);
+    const comment = sanitizeBugCommentDossier(requireCompleteBugCommentDossier(options.comment));
+    const idempotencyKey = bugCommentIdempotencyKey(bugId, comment, options.idempotencyKey);
+    const path = bugReportCommentApiPath(bugId);
+    try {
+      return await this.client.requestJson<Record<string, unknown>>(
+        "POST",
+        path,
+        toConsoleBugCommentBody(comment, options.source, idempotencyKey),
+        accessToken,
+        { "Idempotency-Key": idempotencyKey },
+      );
+    } catch (error) {
+      throw normalizeBugCommentError(error, path);
     }
   }
 
@@ -233,6 +278,35 @@ export async function listBugReports(
   };
 }
 
+export async function commentBugReport(
+  options: BugReportCommentOptions,
+  deps: BugReportClientDeps = {},
+): Promise<BugReportCommentResult> {
+  const auth = await createAuthenticatedBugReportContext(options.console, deps);
+  const comment = sanitizeBugCommentDossier(requireCompleteBugCommentDossier(options.comment));
+  const bugId = requireBugId(options.id);
+  const idempotencyKey = bugCommentIdempotencyKey(bugId, comment, options.idempotencyKey);
+  const payload = await new RaviBugReportClient(auth.client).comment(auth.accessToken, {
+    ...options,
+    id: bugId,
+    comment,
+    idempotencyKey,
+  });
+  const commentId = commentIdFromPayload(payload) ?? "commented";
+  const resolvedBugId = stringValue(payload.bugId) ?? bugIdFromPayload(payload) ?? bugId;
+  return {
+    success: true,
+    consoleUrl: auth.consoleUrl,
+    bug: isRecord(payload.bug) ? payload.bug : payload,
+    comment: payload,
+    id: commentId,
+    bugId: resolvedBugId,
+    url: trackingUrl(auth.consoleUrl, payload, resolvedBugId),
+    reused: payload.reused === true,
+    idempotencyKey,
+  };
+}
+
 async function createAuthenticatedBugReportContext(consoleUrl: string | undefined, deps: BugReportClientDeps) {
   const credentials = requireStoredCredentials((deps.readCredentials ?? readCloudCredentials)(), consoleUrl);
   const client = deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
@@ -297,6 +371,47 @@ export function toConsoleBugCreateBody(
   return body;
 }
 
+/**
+ * Map a local `ravi.bug_comment/v1` follow-up onto Console commentBodySchema.
+ * Unknown top-level keys are stripped; the sanitized comment lives under
+ * required `payload`. `idempotencyKey` is sent so Console can replay retries.
+ */
+export function toConsoleBugCommentBody(
+  comment: BugCommentDossier,
+  source: BugReportCommentOptions["source"] = "cli",
+  idempotencyKey: string,
+): Record<string, unknown> {
+  const sanitized = sanitizeBugCommentDossier(requireCompleteBugCommentDossier(comment));
+  const body: Record<string, unknown> = {
+    schemaVersion: sanitized.schemaVersion,
+    payload: {
+      ...sanitized,
+      source: source ?? "cli",
+    },
+    idempotencyKey,
+  };
+  if (sanitized.text?.trim()) body.text = sanitized.text.trim();
+  return body;
+}
+
+export function bugReportCommentApiPath(bugId: string): string {
+  return `${BUG_REPORT_API_PATH}/${encodeURIComponent(requireBugId(bugId))}/comments`;
+}
+
+export function bugCommentIdempotencyKey(bugId: string, comment: BugCommentDossier, explicit?: string): string {
+  const supplied = explicit?.trim();
+  if (supplied) return supplied;
+  const sanitized = sanitizeBugCommentDossier(comment);
+  const canonical = JSON.stringify({
+    schemaVersion: BUG_COMMENT_SCHEMA_ID,
+    bugId: requireBugId(bugId),
+    text: sanitized.text ?? "",
+    logs: sanitized.evidence?.logs ?? [],
+    notes: sanitized.evidence?.notes ?? [],
+  });
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
 export function asUuid(value: string | undefined): string | undefined {
   const text = value?.trim();
   if (!text || !UUID_PATTERN.test(text)) return undefined;
@@ -318,6 +433,14 @@ function extractBugList(payload: unknown): Record<string, unknown>[] {
 
 function bugIdFromPayload(payload: Record<string, unknown>): string | null {
   return stringValue(payload.id) ?? stringValue(payload.bugId) ?? stringValue(payload.targetId);
+}
+
+function commentIdFromPayload(payload: Record<string, unknown>): string | null {
+  return (
+    stringValue(payload.commentId) ??
+    (isRecord(payload.comment) ? stringValue(payload.comment.id) : null) ??
+    stringValue(payload.id)
+  );
 }
 
 function trackingUrl(consoleUrl: string, payload: Record<string, unknown>, id: string): string {
@@ -352,4 +475,15 @@ function normalizeBugReportError(error: unknown): CloudAuthError {
   return new CloudAuthError("SERVER_UNAVAILABLE", error instanceof Error ? error.message : String(error), {
     cause: error,
   });
+}
+
+function normalizeBugCommentError(error: unknown, path: string): CloudAuthError {
+  if (error instanceof CloudAuthError && error.status === 404) {
+    return new CloudAuthError(
+      "SERVER_UNAVAILABLE",
+      `Console has no comment route yet. Expected POST ${path}. Keep this bug id and retry after Console deploys the append API; do not file a second report.`,
+      { status: 404, cause: error },
+    );
+  }
+  return normalizeBugReportError(error);
 }

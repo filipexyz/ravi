@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { BUG_REPORT_COLLECTION_PROMPT } from "../../bug-report/prompt.js";
-import { BUG_REPORT_SCHEMA_ID } from "../../bug-report/schema.js";
+import { BUG_COMMENT_COLLECTION_PROMPT, BUG_REPORT_COLLECTION_PROMPT } from "../../bug-report/prompt.js";
+import { BUG_COMMENT_SCHEMA_ID, BUG_REPORT_SCHEMA_ID } from "../../bug-report/schema.js";
+import { bugCommentIdempotencyKey } from "../../bug-report/client.js";
 import { BUG_STATUS_WATCH_TOPIC, bugFollowFilter, type BugFollowTriggerDeps } from "../../bug-report/follow.js";
 import type { Trigger, TriggerInput } from "../../triggers/index.js";
 
@@ -463,6 +464,284 @@ describe("bug agent-first contract", () => {
     expect(JSON.parse(output).id).toBe("bug_file");
     expect(calls.some((call) => call.path === "/api/cli/bugs/bug_file/subscribe")).toBe(true);
     expect(follow.createdTriggers[0]?.filter).toBe(bugFollowFilter("bug_file"));
+  });
+});
+
+describe("bug comment", () => {
+  it("POSTs sanitized follow-up text to /api/cli/bugs/:id/comments with --execute", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const command = new BugCommands({
+      client: makeClient(async (method, path, body, accessToken) => {
+        calls.push({ method, path, body, accessToken });
+        return {
+          id: "cmt_1",
+          bugId: "bug_1",
+          url: "https://console.example/bugs/bug_1",
+        };
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+
+    const { output } = await captureConsole(() =>
+      command.comment(
+        "bug_1",
+        "Root cause is idle stdin.",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const payload = JSON.parse(output);
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/cli/bugs/bug_1/comments",
+        accessToken: "access-secret",
+        body: {
+          schemaVersion: BUG_COMMENT_SCHEMA_ID,
+          text: "Root cause is idle stdin.",
+          payload: {
+            schemaVersion: BUG_COMMENT_SCHEMA_ID,
+            text: "Root cause is idle stdin.",
+            source: "cli",
+          },
+          idempotencyKey: bugCommentIdempotencyKey("bug_1", {
+            schemaVersion: BUG_COMMENT_SCHEMA_ID,
+            text: "Root cause is idle stdin.",
+          }),
+        },
+      },
+    ]);
+    expect(payload).toMatchObject({
+      success: true,
+      id: "cmt_1",
+      bugId: "bug_1",
+      url: "https://console.example/bugs/bug_1",
+      reused: false,
+    });
+    expect(payload.idempotencyKey).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("redacts secrets from --text and --evidence-file before POST", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-bug-comment-"));
+    const file = join(dir, "evidence.txt");
+    writeFileSync(file, "Authorization: Bearer leakedtokenvalue\n");
+    const calls: Array<{ body: unknown }> = [];
+    const command = new BugCommands({
+      client: makeClient(async (_method, _path, body) => {
+        calls.push({ body });
+        return { id: "cmt_2", bugId: "bug_9" };
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+
+    await captureConsole(() =>
+      command.comment(
+        "bug_9",
+        "Found OPENAI_API_KEY=sk-ant-leakedvalue12",
+        file,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    const serialized = JSON.stringify(calls[0]?.body);
+    expect(serialized).not.toContain("leakedtokenvalue");
+    expect(serialized).not.toContain("sk-ant-leakedvalue12");
+    expect(serialized).toContain("[REDACTED]");
+    const posted = calls[0]?.body as { payload?: { sanitization?: { rulesApplied?: string[] } } } | undefined;
+    expect(posted?.payload?.sanitization?.rulesApplied).toBeDefined();
+  });
+
+  it("sends the same idempotency key on retry so Console can dedupe", async () => {
+    const keys: string[] = [];
+    const command = new BugCommands({
+      client: makeClient(async (_method, _path, body) => {
+        keys.push(String((body as { idempotencyKey?: string }).idempotencyKey));
+        return { id: "cmt_same", bugId: "bug_1", reused: keys.length > 1 };
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+
+    const first = await captureConsole(() =>
+      command.comment("bug_1", "Same follow-up", undefined, undefined, undefined, undefined, undefined, true, true),
+    );
+    const retry = await captureConsole(() =>
+      command.comment("bug_1", "Same follow-up", undefined, undefined, undefined, undefined, undefined, true, true),
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    expect(JSON.parse(first.output).reused).toBe(false);
+    expect(JSON.parse(retry.output).reused).toBe(true);
+  });
+
+  it("honors an explicit --idempotency-key", async () => {
+    const calls: Array<{ body: unknown }> = [];
+    const command = new BugCommands({
+      client: makeClient(async (_method, _path, body) => {
+        calls.push({ body });
+        return { id: "cmt_explicit", bugId: "bug_1" };
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+    await captureConsole(() =>
+      command.comment("bug_1", "Follow-up", undefined, undefined, undefined, "idem_custom", undefined, true, true),
+    );
+    const posted = calls[0]?.body as { idempotencyKey?: string } | undefined;
+    expect(posted?.idempotencyKey).toBe("idem_custom");
+  });
+});
+
+describe("bug comment agent-first contract", () => {
+  it("blocks comment without --execute (dry-run, exit 3, nothing leaves the machine)", async () => {
+    const secret = "PRIVATE_COMMENT_4K9Z";
+    const calls: unknown[] = [];
+    let credentialReads = 0;
+    const command = new BugCommands({
+      client: makeClient(async (...args) => {
+        calls.push(args);
+        return {};
+      }),
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const { output, error: thrown } = await captureConsoleAllowThrow(() =>
+      command.comment(
+        "bug_1",
+        secret,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "https://private-console.invalid",
+        true,
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("bug comment");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan).toMatchObject({
+      schemaVersion: BUG_COMMENT_SCHEMA_ID,
+      textPresent: true,
+      textChars: secret.length,
+      collectionPrompt: BUG_COMMENT_COLLECTION_PROMPT,
+    });
+    const serialized = JSON.stringify(plan);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain("https://private-console.invalid");
+    expect(serialized).toContain("ravi.bug_comment/v1");
+    expect(plan.collectionPrompt).toBe(BUG_COMMENT_COLLECTION_PROMPT);
+    expect(output).toContain("WRITE_REQUIRES_EXECUTE");
+    expect(calls).toHaveLength(0);
+    expect(credentialReads).toBe(0);
+  });
+
+  it("prints the collection prompt on a textless dry-run without touching auth", async () => {
+    let credentialReads = 0;
+    const calls: unknown[] = [];
+    const command = new BugCommands({
+      client: makeClient(async (...args) => {
+        calls.push(args);
+        return {};
+      }),
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const { output, error: thrown } = await captureConsoleAllowThrow(() =>
+      command.comment("bug_1", undefined, undefined, undefined, undefined, undefined, undefined, false),
+    );
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(3);
+    expect(output).toContain(BUG_COMMENT_COLLECTION_PROMPT);
+    expect(calls).toHaveLength(0);
+    expect(credentialReads).toBe(0);
+  });
+
+  it("fails --execute without text or evidence (PAYLOAD_INVALID)", async () => {
+    const command = new BugCommands({
+      client: makeClient(async () => ({})),
+      readCredentials: makeReadCredentials(),
+    });
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.comment("bug_1", undefined, undefined, undefined, undefined, undefined, undefined, true, true),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { code?: string }).code).toBe("PAYLOAD_INVALID");
+  });
+
+  it("fails fast on a create dossier passed as --dossier-json", async () => {
+    const command = new BugCommands({
+      client: makeClient(async () => ({})),
+      readCredentials: makeReadCredentials(),
+    });
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.comment(
+          "bug_1",
+          undefined,
+          undefined,
+          JSON.stringify(VALID_DOSSIER),
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { code?: string }).code).toBe("PAYLOAD_INVALID");
+  });
+
+  it("reads a plain-text evidence file on --execute", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-bug-comment-file-"));
+    const file = join(dir, "note.txt");
+    writeFileSync(file, "stack frame at idleStdinProbe");
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const command = new BugCommands({
+      client: makeClient(async (_method, path, body) => {
+        calls.push({ path, body });
+        return { id: "cmt_file", bugId: "bug_file" };
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+
+    const { output } = await captureConsole(() =>
+      command.comment("bug_file", undefined, file, undefined, undefined, undefined, undefined, true, true),
+    );
+    expect(calls[0]?.path).toBe("/api/cli/bugs/bug_file/comments");
+    expect(calls[0]?.body).toMatchObject({
+      payload: {
+        evidence: { notes: ["stack frame at idleStdinProbe"] },
+        source: "cli",
+      },
+    });
+    expect(JSON.parse(output).id).toBe("cmt_file");
   });
 });
 

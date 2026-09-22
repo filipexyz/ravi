@@ -9228,6 +9228,147 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let BugCommentInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "dossierFile": {
+        "description": "Path to a comment dossier JSON file",
+        "type": "string"
+      },
+      "dossierJson": {
+        "description": "Full ravi.bug_comment/v1 JSON object",
+        "type": "string"
+      },
+      "evidenceFile": {
+        "description": "Path to sanitized evidence (plain text, evidence JSON, or a comment dossier)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually POST the follow-up to Ravi Console; default is a dry-run that prints the collection prompt (exit 3)",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Existing bug report id",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Retry key; default is sha256 of this bug id plus the sanitized payload",
+        "type": "string"
+      },
+      "text": {
+        "description": "Sanitized follow-up comment",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let BugCommentReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bug": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "bugId": {
+        "type": "string"
+      },
+      "comment": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "type": "string"
+      },
+      "reused": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "bug",
+      "comment",
+      "id",
+      "bugId",
+      "url",
+      "reused",
+      "idempotencyKey"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let BugListInputSchema = #"""
   {
     "additionalProperties": false,

@@ -35,6 +35,8 @@
 
 ```bash
 bun test src/cli/commands/bug.test.ts
+bun test src/bug-report/client.test.ts
+bun test src/bug-report/sanitize.test.ts
 bun test src/bug-report/follow.test.ts
 bun test src/prompt-builder.test.ts
 ```
@@ -47,6 +49,9 @@ ravi bug report --json                                 # expect exit 3 + plan + 
 ravi bug report --severity bogus --json                # expect PAYLOAD_INVALID, exit 2
 ravi bug report --dossier-json '{"schemaVersion":"ravi.bug_report/v1","title":"x","summary":"y","severity":"low"}' --execute --json
 # expect follow.ok, follow.filter scoped to that id, follow.topic ravi.watch.console.bug.status
+ravi bug comment <id> --json                           # expect exit 3 + plan + collection prompt
+ravi bug comment <id> --text "follow-up" --execute --json
+# expect POST /api/cli/bugs/<id>/comments, same id, idempotencyKey present
 ravi bug status <id> --json
 ravi bug list --json --limit 20
 ```

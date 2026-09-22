@@ -89,6 +89,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("## Bug Reports");
     expect(prompt).toContain("ask the user whether to file a Ravi bug report");
     expect(prompt).toContain("ravi bug report");
+    expect(prompt).toContain("ravi bug comment <id>");
+    expect(prompt).toContain("Do not file a second report for follow-up evidence");
     expect(prompt).toContain("Do not use `ravi feedback` for product/runtime bugs");
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');

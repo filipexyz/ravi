@@ -41,7 +41,17 @@ A shared "all my bugs" trigger would wake this session for bugs filed
 elsewhere; the per-bug filter is the isolation boundary. Subscribe or
 trigger failure is a warning: the dossier already left the machine.
 
+Follow-up diagnosis often arrives after the first dossier. Without an
+append verb, agents file a second report and split the status feed.
+`bug comment` is the same publication class as `bug report` (it leaves
+the machine and cannot be retracted from the CLI), so it keeps the
+`--execute` brake and the same sanitization rules. Idempotency is
+Console-owned: the CLI sends a stable `Idempotency-Key` derived from the
+bug id plus the sanitized body so a retried `--execute` does not create
+a second comment.
+
 The always-on session prompt is a small paragraph, not a second skill: when
 the session actually hits a product/runtime bug, ask once; if the user says
-yes, run `ravi bug report`. Spam and unsolicited `--execute` would make the
-feature unusable.
+yes, run `ravi bug report`. If more evidence arrives later, append it with
+`ravi bug comment <id>` on that same id. Spam and unsolicited `--execute`
+would make the feature unusable.

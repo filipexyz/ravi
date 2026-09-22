@@ -2784,6 +2784,96 @@ public struct BridgesRevokeReturn: Codable, Sendable {
   }
 }
 
+public struct BugCommentOptions: Codable, Sendable {
+  public var console: String?
+  public var dossierFile: String?
+  public var dossierJson: String?
+  public var evidenceFile: String?
+  public var execute: Bool?
+  public var idempotencyKey: String?
+  public var text: String?
+
+  public init(console: String? = nil, dossierFile: String? = nil, dossierJson: String? = nil, evidenceFile: String? = nil, execute: Bool? = nil, idempotencyKey: String? = nil, text: String? = nil) {
+    self.console = console
+    self.dossierFile = dossierFile
+    self.dossierJson = dossierJson
+    self.evidenceFile = evidenceFile
+    self.execute = execute
+    self.idempotencyKey = idempotencyKey
+    self.text = text
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case dossierFile = "dossierFile"
+    case dossierJson = "dossierJson"
+    case evidenceFile = "evidenceFile"
+    case execute = "execute"
+    case idempotencyKey = "idempotencyKey"
+    case text = "text"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dossierFile {
+      body["dossierFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dossierJson {
+      body["dossierJson"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.evidenceFile {
+      body["evidenceFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.text {
+      body["text"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BugCommentReturn: Codable, Sendable {
+  public var bug: [String: RaviJSON]
+  public var bugId: String
+  public var comment: [String: RaviJSON]
+  public var consoleUrl: String
+  public var id: String
+  public var idempotencyKey: String
+  public var reused: Bool
+  public var success: Bool
+  public var url: String
+
+  public init(bug: [String: RaviJSON], bugId: String, comment: [String: RaviJSON], consoleUrl: String, id: String, idempotencyKey: String, reused: Bool, success: Bool, url: String) {
+    self.bug = bug
+    self.bugId = bugId
+    self.comment = comment
+    self.consoleUrl = consoleUrl
+    self.id = id
+    self.idempotencyKey = idempotencyKey
+    self.reused = reused
+    self.success = success
+    self.url = url
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bug = "bug"
+    case bugId = "bugId"
+    case comment = "comment"
+    case consoleUrl = "consoleUrl"
+    case id = "id"
+    case idempotencyKey = "idempotencyKey"
+    case reused = "reused"
+    case success = "success"
+    case url = "url"
+  }
+}
+
 public struct BugListOptions: Codable, Sendable {
   public var console: String?
   public var fields: String?
