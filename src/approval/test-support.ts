@@ -1,4 +1,4 @@
-import { createContact, getContact, linkContactIdentity, updateContact } from "../contacts.js";
+import { createContact, linkContactIdentity, updateContact } from "../contacts.js";
 import { actorCanGrantRequestedPermission, type ApprovalGrantorInput } from "./grantor.js";
 
 export const APPROVAL_TEST_WA_OWNER_PHONE = "5511987009601";
@@ -18,23 +18,25 @@ export function seedApprovalContact(input: {
   tags: string[];
   slack?: { userId: string; instanceId?: string };
 }) {
-  const existing = getContact(input.phone);
-  if (existing) {
-    updateContact(input.phone, {
-      name: input.name,
-      tags: input.tags,
-      status: "allowed",
-    });
-  } else {
-    createContact({
+  let contact;
+  try {
+    contact = createContact({
       phone: input.phone,
       name: input.name,
       tags: input.tags,
       status: "allowed",
     });
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith("Contact already exists:")) {
+      throw error;
+    }
+    contact = updateContact(input.phone, {
+      name: input.name,
+      tags: input.tags,
+      status: "allowed",
+    });
   }
-  const contact = getContact(input.phone);
-  if (!contact) {
+  if (!contact?.id) {
     throw new Error(`Approval test contact was not created: ${input.phone}`);
   }
   if (input.slack) {

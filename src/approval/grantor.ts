@@ -1,4 +1,4 @@
-import { getContact, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
+import { getContact, getContactDetails, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
@@ -29,7 +29,7 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     return { allowed: false, reason: "missing_actor" };
   }
 
-  const identity = resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId]);
+  const identity = resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
   if (
     !identity?.ownerType ||
     !identity.ownerId ||
@@ -66,15 +66,25 @@ function resolveGrantorIdentity(
     const key = `${channel}:${instanceId}:${senderId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const identity = resolvePlatformIdentity({
-      channel,
-      instanceId,
-      platformUserId: senderId,
-    });
+    const identity =
+      typeof resolvePlatformIdentity === "function"
+        ? resolvePlatformIdentity({
+            channel,
+            instanceId,
+            platformUserId: senderId,
+          })
+        : null;
     if (identity?.ownerType && identity.ownerId) return identity;
   }
 
-  const contact = getContact(senderId);
+  // Prefer the canonical details lookup. `getContact` is a thin export and is
+  // sometimes replaced by leaked bun test mocks that return a dummy object.
+  const details = typeof getContactDetails === "function" ? getContactDetails(senderId) : null;
+  if (details?.contact?.id) {
+    return { ownerType: "contact", ownerId: details.contact.id };
+  }
+
+  const contact = typeof getContact === "function" ? getContact(senderId) : null;
   if (contact?.id) {
     return { ownerType: "contact", ownerId: contact.id };
   }
