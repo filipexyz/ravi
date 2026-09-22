@@ -4,6 +4,8 @@ import {
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "../../approval/service.js";
+import { SLACK_APPROVAL_ACTION_APPROVE } from "../../approval/slack-blocks.js";
+import { createContact, linkContactIdentity } from "../../contacts.js";
 import { dbCreateContext, dbDeleteContext, dbGetContext } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { SlackSocketModeService } from "./socket-mode.js";
@@ -109,6 +111,7 @@ describe("native Slack reaction_added", () => {
       requestReply: (async <T>(_topic: string, _data: Record<string, unknown>) => {
         return requestReplyResult as T;
       }) satisfies ApprovalServiceDependencies["requestReply"],
+      finalizeSlackApproval: async () => {},
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
           emitted.push({ topic, data });
@@ -178,15 +181,26 @@ describe("native Slack reaction_added", () => {
     ]);
   });
 
-  it("publishes unknown Slack reactions without resolving approval", async () => {
+  it("does not resolve Slack approval from reaction_added", async () => {
     const published: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const service = createService(published);
-    await service.handleEnvelope(reactionEnvelope({ reaction: "eyes", targetTs: "1713000000.000100" }));
+    await service.handleEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "1713000000.000100" }));
     subscribeEvents = published.map((entry) => ({ topic: entry.topic, data: entry.payload }));
+    const owner = createContact({
+      phone: "5511999990100",
+      name: "Owner",
+      tags: ["permission.admin"],
+      status: "allowed",
+    });
+    linkContactIdentity(owner.id, {
+      channel: "slack",
+      platformUserId: "U123",
+      instanceId: "ravi-slack",
+    });
 
     const context = dbCreateContext({
-      contextId: "ctx_slack_eyes",
-      contextKey: "rctx_slack_eyes",
+      contextId: "ctx_slack_reaction_not_approval",
+      contextKey: "rctx_slack_reaction_not_approval",
       kind: "agent-runtime",
       sessionName: "dev-main",
       capabilities: [],
@@ -206,25 +220,16 @@ describe("native Slack reaction_added", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 20,
+      timeoutMs: 30,
     });
 
-    expect(published).toEqual([
-      {
-        topic: "ravi.inbound.reaction",
-        payload: {
-          targetMessageId: "1713000000.000100",
-          emoji: "eyes",
-          senderId: "U123",
-        },
-      },
-    ]);
+    expect(published[0]?.topic).toBe("ravi.inbound.reaction");
     expect(result).toMatchObject({
       allowed: false,
       approved: false,
       inherited: false,
     });
-    expect(result.reason ?? "").not.toMatch(/Timeout/);
+    expect(result.reason ?? "").toMatch(/Timeout/);
     expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
   });
 
@@ -248,90 +253,41 @@ describe("native Slack reaction_added", () => {
     expect(published).toEqual([]);
   });
 
-  it("resolves permission approval when Slack reaction_added maps to 👍", async () => {
+  it("does not start a turn for approval button interactions", async () => {
     const published: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const service = createService(published);
-    await service.handleEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "1713000000.000100" }));
-    subscribeEvents = published.map((entry) => ({ topic: entry.topic, data: entry.payload }));
 
-    const context = dbCreateContext({
-      contextId: "ctx_slack_reaction_approval",
-      contextKey: "rctx_slack_reaction_approval",
-      kind: "agent-runtime",
-      sessionName: "dev-main",
-      capabilities: [],
-      metadata: {
-        approvalSource: {
-          channel: "slack",
-          accountId: "ravi-slack",
-          chatId: "C123",
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-approval-button",
+        payload: {
+          type: "block_actions",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "C123" },
+          message: { ts: "1713000000.000100" },
+          actions: [
+            {
+              type: "button",
+              action_id: SLACK_APPROVAL_ACTION_APPROVE,
+              value: "req_opaque",
+            },
+          ],
         },
-      },
-      createdAt: 1000,
-    });
-    createdContextIds.add(context.contextId);
+      }),
+    ).resolves.toBe("processed");
 
-    const result = await authorizeRuntimeContext({
-      context,
-      permission: "execute",
-      objectType: "group",
-      objectId: "daemon",
-      timeoutMs: 20,
-    });
-
-    expect(result).toMatchObject({
-      allowed: true,
-      approved: true,
-      inherited: false,
-    });
-    expect(dbGetContext(context.contextId)?.capabilities).toContainEqual({
-      permission: "execute",
-      objectType: "group",
-      objectId: "daemon",
-      source: "approval",
-    });
-    expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
-  });
-
-  it("still rejects when a matching inbound reply arrives", async () => {
-    subscribeEvents = [
+    expect(published).toEqual([
       {
-        topic: "ravi.inbound.reply",
-        data: { targetMessageId: "1713000000.000100", text: "no", senderId: "U123" },
+        topic: "ravi.inbound.interaction",
+        payload: expect.objectContaining({
+          provider: "slack",
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "req_opaque",
+          userId: "U123",
+          messageTs: "1713000000.000100",
+        }),
       },
-    ];
-
-    const context = dbCreateContext({
-      contextId: "ctx_slack_reply_reject",
-      contextKey: "rctx_slack_reply_reject",
-      kind: "agent-runtime",
-      sessionName: "dev-main",
-      capabilities: [],
-      metadata: {
-        approvalSource: {
-          channel: "slack",
-          accountId: "ravi-slack",
-          chatId: "C123",
-        },
-      },
-      createdAt: 1000,
-    });
-    createdContextIds.add(context.contextId);
-
-    const result = await authorizeRuntimeContext({
-      context,
-      permission: "execute",
-      objectType: "group",
-      objectId: "daemon",
-      timeoutMs: 20,
-    });
-
-    expect(result).toMatchObject({
-      allowed: false,
-      approved: false,
-      inherited: false,
-    });
-    expect(result.reason).toBe("no");
-    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    ]);
   });
 });

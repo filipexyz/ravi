@@ -12,6 +12,9 @@
 - Local validation MUST reject `block_id` and `action_id` above 255 characters.
 - Socket Mode MUST publish Block Kit interactions to
   `ravi.inbound.interaction`.
+- Native Slack permission approval MUST use versioned action ids
+  `ravi.approval.v1.approve` and `ravi.approval.v1.reject` and MUST NOT
+  create a runtime turn from those clicks.
 - Interaction events MUST NOT expose `response_url` or Slack tokens.
 - Interaction events SHOULD expose `responseUrlId` when Slack provides a
   response URL.

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { nats as runtimeNats } from "../nats.js";
 import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
@@ -5,21 +6,52 @@ import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
-import { isApprovalReactionEmoji } from "../utils/reaction-emoji.js";
+import { updateSlackText } from "../channels/slack/text-send.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
+import { evaluateApprovalInboundEvent } from "./decision.js";
+import { buildSlackApprovalFinalMessage, buildSlackApprovalRequestMessage } from "./slack-blocks.js";
+import {
+  attachApprovalRequestMessageId,
+  claimApprovalDecision,
+  createApprovalRequest,
+  expireApprovalRequest,
+  getApprovalRequest,
+  type ApprovalRequestRecord,
+  type ApprovalRequestType,
+} from "./store.js";
 
 const log = logger.child("approval:service");
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+export const DEFAULT_APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
+
+export interface ApprovalFinalizeSlackInput {
+  readonly accountId: string;
+  readonly chatId: string;
+  readonly messageId: string;
+  readonly text: string;
+  readonly blocks: readonly Record<string, unknown>[];
+}
 
 export interface ApprovalServiceDependencies {
   nats: Pick<typeof runtimeNats, "emit" | "subscribe">;
   requestReply: typeof runtimeRequestReply;
+  now: () => number;
+  finalizeSlackApproval: (input: ApprovalFinalizeSlackInput) => Promise<void>;
 }
 
 const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
   nats: runtimeNats,
   requestReply: runtimeRequestReply,
+  now: Date.now,
+  finalizeSlackApproval: async (input) => {
+    await updateSlackText({
+      accountId: input.accountId,
+      chatId: input.chatId,
+      messageId: input.messageId,
+      text: input.text,
+      blocks: input.blocks,
+    });
+  },
 };
 
 let approvalServiceDependencies = defaultApprovalServiceDependencies;
@@ -63,12 +95,13 @@ export interface ApprovalTarget {
   accountId: string;
   chatId: string;
   threadId?: string;
+  instanceId?: string;
 }
 
 export interface CascadingApprovalOptions {
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
-  type: "plan" | "spec" | "permission";
+  type: ApprovalRequestType;
   sessionName: string;
   agentId: string;
   text: string;
@@ -96,12 +129,56 @@ export interface ContextAuthorizationResult {
   context: ContextRecord;
 }
 
+export interface RequestApprovalOptions {
+  timeoutMs?: number;
+  type?: ApprovalRequestType;
+  sessionName?: string;
+  agentId?: string;
+  permission?: string;
+  objectType?: string;
+  objectId?: string;
+  delegated?: boolean;
+}
+
 export async function requestApproval(
   source: ApprovalTarget,
   text: string,
-  options?: { timeoutMs?: number },
+  options?: RequestApprovalOptions,
 ): Promise<{ approved: boolean; reason?: string; messageId?: string }> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
+  const now = approvalServiceDependencies.now();
+  const requestId = randomUUID();
+  const type = options?.type ?? "permission";
+  const slack = isSlackChannel(source.channel);
+  const slackDelivery = slack
+    ? buildSlackApprovalRequestMessage({
+        requestId,
+        type,
+        text,
+        agentId: options?.agentId,
+        sessionName: options?.sessionName,
+        delegated: options?.delegated,
+      })
+    : null;
+  const deliveryText =
+    slackDelivery?.text ?? buildReactionApprovalText(type, text, options?.agentId, options?.delegated === true);
+
+  createApprovalRequest({
+    id: requestId,
+    type,
+    channel: source.channel,
+    accountId: source.accountId,
+    chatId: source.chatId,
+    instanceId: source.instanceId ?? source.accountId,
+    threadId: source.threadId,
+    sessionName: options?.sessionName,
+    agentId: options?.agentId,
+    permission: options?.permission,
+    objectType: options?.objectType,
+    objectId: options?.objectId,
+    createdAt: now,
+    expiresAt: now + timeoutMs,
+  });
 
   let sendResult: { messageId?: string };
   try {
@@ -111,22 +188,32 @@ export async function requestApproval(
         channel: source.channel,
         accountId: source.accountId,
         to: source.chatId,
-        text,
+        text: deliveryText,
+        ...(slackDelivery ? { blocks: slackDelivery.blocks } : {}),
+        ...(source.threadId ? { threadId: source.threadId } : {}),
       },
       timeoutMs,
     );
   } catch (err) {
+    expireApprovalRequest(requestId, approvalServiceDependencies.now());
     log.warn("Failed to send approval request", { error: err });
     return { approved: false, reason: err instanceof Error ? err.message : String(err) };
   }
 
   if (!sendResult.messageId) {
+    expireApprovalRequest(requestId, approvalServiceDependencies.now());
     log.warn("Approval request returned without messageId");
     return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
   }
 
-  log.info("Waiting for approval response", { messageId: sendResult.messageId });
-  const result = await waitForApprovalResponse(sendResult.messageId, timeoutMs);
+  const pending = attachApprovalRequestMessageId(requestId, sendResult.messageId) ?? getApprovalRequest(requestId);
+  if (!pending?.messageId) {
+    expireApprovalRequest(requestId, approvalServiceDependencies.now());
+    return { approved: false, reason: "Falha ao correlacionar pedido de aprovação." };
+  }
+
+  log.info("Waiting for approval response", { requestId, messageId: sendResult.messageId, channel: source.channel });
+  const result = await waitForApprovalResponse(requestId, timeoutMs);
   return { ...result, messageId: sendResult.messageId };
 }
 
@@ -136,7 +223,7 @@ export async function requestPollAnswer(
   optionLabels: string[],
   options?: { timeoutMs?: number; selectableCount?: number },
 ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
 
   let sendResult: { messageId?: string };
   try {
@@ -197,8 +284,16 @@ export async function requestCascadingApproval(
     })
     .catch(() => {});
 
-  const approvalText = buildApprovalText(opts.type, opts.text, opts.agentId, isDelegated);
-  const result = await requestApproval(targetSource, approvalText, { timeoutMs: opts.timeoutMs });
+  const result = await requestApproval(targetSource, opts.text, {
+    timeoutMs: opts.timeoutMs,
+    type: opts.type,
+    sessionName: opts.sessionName,
+    agentId: opts.agentId,
+    delegated: isDelegated,
+    permission: stringField(opts.eventData, "permission"),
+    objectType: stringField(opts.eventData, "objectType"),
+    objectId: stringField(opts.eventData, "objectId"),
+  });
 
   await emitApprovalResponseOnce({
     type: opts.type,
@@ -332,15 +427,15 @@ function permissionDeniedAuditType(objectType: string): string {
   return "scope";
 }
 
-function buildApprovalText(
-  type: CascadingApprovalOptions["type"],
+function buildReactionApprovalText(
+  type: ApprovalRequestType,
   text: string,
-  agentId: string,
+  agentId: string | undefined,
   delegated: boolean,
 ): string {
   const label = type === "plan" ? "Plano pendente" : type === "spec" ? "Spec pendente" : "Permissão solicitada";
   if (delegated) {
-    return `📋 *${label}* (de _${agentId}_)\n\n${text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+    return `📋 *${label}* (de _${agentId ?? "unknown"}_)\n\n${text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
   }
   return `📋 *${label}*\n\n${text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
 }
@@ -371,10 +466,14 @@ function buildPermissionRequestText(
 }
 
 async function waitForApprovalResponse(
-  messageId: string,
+  requestId: string,
   timeoutMs: number,
 ): Promise<{ approved: boolean; reason?: string }> {
-  const stream = approvalServiceDependencies.nats.subscribe("ravi.inbound.reaction", "ravi.inbound.reply");
+  const stream = approvalServiceDependencies.nats.subscribe(
+    "ravi.inbound.interaction",
+    "ravi.inbound.reaction",
+    "ravi.inbound.reply",
+  );
 
   return new Promise((resolve) => {
     let settled = false;
@@ -384,38 +483,87 @@ async function waitForApprovalResponse(
       stream.return?.(undefined);
     };
 
-    const timer = setTimeout(() => {
+    const finish = (result: { approved: boolean; reason?: string }) => {
+      if (settled) return;
+      clearTimeout(timer);
       cleanup();
-      log.warn("Approval timed out", { messageId });
-      resolve({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      const now = approvalServiceDependencies.now();
+      const expired = expireApprovalRequest(requestId, now);
+      if (expired) {
+        void finalizeApprovalMessage(expired, "expired").catch((error) => {
+          log.warn("Failed to finalize expired Slack approval message", { requestId, error });
+        });
+      }
+      log.warn("Approval timed out", { requestId });
+      finish({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
     }, timeoutMs);
 
     (async () => {
       try {
         for await (const event of stream) {
-          if (event.topic === "ravi.inbound.reaction") {
-            const data = event.data as { targetMessageId?: string; emoji?: string };
-            if (data.targetMessageId !== messageId) continue;
-            clearTimeout(timer);
-            cleanup();
-            const approved = isApprovalReactionEmoji(data.emoji);
-            resolve({ approved });
-            return;
+          const evaluation = evaluateApprovalInboundEvent(
+            { topic: event.topic, data: event.data as Record<string, unknown> },
+            approvalServiceDependencies.now(),
+          );
+          if (evaluation.kind === "ignore") {
+            log.info("Ignoring inbound approval event", {
+              requestId,
+              topic: event.topic,
+              reason: evaluation.reason,
+            });
+            continue;
+          }
+          if (evaluation.request.id !== requestId) continue;
+
+          const claimed = claimApprovalDecision({
+            id: requestId,
+            decision: evaluation.decision,
+            decidedBy: evaluation.actorId,
+            reason: evaluation.reason,
+            now: approvalServiceDependencies.now(),
+          });
+          if (!claimed) {
+            log.info("Approval decision lost the single-use claim", { requestId });
+            continue;
           }
 
-          const data = event.data as { targetMessageId?: string; text?: string };
-          if (data.targetMessageId !== messageId) continue;
-          clearTimeout(timer);
-          cleanup();
-          resolve({ approved: false, reason: data.text });
+          await finalizeApprovalMessage(claimed, claimed.decision ?? evaluation.decision).catch((error) => {
+            log.warn("Failed to finalize Slack approval message", { requestId, error });
+          });
+          finish({
+            approved: claimed.decision === "approved",
+            ...(claimed.decision === "rejected" ? { reason: claimed.reason ?? evaluation.reason } : {}),
+          });
           return;
         }
       } catch (err) {
-        clearTimeout(timer);
-        cleanup();
-        resolve({ approved: false, reason: err instanceof Error ? err.message : String(err) });
+        finish({ approved: false, reason: err instanceof Error ? err.message : String(err) });
       }
     })();
+  });
+}
+
+async function finalizeApprovalMessage(
+  request: ApprovalRequestRecord,
+  outcome: "approved" | "rejected" | "expired",
+): Promise<void> {
+  if (!isSlackChannel(request.channel) || !request.messageId) return;
+  const message = buildSlackApprovalFinalMessage({
+    type: request.type,
+    outcome,
+    reason: request.reason ?? undefined,
+  });
+  await approvalServiceDependencies.finalizeSlackApproval({
+    accountId: request.accountId,
+    chatId: request.chatId,
+    messageId: request.messageId,
+    text: message.text,
+    blocks: message.blocks,
   });
 }
 
@@ -496,6 +644,7 @@ function getApprovalSourceFromMetadata(context: ContextRecord): ApprovalTarget |
     accountId: candidate.accountId,
     chatId: candidate.chatId,
     ...(typeof candidate.threadId === "string" ? { threadId: candidate.threadId } : {}),
+    ...(typeof candidate.instanceId === "string" ? { instanceId: candidate.instanceId } : {}),
   };
 }
 
@@ -517,4 +666,13 @@ function applyContextSnapshot(target: ContextRecord, updated: ContextRecord): vo
   target.revokedAt = updated.revokedAt;
   target.expiresAt = updated.expiresAt;
   target.metadata = updated.metadata;
+}
+
+function isSlackChannel(channel: string): boolean {
+  return channel.trim().toLowerCase() === "slack";
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

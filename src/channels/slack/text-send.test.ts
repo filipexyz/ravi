@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ChannelConfig } from "../../router/router-db.js";
-import { resolveSlackNativeChannel, sendSlackText } from "./text-send.js";
+import { resolveSlackNativeChannel, sendSlackText, updateSlackText } from "./text-send.js";
 
 function slackChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
@@ -60,6 +60,66 @@ describe("sendSlackText", () => {
     expect(body.get("channel")).toBe("C123");
     expect(body.get("text")).toBe("hello native");
     expect(body.get("thread_ts")).toBe("1783999999.000099");
+  });
+
+  it("posts Block Kit blocks on chat.postMessage", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: true, channel: "C123", ts: "1784000000.000200" });
+    }) as typeof fetch;
+
+    await sendSlackText(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        text: "Permission requested",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "Approve?" } }],
+      },
+      {
+        channels: { hana: slackChannel() },
+        resolveSecret: async () => ({
+          secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+        }),
+        fetchImpl,
+        apiBaseUrl: "https://slack.test/api/",
+      },
+    );
+
+    const body = new URLSearchParams(String(requests[0]?.init?.body));
+    expect(body.get("blocks")).toContain("Approve?");
+  });
+
+  it("updates a Slack message through chat.update", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: true, channel: "C123", ts: "1784000000.000100" });
+    }) as typeof fetch;
+
+    const result = await updateSlackText(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        messageId: "1784000000.000100",
+        text: "Permission requested: Approved",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "*Approved*" } }],
+      },
+      {
+        channels: { hana: slackChannel() },
+        resolveSecret: async () => ({
+          secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+        }),
+        fetchImpl,
+        apiBaseUrl: "https://slack.test/api/",
+      },
+    );
+
+    expect(result.status).toBe("updated");
+    expect(requests[0]?.url).toBe("https://slack.test/api/chat.update");
+    const body = new URLSearchParams(String(requests[0]?.init?.body));
+    expect(body.get("ts")).toBe("1784000000.000100");
+    expect(body.get("text")).toContain("Approved");
   });
 
   it("surfaces Slack API errors without falling back to Omni", async () => {

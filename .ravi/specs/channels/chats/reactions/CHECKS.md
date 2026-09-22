@@ -34,10 +34,11 @@
 
 ## Approval Compatibility
 
-- `src/approval/service.ts` subscribes to `ravi.inbound.reaction` and resolves approvals by `targetMessageId`.
-- Approval flow is unaffected by the addition of durable accounting.
-- A native Slack 👍 / ❤️ reaction on the approval message resolves the waiter as approved without waiting for timeout.
-- A matching `ravi.inbound.reply` still rejects as before.
+- `src/approval/service.ts` still consumes `ravi.inbound.reaction` for
+  WhatsApp/Omni approval after durable accounting.
+- Native Slack approval MUST resolve through authorized Block Kit buttons on
+  `ravi.inbound.interaction`, not Slack `reaction_added`.
+- A matching authorized WhatsApp `ravi.inbound.reply` still rejects as before.
 
 ## Trigger Compatibility
 

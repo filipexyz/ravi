@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createContact, linkContactIdentity } from "../contacts.js";
 import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
   emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
+  type ApprovalFinalizeSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
+import { SLACK_APPROVAL_ACTION_APPROVE, SLACK_APPROVAL_ACTION_REJECT } from "./slack-blocks.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
@@ -19,9 +22,60 @@ let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let finalizedSlack: ApprovalFinalizeSlackInput[] = [];
 let externalOrder: string[] = [];
 let stateDir: string | null = null;
 const createdContextIds = new Set<string>();
+
+const OWNER_PHONE = "5511999999999";
+const OWNER_SLACK_USER = "U123";
+
+function seedWhatsAppOwner(): void {
+  createContact({
+    phone: OWNER_PHONE,
+    name: "Owner",
+    tags: ["permission.admin"],
+    status: "allowed",
+  });
+}
+
+function seedSlackOwner(instanceId = "main"): void {
+  const contact = createContact({
+    phone: "5511988888888",
+    name: "Slack Owner",
+    tags: ["permission.admin"],
+    status: "allowed",
+  });
+  linkContactIdentity(contact.id, {
+    channel: "slack",
+    platformUserId: OWNER_SLACK_USER,
+    instanceId,
+  });
+}
+
+function extractDeliveredRequestId(): string {
+  const blocks = deliveredRequests[0]?.data.blocks;
+  if (!Array.isArray(blocks)) return "";
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    const elements = (block as { elements?: unknown }).elements;
+    if (!Array.isArray(elements)) continue;
+    for (const element of elements) {
+      if (!element || typeof element !== "object") continue;
+      const value = (element as { value?: unknown }).value;
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return "";
+}
+
+function hydrateEvent(event: { topic: string; data: Record<string, unknown> }): {
+  topic: string;
+  data: Record<string, unknown>;
+} {
+  if (event.data.value !== "$requestId") return event;
+  return { topic: event.topic, data: { ...event.data, value: extractDeliveredRequestId() } };
+}
 
 describe("approval service", () => {
   beforeEach(async () => {
@@ -31,6 +85,7 @@ describe("approval service", () => {
     emitted = [];
     auditEvents = [];
     deliveredRequests = [];
+    finalizedSlack = [];
     externalOrder = [];
     setPermissionAuditPublisherForTest(async (topic, data) => {
       auditEvents.push({ topic, data });
@@ -41,6 +96,9 @@ describe("approval service", () => {
         deliveredRequests.push({ topic, data });
         return requestReplyResult as T;
       }) satisfies ApprovalServiceDependencies["requestReply"],
+      finalizeSlackApproval: async (input) => {
+        finalizedSlack.push(input);
+      },
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
           externalOrder.push(topic);
@@ -51,7 +109,7 @@ describe("approval service", () => {
           return (async function* () {
             for (const event of subscribeEvents) {
               if (topics.includes(event.topic)) {
-                yield event;
+                yield hydrateEvent(event);
               }
             }
           })();
@@ -100,10 +158,11 @@ describe("approval service", () => {
   });
 
   it("requests approval through metadata.approvalSource and persists the granted capability", async () => {
+    seedWhatsAppOwner();
     subscribeEvents = [
       {
         topic: "ravi.inbound.reaction",
-        data: { targetMessageId: "msg_1", emoji: "👍" },
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: OWNER_PHONE },
       },
     ];
 
@@ -152,10 +211,12 @@ describe("approval service", () => {
     });
     const deliveredText = String(deliveredRequests[0]?.data.text ?? "");
     expect(deliveredRequests[0]?.topic).toBe("ravi.outbound.deliver");
+    expect(deliveredRequests[0]?.data.blocks).toBeUndefined();
     expect(deliveredText).toContain("Capability: execute:group:daemon");
     expect(deliveredText).toContain("Escopo: contexto atual");
     expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
     expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
+    expect(deliveredText).toContain("Reaja com 👍 ou ❤️");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
     const approvalResponse = emitted.find((entry) => entry.topic === "ravi.approval.response");
     expect(typeof approvalResponse?.data._emitId).toBe("string");
@@ -168,17 +229,18 @@ describe("approval service", () => {
     ]);
   });
 
-  it("approves Slack short-name reactions after emoji normalization", async () => {
+  it("does not approve Slack reactions even from an authorized grantor", async () => {
+    seedSlackOwner();
     subscribeEvents = [
       {
         topic: "ravi.inbound.reaction",
-        data: { targetMessageId: "msg_1", emoji: "+1" },
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: OWNER_SLACK_USER },
       },
     ];
 
     const context = dbCreateContext({
-      contextId: "ctx_slack_shortname",
-      contextKey: "rctx_slack_shortname",
+      contextId: "ctx_slack_reaction_ignored",
+      contextKey: "rctx_slack_reaction_ignored",
       kind: "agent-runtime",
       sessionName: "dev-main",
       capabilities: [],
@@ -198,7 +260,60 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 20,
+      timeoutMs: 30,
+    });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      approved: false,
+      inherited: false,
+    });
+    expect(result.reason ?? "").toMatch(/Timeout/);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    expect(finalizedSlack[0]?.text).toContain("Expired");
+  });
+
+  it("approves an authorized Slack Block Kit click and removes the buttons", async () => {
+    seedSlackOwner();
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          instanceId: "main",
+          channelId: "C123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_approve",
+      contextKey: "rctx_slack_approve",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
     });
 
     expect(result).toMatchObject({
@@ -206,13 +321,252 @@ describe("approval service", () => {
       approved: true,
       inherited: false,
     });
+    const delivered = deliveredRequests[0]?.data;
+    expect(delivered?.text).toBe("Permission requested");
+    expect(JSON.stringify(delivered?.blocks)).toContain(SLACK_APPROVAL_ACTION_APPROVE);
+    expect(JSON.stringify(delivered?.blocks)).not.toContain("Reaja com");
+    expect(JSON.stringify(delivered?.blocks)).not.toContain("react with");
+    expect(finalizedSlack).toHaveLength(1);
+    expect(finalizedSlack[0]).toMatchObject({
+      accountId: "main",
+      chatId: "C123",
+      messageId: "msg_1",
+    });
+    expect(JSON.stringify(finalizedSlack[0]?.blocks)).not.toContain('"type":"actions"');
+    expect(finalizedSlack[0]?.text).toContain("Approved");
   });
 
-  it("rejects when a matching inbound reply arrives", async () => {
+  it("rejects an authorized Slack Block Kit click", async () => {
+    seedSlackOwner();
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          channelId: "C123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_REJECT,
+          value: "$requestId",
+        },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_reject",
+      contextKey: "rctx_slack_reject",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
+    });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      approved: false,
+      inherited: false,
+    });
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    expect(finalizedSlack[0]?.text).toContain("Rejected");
+  });
+
+  it("ignores an unauthorized Slack click and does not grant", async () => {
+    seedSlackOwner();
+    const stranger = createContact({
+      phone: "5511977777777",
+      name: "Stranger",
+      tags: ["lead"],
+      status: "allowed",
+    });
+    linkContactIdentity(stranger.id, {
+      channel: "slack",
+      platformUserId: "U999",
+      instanceId: "main",
+    });
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          channelId: "C123",
+          messageTs: "msg_1",
+          userId: "U999",
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_unauth",
+      contextKey: "rctx_slack_unauth",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
+    });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      approved: false,
+      inherited: false,
+    });
+    expect(result.reason ?? "").toMatch(/Timeout/);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    expect(finalizedSlack[0]?.text).toContain("Expired");
+  });
+
+  it("keeps the first valid Slack decision and ignores a second click", async () => {
+    seedSlackOwner();
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          channelId: "C123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          channelId: "C123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_REJECT,
+          value: "$requestId",
+        },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_single_use",
+      contextKey: "rctx_slack_single_use",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
+    });
+
+    expect(result.approved).toBe(true);
+    expect(finalizedSlack).toHaveLength(1);
+    expect(dbGetContext(context.contextId)?.capabilities).toContainEqual({
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      source: "approval",
+    });
+  });
+
+  it("ignores a Slack click on the wrong message", async () => {
+    seedSlackOwner();
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "main",
+          channelId: "C123",
+          messageTs: "msg_other",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_wrong_message",
+      contextKey: "rctx_slack_wrong_message",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.reason ?? "").toMatch(/Timeout/);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+  });
+
+  it("rejects when a matching inbound WhatsApp reply arrives from an authorized grantor", async () => {
+    seedWhatsAppOwner();
     subscribeEvents = [
       {
         topic: "ravi.inbound.reply",
-        data: { targetMessageId: "msg_1", text: "não" },
+        data: { targetMessageId: "msg_1", text: "não", senderId: OWNER_PHONE },
       },
     ];
 
@@ -247,6 +601,51 @@ describe("approval service", () => {
       inherited: false,
     });
     expect(result.reason).toBe("não");
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+  });
+
+  it("does not let an unauthorized WhatsApp reaction approve", async () => {
+    seedWhatsAppOwner();
+    createContact({
+      phone: "5511966666666",
+      name: "Stranger",
+      tags: ["lead"],
+      status: "allowed",
+    });
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.reaction",
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: "5511966666666" },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_wa_unauth",
+      contextKey: "rctx_wa_unauth",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 30,
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.reason ?? "").toMatch(/Timeout/);
     expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
   });
 
