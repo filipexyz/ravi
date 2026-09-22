@@ -36,6 +36,7 @@ import {
   type ContractErrorDetails,
 } from "./agent-contract.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
+import { localMediaSendCatalogCopy } from "./media-send-auth.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 
@@ -286,6 +287,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           op,
           body.error.code,
           remoteContractFailureMessage(
+            op,
             body.outcome,
             projectPublicIssues(body.error.issues),
             body.error.message,
@@ -344,6 +346,7 @@ interface CompleteContractErrorBody {
 }
 
 function remoteContractFailureMessage(
+  op: string,
   outcome: CompleteContractErrorBody["outcome"],
   issues?: ReturnType<typeof projectPublicIssues>,
   sourceMessage?: string,
@@ -354,6 +357,10 @@ function remoteContractFailureMessage(
   if (outcome === "blocked") return "Remote command was blocked by policy.";
   if (issues?.[0]) return remoteValidationFailureMessage(issues, sourceMessage);
   if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (op === "media send" && code) {
+    const catalog = localMediaSendCatalogCopy(code);
+    if (catalog) return catalog.message;
+  }
   return "Remote command failed.";
 }
 
@@ -404,7 +411,10 @@ function projectRemoteContractDetails(
 ): ContractErrorDetails {
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
-  if (typeof remote.suggestedAction === "string") {
+  const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
+  if (mediaCatalog) {
+    details.suggestedAction = mediaCatalog.suggestedAction;
+  } else if (typeof remote.suggestedAction === "string") {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   }
   const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);

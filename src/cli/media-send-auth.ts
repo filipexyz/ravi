@@ -8,16 +8,42 @@
 
 export const OMNI_AUTH_FAILED_CODE = "OMNI_AUTH_FAILED";
 export const MEDIA_SEND_FAILED_CODE = "MEDIA_SEND_FAILED";
+export const FILE_NOT_FOUND_CODE = "FILE_NOT_FOUND";
 
 export const OMNI_AUTH_FAILED_MESSAGE = "Omni rejected the API key used to send media.";
 
 export const MEDIA_SEND_FAILED_MESSAGE = "Media delivery failed.";
+
+export const FILE_NOT_FOUND_MESSAGE = "Media file was not found.";
 
 export const OMNI_AUTH_FAILED_SUGGESTED_ACTION =
   "Omni rejected the API key (401 Invalid API key). Ravi's runtime uses OMNI_API_KEY or the top-level apiKey in ~/.omni/config.json, but the Omni CLI prefers servers.list.<active>.apiKey. Align those keys (copy the live primary into the active server entry, or set OMNI_API_URL and OMNI_API_KEY) and retry.";
 
 export const MEDIA_SEND_FAILED_SUGGESTED_ACTION =
   "Check the target (--account/--to or session context) and channel availability, then retry";
+
+export const FILE_NOT_FOUND_SUGGESTED_ACTION =
+  "Check the local file path (the file must exist on this machine) and re-run";
+
+const MEDIA_SEND_REMOTE_CATALOG: Record<string, { message: string; suggestedAction: string }> = {
+  [MEDIA_SEND_FAILED_CODE]: {
+    message: MEDIA_SEND_FAILED_MESSAGE,
+    suggestedAction: MEDIA_SEND_FAILED_SUGGESTED_ACTION,
+  },
+  [OMNI_AUTH_FAILED_CODE]: {
+    message: OMNI_AUTH_FAILED_MESSAGE,
+    suggestedAction: OMNI_AUTH_FAILED_SUGGESTED_ACTION,
+  },
+  [FILE_NOT_FOUND_CODE]: {
+    message: FILE_NOT_FOUND_MESSAGE,
+    suggestedAction: FILE_NOT_FOUND_SUGGESTED_ACTION,
+  },
+};
+
+/** Local catalog copy for isolated remote `media send` failures. Never echoes remote text. */
+export function localMediaSendCatalogCopy(code: string): { message: string; suggestedAction: string } | undefined {
+  return MEDIA_SEND_REMOTE_CATALOG[code];
+}
 
 export class MediaSendAuthError extends Error {
   readonly code = OMNI_AUTH_FAILED_CODE;

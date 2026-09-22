@@ -24,7 +24,19 @@ keeps working and `ravi media send --execute` fails with an opaque
 `MEDIA_SEND_FAILED`. The send path must therefore project the runtime
 connection onto an isolated `OMNI_CONFIG_DIR`, and a remaining 401 must
 surface as `OMNI_AUTH_FAILED` with a config-divergence action — not a generic
-"Remote command failed."
+"Remote command failed." Isolated CLIs that auto-bridge to the host gateway
+must project those catalog codes back through the same local copy; keeping
+only the code and replacing the message with "Remote command failed." hides
+the cause after a valid dry-run.
+
+Advertisement is a third trap. WhatsApp channel support alone listed
+`media.send` as available. Gateway execution still required a snapshot grant
+(`mutate:media:send` or the equivalent command-access candidate). A later
+turn in the same group session could then be denied, while an authorized DM
+session with the same account/file/target succeeded. `sessions actions` must
+evaluate the current snapshot with those same candidates. Explicit
+`--account` / `--to` do not grant authority. No snapshot keeps channel
+status so discovery outside a turn does not invent a deny.
 
 There is no dedicated `media` skill today — a registered gap. The sessions
 action hints are currently the only prompt-level teaching surface, which makes

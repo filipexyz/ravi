@@ -16,6 +16,8 @@ applies_to:
   - src/cli/commands/media.ts
   - src/cli/media-send.ts
   - src/cli/media-send-auth.ts
+  - src/cli/media-send-access.ts
+  - src/cli/remote-gateway.ts
   - src/omni-config.ts
   - src/cli/commands/sessions.ts
   - src/cli/agent-contract.ts
@@ -53,6 +55,12 @@ live channel (WhatsApp/Slack) and cannot be unsent.
    with `OMNI_AUTH_FAILED` (`retryable: false`) and a `suggestedAction` that
    names the `servers.list.<active>.apiKey` vs top-level `apiKey` /
    `OMNI_API_KEY` divergence without echoing the key or raw provider payload.
+   Isolated remote projection MUST keep those catalog codes and replace the
+   remote message / `suggestedAction` with the local catalog copy. Generic
+   codes such as `COMMAND_FAILED` stay `Remote command failed.` The projection
+   MUST NOT echo remote text, keys, URLs, or provider payloads. `FILE_NOT_FOUND`
+   on `media send` uses the same local catalog copy; the same code on another
+   `op` MUST NOT receive media copy.
 6. `media send --execute` MUST authenticate the spawned Omni CLI with the same
    `apiUrl`/`apiKey` `resolveOmniConnection()` gives the Ravi Omni
    client/runtime. Because the Omni CLI prefers `servers.list.<active>.apiKey`
@@ -81,7 +89,10 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 
 - `src/cli/commands/sessions.ts` (`buildCurrentSessionMediaSendCommand` and the
   `sendMedia` usage hint) teaches `ravi media send "<file-path>" --execute` to
-  live agents; the builder MUST carry `--execute`.
+  live agents; the builder MUST carry `--execute`. `sessions actions` MUST
+  advertise `media.send` as available only when the current runtime snapshot
+  allows `media send` (or when no snapshot is present, in which case channel
+  capability remains). Explicit `--account` / `--to` do not grant authority.
 - `ravi image generate` and `ravi audio generate` return a `sendCommand` field
   that MUST carry `--execute` (`ravi media send "<path>" --execute`).
 
@@ -98,8 +109,8 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 
 - `bun test src/cli/commands/media-json.test.ts` green (the `media send
   contract` block included, including `OMNI_AUTH_FAILED`).
-- `bun test src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts`
-  green (credential wiring + 401 classification).
+- `bun test src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/cli/media-send-access.test.ts src/cli/remote-gateway.test.ts src/omni-config.test.ts`
+  green (credential wiring + 401 classification + isolated catalog projection).
 - Live checks: `ravi media send /tmp/img.png --json` → exit 3 + plan; adding
   `--execute` delivers; `ravi media send /tmp/nope.png --json` →
   `FILE_NOT_FOUND`, exit 1.

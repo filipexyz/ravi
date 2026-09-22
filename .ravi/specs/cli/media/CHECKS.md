@@ -17,6 +17,12 @@
   which MUST exit 1 with `OMNI_AUTH_FAILED`, `retryable: false`, and a
   `suggestedAction` that names the `servers.list.<active>.apiKey` vs
   top-level / `OMNI_API_KEY` divergence without echoing the key.
+- Isolated remote `media send` failures with `MEDIA_SEND_FAILED`,
+  `OMNI_AUTH_FAILED`, or `FILE_NOT_FOUND` MUST keep the code and replace the
+  remote message / `suggestedAction` with the local catalog copy. Generic
+  `COMMAND_FAILED` MUST stay `Remote command failed.` Remote text, keys, and
+  URLs MUST be absent. The same catalog code on another `op` MUST NOT receive
+  media copy.
 - `media send --execute` MUST authenticate the spawned Omni CLI with the same
   `apiUrl`/`apiKey` `resolveOmniConnection()` would give the Ravi Omni client,
   including writing that key into `servers.list.default` via `OMNI_CONFIG_DIR`
@@ -25,5 +31,6 @@
   `ravi media send "<file-path>" --execute`.
 - The `sendCommand` field returned by `image generate` and `audio generate`
   MUST include `--execute`.
-- `bun test src/cli/commands/media-json.test.ts src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts`
-  SHOULD pass after any change to the media contract or Omni CLI auth wiring.
+- `bun test src/cli/commands/media-json.test.ts src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/cli/media-send-access.test.ts src/cli/remote-gateway.test.ts src/omni-config.test.ts`
+  SHOULD pass after any change to the media contract, Omni CLI auth wiring, or
+  isolated remote projection.

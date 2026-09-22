@@ -1,6 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { renderContractError } from "./agent-contract.js";
 import {
+  FILE_NOT_FOUND_CODE,
+  FILE_NOT_FOUND_MESSAGE,
+  FILE_NOT_FOUND_SUGGESTED_ACTION,
+  MEDIA_SEND_FAILED_CODE,
+  MEDIA_SEND_FAILED_MESSAGE,
+  MEDIA_SEND_FAILED_SUGGESTED_ACTION,
+  OMNI_AUTH_FAILED_CODE,
+  OMNI_AUTH_FAILED_MESSAGE,
+  OMNI_AUTH_FAILED_SUGGESTED_ACTION,
+} from "./media-send-auth.js";
+import {
   CALLER_CWD_HEADER,
   dispatchRemote,
   getRemoteGatewayConfig,
@@ -623,5 +634,117 @@ describe("remote gateway exit taxonomy", () => {
 
       expect(error?.envelope().error).toMatchObject({ dryRun: true, plan: testCase.plan });
     }
+  });
+
+  it.each([
+    [
+      MEDIA_SEND_FAILED_CODE,
+      true,
+      MEDIA_SEND_FAILED_MESSAGE,
+      MEDIA_SEND_FAILED_SUGGESTED_ACTION,
+    ],
+    [
+      OMNI_AUTH_FAILED_CODE,
+      false,
+      OMNI_AUTH_FAILED_MESSAGE,
+      OMNI_AUTH_FAILED_SUGGESTED_ACTION,
+    ],
+    [
+      FILE_NOT_FOUND_CODE,
+      false,
+      FILE_NOT_FOUND_MESSAGE,
+      FILE_NOT_FOUND_SUGGESTED_ACTION,
+    ],
+  ] as const)(
+    "projects isolated media send %s through the local catalog without remote text",
+    (code, retryable, message, suggestedAction) => {
+      const error = remoteGatewayErrorToContractError(
+        "media send",
+        result({
+          status: 500,
+          body: JSON.stringify({
+            success: false,
+            op: "media send",
+            exitCode: 1,
+            outcome: "failed",
+            error: {
+              code,
+              message: "PRIVATE_MESSAGE_8K2R sk-abcdefghijklmnop omni://internal",
+              retryable,
+              suggestedAction: "PRIVATE_ACTION_8K2R",
+            },
+          }),
+        }),
+      );
+
+      expect(error).toMatchObject({
+        op: "media send",
+        code,
+        exitCode: 1,
+        message,
+        details: { retryable, suggestedAction },
+      });
+      const serialized = JSON.stringify(error?.envelope());
+      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("PRIVATE_ACTION_8K2R");
+      expect(serialized).not.toContain("sk-abcdefghijklmnop");
+      expect(serialized).not.toContain("omni://internal");
+    },
+  );
+
+  it("keeps generic isolated media send failures as Remote command failed", () => {
+    const error = remoteGatewayErrorToContractError(
+      "media send",
+      result({
+        status: 500,
+        body: JSON.stringify({
+          success: false,
+          op: "media send",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "COMMAND_FAILED",
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: true,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "media send",
+      code: "COMMAND_FAILED",
+      message: "Remote command failed.",
+      details: { retryable: true },
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+  });
+
+  it("does not apply the media catalog when a different op reuses a catalog code", () => {
+    const error = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({
+        status: 404,
+        body: JSON.stringify({
+          success: false,
+          op: "transcribe file",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: FILE_NOT_FOUND_CODE,
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "transcribe file",
+      code: FILE_NOT_FOUND_CODE,
+      message: "Remote command failed.",
+    });
+    expect(error?.message).not.toBe(FILE_NOT_FOUND_MESSAGE);
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
   });
 });
