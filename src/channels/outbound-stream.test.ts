@@ -77,6 +77,40 @@ describe("channel outbound jobs", () => {
     );
   });
 
+  it("converts Slack runtime response markdown to mrkdwn and leaves other channels unchanged", () => {
+    const slack = buildChannelOutboundJobFromResponse("ravi-channels", {
+      response: "See the **guide** at [docs](https://example.com)",
+      _emitId: "emit_md",
+      target: {
+        channel: "slack",
+        accountId: "workspace:T1",
+        chatId: "C123",
+      },
+    });
+    expect(slack.ok).toBe(true);
+    if (!slack.ok) throw new Error(slack.reason);
+    expect(slack.job.request.content).toEqual({
+      type: "text",
+      text: "See the *guide* at <https://example.com|docs>",
+    });
+
+    const whatsapp = buildChannelOutboundJobFromResponse("ravi-channels", {
+      response: "See the **guide** at [docs](https://example.com)",
+      _emitId: "emit_wa",
+      target: {
+        channel: "whatsapp",
+        accountId: "wa-1",
+        chatId: "5511999",
+      },
+    });
+    expect(whatsapp.ok).toBe(true);
+    if (!whatsapp.ok) throw new Error(whatsapp.reason);
+    expect(whatsapp.job.request.content).toEqual({
+      type: "text",
+      text: "See the **guide** at [docs](https://example.com)",
+    });
+  });
+
   it("does not create jobs for responses that must not be delivered", () => {
     expect(buildChannelOutboundJobFromResponse("s", { response: "x" })).toEqual({
       ok: false,

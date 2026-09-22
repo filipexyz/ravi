@@ -4,6 +4,7 @@ import { ensureConnected, getNats } from "../nats.js";
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelChatActionContent } from "./chat-actions.js";
+import { markdownToSlackMrkdwn } from "./slack/mrkdwn.js";
 
 const log = logger.child("channels:outbound-stream");
 const sc = StringCodec();
@@ -272,9 +273,10 @@ export function buildChannelOutboundJobFromResponse(
   const emitId = response._emitId;
   if (!emitId) return { ok: false, reason: "missing_emit_id" };
 
-  const text = response.error ? `Error: ${response.error}` : response.response;
-  if (!text) return { ok: false, reason: "empty_response" };
-  if (text.trim() === "@@SILENT@@") return { ok: false, reason: "silent_response" };
+  const rawText = response.error ? `Error: ${response.error}` : response.response;
+  if (!rawText) return { ok: false, reason: "empty_response" };
+  if (rawText.trim() === "@@SILENT@@") return { ok: false, reason: "silent_response" };
+  const text = formatChannelOutboundText(target.channel, rawText);
 
   const now = options.now ?? Date.now();
   const requestId = `runtime:${sessionName}:${emitId}`;
@@ -427,6 +429,10 @@ function isPublishAckTimeout(error: unknown): boolean {
   const name = typeof value?.name === "string" ? value.name.toUpperCase() : "";
   const message = typeof value?.message === "string" ? value.message.toUpperCase() : String(error).toUpperCase();
   return code === "TIMEOUT" || name === "TIMEOUT" || message === "TIMEOUT" || message.includes("TIMEOUT");
+}
+
+function formatChannelOutboundText(channelId: string, text: string): string {
+  return channelId.trim().toLowerCase() === "slack" ? markdownToSlackMrkdwn(text) : text;
 }
 
 function formatErrorMessage(error: unknown): string {

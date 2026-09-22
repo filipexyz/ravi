@@ -108,6 +108,9 @@ export type {
 } from "./types.js";
 export {
   createSlackNativeChannelDriver,
+  renderSlackBackendOutput,
+  renderSlackContent,
   slackNativeRuntimeHealth,
 } from "./driver.js";
+export { markdownToSlackMrkdwn } from "./mrkdwn.js";
 export type { SlackNativeChannelDriverOptions } from "./driver.js";

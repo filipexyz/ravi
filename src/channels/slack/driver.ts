@@ -12,6 +12,7 @@ import {
   type NativeChannelDriver,
   type NativeChannelRuntimeHealth,
 } from "../native/driver.js";
+import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 import {
   createSlackNativeRuntimeFromEnv,
   decodeSlackBackendConversationId,
@@ -177,15 +178,15 @@ function resolveRuntimeCanonicalMessageId(envelope: ChannelOutputEnvelope): stri
   return dbGetChannelBackendRuntimeState(envelope.binding.turnId)?.assistantMessageId;
 }
 
-function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {
+export function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {
   if (envelope.kind === "safe_error") {
     return `Unable to complete the request (${envelope.error?.code ?? "INTERNAL"}).`;
   }
   return renderSlackContent(envelope.content ?? []);
 }
 
-function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"]>): string {
-  return content
+export function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"]>): string {
+  const joined = content
     .map((block) =>
       block.type === "text"
         ? block.text
@@ -194,6 +195,7 @@ function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"
           : `[Attachment: ${block.artifactId}]`,
     )
     .join("\n");
+  return markdownToSlackMrkdwn(joined);
 }
 
 export function slackNativeRuntimeHealth(status: SlackSocketModeStatus): NativeChannelRuntimeHealth {

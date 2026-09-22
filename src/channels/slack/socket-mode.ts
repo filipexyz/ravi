@@ -55,6 +55,7 @@ import {
 } from "./chat-action-target.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 import { SlackGatewayModeService } from "./gateway-mode.js";
 import {
   buildSlackInstanceProvenance,
@@ -309,7 +310,7 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     if (action.actionId === "thread.create") {
       const result = await this.webClient.postMessage({
         channel,
-        text: action.text,
+        text: markdownToSlackMrkdwn(action.text),
         clientMsgId: slackClientMessageId(request.idempotencyKey),
       });
       return {
@@ -326,7 +327,7 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
       const result = await this.webClient.updateMessage({
         channel,
         ts,
-        text: action.text,
+        text: markdownToSlackMrkdwn(action.text),
       });
       return {
         provider: "slack",
