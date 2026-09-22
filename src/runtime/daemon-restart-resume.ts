@@ -31,6 +31,7 @@ export function resolveCrashRecoveryRestartResumeDecision(input: {
   metadata?: Record<string, unknown>;
   snapshotPresent: boolean;
   snapshotEligible: boolean;
+  pendingMessageCount?: number;
 }): CrashRecoveryRestartResumeDecision {
   if (!input.snapshotPresent) {
     return { mode: "skip", publish: false, reason: "missing_snapshot" };
@@ -39,6 +40,9 @@ export function resolveCrashRecoveryRestartResumeDecision(input: {
     return { mode: "skip", publish: false, reason: "ineligible_snapshot" };
   }
   const mode = resolveCrashRecoveryRestartResumeMode(input.metadata);
+  if (mode === "skip" && (input.pendingMessageCount ?? 0) > 0) {
+    return { mode: "pending_only", publish: true, reason: "pending_only" };
+  }
   return mode === "skip" ? { mode, publish: false, reason: "unsafe_snapshot" } : { mode, publish: true, reason: mode };
 }
 

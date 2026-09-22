@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { isExplicitLocalRuntimeAbort, isProviderEndedAfterCompletedTools } from "./host-session.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  getPendingRuntimeTurnSuccessors,
+  isExplicitLocalRuntimeAbort,
+  isProviderEndedAfterCompletedTools,
+  type RuntimeHostStreamingSession,
+} from "./host-session.js";
 
 describe("isProviderEndedAfterCompletedTools", () => {
   it("recovers after tools and materialized output even when the host labeled provider_interrupted", () => {
@@ -45,5 +51,30 @@ describe("isProviderEndedAfterCompletedTools", () => {
     expect(
       isProviderEndedAfterCompletedTools({ toolRunning: false }, { startedTool: false, materializedOutput: true }),
     ).toBe(false);
+  });
+});
+
+describe("getPendingRuntimeTurnSuccessors", () => {
+  it("keeps unyielded queued input when the live turn no longer names its pending ids", () => {
+    const yielded = createQueuedRuntimeUserMessage({ prompt: "already handed off" });
+    yielded.clientMessageId = "ravi:current";
+    const successor = createQueuedRuntimeUserMessage({ prompt: "queued after handoff" });
+
+    expect(
+      getPendingRuntimeTurnSuccessors({
+        pendingMessages: [yielded, successor],
+      } as RuntimeHostStreamingSession).map((message) => message.message.content),
+    ).toEqual(["queued after handoff"]);
+  });
+
+  it("returns nothing when the only pending atoms already belong to the yielded turn", () => {
+    const yielded = createQueuedRuntimeUserMessage({ prompt: "already handed off" });
+    yielded.clientMessageId = "ravi:current";
+
+    expect(
+      getPendingRuntimeTurnSuccessors({
+        pendingMessages: [yielded],
+      } as RuntimeHostStreamingSession),
+    ).toEqual([]);
   });
 });

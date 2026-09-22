@@ -492,7 +492,13 @@ export function getCrashRecoveryReplayablePendingRuntimeMessages(
 export function getPendingRuntimeTurnSuccessors(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {
   const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (currentTurnPendingIds.size === 0) {
-    return [];
+    // A live physical turn may have been yielded without retained pending ids.
+    // Messages that never received a provider clientMessageId were not part of
+    // that handoff, so they remain independent successors. Yielded current-turn
+    // atoms keep their clientMessageId and stay excluded.
+    return session.pendingMessages.filter(
+      (message) => typeof message.pendingId === "string" && !message.clientMessageId,
+    );
   }
   return session.pendingMessages.filter(
     (message) => typeof message.pendingId === "string" && !currentTurnPendingIds.has(message.pendingId),
