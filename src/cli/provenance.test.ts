@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { buildCliInvocationMetadata, hashForAudit, sanitizeCliArgv, standardStreamIsTty } from "./provenance.js";
 
 function provenanceIdleStdinScript(): string {
@@ -17,20 +17,25 @@ function provenanceIdleStdinScript(): string {
     `;
 }
 
-function collectChildOutput(child: ChildProcessWithoutNullStreams): Promise<{
+function collectChildOutput(child: ChildProcess): Promise<{
   stdout: string;
   stderr: string;
   code: number | null;
 }> {
+  const stdoutStream = child.stdout;
+  const stderrStream = child.stderr;
+  if (!stdoutStream || !stderrStream) {
+    return Promise.reject(new Error("child stdio missing"));
+  }
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    stdoutStream.setEncoding("utf8");
+    stderrStream.setEncoding("utf8");
+    stdoutStream.on("data", (chunk: string) => {
       stdout += chunk;
     });
-    child.stderr.on("data", (chunk: string) => {
+    stderrStream.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.on("error", reject);
