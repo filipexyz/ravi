@@ -1,7 +1,15 @@
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { officialSkillImpliedByCapabilities, resolveAgentSkills } from "./allowed-skills.js";
+import { officialSkillImpliedByCapabilities } from "./skill-capability-implication.js";
 import { isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
+
+function resolveConfiguredAgentSkills(agentId: string) {
+  // Lazy: `allowed-skills` reads the grant table from `router-db`. Provider
+  // registry → Pi authorization imports this module at CLI load time, and
+  // command tests mock a partial `router-db` that does not export grants.
+  const { resolveAgentSkills } = require("./allowed-skills.js") as typeof import("./allowed-skills.js");
+  return resolveAgentSkills(agentId);
+}
 
 export interface SkillAuthorizationOptions {
   /**
@@ -32,7 +40,7 @@ export function isSkillAuthorizedForAgent(
   options: SkillAuthorizationOptions = {},
 ): boolean {
   if (!agentId?.trim()) return true;
-  const resolved = resolveAgentSkills(agentId);
+  const resolved = resolveConfiguredAgentSkills(agentId);
   if (!resolved.hasConfiguration) return true;
   if (isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist)) {
     return true;

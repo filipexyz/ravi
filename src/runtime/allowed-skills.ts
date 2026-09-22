@@ -1,7 +1,17 @@
 import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/router-db.js";
-import { skillIdentifiersMatch } from "./skill-visibility.js";
+import {
+  isAdminAll,
+  selectGroupCaps,
+  specificSkillsFromCapabilities,
+  capabilityMatchesGroupRule,
+} from "./skill-capability-implication.js";
+
+export {
+  officialSkillImpliedByCapabilities,
+  specificSkillsFromCapabilities,
+} from "./skill-capability-implication.js";
 
 /**
  * Per-agent skill visibility — provider-agnostic core.
@@ -70,59 +80,6 @@ function expandSkillNames(slug: string): string[] {
     }
   }
   return [...variants];
-}
-
-function isAdminAll(capabilities: readonly ContextCapability[]): boolean {
-  return capabilities.some((cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*");
-}
-
-function selectGroupCaps(capabilities: readonly ContextCapability[]): ContextCapability[] {
-  return capabilities.filter((cap) => cap.permission === "execute" && cap.objectType === "group");
-}
-
-function isSemanticCommandCapability(capability: ContextCapability): boolean {
-  return capability.permission === "read" || capability.permission === "mutate";
-}
-
-function capabilityMatchesGroupRule(capability: ContextCapability, pattern: RegExp): boolean {
-  if (capability.permission === "execute" && capability.objectType === "group") {
-    return capability.objectId !== "*" && pattern.test(capability.objectId);
-  }
-  return isSemanticCommandCapability(capability) && pattern.test(capability.objectType);
-}
-
-/**
- * System skills implied by specific command capabilities (not generic
- * `execute:group:*` or `admin:system:*`). Used when explicit grants would
- * otherwise hide a skill the identity is already authorized to run.
- */
-export function specificSkillsFromCapabilities(capabilities: readonly ContextCapability[]): string[] {
-  const slugs = new Set<string>();
-  for (const rule of listGroupSkillRules()) {
-    if (capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern))) {
-      slugs.add(rule.skill);
-    }
-  }
-  return [...slugs];
-}
-
-/**
- * Whether an official gated system skill is implied by the identity's
- * capabilities. Custom/personal skills are never implied here — those stay
- * grant-only so skill visibility cannot mint effect authority.
- */
-export function officialSkillImpliedByCapabilities(
-  capabilities: readonly ContextCapability[],
-  skillName: string,
-): boolean {
-  const rules = listGroupSkillRules().filter((rule) => skillIdentifiersMatch(rule.skill, skillName));
-  if (rules.length === 0) {
-    return false;
-  }
-  if (isAdminAll(capabilities) || selectGroupCaps(capabilities).some((cap) => cap.objectId === "*")) {
-    return true;
-  }
-  return rules.some((rule) => capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern)));
 }
 
 /**

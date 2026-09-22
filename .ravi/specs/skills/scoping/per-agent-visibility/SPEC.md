@@ -13,6 +13,7 @@ applies_to:
   - runtime skill filtering (provider-agnostic core + per-provider enforcement adapter)
   - src/runtime/allowed-skills.ts
   - src/runtime/skill-authorization.ts
+  - src/runtime/skill-capability-implication.ts
   - ravi skills CLI
 owners:
   - main
