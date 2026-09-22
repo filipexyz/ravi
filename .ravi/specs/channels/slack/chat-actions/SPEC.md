@@ -16,6 +16,7 @@ tags:
   - media
 applies_to:
   - src/channels/slack/client.ts
+  - src/channels/slack/chat-action-target.ts
   - src/channels/slack/socket-mode.ts
   - src/channels/outbound-consumer.ts
   - src/cli/commands/sessions.ts
@@ -36,6 +37,11 @@ normative: true
   message authored by the configured bot.
 - `message.react` MUST use `reactions.add` or `reactions.remove` and require
   `reactions:write`.
+- `message.react` MUST map unicode and alias emoji values to Slack short names
+  before calling the Web API. Unknown unicode MUST fail as `invalid_name`.
+- Edit, delete and reaction requests MUST resolve the Slack Web API `channel`
+  to a platform `C`/`D`/`G` id. Encoded backend (`D123~ts`), thread (`C123#ts`),
+  and canonical `chat_*` ids MUST NOT be sent as the API channel.
 - `media.send` MUST use the external upload flow and require `files:write`.
 - `sticker.send` MUST be `unavailable` with `unsupported_channel`.
 - `message.reply` MUST remain `planned` until a canonical quoted-reply command
@@ -60,6 +66,9 @@ normative: true
 - Ephemeral messages MUST NOT be offered as editable normal messages.
 - Canonical edit/delete state MUST be updated only after Slack confirms the
   operation.
+- Durable `message.react` MUST NOT mark the receipt complete unless Slack
+  accepted the reaction (`ok:true` or `already_reacted`). Terminal provider
+  errors MUST be ACKed as failed and logged, not as delivered.
 - Thread and channel ids MUST remain separate from the message timestamp.
 - `thread.create` delivery MUST expose the created root message `ts` so the
   daemon can materialize the child fork.

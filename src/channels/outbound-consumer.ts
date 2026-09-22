@@ -188,6 +188,46 @@ export class ChannelOutboundConsumer {
   }
 }
 
+function acknowledgeCompletedReceipt(receipt: ChannelOutboundReceipt): ChannelOutboundProcessingResult {
+  // A complete receipt with a send-phase error never reached Slack. Post-send
+  // terminal errors (canonical persist) stay "delivered" because the provider
+  // already accepted the mutation.
+  if (receipt.lastErrorPhase === "send" && receipt.lastErrorMessage) {
+    return {
+      disposition: "ack",
+      status: "failed",
+      retryable: false,
+      error: receipt.lastErrorMessage,
+      phase: "send",
+    };
+  }
+  return { disposition: "ack", status: "delivered", retryable: false };
+}
+
+function logNativeOutboundSendFailure(
+  job: ChannelOutboundJob,
+  failure: ReturnType<typeof classifyNativeOutboundFailure>,
+  message: string,
+): void {
+  const content = job.request.content;
+  log.warn("Native outbound send failed", {
+    jobId: job.jobId,
+    channelId: job.request.channelId,
+    chatId: job.request.target.chatId,
+    canonicalChatId: job.request.target.canonicalChatId,
+    retryable: failure.retryable,
+    ...(failure.reasonCode ? { reasonCode: failure.reasonCode } : {}),
+    ...(content.type === "chat_action"
+      ? {
+          actionId: content.actionId,
+          ...("providerMessageId" in content ? { providerMessageId: content.providerMessageId } : {}),
+          ...("emoji" in content ? { emoji: content.emoji } : {}),
+        }
+      : { contentType: content.type }),
+    error: message,
+  });
+}
+
 export function acknowledgeChannelOutboundMessage(
   msg: AckableChannelOutboundMessage,
   result: ChannelOutboundProcessingResult,
@@ -263,7 +303,7 @@ export async function processChannelOutboundJob(
   }
 
   if (receipt?.state === "complete") {
-    return { disposition: "ack", status: "delivered", retryable: false };
+    return acknowledgeCompletedReceipt(receipt);
   }
 
   let claimOwner: string | undefined;
@@ -338,7 +378,7 @@ export async function processChannelOutboundJob(
     if (claim.status === "existing") {
       claimOwner = undefined;
       if (receipt.state === "complete") {
-        return { disposition: "ack", status: "delivered", retryable: false };
+        return acknowledgeCompletedReceipt(receipt);
       }
     }
   }
@@ -360,6 +400,7 @@ export async function processChannelOutboundJob(
     } catch (error) {
       const message = errorMessage(error);
       const failure = classifyNativeOutboundFailure(job, message);
+      logNativeOutboundSendFailure(job, failure, message);
       try {
         receiptStore.releaseClaim({
           idempotencyKey: job.request.idempotencyKey,
@@ -486,6 +527,7 @@ async function processWithoutReceiptLedger(
   } catch (error) {
     const message = errorMessage(error);
     const failure = classifyNativeOutboundFailure(job, message);
+    logNativeOutboundSendFailure(job, failure, message);
     await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
       status: "failed",
       reason: "send_error",
@@ -833,6 +875,14 @@ export function persistDeliveredChatAction(
       canonicalRootMessageId: persisted.canonicalMessageId,
     });
     return persisted;
+  }
+
+  if (content.actionId === "message.react") {
+    const raw = delivered.raw;
+    const error = raw && typeof raw.error === "string" ? raw.error : undefined;
+    if (raw && raw.ok === false && error !== "already_reacted") {
+      throw new Error(`Slack reaction was not accepted: ${error ?? "unknown"}`);
+    }
   }
 
   const canonicalMessageId = content.canonicalMessageId?.trim();

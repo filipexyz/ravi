@@ -3,6 +3,10 @@
 - [ ] Slack edit calls `chat.update`.
 - [ ] Slack delete calls `chat.delete`.
 - [ ] Slack reaction calls `reactions.add` or `reactions.remove`.
+- [ ] Slack reaction maps unicode/alias emoji to a Slack short name.
+- [ ] Slack reaction uses the platform `C`/`D`/`G` channel id, not a canonical or encoded chat id.
+- [ ] Durable Slack react does not complete unless Slack accepted the reaction.
+- [ ] Terminal Slack react errors are ACKed as failed and logged, not as delivered.
 - [ ] No native Slack action resolves an Omni instance.
 - [ ] Slack sticker availability is `unavailable/unsupported_channel`.
 - [ ] Missing Slack credentials produce `missing_connection`.

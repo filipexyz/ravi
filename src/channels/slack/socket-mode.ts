@@ -47,6 +47,11 @@ import {
   acceptResolvedChannelIngress,
   type ChannelContent,
 } from "../backend.js";
+import {
+  normalizeSlackReactionName,
+  resolveSlackApiChannelId,
+  resolveSlackApiTimestamp,
+} from "./chat-action-target.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
 import { SlackGatewayModeService } from "./gateway-mode.js";
@@ -299,9 +304,10 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
 
   async executeChatAction(request: NativeChatActionDeliveryRequest): Promise<NativeChatActionDeliveryResult> {
     const { action, target } = request;
+    const channel = resolveSlackApiChannelId(target);
     if (action.actionId === "thread.create") {
       const result = await this.webClient.postMessage({
-        channel: target.chatId,
+        channel,
         text: action.text,
         clientMsgId: slackClientMessageId(request.idempotencyKey),
       });
@@ -315,9 +321,10 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     }
 
     if (action.actionId === "message.edit") {
+      const ts = resolveSlackApiTimestamp(action.providerMessageId);
       const result = await this.webClient.updateMessage({
-        channel: target.chatId,
-        ts: action.providerMessageId,
+        channel,
+        ts,
         text: action.text,
       });
       return {
@@ -330,46 +337,51 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     }
 
     if (action.actionId === "message.delete") {
+      const ts = resolveSlackApiTimestamp(action.providerMessageId);
       const raw = await this.webClient.deleteMessage({
-        channel: target.chatId,
-        ts: action.providerMessageId,
+        channel,
+        ts,
       });
       return {
         provider: "slack",
-        messageId: action.providerMessageId,
-        platformMessageId: action.providerMessageId,
-        providerTimestamp: slackTsToMs(action.providerMessageId),
+        messageId: ts,
+        platformMessageId: ts,
+        providerTimestamp: slackTsToMs(ts),
         raw,
       };
     }
 
     const name = normalizeSlackReactionName(action.emoji);
+    const timestamp = resolveSlackApiTimestamp(action.providerMessageId);
     const raw =
       action.operation === "remove"
         ? await this.webClient.removeReaction({
-            channel: target.chatId,
-            timestamp: action.providerMessageId,
+            channel,
+            timestamp,
             name,
           })
         : await this.webClient.addReaction({
-            channel: target.chatId,
-            timestamp: action.providerMessageId,
+            channel,
+            timestamp,
             name,
           });
+    assertSlackReactionAccepted(raw, action.operation);
     return {
       provider: "slack",
-      messageId: action.providerMessageId,
-      platformMessageId: action.providerMessageId,
-      providerTimestamp: slackTsToMs(action.providerMessageId),
+      messageId: timestamp,
+      platformMessageId: timestamp,
+      providerTimestamp: slackTsToMs(timestamp),
       raw,
     };
   }
 }
 
-function normalizeSlackReactionName(value: string): string {
-  const normalized = value.trim().replace(/^:+|:+$/g, "");
-  if (!normalized) throw new Error("Slack reaction emoji is required");
-  return normalized;
+function assertSlackReactionAccepted(raw: Record<string, unknown>, operation: "add" | "remove" | undefined): void {
+  if (raw.ok !== false) return;
+  const error = typeof raw.error === "string" ? raw.error : undefined;
+  const allowed = operation === "remove" ? "no_reaction" : "already_reacted";
+  if (error === allowed) return;
+  throw new Error(`Slack reaction was not accepted: ${error ?? "unknown"}`);
 }
 
 /** Stable UUID token for Slack's client_msg_id duplicate-suppression support. */

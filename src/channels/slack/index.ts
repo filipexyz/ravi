@@ -66,6 +66,13 @@ export {
   slackTsToMs,
 } from "./routing.js";
 export {
+  isSlackMessageTs,
+  isSlackPlatformChannelId,
+  normalizeSlackReactionName,
+  resolveSlackApiChannelId,
+  resolveSlackApiTimestamp,
+} from "./chat-action-target.js";
+export {
   SlackAssistantThreadPresence,
   SlackPresenceStack,
   SlackReactionPresence,

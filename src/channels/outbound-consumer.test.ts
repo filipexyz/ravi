@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession } from "../router/sessions.js";
 import { dbUpsertChat, dbUpsertChatMessage } from "../router/router-db.js";
+import { SlackChatActionDelivery } from "./slack/socket-mode.js";
 import { createSlackThreadLifecycle, getSlackThreadLifecycle } from "./slack/thread-lifecycle-store.js";
 import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
@@ -10,10 +11,12 @@ import {
   channelOutboundRequestFingerprint,
   missingAdapterRetryDelayMs,
   persistDeliveredMessage,
+  persistDeliveredChatAction,
   processChannelOutboundJob as processChannelOutboundJobWithNats,
 } from "./outbound-consumer.js";
 import {
   getChannelOutboundReceipt,
+  markChannelOutboundReceiptTerminalError,
   sqliteChannelOutboundReceiptStore,
   type ChannelOutboundReceiptStore,
 } from "./outbound-receipts.js";
@@ -246,6 +249,201 @@ describe("channel outbound consumer", () => {
     );
   });
 
+  it("invokes Slack reactions.add for scoped native DM and channel react jobs", async () => {
+    const addReaction = mock(async () => ({ ok: true }));
+    const delivery = new SlackChatActionDelivery({ addReaction } as never, {
+      accountId: "hana-slack",
+      routeAccountId: "hana-slack",
+      instanceId: "hana-slack",
+      connection: "hana-slack-secret",
+      instanceAliases: ["0bc9635c-1ee9-42e3-9112-95be9cdb0334", "hana-slack"],
+    });
+    const wrongWorkspace = new SlackChatActionDelivery(
+      {
+        addReaction: mock(async () => {
+          throw new Error("wrong Slack workspace");
+        }),
+      } as never,
+      {
+        accountId: "other-slack",
+        routeAccountId: "other-slack",
+        instanceId: "other-slack",
+        connection: "other-secret",
+        instanceAliases: ["11111111-2222-3333-4444-555555555555", "other-slack"],
+      },
+    );
+    const emitEvent = mock(async () => {});
+
+    const dm = await processChannelOutboundJob(
+      makeReactJob({
+        accountId: "hana-slack",
+        instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+        chatId: "D123~1711111111.000100",
+        canonicalChatId: "chat_slack_D123",
+        emoji: "👍",
+      }),
+      {
+        deliveries: [],
+        actionDeliveries: [wrongWorkspace, delivery],
+        emitEvent,
+        persistDelivery: false,
+      },
+    );
+    const channel = await processChannelOutboundJob(
+      makeReactJob({
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        chatId: "C123#1711111110.000010",
+        canonicalChatId: "chat_slack_C123",
+        emoji: "thumbsup",
+        providerMessageId: "1711111111.000200",
+      }),
+      {
+        deliveries: [],
+        actionDeliveries: [wrongWorkspace, delivery],
+        emitEvent,
+        persistDelivery: false,
+      },
+    );
+
+    expect(dm).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+    expect(channel).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+    expect(addReaction).toHaveBeenNthCalledWith(1, {
+      channel: "D123",
+      timestamp: "1711111111.000100",
+      name: "+1",
+    });
+    expect(addReaction).toHaveBeenNthCalledWith(2, {
+      channel: "C123",
+      timestamp: "1711111111.000200",
+      name: "+1",
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "delivered",
+        actionId: "message.react",
+        providerMessageId: "1711111111.000100",
+      }),
+    );
+  });
+
+  it("treats a Slack react payload with ok:false as a terminal send failure", async () => {
+    const emitEvent = mock(async () => {});
+    const addReaction = mock(async () => ({ ok: false, error: "invalid_name" }));
+    const delivery = new SlackChatActionDelivery({ addReaction } as never, {
+      accountId: "hana-slack",
+      instanceId: "hana-slack",
+      connection: "hana-slack",
+      instanceAliases: ["hana-slack"],
+    });
+
+    const result = await processChannelOutboundJob(
+      makeReactJob({
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        chatId: "D123",
+        emoji: "thumbsup",
+      }),
+      {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent,
+        persistDelivery: false,
+      },
+    );
+
+    expect(addReaction).toHaveBeenCalledWith({
+      channel: "D123",
+      timestamp: "1711111111.000100",
+      name: "+1",
+    });
+    expect(result).toMatchObject({
+      disposition: "ack",
+      status: "failed",
+      retryable: false,
+      phase: "send",
+      error: expect.stringContaining("invalid_name"),
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "failed",
+        reason: "send_error",
+        retryable: false,
+        unavailableReasonCode: "invalid_target",
+        actionId: "message.react",
+      }),
+    );
+  });
+
+  it("rejects persist of a Slack react that Slack did not accept", () => {
+    expect(() =>
+      persistDeliveredChatAction(makeReactJob(), {
+        provider: "slack",
+        platformMessageId: "1711111111.000100",
+        raw: { ok: false, error: "invalid_name" },
+      }),
+    ).toThrow(/Slack reaction was not accepted: invalid_name/);
+    expect(
+      persistDeliveredChatAction(makeReactJob(), {
+        provider: "slack",
+        platformMessageId: "1711111111.000100",
+        raw: { ok: false, error: "already_reacted" },
+      }),
+    ).toMatchObject({ platformMessageId: "1711111111.000100" });
+  });
+
+  it("acks a terminal Slack react failure instead of treating the queue as success", async () => {
+    const emitEvent = mock(async () => {});
+    const delivery = new SlackChatActionDelivery(
+      {
+        addReaction: mock(async () => {
+          throw new Error("Slack reactions.add failed: invalid_name");
+        }),
+      } as never,
+      {
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        connection: "hana-slack",
+        instanceAliases: ["hana-slack"],
+      },
+    );
+
+    const result = await processChannelOutboundJob(
+      makeReactJob({
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        chatId: "D123",
+        emoji: "thumbsup",
+      }),
+      {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent,
+        persistDelivery: false,
+      },
+    );
+
+    expect(result).toMatchObject({
+      disposition: "ack",
+      status: "failed",
+      retryable: false,
+      phase: "send",
+      error: expect.stringContaining("invalid_name"),
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "failed",
+        reason: "send_error",
+        retryable: false,
+        unavailableReasonCode: "invalid_target",
+        actionId: "message.react",
+      }),
+    );
+  });
+
   it("dispatches chat actions only through a matching native action adapter", async () => {
     const emitEvent = mock(async () => {});
     const actionDelivery = makeActionDelivery();
@@ -375,6 +573,94 @@ describe("channel outbound consumer", () => {
         canonicalMessageId: "cm_123",
         platformMessageId: "1711111111.000100",
         providerTimestamp: 1_711_111_111_000,
+      });
+    });
+
+    it("marks a scoped Slack react complete only after reactions.add succeeds", async () => {
+      const addReaction = mock(async () => ({ ok: true }));
+      const delivery = new SlackChatActionDelivery({ addReaction } as never, {
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        instanceAliases: ["0bc9635c-1ee9-42e3-9112-95be9cdb0334", "hana-slack"],
+      });
+      const job = makeReactJob({
+        accountId: "hana-slack",
+        instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+        chatId: "D123",
+        emoji: "thumbsup",
+      });
+
+      const first = await processChannelOutboundJob(job, {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent: mock(async () => {}),
+        recordDeliveryTrace: () => null,
+      });
+      const repeated = await processChannelOutboundJob(job, {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent: mock(async () => {}),
+        recordDeliveryTrace: () => null,
+      });
+
+      expect(first).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(repeated).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(addReaction).toHaveBeenCalledTimes(1);
+      expect(addReaction).toHaveBeenCalledWith({
+        channel: "D123",
+        timestamp: "1711111111.000100",
+        name: "+1",
+      });
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "complete",
+        platformMessageId: "1711111111.000100",
+      });
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.lastErrorMessage).toBeUndefined();
+    });
+
+    it("does not treat a completed react receipt with a terminal send error as delivered", async () => {
+      const delivery = new SlackChatActionDelivery({
+        addReaction: mock(async () => {
+          throw new Error("must not call Slack after a terminal receipt");
+        }),
+      } as never);
+      sqliteChannelOutboundReceiptStore.claim({
+        idempotencyKey: makeReactJob().request.idempotencyKey,
+        requestFingerprint: channelOutboundRequestFingerprint(makeReactJob()),
+        owner: "runner-1",
+        jobId: makeReactJob().jobId,
+        requestId: makeReactJob().request.requestId,
+        sessionName: "ravi-channels",
+        provider: "slack",
+      });
+      sqliteChannelOutboundReceiptStore.recordSent({
+        idempotencyKey: makeReactJob().request.idempotencyKey,
+        requestFingerprint: channelOutboundRequestFingerprint(makeReactJob()),
+        owner: "runner-1",
+        provider: "slack",
+        platformMessageId: "1711111111.000100",
+        sentAt: 100,
+      });
+      markChannelOutboundReceiptTerminalError(
+        makeReactJob().request.idempotencyKey,
+        "send",
+        "Slack reactions.add failed: invalid_name",
+        120,
+      );
+
+      const result = await processChannelOutboundJob(makeReactJob(), {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent: mock(async () => {}),
+        recordDeliveryTrace: () => null,
+      });
+
+      expect(result).toMatchObject({
+        disposition: "ack",
+        status: "failed",
+        retryable: false,
+        error: "Slack reactions.add failed: invalid_name",
+        phase: "send",
       });
     });
 
@@ -1344,6 +1630,57 @@ function makeActionDelivery(): NativeChatActionDelivery {
       platformMessageId: request.action.providerMessageId,
       providerTimestamp: 1_711_111_111_000,
     })),
+  };
+}
+
+function makeReactJob(
+  overrides: {
+    accountId?: string;
+    instanceId?: string;
+    chatId?: string;
+    canonicalChatId?: string;
+    emoji?: string;
+    providerMessageId?: string;
+  } = {},
+): ChannelOutboundJob {
+  const accountId = overrides.accountId ?? "hana-slack";
+  const instanceId = overrides.instanceId ?? "hana-slack";
+  const chatId = overrides.chatId ?? "D123";
+  const providerMessageId = overrides.providerMessageId ?? "1711111111.000100";
+  const emoji = overrides.emoji ?? "thumbsup";
+  return {
+    jobId: `chat-action:react:${providerMessageId}`,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: 1_782_920_000_000,
+    updatedAt: 1_782_920_000_000,
+    request: {
+      requestId: `chat-action:react:${providerMessageId}`,
+      channelId: "slack",
+      instanceId,
+      accountId,
+      targetChatId: chatId,
+      origin: {
+        sessionName: "ravi-channels",
+        emitId: `chat-action:react:${providerMessageId}`,
+        responsePhase: "chat_action",
+      },
+      content: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId,
+        emoji,
+        operation: "add",
+      },
+      idempotencyKey: `chat-action:react:${accountId}:${chatId}:message.react:${providerMessageId}`,
+      target: {
+        channel: "slack",
+        accountId,
+        instanceId,
+        chatId,
+        ...(overrides.canonicalChatId ? { canonicalChatId: overrides.canonicalChatId } : {}),
+      },
+    },
   };
 }
 
