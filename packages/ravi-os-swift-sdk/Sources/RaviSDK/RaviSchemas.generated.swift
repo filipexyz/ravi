@@ -2551,6 +2551,9 @@ public enum RaviSchemas {
       "agentId": {
         "type": "string"
       },
+      "authorityLayer": {
+        "type": "string"
+      },
       "before": {
         "anyOf": [
           {
@@ -2628,6 +2631,9 @@ public enum RaviSchemas {
           }
         ]
       },
+      "effectiveOn": {
+        "type": "string"
+      },
       "inspectCommand": {
         "type": "string"
       },
@@ -2635,6 +2641,9 @@ public enum RaviSchemas {
         "type": "string"
       },
       "profile": {
+        "type": "string"
+      },
+      "recurringAccessCommand": {
         "type": "string"
       },
       "resetToBootstrapCommand": {
@@ -52069,11 +52078,20 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
+      "diagnosticNote": {
+        "type": "string"
+      },
       "guidance": {
         "additionalProperties": false,
         "properties": {
           "breakGlass": {
             "type": "string"
+          },
+          "candidateCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "canonicalCapability": {
             "type": "string"
@@ -52093,6 +52111,9 @@ public enum RaviSchemas {
           "preferredPath": {
             "additionalProperties": false,
             "properties": {
+              "allowCommand": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string"
               },
@@ -52415,6 +52436,12 @@ public enum RaviSchemas {
           "breakGlass": {
             "type": "string"
           },
+          "candidateCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "canonicalCapability": {
             "type": "string"
           },
@@ -52433,6 +52460,9 @@ public enum RaviSchemas {
           "preferredPath": {
             "additionalProperties": false,
             "properties": {
+              "allowCommand": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string"
               },
