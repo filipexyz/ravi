@@ -1463,6 +1463,193 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("resumes durable stashed input after a live unsafe snapshot with a zero pending counter", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-stashed-pending-restart-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-stashed-pending";
+      const sessionName = "restart-stashed-pending";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-stashed-pending", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: true,
+          materializedOutput: false,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "unsafe current turn" });
+      const stashed = createQueuedRuntimeUserMessage({ prompt: "queued user work already stashed" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          toolRunning: true,
+          currentToolName: "bash",
+          currentTraceTurnId: "turn-stashed-pending",
+          currentCrashRecoveryAttemptId: "attempt-stashed-pending",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [],
+        }),
+      );
+      dispatcher.stashedMessages.set(sessionName, [stashed]);
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-stashed-pending",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-stashed-pending",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.metadata?.live).toBe(true);
+      expect((snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable).toBe(
+        false,
+      );
+      expect(snapshot?.pendingMessageCount).toBe(1);
+      const mode = resolveCrashRecoveryRestartResumeMode(snapshot?.metadata);
+      expect(mode).toBe("pending_only");
+      const pending = dbGetDaemonRestartPendingMessages("epoch-stashed-pending", sessionKey) as RuntimeUserMessage[];
+      expect(pending.map((message) => message.message.content)).toEqual(["queued user work already stashed"]);
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-stashed-pending",
+        reason: "test",
+        sessionKey,
+        mode,
+      });
+      expect(payload?._daemonRestartResume?.pendingOnly).toBe(true);
+      expect(payload?.prompt).not.toContain("Continue de onde parou");
+      const prepared = (
+        dispatcher as unknown as {
+          prepareDaemonRestartResumePrompt(
+            requestedSessionName: string,
+            prompt: RuntimeLaunchPrompt,
+            sessionEntry: null,
+          ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+        }
+      ).prepareDaemonRestartResumePrompt(sessionName, payload!, null);
+      expect(prepared?.prompt.prompt).toBe("queued user work already stashed");
+      expect(prepared?.messages.map((message) => message.pendingId)).toEqual([stashed.pendingId]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("resumes unyielded queued input when a live unsafe turn lost its pending ids", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-unyielded-pending-restart-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-unyielded-pending";
+      const sessionName = "restart-unyielded-pending";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-unyielded-pending", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: true,
+          materializedOutput: false,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const yielded = createQueuedRuntimeUserMessage({ prompt: "already handed off" });
+      yielded.clientMessageId = "ravi:current";
+      const successor = createQueuedRuntimeUserMessage({ prompt: "queued user work after handoff" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          toolRunning: true,
+          currentToolName: "bash",
+          currentTraceTurnId: "turn-unyielded-pending",
+          currentCrashRecoveryAttemptId: "attempt-unyielded-pending",
+          currentTurnPendingIds: undefined,
+          pendingMessages: [yielded, successor],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-unyielded-pending",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-unyielded-pending",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.metadata?.live).toBe(true);
+      expect((snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable).toBe(
+        false,
+      );
+      expect(snapshot?.pendingMessageCount).toBe(1);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
+      const pending = dbGetDaemonRestartPendingMessages("epoch-unyielded-pending", sessionKey) as RuntimeUserMessage[];
+      expect(pending.map((message) => message.message.content)).toEqual(["queued user work after handoff"]);
+      expect(pending.map((message) => message.pendingId)).toEqual([successor.pendingId]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("still skips a live unsafe snapshot whose only pending atoms were already yielded", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-yielded-only-restart-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-yielded-only";
+      const sessionName = "restart-yielded-only";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-yielded-only", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: true,
+          materializedOutput: false,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const yielded = createQueuedRuntimeUserMessage({ prompt: "already handed off" });
+      yielded.clientMessageId = "ravi:current";
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          toolRunning: true,
+          currentTraceTurnId: "turn-yielded-only",
+          currentCrashRecoveryAttemptId: "attempt-yielded-only",
+          currentTurnPendingIds: undefined,
+          pendingMessages: [yielded],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-yielded-only",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-yielded-only",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.pendingMessageCount).toBe(0);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("treats a provider-terminal turn as consumed in daemon restart snapshots", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
     try {

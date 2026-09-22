@@ -89,4 +89,32 @@ describe("daemon restart crash-recovery resume mode", () => {
       }),
     ).toEqual({ mode: "skip", publish: false, reason: "missing_snapshot" });
   });
+
+  it("resumes pending-only when an unsafe snapshot still carries durable queued input", () => {
+    expect(
+      resolveCrashRecoveryRestartResumeDecision({
+        metadata: {
+          live: true,
+          [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "skip",
+        },
+        snapshotPresent: true,
+        snapshotEligible: true,
+        pendingMessageCount: 1,
+      }),
+    ).toEqual({ mode: "pending_only", publish: true, reason: "pending_only" });
+  });
+
+  it("keeps skip when an unsafe live snapshot has a zero pending counter", () => {
+    expect(
+      resolveCrashRecoveryRestartResumeDecision({
+        metadata: {
+          live: true,
+          [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "skip",
+        },
+        snapshotPresent: true,
+        snapshotEligible: true,
+        pendingMessageCount: 0,
+      }),
+    ).toEqual({ mode: "skip", publish: false, reason: "unsafe_snapshot" });
+  });
 });

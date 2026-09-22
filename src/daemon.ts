@@ -608,6 +608,7 @@ async function publishRestartResumeEvent(
     metadata: options.snapshot?.metadata,
     snapshotPresent: Boolean(options.snapshot),
     snapshotEligible: options.snapshotEligible ?? true,
+    pendingMessageCount: options.snapshot?.pendingMessageCount,
   });
   const crashRecoveryResumeMode = crashRecoveryResumeDecision.mode;
   if (!crashRecoveryResumeDecision.publish) {
