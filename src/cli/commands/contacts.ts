@@ -19,6 +19,9 @@ import {
   getContact,
   getPendingContacts,
   upsertContact,
+  upsertContactFromPlatformIdentity,
+  isSlackHumanUserId,
+  isSlackConversationIdentity,
   deleteContact,
   allowContact,
   blockContact,
@@ -56,7 +59,13 @@ import {
   listAccountPendingContacts,
   listAccountPendingChats,
 } from "../../contacts.js";
-import { dbListMessageMetaByContactId, dbListRoutes, type MessageMetadata } from "../../router/router-db.js";
+import {
+  dbGetInstance,
+  dbGetInstanceByInstanceId,
+  dbListMessageMetaByContactId,
+  dbListRoutes,
+  type MessageMetadata,
+} from "../../router/router-db.js";
 import { findSessionByChatId } from "../../router/sessions.js";
 import {
   listContactSessionSummaries,
@@ -139,6 +148,8 @@ function platformIcon(platform: string): string {
       return "🔗";
     case "telegram":
       return "✈️";
+    case "slack":
+      return "💬";
     default:
       return "•";
   }
@@ -230,6 +241,13 @@ function parseScopeOption(scope?: string): { scopeType?: ContactEventScopeType; 
     scopeType: raw.slice(0, separator) as ContactEventScopeType,
     scopeId: raw.slice(separator + 1),
   };
+}
+
+function resolveContactInstanceRef(value?: string): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  const inst = dbGetInstance(trimmed) ?? dbGetInstanceByInstanceId(trimmed);
+  return inst?.instanceId?.trim() || inst?.name || trimmed;
 }
 
 function parseOwnerOption(owner?: string): { ownerType?: string; ownerId?: string } {
@@ -459,7 +477,7 @@ export class ContactsCommands {
 
     if (pageContacts.length === 0) {
       console.log("No contacts registered.");
-      console.log("\nAdd a contact: ravi contacts add <phone> [name]");
+      console.log("\nAdd a contact: ravi contacts add <identity> [name] [--channel slack --instance <id>]");
       return payload;
     }
 
@@ -694,24 +712,64 @@ export class ContactsCommands {
   @Command({ name: "add", description: "Add/allow a contact" })
   @CommandAccess({ kind: "mutate", resource: "contacts", action: "add", risk: "medium" })
   add(
-    @Arg("identity", { description: "Phone number or WhatsApp identity" }) identity: string,
+    @Arg("identity", { description: "Phone, WhatsApp, or platform user id (use --channel/--instance for Slack)" })
+    identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
     @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
     @Option({ flags: "--kind <kind>", description: "Contact kind: person or org" }) kind?: string,
+    @Option({ flags: "--channel <channel>", description: "Channel for a platform identity: slack, telegram, phone, whatsapp, email" })
+    channel?: string,
+    @Option({ flags: "--instance <id>", description: "Channel instance name or id (required for slack/telegram/discord)" })
+    instanceId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const normalized = normalizePhone(identity);
-    if (!normalized) {
-      fail("Identity must be a phone number or WhatsApp identity. Use 'ravi contacts link' for explicit platform ids.");
-    }
-    if (normalized.startsWith("group:")) {
-      fail("Groups/chats are not contacts. Use chat or route review surfaces for group identities.");
-    }
     if (kind && kind !== "person" && kind !== "org") {
       fail("Kind must be 'person' or 'org'");
     }
-    upsertContact(normalized, name ?? null, "allowed", "manual");
-    const contact = getContact(normalized);
+
+    const requestedChannel = channel?.trim().toLowerCase() || "";
+    if (!requestedChannel && (isSlackHumanUserId(identity) || isSlackConversationIdentity(identity))) {
+      fail(
+        "Slack ids are not phone identities. Use 'ravi contacts add <userId> --channel slack --instance <id>' to create a contact, or 'ravi contacts link' to attach an id to an existing contact.",
+      );
+    }
+
+    let contact = null as ReturnType<typeof getContact>;
+    let normalized = identity.trim();
+    if (requestedChannel) {
+      const resolvedInstanceId = resolveContactInstanceRef(instanceId);
+      if (["slack", "telegram", "discord"].includes(requestedChannel) && !resolvedInstanceId) {
+        fail(`--instance is required for ${requestedChannel} identities`);
+      }
+      try {
+        contact = upsertContactFromPlatformIdentity({
+          channel: requestedChannel,
+          platformUserId: identity,
+          instanceId: resolvedInstanceId,
+          ...(name ? { name } : {}),
+          status: "allowed",
+          source: "manual",
+        });
+        normalized =
+          contact.identities.find((entry) => entry.platform === requestedChannel)?.value ??
+          contact.phone ??
+          identity.trim();
+      } catch (err: unknown) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      normalized = normalizePhone(identity);
+      if (!normalized) {
+        fail(
+          "Identity must be a phone number or WhatsApp identity. To create a Slack/Telegram contact, pass --channel <channel> --instance <id>. Use 'ravi contacts link' to attach a platform id to an existing contact.",
+        );
+      }
+      if (normalized.startsWith("group:")) {
+        fail("Groups/chats are not contacts. Use chat or route review surfaces for group identities.");
+      }
+      upsertContact(normalized, name ?? null, "allowed", "manual");
+      contact = getContact(normalized);
+    }
     if (contact && agentIds) {
       const agents = parseAgentIds(agentIds) ?? [];
       updateContact(contact.id, { allowedAgents: agents });
@@ -725,6 +783,8 @@ export class ContactsCommands {
       target: identity,
       normalized,
       kind: kind ?? "person",
+      channel: requestedChannel || null,
+      instanceId: instanceId?.trim() || null,
       contact: serializeContactMaybe(updated),
       allowedAgents: parseAgentIds(agentIds),
       changedCount: updated ? 1 : 0,
@@ -733,8 +793,9 @@ export class ContactsCommands {
       printJson(payload);
     } else {
       const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
+      const identityLabel = requestedChannel ? `${requestedChannel}:${normalized}` : formatPhone(normalized);
       console.log(
-        `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`,
+        `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${identityLabel}${agentLabel}`,
       );
     }
     return payload;
@@ -1633,7 +1694,7 @@ export class ContactsCommands {
   @CommandAccess({ kind: "mutate", resource: "contacts", action: "link", risk: "medium" })
   link(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Option({ flags: "--channel <channel>", description: "Channel, e.g. phone, whatsapp, telegram, email" })
+    @Option({ flags: "--channel <channel>", description: "Channel, e.g. phone, whatsapp, telegram, slack, email" })
     channel?: string,
     @Option({ flags: "--id <platformUserId>", description: "Platform user ID" }) platformUserId?: string,
     @Option({ flags: "--instance <id>", description: "Channel instance ID" }) instanceId?: string,

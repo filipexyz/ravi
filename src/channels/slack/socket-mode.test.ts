@@ -6,6 +6,7 @@ import {
   ensureContactFromInbound,
   getPendingContacts,
   linkContactIdentity,
+  listAccountPendingChats,
   listAccountPendingContacts,
   resolvePlatformIdentity,
   upsertAgentPlatformIdentity,
@@ -293,6 +294,242 @@ describe("Slack Socket Mode routing", () => {
     expect(
       resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U123" }),
     ).toMatchObject({ ownerType: "contact", platformDisplayName: "Luis" });
+  });
+
+  it("holds an allowlisted Slack channel for review and still captures the human sender", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const usersInfo = mock(async () => ({
+      ok: true,
+      user: {
+        id: "U555",
+        name: "ana",
+        profile: { display_name: "Ana", real_name: "Ana Souza", image_72: "https://avatars.slack-edge.com/u555" },
+      },
+    }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "pairing",
+            groupPolicy: "allowlist",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { usersInfo } as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-group-hold",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-group-hold",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C555",
+          channel_type: "channel",
+          user: "U555",
+          text: "oi do canal",
+          ts: "1713000000.000300",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(0);
+    expect(usersInfo).toHaveBeenCalledWith("U555");
+    expect(listAccountPendingChats("slack-main")).toMatchObject([
+      { accountId: "slack-main", phone: "C555", chatId: "C555", isGroup: true },
+    ]);
+    const contact = getPendingContacts()[0];
+    expect(contact?.name).toBe("Ana");
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U555" })).toMatchObject(
+      { ownerType: "contact", platformDisplayName: "Ana" },
+    );
+  });
+
+  it("intakes a routed Slack channel sender without requiring a prior DM", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [
+          {
+            pattern: "group:C777",
+            accountId: "slack-main",
+            agent: "ravi-hil",
+            session: "main",
+            priority: 1_000,
+            policy: "open",
+            channel: "slack",
+          },
+        ],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "open",
+            groupPolicy: "open",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-group-intake",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-group-intake",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C777",
+          channel_type: "channel",
+          user: "U777",
+          text: "pesquisa isso",
+          ts: "1713000000.000400",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    const source = published[0]?.payload.source as MessageTarget;
+    expect(source.actorType).toBe("contact");
+    expect(source.contactId).toBeTruthy();
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U777" }),
+    ).toMatchObject({ ownerType: "contact", ownerId: source.contactId });
+  });
+
+  it("does not auto-intake Slack channel senders when contactIntakeMode is off", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "off",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [
+          {
+            pattern: "group:C888",
+            accountId: "slack-main",
+            agent: "ravi-hil",
+            session: "main",
+            priority: 1_000,
+            policy: "open",
+            channel: "slack",
+          },
+        ],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "open",
+            groupPolicy: "open",
+            contactIntakeMode: "off",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-group-off",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-group-off",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C888",
+          channel_type: "channel",
+          user: "U888",
+          text: "pesquisa isso",
+          ts: "1713000000.000500",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    const source = published[0]?.payload.source as MessageTarget;
+    expect(source.actorType).toBe("unknown");
+    expect(source.contactId).toBeUndefined();
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U888" })).toBeNull();
   });
 
   it("routes an approved Slack DM by the sender identity instead of the conversation id", async () => {
@@ -3675,14 +3912,21 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     const context = published[0]!.payload.context as MessageContext;
-    expect(source.actorType).toBe("unknown");
-    expect(source.contactId).toBeUndefined();
+    expect(source.actorType).toBe("contact");
+    expect(source.contactId).toBeTruthy();
+    expect(source.contactId).not.toBe(contact.id);
     expect(source.identityProvenance).toMatchObject({
       canonicalInstance: UUID,
-      matchedInstance: null,
-      reason: "identity_not_found",
+      matchedInstance: UUID,
+      reason: "resolved",
     });
-    expect(actorResolutionForSource(source, context)).toBe("missing_contact");
+    expect(actorResolutionForSource(source, context)).toBe("resolved");
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U123" })?.ownerId,
+    ).toBe(source.contactId);
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: OTHER_UUID, platformUserId: "U123" })?.ownerId,
+    ).toBe(contact.id);
   });
 
   it("fails closed with ambiguous_instance_alias when equivalent aliases resolve to different owners", async () => {
@@ -3852,9 +4096,43 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     }
   });
 
-  it("keeps an unknown external Slack actor fail-closed with zero authority across turn rotations", async () => {
+  it("intakes an unknown Slack channel sender when contactIntakeMode is pending", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-intake-1", eventId: "EvIntake1", user: "U404", ts: "1713000050.000100" }),
+    );
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    const context = published[0]!.payload.context as MessageContext;
+    expect(source.actorType).toBe("contact");
+    expect(source.contactId).toBeTruthy();
+    expect(actorResolutionForSource(source, context)).toBe("resolved");
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U404" }),
+    ).toMatchObject({ ownerType: "contact", ownerId: source.contactId });
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: getSessionByName("ravi-hil")!.sessionKey,
+      sessionName: "ravi-hil",
+      sessionCwd: "/tmp/ravi-hil",
+      agent: { id: "ravi-hil", cwd: "/tmp/ravi-hil" },
+      prompt: { prompt: "publica", source, context },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: source,
+    });
+    expect(Number(runtimeContext.metadata?.effectiveCapabilityCount)).toBeGreaterThan(0);
+  });
+
+  it("keeps an unknown external Slack actor fail-closed with zero authority when intake is off", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const offConfig: RouterConfig = {
+      ...aliasConfig(),
+      instances: { [SLUG]: { ...slackInstance(SLUG, UUID), contactIntakeMode: "off" } },
+    };
+    const service = makeService({ instanceId: SLUG, config: offConfig, published });
 
     const envelopes = [
       slackMessageEnvelope({ envelopeId: "env-unk-1", eventId: "EvUnk1", user: "U404", ts: "1713000050.000100" }),

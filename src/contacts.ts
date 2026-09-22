@@ -1259,6 +1259,26 @@ function contactIdentityIsGroup(platform: string, value: string): boolean {
   return platform === "whatsapp_group" || normalizePhone(value).startsWith("group:");
 }
 
+const INSTANCE_SCOPED_PLATFORM_CHANNELS = new Set(["slack", "telegram", "discord"]);
+
+/** Slack people are `U…` / `W…`. Conversation ids (`C…`/`G…`/`D…`) are chats. */
+export function isSlackHumanUserId(value: string): boolean {
+  return /^[UW][A-Z0-9]+$/i.test(value.trim());
+}
+
+export function isSlackConversationIdentity(value: string): boolean {
+  return /^[CGD][A-Z0-9]+$/i.test(value.trim());
+}
+
+function assertContactablePlatformUserId(channel: string, platformUserId: string): void {
+  if (contactIdentityIsGroup(channel, platformUserId) || normalizePhone(platformUserId).startsWith("group:")) {
+    throw new Error("Group/chat identities belong to chats, not contacts");
+  }
+  if (channel === "slack" && isSlackConversationIdentity(platformUserId)) {
+    throw new Error("Slack channels, DMs, and groups are chats, not contacts. Use a Slack user id (U…/W…).");
+  }
+}
+
 function assertPersonOrOrgIdentity(value: string, operation: string): string {
   const normalized = normalizePhone(value);
   if (normalized.startsWith("group:")) {
@@ -7724,6 +7744,9 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
       if (normalizePhone(contactIdentity).startsWith("group:")) {
         return;
       }
+      if (channel === "slack" && isSlackConversationIdentity(platformSenderId)) {
+        return;
+      }
 
       const evidence = inboundIntakeEventEvidence(input);
 
@@ -9856,6 +9879,104 @@ function upsertCanonicalPlatformIdentity(
     throw new Error(`Platform identity not found after link: ${mapped.canonicalChannel}:${mapped.normalizedValue}`);
   assertPlatformIdentityCanBeOwnedBy(row, "contact", contactId);
   return row;
+}
+
+export function upsertContactFromPlatformIdentity(input: {
+  channel: string;
+  platformUserId: string;
+  instanceId?: string | null;
+  name?: string | null;
+  status?: ContactStatus;
+  source?: ContactSource | null;
+}): Contact {
+  const channel = normalizePlatformIdentityChannel(input.channel);
+  if (!channel) throw new Error("Channel is required");
+  const platformUserId = input.platformUserId.trim();
+  if (!platformUserId) throw new Error("Platform user id is required");
+  assertContactablePlatformUserId(channel, platformUserId);
+
+  const instanceId = input.instanceId?.trim() ?? "";
+  if (INSTANCE_SCOPED_PLATFORM_CHANNELS.has(channel) && !instanceId) {
+    throw new Error(`instance is required for ${channel} identities`);
+  }
+
+  const status = input.status ?? "allowed";
+  const source = input.source ?? "manual";
+
+  if (channel === "phone" || channel === "whatsapp") {
+    const normalized = assertPersonOrOrgIdentity(platformUserId, "upsertContactFromPlatformIdentity");
+    upsertContact(normalized, input.name ?? null, status, source);
+    const contact = getContact(normalized);
+    if (!contact) throw new Error("Contact was not created");
+    return contact;
+  }
+
+  const database = ensureDb();
+  const existingIdentity = findPlatformIdentityByChannelRef(database, {
+    channel,
+    instanceId,
+    platformUserId,
+  });
+  if (existingIdentity?.owner_type === "agent") {
+    throw new Error(
+      `Platform identity is owned by agent ${existingIdentity.owner_id}. Agent-owned identities cannot become contacts.`,
+    );
+  }
+
+  if (existingIdentity?.owner_type === "contact" && existingIdentity.owner_id) {
+    const updates: Parameters<typeof updateContact>[1] = { status, source };
+    if (input.name !== undefined) updates.name = input.name;
+    return updateContact(existingIdentity.owner_id, updates);
+  }
+
+  let contactId = "";
+  executeWrite(
+    database,
+    () => {
+      contactId = generateId();
+      upsertCanonicalContactRecord(database, {
+        id: contactId,
+        displayName: input.name ?? null,
+        metadata: { source: "contacts", identityModel: "canonical" },
+      });
+      upsertCanonicalContactPolicy(database, {
+        contactId,
+        status,
+        replyMode: "auto",
+        tags: [],
+        notes: {},
+        source,
+      });
+      insertContactEvent(database, {
+        contactId,
+        eventType: "profile.created",
+        source,
+        actorType: "system",
+        confidence: 1,
+        payload: { channel, instanceId, platformUserId, name: input.name ?? null, status },
+      });
+      insertContactEvent(database, {
+        contactId,
+        eventType: "policy.status_changed",
+        source,
+        actorType: "system",
+        confidence: 1,
+        payload: { previousStatus: null, status },
+      });
+    },
+    { label: "contacts:upsertContactFromPlatformIdentity" },
+  );
+
+  linkContactIdentity(contactId, {
+    channel,
+    platformUserId,
+    instanceId,
+    reason: source,
+  });
+
+  const created = getCanonicalCompatContactById(ensureDb(), contactId);
+  if (!created) throw new Error("Contact was not created");
+  return created;
 }
 
 export function linkContactIdentity(

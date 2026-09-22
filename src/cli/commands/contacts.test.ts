@@ -21,6 +21,8 @@ let crmProfileRecord: Record<string, unknown> | null = null;
 let mergeCall: { targetId: string; sourceId: string } | null = null;
 const deleteContactCalls: string[] = [];
 const blockContactCalls: string[] = [];
+const upsertContactCalls: Array<{ phone: string; name?: string | null }> = [];
+const platformIdentityAdds: Array<Record<string, unknown>> = [];
 
 function pageRecords<T>(
   records: T[],
@@ -137,7 +139,21 @@ mock.module("../../contacts.js", () => ({
     };
   },
   getPendingContacts: () => pendingContacts,
-  upsertContact: () => {},
+  upsertContact: (phone: string, name?: string | null) => {
+    upsertContactCalls.push({ phone, name });
+  },
+  upsertContactFromPlatformIdentity: (input: Record<string, unknown>) => {
+    platformIdentityAdds.push(input);
+    const contact = {
+      id: "contact-slack",
+      phone: String(input.platformUserId),
+      name: input.name ?? null,
+      status: input.status ?? "allowed",
+      identities: [{ platform: input.channel, value: input.platformUserId, isPrimary: true }],
+    };
+    contactRecord = contact;
+    return contact;
+  },
   deleteContact: (ref: string) => {
     deleteContactCalls.push(ref);
     return true;
@@ -323,6 +339,8 @@ describe("ContactsCommands info", () => {
     mergeCall = null;
     sessionRecord = { name: "wa-support" };
     routeRecords = [{ pattern: "5511999999999", agent: "sales" }];
+    upsertContactCalls.length = 0;
+    platformIdentityAdds.length = 0;
   });
 
   it("labels persisted contact fields plus resolver and session lookups", () => {
@@ -525,6 +543,45 @@ describe("ContactsCommands info", () => {
     expect(pendingChats[0].type).toBe("group");
   });
 
+  it("adds a Slack platform identity without a prior DM", () => {
+    const payload = captureJson(() =>
+      new ContactsCommands().add("U0BAA2B1LTS", "Luis", undefined, undefined, "slack", "slack-main", true),
+    );
+    expect(platformIdentityAdds).toEqual([
+      {
+        channel: "slack",
+        platformUserId: "U0BAA2B1LTS",
+        instanceId: "slack-main",
+        name: "Luis",
+        status: "allowed",
+        source: "manual",
+      },
+    ]);
+    expect(upsertContactCalls).toHaveLength(0);
+    expect(payload.status).toBe("added");
+    expect(payload.channel).toBe("slack");
+    expect(payload.normalized).toBe("U0BAA2B1LTS");
+  });
+
+  it("keeps phone add on the existing DM path", () => {
+    captureJson(() => new ContactsCommands().add("5511999999999", "Alice", undefined, undefined, undefined, undefined, true));
+    expect(upsertContactCalls).toEqual([{ phone: "5511999999999", name: "Alice" }]);
+    expect(platformIdentityAdds).toHaveLength(0);
+  });
+
+  it("rejects a Slack user id without --channel so it cannot become a phone shadow", () => {
+    expect(() => new ContactsCommands().add("U0BAA2B1LTS", "Luis")).toThrow(/Slack ids are not phone identities/);
+    expect(upsertContactCalls).toHaveLength(0);
+    expect(platformIdentityAdds).toHaveLength(0);
+  });
+
+  it("requires --instance when adding a Slack platform identity", () => {
+    expect(() => new ContactsCommands().add("U123", "Luis", undefined, undefined, "slack")).toThrow(
+      /instance is required/,
+    );
+    expect(platformIdentityAdds).toHaveLength(0);
+  });
+
   it("rejects group identities on contact approval", () => {
     contactRecord = null;
 
@@ -602,6 +659,8 @@ describe("contacts agent-first contract", () => {
     mergeCall = null;
     sessionRecord = null;
     routeRecords = [];
+    upsertContactCalls.length = 0;
+    platformIdentityAdds.length = 0;
   });
 
   function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
