@@ -35,9 +35,15 @@ bun test src/cli/commands/skill-gates.test.ts
   MUST append one under the gate skill id.
 - `markLoadedFromSkillGate` MUST prefer an exact id match over an alias match
   when both are present in the snapshot.
-- A gate whose skill is not visible to the agent or is provided by no plugin
-  MUST fail with `RAVI_SKILL_GATE_CONFIG_ERROR`, MUST NOT mark anything as
-  loaded, and MUST emit a `skill.gate.error` event.
+- A gate whose skill is not visible to the agent, is not implied by the
+  identity's command capabilities, or is provided by no plugin MUST fail with
+  `RAVI_SKILL_GATE_CONFIG_ERROR`, MUST NOT mark anything as loaded, and MUST
+  emit a `skill.gate.error` event.
+- A session whose effective identity has `admin:system:*` or
+  `mutate:permissions:allow` MUST NOT receive `RAVI_SKILL_GATE_CONFIG_ERROR`
+  for `ravi permissions --help`, `ravi permissions allow`, or `permissions_allow`
+  even when a custom skill grant hid the catalog entry. The first call MUST
+  be `RAVI_SKILL_REQUIRED` (skill exists) or proceed if already loaded.
 - Every `RAVI_SKILL_REQUIRED` denial MUST emit a `skill.gate.loaded` event on
   `ravi.session.<session>.runtime` carrying `toolName`, `skill`, `source`,
   `code` and `reason`.

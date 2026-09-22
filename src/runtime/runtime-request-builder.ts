@@ -514,7 +514,9 @@ async function buildRuntimeStartRequestInternal(
     };
   };
 
-  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id, {
+    capabilitiesOverride: runtimeContext.capabilities.length > 0 ? runtimeContext.capabilities : undefined,
+  });
   const allowedSkills =
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
@@ -893,6 +895,7 @@ async function buildRuntimeStartRequestInternal(
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+      agentId: agent.id,
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),

@@ -455,7 +455,12 @@ async function authorizeRuntimeCommandExecution(
   }
 
   const requestedSkill = extractRequestedSkillFromCommandLine(command);
-  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+  if (
+    requestedSkill &&
+    !isSkillAuthorizedForAgent(options.agentId, requestedSkill, {
+      capabilities: options.context.capabilities,
+    })
+  ) {
     const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
     emitRuntimePolicyDenied(options, {
       type: "tool",
@@ -646,7 +651,12 @@ async function authorizeRuntimeToolUse(
   }
 
   const requestedSkill = extractRequestedSkillFromToolCall(request.toolName, request.input);
-  if (requestedSkill && !isSkillAuthorizedForAgent(options.agentId, requestedSkill)) {
+  if (
+    requestedSkill &&
+    !isSkillAuthorizedForAgent(options.agentId, requestedSkill, {
+      capabilities: options.context.capabilities,
+    })
+  ) {
     const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
     emitRuntimePolicyDenied(options, {
       type: "tool",

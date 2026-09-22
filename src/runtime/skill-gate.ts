@@ -129,8 +129,12 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     return { allowed: true };
   }
 
-  if (!isSkillAuthorizedForAgent(session.agentId, input.gate.skill)) {
-    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it via 'ravi skills grant' or a group permission.`;
+  if (
+    !isSkillAuthorizedForAgent(session.agentId, input.gate.skill, {
+      capabilities: input.context?.capabilities,
+    })
+  ) {
+    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it via 'ravi skills grant' or a matching command capability.`;
     emitSkillGateEvent(session, {
       type: "skill.gate.error",
       toolName: input.toolName,
