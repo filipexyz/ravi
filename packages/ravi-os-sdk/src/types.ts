@@ -458,6 +458,7 @@ export type AgentsPermissionsReturn = {
     }>;
   };
   agentId: string;
+  authorityLayer?: string;
   before?: ({
     capabilities?: Array<string | ({
       objectId?: string;
@@ -472,9 +473,11 @@ export type AgentsPermissionsReturn = {
   chatOnlyCommand?: string;
   command?: string;
   defaults?: (Record<string, unknown>) | null;
+  effectiveOn?: string;
   inspectCommand?: string;
   leastPrivilegeExample?: string;
   profile?: string;
+  recurringAccessCommand?: string;
   resetToBootstrapCommand?: string;
   runtimePermissions?: ({
     capabilities?: Array<string | ({
@@ -10018,12 +10021,15 @@ export type PermissionsCheckReturn = {
       type: string;
     };
   };
+  diagnosticNote?: string;
   guidance?: {
     breakGlass: string;
+    candidateCapabilities?: string[];
     canonicalCapability: string;
     inspectCommands: string[];
     nextSteps: string[];
     preferredPath: {
+      allowCommand?: string;
       kind: string;
       message: string;
       suggestedTags: Array<{
@@ -10100,10 +10106,12 @@ export type PermissionsResolveReturn = {
   dryRun: boolean;
   guidance?: {
     breakGlass: string;
+    candidateCapabilities?: string[];
     canonicalCapability: string;
     inspectCommands: string[];
     nextSteps: string[];
     preferredPath: {
+      allowCommand?: string;
       kind: string;
       message: string;
       suggestedTags: Array<{

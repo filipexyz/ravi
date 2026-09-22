@@ -2539,6 +2539,9 @@ export const AgentsPermissionsReturnSchema = {
     "agentId": {
       "type": "string"
     },
+    "authorityLayer": {
+      "type": "string"
+    },
     "before": {
       "anyOf": [
         {
@@ -2616,6 +2619,9 @@ export const AgentsPermissionsReturnSchema = {
         }
       ]
     },
+    "effectiveOn": {
+      "type": "string"
+    },
     "inspectCommand": {
       "type": "string"
     },
@@ -2623,6 +2629,9 @@ export const AgentsPermissionsReturnSchema = {
       "type": "string"
     },
     "profile": {
+      "type": "string"
+    },
+    "recurringAccessCommand": {
       "type": "string"
     },
     "resetToBootstrapCommand": {
@@ -51357,11 +51366,20 @@ export const PermissionsCheckReturnSchema = {
       ],
       "type": "object"
     },
+    "diagnosticNote": {
+      "type": "string"
+    },
     "guidance": {
       "additionalProperties": false,
       "properties": {
         "breakGlass": {
           "type": "string"
+        },
+        "candidateCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "canonicalCapability": {
           "type": "string"
@@ -51381,6 +51399,9 @@ export const PermissionsCheckReturnSchema = {
         "preferredPath": {
           "additionalProperties": false,
           "properties": {
+            "allowCommand": {
+              "type": "string"
+            },
             "kind": {
               "type": "string"
             },
@@ -51699,6 +51720,12 @@ export const PermissionsResolveReturnSchema = {
         "breakGlass": {
           "type": "string"
         },
+        "candidateCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "canonicalCapability": {
           "type": "string"
         },
@@ -51717,6 +51744,9 @@ export const PermissionsResolveReturnSchema = {
         "preferredPath": {
           "additionalProperties": false,
           "properties": {
+            "allowCommand": {
+              "type": "string"
+            },
             "kind": {
               "type": "string"
             },
