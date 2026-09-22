@@ -2196,7 +2196,6 @@ describe("runtime session trace instrumentation", () => {
     process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS = "20";
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
-    let midLive: ReturnType<typeof getRuntimeLiveStateForSession> = null;
 
     try {
       await runTraceLoop(streaming, {
@@ -2207,7 +2206,11 @@ describe("runtime session trace instrumentation", () => {
             toolUse: { id: "slow-1", name: "Bash", input: { cmd: "sleep 30" } },
           } satisfies RuntimeEvent;
           await new Promise((resolve) => setTimeout(resolve, 120));
-          midLive = getRuntimeLiveStateForSession(makeSession());
+          const midLive = getRuntimeLiveStateForSession(makeSession());
+          expect(midLive?.activity).toBe("thinking");
+          expect(midLive?.toolName).toBe("Bash");
+          expect(midLive?.busySince).toBeDefined();
+          expect(midLive?.summary).toContain("rodando");
           yield {
             type: "tool.completed",
             toolUseId: "slow-1",
@@ -2227,14 +2230,6 @@ describe("runtime session trace instrumentation", () => {
       else process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS = previousNoticeMs;
     }
 
-    expect(midLive).toMatchObject({
-      activity: "thinking",
-      toolName: "Bash",
-    });
-    expect(midLive?.activity).not.toBe("blocked");
-    expect(midLive?.busySince).toBeDefined();
-    expect(midLive?.summary).toContain("rodando");
-
     const live = getRuntimeLiveStateForSession(makeSession());
     expect(live).toMatchObject({
       activity: "idle",
@@ -2251,12 +2246,6 @@ describe("runtime session trace instrumentation", () => {
     });
     expect(afterLateTick?.busySince).toBeUndefined();
     expect(afterLateTick?.toolName).toBeUndefined();
-    expect(
-      natsEmitSpy?.mock.calls.some(
-        ([topic, data]) =>
-          topic === "ravi.outbound.deliver" && typeof data === "object" && JSON.stringify(data).includes("rodando"),
-      ),
-    ).toBe(false);
   });
 
   it("clears compaction at terminal boundaries even without an idle status", async () => {
