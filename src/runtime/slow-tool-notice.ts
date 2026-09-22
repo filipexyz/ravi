@@ -1,3 +1,5 @@
+import type { RuntimeLiveActivity, RuntimeLiveStatePatch } from "./live-state.js";
+
 /**
  * Vigia de tool demorada.
  *
@@ -14,6 +16,9 @@
  * A solução estrutural para chamada longa é outra: virar job em background
  * (`ravi jobs run`), com o agente no controle (`wait`, `tail`, `kill`).
  */
+
+/** Healthy in-progress work. Never `blocked` — that label is for stuck/failed turns. */
+export const SLOW_TOOL_LIVE_ACTIVITY: RuntimeLiveActivity = "thinking";
 
 export interface SlowToolWatchConfig {
   /** A partir de quanto tempo a tool passa a ser anunciada no estado ao vivo. */
@@ -37,6 +42,36 @@ function positiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return parsed;
+}
+
+export function shouldPublishSlowToolLiveState(input: {
+  toolRunning: boolean;
+  currentToolId?: string;
+  armedToolId: string;
+  elapsedMs: number;
+  announceAfterMs: number;
+  turnActive: boolean;
+  sessionDone?: boolean;
+}): boolean {
+  return (
+    !input.sessionDone &&
+    input.toolRunning &&
+    input.turnActive &&
+    input.currentToolId === input.armedToolId &&
+    input.elapsedMs >= input.announceAfterMs
+  );
+}
+
+export function buildSlowToolLivePatch(
+  toolName: string,
+  elapsedMs: number,
+  queuedMessages: number,
+): Pick<RuntimeLiveStatePatch, "activity" | "toolName" | "summary"> {
+  return {
+    activity: SLOW_TOOL_LIVE_ACTIVITY,
+    toolName,
+    summary: buildSlowToolStatusText(toolName, elapsedMs, queuedMessages),
+  };
 }
 
 /** Texto do estado ao vivo (aparece no UI, nunca como mensagem na conversa). */

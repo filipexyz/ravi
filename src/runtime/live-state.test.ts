@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import {
   clearRuntimeLiveState,
+  getRuntimeLiveState,
   getRuntimeLiveStateForSession,
+  isRuntimeLiveBusy,
   markRuntimeLiveIdle,
   updateRuntimeLiveState,
 } from "./live-state.js";
@@ -41,10 +43,58 @@ describe("runtime live-state", () => {
 
     markRuntimeLiveIdle("dev");
     expect(getRuntimeLiveStateForSession(makeSession())?.activity).toBe("idle");
+    expect(getRuntimeLiveState("dev")?.busySince).toBeUndefined();
+    expect(getRuntimeLiveState("dev")?.toolName).toBeUndefined();
     clearRuntimeLiveState("dev");
   });
 
-  it("falls back to blocked state for aborted persisted sessions", () => {
+  it("clears busySince and toolName when a turn returns to idle", () => {
+    clearRuntimeLiveState("dev");
+    updateRuntimeLiveState("dev", {
+      activity: "thinking",
+      summary: "bash running",
+      toolName: "bash",
+    });
+    expect(getRuntimeLiveState("dev")?.busySince).toBeDefined();
+    expect(getRuntimeLiveState("dev")?.toolName).toBe("bash");
+
+    const idle = markRuntimeLiveIdle("dev", "turn complete");
+    expect(idle).toMatchObject({
+      activity: "idle",
+      summary: "turn complete",
+    });
+    expect(idle.busySince).toBeUndefined();
+    expect(idle.toolName).toBeUndefined();
+    expect(getRuntimeLiveState("dev")?.busySince).toBeUndefined();
+    expect(getRuntimeLiveState("dev")?.toolName).toBeUndefined();
+    clearRuntimeLiveState("dev");
+  });
+
+  it("treats blocked as not busy and does not attach busySince", () => {
+    clearRuntimeLiveState("dev");
+    updateRuntimeLiveState("dev", {
+      activity: "thinking",
+      summary: "bash running",
+      toolName: "bash",
+    });
+
+    const blocked = updateRuntimeLiveState("dev", {
+      activity: "blocked",
+      summary: "turn failed",
+    });
+
+    expect(isRuntimeLiveBusy("blocked")).toBe(false);
+    expect(isRuntimeLiveBusy("thinking")).toBe(true);
+    expect(blocked).toMatchObject({
+      activity: "blocked",
+      summary: "turn failed",
+    });
+    expect(blocked.busySince).toBeUndefined();
+    expect(blocked.toolName).toBeUndefined();
+    clearRuntimeLiveState("dev");
+  });
+
+  it("falls back to blocked-but-not-busy for aborted persisted sessions", () => {
     const live = getRuntimeLiveStateForSession(
       makeSession({
         name: "aborted-session",
@@ -58,6 +108,9 @@ describe("runtime live-state", () => {
       activity: "blocked",
       summary: "last run aborted",
       updatedAt: 3_000,
+      agentId: "dev",
     });
+    expect(live?.busySince).toBeUndefined();
+    expect(isRuntimeLiveBusy(live!.activity)).toBe(false);
   });
 });

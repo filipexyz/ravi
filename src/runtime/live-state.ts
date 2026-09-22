@@ -4,6 +4,12 @@ import type { RuntimeProviderId, RuntimeSkillVisibilityRecord } from "./types.js
 
 export type RuntimeLiveActivity = "idle" | "thinking" | "streaming" | "compacting" | "awaiting_approval" | "blocked";
 
+export function isRuntimeLiveBusy(activity: RuntimeLiveActivity): boolean {
+  // `blocked` is a stuck/failed label, not an in-progress busy state.
+  // Pairing it with busySince makes operators see a growing "blocked" timer.
+  return activity !== "idle" && activity !== "blocked";
+}
+
 export interface RuntimeLiveState {
   activity: RuntimeLiveActivity;
   summary?: string;
@@ -37,7 +43,7 @@ const liveBySessionName = new Map<string, RuntimeLiveState>();
 export function updateRuntimeLiveState(sessionName: string, patch: RuntimeLiveStatePatch): RuntimeLiveState {
   const now = Date.now();
   const current = liveBySessionName.get(sessionName);
-  const busy = patch.activity !== "idle";
+  const busy = isRuntimeLiveBusy(patch.activity);
   const next: RuntimeLiveState = {
     ...(current ?? { updatedAt: now }),
     activity: patch.activity,
@@ -80,7 +86,6 @@ export function getRuntimeLiveStateForSession(session: SessionEntry): RuntimeLiv
       activity: "blocked",
       summary: "last run aborted",
       updatedAt: session.updatedAt,
-      busySince: session.updatedAt,
       agentId: session.agentId,
     };
   }
