@@ -5384,21 +5384,33 @@ public typealias ContactsActivityReturn = [String: RaviJSON]
 
 public struct ContactsAddOptions: Codable, Sendable {
   public var agent: String?
+  public var channel: String?
+  public var instance: String?
   public var kind: String?
 
-  public init(agent: String? = nil, kind: String? = nil) {
+  public init(agent: String? = nil, channel: String? = nil, instance: String? = nil, kind: String? = nil) {
     self.agent = agent
+    self.channel = channel
+    self.instance = instance
     self.kind = kind
   }
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
+    case channel = "channel"
+    case instance = "instance"
     case kind = "kind"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.agent {
       body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.channel {
+      body["channel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.instance {
+      body["instance"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.kind {
       body["kind"] = try RaviJSON.fromEncodable(value)

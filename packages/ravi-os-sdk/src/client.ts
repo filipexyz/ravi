@@ -1415,6 +1415,8 @@ export class RaviClient {
     /** Add/allow a contact */
     add: async (identity: string, name?: string, options?: {
       agent?: string;
+      channel?: string;
+      instance?: string;
       kind?: string;
     }): Promise<ContactsAddReturn> => {
       return this.transport.call({

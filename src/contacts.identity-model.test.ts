@@ -62,6 +62,7 @@ import {
   updateCrmContactProfile,
   upsertAgentPlatformIdentity,
   upsertContact,
+  upsertContactFromPlatformIdentity,
 } from "./contacts.js";
 import { attachTagSlugsToAsset } from "./tags/helpers.js";
 import {
@@ -1845,6 +1846,101 @@ describe("contacts identity graph schema", () => {
     expect(agentOwned.contact).toBeNull();
     expect(agentOwned.platformIdentity).toMatchObject({ ownerType: "agent", ownerId: "dev" });
     expect(getContact("5511999900003")).toBeNull();
+  });
+
+  it("does not create contacts for Slack channel or conversation ids", () => {
+    const channel = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformSenderId: "C123CHANNEL",
+      contactIdentity: "C123CHANNEL",
+      intakeMode: "pending",
+    });
+    expect(channel.contact).toBeNull();
+    expect(getContact("C123CHANNEL")).toBeNull();
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "C123CHANNEL" }),
+    ).toBeNull();
+  });
+
+  it("creates a Slack platform identity contact without a prior DM", () => {
+    const contact = upsertContactFromPlatformIdentity({
+      channel: "slack",
+      platformUserId: "U0BAA2B1LTS",
+      instanceId: "slack-main",
+      name: "Luis",
+      status: "allowed",
+      source: "manual",
+    });
+
+    expect(contact.name).toBe("Luis");
+    expect(contact.status).toBe("allowed");
+    expect(getContact("U0BAA2B1LTS")?.id).toBe(contact.id);
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U0BAA2B1LTS" }),
+    ).toMatchObject({
+      ownerType: "contact",
+      ownerId: contact.id,
+      instanceId: "slack-main",
+    });
+
+    const repeated = upsertContactFromPlatformIdentity({
+      channel: "slack",
+      platformUserId: "U0BAA2B1LTS",
+      instanceId: "slack-main",
+      name: "Luis Filipe",
+    });
+    expect(repeated.id).toBe(contact.id);
+    expect(repeated.name).toBe("Luis Filipe");
+    expect(getAllContacts()).toHaveLength(1);
+  });
+
+  it("requires an instance and rejects Slack conversation ids on operator create", () => {
+    expect(() =>
+      upsertContactFromPlatformIdentity({
+        channel: "slack",
+        platformUserId: "U123",
+      }),
+    ).toThrow(/instance is required/);
+
+    expect(() =>
+      upsertContactFromPlatformIdentity({
+        channel: "slack",
+        platformUserId: "C123CHANNEL",
+        instanceId: "slack-main",
+      }),
+    ).toThrow(/chats, not contacts/);
+  });
+
+  it("does not steal an agent-owned Slack identity when creating a contact", () => {
+    upsertAgentPlatformIdentity({
+      agentId: "dev",
+      channel: "slack",
+      instanceId: "slack-main",
+      platformUserId: "U999AGENT",
+      linkedBy: "auto",
+    });
+
+    expect(() =>
+      upsertContactFromPlatformIdentity({
+        channel: "slack",
+        platformUserId: "U999AGENT",
+        instanceId: "slack-main",
+        name: "Bot Person",
+      }),
+    ).toThrow(/owned by agent/);
+    expect(getContact("U999AGENT")).toBeNull();
+  });
+
+  it("keeps phone upsert as the DM contact path", () => {
+    upsertContact("5511999900004", "Phone Person", "allowed", "manual");
+    const viaPlatform = upsertContactFromPlatformIdentity({
+      channel: "phone",
+      platformUserId: "5511999900004",
+      name: "Phone Person",
+    });
+    expect(viaPlatform.phone).toBe("5511999900004");
+    expect(getAllContacts()).toHaveLength(1);
   });
 
   it("does not reassign a contact-owned platform identity to an agent", () => {

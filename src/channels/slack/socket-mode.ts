@@ -3,6 +3,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import {
   ensureContactFromInbound,
+  isSlackHumanUserId,
   resolvePlatformIdentity,
   saveAccountPending,
   type PlatformIdentity,
@@ -1396,36 +1397,72 @@ export class SlackSocketModeService {
     }
   }
 
+  private async intakeSlackHumanSender(input: {
+    message: SlackNormalizedMessage;
+    instanceId: string;
+    instanceAliases: SlackInstanceAliasResolution;
+    intakeMode: "off" | "discovered" | "pending";
+    defaultTags?: string[] | null;
+    chatType: string;
+  }): Promise<void> {
+    if (input.intakeMode === "off") return;
+    if (input.message.senderKind === "bot") return;
+    const userId = input.message.slackUserId ?? input.message.userId;
+    if (!isSlackHumanUserId(userId)) return;
+
+    const existing = resolveScopedSlackIdentity(
+      input.instanceAliases,
+      (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: userId }),
+      (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+    );
+    if (existing.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON) return;
+    if (existing.identity?.ownerType === "contact" || existing.identity?.ownerType === "agent") {
+      return;
+    }
+
+    const profile = await this.slackUserProfile(userId);
+    ensureContactFromInbound({
+      channel: "slack",
+      instanceId: input.instanceId,
+      platformSenderId: userId,
+      contactIdentity: userId,
+      displayName: profile?.displayName ?? null,
+      avatarUrl: profile?.avatarUrl ?? null,
+      profileData: {
+        source: "slack.event",
+        accountId: this.options.accountId,
+        teamId: input.message.teamId,
+        channelId: input.message.channelId,
+      },
+      chatId: input.message.channelId,
+      chatType: input.chatType,
+      sourceEventId: input.message.eventId ?? input.message.envelopeId ?? null,
+      providerMessageId: input.message.ts,
+      intakeMode: input.intakeMode,
+      defaultTags: input.defaultTags,
+      source: "slack.event",
+    });
+  }
+
   private async holdSlackSenderForReview(input: {
     message: SlackNormalizedMessage;
     accountId: string;
     instanceId: string;
+    instanceAliases: SlackInstanceAliasResolution;
     intakeMode: "off" | "discovered" | "pending";
+    defaultTags?: string[] | null;
     isGroup: boolean;
   }): Promise<void> {
-    const profile = input.isGroup ? null : await this.slackUserProfile(input.message.userId);
-    if (!input.isGroup) {
-      ensureContactFromInbound({
-        channel: "slack",
-        instanceId: input.instanceId,
-        platformSenderId: input.message.userId,
-        contactIdentity: input.message.userId,
-        displayName: profile?.displayName ?? null,
-        avatarUrl: profile?.avatarUrl ?? null,
-        profileData: {
-          source: "slack.event",
-          accountId: input.accountId,
-          teamId: input.message.teamId,
-          channelId: input.message.channelId,
-        },
-        chatId: input.message.channelId,
-        chatType: "dm",
-        sourceEventId: input.message.eventId ?? input.message.envelopeId ?? null,
-        providerMessageId: input.message.ts,
-        intakeMode: input.intakeMode,
-        source: "slack.event",
-      });
-    }
+    await this.intakeSlackHumanSender({
+      message: input.message,
+      instanceId: input.instanceId,
+      instanceAliases: input.instanceAliases,
+      intakeMode: input.intakeMode,
+      defaultTags: input.defaultTags,
+      chatType: input.isGroup ? "group" : "dm",
+    });
+    const profileUserId = input.message.slackUserId ?? input.message.userId;
+    const profile = input.isGroup ? null : await this.slackUserProfile(profileUserId);
     saveAccountPending(input.accountId, input.isGroup ? input.message.channelId : input.message.userId, {
       name: profile?.displayName ?? null,
       chatId: input.message.channelId,
@@ -1526,7 +1563,9 @@ export class SlackSocketModeService {
         message,
         accountId: routeAccountId,
         instanceId,
+        instanceAliases,
         intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+        defaultTags: instanceConfig?.defaultContactTags ?? null,
         isGroup,
       });
       log.info("Slack inbound held for owner review", {
@@ -1591,6 +1630,14 @@ export class SlackSocketModeService {
         }
       }
     }
+    await this.intakeSlackHumanSender({
+      message,
+      instanceId,
+      instanceAliases,
+      intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+      defaultTags: instanceConfig?.defaultContactTags ?? null,
+      chatType: routeThreadId ? "thread" : peerKind,
+    });
     const actorIdentity = resolveSlackActorIdentity({
       chatId: canonicalChat.id,
       instanceAliases,
