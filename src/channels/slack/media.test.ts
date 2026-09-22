@@ -27,6 +27,20 @@ describe("resolveSlackMediaChannel", () => {
     expect(resolveSlackMediaChannel(channels, "hana-slack-credentials")?.name).toBe("hana-slack");
     expect(resolveSlackMediaChannel(channels, "missing")).toBeUndefined();
   });
+
+  it("does not resolve a disabled Slack channel or a same-named WhatsApp channel", () => {
+    const channels = {
+      disabled: slackChannel({ enabled: false }),
+      main: slackChannel({
+        name: "main",
+        provider: "whatsapp",
+        credentialConnection: undefined,
+      }),
+    };
+
+    expect(resolveSlackMediaChannel(channels, "hana-slack")).toBeUndefined();
+    expect(resolveSlackMediaChannel(channels, "main")).toBeUndefined();
+  });
 });
 
 describe("sendSlackMedia", () => {
