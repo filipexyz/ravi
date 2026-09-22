@@ -241,6 +241,19 @@ Allowed `scope_kind` values:
 - `workspace`: default for one normalized cwd/worktree path.
 - `global`: local fallback for the current Ravi installation.
 
+`global:default` is the install-level project inherited by new agents. It is
+written only in these cases:
+
+- `ravi login`, when the selected organization has exactly one visible Console
+  project and no install default exists;
+- the first successful `ravi cloud scope set --project`, which seeds
+  `global:default` if it is still empty;
+- `ravi cloud scope set --project <ref> --global`, which sets or replaces the
+  install default.
+
+Multiple visible projects MUST NOT be auto-selected. `agents create` MUST NOT
+write a Console scope default.
+
 Future scope kinds MAY include `chat`, `route`, or `task`, but only after a spec
 update defines how they interact with delegated authority.
 
@@ -441,9 +454,12 @@ follow the Manual v2 agent-first contract defined by `cli`:
   global taxonomy. `PAYLOAD_INVALID` (for example "Choose only one scope
   target" or a missing `--project`) exits `2`; only
   `WRITE_REQUIRES_EXECUTE` exits `3`.
-- Unknown project refs on `set` fail as `PROJECT_ACCESS_DENIED` listing the
-  visible project refs (already safe, id/slug-only) — the resolver's message
-  is the suggestion surface for this remote resource.
+- Unknown or wrong project refs on `set` fail as `PAYLOAD_INVALID` (not
+  `PROJECT_ACCESS_DENIED`) naming the ref as not found, listing visible
+  project refs (id/slug-only), and suggesting
+  `ravi cloud scope set --project <project-ref>`. If the ref matches a known
+  local agent id, the message says agent refs are not Console projects. Remote
+  Console `PROJECT_ACCESS_DENIED` / `ORG_ACCESS_DENIED` stay unchanged.
 - Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
   `cloud` root is registered in `AGENT_CONTRACT_DOMAINS`.
 
@@ -452,13 +468,19 @@ plus this spec are the teaching surface.
 
 ## Errors
 
-Missing project errors SHOULD say:
+Missing project errors SHOULD distinguish "no project selected" from "this ref
+is not a visible Console project":
 
 ```text
-Missing Console project. Set one with:
+Missing Console project. No project is selected in this scope (Project: not selected). Set one with:
   ravi cloud scope set --project <project-ref> --session <session>
+or:
+  ravi cloud scope set --project <project-ref> --global
 or pass --project <project-ref>.
 ```
+
+Unknown ref errors SHOULD say the ref was not found (not that the organization
+hid it) and include the same corrective command plus visible refs.
 
 Ambiguous project errors SHOULD list safe project refs returned by Console and
 suggest setting a default.
@@ -498,3 +520,13 @@ errors.
 - Existing local-only Ravi behavior works without cloud credentials.
 - No scope command or JSON output prints access tokens, refresh tokens, context
   keys, provider secrets, or WorkOS tokens.
+- Unknown/wrong project refs fail as `PAYLOAD_INVALID` with a not-found message
+  and `ravi cloud scope set --project <project-ref>`, not as organization
+  visibility / `PROJECT_ACCESS_DENIED`.
+- `ravi login` writes an install-level `global:default` Console project only
+  when the selected organization has exactly one visible project and no global
+  default exists. Multiple visible projects are never auto-picked.
+- The first successful `ravi cloud scope set --project` seeds `global:default`
+  when none exists, so later agents inherit that choice. It MUST NOT overwrite
+  an existing global default. `ravi cloud scope set --project <ref> --global`
+  sets or replaces the install default explicitly.

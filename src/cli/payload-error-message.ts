@@ -42,7 +42,7 @@ export function inferPayloadIssuePath(message: string): Array<string | number> {
   if (flag?.[1]) {
     return [flag[1].replace(/-([a-z])/g, (_, character: string) => character.toUpperCase())];
   }
-  if (/^Missing Console project/i.test(message)) return ["project"];
+  if (/^Missing Console project/i.test(message) || /^Console project "/i.test(message)) return ["project"];
   return [];
 }
 

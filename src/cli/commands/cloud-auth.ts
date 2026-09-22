@@ -20,6 +20,10 @@ import {
 import type { CloudCredentials, ConsoleAuthConfig, ConsoleMeResponse } from "../../cloud-auth/types.js";
 import { DEFAULT_CONSOLE_URL } from "../../cloud-auth/types.js";
 import { completeVerificationUri } from "../../cloud-auth/verification-uri.js";
+import {
+  seedInstallConsoleScopeDefaultFromVisibleProjects,
+  type ConsoleScopeResolverDeps,
+} from "../../console-scope/resolver.js";
 
 export interface CloudLoginOptions {
   console?: string;
@@ -45,6 +49,7 @@ export interface CloudAuthCommandDeps {
   readCredentials?: typeof readCloudCredentials;
   writeCredentials?: typeof writeCloudCredentials;
   deleteCredentials?: typeof deleteCloudCredentials;
+  listProjects?: ConsoleScopeResolverDeps["listProjects"];
   openExternal?: (url: string) => Promise<void> | void;
   sleep?: (ms: number) => Promise<void>;
   env?: NodeJS.ProcessEnv;
@@ -94,6 +99,17 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
   });
   const hydrated = await hydrateLoginIdentity(client, credentials);
   write(hydrated);
+  await seedInstallConsoleScopeDefaultFromVisibleProjects(
+    { consoleUrl: hydrated.consoleUrl, credentials: hydrated },
+    {
+      client,
+      readCredentials: () => hydrated,
+      writeCredentials: write,
+      deleteCredentials: deps.deleteCredentials ?? deleteCloudCredentials,
+      listProjects: deps.listProjects,
+      env,
+    },
+  );
 
   const payload = {
     success: true,

@@ -1,8 +1,20 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import type { CloudCredentials, CredentialExchangeInput } from "../../cloud-auth/types.js";
+import { closeConsoleScopeStore, getConsoleScopeDefault } from "../../console-scope/store.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { runLogin, runLogout, runWhoami } from "./cloud-auth.js";
+
+let stateDir: string | null = null;
+
+afterEach(async () => {
+  closeConsoleScopeStore();
+  if (stateDir) {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  }
+});
 
 describe("cloud auth root command handlers", () => {
   it("prints whoami JSON with identity and expiry metadata but no token material", async () => {
@@ -211,6 +223,110 @@ describe("cloud auth root command handlers", () => {
     expect(new URL(payload.auth.authorizationUrl).searchParams.get("user_code")).toBe("ABCD-EFGH");
     expect(payload.auth.authorizationUrl).not.toBe("https://console.example/cli/authorize");
     expect(payload.auth.verificationUri).not.toBe("https://console.example/cli/authorize");
+  });
+
+  it("seeds an install Console project default on login when exactly one project is visible", async () => {
+    stateDir = await createIsolatedRaviState("ravi-login-scope-seed-");
+    const client = {
+      getAuthConfig: mock(async () => ({
+        configured: true,
+        clientId: "ravi-cli",
+        mode: "console_device",
+        endpoints: {
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
+        },
+      })),
+      startDeviceAuthorization: mock(async () => ({
+        verificationUriComplete: "https://console.example/device?user_code=ABC",
+        userCode: "ABC",
+        deviceCode: "device-secret",
+        interval: 1,
+      })),
+      exchange: mock(async (input: CredentialExchangeInput) => ({
+        ...makeCredentials(),
+        installationId: input.installationId,
+      })),
+    } as unknown as ConsoleApiClient;
+
+    await captureConsole(() =>
+      runLogin(
+        { console: "https://console.example", json: true, open: false, poll: false },
+        {
+          client,
+          readCredentials: () => null,
+          writeCredentials: () => {},
+          listProjects: async () => ({
+            success: true,
+            consoleUrl: "https://console.example",
+            total: 1,
+            projects: [{ id: "proj_1", slug: "solo-lab", name: "Solo" }],
+            items: [{ id: "proj_1", slug: "solo-lab", name: "Solo" }],
+          }),
+        },
+      ),
+    );
+
+    expect(
+      getConsoleScopeDefault({ scopeKind: "global", scopeKey: "default" }, "https://console.example", {
+        organization: { id: "org_123", name: "Acme" },
+      })?.project?.ref,
+    ).toBe("solo-lab");
+  });
+
+  it("does not seed an install default on login when multiple projects are visible", async () => {
+    stateDir = await createIsolatedRaviState("ravi-login-scope-multi-");
+    const client = {
+      getAuthConfig: mock(async () => ({
+        configured: true,
+        clientId: "ravi-cli",
+        mode: "console_device",
+        endpoints: {
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
+        },
+      })),
+      startDeviceAuthorization: mock(async () => ({
+        verificationUriComplete: "https://console.example/device?user_code=ABC",
+        userCode: "ABC",
+        deviceCode: "device-secret",
+        interval: 1,
+      })),
+      exchange: mock(async (input: CredentialExchangeInput) => ({
+        ...makeCredentials(),
+        installationId: input.installationId,
+      })),
+    } as unknown as ConsoleApiClient;
+
+    await captureConsole(() =>
+      runLogin(
+        { console: "https://console.example", json: true, open: false, poll: false },
+        {
+          client,
+          readCredentials: () => null,
+          writeCredentials: () => {},
+          listProjects: async () => ({
+            success: true,
+            consoleUrl: "https://console.example",
+            total: 2,
+            projects: [
+              { id: "proj_1", slug: "rbbt-ravi", name: "RBBT" },
+              { id: "proj_2", slug: "filipe-ai", name: "Filipe" },
+            ],
+            items: [
+              { id: "proj_1", slug: "rbbt-ravi", name: "RBBT" },
+              { id: "proj_2", slug: "filipe-ai", name: "Filipe" },
+            ],
+          }),
+        },
+      ),
+    );
+
+    expect(
+      getConsoleScopeDefault({ scopeKind: "global", scopeKey: "default" }, "https://console.example", {
+        organization: { id: "org_123", name: "Acme" },
+      }),
+    ).toBeNull();
   });
 
   it("revokes on logout, deletes local credentials, and redacts JSON output", async () => {

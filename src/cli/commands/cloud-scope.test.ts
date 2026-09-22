@@ -126,6 +126,65 @@ describe("cloud scope CLI commands", () => {
   // Manual v2 agent-first contract: set/clear are declared UNBRAKED (reversible
   // local-default pair), and the legacy CloudAuthError funnel must never
   // swallow a ContractError raised by the contract layer.
+  it("rejects an unknown project ref as PAYLOAD_INVALID instead of PROJECT_ACCESS_DENIED", async () => {
+    stateDir = await createIsolatedRaviState("ravi-cloud-scope-unknown-ref-");
+    const command = new CloudScopeCommands({
+      client: makeClient([{ id: "proj_1", slug: "rbbt-ravi", name: "RBBT" }]),
+      readCredentials: makeReadCredentials(),
+      getContext: () => ({ sessionName: "ravi-console" }),
+    });
+
+    let caught: unknown;
+    try {
+      await captureConsole(() =>
+        command.set("missing-project", true, undefined, undefined, undefined, undefined, true),
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ code: "PAYLOAD_INVALID" });
+    expect(String((caught as Error).message)).toContain('Console project "missing-project" was not found');
+    expect(String((caught as Error).message)).toContain("ravi cloud scope set --project <project-ref>");
+    expect(String((caught as Error).message)).toContain("Visible project refs: rbbt-ravi.");
+    expect(String((caught as Error).message)).not.toContain("not visible in the selected organization");
+  });
+
+  it("sets --global and lets a new agent inherit the install default", async () => {
+    stateDir = await createIsolatedRaviState("ravi-cloud-scope-global-command-");
+    const setCommand = new CloudScopeCommands({
+      client: makeClient(),
+      readCredentials: makeReadCredentials(),
+      getContext: () => ({ sessionName: "ravi-console" }),
+    });
+    const { output: setOutput } = await captureConsole(() =>
+      setCommand.set("rbbt-ravi", undefined, undefined, undefined, true, undefined, true),
+    );
+    const setPayload = JSON.parse(setOutput);
+    expect(setPayload).toMatchObject({
+      success: true,
+      target: { scopeKind: "global", scopeKey: "default" },
+      scope: { project: { ref: "rbbt-ravi" } },
+    });
+
+    const showCommand = new CloudScopeCommands({
+      client: makeClient([
+        { id: "proj_1", slug: "rbbt-ravi", name: "RBBT" },
+        { id: "proj_2", slug: "filipe-ai", name: "Filipe" },
+      ]),
+      readCredentials: makeReadCredentials(),
+      getContext: () => ({ agentId: "fresh-agent" }),
+    });
+    const { output: showOutput } = await captureConsole(() => showCommand.show(undefined, true));
+    expect(JSON.parse(showOutput)).toMatchObject({
+      success: true,
+      scope: {
+        source: "global_default",
+        project: { ref: "rbbt-ravi" },
+      },
+    });
+  });
+
   it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
     stateDir = await createIsolatedRaviState("ravi-cloud-scope-contract-test-");
     const boom = new ContractError("cloud scope set", "SOME_CONTRACT_CODE", "boom", 3, { dryRun: true });
