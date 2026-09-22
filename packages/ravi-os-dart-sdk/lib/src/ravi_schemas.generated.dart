@@ -22974,8 +22974,16 @@ class RaviSchemas {
       "description": "Restrict to agent(s), comma-separated",
       "type": "string"
     },
+    "channel": {
+      "description": "Channel for a platform identity: slack, telegram, phone, whatsapp, email",
+      "type": "string"
+    },
     "identity": {
-      "description": "Phone number or WhatsApp identity",
+      "description": "Phone, WhatsApp, or platform user id (use --channel/--instance for Slack)",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Channel instance name or id (required for slack/telegram/discord)",
       "type": "string"
     },
     "kind": {
@@ -23256,7 +23264,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "channel": {
-      "description": "Channel, e.g. phone, whatsapp, telegram, email",
+      "description": "Channel, e.g. phone, whatsapp, telegram, slack, email",
       "type": "string"
     },
     "contact": {

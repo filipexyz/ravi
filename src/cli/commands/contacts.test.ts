@@ -564,7 +564,9 @@ describe("ContactsCommands info", () => {
   });
 
   it("keeps phone add on the existing DM path", () => {
-    captureJson(() => new ContactsCommands().add("5511999999999", "Alice", undefined, undefined, undefined, undefined, true));
+    captureJson(() =>
+      new ContactsCommands().add("5511999999999", "Alice", undefined, undefined, undefined, undefined, true),
+    );
     expect(upsertContactCalls).toEqual([{ phone: "5511999999999", name: "Alice" }]);
     expect(platformIdentityAdds).toHaveLength(0);
   });

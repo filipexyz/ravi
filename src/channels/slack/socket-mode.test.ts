@@ -371,9 +371,9 @@ describe("Slack Socket Mode routing", () => {
     ]);
     const contact = getPendingContacts()[0];
     expect(contact?.name).toBe("Ana");
-    expect(resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U555" })).toMatchObject(
-      { ownerType: "contact", platformDisplayName: "Ana" },
-    );
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U555" }),
+    ).toMatchObject({ ownerType: "contact", platformDisplayName: "Ana" });
   });
 
   it("intakes a routed Slack channel sender without requiring a prior DM", async () => {
@@ -3921,12 +3921,12 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
       reason: "resolved",
     });
     expect(actorResolutionForSource(source, context)).toBe("resolved");
-    expect(
-      resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U123" })?.ownerId,
-    ).toBe(source.contactId);
-    expect(
-      resolvePlatformIdentity({ channel: "slack", instanceId: OTHER_UUID, platformUserId: "U123" })?.ownerId,
-    ).toBe(contact.id);
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U123" })?.ownerId).toBe(
+      source.contactId,
+    );
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: OTHER_UUID, platformUserId: "U123" })?.ownerId).toBe(
+      contact.id,
+    );
   });
 
   it("fails closed with ambiguous_instance_alias when equivalent aliases resolve to different owners", async () => {
@@ -4109,9 +4109,10 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     expect(source.actorType).toBe("contact");
     expect(source.contactId).toBeTruthy();
     expect(actorResolutionForSource(source, context)).toBe("resolved");
-    expect(
-      resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U404" }),
-    ).toMatchObject({ ownerType: "contact", ownerId: source.contactId });
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U404" })).toMatchObject({
+      ownerType: "contact",
+      ownerId: source.contactId,
+    });
     const { runtimeContext } = buildRuntimeRequestContext({
       dbSessionKey: getSessionByName("ravi-hil")!.sessionKey,
       sessionName: "ravi-hil",

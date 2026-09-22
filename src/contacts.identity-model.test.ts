@@ -1858,7 +1858,9 @@ describe("contacts identity graph schema", () => {
     });
     expect(channel.contact).toBeNull();
     expect(getContact("C123CHANNEL")).toBeNull();
-    expect(resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "C123CHANNEL" })).toBeNull();
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "C123CHANNEL" }),
+    ).toBeNull();
   });
 
   it("creates a Slack platform identity contact without a prior DM", () => {

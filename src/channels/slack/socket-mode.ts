@@ -1375,6 +1375,7 @@ export class SlackSocketModeService {
   private async intakeSlackHumanSender(input: {
     message: SlackNormalizedMessage;
     instanceId: string;
+    instanceAliases: SlackInstanceAliasResolution;
     intakeMode: "off" | "discovered" | "pending";
     defaultTags?: string[] | null;
     chatType: string;
@@ -1383,6 +1384,16 @@ export class SlackSocketModeService {
     if (input.message.senderKind === "bot") return;
     const userId = input.message.slackUserId ?? input.message.userId;
     if (!isSlackHumanUserId(userId)) return;
+
+    const existing = resolveScopedSlackIdentity(
+      input.instanceAliases,
+      (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: userId }),
+      (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+    );
+    if (existing.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON) return;
+    if (existing.identity?.ownerType === "contact" || existing.identity?.ownerType === "agent") {
+      return;
+    }
 
     const profile = await this.slackUserProfile(userId);
     ensureContactFromInbound({
@@ -1412,6 +1423,7 @@ export class SlackSocketModeService {
     message: SlackNormalizedMessage;
     accountId: string;
     instanceId: string;
+    instanceAliases: SlackInstanceAliasResolution;
     intakeMode: "off" | "discovered" | "pending";
     defaultTags?: string[] | null;
     isGroup: boolean;
@@ -1419,6 +1431,7 @@ export class SlackSocketModeService {
     await this.intakeSlackHumanSender({
       message: input.message,
       instanceId: input.instanceId,
+      instanceAliases: input.instanceAliases,
       intakeMode: input.intakeMode,
       defaultTags: input.defaultTags,
       chatType: input.isGroup ? "group" : "dm",
@@ -1525,6 +1538,7 @@ export class SlackSocketModeService {
         message,
         accountId: routeAccountId,
         instanceId,
+        instanceAliases,
         intakeMode: instanceConfig?.contactIntakeMode ?? "off",
         defaultTags: instanceConfig?.defaultContactTags ?? null,
         isGroup,
@@ -1594,6 +1608,7 @@ export class SlackSocketModeService {
     await this.intakeSlackHumanSender({
       message,
       instanceId,
+      instanceAliases,
       intakeMode: instanceConfig?.contactIntakeMode ?? "off",
       defaultTags: instanceConfig?.defaultContactTags ?? null,
       chatType: routeThreadId ? "thread" : peerKind,

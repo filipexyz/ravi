@@ -717,9 +717,15 @@ export class ContactsCommands {
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
     @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
     @Option({ flags: "--kind <kind>", description: "Contact kind: person or org" }) kind?: string,
-    @Option({ flags: "--channel <channel>", description: "Channel for a platform identity: slack, telegram, phone, whatsapp, email" })
+    @Option({
+      flags: "--channel <channel>",
+      description: "Channel for a platform identity: slack, telegram, phone, whatsapp, email",
+    })
     channel?: string,
-    @Option({ flags: "--instance <id>", description: "Channel instance name or id (required for slack/telegram/discord)" })
+    @Option({
+      flags: "--instance <id>",
+      description: "Channel instance name or id (required for slack/telegram/discord)",
+    })
     instanceId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {

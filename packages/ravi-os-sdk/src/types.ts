@@ -4253,7 +4253,9 @@ export type ContactsActivityReturn = Record<string, unknown>;
 /** Input shape for `contacts.add`. */
 export type ContactsAddInput = {
   agent?: string;
+  channel?: string;
   identity: string;
+  instance?: string;
   kind?: string;
   name?: string;
 };

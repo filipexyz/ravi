@@ -4530,14 +4530,22 @@ typedef ContactsActivityReturn = Map<String, RaviJson>;
 ContactsActivityReturn contactsActivityReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class ContactsAddOptions {
-  const ContactsAddOptions({this.agent, this.kind});
+  const ContactsAddOptions({this.agent, this.channel, this.instance, this.kind});
 
   final String? agent;
+  final String? channel;
+  final String? instance;
   final String? kind;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (agent != null) {
       into["agent"] = RaviJson.from(agent);
+    }
+    if (channel != null) {
+      into["channel"] = RaviJson.from(channel);
+    }
+    if (instance != null) {
+      into["instance"] = RaviJson.from(instance);
     }
     if (kind != null) {
       into["kind"] = RaviJson.from(kind);
