@@ -52,7 +52,9 @@ function emptySlackRouterConfig() {
 
 describe("slackInboundReactionFromEnvelope", () => {
   it("maps Slack +1 / heart names onto the approval unicode set", () => {
-    expect(slackInboundReactionFromEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "1713000000.000100" }))).toEqual({
+    expect(
+      slackInboundReactionFromEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "1713000000.000100" })),
+    ).toEqual({
       targetMessageId: "1713000000.000100",
       emoji: "👍",
       senderId: "U123",
@@ -64,20 +66,18 @@ describe("slackInboundReactionFromEnvelope", () => {
       emoji: "👍",
       senderId: "U123",
     });
-    expect(slackInboundReactionFromEnvelope(reactionEnvelope({ reaction: "heart", targetTs: "1713000000.000200" }))).toEqual(
-      {
-        targetMessageId: "1713000000.000200",
-        emoji: "❤️",
-        senderId: "U123",
-      },
-    );
+    expect(
+      slackInboundReactionFromEnvelope(reactionEnvelope({ reaction: "heart", targetTs: "1713000000.000200" })),
+    ).toEqual({
+      targetMessageId: "1713000000.000200",
+      emoji: "❤️",
+      senderId: "U123",
+    });
   });
 
   it("ignores non-message items, removals, and malformed events", () => {
     expect(
-      slackInboundReactionFromEnvelope(
-        reactionEnvelope({ reaction: "+1", targetTs: "F123", itemType: "file" }),
-      ),
+      slackInboundReactionFromEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "F123", itemType: "file" })),
     ).toBeNull();
     expect(
       slackInboundReactionFromEnvelope(

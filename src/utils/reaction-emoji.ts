@@ -10,7 +10,13 @@ const SLACK_NAME_TO_EMOJI: Record<string, string> = {
 };
 
 export function slackReactionShortName(value: string): string {
-  return value.trim().replace(/^:+|:+$/g, "").split("::")[0]?.toLowerCase() ?? "";
+  return (
+    value
+      .trim()
+      .replace(/^:+|:+$/g, "")
+      .split("::")[0]
+      ?.toLowerCase() ?? ""
+  );
 }
 
 /** Map Slack short names (`+1`, `heart`) and skin-tone thumbs to the unicode approval set. */

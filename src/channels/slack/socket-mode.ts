@@ -740,7 +740,7 @@ export class SlackSocketModeService {
     const inboundReaction = slackInboundReactionFromEnvelope(envelope);
     if (inboundReaction) {
       log.info("Slack inbound reaction", inboundReaction);
-      await this.publishInteraction("ravi.inbound.reaction", inboundReaction);
+      await this.publishInteraction("ravi.inbound.reaction", { ...inboundReaction });
       return "processed";
     }
 
