@@ -39,6 +39,11 @@ import {
 } from "../../runtime/runtime-request-context.js";
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
+  normalizeSlackReactionName,
+  resolveSlackApiChannelId,
+  resolveSlackApiTimestamp,
+} from "./chat-action-target.js";
+import {
   SlackAssistantThreadPresence,
   SlackChatActionDelivery,
   SlackPresenceStack,
@@ -570,6 +575,97 @@ describe("Slack Socket Mode routing", () => {
       timestamp: "1713000000.000100",
       name: "+1",
     });
+  });
+
+  it("maps unicode and alias Slack reaction names before calling reactions.add", () => {
+    expect(normalizeSlackReactionName(":+1:")).toBe("+1");
+    expect(normalizeSlackReactionName("thumbsup")).toBe("+1");
+    expect(normalizeSlackReactionName("👍")).toBe("+1");
+    expect(normalizeSlackReactionName("👍🏻")).toBe("+1");
+    expect(normalizeSlackReactionName("❤️")).toBe("heart");
+    expect(normalizeSlackReactionName("hourglass_flowing_sand")).toBe("hourglass_flowing_sand");
+    expect(() => normalizeSlackReactionName("🙂")).toThrow(/invalid_name/);
+  });
+
+  it("resolves backend, thread, and canonical Slack chat ids to a platform channel", async () => {
+    expect(resolveSlackApiChannelId({ chatId: "D123~1713000000.000100" })).toBe("D123");
+    expect(resolveSlackApiChannelId({ chatId: "C123#1712999999.000010" })).toBe("C123");
+    expect(
+      resolveSlackApiChannelId({
+        chatId: "chat_slack_missing",
+        canonicalChatId: "C456",
+      }),
+    ).toBe("C456");
+
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "hana-slack",
+      platformChatId: "D999",
+      chatType: "dm",
+    });
+    expect(
+      resolveSlackApiChannelId({
+        chatId: chat.id,
+        canonicalChatId: chat.id,
+      }),
+    ).toBe("D999");
+    expect(() => resolveSlackApiChannelId({ chatId: "chat_slack_missing" })).toThrow(/channel_not_found/);
+  });
+
+  it("reacts on a scoped Slack DM even when the job carries slug+UUID session ids", async () => {
+    const addReaction = mock(async () => ({ ok: true, action: "reacted" }));
+    const delivery = new SlackChatActionDelivery({ addReaction } as never, {
+      accountId: "hana-slack",
+      routeAccountId: "hana-slack",
+      instanceId: "hana-slack",
+      connection: "hana-slack-secret",
+      instanceAliases: ["0bc9635c-1ee9-42e3-9112-95be9cdb0334", "hana-slack"],
+    });
+    const target = {
+      channel: "slack" as const,
+      accountId: "hana-slack",
+      instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+      chatId: "D123~1713000000.000100",
+      canonicalChatId: "chat_slack_D123",
+    };
+
+    expect(delivery.supports(target)).toBe(true);
+    await delivery.executeChatAction({
+      sessionName: "hana-slack-dm",
+      idempotencyKey: "react-dm-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId: "1713000000.000100",
+        emoji: "👍",
+      },
+    });
+
+    expect(addReaction).toHaveBeenCalledWith({
+      channel: "D123",
+      timestamp: "1713000000.000100",
+      name: "+1",
+    });
+    expect(resolveSlackApiTimestamp("1713000000.000100")).toBe("1713000000.000100");
+  });
+
+  it("fails Slack react delivery when reactions.add returns ok:false", async () => {
+    const addReaction = mock(async () => ({ ok: false, error: "invalid_name" }));
+    const delivery = new SlackChatActionDelivery({ addReaction } as never);
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "hana-slack-dm",
+        idempotencyKey: "react-rejected",
+        target: { channel: "slack", accountId: "hana-slack", chatId: "D123" },
+        action: {
+          type: "chat_action",
+          actionId: "message.react",
+          providerMessageId: "1713000000.000100",
+          emoji: "+1",
+        },
+      }),
+    ).rejects.toThrow(/Slack reaction was not accepted: invalid_name/);
   });
 
   it("creates a native Slack thread root with a stable client message id", async () => {
