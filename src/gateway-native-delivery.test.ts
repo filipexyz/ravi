@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { configStore } from "./config-store.js";
 import type { ChannelOutboundJob } from "./channels/outbound-stream.js";
+import type { SlackTextSendInput } from "./channels/slack/text-send.js";
+import * as slackTextSend from "./channels/slack/text-send.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { dbUpsertChannel, dbUpsertInstance, getDb } from "./router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
 const publishedJobs: ChannelOutboundJob[] = [];
 const slackMediaSends: Array<Record<string, unknown>> = [];
-const slackTextSends: Array<Record<string, unknown>> = [];
+const slackTextSends: SlackTextSendInput[] = [];
 const decoder = new TextDecoder();
 const acceptedMsgIds = new Set<string>();
 let publishBehavior: "ok" | "timeoutOnceThenOk" | "timeoutAlwaysBeforePublish" | "failBeforePublish" = "ok";
@@ -82,8 +84,16 @@ mock.module("./channels/slack/media.js", () => ({
   }),
 }));
 
-mock.module("./channels/slack/text-send.js", () => ({
-  sendSlackText: mock(async (input: Record<string, unknown>) => {
+let stateDir: string | null = null;
+let sendSlackTextSpy: ReturnType<typeof spyOn> | undefined;
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-gateway-native-test-");
+  publishedJobs.length = 0;
+  slackMediaSends.length = 0;
+  slackTextSends.length = 0;
+  sendSlackTextSpy?.mockRestore();
+  sendSlackTextSpy = spyOn(slackTextSend, "sendSlackText").mockImplementation(async (input: SlackTextSendInput) => {
     slackTextSends.push(input);
     return {
       transport: "slack-native",
@@ -93,16 +103,7 @@ mock.module("./channels/slack/text-send.js", () => ({
       messageId: "1784000000.000100",
       raw: { ok: true },
     };
-  }),
-}));
-
-let stateDir: string | null = null;
-
-beforeEach(async () => {
-  stateDir = await createIsolatedRaviState("ravi-gateway-native-test-");
-  publishedJobs.length = 0;
-  slackMediaSends.length = 0;
-  slackTextSends.length = 0;
+  });
   acceptedMsgIds.clear();
   publishBehavior = "ok";
   publishAttempts = 0;
@@ -110,6 +111,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  sendSlackTextSpy?.mockRestore();
+  sendSlackTextSpy = undefined;
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
@@ -597,7 +600,9 @@ function seedNativeSlack(overrides: { credentialConnection?: string | null } = {
     name: "hana-slack",
     provider: "slack",
     enabled: true,
-    ...(overrides.credentialConnection === null ? {} : { credentialConnection: overrides.credentialConnection ?? "hana-slack-secret" }),
+    ...(overrides.credentialConnection === null
+      ? {}
+      : { credentialConnection: overrides.credentialConnection ?? "hana-slack-secret" }),
   });
   configStore.refresh();
 }
@@ -611,71 +616,76 @@ function seedOmniWhatsApp(): void {
   configStore.refresh();
 }
 
-async function handleDirectSend(
-  gateway: unknown,
-  data: {
-    channel: string;
-    accountId: string;
-    to: string;
-    text?: string;
-    poll?: { name: string; values: string[] };
-    replyTopic?: string;
-  },
-): Promise<void> {
-  await (gateway as { handleDirectSendEvent(data: typeof data): Promise<void> }).handleDirectSendEvent(data);
+type DirectSendTestRequest = {
+  channel: string;
+  accountId: string;
+  to: string;
+  text?: string;
+  poll?: { name: string; values: string[] };
+  replyTopic?: string;
+};
+
+type ReactionTestRequest = {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  emoji: string;
+};
+
+type MessageEditTestRequest = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  text: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
+
+type MessageDeleteTestRequest = {
+  channel?: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  canonicalMessageId?: string;
+  replyTopic?: string;
+};
+
+type StickerTestRequest = {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  stickerId: string;
+  label: string;
+  filePath: string;
+  mimeType: string;
+  filename: string;
+  replyTopic?: string;
+};
+
+async function handleDirectSend(gateway: unknown, data: DirectSendTestRequest): Promise<void> {
+  await (gateway as { handleDirectSendEvent(data: DirectSendTestRequest): Promise<void> }).handleDirectSendEvent(data);
 }
 
-async function handleReaction(
-  gateway: unknown,
-  data: { channel: string; accountId: string; chatId: string; messageId: string; emoji: string },
-): Promise<void> {
-  await (gateway as { handleReactionEvent(data: typeof data): Promise<void> }).handleReactionEvent(data);
+async function handleReaction(gateway: unknown, data: ReactionTestRequest): Promise<void> {
+  await (gateway as { handleReactionEvent(data: ReactionTestRequest): Promise<void> }).handleReactionEvent(data);
 }
 
-async function handleMessageEdit(
-  gateway: unknown,
-  data: {
-    channel?: string;
-    accountId: string;
-    chatId: string;
-    messageId: string;
-    text: string;
-    canonicalMessageId?: string;
-    replyTopic?: string;
-  },
-): Promise<void> {
-  await (gateway as { handleMessageEditEvent(data: typeof data): Promise<void> }).handleMessageEditEvent(data);
+async function handleMessageEdit(gateway: unknown, data: MessageEditTestRequest): Promise<void> {
+  await (gateway as { handleMessageEditEvent(data: MessageEditTestRequest): Promise<void> }).handleMessageEditEvent(
+    data,
+  );
 }
 
-async function handleMessageDelete(
-  gateway: unknown,
-  data: {
-    channel?: string;
-    accountId: string;
-    chatId: string;
-    messageId: string;
-    canonicalMessageId?: string;
-    replyTopic?: string;
-  },
-): Promise<void> {
-  await (gateway as { handleMessageDeleteEvent(data: typeof data): Promise<void> }).handleMessageDeleteEvent(data);
+async function handleMessageDelete(gateway: unknown, data: MessageDeleteTestRequest): Promise<void> {
+  await (
+    gateway as { handleMessageDeleteEvent(data: MessageDeleteTestRequest): Promise<void> }
+  ).handleMessageDeleteEvent(data);
 }
 
-async function handleSticker(
-  gateway: unknown,
-  data: {
-    channel: string;
-    accountId: string;
-    chatId: string;
-    stickerId: string;
-    label: string;
-    filePath: string;
-    mimeType: string;
-    filename: string;
-    replyTopic?: string;
-  },
-): Promise<void> {
-  await (gateway as { handleStickerSendEvent(data: typeof data): Promise<void> }).handleStickerSendEvent(data);
+async function handleSticker(gateway: unknown, data: StickerTestRequest): Promise<void> {
+  await (gateway as { handleStickerSendEvent(data: StickerTestRequest): Promise<void> }).handleStickerSendEvent(data);
 }
 
 describe("Gateway native channel account actions", () => {
@@ -703,9 +713,7 @@ describe("Gateway native channel account actions", () => {
         text: "hello native",
       },
     ]);
-    expect(emitted).toEqual([
-      ["ravi.reply.native-send", { success: true, messageId: "1784000000.000100" }],
-    ]);
+    expect(emitted).toEqual([["ravi.reply.native-send", { success: true, messageId: "1784000000.000100" }]]);
   });
 
   it("keeps Omni direct send for WhatsApp accounts", async () => {
@@ -721,9 +729,14 @@ describe("Gateway native channel account actions", () => {
     });
 
     expect(slackTextSends).toHaveLength(0);
-    expect(omniSend).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111", "120363407390920496@g.us", "hello omni", {
-      mentions: undefined,
-    });
+    expect(omniSend).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363407390920496@g.us",
+      "hello omni",
+      {
+        mentions: undefined,
+      },
+    );
     expect(emitted[0]).toEqual(["ravi.reply.omni-send", { success: true, messageId: "omni-1" }]);
   });
 

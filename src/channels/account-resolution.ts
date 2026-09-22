@@ -127,7 +127,10 @@ export function resolveOutboundAccount(
   return { kind: "unresolved", accountId: account, reason: "not_found" };
 }
 
-function nativeResolution(accountId: string, channel: ChannelConfig): Extract<OutboundAccountResolution, { kind: "native" }> {
+function nativeResolution(
+  accountId: string,
+  channel: ChannelConfig,
+): Extract<OutboundAccountResolution, { kind: "native" }> {
   return {
     kind: "native",
     accountId,

@@ -172,7 +172,11 @@ describe("resolveOutboundAccount", () => {
       accountId: "ghost",
       reason: "not_found",
     });
-    expect(resolveOutboundAccount("", { config: config() }).reason).toBe("empty");
+    expect(resolveOutboundAccount("", { config: config() })).toEqual({
+      kind: "unresolved",
+      accountId: "",
+      reason: "empty",
+    });
   });
 
   it("reports missing native credentials without inventing an Omni instance", () => {
