@@ -5,9 +5,15 @@ import {
   type ApprovalServiceDependencies,
 } from "../../approval/service.js";
 import { SLACK_APPROVAL_ACTION_APPROVE } from "../../approval/slack-blocks.js";
-import { createContact, linkContactIdentity } from "../../contacts.js";
 import { dbCreateContext, dbDeleteContext, dbGetContext } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import {
+  APPROVAL_TEST_NOW_MS,
+  APPROVAL_TEST_SLACK_OWNER_PHONE,
+  APPROVAL_TEST_SLACK_OWNER_USER,
+  APPROVAL_TEST_TIMEOUT_MS,
+  seedApprovalContact,
+} from "../../approval/test-support.js";
 import { SlackSocketModeService } from "./socket-mode.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import type { SlackSocketEnvelope } from "./types.js";
@@ -108,6 +114,7 @@ describe("native Slack reaction_added", () => {
     emitted = [];
     requestReplyResult = { messageId: "1713000000.000100" };
     setApprovalServiceDependenciesForTest({
+      now: () => APPROVAL_TEST_NOW_MS,
       requestReply: (async <T>(_topic: string, _data: Record<string, unknown>) => {
         return requestReplyResult as T;
       }) satisfies ApprovalServiceDependencies["requestReply"],
@@ -186,16 +193,11 @@ describe("native Slack reaction_added", () => {
     const service = createService(published);
     await service.handleEnvelope(reactionEnvelope({ reaction: "+1", targetTs: "1713000000.000100" }));
     subscribeEvents = published.map((entry) => ({ topic: entry.topic, data: entry.payload }));
-    const owner = createContact({
-      phone: "5511999990100",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
       name: "Owner",
       tags: ["permission.admin"],
-      status: "allowed",
-    });
-    linkContactIdentity(owner.id, {
-      channel: "slack",
-      platformUserId: "U123",
-      instanceId: "ravi-slack",
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: "ravi-slack" },
     });
 
     const context = dbCreateContext({
@@ -220,7 +222,7 @@ describe("native Slack reaction_added", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(published[0]?.topic).toBe("ravi.inbound.reaction");

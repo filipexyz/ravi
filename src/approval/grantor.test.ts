@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createContact, linkContactIdentity } from "../contacts.js";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { actorCanGrantRequestedPermission } from "./grantor.js";
+import {
+  APPROVAL_TEST_FAMILY_PHONE,
+  APPROVAL_TEST_LEAD_PHONE,
+  APPROVAL_TEST_SLACK_OWNER_PHONE,
+  APPROVAL_TEST_SLACK_OWNER_USER,
+  APPROVAL_TEST_SUPERADMIN_PHONE,
+  APPROVAL_TEST_WA_OWNER_PHONE,
+  seedApprovalContact,
+} from "./test-support.js";
 
 let stateDir: string | null = null;
 
@@ -39,18 +47,17 @@ describe("approval grantor", () => {
   });
 
   it("allows an admin-tagged WhatsApp contact to grant any requested capability", () => {
-    createContact({
-      phone: "5511999990000",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_WA_OWNER_PHONE,
       name: "Owner",
       tags: ["permission.admin"],
-      status: "allowed",
     });
 
     expect(
       actorCanGrantRequestedPermission({
         channel: "whatsapp",
         accountId: "main",
-        senderId: "5511999990000",
+        senderId: APPROVAL_TEST_WA_OWNER_PHONE,
         permission: "execute",
         objectType: "group",
         objectId: "daemon",
@@ -59,16 +66,11 @@ describe("approval grantor", () => {
   });
 
   it("allows a Slack-linked admin contact after identity resolution", () => {
-    const contact = createContact({
-      phone: "5511999990001",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
       name: "Slack Owner",
       tags: ["permission.owner"],
-      status: "allowed",
-    });
-    linkContactIdentity(contact.id, {
-      channel: "slack",
-      platformUserId: "U123",
-      instanceId: "slack-main",
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: "slack-main" },
     });
 
     expect(
@@ -76,7 +78,7 @@ describe("approval grantor", () => {
         channel: "slack",
         accountId: "slack-main",
         instanceId: "slack-main",
-        senderId: "U123",
+        senderId: APPROVAL_TEST_SLACK_OWNER_USER,
         permission: "execute",
         objectType: "group",
         objectId: "daemon",
@@ -92,17 +94,16 @@ describe("approval grantor", () => {
       source: "permissions",
       metadata: { permissions: { capabilities: ["mutate:image:generate"] } },
     });
-    createContact({
-      phone: "5511999990002",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_FAMILY_PHONE,
       name: "Family",
       tags: ["permission.family"],
-      status: "allowed",
     });
 
     expect(
       actorCanGrantRequestedPermission({
         channel: "whatsapp",
-        senderId: "5511999990002",
+        senderId: APPROVAL_TEST_FAMILY_PHONE,
         permission: "mutate",
         objectType: "image",
         objectId: "generate",
@@ -111,7 +112,7 @@ describe("approval grantor", () => {
     expect(
       actorCanGrantRequestedPermission({
         channel: "whatsapp",
-        senderId: "5511999990002",
+        senderId: APPROVAL_TEST_FAMILY_PHONE,
         permission: "execute",
         objectType: "group",
         objectId: "daemon",
@@ -120,29 +121,27 @@ describe("approval grantor", () => {
   });
 
   it("requires admin system:* when no permission triple is present", () => {
-    createContact({
-      phone: "5511999990003",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_LEAD_PHONE,
       name: "Lead",
       tags: ["lead"],
-      status: "allowed",
     });
-    createContact({
-      phone: "5511999990004",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SUPERADMIN_PHONE,
       name: "Owner",
       tags: ["permission.superadmin"],
-      status: "allowed",
     });
 
     expect(
       actorCanGrantRequestedPermission({
         channel: "whatsapp",
-        senderId: "5511999990003",
+        senderId: APPROVAL_TEST_LEAD_PHONE,
       }).allowed,
     ).toBe(false);
     expect(
       actorCanGrantRequestedPermission({
         channel: "whatsapp",
-        senderId: "5511999990004",
+        senderId: APPROVAL_TEST_SUPERADMIN_PHONE,
       }).allowed,
     ).toBe(true);
   });

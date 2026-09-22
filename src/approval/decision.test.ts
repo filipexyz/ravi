@@ -1,22 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createContact, linkContactIdentity } from "../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { evaluateApprovalInboundEvent } from "./decision.js";
 import { SLACK_APPROVAL_ACTION_APPROVE } from "./slack-blocks.js";
 import { attachApprovalRequestMessageId, createApprovalRequest } from "./store.js";
+import {
+  APPROVAL_TEST_NOW_MS,
+  APPROVAL_TEST_SLACK_OWNER_USER,
+  APPROVAL_TEST_SLACK_STRANGER_USER,
+  APPROVAL_TEST_STRANGER_PHONE,
+  APPROVAL_TEST_WA_OWNER_PHONE,
+  seedApprovalContact,
+} from "./test-support.js";
 
 let stateDir: string | null = null;
 
 describe("approval inbound decision", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-approval-decision-");
-    const owner = createContact({
-      phone: "5511999990000",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_WA_OWNER_PHONE,
       name: "Owner",
       tags: ["permission.admin"],
-      status: "allowed",
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: "main" },
     });
-    linkContactIdentity(owner.id, { channel: "slack", platformUserId: "U123", instanceId: "main" });
     createApprovalRequest({
       id: "req_slack",
       type: "permission",
@@ -27,8 +33,8 @@ describe("approval inbound decision", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      createdAt: 1000,
-      expiresAt: 10_000,
+      createdAt: APPROVAL_TEST_NOW_MS,
+      expiresAt: APPROVAL_TEST_NOW_MS + 9_000,
     });
     attachApprovalRequestMessageId("req_slack", "msg_1");
     createApprovalRequest({
@@ -36,12 +42,12 @@ describe("approval inbound decision", () => {
       type: "permission",
       channel: "whatsapp",
       accountId: "main",
-      chatId: "5511999990000",
+      chatId: APPROVAL_TEST_WA_OWNER_PHONE,
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      createdAt: 1000,
-      expiresAt: 10_000,
+      createdAt: APPROVAL_TEST_NOW_MS,
+      expiresAt: APPROVAL_TEST_NOW_MS + 9_000,
     });
     attachApprovalRequestMessageId("req_wa", "wa_msg_1");
   });
@@ -60,14 +66,14 @@ describe("approval inbound decision", () => {
             accountId: "main",
             channelId: "C123",
             messageTs: "msg_1",
-            userId: "U123",
+            userId: APPROVAL_TEST_SLACK_OWNER_USER,
             actionId: SLACK_APPROVAL_ACTION_APPROVE,
             value: "req_slack",
           },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
-    ).toMatchObject({ kind: "decide", decision: "approved", actorId: "U123" });
+    ).toMatchObject({ kind: "decide", decision: "approved", actorId: APPROVAL_TEST_SLACK_OWNER_USER });
   });
 
   it("ignores Slack reactions for a Slack approval request", () => {
@@ -75,9 +81,9 @@ describe("approval inbound decision", () => {
       evaluateApprovalInboundEvent(
         {
           topic: "ravi.inbound.reaction",
-          data: { targetMessageId: "msg_1", emoji: "👍", senderId: "U123" },
+          data: { targetMessageId: "msg_1", emoji: "👍", senderId: APPROVAL_TEST_SLACK_OWNER_USER },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
     ).toMatchObject({ kind: "ignore", reason: "wrong_channel" });
   });
@@ -91,12 +97,12 @@ describe("approval inbound decision", () => {
             accountId: "main",
             channelId: "C123",
             messageTs: "msg_1",
-            userId: "U999",
+            userId: APPROVAL_TEST_SLACK_STRANGER_USER,
             actionId: SLACK_APPROVAL_ACTION_APPROVE,
             value: "req_slack",
           },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
     ).toMatchObject({ kind: "ignore", reason: "unauthorized_grantor" });
 
@@ -108,12 +114,12 @@ describe("approval inbound decision", () => {
             accountId: "main",
             channelId: "C123",
             messageTs: "msg_other",
-            userId: "U123",
+            userId: APPROVAL_TEST_SLACK_OWNER_USER,
             actionId: SLACK_APPROVAL_ACTION_APPROVE,
             value: "req_slack",
           },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
     ).toMatchObject({ kind: "ignore", reason: "wrong_message" });
 
@@ -125,12 +131,12 @@ describe("approval inbound decision", () => {
             accountId: "main",
             channelId: "C123",
             messageTs: "msg_1",
-            userId: "U123",
+            userId: APPROVAL_TEST_SLACK_OWNER_USER,
             actionId: SLACK_APPROVAL_ACTION_APPROVE,
             value: "req_slack",
           },
         },
-        10_000,
+        APPROVAL_TEST_NOW_MS + 9_000,
       ),
     ).toMatchObject({ kind: "ignore", reason: "not_open" });
   });
@@ -140,25 +146,24 @@ describe("approval inbound decision", () => {
       evaluateApprovalInboundEvent(
         {
           topic: "ravi.inbound.reaction",
-          data: { targetMessageId: "wa_msg_1", emoji: "👍", senderId: "5511999990000" },
+          data: { targetMessageId: "wa_msg_1", emoji: "👍", senderId: APPROVAL_TEST_WA_OWNER_PHONE },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
     ).toMatchObject({ kind: "decide", decision: "approved" });
 
-    createContact({
-      phone: "5511999990099",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
       name: "Stranger",
       tags: ["lead"],
-      status: "allowed",
     });
     expect(
       evaluateApprovalInboundEvent(
         {
           topic: "ravi.inbound.reaction",
-          data: { targetMessageId: "wa_msg_1", emoji: "👍", senderId: "5511999990099" },
+          data: { targetMessageId: "wa_msg_1", emoji: "👍", senderId: APPROVAL_TEST_STRANGER_PHONE },
         },
-        2000,
+        APPROVAL_TEST_NOW_MS + 1_000,
       ),
     ).toMatchObject({ kind: "ignore", reason: "unauthorized_grantor" });
   });

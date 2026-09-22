@@ -52,10 +52,11 @@ permission may approve.
 - WhatsApp/Omni MUST keep reaction-to-approve and reply-to-reject UX.
 - Authorization MUST load the pending request record and check the actor
   through `resolvePlatformIdentity` / contact identity plus
-  `materializeSubjectCapabilities` and `canWithCapabilities`. Admin contact
-  tags (`permission-admin`, `permission-owner`, `permission-superadmin`) keep
-  granting `admin:system:*`. Plan/spec requests without a permission triple
-  MUST require `admin:system:*`.
+  `materializeSubjectCapabilities` and the capability snapshot matcher
+  (`canWithCapabilities`). Button values, emoji, and client claims MUST NOT
+  be treated as authority. Admin contact tags (`permission-admin`,
+  `permission-owner`, `permission-superadmin`) keep granting `admin:system:*`.
+  Plan/spec requests without a permission triple MUST require `admin:system:*`.
 - Unauthorized, stale, expired, wrong-message, wrong-account, or wrong-chat
   events MUST fail closed: no grant, no runtime turn, no first-valid claim.
 - Correlation MUST use request id + message id + account/chat + authorized

@@ -15,5 +15,5 @@
 - Slack approval interactions MUST NOT create a runtime turn.
 - After decide or timeout, Slack MUST update the message and remove buttons
   when `chat.update` is available.
-- `bun test src/approval/service.test.ts` MUST pass.
+- `bun test src/approval/service.test.ts src/approval/grantor.test.ts src/approval/decision.test.ts src/approval/store.test.ts src/approval/slack-blocks.test.ts` MUST pass.
 - `bun run typecheck` MUST pass.

@@ -1,5 +1,6 @@
 import { getContact, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
-import { canWithCapabilities, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { canWithCapabilities } from "../permissions/capability-snapshot.js";
+import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
 export interface ApprovalGrantorInput {
   readonly channel: string;

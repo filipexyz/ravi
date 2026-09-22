@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { createContact, linkContactIdentity } from "../contacts.js";
 import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
@@ -16,6 +15,17 @@ import {
   listPermissionDenials,
   setPermissionAuditPublisherForTest,
 } from "../permissions/denials.js";
+import {
+  APPROVAL_TEST_NOW_MS,
+  APPROVAL_TEST_SLACK_OWNER_PHONE,
+  APPROVAL_TEST_SLACK_OWNER_USER,
+  APPROVAL_TEST_SLACK_STRANGER_USER,
+  APPROVAL_TEST_STRANGER_PHONE,
+  APPROVAL_TEST_TIMEOUT_MS,
+  APPROVAL_TEST_WA_OWNER_PHONE,
+  assertAuthorizedGrantor,
+  seedApprovalContact,
+} from "./test-support.js";
 
 let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -25,31 +35,43 @@ let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> =
 let finalizedSlack: ApprovalFinalizeSlackInput[] = [];
 let externalOrder: string[] = [];
 let stateDir: string | null = null;
+let nowMs = APPROVAL_TEST_NOW_MS;
 const createdContextIds = new Set<string>();
 
-const OWNER_PHONE = "5511999999999";
-const OWNER_SLACK_USER = "U123";
+const OWNER_PHONE = APPROVAL_TEST_WA_OWNER_PHONE;
+const OWNER_SLACK_USER = APPROVAL_TEST_SLACK_OWNER_USER;
 
 function seedWhatsAppOwner(): void {
-  createContact({
+  seedApprovalContact({
     phone: OWNER_PHONE,
     name: "Owner",
     tags: ["permission.admin"],
-    status: "allowed",
+  });
+  assertAuthorizedGrantor({
+    channel: "whatsapp",
+    accountId: "main",
+    senderId: OWNER_PHONE,
+    permission: "execute",
+    objectType: "group",
+    objectId: "daemon",
   });
 }
 
 function seedSlackOwner(instanceId = "main"): void {
-  const contact = createContact({
-    phone: "5511988888888",
+  seedApprovalContact({
+    phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
     name: "Slack Owner",
     tags: ["permission.admin"],
-    status: "allowed",
+    slack: { userId: OWNER_SLACK_USER, instanceId },
   });
-  linkContactIdentity(contact.id, {
+  assertAuthorizedGrantor({
     channel: "slack",
-    platformUserId: OWNER_SLACK_USER,
+    accountId: instanceId,
     instanceId,
+    senderId: OWNER_SLACK_USER,
+    permission: "execute",
+    objectType: "group",
+    objectId: "daemon",
   });
 }
 
@@ -87,10 +109,12 @@ describe("approval service", () => {
     deliveredRequests = [];
     finalizedSlack = [];
     externalOrder = [];
+    nowMs = APPROVAL_TEST_NOW_MS;
     setPermissionAuditPublisherForTest(async (topic, data) => {
       auditEvents.push({ topic, data });
     });
     setApprovalServiceDependenciesForTest({
+      now: () => nowMs,
       requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
         externalOrder.push("outbound.deliver");
         deliveredRequests.push({ topic, data });
@@ -188,7 +212,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 20,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
       beforeExternalApproval: () => externalOrder.push("before-external-approval"),
     });
 
@@ -260,7 +284,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result).toMatchObject({
@@ -313,7 +337,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result).toMatchObject({
@@ -375,7 +399,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result).toMatchObject({
@@ -389,16 +413,11 @@ describe("approval service", () => {
 
   it("ignores an unauthorized Slack click and does not grant", async () => {
     seedSlackOwner();
-    const stranger = createContact({
-      phone: "5511977777777",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
       name: "Stranger",
       tags: ["lead"],
-      status: "allowed",
-    });
-    linkContactIdentity(stranger.id, {
-      channel: "slack",
-      platformUserId: "U999",
-      instanceId: "main",
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
     });
     subscribeEvents = [
       {
@@ -408,7 +427,7 @@ describe("approval service", () => {
           accountId: "main",
           channelId: "C123",
           messageTs: "msg_1",
-          userId: "U999",
+          userId: APPROVAL_TEST_SLACK_STRANGER_USER,
           actionId: SLACK_APPROVAL_ACTION_APPROVE,
           value: "$requestId",
         },
@@ -437,7 +456,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result).toMatchObject({
@@ -501,7 +520,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result.approved).toBe(true);
@@ -553,7 +572,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result.approved).toBe(false);
@@ -592,7 +611,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 20,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result).toMatchObject({
@@ -606,16 +625,15 @@ describe("approval service", () => {
 
   it("does not let an unauthorized WhatsApp reaction approve", async () => {
     seedWhatsAppOwner();
-    createContact({
-      phone: "5511966666666",
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
       name: "Stranger",
       tags: ["lead"],
-      status: "allowed",
     });
     subscribeEvents = [
       {
         topic: "ravi.inbound.reaction",
-        data: { targetMessageId: "msg_1", emoji: "👍", senderId: "5511966666666" },
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: APPROVAL_TEST_STRANGER_PHONE },
       },
     ];
 
@@ -641,7 +659,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
-      timeoutMs: 30,
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
     });
 
     expect(result.approved).toBe(false);
