@@ -1,6 +1,6 @@
 import { resolve as resolvePath } from "node:path";
 import { ConsoleApiClient, normalizeConsoleUrl } from "../cloud-auth/client.js";
-import { CloudAuthError } from "../cloud-auth/errors.js";
+import { CloudAuthError, isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import { DEFAULT_CONSOLE_URL, type CloudCredentials } from "../cloud-auth/types.js";
 import { listCloudProjects, type CloudProjectListResult, type CloudProjectPayload } from "../cloud-projects/client.js";
@@ -32,6 +32,7 @@ export interface ConsoleScopeResolverDeps {
   writeCredentials?: typeof writeCloudCredentials;
   deleteCredentials?: typeof deleteCloudCredentials;
   listProjects?: typeof listCloudProjects;
+  lookupLocalAgent?: (id: string) => { id: string } | null;
   getContext?: typeof getContext;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
@@ -269,16 +270,95 @@ export async function saveConsoleScopeDefault(
     throw new CloudAuthError("AUTH_REQUIRED", "No Ravi Cloud CLI credentials found. Run `ravi login`.");
   }
   const consoleUrl = normalizeConsoleUrl(input.consoleUrl ?? credentials.consoleUrl);
+  const organization = input.organization ?? credentials.organization ?? null;
   const project = await validateProjectRef(input.project?.ref, consoleUrl, deps);
-  return upsertConsoleScopeDefault(
+  const saved = upsertConsoleScopeDefault(
     {
       ...input,
       consoleUrl,
-      organization: input.organization ?? credentials.organization ?? null,
+      organization,
       project,
     },
-    { env, organization: input.organization ?? credentials.organization ?? null },
+    { env, organization },
   );
+  // First explicit project choice becomes the install default so later agents
+  // inherit it. Never overwrite an existing --global default.
+  if (saved.scopeKind !== "global") {
+    seedInstallConsoleScopeDefaultIfAbsent(
+      {
+        consoleUrl,
+        organization,
+        project,
+        sourceNote: "seeded from first cloud scope set",
+      },
+      deps,
+    );
+  }
+  return saved;
+}
+
+export function seedInstallConsoleScopeDefaultIfAbsent(
+  input: {
+    consoleUrl: string;
+    organization?: ConsoleScopeOrganization | null;
+    project?: ConsoleScopeProject | null;
+    sourceNote?: string | null;
+  },
+  deps: ConsoleScopeResolverDeps = {},
+): ConsoleScopeDefault | null {
+  const project = input.project;
+  if (!project?.ref) return null;
+  const env = deps.env ?? process.env;
+  const organization = input.organization ?? null;
+  const consoleUrl = normalizeConsoleUrl(input.consoleUrl);
+  const existing = getConsoleScopeDefault({ scopeKind: "global", scopeKey: "default" }, consoleUrl, {
+    env,
+    organization,
+  });
+  if (existing?.project?.ref) return existing;
+  return upsertConsoleScopeDefault(
+    {
+      scopeKind: "global",
+      scopeKey: "default",
+      consoleUrl,
+      organization,
+      project,
+      sourceNote: input.sourceNote ?? "seeded install default",
+    },
+    { env, organization },
+  );
+}
+
+export async function seedInstallConsoleScopeDefaultFromVisibleProjects(
+  input: { consoleUrl?: string; credentials?: CloudCredentials | null } = {},
+  deps: ConsoleScopeResolverDeps = {},
+): Promise<ConsoleScopeDefault | null> {
+  try {
+    const env = deps.env ?? process.env;
+    const credentials = input.credentials ?? readCredentialsForConsoleQuiet(input.consoleUrl, deps);
+    if (!credentials) return null;
+    const organization = credentials.organization ?? organizationFromCredentials(credentials, env);
+    if (!text(organization?.id) && !text(organization?.slug)) return null;
+    const consoleUrl = normalizeConsoleUrl(input.consoleUrl ?? credentials.consoleUrl);
+    const existing = getConsoleScopeDefault({ scopeKind: "global", scopeKey: "default" }, consoleUrl, {
+      env,
+      organization,
+    });
+    if (existing?.project?.ref) return existing;
+    const remoteProjects = await visibleRemoteProjects(credentials, consoleUrl, deps);
+    if (remoteProjects.length !== 1) return null;
+    return seedInstallConsoleScopeDefaultIfAbsent(
+      {
+        consoleUrl,
+        organization,
+        project: remoteProjects[0],
+        sourceNote: "login unique visible project",
+      },
+      deps,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export function clearConsoleScopeDefault(
@@ -313,19 +393,10 @@ export async function validateProjectRef(
       deleteCredentials: deps.deleteCredentials,
     },
   );
-  const match = projects.projects.map(projectFromPayload).find((project) => projectMatchesRef(project, ref));
+  const visible = projects.projects.map(projectFromPayload);
+  const match = visible.find((project) => projectMatchesRef(project, ref));
   if (!match) {
-    const knownRefs = projects.projects
-      .map(projectFromPayload)
-      .map((project) => project.ref)
-      .filter(Boolean)
-      .join(", ");
-    throw new CloudAuthError(
-      "PROJECT_ACCESS_DENIED",
-      `Console project "${ref}" is not visible in the selected organization.${
-        knownRefs ? ` Visible project refs: ${knownRefs}.` : ""
-      }`,
-    );
+    throw unknownProjectRefError(ref, visible, deps);
   }
   return match;
 }
@@ -409,6 +480,18 @@ function readCredentialsForConsole(
     );
   }
   return credentials;
+}
+
+function readCredentialsForConsoleQuiet(
+  consoleUrl: string | undefined,
+  deps: ConsoleScopeResolverDeps,
+): CloudCredentials | null {
+  try {
+    return readCredentialsForConsole(consoleUrl, deps);
+  } catch (error) {
+    if (isCloudAuthError(error) && error.code === "AUTH_REQUIRED") return null;
+    throw error;
+  }
 }
 
 function currentContext(deps: ConsoleScopeResolverDeps): ToolContext | undefined {
@@ -527,10 +610,44 @@ function missingProjectError(explanation: ConsoleScopeExplanation): CloudAuthErr
   )?.reason;
   return new CloudAuthError(
     "PAYLOAD_INVALID",
-    `Missing Console project. Set one with:\n  ${next}\nor pass --project <project-ref>.${
+    `Missing Console project. No project is selected in this scope (Project: not selected). Set one with:\n  ${next}\nor:\n  ravi cloud scope set --project <project-ref> --global\nor pass --project <project-ref>.${
       visibleProjects ? `\nVisible project refs: ${visibleProjects}.` : ""
     }${remoteProjectReason ? `\n${remoteProjectReason}` : ""}`,
   );
+}
+
+function unknownProjectRefError(
+  ref: string,
+  visible: ConsoleScopeProject[],
+  deps: ConsoleScopeResolverDeps,
+): CloudAuthError {
+  const knownRefs = visible.map((project) => project.ref).filter(Boolean);
+  const agentId = lookupLocalAgentId(ref, deps);
+  const agentLine = agentId
+    ? ` "${ref}" matches local agent id "${agentId}"; agent refs are not Console projects.`
+    : "";
+  const visibleLine = knownRefs.length
+    ? `Visible project refs: ${knownRefs.join(", ")}.`
+    : "No visible Console projects were returned. Run `ravi cloud projects list`.";
+  return new CloudAuthError(
+    "PAYLOAD_INVALID",
+    `Console project "${ref}" was not found.${agentLine} Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>\n${visibleLine}`,
+  );
+}
+
+function lookupLocalAgentId(ref: string, deps: ConsoleScopeResolverDeps): string | null {
+  try {
+    const lookup = deps.lookupLocalAgent ?? defaultLookupLocalAgent;
+    return text(lookup(ref)?.id);
+  } catch {
+    return null;
+  }
+}
+
+function defaultLookupLocalAgent(id: string): { id: string } | null {
+  const { getAgent } = require("../router/config.js") as typeof import("../router/config.js");
+  const agent = getAgent(id);
+  return agent ? { id: agent.id } : null;
 }
 
 function missingProjectCommand(context: ToolContext | undefined, deps: ConsoleScopeResolverDeps): string {

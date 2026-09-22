@@ -23,8 +23,8 @@ owners:
 - CloudAuthError validation failures MUST preserve their stable codes under
   the global exit map (`PAYLOAD_INVALID` → `2`; only
   `WRITE_REQUIRES_EXECUTE` exits `3`).
-- `bun test src/cli/commands/cloud-scope.test.ts` SHOULD pass after any change
-  to the scope command surface.
+- `bun test src/console-scope/resolver.test.ts src/cli/commands/cloud-scope.test.ts`
+  SHOULD pass after any change to the scope command surface.
 
 ## Unit Coverage
 
@@ -46,8 +46,18 @@ owners:
   - workspace wins over global;
   - credentials supply organization only when no richer scope exists.
 - Missing project for project-required commands returns `PAYLOAD_INVALID` with a
-  next command.
+  next command and names "Project: not selected" rather than org visibility.
+- Unknown/wrong project refs return `PAYLOAD_INVALID` ("was not found") with
+  `ravi cloud scope set --project <project-ref>` and visible refs. They MUST
+  NOT use `PROJECT_ACCESS_DENIED` or "not visible in the selected organization".
+- A ref that matches a local agent id says agent refs are not Console projects.
 - Remote `PROJECT_ACCESS_DENIED` and `ORG_ACCESS_DENIED` are preserved.
+- `ravi login` seeds `global:default` only when exactly one project is visible
+  and no install default exists. Multiple visible projects stay unselected.
+- The first `ravi cloud scope set --project` seeds `global:default` if absent.
+  `--global` sets or replaces the install default. New agents inherit it.
+- `bun test src/console-scope/resolver.test.ts src/cli/commands/cloud-scope.test.ts`
+  SHOULD pass after resolver or scope-command changes.
 - A local Project slug is never accepted as a Console project ref unless an
   explicit Console mapping exists.
 - A local Project mapping reports `source="local_project_mapping"` in explain

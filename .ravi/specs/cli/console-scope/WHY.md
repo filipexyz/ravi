@@ -43,6 +43,21 @@ adding a second point of no return. What the migration did add here is the
 `ContractError` rethrow guard in the command funnel, so contract-layer errors
 from shared helpers never get flattened into `SERVER_UNAVAILABLE`.
 
+### Populate an install-level project default without guessing
+
+The session→agent→workspace→global cascade already existed, but nothing wrote
+`global:default` on login or agent create. New agents therefore showed
+`Project: not selected` and failed the first project-scoped command.
+
+The least-surprising write path:
+
+- `ravi login` stores the install default only when exactly one Console
+  project is visible. Multiple projects stay unselected.
+- The first `ravi cloud scope set --project` seeds that install default if it
+  is still empty, so later agents inherit an operator-chosen ref.
+- `ravi cloud scope set --project <ref> --global` is the explicit replace path.
+- `agents create` does not invent a per-agent Console project.
+
 ### Keep login and focus separate
 
 `ravi login` selects an organization because the access token is issued for a

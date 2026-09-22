@@ -21,8 +21,22 @@ command ever exits 5 as `SERVER_UNAVAILABLE` while the underlying error was a
 `ContractError`, the rethrow guard in `runCloudScopeCommand` regressed.
 
 ```bash
-bun test src/cli/commands/cloud-scope.test.ts
+bun test src/console-scope/resolver.test.ts src/cli/commands/cloud-scope.test.ts
 ```
+
+Unknown project refs must fail as `PAYLOAD_INVALID` ("was not found") with
+`ravi cloud scope set --project <project-ref>`. A missing selected project
+must say `Project: not selected`. Neither path is an org-visibility /
+`PROJECT_ACCESS_DENIED` failure.
+
+Install-level default (`global:default`):
+
+- `ravi login` writes it only when the selected org has exactly one visible
+  Console project and no global default exists.
+- The first `ravi cloud scope set --project` also seeds it if still empty.
+- `ravi cloud scope set --project <ref> --global` sets or replaces it.
+- New agents inherit that install default. Do not expect `agents create` to
+  write a per-agent Console project.
 
 ## Inspect Current Cloud Auth
 
@@ -146,13 +160,16 @@ For a workspace:
 ravi cloud scope set --project rbbt-lab --workspace /Users/luis/dev/rbbt
 ```
 
-Global fallback:
+Global / install fallback (inherited by new agents):
 
 ```bash
 ravi cloud scope set --project rbbt-lab --global
 ```
 
-Prefer session or workspace scope over global scope for customer/project work.
+Use `--global` in multi-project installs so new agents are not born with
+`Project: not selected`. A unique visible project is stored automatically on
+`ravi login`. Prefer session or workspace scope over global scope for
+customer/project work; those layers still win over the install default.
 
 Use local Project mappings only when a local Project is intentionally connected
 to a remote Console project. The mapping must be visible in `scope explain`; a

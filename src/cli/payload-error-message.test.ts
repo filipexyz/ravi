@@ -18,6 +18,16 @@ describe("payload invalid message sanitization", () => {
     expect(sanitizePayloadInvalidMessage("Missing Console project. Set one with:\n  ravi cloud scope set")).toContain(
       "Missing Console project",
     );
+    expect(
+      sanitizePayloadInvalidMessage(
+        'Console project "main" was not found. Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>',
+      ),
+    ).toContain("was not found");
+    expect(
+      inferPayloadIssuePath(
+        'Console project "main" was not found. Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>',
+      ),
+    ).toEqual(["project"]);
   });
 
   it("drops provider dumps and unstructured secrets", () => {
