@@ -2,9 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, readlinkSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import { basename } from "node:path";
+import { isatty } from "node:tty";
 import { getContext } from "./context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import { sanitizePublicValue } from "./redaction.js";
+
+const STDIN_FD = 0;
+const STDOUT_FD = 1;
+const STDERR_FD = 2;
 
 const MAX_ARG_LENGTH = 240;
 
@@ -122,9 +127,9 @@ export function buildCliInvocationMetadata(command?: {
       arch: process.arch,
     },
     terminal: {
-      stdinIsTTY: Boolean(process.stdin.isTTY),
-      stdoutIsTTY: Boolean(process.stdout.isTTY),
-      stderrIsTTY: Boolean(process.stderr.isTTY),
+      stdinIsTTY: standardStreamIsTty(STDIN_FD),
+      stdoutIsTTY: standardStreamIsTty(STDOUT_FD),
+      stderrIsTTY: standardStreamIsTty(STDERR_FD),
       ...(process.env.TTY ? { tty: truncateAuditString(process.env.TTY) } : {}),
       ...(process.env.TERM ? { term: truncateAuditString(process.env.TERM) } : {}),
       ...(process.env.SHELL ? { shell: basename(process.env.SHELL) } : {}),
@@ -166,6 +171,22 @@ export function buildCliInvocationMetadata(command?: {
   };
 
   return sanitizePublicValue(metadata) as CliInvocationMetadata;
+}
+
+/**
+ * TTY probe that must never instantiate `process.stdin`.
+ *
+ * Accessing the lazy stdin stream can issue a blocking `read(fd=0)`. Under
+ * PM2, fd 0 is often an idle socketpair whose peer never writes or closes, so
+ * that read never returns. Host CLI gateway commands run in-process on the
+ * daemon; a wedged audit metadata build stalls every agent and CLI call.
+ */
+export function standardStreamIsTty(fd: number): boolean {
+  try {
+    return isatty(fd);
+  } catch {
+    return false;
+  }
 }
 
 function truncateAuditString(value: string): string {

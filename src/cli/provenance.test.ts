@@ -1,5 +1,118 @@
 import { describe, expect, it } from "bun:test";
-import { buildCliInvocationMetadata, hashForAudit, sanitizeCliArgv } from "./provenance.js";
+import { spawn, type ChildProcess } from "node:child_process";
+import { buildCliInvocationMetadata, hashForAudit, sanitizeCliArgv, standardStreamIsTty } from "./provenance.js";
+
+function provenanceIdleStdinScript(): string {
+  const provenanceUrl = new URL("./provenance.ts", import.meta.url).href;
+  return `
+      import { buildCliInvocationMetadata } from ${JSON.stringify(provenanceUrl)};
+      const started = Date.now();
+      const metadata = buildCliInvocationMetadata({ group: "tasks", name: "list", tool: "tasks_list" });
+      process.stdout.write(JSON.stringify({
+        elapsedMs: Date.now() - started,
+        stdinIsTTY: metadata.terminal.stdinIsTTY,
+        stdoutIsTTY: metadata.terminal.stdoutIsTTY,
+        stderrIsTTY: metadata.terminal.stderrIsTTY,
+      }));
+    `;
+}
+
+function collectChildOutput(child: ChildProcess): Promise<{
+  stdout: string;
+  stderr: string;
+  code: number | null;
+}> {
+  const stdoutStream = child.stdout;
+  const stderrStream = child.stderr;
+  if (!stdoutStream || !stderrStream) {
+    return Promise.reject(new Error("child stdio missing"));
+  }
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    stdoutStream.setEncoding("utf8");
+    stderrStream.setEncoding("utf8");
+    stdoutStream.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    stderrStream.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ stdout, stderr, code }));
+  });
+}
+
+async function runProvenanceAgainstIdleStdin(mode: "pipe" | "socketpair"): Promise<{
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  timedOut: boolean;
+}> {
+  const script = provenanceIdleStdinScript();
+  const child =
+    mode === "pipe"
+      ? spawn(process.execPath, ["--eval", script], { stdio: ["pipe", "pipe", "pipe"] })
+      : spawn(
+          "python3",
+          [
+            "-c",
+            [
+              "import socket, subprocess, sys",
+              "bun, script = sys.argv[1], sys.argv[2]",
+              "reader, writer = socket.socketpair()",
+              "proc = subprocess.Popen([bun, '--eval', script], stdin=reader, stdout=subprocess.PIPE, stderr=subprocess.PIPE)",
+              "reader.close()",
+              "try:",
+              "    out, err = proc.communicate(timeout=2.5)",
+              "except subprocess.TimeoutExpired:",
+              "    proc.kill()",
+              "    sys.exit(99)",
+              "sys.stdout.buffer.write(out or b'')",
+              "sys.stderr.buffer.write(err or b'')",
+              "sys.exit(proc.returncode or 0)",
+            ].join("\n"),
+            process.execPath,
+            script,
+          ],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+
+  const completed = collectChildOutput(child);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, 2500);
+
+  try {
+    const result = await completed;
+    return { ...result, timedOut };
+  } finally {
+    clearTimeout(timeout);
+    child.stdin?.destroy();
+  }
+}
+
+function withForbiddenStdinAccess<T>(fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, "stdin");
+  let accessed = 0;
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessed += 1;
+      throw new Error("process.stdin must not be opened for audit TTY detection");
+    },
+  });
+  try {
+    const result = fn();
+    expect(accessed).toBe(0);
+    return result;
+  } finally {
+    if (original) Object.defineProperty(process, "stdin", original);
+  }
+}
 
 describe("CLI provenance", () => {
   it("summarizes argv without persisting values", () => {
@@ -65,8 +178,46 @@ describe("CLI provenance", () => {
     expect(metadata.host.hostname).toBeTruthy();
     expect(metadata.runtime.nodeVersion).toBe(process.versions.node);
     expect(typeof metadata.raviContext.hasContextKey).toBe("boolean");
+    expect(typeof metadata.terminal.stdinIsTTY).toBe("boolean");
+    expect(typeof metadata.terminal.stdoutIsTTY).toBe("boolean");
+    expect(typeof metadata.terminal.stderrIsTTY).toBe("boolean");
     expect(JSON.stringify(metadata)).not.toContain(process.cwd());
     expect(JSON.stringify(metadata)).not.toContain(process.execPath);
+  });
+
+  it("detects TTY state without opening process.stdin", () => {
+    const metadata = withForbiddenStdinAccess(() =>
+      buildCliInvocationMetadata({
+        group: "tasks",
+        name: "list",
+        tool: "tasks_list",
+      }),
+    );
+
+    expect(withForbiddenStdinAccess(() => standardStreamIsTty(0))).toBe(metadata.terminal.stdinIsTTY);
+    expect(metadata.terminal.stdinIsTTY).toBe(standardStreamIsTty(0));
+    expect(metadata.terminal.stdoutIsTTY).toBe(standardStreamIsTty(1));
+    expect(metadata.terminal.stderrIsTTY).toBe(standardStreamIsTty(2));
+  });
+
+  it.each([
+    ["idle open pipe", "pipe"],
+    ["idle socketpair", "socketpair"],
+  ] as const)("does not hang when fd 0 is an %s", async (_label, mode) => {
+    const result = await runProvenanceAgainstIdleStdin(mode);
+    expect(result.timedOut).toBe(false);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    const parsed = JSON.parse(result.stdout) as {
+      elapsedMs: number;
+      stdinIsTTY: boolean;
+      stdoutIsTTY: boolean;
+      stderrIsTTY: boolean;
+    };
+    expect(parsed.stdinIsTTY).toBe(false);
+    expect(typeof parsed.stdoutIsTTY).toBe("boolean");
+    expect(typeof parsed.stderrIsTTY).toBe("boolean");
+    expect(parsed.elapsedMs).toBeLessThan(1000);
   });
 
   it("hashes audit identifiers without exposing raw values", () => {

@@ -3,6 +3,11 @@
  *
  * Connects to external NATS and omni services (managed by PM2/omni CLI).
  * No child process spawning — all infrastructure is external.
+ *
+ * This process must never block on stdin. Session dispatch, delivery, and the
+ * host CLI gateway share the daemon event loop. Under PM2, fd 0 is often an
+ * idle socketpair; a synchronous `read(0)` wedges every agent and CLI call.
+ * Interactive stdin consumers belong in a real TTY CLI, not this process.
  */
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
