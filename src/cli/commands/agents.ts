@@ -393,6 +393,26 @@ function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig |
   return parts.join(" + ");
 }
 
+function buildAgentPermissionsInspectCommand(agentId: string): string {
+  return `ravi permissions materialize --subject-type agent --subject-id ${agentId} --json`;
+}
+
+function buildAgentPermissionsRecurringAccessCommand(agentId: string): string {
+  return `ravi permissions allow <profile> --to agent:${agentId} --capabilities <permission>:<objectType>:<objectId> --apply`;
+}
+
+function printAgentRuntimeDefaultsGuidance(agentId: string): void {
+  console.log(
+    "  This updates agent runtime defaults (materializer: agent-default-capabilities), not a live authorize grant.",
+  );
+  console.log("  Effective authorize uses the next issued runtime context snapshot that includes these defaults.");
+  console.log(`  Inspect materialized: ${buildAgentPermissionsInspectCommand(agentId)}`);
+  console.log(`  Recurring access:     ${buildAgentPermissionsRecurringAccessCommand(agentId)}`);
+  console.log(
+    "  Note: `ravi permissions check` without a runtime context still denies with no_permission_provider_configured.",
+  );
+}
+
 function buildDebugSessionSummary(session: {
   sessionKey: string;
   name?: string | null;
@@ -1306,7 +1326,8 @@ export class AgentsCommands {
         profile: before?.profile ?? "bootstrap",
         runtimePermissions: before,
         command: `ravi agents permissions ${id}`,
-        inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
+        inspectCommand: buildAgentPermissionsInspectCommand(id),
+        recurringAccessCommand: buildAgentPermissionsRecurringAccessCommand(id),
         leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         chatOnlyCommand: `ravi agents permissions ${id} chat-only`,
         resetToBootstrapCommand: `ravi agents permissions ${id} none`,
@@ -1316,10 +1337,11 @@ export class AgentsCommands {
       if (asJson) {
         printJson(payload);
       } else {
-        console.log(`Runtime permissions for ${id}: ${describeRuntimePermissionConfig(before)}`);
-        console.log(`  Inspect effective: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
+        console.log(`Runtime defaults for ${id}: ${describeRuntimePermissionConfig(before)}`);
+        console.log(`  Inspect materialized: ${buildAgentPermissionsInspectCommand(id)}`);
+        console.log(`  Recurring access:     ${buildAgentPermissionsRecurringAccessCommand(id)}`);
         console.log(
-          `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
+          `  Defaults-only:       ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
         console.log(`  Reception only:    ravi agents permissions ${id} chat-only`);
         console.log(`  Reset to bootstrap: ravi agents permissions ${id} none`);
@@ -1388,13 +1410,18 @@ export class AgentsCommands {
       before,
       after,
       defaults: nextDefaults ?? null,
+      inspectCommand: buildAgentPermissionsInspectCommand(id),
+      recurringAccessCommand: buildAgentPermissionsRecurringAccessCommand(id),
+      authorityLayer: "agent-defaults" as const,
+      effectiveOn: "next-issued-runtime-context" as const,
       agent: buildAgentJson(updated, loadRouterConfig().defaultAgent),
     };
 
     if (asJson) {
       printJson(payload);
     } else {
-      console.log(`\u2713 Runtime permissions set: ${id} -> ${describeRuntimePermissionConfig(after)}`);
+      console.log(`\u2713 Agent runtime defaults updated: ${id} -> ${describeRuntimePermissionConfig(after)}`);
+      printAgentRuntimeDefaultsGuidance(id);
       if (after?.profile === "full-access") {
         console.log(
           "  Break-glass: materializes admin system:*, execute executable:*, and use tool:* for the agent and its own automation turns",

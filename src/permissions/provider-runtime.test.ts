@@ -219,6 +219,31 @@ describe("Permission Provider Runtime", () => {
     );
   });
 
+  it("does not let materialized agent-default capabilities authorize a bare subject", () => {
+    dbCreateAgent({ id: "pages-agent", cwd: "/tmp/pages-agent" });
+    dbUpdateAgent("pages-agent", {
+      defaults: { runtimePermissions: { capabilities: ["mutate:pages:ship"] } },
+    });
+
+    const capabilities = materializeSubjectCapabilities("agent", "pages-agent");
+    expect(capabilities).toContainEqual({
+      permission: "mutate",
+      objectType: "pages",
+      objectId: "ship",
+      source: "agent-default-capabilities:agent:pages-agent",
+    });
+    expect(canWithCapabilities(capabilities, "mutate", "pages", "ship")).toBe(true);
+
+    const decision = authorizePermission({
+      subject: { type: "agent", id: "pages-agent" },
+      permission: "mutate",
+      objectType: "pages",
+      objectId: "ship",
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reasonCode).toBe("no_permission_provider_configured");
+  });
+
   it("materializes compartment-scoped agent identity capabilities from the executor agent", () => {
     dbCreateAgent({ id: "workspace-agent", cwd: "/tmp/workspace-agent" });
     dbUpdateAgent("workspace-agent", {

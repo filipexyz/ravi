@@ -422,32 +422,38 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var after: RaviJSON?
   public var agent: RaviJSON?
   public var agentId: String
+  public var authorityLayer: String?
   public var before: RaviJSON?
   public var breakGlassCommand: String?
   public var changed: Bool
   public var chatOnlyCommand: String?
   public var command: String?
   public var defaults: RaviJSON?
+  public var effectiveOn: String?
   public var inspectCommand: String?
   public var leastPrivilegeExample: String?
   public var profile: String?
+  public var recurringAccessCommand: String?
   public var resetToBootstrapCommand: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, breakGlassCommand: String? = nil, changed: Bool, chatOnlyCommand: String? = nil, command: String? = nil, defaults: RaviJSON? = nil, inspectCommand: String? = nil, leastPrivilegeExample: String? = nil, profile: String? = nil, resetToBootstrapCommand: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, authorityLayer: String? = nil, before: RaviJSON? = nil, breakGlassCommand: String? = nil, changed: Bool, chatOnlyCommand: String? = nil, command: String? = nil, defaults: RaviJSON? = nil, effectiveOn: String? = nil, inspectCommand: String? = nil, leastPrivilegeExample: String? = nil, profile: String? = nil, recurringAccessCommand: String? = nil, resetToBootstrapCommand: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
     self.agentId = agentId
+    self.authorityLayer = authorityLayer
     self.before = before
     self.breakGlassCommand = breakGlassCommand
     self.changed = changed
     self.chatOnlyCommand = chatOnlyCommand
     self.command = command
     self.defaults = defaults
+    self.effectiveOn = effectiveOn
     self.inspectCommand = inspectCommand
     self.leastPrivilegeExample = leastPrivilegeExample
     self.profile = profile
+    self.recurringAccessCommand = recurringAccessCommand
     self.resetToBootstrapCommand = resetToBootstrapCommand
     self.runtimePermissions = runtimePermissions
   }
@@ -457,15 +463,18 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
     case after = "after"
     case agent = "agent"
     case agentId = "agentId"
+    case authorityLayer = "authorityLayer"
     case before = "before"
     case breakGlassCommand = "breakGlassCommand"
     case changed = "changed"
     case chatOnlyCommand = "chatOnlyCommand"
     case command = "command"
     case defaults = "defaults"
+    case effectiveOn = "effectiveOn"
     case inspectCommand = "inspectCommand"
     case leastPrivilegeExample = "leastPrivilegeExample"
     case profile = "profile"
+    case recurringAccessCommand = "recurringAccessCommand"
     case resetToBootstrapCommand = "resetToBootstrapCommand"
     case runtimePermissions = "runtimePermissions"
   }
@@ -15510,17 +15519,20 @@ public struct PermissionsCheckOptions: Codable, Sendable {
 public struct PermissionsCheckReturn: Codable, Sendable {
   public var allowed: Bool
   public var decision: RaviJSON
+  public var diagnosticNote: String?
   public var guidance: RaviJSON?
 
-  public init(allowed: Bool, decision: RaviJSON, guidance: RaviJSON? = nil) {
+  public init(allowed: Bool, decision: RaviJSON, diagnosticNote: String? = nil, guidance: RaviJSON? = nil) {
     self.allowed = allowed
     self.decision = decision
+    self.diagnosticNote = diagnosticNote
     self.guidance = guidance
   }
 
   enum CodingKeys: String, CodingKey {
     case allowed = "allowed"
     case decision = "decision"
+    case diagnosticNote = "diagnosticNote"
     case guidance = "guidance"
   }
 }

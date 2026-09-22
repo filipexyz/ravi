@@ -118,18 +118,17 @@ function buildCommandAccessDenialMessage(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
   authorityLabel: string,
 ): string {
-  const subject = subjectFromAuthorityLabel(authorityLabel);
-  const guidance = buildAuthorizationGuidance({
-    capability: commandAccessCapability(input),
-    subject,
-    scope: "recurring",
-    reason: `Needs ${formatCommand(input)} command access.`,
-    includeProviderOwnedTags: true,
-  });
+  const guidance = buildCommandAccessGuidance(input, subjectFromAuthorityLabel(authorityLabel));
   return [
     `Permission denied: ${authorityLabel} cannot execute ${formatCommand(input)} (${input.access.kind} ${input.access.resource}.${input.access.action}, risk ${input.access.risk})`,
     ...formatAuthorizationGuidanceLines(guidance),
   ].join("\n");
+}
+
+export function listCliCommandAccessCandidates(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+): AuthorizationCapability[] {
+  return commandAccessCandidates(input);
 }
 
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
@@ -297,14 +296,10 @@ function recordCliCommandAccessDenial(
   const requested = attempted[0];
   if (!requested) return;
   const command = `${input.group} ${input.command}`;
-  const capability = commandAccessCapability(input);
-  const guidance = buildAuthorizationGuidance({
-    capability,
-    subject: context.agentId ? { type: "agent", id: context.agentId } : undefined,
-    scope: "recurring",
-    reason: `Needs ${command} command access.`,
-    includeProviderOwnedTags: true,
-  });
+  const guidance = buildCommandAccessGuidance(
+    input,
+    context.agentId ? { type: "agent", id: context.agentId } : undefined,
+  );
 
   const provenance = buildAuditContextProvenance({
     contextId: context.contextId,
@@ -348,11 +343,27 @@ function recordCliCommandAccessDenial(
       blockType: "cli_command_access_missing_grant",
       guidance: {
         canonicalCapability: guidance.canonicalCapability,
+        candidateCapabilities: guidance.candidateCapabilities,
         recommendedPath: guidance.preferredPath.message,
+        allowCommand: guidance.preferredPath.allowCommand,
         suggestedTags: guidance.preferredPath.suggestedTags,
       },
       ...(provenance ? { context: provenance } : {}),
     },
+  });
+}
+
+function buildCommandAccessGuidance(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+  subject?: { type: string; id: string },
+) {
+  return buildAuthorizationGuidance({
+    capability: commandAccessCapability(input),
+    candidates: commandAccessCandidates(input),
+    subject,
+    scope: "recurring",
+    reason: `Needs ${formatCommand(input)} command access.`,
+    includeProviderOwnedTags: true,
   });
 }
 

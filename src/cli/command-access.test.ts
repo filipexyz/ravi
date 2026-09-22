@@ -589,8 +589,60 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(false);
     expect(result.errorMessage).toContain("Missing capability: mutate:demo.items:create");
+    expect(result.errorMessage).toContain(
+      "Required candidates: mutate:demo.items:create, mutate:demo.items:*, mutate:demo.items.create:*, execute:group:demo_create, execute:group:demo",
+    );
     expect(result.errorMessage).toContain("permission-demo-writer");
+    expect(result.errorMessage).toContain("ravi permissions allow permission-demo-writer --to agent:dev --apply");
     expect(result.errorMessage).toContain("full-access is break-glass");
+  });
+
+  it("lists every pages @CommandAccess candidate and a concrete allow command", () => {
+    dbCreateTagDefinition({
+      slug: "permission-pages-publisher",
+      label: "Pages Publisher",
+      kind: "system",
+      source: "permissions",
+      metadata: {
+        permissions: {
+          capabilities: ["execute:group:pages"],
+        },
+      },
+    });
+
+    const record = context([]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "pages",
+        command: "ship",
+        access: { kind: "mutate", resource: "pages", action: "ship", risk: "high" },
+        source: "gateway",
+      }),
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("Missing capability: mutate:pages:ship");
+    expect(result.errorMessage).toContain(
+      "Required candidates: mutate:pages:ship, mutate:pages:*, mutate:pages.ship:*, execute:group:pages_ship, execute:group:pages",
+    );
+    expect(result.errorMessage).toContain("ravi permissions allow permission-pages-publisher --to agent:dev --apply");
+  });
+
+  it("authorizes pages ship through a materialized execute:group:pages ceiling", () => {
+    const record = context([{ permission: "execute", objectType: "group", objectId: "pages" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "pages",
+        command: "ship",
+        access: { kind: "mutate", resource: "pages", action: "ship", risk: "high" },
+        source: "tool",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.permission).toBe("execute");
+    expect(result.decision?.objectType).toBe("group");
+    expect(result.decision?.objectId).toBe("pages");
   });
 
   it("records and emits audit denied for runtime command access denies", async () => {

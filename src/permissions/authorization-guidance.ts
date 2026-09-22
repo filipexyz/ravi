@@ -22,12 +22,14 @@ export interface ProviderOwnedPermissionTagSuggestion {
 
 export interface AuthorizationGuidance {
   canonicalCapability: string;
+  candidateCapabilities: string[];
   subject?: AuthorizationSubject;
   scope: "current-context" | "recurring" | "diagnostic";
   inspectCommands: string[];
   preferredPath: {
     kind: "provider-owned-profile-or-tag";
     message: string;
+    allowCommand: string;
     suggestedTags: ProviderOwnedPermissionTagSuggestion[];
   };
   rawCapabilityFallback: string;
@@ -48,6 +50,7 @@ export function formatCanonicalCapability(capability: AuthorizationCapability): 
 
 export function buildAuthorizationGuidance(input: {
   capability: AuthorizationCapability;
+  candidates?: AuthorizationCapability[];
   subject?: AuthorizationSubject;
   scope?: AuthorizationGuidance["scope"];
   reason?: string;
@@ -56,15 +59,23 @@ export function buildAuthorizationGuidance(input: {
   const canonicalCapability = formatCanonicalCapability(input.capability);
   const subject = normalizeSubject(input.subject);
   const inspectCommands = buildInspectCommands(subject);
+  const candidateCapabilities = dedupeAuthorizationCapabilities([input.capability, ...(input.candidates ?? [])]).map(
+    formatCanonicalCapability,
+  );
   const suggestedTags = input.includeProviderOwnedTags
-    ? findProviderOwnedPermissionTagsForCapability(input.capability)
+    ? findProviderOwnedPermissionTagsForCapabilities([input.capability, ...(input.candidates ?? [])])
     : [];
+  const allowCommand = buildRecurringAllowCommand({
+    capability: input.capability,
+    subject,
+    tagSlug: suggestedTags[0]?.slug,
+  });
   const profileOrTag = suggestedTags[0]
     ? `permission tag ${suggestedTags[0].slug}`
-    : "provider-owned permission profile/tag";
+    : `permission profile ${derivePermissionProfileSlug(input.capability)}`;
   const preferredMessage = suggestedTags[0]
-    ? `Use provider-owned permission tag '${suggestedTags[0].slug}' (${suggestedTags[0].label}) for recurring access.`
-    : "Use a provider-owned permission profile/tag for recurring access.";
+    ? `Use ${allowCommand} (${suggestedTags[0].label}) for recurring access.`
+    : `Use ${allowCommand} for recurring access.`;
   const rawCapabilityFallback = `Use raw capability ${canonicalCapability} only as temporary/bootstrap material when no profile/tag exists yet.`;
   const breakGlass = "full-access is break-glass and requires explicit operator approval.";
 
@@ -77,12 +88,14 @@ export function buildAuthorizationGuidance(input: {
 
   return {
     canonicalCapability,
+    candidateCapabilities,
     ...(subject ? { subject } : {}),
     scope: input.scope ?? "diagnostic",
     inspectCommands,
     preferredPath: {
       kind: "provider-owned-profile-or-tag",
       message: preferredMessage,
+      allowCommand,
       suggestedTags,
     },
     rawCapabilityFallback,
@@ -99,13 +112,57 @@ export function buildAuthorizationGuidance(input: {
 }
 
 export function formatAuthorizationGuidanceLines(guidance: AuthorizationGuidance): string[] {
-  return [
-    `Missing capability: ${guidance.canonicalCapability}`,
+  const lines = [`Missing capability: ${guidance.canonicalCapability}`];
+  if (guidance.candidateCapabilities.length > 1) {
+    lines.push(`Required candidates: ${guidance.candidateCapabilities.join(", ")}`);
+  }
+  lines.push(
     `Inspect: ${guidance.inspectCommands[0]}`,
     `Recurring access: ${guidance.preferredPath.message}`,
     `Fallback: ${guidance.rawCapabilityFallback}`,
     `Break-glass: ${guidance.breakGlass}`,
-  ];
+  );
+  return lines;
+}
+
+export function derivePermissionProfileSlug(capability: AuthorizationCapability): string {
+  return `permission-${capability.permission}-${capability.objectType}-${capability.objectId}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function buildRecurringAllowCommand(input: {
+  capability: AuthorizationCapability;
+  subject?: AuthorizationSubject;
+  tagSlug?: string;
+}): string {
+  const profile = input.tagSlug ?? derivePermissionProfileSlug(input.capability);
+  const parts = ["ravi", "permissions", "allow", quoteCliArg(profile)];
+  const subject = normalizeSubject(input.subject);
+  if (subject) {
+    parts.push("--to", `${subject.type}:${subject.id}`);
+  }
+  if (!input.tagSlug) {
+    parts.push("--capabilities", formatCanonicalCapability(input.capability));
+  }
+  parts.push("--apply");
+  return parts.join(" ");
+}
+
+export function findProviderOwnedPermissionTagsForCapabilities(
+  capabilities: AuthorizationCapability[],
+): ProviderOwnedPermissionTagSuggestion[] {
+  const seen = new Set<string>();
+  return capabilities
+    .flatMap((capability) => findProviderOwnedPermissionTagsForCapability(capability))
+    .filter((tag) => {
+      if (seen.has(tag.slug)) return false;
+      seen.add(tag.slug);
+      return true;
+    })
+    .sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 export function findProviderOwnedPermissionTagsForCapability(
@@ -142,6 +199,22 @@ function normalizeSubject(subject: AuthorizationSubject | undefined): Authorizat
   const type = subject?.type.trim();
   const id = subject?.id.trim();
   return type && id ? { type, id } : undefined;
+}
+
+function dedupeAuthorizationCapabilities(capabilities: AuthorizationCapability[]): AuthorizationCapability[] {
+  const seen = new Set<string>();
+  const result: AuthorizationCapability[] = [];
+  for (const capability of capabilities) {
+    const key = formatCanonicalCapability(capability);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(capability);
+  }
+  return result;
+}
+
+function quoteCliArg(value: string): string {
+  return /^[A-Za-z0-9_./:@,-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 export function readPermissionTagCapabilities(definition: TagDefinition): AuthorizationCapability[] {

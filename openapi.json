@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "7a9c8ab38723abfc"
+    "version": "2a7705b04c79e18f"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2860,6 +2860,9 @@
                     "agentId": {
                       "type": "string"
                     },
+                    "authorityLayer": {
+                      "type": "string"
+                    },
                     "before": {
                       "anyOf": [
                         {
@@ -2937,6 +2940,9 @@
                         }
                       ]
                     },
+                    "effectiveOn": {
+                      "type": "string"
+                    },
                     "inspectCommand": {
                       "type": "string"
                     },
@@ -2944,6 +2950,9 @@
                       "type": "string"
                     },
                     "profile": {
+                      "type": "string"
+                    },
+                    "recurringAccessCommand": {
                       "type": "string"
                     },
                     "resetToBootstrapCommand": {
@@ -62740,11 +62749,20 @@
                       ],
                       "type": "object"
                     },
+                    "diagnosticNote": {
+                      "type": "string"
+                    },
                     "guidance": {
                       "additionalProperties": false,
                       "properties": {
                         "breakGlass": {
                           "type": "string"
+                        },
+                        "candidateCapabilities": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         },
                         "canonicalCapability": {
                           "type": "string"
@@ -62764,6 +62782,9 @@
                         "preferredPath": {
                           "additionalProperties": false,
                           "properties": {
+                            "allowCommand": {
+                              "type": "string"
+                            },
                             "kind": {
                               "type": "string"
                             },
@@ -63138,6 +63159,12 @@
                         "breakGlass": {
                           "type": "string"
                         },
+                        "candidateCapabilities": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
                         "canonicalCapability": {
                           "type": "string"
                         },
@@ -63156,6 +63183,9 @@
                         "preferredPath": {
                           "additionalProperties": false,
                           "properties": {
+                            "allowCommand": {
+                              "type": "string"
+                            },
                             "kind": {
                               "type": "string"
                             },
