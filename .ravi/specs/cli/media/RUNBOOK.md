@@ -7,8 +7,14 @@
 3. Exit `1` + `FILE_NOT_FOUND`: the local path is wrong — the file must exist
    on the machine running the CLI, not on the channel side.
 4. Exit `1` + `MEDIA_SEND_FAILED`: delivery-side problem (omni CLI missing,
-   unmapped instance, Slack upload failure). The public message is stable and
-   redacted; inspect redacted runtime logs and target configuration before retrying.
+   unmapped instance, Slack upload failure). Isolated remote projection MUST
+   still say `Media delivery failed.` with the local suggested action, not
+   only `Remote command failed.` The public message is stable and redacted;
+   inspect redacted runtime logs and target configuration before retrying.
+4b. Exit `1` + `PERMISSION_DENIED` from the remote gateway: the current
+   runtime snapshot cannot execute `media send`. Re-run `ravi sessions
+   actions --json` and read `unavailableReasonCode`. Explicit `--account` /
+   `--to` cannot add the grant. Do not treat this as a transport retry.
 5. Exit `1` + `OMNI_AUTH_FAILED`: Omni returned `401` / `Invalid API key`. The
    Omni CLI reads `servers.list.<active>.apiKey` from `~/.omni/config.json`,
    which can be stale relative to the top-level `apiKey` or `OMNI_API_KEY`
@@ -27,7 +33,7 @@
 ## Validation
 
 ```bash
-bun test src/cli/commands/media-json.test.ts src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts
+bun test src/cli/commands/media-json.test.ts src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/cli/media-send-access.test.ts src/cli/remote-gateway.test.ts src/omni-config.test.ts
 ```
 
 Live checks (dry-run first — the brake protects you):

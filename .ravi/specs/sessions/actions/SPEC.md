@@ -15,6 +15,7 @@ tags:
 applies_to:
   - src/cli/context.ts
   - src/cli/commands/sessions.ts
+  - src/cli/media-send-access.ts
   - src/router/router-db.ts
   - src/channels/chat-actions.ts
 owners:
@@ -86,6 +87,16 @@ those identities when they already exist on the turn source.
   exposing or executing actions.
 - Chat attachment alone is not session modification authority.
 - An unavailable permission reason MUST remain non-sensitive.
+- `media.send` channel support is not execution authority. When a runtime
+  context snapshot is present, advertisement MUST evaluate the same
+  capability candidates as `media send` command access (`mutate:media:send`,
+  `mutate:media:*`, `mutate:media.send:*`, `execute:group:media_send`,
+  `execute:group:media`, or `admin:system:*`). A missing grant MUST set
+  status `unavailable` with reason code `permission_denied` and MUST omit
+  the runnable command fields. Group vs DM source and explicit `--account` /
+  `--to` MUST NOT change that evaluation. When no runtime snapshot is
+  present, channel availability remains so discovery outside a turn does not
+  invent a deny. Authorization MUST NOT be widened to hide the mismatch.
 
 ## Compatibility
 

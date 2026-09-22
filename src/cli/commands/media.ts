@@ -11,7 +11,13 @@ import { getContext } from "../context.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import { inferMediaMimeType, inferMediaType, sendMediaWithOmniCli } from "../media-send.js";
-import { mapMediaSendFailure } from "../media-send-auth.js";
+import { MEDIA_SEND_COMMAND_ACCESS } from "../media-send-access.js";
+import {
+  FILE_NOT_FOUND_CODE,
+  FILE_NOT_FOUND_MESSAGE,
+  FILE_NOT_FOUND_SUGGESTED_ACTION,
+  mapMediaSendFailure,
+} from "../media-send-auth.js";
 
 const mediaSendReturnSchema = z.object({
   success: z.literal(true),
@@ -44,14 +50,7 @@ const mediaSendReturnSchema = z.object({
 })
 export class MediaCommands {
   @Command({ name: "send", description: "Send a media file (image, video, audio, document)" })
-  @CommandAccess({
-    kind: "mutate",
-    resource: "media",
-    action: "send",
-    risk: "high",
-    redactions: ["filePath", "to", "account", "threadId"],
-    requiresConfirmation: true,
-  })
+  @CommandAccess(MEDIA_SEND_COMMAND_ACCESS)
   @Returns(mediaSendReturnSchema)
   async send(
     @Arg("filePath", { description: "Path to the file to send" }) filePath: string,
@@ -72,10 +71,10 @@ export class MediaCommands {
     // not something --execute should be spent on.
     const absPath = resolve(filePath);
     if (!existsSync(absPath)) {
-      contractFail("media send", "FILE_NOT_FOUND", "Media file was not found.", {
+      contractFail("media send", FILE_NOT_FOUND_CODE, FILE_NOT_FOUND_MESSAGE, {
         asJson,
         details: {
-          suggestedAction: "Check the local file path (the file must exist on this machine) and re-run",
+          suggestedAction: FILE_NOT_FOUND_SUGGESTED_ACTION,
         },
       });
     }

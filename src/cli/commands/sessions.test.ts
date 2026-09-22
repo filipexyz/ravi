@@ -1178,6 +1178,102 @@ describe("SessionCommands list --json", () => {
   });
 });
 
+type WhatsAppActionKind = "group" | "dm";
+
+const WHATSAPP_ACTION_SURFACES: Record<
+  WhatsAppActionKind,
+  { chatId: string; platformChatId: string; title: string; sessionKeySuffix: string }
+> = {
+  group: {
+    chatId: "chat_ae70f8bc7ec999d2e2048219",
+    platformChatId: "120363424772797713@g.us",
+    title: "ravi - group",
+    sessionKeySuffix: "whatsapp:main:chat_ae70f8bc7ec999d2e2048219",
+  },
+  dm: {
+    chatId: "chat_dm_5511999999999",
+    platformChatId: "5511999999999",
+    title: "ravi - dm",
+    sessionKeySuffix: "whatsapp:main:chat_dm_5511999999999",
+  },
+};
+
+function whatsappActionSessionKey(kind: WhatsAppActionKind): string {
+  return `agent:dev:${WHATSAPP_ACTION_SURFACES[kind].sessionKeySuffix}`;
+}
+
+function setupWhatsAppActionSession(options: { kind: WhatsAppActionKind; sessionName: string }): void {
+  const surface = WHATSAPP_ACTION_SURFACES[options.kind];
+  const sessionKey = whatsappActionSessionKey(options.kind);
+  resolvedSession = {
+    sessionKey,
+    name: options.sessionName,
+    agentId: "dev",
+    agentCwd: "/tmp/dev",
+  };
+  sessionSubscriptions = [
+    {
+      id: `sub_${options.kind}`,
+      sessionKey,
+      chatId: surface.chatId,
+      role: "primary",
+      outputAttachedAt: 1,
+    },
+  ];
+  chatRecords.set(surface.chatId, {
+    id: surface.chatId,
+    title: surface.title,
+    channel: "whatsapp",
+    instanceId: "main",
+    platformChatId: surface.platformChatId,
+  });
+  stickerCatalog = [
+    {
+      id: "wave",
+      enabled: true,
+      channels: ["whatsapp"],
+      agents: [],
+    },
+  ];
+}
+
+function whatsappActionContext(options: {
+  kind: WhatsAppActionKind;
+  sessionName: string;
+  capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
+}): Record<string, unknown> {
+  const surface = WHATSAPP_ACTION_SURFACES[options.kind];
+  const sessionKey = whatsappActionSessionKey(options.kind);
+  return {
+    agentId: "dev",
+    sessionKey,
+    sessionName: options.sessionName,
+    source: {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "main",
+      chatId: surface.platformChatId,
+      canonicalChatId: surface.chatId,
+    },
+    context: {
+      contextId: `ctx_${options.kind}_${options.sessionName}`,
+      contextKey: `rctx_${options.kind}_${options.sessionName}`,
+      kind: "turn-runtime",
+      agentId: "dev",
+      sessionKey,
+      sessionName: options.sessionName,
+      capabilities: options.capabilities,
+      createdAt: 0,
+    },
+  };
+}
+
+function mediaSendActionFrom(payload: { actions: Array<Record<string, unknown>> }): Record<string, unknown> {
+  const action = payload.actions.find((item) => item.id === "media.send");
+  if (!action) throw new Error("media.send action missing from sessions actions payload");
+  return action;
+}
+
 describe("SessionCommands attach hints", () => {
   it("builds the detach command returned by attach", () => {
     expect(buildSessionDetachCommand("dev", "chat_123")).toBe("ravi sessions detach dev --chat chat_123");
@@ -1308,6 +1404,92 @@ describe("SessionCommands attach hints", () => {
       chatId: "chat_ae70f8bc7ec999d2e2048219",
       defaultOutput: true,
     });
+  });
+
+  it("keeps WhatsApp media.send available without a runtime snapshot", () => {
+    setupWhatsAppActionSession({
+      kind: "group",
+      sessionName: "dev",
+    });
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().actions("dev", undefined, true);
+      }),
+    );
+    const action = payload.actions.find((item: { id: string }) => item.id === "media.send");
+
+    expect(action).toMatchObject({
+      id: "media.send",
+      status: "available",
+      command: 'ravi media send "<file-path>" --execute',
+    });
+    expect(action.unavailableReasonCode).toBeUndefined();
+  });
+
+  it("advertises media.send on group and DM snapshots only when the same grant is present", () => {
+    const granted = [{ permission: "mutate", objectType: "media", objectId: "send" }];
+    const bootstrap = [{ permission: "execute", objectType: "group", objectId: "sessions" }];
+
+    setupWhatsAppActionSession({ kind: "group", sessionName: "group-granted" });
+    toolContext = whatsappActionContext({ kind: "group", sessionName: "group-granted", capabilities: granted });
+    const groupGranted = mediaSendActionFrom(
+      JSON.parse(
+        captureLogs(() => {
+          new SessionCommands().actions("group-granted", undefined, true);
+        }),
+      ),
+    );
+
+    setupWhatsAppActionSession({ kind: "dm", sessionName: "dm-granted" });
+    toolContext = whatsappActionContext({ kind: "dm", sessionName: "dm-granted", capabilities: granted });
+    const dmGranted = mediaSendActionFrom(
+      JSON.parse(
+        captureLogs(() => {
+          new SessionCommands().actions("dm-granted", undefined, true);
+        }),
+      ),
+    );
+
+    setupWhatsAppActionSession({ kind: "group", sessionName: "group-denied" });
+    toolContext = whatsappActionContext({ kind: "group", sessionName: "group-denied", capabilities: bootstrap });
+    const groupDenied = mediaSendActionFrom(
+      JSON.parse(
+        captureLogs(() => {
+          new SessionCommands().actions("group-denied", undefined, true);
+        }),
+      ),
+    );
+
+    setupWhatsAppActionSession({ kind: "dm", sessionName: "dm-denied" });
+    toolContext = whatsappActionContext({ kind: "dm", sessionName: "dm-denied", capabilities: bootstrap });
+    const dmDenied = mediaSendActionFrom(
+      JSON.parse(
+        captureLogs(() => {
+          new SessionCommands().actions("dm-denied", undefined, true);
+        }),
+      ),
+    );
+
+    expect(groupGranted).toMatchObject({
+      status: "available",
+      command: 'ravi media send "<file-path>" --execute',
+    });
+    expect(dmGranted).toMatchObject({
+      status: "available",
+      command: 'ravi media send "<file-path>" --execute',
+    });
+    expect(groupDenied).toMatchObject({
+      status: "unavailable",
+      unavailableReasonCode: "permission_denied",
+      unavailableReason: "The current runtime context is not authorized to send media.",
+    });
+    expect(dmDenied).toMatchObject({
+      status: "unavailable",
+      unavailableReasonCode: "permission_denied",
+    });
+    expect(groupDenied).not.toHaveProperty("command");
+    expect(dmDenied).not.toHaveProperty("command");
   });
 
   it("resolves Slack actions per concrete surface and origin session", () => {

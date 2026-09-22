@@ -1,9 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import {
+  FILE_NOT_FOUND_CODE,
+  FILE_NOT_FOUND_MESSAGE,
+  FILE_NOT_FOUND_SUGGESTED_ACTION,
   isOmniCliAuthFailure,
+  localMediaSendCatalogCopy,
   mapMediaSendFailure,
   MediaSendAuthError,
   MEDIA_SEND_FAILED_CODE,
+  MEDIA_SEND_FAILED_MESSAGE,
+  MEDIA_SEND_FAILED_SUGGESTED_ACTION,
   OMNI_AUTH_FAILED_CODE,
   OMNI_AUTH_FAILED_SUGGESTED_ACTION,
 } from "./media-send-auth.js";
@@ -34,6 +40,18 @@ describe("Omni CLI auth failure classification", () => {
     expect(mapped.suggestedAction).toContain("servers.list.<active>.apiKey");
     expect(mapped.suggestedAction).toContain("OMNI_API_KEY");
     expect(mapped.suggestedAction).not.toMatch(/sk-|omni_sk_/);
+  });
+
+  it("exposes a local catalog copy for isolated remote media-send codes", () => {
+    expect(localMediaSendCatalogCopy(MEDIA_SEND_FAILED_CODE)).toEqual({
+      message: MEDIA_SEND_FAILED_MESSAGE,
+      suggestedAction: MEDIA_SEND_FAILED_SUGGESTED_ACTION,
+    });
+    expect(localMediaSendCatalogCopy(FILE_NOT_FOUND_CODE)).toEqual({
+      message: FILE_NOT_FOUND_MESSAGE,
+      suggestedAction: FILE_NOT_FOUND_SUGGESTED_ACTION,
+    });
+    expect(localMediaSendCatalogCopy("COMMAND_FAILED")).toBeUndefined();
   });
 
   it("keeps generic delivery errors as MEDIA_SEND_FAILED", () => {

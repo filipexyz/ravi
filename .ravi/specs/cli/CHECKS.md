@@ -29,7 +29,10 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   `issues`, and explicitly projected typed plan metadata; sentinel free text,
   paths, URLs, tokens and arbitrary nested objects MUST be absent from the
   resulting envelope. 400/422 gateway validation failures MUST keep `status`
-  and `issues` visible in both CLI text and `--json`.
+  and `issues` visible in both CLI text and `--json`. Isolated `media send`
+  catalog codes (`MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED`, `FILE_NOT_FOUND`)
+  MUST keep the code and use the local catalog message / `suggestedAction`;
+  generic `COMMAND_FAILED` stays `Remote command failed.`
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable

@@ -17,3 +17,9 @@
 - [ ] Channel-root sessions MUST NOT advertise `thread.close` as runnable.
 - [ ] Slack thread children MUST advertise `thread.close`.
 - [ ] Close without `--return` MUST not interrupt the parent session.
+- [ ] WhatsApp `media.send` without a runtime snapshot MUST stay channel-available.
+- [ ] Group and DM snapshots with `mutate:media:send` MUST advertise `media.send`
+      as available with the runnable command.
+- [ ] Group and DM snapshots with only bootstrap groups MUST mark `media.send`
+      unavailable with `permission_denied` and omit the command.
+- [ ] Explicit `--account` / `--to` MUST NOT grant `media send` authority.

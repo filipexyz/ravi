@@ -131,7 +131,10 @@ details and policy outcome:
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags
   and positionals must match their canonical grammars, and `suggestedAction`
-  is replaced by a safe local action. HTTP `status` and structured `issues`
+  is replaced by a safe local action. For `media send`, catalog codes
+  `MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED` and `FILE_NOT_FOUND` MUST keep the
+  remote code and use the local catalog message and action; other codes stay
+  on the generic remote failure copy. HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
   be projected so CLI text and `--json` stay actionable. This privacy
   projection is the permitted exception to byte-for-byte detail parity;
