@@ -1,16 +1,30 @@
 import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { dbListSkillGrantsForAgent } from "../router/router-db.js";
-import type { ContextCapability } from "../router/router-db.js";
+import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/router-db.js";
+import {
+  isAdminAll,
+  selectGroupCaps,
+  specificSkillsFromCapabilities,
+  capabilityMatchesGroupRule,
+} from "./skill-capability-implication.js";
+
+export {
+  officialSkillImpliedByCapabilities,
+  specificSkillsFromCapabilities,
+} from "./skill-capability-implication.js";
 
 /**
  * Per-agent skill visibility — provider-agnostic core.
  *
  * spec: skills/scoping/per-agent-visibility
  *
- * Produces a per-agent allowlist from the operational baseline plus either:
- *   1. explicit grants (`ravi skills grant`), when present; or
- *   2. system skills derived from permissions for legacy agents without grants.
+ * Produces a per-agent allowlist from the operational baseline plus:
+ *   1. explicit grants (`ravi skills grant`);
+ *   2. system skills derived from command capabilities.
+ *
+ * Grants stay authoritative against a generic `execute:group:*` dump.
+ * `admin:system:*` and specific `read|mutate:<resource>:<action>` /
+ * `execute:group:<group>` capabilities still surface their system skills.
  *
  * The enforcement layer (claude-provider / codex adapter) is responsible for
  * applying the allowlist to its runtime (Invariant N). Nothing in this module
@@ -68,24 +82,16 @@ function expandSkillNames(slug: string): string[] {
   return [...variants];
 }
 
-function isAdminAll(capabilities: ContextCapability[]): boolean {
-  return capabilities.some((cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*");
-}
-
-function selectGroupCaps(capabilities: ContextCapability[]): ContextCapability[] {
-  return capabilities.filter((cap) => cap.permission === "execute" && cap.objectType === "group");
-}
-
 /**
  * Resolve a allowlist de skills visíveis para `agentId`, provider-agnostic.
  *
- * @param options.capabilitiesOverride — usado por testes para injetar caps
- * materializadas; produção sempre passa `undefined` e o módulo consulta
- * `materializeSubjectCapabilities` diretamente.
+ * @param options.capabilitiesOverride — effective identity snapshot when the
+ * caller already materialized one (turn context). Tests also use it to inject
+ * caps. When omitted, the module reads `materializeSubjectCapabilities`.
  */
 export function resolveAgentSkills(
   agentId: string,
-  options: { capabilitiesOverride?: ContextCapability[] } = {},
+  options: { capabilitiesOverride?: readonly ContextCapability[] } = {},
 ): ResolvedAgentSkills {
   const trimmed = agentId?.trim();
   if (!trimmed) {
@@ -109,20 +115,26 @@ export function resolveAgentSkills(
       derivedSlugs.add(rule.skill);
       continue;
     }
-    for (const cap of groupCaps) {
-      if (rule.pattern.test(cap.objectId)) {
-        derivedSlugs.add(rule.skill);
-        break;
-      }
+    if (capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern))) {
+      derivedSlugs.add(rule.skill);
     }
   }
   const derivedNames = [...derivedSlugs].flatMap(expandSkillNames);
 
   const grants = dbListSkillGrantsForAgent(trimmed);
   const grantNames = grants.flatMap((grant) => expandSkillNames(grant.skillName));
-  const effectiveDerivedNames = grants.length > 0 ? [] : derivedNames;
+  // Grants remain authoritative against a generic `execute:group:*` dump.
+  // Admin break-glass and specific command capabilities still surface their
+  // system skills: visibility follows authority, never the other way around.
+  const effectiveDerivedNames =
+    grants.length > 0
+      ? adminAll
+        ? derivedNames
+        : specificSkillsFromCapabilities(capabilities).flatMap(expandSkillNames)
+      : derivedNames;
 
-  const hasConfiguration = adminAll || groupCaps.length > 0 || grants.length > 0;
+  const hasSpecificCommandCaps = specificSkillsFromCapabilities(capabilities).length > 0;
+  const hasConfiguration = adminAll || groupCaps.length > 0 || grants.length > 0 || hasSpecificCommandCaps;
   const allowlist = [...new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames])];
 
   return {

@@ -13,6 +13,10 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [x] Cold start e session resume preservam o catálogo filtrado.
 - [x] A redução do catálogo diminui os input tokens do cold start de forma mensurável.
 - [x] Permissões de ferramentas continuam independentes da visibilidade de skills.
+- [x] Identidade com `admin:system:*` (e opcionalmente `mutate:permissions:allow`) + grant personalizado MUST ver `ravi-system-permissions-manager` e NÃO ser bloqueada por `RAVI_SKILL_GATE_CONFIG_ERROR` em `ravi permissions --help` / `permissions_allow` / `ravi skills show`.
+- [x] Identidade com `mutate:pages:ship` + grant personalizado MUST ver `ravi-system-pages`.
+- [x] Identidade sem essas capabilities MUST continuar `SKILL_NOT_AUTHORIZED` / `RAVI_SKILL_GATE_CONFIG_ERROR`.
+- [x] Grant da skill `permissions-manager` MUST NOT conceder `mutate:permissions:allow`.
 - [x] Pi: Read/`Skill` de skill não concedida é negado no permission-extension authorize path com `SKILL_NOT_AUTHORIZED`.
 - [x] Pi: Read/`Skill` de skill concedida é autorizado; arquivos comuns (ex. `README.md`) não disparam o gate.
 - [x] Pi: o catálogo do system prompt continua filtrado pela mesma allowlist.

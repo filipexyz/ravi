@@ -11,6 +11,9 @@ tags:
   - runtime
 applies_to:
   - runtime skill filtering (provider-agnostic core + per-provider enforcement adapter)
+  - src/runtime/allowed-skills.ts
+  - src/runtime/skill-authorization.ts
+  - src/runtime/skill-capability-implication.ts
   - ravi skills CLI
 owners:
   - main
@@ -28,7 +31,7 @@ Cada agente vê no contexto **só as skills que fazem sentido pra ele** — reso
 
 **Dois regimes, um resultado:**
 
-1. Agente com grants explícitos recebe `baseline ∪ grants`; permissões genéricas não ampliam esse catálogo.
+1. Agente com grants explícitos recebe `baseline ∪ grants ∪ skills oficiais implicadas por autoridade específica`. `execute:group:*` genérico NÃO amplia esse catálogo. `admin:system:*` e capabilities semânticas (`mutate:permissions:allow`, `mutate:pages:ship`, `execute:group:pages`) continuam a expor a skill do comando autorizado.
 2. Agente sem grants explícitos recebe `baseline ∪ derivadas-de-permissão`, preservando compatibilidade.
 
 Ambos produzem uma **allowlist por agente** que alimenta o **filtro nativo do motor**.
@@ -61,14 +64,14 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 
 ## Invariants
 
-- **R (fonte única).** A allowlist MUST vir só de `resolveAgentSkills`: `baseline ∪ grants` quando houver grants explícitos; caso contrário, `baseline ∪ derivadas-permissão`. Nada de outra origem.
+- **R (fonte única).** A allowlist MUST vir só de `resolveAgentSkills`: `baseline ∪ grants ∪ skills oficiais implicadas por autoridade` quando houver grants; caso contrário, `baseline ∪ derivadas-permissão`. Nada de outra origem.
 - **T (por turno).** MUST ser resolvida na montagem de cada turno pelo `runtime-request-builder` e entregue ao adaptador do provider. Mudança de permissão ou grant vale no próximo turno, sem restart.
 - **N (agnóstico).** `resolveAgentSkills` MUST ser provider-agnostic. Só o *enforcement* (aplicar a lista ao motor) é por-provider. MUST NOT ramificar a lógica de resolução por provider.
-- **D (derivação compatível).** A derivação por permissão MUST ser usada apenas quando o agente não tiver grants explícitos. Um grant explícito MUST NOT ser ampliado por uma permissão genérica.
+- **D (derivação compatível).** Uma permissão genérica (`execute:group:*`) MUST NOT ampliar um catálogo com grants explícitos. `admin:system:*` e capabilities específicas de comando (`read|mutate:<resource>:<action>`, `execute:group:<group>`) MUST continuar a expor a skill oficial daquele comando. Visibilidade segue autoridade; autoridade NUNCA é concedida só porque a skill é visível.
 - **B (baseline).** Todo agente MUST receber o baseline, sempre — mesmo sem permissão nenhuma.
 - **U (single-source).** Skill personalizada MUST ter um único arquivo central; N grants MUST NOT duplicar arquivo em disco.
-- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST respeitar a mesma allowlist do agente. Uma skill não concedida MUST falhar com `SKILL_NOT_AUTHORIZED`.
-- **F (no-break / fallback).** Agente sem configuração explícita mantém a derivação compatível. Agente configurado com grants explícitos MUST receber somente baseline e grants.
+- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST usar a mesma autorização: allowlist do agente OU skill oficial implicada pelas capabilities efetivas da identidade. Uma skill não concedida e não implicada MUST falhar com `SKILL_NOT_AUTHORIZED`.
+- **F (no-break / fallback).** Agente sem configuração explícita mantém a derivação compatível. Grants explícitos NÃO escondem skills oficiais que a identidade já pode executar.
 - **C (cache-friendly).** A allowlist SHOULD ser estável entre turnos do mesmo agente (recomputa, mas idêntica) → o prefixo do prompt mantém cache. SHOULD mudar só em mudança de permissão/grant.
 - **S (camadas independentes).** Visibilidade de skill e permissão de ferramenta são controles distintos. O catálogo e `ravi skills show` MUST aplicar a allowlist; capacidades de efeito continuam sendo autorizadas pela camada de ferramentas.
 - **L (colisão de nome).** Skill local do agente (`<agent-cwd>/.claude/skills/`) MUST ter precedência sobre a compartilhada de mesmo nome; a compartilhada MUST ser suprimida do índice desse agente na colisão.

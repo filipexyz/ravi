@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ContextCapability } from "../router/router-db.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { extractRequestedSkillFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
@@ -140,6 +142,9 @@ export interface PiToolPermissionHandlers {
    * Absent/empty keeps Invariant F grandfather behavior.
    */
   allowedSkills?: readonly string[];
+  /** Executor agent — used to authorize official gated skills from capabilities. */
+  agentId?: string;
+  capabilities?: readonly ContextCapability[];
 }
 
 export interface PiToolPermissionDecision {
@@ -378,7 +383,15 @@ function isPiSkillAuthorized(skillName: string, handlers: PiToolPermissionHandle
   if (!handlers.allowedSkills || handlers.allowedSkills.length === 0) {
     return true;
   }
-  return isSkillNameAuthorizedOnAllowlist(skillName, handlers.allowedSkills);
+  if (isSkillNameAuthorizedOnAllowlist(skillName, handlers.allowedSkills)) {
+    return true;
+  }
+  if (!handlers.agentId) {
+    return false;
+  }
+  return isSkillAuthorizedForAgent(handlers.agentId, skillName, {
+    capabilities: handlers.capabilities,
+  });
 }
 
 export async function resolvePiExtensionUiResponse(

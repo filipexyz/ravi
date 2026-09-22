@@ -1651,6 +1651,7 @@ async function answerPiExtensionUiRequest(
     canUseTool: input.canUseTool,
     approveRuntimeRequest: input.approveRuntimeRequest,
     allowedSkills: input.allowedSkills,
+    agentId: input.agentId,
   });
   if (!response) {
     return;

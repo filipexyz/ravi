@@ -10,9 +10,9 @@ A v4 mantém o núcleo criado na v3 e reaproveita `resolveAgentSkills(agentId)` 
 2. O adaptador Codex intersecta o inventário nativo com essa allowlist e materializa `skills.config` com as entradas não autorizadas desabilitadas.
 3. `ravi skills show` aplica autorização por recurso no CLI e na fronteira do host. No Pi, o mesmo gate vale no permission-extension authorize path para Skill/Read de `SKILL.md`, não só no texto do catálogo.
 4. Toda entrega observada de `SKILL.md`, inclusive via CLI, atualiza `loadedSkills` e o snapshot terminal do turno.
-5. Grants explícitos são autoritativos. A derivação por permissões permanece apenas como fallback para agentes sem grants explícitos.
+5. Grants explícitos são autoritativos contra um dump genérico `execute:group:*`. `admin:system:*` e capabilities semânticas específicas (`mutate:permissions:allow`, `mutate:pages:*`) continuam a expor a skill oficial do comando — senão um grant de skill personalizada esconde `permissions-manager` de uma identidade que já pode administrar permissões.
 
-Isso preserva a independência entre instruções e permissões de efeito: uma skill visível ensina um procedimento; executar ferramentas continua sujeito à camada própria de autorização.
+Isso preserva a independência entre instruções e permissões de efeito: uma skill visível ensina um procedimento; executar ferramentas continua sujeito à camada própria de autorização. Visibilidade NUNCA concede capability.
 
 ## Origem
 

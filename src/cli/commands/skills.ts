@@ -34,7 +34,7 @@ import {
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
-import { skillNameMatchesAllowlist } from "../../runtime/skill-visibility.js";
+import { isSkillAuthorizedForAgent } from "../../runtime/skill-authorization.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
@@ -636,9 +636,10 @@ export class SkillsCommands {
 
     const runtimeAgentId = hasRuntimeInvocationContext() ? getContext()?.agentId?.trim() : undefined;
     if (runtimeAgentId) {
-      const visibility = resolveAgentSkills(runtimeAgentId);
       const skillIdentity = skill.pluginName ? `${skill.pluginName}-${skill.name}` : skill.name;
-      const authorized = !visibility.hasConfiguration || skillNameMatchesAllowlist(skillIdentity, visibility.allowlist);
+      const authorized = isSkillAuthorizedForAgent(runtimeAgentId, skillIdentity, {
+        capabilities: getContext()?.context?.capabilities,
+      });
       if (!authorized) {
         contractFail("skills show", "SKILL_NOT_AUTHORIZED", `Skill not authorized for agent: ${skill.name}`, {
           asJson,

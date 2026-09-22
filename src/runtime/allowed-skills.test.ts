@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertSkillGrant, dbDeleteSkillGrant } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { BASELINE_SYSTEM_SKILL_SLUGS, resolveAgentSkills } from "./allowed-skills.js";
+import {
+  BASELINE_SYSTEM_SKILL_SLUGS,
+  officialSkillImpliedByCapabilities,
+  resolveAgentSkills,
+} from "./allowed-skills.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
@@ -101,7 +105,7 @@ describe("resolveAgentSkills — provider-agnostic core", () => {
 });
 
 describe("resolveAgentSkills — custom grants integration", () => {
-  it("treats explicit grants as authoritative over permission-derived skills", () => {
+  it("treats explicit grants as authoritative over generic execute:group:* dumps", () => {
     dbUpsertSkillGrant({ agentId: "main", skillName: "gmail-pack" });
 
     const resolved = resolveAgentSkills("main", {
@@ -111,6 +115,59 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(resolved.provenance.fromCapabilities).toEqual([]);
     expect(resolved.provenance.fromGrants).toContain("gmail-pack");
     expect(resolved.allowlist).not.toContain("ravi-system-agents-manager");
+  });
+
+  it("keeps official admin/permissions skills visible when admin:system:* is paired with a custom grant", () => {
+    dbUpsertSkillGrant({ agentId: "admin-with-grant", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("admin-with-grant", {
+      capabilitiesOverride: [cap("admin", "system", "*"), cap("mutate", "permissions", "allow")],
+    });
+
+    expect(resolved.allowlist).toContain("gmail-pack");
+    expect(resolved.allowlist).toContain("ravi-system-permissions-manager");
+    expect(resolved.allowlist).toContain("permissions-manager");
+    expect(resolved.allowlist).toContain("ravi-system-pages");
+    expect(officialSkillImpliedByCapabilities([cap("admin", "system", "*")], "ravi-system-permissions-manager")).toBe(
+      true,
+    );
+    expect(officialSkillImpliedByCapabilities([cap("mutate", "permissions", "allow")], "permissions-manager")).toBe(
+      true,
+    );
+  });
+
+  it("surfaces permissions-manager from mutate:permissions:allow without dumping the catalog", () => {
+    dbUpsertSkillGrant({ agentId: "perm-only", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("perm-only", {
+      capabilitiesOverride: [cap("mutate", "permissions", "allow")],
+    });
+
+    expect(resolved.allowlist).toContain("ravi-system-permissions-manager");
+    expect(resolved.allowlist).toContain("gmail-pack");
+    expect(resolved.allowlist).not.toContain("ravi-system-pages");
+    expect(resolved.allowlist).not.toContain("ravi-system-whatsapp-manager");
+  });
+
+  it("surfaces pages from mutate:pages:ship without granting unrelated admin skills", () => {
+    dbUpsertSkillGrant({ agentId: "pages-only", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("pages-only", {
+      capabilitiesOverride: [cap("mutate", "pages", "ship")],
+    });
+
+    expect(resolved.allowlist).toContain("ravi-system-pages");
+    expect(resolved.allowlist).toContain("pages");
+    expect(resolved.allowlist).not.toContain("ravi-system-permissions-manager");
+  });
+
+  it("does not treat a visible permissions skill as mutate:permissions:allow", () => {
+    dbUpsertSkillGrant({ agentId: "visible-only", skillName: "ravi-system-permissions-manager" });
+
+    const resolved = resolveAgentSkills("visible-only", { capabilitiesOverride: [] });
+    expect(resolved.allowlist).toContain("ravi-system-permissions-manager");
+    expect(isSkillAuthorizedForAgent("visible-only", "ravi-system-permissions-manager")).toBe(true);
+    expect(officialSkillImpliedByCapabilities([], "ravi-system-permissions-manager")).toBe(false);
   });
 
   let stateDir: string | null = null;

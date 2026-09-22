@@ -466,6 +466,12 @@ export interface RuntimeStartRequest {
   /** Same immutable secretless broker route prepared for this physical provider session. */
   modelBroker?: RuntimeModelBrokerBinding;
   /**
+   * Executor agent for this physical session. Used by provider adapters that
+   * must re-check official skill authorization against identity capabilities
+   * (not only the advertised allowlist).
+   */
+  agentId?: string;
+  /**
    * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
    * When present + non-empty the provider adapter narrows the runtime skill
    * catalog to this list. When absent or empty, providers keep their default

@@ -15,6 +15,8 @@ applies_to:
   - src/runtime/context-registry.ts
   - src/runtime/runtime-request-context.ts
   - src/runtime/skill-gate.ts
+  - src/runtime/skill-authorization.ts
+  - src/runtime/allowed-skills.ts
   - src/runtime/skill-visibility.ts
   - src/cli/commands/context.ts
   - src/skills/manager.ts
@@ -119,6 +121,7 @@ The transform pipeline is the orchestrator; `skill-gate` is one policy plugged i
 - **Skill does not exist anywhere** — the runtime MUST surface a clear error: "tool requires skill X, no plugin provides X". This is a configuration error, not a runtime gate failure, and MUST be reported distinctly.
 - **Mid-flight soft gate** — the runtime delivers the skill content; the agent's next attempt is allowed to invoke the tool only after the agent's context has acknowledged the skill. Acknowledgement is a turn boundary, not a free pass.
 - **Permission missing** — if the agent lacks permission to load the skill (no `toolgroup:navigate` or skill-specific deny), the gate MUST report the permission gap rather than silently auto-loading.
+- **Capability-implied official skill** — if the identity can already run the gated command (`admin:system:*`, `mutate:permissions:allow`, `mutate:pages:ship`, or `execute:group:<group>`), the gate MUST treat the official system skill as visible even when a custom grant hid it from the advertised catalog. The first call is still `RAVI_SKILL_REQUIRED`. A visible skill MUST NOT, by itself, grant those capabilities.
 
 ## Acceptance Criteria
 
