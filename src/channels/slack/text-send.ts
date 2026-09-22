@@ -4,6 +4,7 @@ import { findNativeChannelAccount } from "../account-resolution.js";
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 
 export interface SlackTextSendInput {
   readonly accountId: string;
@@ -48,7 +49,7 @@ export async function sendSlackText(
   input: SlackTextSendInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = input.text.trim();
+  const text = markdownToSlackMrkdwn(input.text).trim();
   if (!text) {
     throw new Error("Slack text is required");
   }
@@ -75,7 +76,7 @@ export async function updateSlackText(
   input: SlackTextUpdateInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = input.text.trim();
+  const text = markdownToSlackMrkdwn(input.text).trim();
   if (!text) {
     throw new Error("Slack text is required");
   }

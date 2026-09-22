@@ -943,6 +943,55 @@ describe("Slack Socket Mode routing", () => {
     });
   });
 
+  it("converts CommonMark chat-action text to mrkdwn before post and update", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000200",
+      messageId: "1713000000.000200",
+      raw: { ok: true },
+    }));
+    const updateMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage, updateMessage } as never);
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-md",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Look at **this** [diff](https://example.com/diff)",
+      },
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "edit-md",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: "1713000000.000100",
+        text: "Corrected **copy**",
+      },
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      text: "Look at *this* <https://example.com/diff|diff>",
+      clientMsgId: slackClientMessageId("thread-md"),
+    });
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "Corrected *copy*",
+    });
+  });
+
   it("discovers all configured Slack channels without connection env overrides", async () => {
     const resolveSecret = mock(async ({ connection }: { connection: string }) => ({
       secret: JSON.stringify({

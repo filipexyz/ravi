@@ -62,6 +62,33 @@ describe("sendSlackText", () => {
     expect(body.get("thread_ts")).toBe("1783999999.000099");
   });
 
+  it("converts CommonMark agent text to mrkdwn before chat.postMessage", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: true, channel: "C123", ts: "1784000000.000150" });
+    }) as typeof fetch;
+
+    await sendSlackText(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        text: "# Status\nUse **bold** and [docs](https://example.com).",
+      },
+      {
+        channels: { hana: slackChannel() },
+        resolveSecret: async () => ({
+          secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+        }),
+        fetchImpl,
+        apiBaseUrl: "https://slack.test/api/",
+      },
+    );
+
+    const body = new URLSearchParams(String(requests[0]?.init?.body));
+    expect(body.get("text")).toBe("*Status*\nUse *bold* and <https://example.com|docs>.");
+  });
+
   it("posts Block Kit blocks on chat.postMessage", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -120,6 +147,36 @@ describe("sendSlackText", () => {
     const body = new URLSearchParams(String(requests[0]?.init?.body));
     expect(body.get("ts")).toBe("1784000000.000100");
     expect(body.get("text")).toContain("Approved");
+  });
+
+  it("converts CommonMark on chat.update text without rewriting Block Kit blocks", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: true, channel: "C123", ts: "1784000000.000100" });
+    }) as typeof fetch;
+
+    await updateSlackText(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        messageId: "1784000000.000100",
+        text: "Result: **approved**",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "*Approved*" } }],
+      },
+      {
+        channels: { hana: slackChannel() },
+        resolveSecret: async () => ({
+          secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+        }),
+        fetchImpl,
+        apiBaseUrl: "https://slack.test/api/",
+      },
+    );
+
+    const body = new URLSearchParams(String(requests[0]?.init?.body));
+    expect(body.get("text")).toBe("Result: *approved*");
+    expect(body.get("blocks")).toContain("*Approved*");
   });
 
   it("surfaces Slack API errors without falling back to Omni", async () => {
