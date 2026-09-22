@@ -947,7 +947,43 @@ describe("AgentsCommands permissions", () => {
     expect(text).toContain("Reception only:");
     expect(text).toContain("chat-only");
     expect(text).toContain("Reset to bootstrap:");
+    expect(text).toContain("Recurring access:");
+    expect(text).toContain("ravi permissions allow <profile> --to agent:dev");
     expect(text).not.toContain("Clear:");
+  });
+
+  it("does not claim live authorize after writing --capabilities defaults", () => {
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const payload = commands.permissions("dev", undefined, "mutate:pages:ship", false, undefined, true);
+      expect(payload).toMatchObject({
+        action: "permissions",
+        changed: true,
+        agentId: "dev",
+        authorityLayer: "agent-defaults",
+        effectiveOn: "next-issued-runtime-context",
+        inspectCommand: "ravi permissions materialize --subject-type agent --subject-id dev --json",
+        recurringAccessCommand:
+          "ravi permissions allow <profile> --to agent:dev --capabilities <permission>:<objectType>:<objectId> --apply",
+      });
+      expect(agentPermissionsReturnSchema.safeParse(payload).success).toBe(true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const text = logCalls.join("\n");
+    expect(text).toContain("Agent runtime defaults updated: dev -> custom + 1 explicit");
+    expect(text).not.toContain("Runtime permissions set");
+    expect(text).toContain("not a live authorize grant");
+    expect(text).toContain("next issued runtime context snapshot");
+    expect(text).toContain("ravi permissions allow <profile> --to agent:dev");
+    expect(text).toContain("no_permission_provider_configured");
   });
 
   it("narrows a wildcard capability to an already-covered exact capability without --execute", () => {

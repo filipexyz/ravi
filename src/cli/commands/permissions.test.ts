@@ -93,6 +93,12 @@ describe("PermissionsCommands provider-runtime surface", () => {
 
     expect(denied.allowed).toBe(false);
     expect(denied.decision.providerId).toBe("provider-runtime");
+    expect(denied.decision.reasonCode).toBe("no_permission_provider_configured");
+    expect(denied.diagnosticNote).toContain("agent-default-capabilities");
+    expect(denied.diagnosticNote).toContain("ravi permissions allow <profile> --to agent:<id> --apply");
+    expect(denied.guidance?.preferredPath.allowCommand).toBe(
+      "ravi permissions allow permission-execute-group-agents --capabilities execute:group:agents --apply",
+    );
     expect(allowed.allowed).toBe(true);
     expect(allowed.decision.providerId).toBe("operator-control");
   });

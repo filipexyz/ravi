@@ -190,7 +190,9 @@ describe("tools export provider-runtime authorization", () => {
     expect(denied.isError).toBe(true);
     expect(denied).toMatchObject({ outcome: "denied", exitCode: 1 });
     expect(denied.content[0]?.text).toContain("Missing capability: mutate:media:remove");
-    expect(denied.content[0]?.text).not.toContain("execute:group:media_remove");
+    expect(denied.content[0]?.text).toContain("Required candidates:");
+    expect(denied.content[0]?.text).toContain("execute:group:media_remove");
+    expect(denied.content[0]?.text).toContain("ravi permissions allow permission-mutate-media-remove");
   });
 });
 

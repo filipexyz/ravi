@@ -2112,10 +2112,13 @@ export const agentPermissionsReturnSchema = z.object({
   defaults: jsonObjectSchema.nullable().optional(),
   command: z.string().optional(),
   inspectCommand: z.string().optional(),
+  recurringAccessCommand: z.string().optional(),
   leastPrivilegeExample: z.string().optional(),
   chatOnlyCommand: z.string().optional(),
   resetToBootstrapCommand: z.string().optional(),
   breakGlassCommand: z.string().optional(),
+  authorityLayer: z.string().optional(),
+  effectiveOn: z.string().optional(),
   agent: agentJsonSummaryReturnSchema.optional(),
 });
 

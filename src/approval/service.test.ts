@@ -238,7 +238,9 @@ describe("approval service", () => {
     expect(deliveredRequests[0]?.data.blocks).toBeUndefined();
     expect(deliveredText).toContain("Capability: execute:group:daemon");
     expect(deliveredText).toContain("Escopo: contexto atual");
-    expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
+    expect(deliveredText).toContain(
+      "Recorrente: Use ravi permissions allow permission-execute-group-daemon --capabilities execute:group:daemon --apply",
+    );
     expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
     expect(deliveredText).toContain("Reaja com 👍 ou ❤️");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);

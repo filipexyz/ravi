@@ -104,6 +104,7 @@ const permissionsCheckReturnSchema = z.object({
       preferredPath: z.object({
         kind: z.string(),
         message: z.string(),
+        allowCommand: z.string().optional(),
         suggestedTags: z.array(
           z.object({
             slug: z.string(),
@@ -113,6 +114,7 @@ const permissionsCheckReturnSchema = z.object({
           }),
         ),
       }),
+      candidateCapabilities: z.array(z.string()).optional(),
       rawCapabilityFallback: z.string(),
       breakGlass: z.string(),
       requestShape: z.object({
@@ -125,6 +127,7 @@ const permissionsCheckReturnSchema = z.object({
       nextSteps: z.array(z.string()),
     })
     .optional(),
+  diagnosticNote: z.string().optional(),
 });
 
 const permissionsMaterializeReturnSchema = z.object({
@@ -266,12 +269,17 @@ export class PermissionsCommands {
       scope: "diagnostic",
       includeProviderOwnedTags: true,
     });
+    const diagnosticNote =
+      !decision.allowed && decision.reasonCode === "no_permission_provider_configured"
+        ? "This check has no subject or runtime context, so authorize cannot see agent-default-capabilities. Inspect with `ravi permissions materialize --subject-type agent --subject-id <id> --json`. Recurring grants use `ravi permissions allow <profile> --to agent:<id> --apply`."
+        : undefined;
     const payload = {
       allowed: decision.allowed,
       decision,
       ...(!decision.allowed
         ? {
             guidance,
+            ...(diagnosticNote ? { diagnosticNote } : {}),
           }
         : {}),
     };
@@ -284,11 +292,20 @@ export class PermissionsCommands {
     console.log(decision.allowed ? "allowed" : "denied");
     console.log(`${decision.providerId}@${decision.providerVersion}: ${decision.reasonCode}`);
     if (!decision.allowed && payload.guidance) {
+      if (payload.guidance.candidateCapabilities && payload.guidance.candidateCapabilities.length > 1) {
+        console.log(`required candidates: ${payload.guidance.candidateCapabilities.join(", ")}`);
+      }
       console.log(`missing capability: ${payload.guidance.canonicalCapability}`);
       console.log(`inspect: ${payload.guidance.inspectCommands[0]}`);
       console.log(`recurring: ${payload.guidance.preferredPath.message}`);
+      if (payload.guidance.preferredPath.allowCommand) {
+        console.log(`allow: ${payload.guidance.preferredPath.allowCommand}`);
+      }
       console.log(`fallback: ${payload.guidance.rawCapabilityFallback}`);
       console.log(`break-glass: ${payload.guidance.breakGlass}`);
+      if (payload.diagnosticNote) {
+        console.log(`note: ${payload.diagnosticNote}`);
+      }
     }
     return payload;
   }
