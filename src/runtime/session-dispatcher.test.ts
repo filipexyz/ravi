@@ -1509,9 +1509,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         now: now + 1,
       })[0];
       expect(snapshot?.metadata?.live).toBe(true);
-      expect(
-        (snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable,
-      ).toBe(false);
+      expect((snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable).toBe(
+        false,
+      );
       expect(snapshot?.pendingMessageCount).toBe(1);
       const mode = resolveCrashRecoveryRestartResumeMode(snapshot?.metadata);
       expect(mode).toBe("pending_only");
@@ -1587,15 +1587,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         now: now + 1,
       })[0];
       expect(snapshot?.metadata?.live).toBe(true);
-      expect(
-        (snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable,
-      ).toBe(false);
+      expect((snapshot?.metadata?.crashRecoveryReplaySafety as { replayable?: boolean } | undefined)?.replayable).toBe(
+        false,
+      );
       expect(snapshot?.pendingMessageCount).toBe(1);
       expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
-      const pending = dbGetDaemonRestartPendingMessages(
-        "epoch-unyielded-pending",
-        sessionKey,
-      ) as RuntimeUserMessage[];
+      const pending = dbGetDaemonRestartPendingMessages("epoch-unyielded-pending", sessionKey) as RuntimeUserMessage[];
       expect(pending.map((message) => message.message.content)).toEqual(["queued user work after handoff"]);
       expect(pending.map((message) => message.pendingId)).toEqual([successor.pendingId]);
     } finally {

@@ -77,4 +77,14 @@ describe("getPendingRuntimeTurnSuccessors", () => {
       } as RuntimeHostStreamingSession),
     ).toEqual([]);
   });
+
+  it("fails closed when nothing has been yielded and pending ids are missing", () => {
+    const current = createQueuedRuntimeUserMessage({ prompt: "current physical turn" });
+
+    expect(
+      getPendingRuntimeTurnSuccessors({
+        pendingMessages: [current],
+      } as RuntimeHostStreamingSession),
+    ).toEqual([]);
+  });
 });
