@@ -2254,9 +2254,7 @@ describe("runtime session trace instrumentation", () => {
     expect(
       natsEmitSpy?.mock.calls.some(
         ([topic, data]) =>
-          topic === "ravi.outbound.deliver" &&
-          typeof data === "object" &&
-          JSON.stringify(data).includes("rodando"),
+          topic === "ravi.outbound.deliver" && typeof data === "object" && JSON.stringify(data).includes("rodando"),
       ),
     ).toBe(false);
   });
