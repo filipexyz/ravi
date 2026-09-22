@@ -59,9 +59,19 @@ export interface SlackEventPayload {
   readonly source_team?: string | null;
   readonly user_team?: string | null;
   readonly event_ts?: string;
+  readonly reaction?: string;
+  readonly item?: SlackReactionItem;
+  readonly item_user?: string;
   readonly files?: readonly SlackFilePayload[];
   readonly edited?: Record<string, unknown>;
   readonly hidden?: boolean;
+  readonly [key: string]: unknown;
+}
+
+export interface SlackReactionItem {
+  readonly type?: string;
+  readonly channel?: string;
+  readonly ts?: string;
   readonly [key: string]: unknown;
 }
 

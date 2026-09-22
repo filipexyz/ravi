@@ -168,6 +168,88 @@ describe("approval service", () => {
     ]);
   });
 
+  it("approves Slack short-name reactions after emoji normalization", async () => {
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.reaction",
+        data: { targetMessageId: "msg_1", emoji: "+1" },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_slack_shortname",
+      contextKey: "rctx_slack_shortname",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 20,
+    });
+
+    expect(result).toMatchObject({
+      allowed: true,
+      approved: true,
+      inherited: false,
+    });
+  });
+
+  it("rejects when a matching inbound reply arrives", async () => {
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.reply",
+        data: { targetMessageId: "msg_1", text: "não" },
+      },
+    ];
+
+    const context = dbCreateContext({
+      contextId: "ctx_reply_reject",
+      contextKey: "rctx_reply_reject",
+      kind: "agent-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      metadata: {
+        approvalSource: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+        },
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+      timeoutMs: 20,
+    });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      approved: false,
+      inherited: false,
+    });
+    expect(result.reason).toBe("não");
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+  });
+
   it("publishes approval.response once per messageId even when reaction traffic retries", async () => {
     const first = await emitApprovalResponseOnce({
       type: "permission",

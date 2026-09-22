@@ -17,6 +17,8 @@
 
 - `ravi.inbound.reaction` is emitted with `{ targetMessageId, emoji, senderId }` after every processed reaction, regardless of whether durable accounting succeeded.
 - The event payload does not include `chatId` or domain state.
+- Native Slack `reaction_added` on a message publishes `ravi.inbound.reaction` with `targetMessageId = item.ts` and Slack names `+1` / `thumbsup` / `heart` mapped to `👍` / `❤️`.
+- Native Slack reactions do not create user prompts or runtime turns.
 
 ## Isolation From Message Path
 
@@ -34,6 +36,8 @@
 
 - `src/approval/service.ts` subscribes to `ravi.inbound.reaction` and resolves approvals by `targetMessageId`.
 - Approval flow is unaffected by the addition of durable accounting.
+- A native Slack 👍 / ❤️ reaction on the approval message resolves the waiter as approved without waiting for timeout.
+- A matching `ravi.inbound.reply` still rejects as before.
 
 ## Trigger Compatibility
 
@@ -48,6 +52,8 @@ bun test src/router/chat-schema.test.ts
 bun test src/session-trace/channel-trace.test.ts
 bun test src/triggers/__tests__/topic-catalog.test.ts
 bun test src/approval/service.test.ts
+bun test src/utils/reaction-emoji.test.ts
+bun test src/channels/slack/inbound-reaction.test.ts
 bun test src/sdk/gateway/streaming/channels.test.ts
 bun run typecheck
 ```

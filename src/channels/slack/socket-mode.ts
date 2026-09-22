@@ -60,6 +60,7 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
   acceptSlackInboundEnvelope,
   claimSlackInboundEnvelope,
@@ -733,6 +734,13 @@ export class SlackSocketModeService {
     const workObjectEvent = this.normalizeWorkObjectEventEnvelope(envelope);
     if (workObjectEvent) {
       await this.publishInteraction("ravi.inbound.interaction", workObjectEvent);
+      return "processed";
+    }
+
+    const inboundReaction = slackInboundReactionFromEnvelope(envelope);
+    if (inboundReaction) {
+      log.info("Slack inbound reaction", inboundReaction);
+      await this.publishInteraction("ravi.inbound.reaction", inboundReaction);
       return "processed";
     }
 

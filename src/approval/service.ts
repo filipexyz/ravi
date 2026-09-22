@@ -5,6 +5,7 @@ import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
+import { isApprovalReactionEmoji } from "../utils/reaction-emoji.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
 
@@ -397,7 +398,7 @@ async function waitForApprovalResponse(
             if (data.targetMessageId !== messageId) continue;
             clearTimeout(timer);
             cleanup();
-            const approved = data.emoji === "👍" || data.emoji === "❤️" || data.emoji === "❤";
+            const approved = isApprovalReactionEmoji(data.emoji);
             resolve({ approved });
             return;
           }

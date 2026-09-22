@@ -13,6 +13,8 @@ tags:
   - omni
 applies_to:
   - src/omni/consumer.ts
+  - src/channels/slack/socket-mode.ts
+  - src/channels/slack/reactions.ts
   - src/router/router-db.ts
   - src/sdk/gateway/streaming/channels.ts
   - src/triggers/topic-catalog.ts
@@ -97,9 +99,16 @@ REACTION stream (JetStream)
   -> build deterministic provider_message_id
   -> dbUpsertChatMessage(message_type = "reaction", ...)
   -> emit ravi.inbound.reaction { targetMessageId, emoji, senderId }
+
+Native Slack Socket Mode / gateway
+  -> handleEnvelope reaction_added
+  -> map Slack short name (+1, thumbsup, heart) to unicode
+  -> emit ravi.inbound.reaction { targetMessageId: item.ts, emoji, senderId }
 ```
 
 The flow MUST NOT touch route resolution, session dispatch, prompt building, or runtime turn creation.
+
+Native Slack MUST emit `ravi.inbound.reaction` for inbound `reaction_added` events so approval and triggers can correlate without Omni. Slack short names that mean thumbs-up or heart MUST be published as the unicode values approval already accepts (`👍`, `❤️`). File and other non-message reaction items MUST be skipped.
 
 ## Compatibility
 
