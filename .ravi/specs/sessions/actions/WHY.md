@@ -13,3 +13,9 @@ Thread lifecycle actions also depend on session position, not only provider
 capability. The same Slack surface can create a sibling thread while only a
 thread child can close itself, so discovery must project session-aware
 availability rather than advertise Slack API support alone.
+
+`media.send` has the same class of mismatch. WhatsApp channel support can
+list the action while the current turn snapshot lacks `media send`. Agents
+then retry an advertised command and hit a gateway deny. Group origin is
+not a special grant or a special revoke; the snapshot is. Discovery must
+project that snapshot or keep channel status when none exists.

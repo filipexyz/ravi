@@ -74,6 +74,7 @@ import {
   type ChatActionId,
   type ChatActionSurface,
 } from "../../channels/chat-actions.js";
+import { overlayMediaSendAvailability, resolveRuntimeMediaSendCapabilities } from "../media-send-access.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
 import {
@@ -1007,9 +1008,15 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     order: "desc",
   });
   const surfaces = buildSessionActionSurfaces(session, chatIds);
+  const runtimeMediaSendCapabilities = resolveRuntimeMediaSendCapabilities(getContext()?.context);
   const actionAvailability = new Map(
     CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
-      const availabilityBySurface = surfaces.map((surface) => resolveChatActionAvailability(surface, descriptor.id));
+      const availabilityBySurface = surfaces.map((surface) => {
+        const availability = resolveChatActionAvailability(surface, descriptor.id);
+        return descriptor.id === "media.send"
+          ? overlayMediaSendAvailability(availability, runtimeMediaSendCapabilities)
+          : availability;
+      });
       return [
         descriptor.id,
         {
@@ -1046,14 +1053,17 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       ...CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
         const resolved = actionAvailability.get(descriptor.id)!;
         const aggregate = resolved.aggregate;
-        const threadToolIsRunnable =
-          (descriptor.id !== "thread.create" && descriptor.id !== "thread.close") || aggregate.status === "available";
+        const exposeRunnableCommand =
+          aggregate.status === "available" ||
+          (descriptor.id !== "thread.create" &&
+            descriptor.id !== "thread.close" &&
+            descriptor.id !== "media.send");
         return {
           id: descriptor.id,
           status: aggregate.status,
           description: descriptor.description,
           targetKind: descriptor.targetKind,
-          ...(threadToolIsRunnable ? sessionActionToolFields(descriptor.id, toolHints) : {}),
+          ...(exposeRunnableCommand ? sessionActionToolFields(descriptor.id, toolHints) : {}),
           ...(aggregate.executionMode ? { executionMode: aggregate.executionMode } : {}),
           ...(aggregate.requiredScopes ? { requiredScopes: aggregate.requiredScopes } : {}),
           ...(aggregate.scopeVerification ? { scopeVerification: aggregate.scopeVerification } : {}),
