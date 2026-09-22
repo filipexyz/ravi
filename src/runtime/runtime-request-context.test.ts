@@ -1526,6 +1526,61 @@ describe("runtime request context authority", () => {
   });
 });
 
+describe("runtime request context source persistence", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-source-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("persists native Slack instanceId and canonicalChatId onto the runtime context source and env", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession("agent:provider-agent:slack:hana-slack:C123", agent.id, agent.cwd, { name: "hana-slack" });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "hello slack",
+      source: {
+        channel: "slack",
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack_C123",
+      },
+    };
+
+    const { runtimeContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: "agent:provider-agent:slack:hana-slack:C123",
+      sessionName: "hana-slack",
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.source).toEqual({
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "hana-slack",
+      chatId: "C123",
+      canonicalChatId: "chat_slack_C123",
+    });
+    expect(raviEnv).toMatchObject({
+      RAVI_CHANNEL: "slack",
+      RAVI_ACCOUNT_ID: "hana-slack",
+      RAVI_INSTANCE_ID: "hana-slack",
+      RAVI_CHAT_ID: "C123",
+      RAVI_CANONICAL_CHAT_ID: "chat_slack_C123",
+    });
+    expect(dbGetContext(runtimeContext.contextId)?.source).toEqual(runtimeContext.source);
+  });
+});
+
 function promptForContact(contactId: string, text: string): RuntimeLaunchPrompt {
   const senderName = contactId === "ana" ? "Ana" : contactId ? "Luís" : "Desconhecido";
   return {

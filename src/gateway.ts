@@ -31,9 +31,15 @@ import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
+import {
+  NO_INSTANCE_FOR_ACCOUNT,
+  resolveOutboundAccount,
+  type OutboundAccountResolution,
+} from "./channels/account-resolution.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
+import type { ChannelChatActionContent } from "./channels/chat-actions.js";
 import { publishChannelOutboundJobDurably } from "./channels/outbound-publish-outbox.js";
-import { buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
+import { buildChannelChatActionJob, buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
 import { subjectForChannelPresence } from "./channels/presence-consumer.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
@@ -51,6 +57,7 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
+import { sendSlackText } from "./channels/slack/text-send.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -259,6 +266,26 @@ type MessageEditRequest = {
   text: string;
   canonicalMessageId?: string;
   replyTopic?: string;
+};
+
+type DirectSendRequest = {
+  channel: string;
+  accountId: string;
+  to: string;
+  text?: string;
+  mentions?: OmniUserMention[];
+  poll?: { name: string; values: string[]; selectableCount?: number };
+  typingDelayMs?: number;
+  pauseMs?: number;
+  replyTopic?: string;
+};
+
+type ReactionRequest = {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  emoji: string;
 };
 
 export class Gateway {
@@ -1591,102 +1618,185 @@ export class Gateway {
       "directSend",
       ["ravi.outbound.deliver"],
       async (event) => {
-        const data = event.data as {
-          channel: string;
-          accountId: string;
-          to: string;
-          text?: string;
-          mentions?: OmniUserMention[];
-          poll?: { name: string; values: string[]; selectableCount?: number };
-          typingDelayMs?: number;
-          pauseMs?: number;
-          replyTopic?: string;
-        };
-
-        const instanceId = configStore.resolveInstanceId(data.accountId);
-        if (!instanceId) {
-          if (data.replyTopic) {
-            nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
-          }
-          return;
-        }
-        const to = normalizeOutboundJid(data.to);
-
-        try {
-          let typingDelayMs = data.typingDelayMs ?? 0;
-          let pauseMs = data.pauseMs ?? 0;
-
-          // Auto sentinel humanization
-          const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
-          if (isSentinelAuto && data.text) {
-            const routerConfig = configStore.getConfig();
-            const mappedAgentId = routerConfig.accountAgents[data.accountId];
-            const mappedAgent = mappedAgentId ? routerConfig.agents[mappedAgentId] : undefined;
-            if (mappedAgent?.mode === "sentinel") {
-              const len = data.text.length;
-              pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
-              typingDelayMs = Math.max(2000, Math.min(len * 50, 8000)) + Math.random() * 1500;
-            }
-          }
-
-          if (pauseMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, pauseMs));
-          }
-
-          let messageId: string | undefined;
-
-          if (data.poll) {
-            // Poll not supported via omni yet — send as text
-            const pollText = `${data.poll.name}\n${data.poll.values.map((v, i) => `${i + 1}. ${v}`).join("\n")}`;
-            if (typingDelayMs > 0) {
-              await this.omniSender.sendTyping(instanceId, to, true);
-              await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-              const res = await this.omniSender.send(instanceId, to, pollText);
-              messageId = res.messageId;
-              await this.omniSender.sendTyping(instanceId, to, false);
-            } else {
-              const res = await this.omniSender.send(instanceId, to, pollText);
-              messageId = res.messageId;
-            }
-          } else if (data.text) {
-            const prepared = await this.prepareOutboundMentionMessage({
-              accountId: data.accountId,
-              instanceId,
-              chatId: to,
-              channel: data.channel,
-              text: data.text,
-              mentions: data.mentions,
-            });
-            const sendStart = Date.now();
-            if (typingDelayMs > 0) {
-              await this.omniSender.sendTyping(instanceId, to, true);
-              await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
-              messageId = res.messageId;
-              await this.omniSender.sendTyping(instanceId, to, false);
-            } else {
-              const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
-              messageId = res.messageId;
-            }
-            log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
-          }
-
-          log.info("Direct send delivered", { to, instanceId, messageId });
-
-          if (data.replyTopic) {
-            nats
-              .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
-              .catch(() => {});
-          }
-        } catch (err) {
-          log.error("Failed to deliver direct send", { to, instanceId, error: err });
-          if (data.replyTopic) {
-            nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
-          }
-        }
+        await this.handleDirectSendEvent(event.data as DirectSendRequest);
       },
       { queue: "ravi-gateway" },
     );
+  }
+
+  private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
+    const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+    if (resolved.kind === "native") {
+      await this.deliverNativeDirectSend(resolved, data);
+      return;
+    }
+    if (resolved.kind !== "omni") {
+      if (data.replyTopic) {
+        await this.emitEvent(data.replyTopic, { success: false, error: NO_INSTANCE_FOR_ACCOUNT });
+      }
+      return;
+    }
+    const instanceId = resolved.instanceId;
+    const to = normalizeOutboundJid(data.to);
+
+    try {
+      let typingDelayMs = data.typingDelayMs ?? 0;
+      let pauseMs = data.pauseMs ?? 0;
+
+      // Auto sentinel humanization
+      const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
+      if (isSentinelAuto && data.text) {
+        const routerConfig = configStore.getConfig();
+        const mappedAgentId = routerConfig.accountAgents[data.accountId];
+        const mappedAgent = mappedAgentId ? routerConfig.agents[mappedAgentId] : undefined;
+        if (mappedAgent?.mode === "sentinel") {
+          const len = data.text.length;
+          pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
+          typingDelayMs = Math.max(2000, Math.min(len * 50, 8000)) + Math.random() * 1500;
+        }
+      }
+
+      if (pauseMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, pauseMs));
+      }
+
+      let messageId: string | undefined;
+
+      if (data.poll) {
+        // Poll not supported via omni yet — send as text
+        const pollText = `${data.poll.name}\n${data.poll.values.map((v, i) => `${i + 1}. ${v}`).join("\n")}`;
+        if (typingDelayMs > 0) {
+          await this.omniSender.sendTyping(instanceId, to, true);
+          await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
+          const res = await this.omniSender.send(instanceId, to, pollText);
+          messageId = res.messageId;
+          await this.omniSender.sendTyping(instanceId, to, false);
+        } else {
+          const res = await this.omniSender.send(instanceId, to, pollText);
+          messageId = res.messageId;
+        }
+      } else if (data.text) {
+        const prepared = await this.prepareOutboundMentionMessage({
+          accountId: data.accountId,
+          instanceId,
+          chatId: to,
+          channel: data.channel,
+          text: data.text,
+          mentions: data.mentions,
+        });
+        const sendStart = Date.now();
+        if (typingDelayMs > 0) {
+          await this.omniSender.sendTyping(instanceId, to, true);
+          await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
+          const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
+          messageId = res.messageId;
+          await this.omniSender.sendTyping(instanceId, to, false);
+        } else {
+          const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
+          messageId = res.messageId;
+        }
+        log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
+      }
+
+      log.info("Direct send delivered", { to, instanceId, messageId });
+
+      if (data.replyTopic) {
+        await this.emitEvent(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>);
+      }
+    } catch (err) {
+      log.error("Failed to deliver direct send", { to, instanceId, error: err });
+      if (data.replyTopic) {
+        await this.emitEvent(data.replyTopic, { success: false, error: String(err) });
+      }
+    }
+  }
+
+  private async deliverNativeDirectSend(
+    resolved: Extract<OutboundAccountResolution, { kind: "native" }>,
+    data: DirectSendRequest,
+  ): Promise<void> {
+    const reply = async (payload: Record<string, unknown>) => {
+      if (!data.replyTopic) return;
+      await this.emitEvent(data.replyTopic, payload);
+    };
+
+    if (resolved.provider !== "slack") {
+      await reply({ success: false, error: `${resolved.provider} native send is not supported` });
+      return;
+    }
+    if (!resolved.credentialConfigured) {
+      await reply({ success: false, error: "The Slack channel has no enabled brokered credential connection" });
+      return;
+    }
+    if (data.poll) {
+      await reply({ success: false, error: "Polls are not supported on Slack" });
+      return;
+    }
+    const text = data.text?.trim();
+    if (!text) {
+      await reply({ success: false, error: "Missing send text" });
+      return;
+    }
+
+    try {
+      const delivered = await sendSlackText({
+        accountId: resolved.accountId,
+        chatId: data.to,
+        text,
+      });
+      log.info("Native direct send delivered", {
+        accountId: resolved.accountId,
+        provider: resolved.provider,
+        messageId: delivered.messageId,
+      });
+      await reply({ success: true, messageId: delivered.messageId });
+    } catch (err) {
+      log.error("Failed to deliver native direct send", { accountId: resolved.accountId, error: err });
+      await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async queueNativeChatAction(input: {
+    channel: string;
+    accountId: string;
+    instanceId: string;
+    chatId: string;
+    content: ChannelChatActionContent;
+    canonicalChatId?: string;
+  }): Promise<Record<string, unknown>> {
+    const job = buildChannelChatActionJob({
+      sessionName: "gateway",
+      target: {
+        channel: input.channel,
+        accountId: input.accountId,
+        instanceId: input.instanceId,
+        chatId: input.chatId,
+        ...(input.canonicalChatId ? { canonicalChatId: input.canonicalChatId } : {}),
+      },
+      content: input.content,
+    });
+    const published = await publishChannelOutboundJobDurably(job);
+    return {
+      success: true,
+      queued: true,
+      executionMode: "durable",
+      requestId: job.request.requestId,
+      idempotencyKey: job.request.idempotencyKey,
+      publishedNow: published.ok && published.publishedNow,
+      publishPending: !published.ok,
+      ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+    };
+  }
+
+  private nativeActionUnavailable(resolved: OutboundAccountResolution): string | undefined {
+    if (resolved.kind === "unresolved") return NO_INSTANCE_FOR_ACCOUNT;
+    if (resolved.kind === "native" && !resolved.credentialConfigured) {
+      return "The Slack channel has no enabled brokered credential connection";
+    }
+    if (resolved.kind === "native" && resolved.provider !== "slack") {
+      return `${resolved.provider} native chat actions are not supported`;
+    }
+    return undefined;
   }
 
   /**
@@ -1698,26 +1808,44 @@ export class Gateway {
       "reactions",
       ["ravi.outbound.reaction"],
       async (event) => {
-        const data = event.data as {
-          channel: string;
-          accountId: string;
-          chatId: string;
-          messageId: string;
-          emoji: string;
-        };
-
-        try {
-          const reactionInstanceId = configStore.resolveInstanceId(data.accountId);
-          if (!reactionInstanceId) return;
-          const reactionChatId = normalizeOutboundJid(data.chatId);
-          await this.omniSender.sendReaction(reactionInstanceId, reactionChatId, data.messageId, data.emoji);
-          log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
-        } catch (err) {
-          log.error("Failed to send reaction", { error: err });
-        }
+        await this.handleReactionEvent(event.data as ReactionRequest);
       },
       { queue: "ravi-gateway" },
     );
+  }
+
+  private async handleReactionEvent(data: ReactionRequest): Promise<void> {
+    try {
+      const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+      if (resolved.kind === "native") {
+        const unavailable = this.nativeActionUnavailable(resolved);
+        if (unavailable) {
+          log.warn("Native reaction skipped", { accountId: data.accountId, error: unavailable });
+          return;
+        }
+        await this.queueNativeChatAction({
+          channel: resolved.provider,
+          accountId: data.accountId,
+          instanceId: resolved.instanceId,
+          chatId: data.chatId,
+          content: {
+            type: "chat_action",
+            actionId: "message.react",
+            providerMessageId: data.messageId,
+            emoji: data.emoji,
+            operation: "add",
+          },
+        });
+        log.info("Native reaction queued", { chatId: data.chatId, messageId: data.messageId, emoji: data.emoji });
+        return;
+      }
+      if (resolved.kind !== "omni") return;
+      const reactionChatId = normalizeOutboundJid(data.chatId);
+      await this.omniSender.sendReaction(resolved.instanceId, reactionChatId, data.messageId, data.emoji);
+      log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
+    } catch (err) {
+      log.error("Failed to send reaction", { error: err });
+    }
   }
 
   /**
@@ -1758,11 +1886,48 @@ export class Gateway {
 
     const messageId = data.messageId?.trim();
     const text = data.text?.trim();
-    const instanceId = configStore.resolveInstanceId(data.accountId);
-    if (!messageId || !text || !instanceId) {
+    if (!messageId || !text) {
       await emitReply({
         success: false,
-        error: !messageId ? "Missing message id" : !text ? "Missing edit text" : "No instance for account",
+        error: !messageId ? "Missing message id" : "Missing edit text",
+      });
+      return;
+    }
+
+    const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+    if (resolved.kind === "native") {
+      const unavailable = this.nativeActionUnavailable(resolved);
+      if (unavailable) {
+        await emitReply({ success: false, error: unavailable });
+        return;
+      }
+      const queued = await this.queueNativeChatAction({
+        channel: resolved.provider,
+        accountId: data.accountId,
+        instanceId: resolved.instanceId,
+        chatId: data.chatId,
+        content: {
+          type: "chat_action",
+          actionId: "message.edit",
+          ...(data.canonicalMessageId ? { canonicalMessageId: data.canonicalMessageId } : {}),
+          providerMessageId: messageId,
+          text,
+        },
+      });
+      await emitReply({
+        ...queued,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        target: { channel: data.channel, accountId: data.accountId, chatId: data.chatId },
+      });
+      return;
+    }
+
+    const instanceId = resolved.kind === "omni" ? resolved.instanceId : undefined;
+    if (!instanceId) {
+      await emitReply({
+        success: false,
+        error: NO_INSTANCE_FOR_ACCOUNT,
       });
       return;
     }
@@ -1807,11 +1972,47 @@ export class Gateway {
     };
 
     const messageId = data.messageId?.trim();
-    const instanceId = configStore.resolveInstanceId(data.accountId);
-    if (!messageId || !instanceId) {
+    if (!messageId) {
       await emitReply({
         success: false,
-        error: !messageId ? "Missing message id" : "No instance for account",
+        error: "Missing message id",
+      });
+      return;
+    }
+
+    const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+    if (resolved.kind === "native") {
+      const unavailable = this.nativeActionUnavailable(resolved);
+      if (unavailable) {
+        await emitReply({ success: false, error: unavailable });
+        return;
+      }
+      const queued = await this.queueNativeChatAction({
+        channel: resolved.provider,
+        accountId: data.accountId,
+        instanceId: resolved.instanceId,
+        chatId: data.chatId,
+        content: {
+          type: "chat_action",
+          actionId: "message.delete",
+          ...(data.canonicalMessageId ? { canonicalMessageId: data.canonicalMessageId } : {}),
+          providerMessageId: messageId,
+        },
+      });
+      await emitReply({
+        ...queued,
+        messageId,
+        canonicalMessageId: data.canonicalMessageId,
+        target: { channel: data.channel, accountId: data.accountId, chatId: data.chatId },
+      });
+      return;
+    }
+
+    const instanceId = resolved.kind === "omni" ? resolved.instanceId : undefined;
+    if (!instanceId) {
+      await emitReply({
+        success: false,
+        error: NO_INSTANCE_FOR_ACCOUNT,
       });
       return;
     }
@@ -1871,11 +2072,23 @@ export class Gateway {
         };
 
         try {
-          const mediaInstanceId = configStore.resolveInstanceId(data.accountId);
-          if (!mediaInstanceId) return;
+          const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+          if (resolved.kind === "native") {
+            if (resolved.provider !== "slack" || !resolved.credentialConfigured) return;
+            await sendSlackMedia({
+              accountId: data.accountId,
+              chatId: data.chatId,
+              filePath: data.filePath,
+              filename: data.filename,
+              ...(data.caption ? { caption: data.caption } : {}),
+            });
+            log.info("Native media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
+            return;
+          }
+          if (resolved.kind !== "omni") return;
           const mediaChatId = normalizeOutboundJid(data.chatId);
           await this.omniSender.sendMedia(
-            mediaInstanceId,
+            resolved.instanceId,
             mediaChatId,
             data.filePath,
             data.type,
@@ -1910,15 +2123,29 @@ export class Gateway {
   }
 
   private async handleStickerSendEvent(data: StickerSendEvent): Promise<void> {
+    const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+    if (resolved.kind === "native") {
+      if (data.replyTopic) {
+        await this.emitEvent(data.replyTopic, {
+          success: false,
+          error:
+            resolved.provider === "slack"
+              ? "Slack does not support Ravi stickers"
+              : `${resolved.provider} native stickers are not supported`,
+        });
+      }
+      return;
+    }
+
     assertChannelSupportsStickers({
       channelId: data.channel,
       channelName: data.channel,
     });
 
-    const stickerInstanceId = configStore.resolveInstanceId(data.accountId);
+    const stickerInstanceId = resolved.kind === "omni" ? resolved.instanceId : undefined;
     if (!stickerInstanceId) {
       if (data.replyTopic) {
-        await this.emitEvent(data.replyTopic, { success: false, error: "No instance for account" });
+        await this.emitEvent(data.replyTopic, { success: false, error: NO_INSTANCE_FOR_ACCOUNT });
       }
       return;
     }

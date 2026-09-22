@@ -12,7 +12,13 @@ let resolvedContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: unknown[];
       kind: string;
       createdAt: number;
@@ -76,7 +82,13 @@ describe("cli context resolution", () => {
       agentId: "dev",
       sessionKey: "agent:dev:main",
       sessionName: "dev-main",
-      source: { channel: "whatsapp", accountId: "main", chatId: "5511999999999" },
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "5511999999999",
+        instanceId: "instance-from-source",
+        canonicalChatId: "chat-from-source",
+      },
       capabilities: [],
       createdAt: 1000,
     };
@@ -87,7 +99,41 @@ describe("cli context resolution", () => {
       agentId: "dev",
       sessionKey: "agent:dev:main",
       sessionName: "dev-main",
-      source: { channel: "whatsapp", accountId: "main", chatId: "5511999999999" },
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "instance-from-source",
+        chatId: "5511999999999",
+        canonicalChatId: "chat-from-source",
+      },
+    });
+  });
+
+  it("copies native Slack instanceId and canonicalChatId from the runtime context source", () => {
+    process.env.RAVI_CONTEXT_KEY = "rctx_slack";
+    resolvedContext = {
+      contextId: "ctx_slack",
+      kind: "agent-runtime",
+      agentId: "dev",
+      sessionKey: "agent:dev:slack:hana-slack:C123",
+      sessionName: "dev-slack",
+      source: {
+        channel: "slack",
+        accountId: "hana-slack",
+        chatId: "C123",
+        instanceId: "hana-slack",
+        canonicalChatId: "chat_slack_C123",
+      },
+      capabilities: [],
+      createdAt: 1000,
+    };
+
+    expect(getContext()?.source).toEqual({
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "hana-slack",
+      chatId: "C123",
+      canonicalChatId: "chat_slack_C123",
     });
   });
 

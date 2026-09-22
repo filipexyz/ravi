@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { configStore } from "./config-store.js";
 import type { ChannelOutboundJob } from "./channels/outbound-stream.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
-import { dbUpsertInstance, getDb } from "./router/router-db.js";
+import { dbUpsertChannel, dbUpsertInstance, getDb } from "./router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
 const publishedJobs: ChannelOutboundJob[] = [];
 const slackMediaSends: Array<Record<string, unknown>> = [];
+const slackTextSends: Array<Record<string, unknown>> = [];
 const decoder = new TextDecoder();
 const acceptedMsgIds = new Set<string>();
 let publishBehavior: "ok" | "timeoutOnceThenOk" | "timeoutAlwaysBeforePublish" | "failBeforePublish" = "ok";
@@ -81,12 +82,27 @@ mock.module("./channels/slack/media.js", () => ({
   }),
 }));
 
+mock.module("./channels/slack/text-send.js", () => ({
+  sendSlackText: mock(async (input: Record<string, unknown>) => {
+    slackTextSends.push(input);
+    return {
+      transport: "slack-native",
+      provider: "slack",
+      success: true,
+      status: "sent",
+      messageId: "1784000000.000100",
+      raw: { ok: true },
+    };
+  }),
+}));
+
 let stateDir: string | null = null;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-gateway-native-test-");
   publishedJobs.length = 0;
   slackMediaSends.length = 0;
+  slackTextSends.length = 0;
   acceptedMsgIds.clear();
   publishBehavior = "ok";
   publishAttempts = 0;
@@ -103,14 +119,19 @@ async function createGateway() {
   const emitted: Array<[string, Record<string, unknown>]> = [];
   const omniSend = mock(async () => ({ messageId: "omni-1" }));
   const omniSendMedia = mock(async () => ({ messageId: "omni-media-1" }));
+  const omniSendReaction = mock(async () => {});
+  const omniEditMessage = mock(async () => {});
+  const omniDeleteMessage = mock(async () => {});
+  const omniSendSticker = mock(async () => ({ messageId: "omni-sticker-1" }));
   const gateway = new Gateway({
     omniSender: {
       send: omniSend,
       sendTyping: mock(async () => {}),
-      sendReaction: mock(async () => {}),
-      deleteMessage: mock(async () => {}),
-      editMessage: mock(async () => {}),
+      sendReaction: omniSendReaction,
+      deleteMessage: omniDeleteMessage,
+      editMessage: omniEditMessage,
       sendMedia: omniSendMedia,
+      sendSticker: omniSendSticker,
       markRead: mock(async () => {}),
     } as never,
     omniConsumer: {
@@ -122,7 +143,16 @@ async function createGateway() {
       emitted.push([topic, payload]);
     }),
   });
-  return { gateway, emitted, omniSend, omniSendMedia };
+  return {
+    gateway,
+    emitted,
+    omniSend,
+    omniSendMedia,
+    omniSendReaction,
+    omniEditMessage,
+    omniDeleteMessage,
+    omniSendSticker,
+  };
 }
 
 function ensureGatewaySession(sessionName: string): void {
@@ -557,5 +587,329 @@ describe("Gateway native channel outbound queue", () => {
       status: "active",
       reason: "native:runtime-turn.started",
     });
+  });
+});
+
+const OMNI_UUID = "11111111-1111-1111-1111-111111111111";
+
+function seedNativeSlack(overrides: { credentialConnection?: string | null } = {}): void {
+  dbUpsertChannel({
+    name: "hana-slack",
+    provider: "slack",
+    enabled: true,
+    ...(overrides.credentialConnection === null ? {} : { credentialConnection: overrides.credentialConnection ?? "hana-slack-secret" }),
+  });
+  configStore.refresh();
+}
+
+function seedOmniWhatsApp(): void {
+  dbUpsertInstance({
+    name: "main",
+    instanceId: OMNI_UUID,
+    channel: "whatsapp",
+  });
+  configStore.refresh();
+}
+
+async function handleDirectSend(
+  gateway: unknown,
+  data: {
+    channel: string;
+    accountId: string;
+    to: string;
+    text?: string;
+    poll?: { name: string; values: string[] };
+    replyTopic?: string;
+  },
+): Promise<void> {
+  await (gateway as { handleDirectSendEvent(data: typeof data): Promise<void> }).handleDirectSendEvent(data);
+}
+
+async function handleReaction(
+  gateway: unknown,
+  data: { channel: string; accountId: string; chatId: string; messageId: string; emoji: string },
+): Promise<void> {
+  await (gateway as { handleReactionEvent(data: typeof data): Promise<void> }).handleReactionEvent(data);
+}
+
+async function handleMessageEdit(
+  gateway: unknown,
+  data: {
+    channel?: string;
+    accountId: string;
+    chatId: string;
+    messageId: string;
+    text: string;
+    canonicalMessageId?: string;
+    replyTopic?: string;
+  },
+): Promise<void> {
+  await (gateway as { handleMessageEditEvent(data: typeof data): Promise<void> }).handleMessageEditEvent(data);
+}
+
+async function handleMessageDelete(
+  gateway: unknown,
+  data: {
+    channel?: string;
+    accountId: string;
+    chatId: string;
+    messageId: string;
+    canonicalMessageId?: string;
+    replyTopic?: string;
+  },
+): Promise<void> {
+  await (gateway as { handleMessageDeleteEvent(data: typeof data): Promise<void> }).handleMessageDeleteEvent(data);
+}
+
+async function handleSticker(
+  gateway: unknown,
+  data: {
+    channel: string;
+    accountId: string;
+    chatId: string;
+    stickerId: string;
+    label: string;
+    filePath: string;
+    mimeType: string;
+    filename: string;
+    replyTopic?: string;
+  },
+): Promise<void> {
+  await (gateway as { handleStickerSendEvent(data: typeof data): Promise<void> }).handleStickerSendEvent(data);
+}
+
+describe("Gateway native channel account actions", () => {
+  beforeEach(() => {
+    configStore.refresh();
+  });
+
+  it("delivers ravi.outbound.deliver through Slack native send for a channels-created account", async () => {
+    seedNativeSlack();
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      to: "C123",
+      text: "hello native",
+      replyTopic: "ravi.reply.native-send",
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(slackTextSends).toEqual([
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        text: "hello native",
+      },
+    ]);
+    expect(emitted).toEqual([
+      ["ravi.reply.native-send", { success: true, messageId: "1784000000.000100" }],
+    ]);
+  });
+
+  it("keeps Omni direct send for WhatsApp accounts", async () => {
+    seedOmniWhatsApp();
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      to: "group:120363407390920496",
+      text: "hello omni",
+      replyTopic: "ravi.reply.omni-send",
+    });
+
+    expect(slackTextSends).toHaveLength(0);
+    expect(omniSend).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111", "120363407390920496@g.us", "hello omni", {
+      mentions: undefined,
+    });
+    expect(emitted[0]).toEqual(["ravi.reply.omni-send", { success: true, messageId: "omni-1" }]);
+  });
+
+  it("keeps No instance for account when neither Omni nor a native channel exists", async () => {
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "slack",
+      accountId: "ghost",
+      to: "C123",
+      text: "nope",
+      replyTopic: "ravi.reply.missing",
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(slackTextSends).toHaveLength(0);
+    expect(emitted).toEqual([["ravi.reply.missing", { success: false, error: "No instance for account" }]]);
+  });
+
+  it("fails honestly when a native Slack account has no credential connection", async () => {
+    seedNativeSlack({ credentialConnection: null });
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      to: "C123",
+      text: "hello",
+      replyTopic: "ravi.reply.no-cred",
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(slackTextSends).toHaveLength(0);
+    expect(emitted).toEqual([
+      [
+        "ravi.reply.no-cred",
+        { success: false, error: "The Slack channel has no enabled brokered credential connection" },
+      ],
+    ]);
+  });
+
+  it("rejects Slack polls without inventing an Omni instance", async () => {
+    seedNativeSlack();
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      to: "C123",
+      poll: { name: "lunch?", values: ["yes", "no"] },
+      replyTopic: "ravi.reply.poll",
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(slackTextSends).toHaveLength(0);
+    expect(emitted).toEqual([["ravi.reply.poll", { success: false, error: "Polls are not supported on Slack" }]]);
+  });
+
+  it("queues native Slack reactions instead of Omni", async () => {
+    seedNativeSlack();
+    const { gateway, omniSendReaction } = await createGateway();
+
+    await handleReaction(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      messageId: "1784000000.000100",
+      emoji: "👍",
+    });
+
+    expect(omniSendReaction).not.toHaveBeenCalled();
+    expect(publishedJobs).toHaveLength(1);
+    expect(publishedJobs[0]).toMatchObject({
+      status: "queued",
+      request: {
+        channelId: "slack",
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        targetChatId: "C123",
+        content: {
+          type: "chat_action",
+          actionId: "message.react",
+          providerMessageId: "1784000000.000100",
+          emoji: "👍",
+          operation: "add",
+        },
+      },
+    });
+  });
+
+  it("queues native Slack edit and delete without marking Omni/canonical state", async () => {
+    seedNativeSlack();
+    const { gateway, emitted, omniEditMessage, omniDeleteMessage } = await createGateway();
+
+    await handleMessageEdit(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      messageId: "1784000000.000100",
+      canonicalMessageId: "cm_edit",
+      text: "edited",
+      replyTopic: "ravi.reply.edit",
+    });
+    await handleMessageDelete(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      messageId: "1784000000.000100",
+      canonicalMessageId: "cm_delete",
+      replyTopic: "ravi.reply.delete",
+    });
+
+    expect(omniEditMessage).not.toHaveBeenCalled();
+    expect(omniDeleteMessage).not.toHaveBeenCalled();
+    expect(publishedJobs).toHaveLength(2);
+    expect(publishedJobs[0]?.request.content).toMatchObject({
+      actionId: "message.edit",
+      providerMessageId: "1784000000.000100",
+      text: "edited",
+    });
+    expect(publishedJobs[1]?.request.content).toMatchObject({
+      actionId: "message.delete",
+      providerMessageId: "1784000000.000100",
+    });
+    expect(emitted[0]?.[0]).toBe("ravi.reply.edit");
+    expect(emitted[0]?.[1]).toMatchObject({
+      success: true,
+      queued: true,
+      executionMode: "durable",
+      messageId: "1784000000.000100",
+    });
+    expect(emitted[1]?.[0]).toBe("ravi.reply.delete");
+    expect(emitted[1]?.[1]).toMatchObject({
+      success: true,
+      queued: true,
+      executionMode: "durable",
+      messageId: "1784000000.000100",
+    });
+  });
+
+  it("preserves Omni edit and delete for WhatsApp", async () => {
+    seedOmniWhatsApp();
+    const { gateway, emitted, omniEditMessage, omniDeleteMessage } = await createGateway();
+
+    await handleMessageEdit(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363407390920496",
+      messageId: "wamid-1",
+      text: "edited",
+      replyTopic: "ravi.reply.omni-edit",
+    });
+    await handleMessageDelete(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:120363407390920496",
+      messageId: "wamid-1",
+      replyTopic: "ravi.reply.omni-delete",
+    });
+
+    expect(omniEditMessage).toHaveBeenCalledWith(OMNI_UUID, "120363407390920496@g.us", "wamid-1", "edited");
+    expect(omniDeleteMessage).toHaveBeenCalledWith(OMNI_UUID, "120363407390920496@g.us", "wamid-1");
+    expect(publishedJobs).toHaveLength(0);
+    expect(emitted[0]?.[1]).toMatchObject({ success: true, messageId: "wamid-1" });
+    expect(emitted[1]?.[1]).toMatchObject({ success: true, messageId: "wamid-1" });
+  });
+
+  it("fails Slack stickers honestly without calling Omni", async () => {
+    seedNativeSlack();
+    const { gateway, emitted, omniSendSticker } = await createGateway();
+
+    await handleSticker(gateway, {
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      stickerId: "wave",
+      label: "Wave",
+      filePath: "/tmp/wave.webp",
+      mimeType: "image/webp",
+      filename: "wave.webp",
+      replyTopic: "ravi.reply.sticker",
+    });
+
+    expect(omniSendSticker).not.toHaveBeenCalled();
+    expect(emitted).toEqual([
+      ["ravi.reply.sticker", { success: false, error: "Slack does not support Ravi stickers" }],
+    ]);
   });
 });

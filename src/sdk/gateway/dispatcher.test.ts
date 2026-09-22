@@ -1020,17 +1020,28 @@ describe("dispatch — CLI output", () => {
         accountId: "acct-1",
         chatId: "group:120363425628305127",
         threadId: "thread-1",
+        instanceId: "acct-1",
+        canonicalChatId: "chat_whatsapp_group",
       },
     };
     const result = await dispatch(findCmd("demo.context"), {}, {}, { contextRecord: contextWithSource });
     const body = (await result.response.json()) as {
-      source?: { channel: string; accountId: string; chatId: string; threadId?: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
     };
     expect(body.source).toEqual({
       channel: "whatsapp-baileys",
       accountId: "acct-1",
       chatId: "group:120363425628305127",
       threadId: "thread-1",
+      instanceId: "acct-1",
+      canonicalChatId: "chat_whatsapp_group",
     });
   });
 
