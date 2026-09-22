@@ -354,21 +354,24 @@ class AgentsPermissionsOptions {
 }
 
 class AgentsPermissionsReturn {
-  const AgentsPermissionsReturn({required this.action, this.after, this.agent, required this.agentId, this.before, this.breakGlassCommand, required this.changed, this.chatOnlyCommand, this.command, this.defaults, this.inspectCommand, this.leastPrivilegeExample, this.profile, this.resetToBootstrapCommand, this.runtimePermissions});
+  const AgentsPermissionsReturn({required this.action, this.after, this.agent, required this.agentId, this.authorityLayer, this.before, this.breakGlassCommand, required this.changed, this.chatOnlyCommand, this.command, this.defaults, this.effectiveOn, this.inspectCommand, this.leastPrivilegeExample, this.profile, this.recurringAccessCommand, this.resetToBootstrapCommand, this.runtimePermissions});
 
   final String action;
   final RaviJson? after;
   final RaviJson? agent;
   final String agentId;
+  final String? authorityLayer;
   final RaviJson? before;
   final String? breakGlassCommand;
   final bool changed;
   final String? chatOnlyCommand;
   final String? command;
   final RaviJson? defaults;
+  final String? effectiveOn;
   final String? inspectCommand;
   final String? leastPrivilegeExample;
   final String? profile;
+  final String? recurringAccessCommand;
   final String? resetToBootstrapCommand;
   final RaviJson? runtimePermissions;
 
@@ -378,15 +381,18 @@ class AgentsPermissionsReturn {
       after: json["after"] == null ? null : RaviJson.from(json["after"]),
       agent: json["agent"] == null ? null : RaviJson.from(json["agent"]),
       agentId: raviJsonAsString(json["agentId"]),
+      authorityLayer: json["authorityLayer"] == null ? null : raviJsonAsString(json["authorityLayer"]),
       before: json["before"] == null ? null : RaviJson.from(json["before"]),
       breakGlassCommand: json["breakGlassCommand"] == null ? null : raviJsonAsString(json["breakGlassCommand"]),
       changed: raviJsonAsBool(json["changed"]),
       chatOnlyCommand: json["chatOnlyCommand"] == null ? null : raviJsonAsString(json["chatOnlyCommand"]),
       command: json["command"] == null ? null : raviJsonAsString(json["command"]),
       defaults: json["defaults"] == null ? null : RaviJson.from(json["defaults"]),
+      effectiveOn: json["effectiveOn"] == null ? null : raviJsonAsString(json["effectiveOn"]),
       inspectCommand: json["inspectCommand"] == null ? null : raviJsonAsString(json["inspectCommand"]),
       leastPrivilegeExample: json["leastPrivilegeExample"] == null ? null : raviJsonAsString(json["leastPrivilegeExample"]),
       profile: json["profile"] == null ? null : raviJsonAsString(json["profile"]),
+      recurringAccessCommand: json["recurringAccessCommand"] == null ? null : raviJsonAsString(json["recurringAccessCommand"]),
       resetToBootstrapCommand: json["resetToBootstrapCommand"] == null ? null : raviJsonAsString(json["resetToBootstrapCommand"]),
       runtimePermissions: json["runtimePermissions"] == null ? null : RaviJson.from(json["runtimePermissions"]),
     );
@@ -13334,16 +13340,18 @@ class PermissionsCheckOptions {
 }
 
 class PermissionsCheckReturn {
-  const PermissionsCheckReturn({required this.allowed, required this.decision, this.guidance});
+  const PermissionsCheckReturn({required this.allowed, required this.decision, this.diagnosticNote, this.guidance});
 
   final bool allowed;
   final RaviJson decision;
+  final String? diagnosticNote;
   final RaviJson? guidance;
 
   factory PermissionsCheckReturn.fromJson(Map<String, Object?> json) {
     return PermissionsCheckReturn(
       allowed: raviJsonAsBool(json["allowed"]),
       decision: RaviJson.from(json["decision"]),
+      diagnosticNote: json["diagnosticNote"] == null ? null : raviJsonAsString(json["diagnosticNote"]),
       guidance: json["guidance"] == null ? null : RaviJson.from(json["guidance"]),
     );
   }
