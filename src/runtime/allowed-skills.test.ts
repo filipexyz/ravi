@@ -167,9 +167,7 @@ describe("resolveAgentSkills — custom grants integration", () => {
     const resolved = resolveAgentSkills("visible-only", { capabilitiesOverride: [] });
     expect(resolved.allowlist).toContain("ravi-system-permissions-manager");
     expect(isSkillAuthorizedForAgent("visible-only", "ravi-system-permissions-manager")).toBe(true);
-    expect(
-      officialSkillImpliedByCapabilities([], "ravi-system-permissions-manager"),
-    ).toBe(false);
+    expect(officialSkillImpliedByCapabilities([], "ravi-system-permissions-manager")).toBe(false);
   });
 
   let stateDir: string | null = null;

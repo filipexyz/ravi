@@ -109,8 +109,9 @@ describe("capability-aware official skill visibility", () => {
     expect(help.allowed).toBe(false);
     expect(help.code).toBe("RAVI_SKILL_REQUIRED");
     expect(help.skill).toBe("ravi-system-permissions-manager");
-    expect(allow.code).toBe("RAVI_SKILL_REQUIRED");
-    expect(tool.code).toBe("RAVI_SKILL_REQUIRED");
+    // Same logical skill: after the gate delivers it, command/tool aliases proceed.
+    expect(allow.allowed).toBe(true);
+    expect(tool.allowed).toBe(true);
   });
 
   it("lets mutate:pages:ship load pages while keeping permissions-manager denied", () => {
@@ -229,7 +230,9 @@ describe("capability-aware official skill visibility", () => {
     expect(shown.skill.name).toBe("permissions-manager");
 
     const short = withoutLogs(() =>
-      runWithContext({ transport: "tool", agentId }, () => commands.show("permissions-manager", undefined, undefined, true)),
+      runWithContext({ transport: "tool", agentId }, () =>
+        commands.show("permissions-manager", undefined, undefined, true),
+      ),
     );
     expect(short.skill.name).toBe("permissions-manager");
   });

@@ -72,11 +72,11 @@ function expandSkillNames(slug: string): string[] {
   return [...variants];
 }
 
-function isAdminAll(capabilities: ContextCapability[]): boolean {
+function isAdminAll(capabilities: readonly ContextCapability[]): boolean {
   return capabilities.some((cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*");
 }
 
-function selectGroupCaps(capabilities: ContextCapability[]): ContextCapability[] {
+function selectGroupCaps(capabilities: readonly ContextCapability[]): ContextCapability[] {
   return capabilities.filter((cap) => cap.permission === "execute" && cap.objectType === "group");
 }
 
@@ -96,7 +96,7 @@ function capabilityMatchesGroupRule(capability: ContextCapability, pattern: RegE
  * `execute:group:*` or `admin:system:*`). Used when explicit grants would
  * otherwise hide a skill the identity is already authorized to run.
  */
-export function specificSkillsFromCapabilities(capabilities: ContextCapability[]): string[] {
+export function specificSkillsFromCapabilities(capabilities: readonly ContextCapability[]): string[] {
   const slugs = new Set<string>();
   for (const rule of listGroupSkillRules()) {
     if (capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern))) {
@@ -112,7 +112,7 @@ export function specificSkillsFromCapabilities(capabilities: ContextCapability[]
  * grant-only so skill visibility cannot mint effect authority.
  */
 export function officialSkillImpliedByCapabilities(
-  capabilities: ContextCapability[],
+  capabilities: readonly ContextCapability[],
   skillName: string,
 ): boolean {
   const rules = listGroupSkillRules().filter((rule) => skillIdentifiersMatch(rule.skill, skillName));
@@ -134,7 +134,7 @@ export function officialSkillImpliedByCapabilities(
  */
 export function resolveAgentSkills(
   agentId: string,
-  options: { capabilitiesOverride?: ContextCapability[] } = {},
+  options: { capabilitiesOverride?: readonly ContextCapability[] } = {},
 ): ResolvedAgentSkills {
   const trimmed = agentId?.trim();
   if (!trimmed) {

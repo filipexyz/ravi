@@ -11,6 +11,8 @@ tags:
   - runtime
 applies_to:
   - runtime skill filtering (provider-agnostic core + per-provider enforcement adapter)
+  - src/runtime/allowed-skills.ts
+  - src/runtime/skill-authorization.ts
   - ravi skills CLI
 owners:
   - main
