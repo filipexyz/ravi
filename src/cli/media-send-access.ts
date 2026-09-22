@@ -39,9 +39,7 @@ const MEDIA_SEND_CAPABILITY_CANDIDATES = [
   { permission: "execute", objectType: "group", objectId: "media" },
 ] as const;
 
-export function capabilitiesAllowMediaSend(
-  capabilities: readonly ContextCapability[] | null | undefined,
-): boolean {
+export function capabilitiesAllowMediaSend(capabilities: readonly ContextCapability[] | null | undefined): boolean {
   if (!capabilities?.length) return false;
   const snapshot = capabilities as ContextCapability[];
   return MEDIA_SEND_CAPABILITY_CANDIDATES.some((candidate) =>

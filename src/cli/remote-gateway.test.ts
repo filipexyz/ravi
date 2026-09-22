@@ -637,24 +637,9 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
-    [
-      MEDIA_SEND_FAILED_CODE,
-      true,
-      MEDIA_SEND_FAILED_MESSAGE,
-      MEDIA_SEND_FAILED_SUGGESTED_ACTION,
-    ],
-    [
-      OMNI_AUTH_FAILED_CODE,
-      false,
-      OMNI_AUTH_FAILED_MESSAGE,
-      OMNI_AUTH_FAILED_SUGGESTED_ACTION,
-    ],
-    [
-      FILE_NOT_FOUND_CODE,
-      false,
-      FILE_NOT_FOUND_MESSAGE,
-      FILE_NOT_FOUND_SUGGESTED_ACTION,
-    ],
+    [MEDIA_SEND_FAILED_CODE, true, MEDIA_SEND_FAILED_MESSAGE, MEDIA_SEND_FAILED_SUGGESTED_ACTION],
+    [OMNI_AUTH_FAILED_CODE, false, OMNI_AUTH_FAILED_MESSAGE, OMNI_AUTH_FAILED_SUGGESTED_ACTION],
+    [FILE_NOT_FOUND_CODE, false, FILE_NOT_FOUND_MESSAGE, FILE_NOT_FOUND_SUGGESTED_ACTION],
   ] as const)(
     "projects isolated media send %s through the local catalog without remote text",
     (code, retryable, message, suggestedAction) => {

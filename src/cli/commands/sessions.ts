@@ -1055,9 +1055,7 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
         const aggregate = resolved.aggregate;
         const exposeRunnableCommand =
           aggregate.status === "available" ||
-          (descriptor.id !== "thread.create" &&
-            descriptor.id !== "thread.close" &&
-            descriptor.id !== "media.send");
+          (descriptor.id !== "thread.create" && descriptor.id !== "thread.close" && descriptor.id !== "media.send");
         return {
           id: descriptor.id,
           status: aggregate.status,
