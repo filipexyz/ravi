@@ -91,6 +91,8 @@ export const ContextSourceSchema = z.object({
   accountId: z.string().min(1),
   chatId: z.string().min(1),
   threadId: z.string().min(1).optional(),
+  instanceId: z.string().min(1).optional(),
+  canonicalChatId: z.string().min(1).optional(),
 });
 export const ContextCapabilitySchema = z.object({
   permission: z.string().min(1),
@@ -554,6 +556,8 @@ export interface ContextSource {
   accountId: string;
   chatId: string;
   threadId?: string;
+  instanceId?: string;
+  canonicalChatId?: string;
 }
 
 export interface ContextCapability {

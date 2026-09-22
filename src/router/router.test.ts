@@ -9,6 +9,8 @@ import {
   dbCreateAgent,
   dbCreateChatReadingList,
   dbCreateContext,
+  dbGetContext,
+  dbUpdateContextRuntimeState,
   dbDeleteChannel,
   dbDeleteInstance,
   dbGetAgent,
@@ -312,6 +314,55 @@ describe("router context queries", () => {
     expect(
       db.prepare("SELECT marker FROM permission_policy_materializations WHERE id = 'materialization-1'").get(),
     ).toEqual({ marker: "materialization" });
+  });
+
+  it("persists native Slack instanceId and canonicalChatId on context source", () => {
+    dbCreateAgent({ id: "agent-a", cwd: "/tmp/ravi-agent-a" });
+    getOrCreateSession("agent:agent-a:slack:hana-slack:C123", "agent-a", "/tmp/ravi-agent-a", {
+      name: "hana-slack",
+    });
+
+    const created = dbCreateContext({
+      contextId: "ctx_native_slack",
+      contextKey: "key-ctx_native_slack",
+      kind: "turn-runtime",
+      agentId: "agent-a",
+      sessionKey: "agent:agent-a:slack:hana-slack:C123",
+      sessionName: "hana-slack",
+      source: {
+        channel: "slack",
+        accountId: "hana-slack",
+        chatId: "C123",
+        instanceId: "hana-slack",
+        canonicalChatId: "chat_slack_C123",
+      },
+      capabilities: [],
+    });
+
+    expect(created.source).toEqual({
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      instanceId: "hana-slack",
+      canonicalChatId: "chat_slack_C123",
+    });
+    expect(dbGetContext("ctx_native_slack")?.source).toEqual(created.source);
+
+    const updated = dbUpdateContextRuntimeState("ctx_native_slack", {
+      sessionName: "hana-slack",
+      source: {
+        channel: "slack",
+        accountId: "hana-slack-secret",
+        chatId: "C123",
+        instanceId: "hana-slack",
+        canonicalChatId: "chat_slack_C123",
+      },
+    });
+    expect(updated.source).toMatchObject({
+      instanceId: "hana-slack",
+      canonicalChatId: "chat_slack_C123",
+      accountId: "hana-slack-secret",
+    });
   });
 
   it("persists native channel credential connection references through router schema bootstrap", () => {

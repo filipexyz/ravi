@@ -74,6 +74,7 @@ import {
   type ChatActionId,
   type ChatActionSurface,
 } from "../../channels/chat-actions.js";
+import { nativeChannelCredentialConfigured } from "../../channels/account-resolution.js";
 import { overlayMediaSendAvailability, resolveRuntimeMediaSendCapabilities } from "../media-send-access.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
@@ -871,17 +872,7 @@ function buildSessionActionSurfaces(session: SessionEntry, chatIds: string[]): C
 }
 
 function slackCredentialConfigured(config: ReturnType<typeof loadRouterConfig>, instanceId: string): boolean {
-  const aliases = new Set<string>([instanceId.trim().toLowerCase()]);
-  const mappedAccount = config.instanceToAccount[instanceId];
-  if (mappedAccount) aliases.add(mappedAccount.trim().toLowerCase());
-  const configuredInstanceId = config.instances[instanceId]?.instanceId;
-  if (configuredInstanceId) aliases.add(configuredInstanceId.trim().toLowerCase());
-
-  return Object.values(config.channels ?? {}).some((channel) => {
-    if (channel.enabled === false || channel.provider.toLowerCase() !== "slack") return false;
-    if (!channel.credentialConnection?.trim()) return false;
-    return [channel.name, channel.credentialConnection].some((value) => aliases.has(value.trim().toLowerCase()));
-  });
+  return nativeChannelCredentialConfigured(config, instanceId, "slack");
 }
 
 function aggregateChatActionAvailability(

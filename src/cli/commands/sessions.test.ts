@@ -1593,6 +1593,79 @@ describe("SessionCommands attach hints", () => {
     );
   });
 
+  it("marks Slack conversation actions unavailable when the native channel has no credential", () => {
+    const sessionKey = "agent:dev:slack:hana-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "hana-slack",
+      platformChatId: "C123",
+    });
+    routerConfig = {
+      agents: {},
+      channels: {
+        "hana-slack": {
+          name: "hana-slack",
+          provider: "slack",
+          enabled: true,
+        },
+      },
+      instances: {},
+      instanceToAccount: {},
+    };
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().actions("dev-slack", undefined, true);
+      }),
+    );
+
+    expect(payload.surfaces.items[0]).toMatchObject({
+      id: "chat_slack",
+      credentialConfigured: false,
+    });
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "message.react",
+          status: "unavailable",
+          unavailableReasonCode: "missing_connection",
+        }),
+        expect.objectContaining({
+          id: "message.edit",
+          status: "unavailable",
+          unavailableReasonCode: "missing_connection",
+        }),
+        expect.objectContaining({
+          id: "message.delete",
+          status: "unavailable",
+          unavailableReasonCode: "missing_connection",
+        }),
+        expect.objectContaining({
+          id: "sticker.send",
+          status: "unavailable",
+          unavailableReasonCode: "unsupported_channel",
+        }),
+      ]),
+    );
+  });
+
   it("queues Slack thread creation with the selected child model", async () => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {

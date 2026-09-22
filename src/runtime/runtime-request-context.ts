@@ -779,6 +779,8 @@ function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
         accountId: resolvedSource.accountId,
         chatId: resolvedSource.chatId,
         ...(resolvedSource.threadId ? { threadId: resolvedSource.threadId } : {}),
+        ...(resolvedSource.instanceId ? { instanceId: resolvedSource.instanceId } : {}),
+        ...(resolvedSource.canonicalChatId ? { canonicalChatId: resolvedSource.canonicalChatId } : {}),
       }
     : undefined;
 }

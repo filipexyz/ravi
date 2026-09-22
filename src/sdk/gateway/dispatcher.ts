@@ -536,6 +536,8 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null, cwd?: 
         accountId: record.source.accountId,
         chatId: record.source.chatId,
         ...(record.source.threadId ? { threadId: record.source.threadId } : {}),
+        ...(record.source.instanceId ? { instanceId: record.source.instanceId } : {}),
+        ...(record.source.canonicalChatId ? { canonicalChatId: record.source.canonicalChatId } : {}),
       };
     }
   }

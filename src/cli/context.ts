@@ -101,13 +101,15 @@ export function getContext(options: { localOnly?: boolean } = {}): ToolContext |
 
     const source = resolvedContext.source;
     if (source) {
+      const instanceId = source.instanceId ?? env.RAVI_INSTANCE_ID;
+      const canonicalChatId = source.canonicalChatId ?? env.RAVI_CANONICAL_CHAT_ID;
       ctx.source = {
         channel: source.channel,
         accountId: source.accountId,
-        ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
+        ...(instanceId ? { instanceId } : {}),
         chatId: source.chatId,
         ...(source.threadId ? { threadId: source.threadId } : {}),
-        ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
+        ...(canonicalChatId ? { canonicalChatId } : {}),
       };
     } else if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
       ctx.source = {

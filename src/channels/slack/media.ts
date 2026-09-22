@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { configStore } from "../../config-store.js";
 import type { ChannelConfig } from "../../router/router-db.js";
+import { findNativeChannelAccount } from "../account-resolution.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
 
 const DEFAULT_SLACK_API_BASE_URL = "https://slack.com/api";
@@ -51,15 +52,7 @@ export function resolveSlackMediaChannel(
   channels: Record<string, ChannelConfig>,
   accountId: string,
 ): ChannelConfig | undefined {
-  const normalizedAccountId = accountId.trim().toLowerCase();
-  if (!normalizedAccountId) return undefined;
-
-  return Object.values(channels).find((channel) => {
-    if (channel.enabled === false || channel.provider.toLowerCase() !== "slack") return false;
-    return [channel.name, channel.credentialConnection]
-      .filter((value): value is string => Boolean(value?.trim()))
-      .some((value) => value.trim().toLowerCase() === normalizedAccountId);
-  });
+  return findNativeChannelAccount(channels, accountId, { provider: "slack" });
 }
 
 export async function sendSlackMedia(
