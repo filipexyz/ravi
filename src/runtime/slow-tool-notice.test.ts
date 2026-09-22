@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
+  buildSlowToolLivePatch,
   buildSlowToolStatusText,
   DEFAULT_SLOW_TOOL_ANNOUNCE_MS,
   resolveSlowToolWatchConfig,
+  shouldPublishSlowToolLiveState,
+  SLOW_TOOL_LIVE_ACTIVITY,
   SLOW_TOOL_TICK_MS,
 } from "./slow-tool-notice.js";
 
@@ -55,5 +58,33 @@ describe("slow tool status text", () => {
 
   it("falls back when the tool name is missing", () => {
     expect(buildSlowToolStatusText("", 60_000, 0)).toBe("uma tool rodando há 1 min");
+  });
+});
+
+describe("slow tool live-state", () => {
+  it("announces a healthy slow tool as thinking, never blocked", () => {
+    expect(SLOW_TOOL_LIVE_ACTIVITY).toBe("thinking");
+    expect(buildSlowToolLivePatch("bash", 90_000, 0)).toEqual({
+      activity: "thinking",
+      toolName: "bash",
+      summary: "bash rodando há 2 min",
+    });
+  });
+
+  it("publishes only while the same tool is still running on an active turn", () => {
+    const active = {
+      toolRunning: true,
+      currentToolId: "tool-1",
+      armedToolId: "tool-1",
+      elapsedMs: 20_000,
+      announceAfterMs: 15_000,
+      turnActive: true,
+    };
+    expect(shouldPublishSlowToolLiveState(active)).toBe(true);
+    expect(shouldPublishSlowToolLiveState({ ...active, elapsedMs: 5_000 })).toBe(false);
+    expect(shouldPublishSlowToolLiveState({ ...active, toolRunning: false })).toBe(false);
+    expect(shouldPublishSlowToolLiveState({ ...active, turnActive: false })).toBe(false);
+    expect(shouldPublishSlowToolLiveState({ ...active, sessionDone: true })).toBe(false);
+    expect(shouldPublishSlowToolLiveState({ ...active, currentToolId: "tool-2" })).toBe(false);
   });
 });

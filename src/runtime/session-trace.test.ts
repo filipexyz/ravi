@@ -2191,6 +2191,63 @@ describe("runtime session trace instrumentation", () => {
     expect(live?.toolName).toBeUndefined();
   });
 
+  it("keeps a slow in-progress tool as thinking and returns to idle on turn.complete", async () => {
+    const previousNoticeMs = process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS;
+    process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS = "20";
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    try {
+      await runTraceLoop(streaming, {
+        provider: PROVIDER,
+        events: (async function* () {
+          yield {
+            type: "tool.started",
+            toolUse: { id: "slow-1", name: "Bash", input: { cmd: "sleep 30" } },
+          } satisfies RuntimeEvent;
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const midLive = getRuntimeLiveStateForSession(makeSession());
+          expect(midLive?.activity).toBe("thinking");
+          expect(midLive?.toolName).toBe("Bash");
+          expect(midLive?.busySince).toBeDefined();
+          expect(midLive?.summary).toContain("rodando");
+          yield {
+            type: "tool.completed",
+            toolUseId: "slow-1",
+            toolName: "Bash",
+            content: "ok",
+          } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+        })(),
+        interrupt: async () => {},
+      });
+    } finally {
+      if (previousNoticeMs === undefined) delete process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS;
+      else process.env.RAVI_RUNTIME_SLOW_TOOL_NOTICE_MS = previousNoticeMs;
+    }
+
+    const live = getRuntimeLiveStateForSession(makeSession());
+    expect(live).toMatchObject({
+      activity: "idle",
+      summary: "turn complete",
+    });
+    expect(live?.busySince).toBeUndefined();
+    expect(live?.toolName).toBeUndefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const afterLateTick = getRuntimeLiveStateForSession(makeSession());
+    expect(afterLateTick).toMatchObject({
+      activity: "idle",
+      summary: "turn complete",
+    });
+    expect(afterLateTick?.busySince).toBeUndefined();
+    expect(afterLateTick?.toolName).toBeUndefined();
+  });
+
   it("clears compaction at terminal boundaries even without an idle status", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);

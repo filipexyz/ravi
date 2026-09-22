@@ -1127,7 +1127,6 @@ function defaultLiveState(session: SessionEntry): OverlayLiveState {
       activity: "blocked",
       summary: "last run aborted",
       updatedAt: session.updatedAt,
-      busySince: session.updatedAt,
       artifacts: [],
     };
   }

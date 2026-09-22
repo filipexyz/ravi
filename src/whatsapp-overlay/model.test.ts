@@ -1119,6 +1119,29 @@ describe("whatsapp overlay model", () => {
     });
   });
 
+  it("labels aborted sessions blocked without a busySince timer", () => {
+    const now = Date.now();
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "aborted-stale" },
+      sessions: [
+        makeSession({
+          name: "aborted-stale",
+          displayName: "Aborted stale",
+          updatedAt: now,
+          createdAt: now - 30_000,
+          abortedLastRun: true,
+        }),
+      ],
+    });
+
+    expect(snapshot.session?.live).toMatchObject({
+      activity: "blocked",
+      summary: "last run aborted",
+      updatedAt: now,
+    });
+    expect(snapshot.session?.live.busySince).toBeUndefined();
+  });
+
   it("keeps active sessions oldest-first and excludes them from recent sessions", () => {
     const now = Date.now();
     const sessions = [

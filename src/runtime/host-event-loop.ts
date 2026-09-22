@@ -122,7 +122,11 @@ import {
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   resolveDeclaredToolTimeoutMs,
 } from "./tool-liveness.js";
-import { buildSlowToolStatusText, resolveSlowToolWatchConfig } from "./slow-tool-notice.js";
+import {
+  buildSlowToolLivePatch,
+  resolveSlowToolWatchConfig,
+  shouldPublishSlowToolLiveState,
+} from "./slow-tool-notice.js";
 
 const log = logger.child("bot");
 
@@ -1424,7 +1428,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
     const tick = () => {
       slowToolTimer = undefined;
-      if (!streaming.toolRunning || streaming.currentToolId !== toolId) return;
+      if (!streaming.toolRunning || streaming.currentToolId !== toolId || !streaming.turnActive || streaming.done) {
+        return;
+      }
       const now = Date.now();
       const elapsedMs = now - (streaming.toolStartTime ?? now);
 
@@ -1437,15 +1443,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       }).catch(() => {});
 
-      if (elapsedMs >= slowToolWatchConfig.announceAfterMs) {
+      // Re-check immediately before writing. A turn can complete between the
+      // opening guard and this patch; a late write would resurrect busy/blocked
+      // after idle.
+      if (
+        shouldPublishSlowToolLiveState({
+          toolRunning: streaming.toolRunning,
+          currentToolId: streaming.currentToolId,
+          armedToolId: toolId,
+          elapsedMs,
+          announceAfterMs: slowToolWatchConfig.announceAfterMs,
+          turnActive: streaming.turnActive,
+          sessionDone: streaming.done,
+        })
+      ) {
         updateRuntimeLiveState(sessionName, {
-          activity: "blocked",
-          toolName,
+          ...buildSlowToolLivePatch(toolName, elapsedMs, streaming.pendingMessages.length),
           agentId: agent.id,
           runId,
           provider: runtimeSession.provider,
           model,
-          summary: buildSlowToolStatusText(toolName, elapsedMs, streaming.pendingMessages.length),
         });
       }
 
