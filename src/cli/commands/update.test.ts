@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { defaultPm2InertStdinWrapperPath } from "../../daemon-stdin.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "../../managed-runtime.js";
 import {
   buildManagedRuntimeRebindPlan,
@@ -457,7 +458,19 @@ describe("update command helpers", () => {
       { action: "save" },
     ]);
     expect(plan[2]).toMatchObject({ cwd: target.cwd });
-    expect(plan[2]?.args.slice(0, 2)).toEqual(["start", target.bundlePath]);
+    expect(plan[2]?.args).toEqual([
+      "start",
+      target.bundlePath,
+      "--name",
+      "ravi",
+      "--interpreter",
+      defaultPm2InertStdinWrapperPath(target.bundlePath),
+      "--interpreter-args",
+      "/usr/bin/bun",
+      "--",
+      "daemon",
+      "run",
+    ]);
     expect(plan[3]).toMatchObject({ cwd: target.cwd });
     expect(plan[3]?.args.slice(0, 2)).toEqual(["start", "/usr/bin/bun"]);
   });

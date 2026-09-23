@@ -18,6 +18,7 @@ import {
   daemonMutationReturnSchema,
   daemonStatusReturnSchema,
 } from "./operational-return-schemas.js";
+import { buildDaemonPm2StartArgs, ensurePm2InertStdinWrapper, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import { buildManagedRuntimeIdentity } from "../../managed-runtime.js";
 import {
@@ -360,6 +361,14 @@ function requirePm2() {
   }
 }
 
+function startDaemonPm2Args(bundlePath: string, bunPath = "bun"): string[] {
+  return buildDaemonPm2StartArgs({
+    bundlePath,
+    bunPath,
+    stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
+  });
+}
+
 @Group({
   name: "daemon",
   description: "Manage ravi via PM2",
@@ -393,17 +402,7 @@ export class DaemonCommands {
 
     const target = this.requireRuntimeTarget();
 
-    const args = [
-      "start",
-      target.bundlePath,
-      "--name",
-      PM2_PROCESS_NAME,
-      "--interpreter",
-      "bun",
-      "--",
-      "daemon",
-      "run",
-    ];
+    const args = startDaemonPm2Args(target.bundlePath);
     const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
 
     const payload = {
@@ -578,17 +577,7 @@ export class DaemonCommands {
         fail("Failed to stop daemon before restart");
       }
 
-      const args = [
-        "start",
-        target.bundlePath,
-        "--name",
-        PM2_PROCESS_NAME,
-        "--interpreter",
-        "bun",
-        "--",
-        "daemon",
-        "run",
-      ];
+      const args = startDaemonPm2Args(target.bundlePath);
       const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
       pm2Status = status;
       const saveStatus = status === 0 ? persistPm2ProcessList() : null;
@@ -614,17 +603,7 @@ export class DaemonCommands {
       console.log("Daemon restarted and PM2 startup state saved");
       return payload;
     } else {
-      const args = [
-        "start",
-        target.bundlePath,
-        "--name",
-        PM2_PROCESS_NAME,
-        "--interpreter",
-        "bun",
-        "--",
-        "daemon",
-        "run",
-      ];
+      const args = startDaemonPm2Args(target.bundlePath);
       if (asJson) {
         const { status } = runPm2Quiet(args, { cwd: target.cwd });
         const saveStatus = status === 0 ? persistPm2ProcessList() : null;
@@ -956,6 +935,7 @@ export class DaemonCommands {
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "run", risk: "high" })
   @CliOnly()
   async run() {
+    maybeNeuterDaemonStdin();
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
   }

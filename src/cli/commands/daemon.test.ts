@@ -250,6 +250,9 @@ describe("daemon runtime target", () => {
     expect(result.stdout).not.toContain('"mode": "handoff"');
     const pm2Log = readFileSync(pm2LogPath, "utf8");
     expect(pm2Log).toContain(`start ${realpathSync(fakeBundlePath)}`);
+    expect(pm2Log).toContain("ravi-pm2-stdin");
+    expect(pm2Log).toContain("--interpreter-args bun");
+    expect(pm2Log).toContain("daemon run");
     expect(pm2Log).toContain("save --force");
     expect(existsSync(childMarkerPath)).toBe(false);
   }, 20_000);

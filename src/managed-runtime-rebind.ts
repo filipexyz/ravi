@@ -10,6 +10,11 @@ import {
   type ManagedRuntimeProcessSnapshot,
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
+import {
+  buildDaemonPm2StartArgs,
+  defaultPm2InertStdinWrapperPath,
+  ensurePm2InertStdinWrapper,
+} from "./daemon-stdin.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
@@ -85,6 +90,7 @@ export function buildManagedRuntimeRebindPlan(
   previousProcesses: ManagedRuntimeProcessSnapshot[],
   target: ManagedRuntimeTarget,
   bunPath = process.execPath,
+  stdinWrapperPath = defaultPm2InertStdinWrapperPath(target.bundlePath),
 ): ManagedRuntimeRebindStep[] {
   const daemon = previousProcesses.find((process) => process.name === PM2_PROCESS_NAME);
   const channels = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
@@ -105,7 +111,11 @@ export function buildManagedRuntimeRebindPlan(
     plan.push({
       action: "start",
       processName: PM2_PROCESS_NAME,
-      args: ["start", target.bundlePath, "--name", PM2_PROCESS_NAME, "--interpreter", bunPath, "--", "daemon", "run"],
+      args: buildDaemonPm2StartArgs({
+        bundlePath: target.bundlePath,
+        bunPath,
+        stdinWrapperPath,
+      }),
       cwd: target.cwd,
     });
   }
@@ -190,7 +200,9 @@ export async function rebindManagedRuntimeProcesses(
 ): Promise<boolean> {
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? getPm2Processes;
-  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, dependencies.bunPath);
+  const bunPath = dependencies.bunPath ?? process.execPath;
+  const stdinWrapperPath = ensurePm2InertStdinWrapper(target.bundlePath);
+  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, stdinWrapperPath);
   if (plan.length === 0) return true;
 
   const runtimeEnv = buildPm2Env({ RAVI_BUNDLE: target.bundlePath, RAVI_DAEMON_CWD: target.cwd });

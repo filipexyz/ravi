@@ -8,9 +8,15 @@
  * host CLI gateway share the daemon event loop. Under PM2, fd 0 is often an
  * idle socketpair; a synchronous `read(0)` wedges every agent and CLI call.
  * Interactive stdin consumers belong in a real TTY CLI, not this process.
+ *
+ * #539 stopped audit TTY probes from instantiating `process.stdin`. Bun can
+ * still read fd 0 without that getter, so boot also replaces fd 0 with
+ * `/dev/null` (`maybeNeuterDaemonStdin`). PM2 registration launches through
+ * the inert-stdin wrapper so `ravi update --next` keeps the same story.
  */
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { maybeNeuterDaemonStdin } from "./daemon-stdin.js";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -314,6 +320,8 @@ function restartAfterFatalRuntimeError(error: Error): void {
 }
 
 export async function startDaemon() {
+  maybeNeuterDaemonStdin();
+
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl });

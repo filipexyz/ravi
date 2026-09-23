@@ -8,7 +8,10 @@
  * import from "./cli/exports.js" instead.
  */
 
-// MUST be first import - loads ~/.ravi/.env before other modules initialize
+// MUST be first import: replace fd 0 on `daemon run` before the command graph
+// (including ink) can arm stdin. See src/daemon-stdin.ts.
+import "../daemon-stdin.js";
+// Loads ~/.ravi/.env before other modules initialize
 import "./env.js";
 
 import "reflect-metadata";
