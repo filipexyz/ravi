@@ -19,7 +19,14 @@ let resolvedContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
       metadata?: Record<string, unknown>;
       createdAt: number;
@@ -36,7 +43,14 @@ let inlineContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
       metadata?: Record<string, unknown>;
       createdAt: number;
@@ -66,7 +80,14 @@ let issuedContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
       metadata?: Record<string, unknown>;
       createdAt: number;
@@ -80,7 +101,14 @@ let listedContexts: Array<{
   agentId?: string;
   sessionKey?: string;
   sessionName?: string;
-  source?: { channel: string; accountId: string; chatId: string };
+  source?: {
+    channel: string;
+    accountId: string;
+    chatId: string;
+    threadId?: string;
+    instanceId?: string;
+    canonicalChatId?: string;
+  };
   capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
   metadata?: Record<string, unknown>;
   createdAt: number;
@@ -96,7 +124,14 @@ let fetchedContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
       metadata?: Record<string, unknown>;
       createdAt: number;
@@ -113,7 +148,14 @@ let revokedContext:
       agentId?: string;
       sessionKey?: string;
       sessionName?: string;
-      source?: { channel: string; accountId: string; chatId: string };
+      source?: {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        threadId?: string;
+        instanceId?: string;
+        canonicalChatId?: string;
+      };
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>;
       metadata?: Record<string, unknown>;
       createdAt: number;
@@ -1088,6 +1130,44 @@ describe("ContextCommands", () => {
       const payload = JSON.parse(lines[0] ?? "{}");
       const parsed = contextInfoReturnSchema.safeParse(payload);
       expect(parsed.success).toBe(true);
+    });
+
+    it("whoami --json accepts a WhatsApp DM source with instanceId and canonicalChatId", async () => {
+      const { contextWhoamiReturnSchema } = await import("./operational-return-schemas.js");
+      resolvedContext = {
+        ...resolvedContext!,
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+          instanceId: "whatsapp-baileys-main",
+          canonicalChatId: "chat_whatsapp_5511999999999",
+        },
+      };
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.whoami(true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextWhoamiReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("\n"));
+      }
+      expect(parsed.data.source).toEqual({
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "5511999999999",
+        instanceId: "whatsapp-baileys-main",
+        canonicalChatId: "chat_whatsapp_5511999999999",
+      });
     });
 
     it("issue payload conforms to contextIssueReturnSchema", async () => {

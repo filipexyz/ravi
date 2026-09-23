@@ -4690,8 +4690,10 @@ export type ContextCleanupAgentRuntimeReturn = {
       sessionName: string | null;
       source: ({
         accountId: string;
+        canonicalChatId?: string;
         channel: string;
         chatId: string;
+        instanceId?: string;
         threadId?: string;
       }) | null;
       status: "active" | "expired" | "revoked";
@@ -4837,8 +4839,10 @@ export type ContextInfoReturn = {
   sessionName: string | null;
   source: ({
     accountId: string;
+    canonicalChatId?: string;
     channel: string;
     chatId: string;
+    instanceId?: string;
     threadId?: string;
   }) | null;
   status: "active" | "expired" | "revoked";
@@ -4878,8 +4882,10 @@ export type ContextIssueReturn = {
   sessionName: string | null;
   source: ({
     accountId: string;
+    canonicalChatId?: string;
     channel: string;
     chatId: string;
+    instanceId?: string;
     threadId?: string;
   }) | null;
 };
@@ -4938,8 +4944,10 @@ export type ContextLineageReturn = {
     sessionName: string | null;
     source: ({
       accountId: string;
+      canonicalChatId?: string;
       channel: string;
       chatId: string;
+      instanceId?: string;
       threadId?: string;
     }) | null;
     status: "active" | "expired" | "revoked";
@@ -5092,8 +5100,10 @@ export type ContextRevokeReturn = {
     sessionName: string | null;
     source: ({
       accountId: string;
+      canonicalChatId?: string;
       channel: string;
       chatId: string;
+      instanceId?: string;
       threadId?: string;
     }) | null;
     status: "active" | "expired" | "revoked";
@@ -5173,8 +5183,10 @@ export type ContextWhoamiReturn = {
   sessionName: string | null;
   source: ({
     accountId: string;
+    canonicalChatId?: string;
     channel: string;
     chatId: string;
+    instanceId?: string;
     threadId?: string;
   }) | null;
   status: "active" | "expired" | "revoked";
