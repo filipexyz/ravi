@@ -22,7 +22,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
-import { OmniSender, OmniConsumer } from "./omni/index.js";
+import { OmniSender, OmniConsumer, createStubOmniConsumer } from "./omni/index.js";
+
 import { loadConfig } from "./utils/config.js";
 import { connectNats, closeNats } from "./nats.js";
 import { configStore } from "./config-store.js";
@@ -388,12 +389,13 @@ export async function startDaemon() {
     // No omni — create a stub gateway that handles internal routing only
     log.warn("Creating gateway without omni — channel delivery will fail");
     const stubSender = createStubSender();
-    const stubConsumer = createStubConsumer();
+    const stubConsumer = createStubOmniConsumer();
     gateway = createGateway({
       logLevel: config.logLevel,
       omniSender: stubSender,
       omniConsumer: stubConsumer,
     });
+
   }
 
   await gateway.start();
@@ -516,18 +518,6 @@ function createStubSender(): OmniSender {
       throw new Error("Omni not configured");
     },
   } as unknown as OmniSender;
-}
-
-/**
- * Stub OmniConsumer for when omni is not configured.
- */
-function createStubConsumer(): OmniConsumer {
-  return {
-    start: async () => {},
-    stop: async () => {},
-    getActiveTarget: () => undefined,
-    clearActiveTarget: () => {},
-  } as unknown as OmniConsumer;
 }
 
 /**
