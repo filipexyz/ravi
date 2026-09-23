@@ -5131,8 +5131,13 @@ export type ContextVisibilityReturn = {
     confidence: string;
     evidence?: Array<{
       detail?: string;
+      eventId?: string;
+      eventType?: string;
       itemId?: string;
       kind: string;
+      observedAt?: number;
+      path?: string;
+      turnId?: string;
     }>;
     id: string;
     lastSeenAt: number;

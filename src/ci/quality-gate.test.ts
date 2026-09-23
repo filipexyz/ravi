@@ -365,6 +365,13 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/omni/"]);
   });
 
+  it("passes when the omni stub consumer focused test is in the diff", () => {
+    const result = runCoverageGate(["src/omni/stub-consumer.ts", "src/omni/stub-consumer.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/omni/"]);
+  });
+
   it("passes when runtime transport focused tests are in the diff", () => {
     const cwd = makeWorkspace();
 

@@ -167,6 +167,21 @@ let revokedContext:
 let resolvedContextOptions: { touch?: boolean; readOnly?: boolean } | undefined;
 let revokedCalls: Array<{ contextId: string; options?: unknown }> = [];
 let listedSessions: Array<{ sessionKey: string }> = [];
+let resolvedSession:
+  | {
+      sessionKey: string;
+      name?: string;
+      agentId: string;
+      agentCwd: string;
+      createdAt: number;
+      updatedAt: number;
+      runtimeProvider?: string;
+      runtimeSessionParams?: Record<string, unknown>;
+      compactionCount?: number;
+      contextTokens?: number;
+      totalTokens?: number;
+    }
+  | undefined;
 let commandSkillGateDecision:
   | {
       allowed: boolean;
@@ -261,6 +276,10 @@ mock.module("../../router/router-db.js", () => ({
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => listedSessions,
+  resolveSession: (nameOrKey: string) =>
+    resolvedSession && (resolvedSession.sessionKey === nameOrKey || resolvedSession.name === nameOrKey)
+      ? resolvedSession
+      : actualRouterSessionsModule.resolveSession(nameOrKey),
 }));
 
 mock.module("../../approval/service.js", () => ({
@@ -347,6 +366,7 @@ describe("ContextCommands", () => {
     resolvedContextOptions = undefined;
     revokedCalls = [];
     listedSessions = [{ sessionKey: "agent:dev:main" }];
+    resolvedSession = undefined;
     publishedAuditEvents = [];
     commandSkillGateDecision = undefined;
     commandSkillGateCalls = [];
@@ -374,6 +394,7 @@ describe("ContextCommands", () => {
     resolvedContextOptions = undefined;
     revokedCalls = [];
     listedSessions = [];
+    resolvedSession = undefined;
     publishedAuditEvents = [];
     commandSkillGateDecision = undefined;
     commandSkillGateCalls = [];
@@ -1186,6 +1207,100 @@ describe("ContextCommands", () => {
       const payload = JSON.parse(lines[0] ?? "{}");
       const parsed = contextIssueReturnSchema.safeParse(payload);
       expect(parsed.success).toBe(true);
+    });
+
+    it("visibility --json accepts runtime skill evidence fields", async () => {
+      const { contextVisibilityReturnSchema } = await import("./operational-return-schemas.js");
+      const { markLoadedFromRaviSkillToolCall, markLoadedFromSkillGate, buildSkillVisibilitySnapshot } = await import(
+        "../../runtime/skill-visibility.js"
+      );
+
+      const catalog = buildSkillVisibilitySnapshot(
+        [
+          {
+            id: "pages",
+            provider: "claude",
+            state: "advertised",
+            confidence: "declared",
+            source: "plugin:ravi-system/pages",
+            lastSeenAt: 1,
+          },
+        ],
+        1,
+      );
+      const afterGate = markLoadedFromSkillGate(catalog, {
+        provider: "claude",
+        skill: "pages",
+        source: "catalog:ravi-system/pages",
+        path: "/plugins/ravi-system/skills/pages/SKILL.md",
+        toolName: "Bash",
+        now: 2,
+      });
+      const afterShow = markLoadedFromRaviSkillToolCall(afterGate, {
+        provider: "claude",
+        toolName: "exec_command",
+        toolInput: { command: "ravi skills show pages --json" },
+        output: { skill: { name: "pages", pluginName: "ravi-system" } },
+        metadata: { turn: { id: "turn_vis_1" }, item: { id: "item_vis_1" } },
+        now: 3,
+      });
+      const persisted = {
+        ...afterShow,
+        skills: afterShow.skills.map((skill) => ({
+          ...skill,
+          evidence: [
+            ...(skill.evidence ?? []),
+            {
+              kind: "provider-event" as const,
+              observedAt: 4,
+              eventType: "skill.visibility.loaded",
+              eventId: "evt_vis_1",
+              turnId: "turn_vis_1",
+              path: "/plugins/ravi-system/skills/pages/SKILL.md",
+              detail: "provider loaded confirmation",
+            },
+          ],
+        })),
+      };
+
+      resolvedSession = {
+        sessionKey: "agent:dev:main",
+        name: "dev-main",
+        agentId: "dev",
+        agentCwd: "/tmp/ravi-dev",
+        createdAt: 1000,
+        updatedAt: 2000,
+        runtimeProvider: "claude",
+        runtimeSessionParams: { skillVisibility: persisted },
+      };
+
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      let result: unknown;
+      try {
+        result = command.visibility(true);
+      } finally {
+        console.log = originalLog;
+      }
+
+      const payload = JSON.parse(lines[0] ?? "{}");
+      expect(payload.sessionKey).toBe("agent:dev:main");
+      expect(payload.loadedSkills).toContain("pages");
+      const evidence = payload.skills?.[0]?.evidence?.[0];
+      expect(evidence).toEqual(
+        expect.objectContaining({
+          observedAt: expect.any(Number),
+          path: expect.any(String),
+          eventType: expect.any(String),
+        }),
+      );
+      const parsed = contextVisibilityReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+      expect(result).toEqual(payload);
     });
   });
 

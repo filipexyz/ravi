@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "0ce3d15c58b94410"
+    "version": "86205cb6a600b5b7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -31979,10 +31979,25 @@
                                 "detail": {
                                   "type": "string"
                                 },
+                                "eventId": {
+                                  "type": "string"
+                                },
+                                "eventType": {
+                                  "type": "string"
+                                },
                                 "itemId": {
                                   "type": "string"
                                 },
                                 "kind": {
+                                  "type": "string"
+                                },
+                                "observedAt": {
+                                  "type": "number"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "turnId": {
                                   "type": "string"
                                 }
                               },

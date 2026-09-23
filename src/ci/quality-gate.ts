@@ -36,6 +36,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/omni/consumer-context.test.ts",
     "src/omni/consumer-policy.test.ts",
     "src/omni/session-stream.test.ts",
+    // Headless Omni stub: presence/renew no-ops when Omni is not installed.
+    "src/omni/stub-consumer.test.ts",
   ],
   "src/router/": [
     "src/channels/backend.test.ts",

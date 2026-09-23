@@ -261,6 +261,25 @@ export const contextCodexBashHookReturnSchema = z
   })
   .strict();
 
+/**
+ * Mirrors `RuntimeSkillVisibilityEvidence` in `src/runtime/types.ts`.
+ * The runtime persists these diagnostic fields on every evidence row; a
+ * narrower `.strict()` object here is what produced RETURN_SHAPE_ERROR on
+ * `context visibility --json`.
+ */
+export const contextSkillVisibilityEvidenceReturnSchema = z
+  .object({
+    kind: z.string(),
+    observedAt: z.number().optional(),
+    path: z.string().optional(),
+    eventType: z.string().optional(),
+    eventId: z.string().optional(),
+    turnId: z.string().optional(),
+    itemId: z.string().optional(),
+    detail: z.string().optional(),
+  })
+  .strict();
+
 export const contextVisibilityReturnSchema = z
   .object({
     sessionKey: z.string(),
@@ -289,17 +308,7 @@ export const contextVisibilityReturnSchema = z
           state: z.string(),
           confidence: z.string(),
           source: z.string().optional(),
-          evidence: z
-            .array(
-              z
-                .object({
-                  kind: z.string(),
-                  itemId: z.string().optional(),
-                  detail: z.string().optional(),
-                })
-                .strict(),
-            )
-            .optional(),
+          evidence: z.array(contextSkillVisibilityEvidenceReturnSchema).optional(),
           loadedAt: z.number().nullable().optional(),
           lastSeenAt: z.number(),
         })
