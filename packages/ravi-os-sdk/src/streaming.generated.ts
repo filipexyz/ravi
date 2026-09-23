@@ -3,6 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import { buildErrorFromGateway, RaviTransportError, type RaviErrorBody } from "./errors.js";
+import { resolveFetch } from "./fetch.js";
 import { REGISTRY_HASH, SDK_VERSION } from "./version.js";
 
 export interface StreamClientConfig {
@@ -169,12 +170,10 @@ export class RaviStreamClient {
 
   constructor(private readonly config: StreamClientConfig) {
     this.baseUrl = stripTrailingSlash(config.baseUrl);
-    this.fetchImpl = config.fetch ?? globalThis.fetch;
-    if (typeof this.fetchImpl !== "function") {
-      throw new Error(
-        "RaviStreamClient: no global `fetch` available. Pass `config.fetch` explicitly when running in a stripped-down runtime.",
-      );
-    }
+    this.fetchImpl = resolveFetch(
+      config.fetch,
+      "RaviStreamClient: no global `fetch` available. Pass `config.fetch` explicitly when running in a stripped-down runtime.",
+    );
   }
 
   /**
