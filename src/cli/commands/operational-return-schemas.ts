@@ -58,12 +58,14 @@ const contextCapabilityReturnSchema = z
   })
   .strict();
 
-const contextSourceReturnSchema = z
+export const contextSourceReturnSchema = z
   .object({
     channel: z.string(),
     accountId: z.string(),
     chatId: z.string(),
     threadId: z.string().optional(),
+    instanceId: z.string().optional(),
+    canonicalChatId: z.string().optional(),
   })
   .strict();
 

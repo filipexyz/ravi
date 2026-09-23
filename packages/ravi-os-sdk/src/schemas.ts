@@ -24583,10 +24583,16 @@ export const ContextCleanupAgentRuntimeReturnSchema = {
                       "accountId": {
                         "type": "string"
                       },
+                      "canonicalChatId": {
+                        "type": "string"
+                      },
                       "channel": {
                         "type": "string"
                       },
                       "chatId": {
+                        "type": "string"
+                      },
+                      "instanceId": {
                         "type": "string"
                       },
                       "threadId": {
@@ -25412,10 +25418,16 @@ export const ContextInfoReturnSchema = {
             "accountId": {
               "type": "string"
             },
+            "canonicalChatId": {
+              "type": "string"
+            },
             "channel": {
               "type": "string"
             },
             "chatId": {
+              "type": "string"
+            },
+            "instanceId": {
               "type": "string"
             },
             "threadId": {
@@ -25666,10 +25678,16 @@ export const ContextIssueReturnSchema = {
             "accountId": {
               "type": "string"
             },
+            "canonicalChatId": {
+              "type": "string"
+            },
             "channel": {
               "type": "string"
             },
             "chatId": {
+              "type": "string"
+            },
+            "instanceId": {
               "type": "string"
             },
             "threadId": {
@@ -26129,10 +26147,16 @@ export const ContextLineageReturnSchema = {
                 "accountId": {
                   "type": "string"
                 },
+                "canonicalChatId": {
+                  "type": "string"
+                },
                 "channel": {
                   "type": "string"
                 },
                 "chatId": {
+                  "type": "string"
+                },
+                "instanceId": {
                   "type": "string"
                 },
                 "threadId": {
@@ -27186,10 +27210,16 @@ export const ContextRevokeReturnSchema = {
                 "accountId": {
                   "type": "string"
                 },
+                "canonicalChatId": {
+                  "type": "string"
+                },
                 "channel": {
                   "type": "string"
                 },
                 "chatId": {
+                  "type": "string"
+                },
+                "instanceId": {
                   "type": "string"
                 },
                 "threadId": {
@@ -27741,10 +27771,16 @@ export const ContextWhoamiReturnSchema = {
             "accountId": {
               "type": "string"
             },
+            "canonicalChatId": {
+              "type": "string"
+            },
             "channel": {
               "type": "string"
             },
             "chatId": {
+              "type": "string"
+            },
+            "instanceId": {
               "type": "string"
             },
             "threadId": {

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "3a24996060e62e5a"
+    "version": "86205cb6a600b5b7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -28874,10 +28874,16 @@
                                       "accountId": {
                                         "type": "string"
                                       },
+                                      "canonicalChatId": {
+                                        "type": "string"
+                                      },
                                       "channel": {
                                         "type": "string"
                                       },
                                       "chatId": {
+                                        "type": "string"
+                                      },
+                                      "instanceId": {
                                         "type": "string"
                                       },
                                       "threadId": {
@@ -29859,10 +29865,16 @@
                             "accountId": {
                               "type": "string"
                             },
+                            "canonicalChatId": {
+                              "type": "string"
+                            },
                             "channel": {
                               "type": "string"
                             },
                             "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
                               "type": "string"
                             },
                             "threadId": {
@@ -30141,10 +30153,16 @@
                             "accountId": {
                               "type": "string"
                             },
+                            "canonicalChatId": {
+                              "type": "string"
+                            },
                             "channel": {
                               "type": "string"
                             },
                             "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
                               "type": "string"
                             },
                             "threadId": {
@@ -30632,10 +30650,16 @@
                                 "accountId": {
                                   "type": "string"
                                 },
+                                "canonicalChatId": {
+                                  "type": "string"
+                                },
                                 "channel": {
                                   "type": "string"
                                 },
                                 "chatId": {
+                                  "type": "string"
+                                },
+                                "instanceId": {
                                   "type": "string"
                                 },
                                 "threadId": {
@@ -31773,10 +31797,16 @@
                                 "accountId": {
                                   "type": "string"
                                 },
+                                "canonicalChatId": {
+                                  "type": "string"
+                                },
                                 "channel": {
                                   "type": "string"
                                 },
                                 "chatId": {
+                                  "type": "string"
+                                },
+                                "instanceId": {
                                   "type": "string"
                                 },
                                 "threadId": {
@@ -32360,10 +32390,16 @@
                             "accountId": {
                               "type": "string"
                             },
+                            "canonicalChatId": {
+                              "type": "string"
+                            },
                             "channel": {
                               "type": "string"
                             },
                             "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
                               "type": "string"
                             },
                             "threadId": {

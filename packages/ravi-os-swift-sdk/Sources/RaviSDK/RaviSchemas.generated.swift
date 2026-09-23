@@ -24845,10 +24845,16 @@ public enum RaviSchemas {
                         "accountId": {
                           "type": "string"
                         },
+                        "canonicalChatId": {
+                          "type": "string"
+                        },
                         "channel": {
                           "type": "string"
                         },
                         "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
                           "type": "string"
                         },
                         "threadId": {
@@ -25686,10 +25692,16 @@ public enum RaviSchemas {
               "accountId": {
                 "type": "string"
               },
+              "canonicalChatId": {
+                "type": "string"
+              },
               "channel": {
                 "type": "string"
               },
               "chatId": {
+                "type": "string"
+              },
+              "instanceId": {
                 "type": "string"
               },
               "threadId": {
@@ -25942,10 +25954,16 @@ public enum RaviSchemas {
               "accountId": {
                 "type": "string"
               },
+              "canonicalChatId": {
+                "type": "string"
+              },
               "channel": {
                 "type": "string"
               },
               "chatId": {
+                "type": "string"
+              },
+              "instanceId": {
                 "type": "string"
               },
               "threadId": {
@@ -26407,10 +26425,16 @@ public enum RaviSchemas {
                   "accountId": {
                     "type": "string"
                   },
+                  "canonicalChatId": {
+                    "type": "string"
+                  },
                   "channel": {
                     "type": "string"
                   },
                   "chatId": {
+                    "type": "string"
+                  },
+                  "instanceId": {
                     "type": "string"
                   },
                   "threadId": {
@@ -27470,10 +27494,16 @@ public enum RaviSchemas {
                   "accountId": {
                     "type": "string"
                   },
+                  "canonicalChatId": {
+                    "type": "string"
+                  },
                   "channel": {
                     "type": "string"
                   },
                   "chatId": {
+                    "type": "string"
+                  },
+                  "instanceId": {
                     "type": "string"
                   },
                   "threadId": {
@@ -28029,10 +28059,16 @@ public enum RaviSchemas {
               "accountId": {
                 "type": "string"
               },
+              "canonicalChatId": {
+                "type": "string"
+              },
               "channel": {
                 "type": "string"
               },
               "chatId": {
+                "type": "string"
+              },
+              "instanceId": {
                 "type": "string"
               },
               "threadId": {
