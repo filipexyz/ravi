@@ -718,8 +718,49 @@ export class Gateway {
     return sourceTarget;
   }
 
+  private getOmniActiveTarget(sessionName: string): PresenceTarget | undefined {
+    const getter = this.omniConsumer?.getActiveTarget;
+    if (typeof getter !== "function") {
+      log.warn("Omni consumer missing getActiveTarget; treating as no active target", { sessionName });
+      return undefined;
+    }
+    try {
+      return getter.call(this.omniConsumer, sessionName) as PresenceTarget | undefined;
+    } catch (error) {
+      log.warn("Omni consumer getActiveTarget failed", { sessionName, error });
+      return undefined;
+    }
+  }
+
+  private async renewOmniActiveTarget(sessionName: string): Promise<boolean> {
+    const renew = this.omniConsumer?.renewActiveTarget;
+    if (typeof renew !== "function") {
+      log.warn("Omni consumer missing renewActiveTarget; skipping presence renew", { sessionName });
+      return false;
+    }
+    try {
+      return await renew.call(this.omniConsumer, sessionName);
+    } catch (error) {
+      log.warn("Omni consumer renewActiveTarget failed", { sessionName, error });
+      return false;
+    }
+  }
+
+  private async clearOmniActiveTarget(sessionName: string): Promise<void> {
+    const clear = this.omniConsumer?.clearActiveTarget;
+    if (typeof clear !== "function") {
+      log.warn("Omni consumer missing clearActiveTarget; skipping active target clear", { sessionName });
+      return;
+    }
+    try {
+      await clear.call(this.omniConsumer, sessionName);
+    } catch (error) {
+      log.warn("Omni consumer clearActiveTarget failed", { sessionName, error });
+    }
+  }
+
   private async renewActiveTargetIfCurrent(sessionName: string, expectedTarget: PresenceTarget): Promise<boolean> {
-    const activeTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    const activeTarget = this.getOmniActiveTarget(sessionName);
     if (!activeTarget) return false;
     if (!this.targetsMatch(activeTarget, expectedTarget)) {
       if (this.shouldUseNativePresence(expectedTarget) && this.presenceSurfacesMatch(activeTarget, expectedTarget)) {
@@ -732,7 +773,7 @@ export class Gateway {
       });
       return false;
     }
-    return this.omniConsumer.renewActiveTarget(sessionName);
+    return this.renewOmniActiveTarget(sessionName);
   }
 
   private async forceRenewTyping(sessionName: string, target: PresenceTarget, reason = "fallback-renew") {
@@ -801,7 +842,7 @@ export class Gateway {
       turnState.activeTarget = undefined;
       turnState.terminal = true;
     }
-    const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    const localTarget = this.getOmniActiveTarget(sessionName);
     if (alreadyStopped && !localTarget) return;
 
     if (localTarget) {
@@ -813,7 +854,7 @@ export class Gateway {
       } else {
         await this.sendTyping(localStopTarget, false, { sessionName, reason: "terminal-clear-active-target" });
       }
-      await this.omniConsumer.clearActiveTarget(sessionName);
+      await this.clearOmniActiveTarget(sessionName);
       this.terminalPresenceStopped.add(sessionName);
       if (preferredTarget && !this.targetsMatch(localStopTarget, preferredTarget)) {
         await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-fallback-stop" });
@@ -869,7 +910,7 @@ export class Gateway {
     const target = this.runtimePresenceTarget(sessionName, data._source);
     const renewed = target
       ? await this.renewActiveTargetIfCurrent(sessionName, target)
-      : await this.omniConsumer.renewActiveTarget(sessionName);
+      : await this.renewOmniActiveTarget(sessionName);
     if (!renewed && target) {
       await this.sendTyping(target, true, { sessionName, reason: `runtime-${data.type ?? "activity"}` });
     }
@@ -1575,7 +1616,7 @@ export class Gateway {
       if (data._source) {
         await this.forceRenewTyping(sessionName, this.runtimePresenceTarget(sessionName, data._source) ?? data._source);
       } else {
-        await this.omniConsumer.renewActiveTarget(sessionName);
+        await this.renewOmniActiveTarget(sessionName);
       }
       this.scheduleInterruptedPresenceStop(sessionName, data._source);
       return;
