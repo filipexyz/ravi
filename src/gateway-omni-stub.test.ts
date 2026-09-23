@@ -94,15 +94,9 @@ describe("Gateway presence without Omni", () => {
     const sendTyping = mock(async () => {});
     const gateway = makeGateway(createStubOmniConsumer(), sendTyping);
 
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "assistant.message" }),
-    ).resolves.toBeUndefined();
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "stream.chunk" }),
-    ).resolves.toBeUndefined();
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted" }),
-    ).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "assistant.message" })).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "stream.chunk" })).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted" })).resolves.toBeUndefined();
 
     expect(sendTyping).not.toHaveBeenCalled();
   });
@@ -138,12 +132,8 @@ describe("Gateway presence without Omni", () => {
     const sendTyping = mock(async () => {});
     const gateway = makeGateway(makeLegacyIncompleteStub(), sendTyping);
 
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "assistant.message" }),
-    ).resolves.toBeUndefined();
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted" }),
-    ).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "assistant.message" })).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted" })).resolves.toBeUndefined();
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
@@ -161,9 +151,7 @@ describe("Gateway presence without Omni", () => {
       sendTyping,
     );
 
-    await expect(
-      handleRuntimePresence(gateway, sessionName, { type: "assistant.message" }),
-    ).resolves.toBeUndefined();
+    await expect(handleRuntimePresence(gateway, sessionName, { type: "assistant.message" })).resolves.toBeUndefined();
     expect(sendTyping).not.toHaveBeenCalled();
   });
 

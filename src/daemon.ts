@@ -395,7 +395,6 @@ export async function startDaemon() {
       omniSender: stubSender,
       omniConsumer: stubConsumer,
     });
-
   }
 
   await gateway.start();
