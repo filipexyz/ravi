@@ -16,6 +16,7 @@ import {
   buildErrorFromGateway,
   type RaviErrorBody,
 } from "../errors.js";
+import { resolveFetch } from "../fetch.js";
 import { REGISTRY_HASH, SDK_VERSION } from "../version.js";
 
 export interface HttpTransportConfig {
@@ -35,12 +36,10 @@ const API_PREFIX = "/api/v1";
 
 export function createHttpTransport(config: HttpTransportConfig): Transport {
   const baseUrl = stripTrailingSlash(config.baseUrl);
-  const fetchImpl = config.fetch ?? globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error(
-      "createHttpTransport: no global `fetch` available. Pass `config.fetch` explicitly when running in a stripped-down runtime.",
-    );
-  }
+  const fetchImpl = resolveFetch(
+    config.fetch,
+    "createHttpTransport: no global `fetch` available. Pass `config.fetch` explicitly when running in a stripped-down runtime.",
+  );
   const timeoutMs = config.timeoutMs ?? 0;
 
   return {

@@ -188,6 +188,13 @@ describe("client-codegen :: emitAll", () => {
     expect(output.version).toContain('export const REGISTRY_HASH = "sha256:fixed";');
     expect(output.version).toContain('export const GIT_SHA = "fixed";');
   });
+
+  it("binds global fetch in the generated stream client", () => {
+    const { output } = emitMockSdk();
+    expect(output.streaming).toContain('import { resolveFetch } from "./fetch.js";');
+    expect(output.streaming).toContain("this.fetchImpl = resolveFetch(");
+    expect(output.streaming).not.toContain("config.fetch ?? globalThis.fetch");
+  });
 });
 
 describe("client-codegen :: compareSdkSource", () => {
