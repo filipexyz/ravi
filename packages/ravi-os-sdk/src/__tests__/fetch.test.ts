@@ -38,7 +38,7 @@ describe("resolveFetch", () => {
     installWindowLikeFetch(async () => jsonResponse({ source: "global" }));
 
     const extracted = globalThis.fetch;
-    await expect(extracted("https://ravi.test/unbound")).rejects.toThrow(/Illegal invocation/);
+    expect(() => extracted("https://ravi.test/unbound")).toThrow(/Illegal invocation/);
 
     const bound = resolveFetch(undefined, "missing fetch");
     const response = await bound("https://ravi.test/bound");
