@@ -27632,10 +27632,25 @@ public enum RaviSchemas {
                   "detail": {
                     "type": "string"
                   },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "eventType": {
+                    "type": "string"
+                  },
                   "itemId": {
                     "type": "string"
                   },
                   "kind": {
+                    "type": "string"
+                  },
+                  "observedAt": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "turnId": {
                     "type": "string"
                   }
                 },
