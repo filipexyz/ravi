@@ -81,7 +81,11 @@ describe("gh watch intent", () => {
 
   it("follows only the commands that create or mutate your own PR", () => {
     // Criar PR é a intenção de acompanhar. Visualizar é consulta.
-    expect(parseGhWatchIntent("gh pr create --title x --body y")).toMatchObject({ follow: true, prNumber: null });
+    expect(parseGhWatchIntent("gh pr create --title x --body y")).toMatchObject({
+      follow: true,
+      prNumber: null,
+      repo: null,
+    });
     expect(parseGhWatchIntent("gh pr ready 507 --repo o/r")).toMatchObject({ follow: true, prNumber: 507 });
     expect(parseGhWatchIntent("gh pr edit 507 --repo o/r --title nova")).toMatchObject({ follow: true, prNumber: 507 });
 
@@ -124,6 +128,60 @@ describe("gh watch intent", () => {
     expect(parseGhWatchIntent("git log gh")).toBeNull();
     expect(parseGhWatchIntent("echo gh pr view 1")).toBeNull();
     expect(parseGhWatchIntent("cat gh something")).toBeNull();
+  });
+
+  it("does not treat a --head branch as the repository", () => {
+    // `fix/busy-turn-honest` casa com REPO_SLUG. Se o valor de --head vazar
+    // para positional, o follow cria um watch fantasma e o poller chama
+    // `gh pr list --repo fix/busy-turn-honest` para sempre.
+    expect(parseGhWatchIntent('gh pr create --head fix/busy-turn-honest --title "x"')).toMatchObject({
+      scope: "pr",
+      repo: null,
+      prNumber: null,
+      follow: true,
+    });
+    expect(parseGhWatchIntent('gh pr create --head=fix/busy-turn-honest --title "x"')).toMatchObject({
+      repo: null,
+      follow: true,
+    });
+    expect(parseGhWatchIntent("gh pr create -H fix/busy-turn-honest --title x")).toMatchObject({
+      repo: null,
+      follow: true,
+    });
+    expect(parseGhWatchIntent("gh pr ready 507 --head fix/busy-turn-honest")).toMatchObject({
+      repo: null,
+      prNumber: 507,
+      follow: true,
+    });
+    expect(parseGhWatchIntent("gh pr edit 507 --title owner/looks-like-repo")).toMatchObject({
+      repo: null,
+      prNumber: 507,
+      follow: true,
+    });
+  });
+
+  it("still reads repo from --repo and PR URLs when --head is present", () => {
+    expect(parseGhWatchIntent("gh pr create --head fix/busy-turn-honest --title x --repo owner/real")).toMatchObject({
+      repo: "owner/real",
+      prNumber: null,
+      follow: true,
+    });
+    expect(parseGhWatchIntent("gh pr create --repo=owner/real --head=fix/busy-turn-honest --title x")).toMatchObject({
+      repo: "owner/real",
+      follow: true,
+    });
+    expect(parseGhWatchIntent("gh pr ready --undo 507 -R owner/real")).toMatchObject({
+      repo: "owner/real",
+      prNumber: 507,
+      follow: true,
+    });
+    expect(
+      parseGhWatchIntent("gh pr edit https://github.com/owner/real/pull/88 --title owner/looks-like-repo"),
+    ).toMatchObject({
+      repo: "owner/real",
+      prNumber: 88,
+      follow: true,
+    });
   });
 });
 
@@ -329,6 +387,52 @@ describe("gh watch observation", () => {
 
     expect(listed).toBe(0);
     expect(created).toBe(0);
+  });
+
+  it("resolves gh pr create --head from the cwd remote, not the branch name", async () => {
+    resetGhWatchCaches();
+    const queued: string[] = [];
+    let asked = 0;
+
+    await observeGhBashCommand(
+      'gh pr create --head fix/busy-turn-honest --title "x"',
+      { cwd: "/repo", sessionName: "main" },
+      deps({
+        resolveRepoFromCwd: () => {
+          asked += 1;
+          return "owner/real";
+        },
+        addPending: (entry) => {
+          queued.push(entry.repo);
+        },
+      }),
+    );
+
+    expect(queued).toEqual(["owner/real"]);
+    expect(asked).toBe(1);
+  });
+
+  it("keeps an explicit --repo when --head looks like owner/name", async () => {
+    resetGhWatchCaches();
+    const queued: string[] = [];
+    let asked = 0;
+
+    await observeGhBashCommand(
+      "gh pr create --head fix/busy-turn-honest --repo owner/real --title x",
+      { cwd: "/repo" },
+      deps({
+        resolveRepoFromCwd: () => {
+          asked += 1;
+          return "cwd/wrong";
+        },
+        addPending: (entry) => {
+          queued.push(entry.repo);
+        },
+      }),
+    );
+
+    expect(queued).toEqual(["owner/real"]);
+    expect(asked).toBe(0);
   });
 
   it("queues a pending follow for gh pr create, which has no number yet", async () => {

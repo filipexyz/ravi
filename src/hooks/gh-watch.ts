@@ -185,6 +185,63 @@ const REPO_SLUG = /^[\w.-]+\/[\w.-]+$/;
 const PR_URL = /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/;
 const COMMAND_SEPARATORS = new Set(["&&", "||", ";", "|", "(", ")"]);
 
+/**
+ * Flags booleanos do `gh` que não consomem o próximo token.
+ *
+ * Sem essa lista, `gh pr ready --undo 507` perderia o número: `--undo` seria
+ * tratado como `--flag value` e o `507` sairia dos positionals.
+ */
+const GH_BOOLEAN_FLAGS = new Set([
+  "--admin",
+  "--approve",
+  "--auto",
+  "--compact",
+  "--confirm",
+  "--delete-branch",
+  "--draft",
+  "--dry-run",
+  "--editor",
+  "--exit-status",
+  "--fill",
+  "--fill-first",
+  "--fill-verbose",
+  "--force",
+  "--help",
+  "--json",
+  "--merge",
+  "--no-color",
+  "--no-maintainer-edit",
+  "--paginate",
+  "--pretty",
+  "--rebase",
+  "--request-changes",
+  "--silent",
+  "--squash",
+  "--undo",
+  "--verbose",
+  "--watch",
+  "--web",
+  "--yes",
+  "-d",
+  "-e",
+  "-f",
+  "-h",
+  "-w",
+]);
+
+/** `--head=fix/busy-turn-honest` já traz o valor no mesmo token. */
+function attachedEqualsValue(token: string): string | undefined {
+  if (!token.startsWith("--")) return undefined;
+  const eq = token.indexOf("=");
+  return eq > 2 ? token.slice(eq + 1) : undefined;
+}
+
+/** Flags com valor separado: `--head fix/busy-turn-honest`, `-t x`. */
+function consumesSeparatedFlagValue(flag: string, next: string | undefined): boolean {
+  if (next === undefined || next.startsWith("-")) return false;
+  return !GH_BOOLEAN_FLAGS.has(flag);
+}
+
 /** Índices em que começa um comando: o início ou logo depois de um separador. */
 function commandStartIndexes(tokens: string[]): number[] {
   const starts = [0];
@@ -236,7 +293,9 @@ export function parseGhWatchIntent(command: string): GhWatchIntent | null {
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]!;
     if (token === "--repo" || token === "-R") {
-      repo = normalizeRepo(args[index + 1]) ?? repo;
+      const value = args[index + 1];
+      repo = normalizeRepo(value) ?? repo;
+      if (consumesSeparatedFlagValue(token, value)) index += 1;
       continue;
     }
     if (token.startsWith("--repo=")) {
@@ -249,15 +308,21 @@ export function parseGhWatchIntent(command: string): GhWatchIntent | null {
       prNumber = prNumber ?? Number.parseInt(url[3]!, 10);
       continue;
     }
-    if (token.startsWith("-")) continue;
+    if (token.startsWith("-")) {
+      // `--flag=value` já está consumido. Qualquer outro flag que não seja
+      // booleano come o próximo token — senão `--head fix/busy-turn-honest`
+      // vira positional e casa com REPO_SLUG.
+      if (attachedEqualsValue(token) !== undefined) continue;
+      if (consumesSeparatedFlagValue(token, args[index + 1])) index += 1;
+      continue;
+    }
     positionals.push(token);
   }
 
+  // Repo só de fonte explícita: `--repo`/`-R`, URL de PR, path de `gh api`.
+  // Um token com barra em positional (`fix/busy-turn-honest`) casa com
+  // REPO_SLUG e criaria watch fantasma. Sem repo, o observe cai no remote do cwd.
   const scopePositionals = positionals.slice(1);
-  for (const token of scopePositionals) {
-    if (repo) break;
-    repo = normalizeRepo(token);
-  }
   if (scopeToken === "pr") {
     for (const token of scopePositionals) {
       const value = Number.parseInt(token, 10);
