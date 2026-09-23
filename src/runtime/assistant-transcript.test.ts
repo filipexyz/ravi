@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  classifyVisibleAssistantUtterances,
   coalesceAssistantTextBlocks,
   looksLikeEmptyJoinMash,
   peelPersistedAssistantPrefix,
@@ -49,6 +50,8 @@ describe("assistant transcript empty-join mash", () => {
     );
     expect(peelPersistedAssistantPrefix("primeiro?Olá", ["primeiro?", "Olá"])).toBe("");
     expect(peelPersistedAssistantPrefix("primeiro?\n\nOlá\n\nOi.", ["primeiro?", "Olá"])).toBe("Oi.");
+    expect(peelPersistedAssistantPrefix("Tô aqui.", ["Tô aqui."])).toBe("Tô aqui.");
+    expect(peelPersistedAssistantPrefix("Tô aqui.Olá de novo", ["Tô aqui."])).toBe("Olá de novo");
   });
 
   it("resolves only the new clean utterance from a live mashed insert", () => {
@@ -62,9 +65,37 @@ describe("assistant transcript empty-join mash", () => {
     ).toEqual(["Oi. No que você quer trabalhar?"]);
     expect(resolveVisibleAssistantUtterances("primeiro?Olá", ["primeiro?"])).toEqual(["Olá"]);
     expect(resolveVisibleAssistantUtterances("primeiro?Olá", existing)).toEqual([]);
-    expect(resolveVisibleAssistantUtterances("primeiro?", existing)).toEqual([]);
+    expect(resolveVisibleAssistantUtterances("primeiro?", existing)).toEqual(["primeiro?"]);
     expect(resolveVisibleAssistantUtterances("Part one.", [])).toEqual(["Part one."]);
     expect(resolveVisibleAssistantUtterances("Part one.\n\nPart two.", [])).toEqual(["Part one.\n\nPart two."]);
+  });
+
+  it("delivers a new-turn exact repeat of an earlier assistant phrase", () => {
+    expect(resolveVisibleAssistantUtterances("Tô aqui.", ["Tô aqui."])).toEqual(["Tô aqui."]);
+    expect(resolveVisibleAssistantUtterances("Tô aqui.", ["Tô aqui.", "Olá"])).toEqual(["Tô aqui."]);
+    expect(classifyVisibleAssistantUtterances("Tô aqui.", ["Tô aqui."])).toEqual({
+      utterances: ["Tô aqui."],
+    });
+  });
+
+  it("keeps mash peel for prefixed history plus new text", () => {
+    expect(resolveVisibleAssistantUtterances("Tô aqui.Olá de novo", ["Tô aqui."])).toEqual(["Olá de novo"]);
+    expect(classifyVisibleAssistantUtterances("primeiro?Olá", ["primeiro?", "Olá"])).toEqual({
+      utterances: [],
+      skipReason: "mashed_replay",
+    });
+  });
+
+  it("suppresses a same-turn replay of an already delivered utterance", () => {
+    expect(
+      resolveVisibleAssistantUtterances("Tô aqui.", ["Tô aqui."], { alreadyDeliveredThisTurn: ["Tô aqui."] }),
+    ).toEqual([]);
+    expect(
+      classifyVisibleAssistantUtterances("Tô aqui.", ["Tô aqui."], { alreadyDeliveredThisTurn: ["Tô aqui."] }),
+    ).toEqual({
+      utterances: [],
+      skipReason: "same_turn_replay",
+    });
   });
 
   it("does not invent a Flutter-style unmash of a single clean greeting", () => {

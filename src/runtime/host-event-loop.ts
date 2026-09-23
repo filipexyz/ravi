@@ -25,7 +25,7 @@ import {
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
-import { resolveVisibleAssistantUtterances } from "./assistant-transcript.js";
+import { classifyVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   buildRuntimeContextRecoveryPrompt,
@@ -997,6 +997,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let providerRawEventCount = 0;
   let responseText = "";
   let channelResponseText = "";
+  const deliveredVisibleThisTurn: string[] = [];
   const turnToolContinuation = createTurnToolContinuationLedger();
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
   const generatedMediaKeys = new Set<string>();
@@ -2539,6 +2540,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming._providerAuthFailure = undefined;
         responseText = "";
         channelResponseText = "";
+        deliveredVisibleThisTurn.length = 0;
         event = {
           type: "turn.failed",
           error,
@@ -3027,15 +3029,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               // This content will be persisted/projected/emitted. Fence replay
               // before any of those effects; silent and discarded responses do
               // not advance the materialized-output marker.
-              const visibleUtterances = commentaryResponse
-                ? [messageText]
-                : resolveVisibleAssistantUtterances(messageText, recentAssistantContents());
+              const visibility = commentaryResponse
+                ? { utterances: [messageText] }
+                : classifyVisibleAssistantUtterances(messageText, recentAssistantContents(), {
+                    alreadyDeliveredThisTurn: deliveredVisibleThisTurn,
+                  });
+              const visibleUtterances = visibility.utterances;
               if (!commentaryResponse && visibleUtterances.length === 0) {
+                const skipReason = visibility.skipReason ?? "mashed_replay";
                 suppressProviderRawForCurrentTurn = true;
                 recordAssistantState(false);
-                log.info("Skipping replayed or empty-join mashed assistant history", {
+                log.warn("Skipping replayed or empty-join mashed assistant history", {
                   sessionName,
                   textLen: messageText.length,
+                  reason: skipReason,
+                });
+                await emitLegacyProviderEvent({ type: "silent" });
+                await emitRuntimeEvent({
+                  type: "silent",
+                  provider: runtimeSession.provider,
+                  reason: skipReason,
                 });
                 continue;
               }
@@ -3047,6 +3060,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 if (!commentaryResponse) {
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
                   persistVisibleAssistantMessage(utterance);
+                  deliveredVisibleThisTurn.push(utterance);
                 }
                 await emitRuntimeEvent({
                   type: "assistant.message",
@@ -3464,6 +3478,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
         channelResponseText = "";
+        deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
@@ -3578,6 +3593,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
         responseText = "";
         channelResponseText = "";
+        deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
@@ -3663,6 +3679,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         responseText = "";
         channelResponseText = "";
+        deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
