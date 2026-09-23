@@ -3769,9 +3769,13 @@ describe("runtime session trace instrumentation", () => {
     saveMessage(SESSION_NAME, "assistant", "Tô aqui.", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "user", "miranda", null, { agentId: AGENT_ID });
 
-    const streaming = makeStreamingSession({ agentMode: "active" });
+    const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-exact-repeat");
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const outbound: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    natsEmitSpy?.mockImplementation(async (topic: string, data: unknown) => {
+      outbound.push({ topic, data: data as Record<string, unknown> });
+    });
 
     await runTraceLoop(
       streaming,
@@ -3800,6 +3804,14 @@ describe("runtime session trace instrumentation", () => {
     );
     expect(assistantEvent?.data.text).toBe("Tô aqui.");
     expect(emitted.some((entry) => entry.data.type === "silent")).toBe(false);
+    expect(
+      outbound.some(
+        (entry) =>
+          entry.topic.endsWith(".response") &&
+          typeof entry.data.response === "string" &&
+          entry.data.response === "Tô aqui.",
+      ),
+    ).toBe(true);
   });
 
   it("skips a pure mashed replay with a warn-visible silent runtime event", async () => {
@@ -3808,7 +3820,7 @@ describe("runtime session trace instrumentation", () => {
     saveMessage(SESSION_NAME, "assistant", "Olá", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
 
-    const streaming = makeStreamingSession({ agentMode: "active" });
+    const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-mashed-replay-skip");
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
@@ -3836,9 +3848,9 @@ describe("runtime session trace instrumentation", () => {
     ).toEqual(["primeiro?", "Olá"]);
     expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
     expect(emitted.some((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")).toBe(true);
-    expect(
-      emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")?.data.reason,
-    ).toBe("mashed_replay");
+    expect(emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")?.data.reason).toBe(
+      "mashed_replay",
+    );
   });
 
   it("classifies a provider login stub as turn.failed and keeps it off the transcript", async () => {
