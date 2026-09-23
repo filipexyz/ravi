@@ -5,9 +5,23 @@
  * still emit one `assistant.message` whose `text` is prior utterances
  * empty-joined (`primeiro?Olá`) plus the new reply. Persist must refuse that
  * blob, peel already-stored history, and keep only the new utterance(s).
+ * A brand-new turn whose entire answer repeats an earlier phrase
+ * (`Tô aqui.`) is not a mash — deliver it. Same-turn/resume replay of an
+ * utterance already delivered in this physical turn may still be suppressed.
  * Consecutive labeled chunks (`A1_LIVESTR_X` + `A2_LIVESTR_X`) must not
  * coalesce. A single incoming blob without punctuation stays one utterance.
  */
+
+export type VisibleAssistantSkipReason = "empty" | "mashed_replay" | "same_turn_replay";
+
+export type VisibleAssistantResolution = {
+  utterances: string[];
+  skipReason?: VisibleAssistantSkipReason;
+};
+
+export type ResolveVisibleAssistantOptions = {
+  alreadyDeliveredThisTurn?: readonly string[];
+};
 
 const UPPER_START = /^[\p{Lu}]/u;
 
@@ -54,6 +68,7 @@ export function coalesceAssistantTextBlocks(blocks: readonly string[]): string[]
 export function peelPersistedAssistantPrefix(text: string, existing: readonly string[]): string {
   let remaining = text.trim();
   let progressed = true;
+  let peeledAny = false;
   const rows = [...new Set(existing.map((row) => row.trim()).filter((row) => row.length > 0))].sort(
     (left, right) => right.length - left.length,
   );
@@ -61,37 +76,69 @@ export function peelPersistedAssistantPrefix(text: string, existing: readonly st
   while (progressed && remaining) {
     progressed = false;
     for (const row of rows) {
-      if (remaining === row) return "";
+      if (remaining === row) {
+        // Leftover after peeling prefixes is mashed residue. An exact match of
+        // the entire incoming text to one prior row is a new-turn repeat.
+        return peeledAny ? "" : remaining;
+      }
       if (!remaining.startsWith(row)) continue;
       remaining = remaining
         .slice(row.length)
         .replace(/^(?:\n\n|\n)+/, "")
         .trim();
       progressed = true;
+      peeledAny = true;
       break;
     }
   }
   return remaining;
 }
 
-export function resolveVisibleAssistantUtterances(
+export function classifyVisibleAssistantUtterances(
   text: string,
   existingAssistantRows: readonly string[] = [],
-): string[] {
+  options?: ResolveVisibleAssistantOptions,
+): VisibleAssistantResolution {
   const trimmed = text.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { utterances: [], skipReason: "empty" };
 
+  const alreadyDelivered = new Set(
+    (options?.alreadyDeliveredThisTurn ?? []).map((row) => row.trim()).filter(Boolean),
+  );
   const peeled = peelPersistedAssistantPrefix(trimmed, existingAssistantRows);
-  if (!peeled) return [];
+  if (!peeled) return { utterances: [], skipReason: "mashed_replay" };
+
+  const mashed = peeled !== trimmed || looksLikeEmptyJoinMash(trimmed);
+  const parts = splitEmptyJoinedAssistantUtterances(peeled);
+  if (!mashed) {
+    if (parts.length === 1 && alreadyDelivered.has(parts[0]!)) {
+      return { utterances: [], skipReason: "same_turn_replay" };
+    }
+    return { utterances: parts };
+  }
 
   const seen = new Set(existingAssistantRows.map((row) => row.trim()).filter(Boolean));
   const utterances: string[] = [];
-  for (const part of splitEmptyJoinedAssistantUtterances(peeled)) {
-    if (seen.has(part)) continue;
+  for (const part of parts) {
+    if (seen.has(part) || alreadyDelivered.has(part)) continue;
     utterances.push(part);
     seen.add(part);
   }
-  return utterances;
+  if (utterances.length === 0) {
+    return {
+      utterances: [],
+      skipReason: parts.some((part) => alreadyDelivered.has(part)) ? "same_turn_replay" : "mashed_replay",
+    };
+  }
+  return { utterances };
+}
+
+export function resolveVisibleAssistantUtterances(
+  text: string,
+  existingAssistantRows: readonly string[] = [],
+  options?: ResolveVisibleAssistantOptions,
+): string[] {
+  return classifyVisibleAssistantUtterances(text, existingAssistantRows, options).utterances;
 }
 
 function findEmptyJoinBoundaries(text: string): number[] {
