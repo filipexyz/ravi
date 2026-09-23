@@ -400,7 +400,7 @@ describe("gh watch observation", () => {
       deps({
         resolveRepoFromCwd: () => {
           asked += 1;
-          return "owner/real";
+          return "o/r";
         },
         addPending: (entry) => {
           queued.push(entry.repo);
@@ -408,7 +408,8 @@ describe("gh watch observation", () => {
       }),
     );
 
-    expect(queued).toEqual(["owner/real"]);
+    // Sem isso o follow criaria watch em `fix/busy-turn-honest` e nunca perguntaria o cwd.
+    expect(queued).toEqual(["o/r"]);
     expect(asked).toBe(1);
   });
 
@@ -418,7 +419,7 @@ describe("gh watch observation", () => {
     let asked = 0;
 
     await observeGhBashCommand(
-      "gh pr create --head fix/busy-turn-honest --repo owner/real --title x",
+      "gh pr create --head fix/busy-turn-honest --repo o/r --title x",
       { cwd: "/repo" },
       deps({
         resolveRepoFromCwd: () => {
@@ -431,7 +432,7 @@ describe("gh watch observation", () => {
       }),
     );
 
-    expect(queued).toEqual(["owner/real"]);
+    expect(queued).toEqual(["o/r"]);
     expect(asked).toBe(0);
   });
 
