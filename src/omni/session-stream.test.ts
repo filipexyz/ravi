@@ -7,6 +7,7 @@ import {
   resolveSessionPromptPublishOptions,
 } from "./session-stream.js";
 import { publishSessionPromptPublication } from "./session-prompt-publication.js";
+import { inferDeliveryBarrier, requireDeliveryBarrier } from "../delivery-barriers.js";
 
 let currentJsm: PromptJsm;
 
@@ -16,6 +17,12 @@ beforeEach(() => {
 });
 
 describe("session prompt JetStream infrastructure", () => {
+  it("accepts producer-normalized immediate delivery at the publication boundary", () => {
+    const barrier = inferDeliveryBarrier({ deliveryBarrier: "p0" });
+    expect(barrier).toBe("immediate_interrupt");
+    expect(requireDeliveryBarrier(barrier, "deliveryBarrier")).toBe(barrier);
+  });
+
   it("shares concurrent infrastructure recovery in one process", async () => {
     const streamAddGate = deferred<void>();
     const calls = {

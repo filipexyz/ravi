@@ -61,6 +61,10 @@ Ravi recognizes these delivery barriers:
 
 The barrier value MUST be stored on the prompt atom and traceable through publish, queue, release, interrupt, and provider handoff events.
 
+Every canonical barrier value MUST survive normalization and strict parsing
+unchanged. A producer-normalized `immediate_interrupt` MUST remain valid at
+the publication boundary, including when produced by `--immediate` or `p0`.
+
 ## Default Classification
 
 Explicit caller intent wins. If a producer supplies a valid `deliveryBarrier`, the runtime MUST honor that value unless doing so would violate a safety barrier such as startup, compaction, or unsafe tool execution.

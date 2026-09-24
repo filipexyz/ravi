@@ -1,7 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import { inferDeliveryBarrier, requireDeliveryBarrier } from "./delivery-barriers.js";
+import { DELIVERY_BARRIER_VALUES, inferDeliveryBarrier, requireDeliveryBarrier } from "./delivery-barriers.js";
 
 describe("delivery barrier inference", () => {
+  for (const barrier of DELIVERY_BARRIER_VALUES) {
+    it(`preserves the canonical ${barrier} value through parsing and inference`, () => {
+      expect(requireDeliveryBarrier(barrier)).toBe(barrier);
+      expect(inferDeliveryBarrier({ deliveryBarrier: barrier, prompt: "[System] Execute: synthetic task" })).toBe(
+        barrier,
+      );
+    });
+  }
+
   it("keeps explicit barriers authoritative", () => {
     expect(inferDeliveryBarrier({ prompt: "[System] Inform: oi", deliveryBarrier: "p0" })).toBe("immediate_interrupt");
   });

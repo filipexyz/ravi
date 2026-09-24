@@ -26,6 +26,7 @@ const DELIVERY_BARRIER_PRIORITY: Record<DeliveryBarrier, number> = {
 };
 
 const DELIVERY_BARRIER_ALIASES: Record<string, DeliveryBarrier> = {
+  immediate_interrupt: "immediate_interrupt",
   p0: "immediate_interrupt",
   interrupt: "immediate_interrupt",
   immediate: "immediate_interrupt",
