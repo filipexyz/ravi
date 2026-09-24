@@ -35,9 +35,8 @@ import {
   binaryResponseToContractError,
   CONTRACT_EXIT_USAGE,
   contractFailureOutcome,
-  expectedErrorToContractError,
+  mapExecutionErrorToContractError,
   permissionDeniedToContractError,
-  unexpectedErrorToContractError,
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
@@ -176,13 +175,19 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    const knownContractError =
-      err instanceof ContractError
-        ? err
-        : isCloudAuthError(err)
-          ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
-          : expectedErrorToContractError(commandOperation(group, cmd.command), err);
-    if (knownContractError) {
+    if (err instanceof RaviAppError) {
+      const appError = raviAppErrorToContractError(commandOperation(group, cmd.command), err);
+      outcome = contractFailureOutcome(appError);
+      auditExitCode = appError.exitCode;
+      auditErrorCode = appError.code;
+      response = contractErrorResponse(appError, err.status);
+    } else {
+      const knownContractError =
+        err instanceof ContractError
+          ? err
+          : isCloudAuthError(err)
+            ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
+            : mapExecutionErrorToContractError(commandOperation(group, cmd.command), err);
       outcome = contractFailureOutcome(knownContractError);
       auditExitCode = knownContractError.exitCode;
       auditErrorCode = knownContractError.code;
@@ -194,19 +199,9 @@ export async function dispatch(
         providerStatus <= 599
           ? providerStatus
           : undefined;
-      response = contractErrorResponse(knownContractError, cloudStatus);
-    } else if (err instanceof RaviAppError) {
-      const appError = raviAppErrorToContractError(commandOperation(group, cmd.command), err);
-      outcome = contractFailureOutcome(appError);
-      auditExitCode = appError.exitCode;
-      auditErrorCode = appError.code;
-      response = contractErrorResponse(appError, err.status);
-    } else {
-      const unexpectedError = unexpectedErrorToContractError(commandOperation(group, cmd.command));
-      outcome = contractFailureOutcome(unexpectedError);
-      auditExitCode = unexpectedError.exitCode;
-      auditErrorCode = unexpectedError.code;
-      response = contractErrorResponse(unexpectedError, 500);
+      const isUnexpected =
+        !(err instanceof ContractError) && !isCloudAuthError(err) && knownContractError.code === "UNHANDLED_ERROR";
+      response = contractErrorResponse(knownContractError, cloudStatus ?? (isUnexpected ? 500 : undefined));
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);

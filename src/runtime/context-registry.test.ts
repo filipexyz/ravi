@@ -3,6 +3,11 @@ import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/rou
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  DELEGATED_SESSION_BINDINGS_MUST_BE_PAIRED,
+  IDENTITY_DELEGATION_REQUIRES_ADMIN,
+  RuntimeContextError,
+} from "./context-errors.js";
+import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
   getOrCreateAgentRuntimeContext,
@@ -384,7 +389,54 @@ describe("runtime context registry", () => {
         capabilities: [{ permission: "access", objectType: "session", objectId: "main" }],
         identity: { agentId: "main" },
       }),
-    ).toThrow("Identity delegation requires admin:system:*");
+    ).toThrow(RuntimeContextError);
+    try {
+      issueRuntimeContext({
+        parent,
+        cliName: "hub-client-issuer",
+        capabilities: [{ permission: "access", objectType: "session", objectId: "main" }],
+        identity: { agentId: "main" },
+      });
+      throw new Error("expected identity delegation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeContextError);
+      expect(error).toMatchObject({
+        code: "PERMISSION_DENIED",
+        message: IDENTITY_DELEGATION_REQUIRES_ADMIN,
+        details: { requiredCapability: "admin:system:*" },
+      });
+    }
+  });
+
+  it("rejects unpaired delegated session bindings", () => {
+    const parent = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    });
+
+    expect(() =>
+      issueRuntimeContext({
+        parent,
+        cliName: "hub-client-issuer",
+        identity: { agentId: "main", sessionKey: "agent:main:main" },
+      }),
+    ).toThrow(DELEGATED_SESSION_BINDINGS_MUST_BE_PAIRED);
+    try {
+      issueRuntimeContext({
+        parent,
+        cliName: "hub-client-issuer",
+        identity: { agentId: "main", sessionKey: "agent:main:main" },
+      });
+      throw new Error("expected unpaired session bindings to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeContextError);
+      expect(error).toMatchObject({
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: DELEGATED_SESSION_BINDINGS_MUST_BE_PAIRED,
+      });
+    }
   });
 
   it("cascades revocation to descendants with a single shared revokedAt", () => {

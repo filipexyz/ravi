@@ -18,6 +18,7 @@ const publishedPrompts: Array<{
   sessionName: string;
   payload: Record<string, unknown>;
 }> = [];
+let publishSessionPromptError: Error | null = null;
 const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
 const resetSessionCalls: string[] = [];
 const revokedRuntimeContextCalls: Array<{ sessionKey: string; reason?: string }> = [];
@@ -149,6 +150,7 @@ mock.module("../../nats.js", () => ({
 
 mock.module("../../omni/session-stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+    if (publishSessionPromptError) throw publishSessionPromptError;
     publishedPrompts.push({ sessionName, payload });
   }),
 }));
@@ -499,6 +501,7 @@ beforeEach(() => {
   revokedRuntimeContextCalls.length = 0;
   providerRequestCalls.length = 0;
   providerRequestResponse = { success: true };
+  publishSessionPromptError = null;
 });
 
 describe("SessionCommands wait mode", () => {
@@ -535,9 +538,12 @@ describe("SessionCommands wait mode", () => {
         agentId: "codex-cli-locked",
         agentCwd: "/tmp/codex-cli-locked",
       }),
-    ).rejects.toThrow(
-      "Runtime provider 'codex' requires full tool and executable access because Ravi permission hooks are unsupported",
-    );
+    ).rejects.toMatchObject({
+      name: "ContractError",
+      code: "SESSION_RUNTIME_FAILED",
+      message:
+        "Runtime provider 'codex' requires full tool and executable access because Ravi permission hooks are unsupported",
+    });
 
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.sessionName).toBe("codex-cli-locked");
@@ -563,6 +569,10 @@ describe("SessionCommands wait mode", () => {
       "The agent could not complete this request because of an internal runtime error. Please try again.",
     );
     await expect(result).rejects.not.toThrow("/Users/luis");
+    await expect(result).rejects.toMatchObject({
+      name: "ContractError",
+      code: "SESSION_RUNTIME_FAILED",
+    });
   });
 
   it("does not print a success footer when send -w fails", async () => {
@@ -775,7 +785,11 @@ describe("SessionCommands wait mode", () => {
           agentId: "agent-slow",
           agentCwd: "/tmp/slow-session",
         }),
-      ).rejects.toThrow("Timed out waiting for response from slow-session after 120s");
+      ).rejects.toMatchObject({
+        name: "ContractError",
+        code: "SESSION_WAIT_TIMEOUT",
+        message: "Timed out waiting for response from slow-session after 120s",
+      });
     } finally {
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;
@@ -1045,6 +1059,78 @@ describe("SessionCommands delivery barriers", () => {
 
     expect(publishedPrompts.at(-1)?.payload.deliveryBarrier).toBe("after_tool");
     expect(publishedPrompts.at(-1)?.payload.deliveryBarrierSource).toBe("explicit");
+  });
+
+  it("rejects --immediate combined with --steer as USAGE_ERROR for send and execute", async () => {
+    const commands = new SessionCommands();
+    const sendAttempt = commands.send(
+      "dev",
+      "hello",
+      false,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+      true,
+    );
+    await expect(sendAttempt).rejects.toMatchObject({
+      name: "ContractError",
+      code: "USAGE_ERROR",
+      message: "--immediate cannot be combined with --steer.",
+    });
+
+    const executeAttempt = commands.execute("dev", "do the thing", undefined, undefined, undefined, true, true, true);
+    await expect(executeAttempt).rejects.toMatchObject({
+      name: "ContractError",
+      code: "USAGE_ERROR",
+      message: "--immediate cannot be combined with --steer.",
+    });
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("maps publish failures on send and execute to SESSION_RELAY_FAILED", async () => {
+    publishSessionPromptError = new Error("NATS connection refused");
+    const commands = new SessionCommands();
+
+    await expect(
+      commands.send(
+        "dev",
+        "hello",
+        false,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).rejects.toMatchObject({
+      name: "ContractError",
+      code: "SESSION_RELAY_FAILED",
+      message: "NATS connection refused",
+    });
+    await expect(
+      commands.execute("dev", "do the thing", undefined, undefined, undefined, false, false, true),
+    ).rejects.toMatchObject({
+      name: "ContractError",
+      code: "SESSION_RELAY_FAILED",
+      message: "NATS connection refused",
+    });
   });
 
   it("keeps Inform wrapping for in-context agent sends unless --raw", async () => {

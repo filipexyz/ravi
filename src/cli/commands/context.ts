@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -24,6 +24,7 @@ import {
   contextWhoamiReturnSchema,
   declareCommandReturns,
 } from "./operational-return-schemas.js";
+import { isRuntimeContextError } from "../../runtime/context-errors.js";
 import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -34,6 +35,7 @@ import {
 import {
   dbGetAgent,
   dbGetContext,
+  dbListAgents,
   dbListContexts,
   dbPruneContexts,
   type ContextRecord,
@@ -412,15 +414,20 @@ export class ContextCommands {
     asSessionName?: string,
   ) {
     const parent = this.requireResolvedContext();
-    const identity = parseDelegatedIdentity(asAgent, asSessionKey, asSessionName);
-    const child = issueRuntimeContext({
-      parent,
-      cliName,
-      capabilities: parseCapabilityList(allow),
-      ttlMs: parseDurationMs(ttl),
-      inheritCapabilities: inherit,
-      identity,
-    });
+    const identity = parseDelegatedIdentity(asAgent, asSessionKey, asSessionName, asJson);
+    let child: ReturnType<typeof issueRuntimeContext>;
+    try {
+      child = issueRuntimeContext({
+        parent,
+        cliName,
+        capabilities: parseCapabilityList(allow),
+        ttlMs: parseDurationMs(ttl),
+        inheritCapabilities: inherit,
+        identity,
+      });
+    } catch (error) {
+      failContextIssueError(error, asJson);
+    }
 
     const payload: ContextIssuePayload = {
       contextId: child.contextId,
@@ -1331,26 +1338,76 @@ function parseDurationMs(input: string | undefined): number | undefined {
   fail(`Invalid duration: "${input}". Expected 30m, 2h or 1d`);
 }
 
+function failContextIssueError(error: unknown, asJson?: boolean): never {
+  if (isRuntimeContextError(error)) {
+    contractFail("context issue", error.code, error.message, {
+      asJson,
+      exitCode: error.exitCode,
+      details: {
+        suggestedAction: error.suggestedAction,
+        ...error.details,
+      },
+    });
+  }
+  throw error;
+}
+
+function failContextIssueUsage(message: string, suggestedAction: string, asJson?: boolean): never {
+  contractFail("context issue", "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+  });
+}
+
 function parseDelegatedIdentity(
   agentInput: string | undefined,
   sessionKeyInput: string | undefined,
   sessionNameInput: string | undefined,
+  asJson?: boolean,
 ): { agentId: string; sessionKey?: string; sessionName?: string } | undefined {
   const agentId = agentInput?.trim();
   const sessionKey = sessionKeyInput?.trim();
   const sessionName = sessionNameInput?.trim();
   if (!agentId && !sessionKey && !sessionName) return undefined;
-  if (!agentId) fail("--as-agent is required when delegating a context identity");
-  if (Boolean(sessionKey) !== Boolean(sessionName)) {
-    fail("--as-session-key and --as-session-name must be provided together");
+  if (!agentId) {
+    failContextIssueUsage(
+      "--as-agent is required when delegating a context identity",
+      "Pass --as-agent with --as-session-key / --as-session-name",
+      asJson,
+    );
   }
-  if (!dbGetAgent(agentId)) fail(`Agent not found: ${agentId}`);
+  if (Boolean(sessionKey) !== Boolean(sessionName)) {
+    failContextIssueUsage(
+      "--as-session-key and --as-session-name must be provided together",
+      "Pass both session binding flags, or omit both",
+      asJson,
+    );
+  }
+  if (!dbGetAgent(agentId)) {
+    const candidates = dbListAgents().flatMap((agent) => [agent.id, agent.name]);
+    contractFail("context issue", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
+    });
+  }
   if (sessionKey && !sessionKey.startsWith(`agent:${agentId}:`)) {
-    fail(`Delegated session key must belong to agent ${agentId}`);
+    failContextIssueUsage(
+      `Delegated session key must belong to agent ${agentId}`,
+      `Use a session key that starts with agent:${agentId}:`,
+      asJson,
+    );
   }
   const existingSession = sessionKey ? resolveSession(sessionKey) : sessionName ? resolveSession(sessionName) : null;
   if (existingSession && existingSession.agentId !== agentId) {
-    fail(`Delegated session does not belong to agent ${agentId}`);
+    failContextIssueUsage(
+      `Delegated session does not belong to agent ${agentId}`,
+      "Pass --as-session-key / --as-session-name for a session owned by --as-agent",
+      asJson,
+    );
   }
   return {
     agentId,

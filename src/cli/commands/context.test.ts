@@ -4,6 +4,7 @@ afterAll(() => mock.restore());
 
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
+const { identityDelegationRequiresAdminError } = await import("../../runtime/context-errors.js");
 const actualNatsModule = await import("../../nats.js");
 const actualCliContextModule = await import("../context.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
@@ -166,6 +167,7 @@ let revokedContext:
   | undefined;
 let resolvedContextOptions: { touch?: boolean; readOnly?: boolean } | undefined;
 let revokedCalls: Array<{ contextId: string; options?: unknown }> = [];
+let listedAgents: Array<{ id: string; name?: string; cwd: string }> = [];
 let listedSessions: Array<{ sessionKey: string }> = [];
 let resolvedSession:
   | {
@@ -225,23 +227,47 @@ mock.module("../../runtime/context-registry.js", () => ({
     }
     return resolvedContext;
   },
-  issueRuntimeContext: (_input: unknown) =>
-    issuedContext ?? {
-      contextId: "ctx_child_123",
-      contextKey: "rctx_child_123",
-      kind: "cli-runtime",
-      agentId: resolvedContext?.agentId,
-      sessionKey: resolvedContext?.sessionKey,
-      sessionName: resolvedContext?.sessionName,
-      source: resolvedContext?.source,
-      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
-      metadata: {
-        parentContextId: resolvedContext?.contextId ?? "ctx_123",
-        issuedFor: "sync-cli",
-      },
-      createdAt: 3000,
-      expiresAt: 4000,
-    },
+  issueRuntimeContext: (input: {
+    parent?: { capabilities?: Array<{ permission: string; objectType: string; objectId: string }> };
+    identity?: { agentId?: string; sessionKey?: string; sessionName?: string };
+    cliName?: string;
+  }) => {
+    if (input.identity) {
+      const hasAdmin = (input.parent?.capabilities ?? []).some(
+        (capability) =>
+          capability.permission === "admin" && capability.objectType === "system" && capability.objectId === "*",
+      );
+      if (!hasAdmin) throw identityDelegationRequiresAdminError();
+    }
+    const identity = input.identity;
+    return (
+      issuedContext ?? {
+        contextId: "ctx_child_123",
+        contextKey: "rctx_child_123",
+        kind: "cli-runtime",
+        agentId: identity?.agentId ?? resolvedContext?.agentId,
+        sessionKey: identity?.sessionKey ?? resolvedContext?.sessionKey,
+        sessionName: identity?.sessionName ?? resolvedContext?.sessionName,
+        source: identity ? undefined : resolvedContext?.source,
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+        metadata: {
+          parentContextId: resolvedContext?.contextId ?? "ctx_123",
+          issuedFor: input.cliName ?? "sync-cli",
+          ...(identity
+            ? {
+                identityDelegation: {
+                  agentId: identity.agentId,
+                  sessionKey: identity.sessionKey ?? null,
+                  sessionName: identity.sessionName ?? null,
+                },
+              }
+            : {}),
+        },
+        createdAt: 3000,
+        expiresAt: 4000,
+      }
+    );
+  },
   revokeRuntimeContext: (_contextId: string, _options?: unknown) => {
     revokedCalls.push({ contextId: _contextId, options: _options });
     const matchingContext = listedContexts.find((context) => context.contextId === _contextId);
@@ -271,6 +297,8 @@ mock.module("../../router/router-db.js", () => ({
     return listedContexts.find((context) => context.contextId === contextId) ?? null;
   },
   dbListContexts: () => listedContexts,
+  dbGetAgent: (id: string) => listedAgents.find((agent) => agent.id === id) ?? null,
+  dbListAgents: () => listedAgents,
 }));
 
 mock.module("../../router/sessions.js", () => ({
@@ -327,6 +355,9 @@ mock.module("../../runtime/credentials-store.js", () => ({
 
 const { ContextCommands, ContextCredentialsCommands } = await import("./context.js");
 const { ContractError } = await import("../agent-contract.js");
+const { IDENTITY_DELEGATION_REQUIRES_ADMIN, IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION } = await import(
+  "../../runtime/context-errors.js"
+);
 const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
 async function callCodexBashHook(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -365,6 +396,7 @@ describe("ContextCommands", () => {
     revokedContext = undefined;
     resolvedContextOptions = undefined;
     revokedCalls = [];
+    listedAgents = [];
     listedSessions = [{ sessionKey: "agent:dev:main" }];
     resolvedSession = undefined;
     publishedAuditEvents = [];
@@ -393,6 +425,7 @@ describe("ContextCommands", () => {
     revokedContext = undefined;
     resolvedContextOptions = undefined;
     revokedCalls = [];
+    listedAgents = [];
     listedSessions = [];
     resolvedSession = undefined;
     publishedAuditEvents = [];
@@ -815,6 +848,155 @@ describe("ContextCommands", () => {
     expect(output).toContain("Issued Context: ctx_child_123");
     expect(output).toContain("Capabilities (1)");
     expect(output).toContain("RAVI_CONTEXT_KEY=rctx_child_123");
+  });
+
+  it("returns PERMISSION_DENIED with admin:system:* when a non-admin parent delegates identity", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+    let caught: unknown;
+    try {
+      command.issue("hub-client-issuer", "access:session:main", undefined, false, true, "main");
+    } catch (error) {
+      caught = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(caught).toBeInstanceOf(ContractError);
+    expect(caught).toMatchObject({
+      code: "PERMISSION_DENIED",
+      exitCode: 1,
+      message: IDENTITY_DELEGATION_REQUIRES_ADMIN,
+    });
+    const envelope = (caught as InstanceType<typeof ContractError>).envelope();
+    expect(envelope.error.suggestedAction).toBe(IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION);
+    expect(envelope.error.requiredCapability).toBe("admin:system:*");
+    expect(JSON.stringify(envelope)).not.toMatch(/rctx_[A-Za-z0-9]{8,}/);
+    const printed = JSON.parse(lines[0] ?? "{}");
+    expect(printed).toMatchObject({
+      success: false,
+      op: "context issue",
+      error: {
+        code: "PERMISSION_DENIED",
+        message: IDENTITY_DELEGATION_REQUIRES_ADMIN,
+        suggestedAction: IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION,
+        requiredCapability: "admin:system:*",
+      },
+    });
+  });
+
+  it("returns USAGE_ERROR when --as-session-* flags are not paired", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+    let caught: unknown;
+    try {
+      command.issue("hub-client-issuer", undefined, undefined, false, true, "main", "agent:main:main");
+    } catch (error) {
+      caught = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(caught).toBeInstanceOf(ContractError);
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      message: "--as-session-key and --as-session-name must be provided together",
+    });
+    const envelope = (caught as InstanceType<typeof ContractError>).envelope();
+    expect(envelope.error.suggestedAction).toContain("both session binding flags");
+    const printed = JSON.parse(lines[0] ?? "{}");
+    expect(printed.error.code).toBe("USAGE_ERROR");
+    expect(printed.error.message).toContain("must be provided together");
+  });
+
+  it("returns USAGE_ERROR when the delegated session does not belong to --as-agent", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    const command = new ContextCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let caught: unknown;
+    try {
+      command.issue("hub-client-issuer", undefined, undefined, false, true, "main", "agent:other:main", "other-main");
+    } catch (error) {
+      caught = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(caught).toBeInstanceOf(ContractError);
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      message: "Delegated session key must belong to agent main",
+    });
+    expect((caught as InstanceType<typeof ContractError>).details.suggestedAction).toContain("agent:main:");
+  });
+
+  it("issues a delegated child context when the parent has admin:system:*", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    resolvedSession = {
+      sessionKey: "agent:main:main",
+      name: "main",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    resolvedContext = {
+      ...resolvedContext!,
+      capabilities: [
+        { permission: "admin", objectType: "system", objectId: "*" },
+        { permission: "access", objectType: "session", objectId: "main" },
+      ],
+    };
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = command.issue(
+        "hub-client-issuer",
+        "access:session:main",
+        undefined,
+        false,
+        true,
+        "main",
+        "agent:main:main",
+        "main",
+      ) as unknown as Record<string, unknown>;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(payload).toMatchObject({
+      contextId: "ctx_child_123",
+      kind: "cli-runtime",
+      cliName: "hub-client-issuer",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      parentContextId: "ctx_123",
+    });
+    expect(payload.contextKey).toBe("rctx_child_123");
+    expect(payload.env).toEqual({ RAVI_CONTEXT_KEY: "rctx_child_123" });
+    const printed = JSON.parse(lines[0] ?? "{}");
+    expect(printed.agentId).toBe("main");
+    expect(printed.sessionKey).toBe("agent:main:main");
   });
 
   it("revokes a context and prints the updated state in --json mode", () => {
