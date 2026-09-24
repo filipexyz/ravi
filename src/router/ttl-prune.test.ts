@@ -117,7 +117,6 @@ describe("dbPruneStaleRows batched TTL deletes", () => {
       if (sql === "COMMIT") commits.push(Date.now());
       return originalExec(sql);
     }) as typeof db.exec;
-    // @ts-expect-error wrapping prepare for the test
     db.prepare = (sql: string) => {
       if (/DELETE FROM session_events/i.test(sql)) preparedDeletes.push(sql);
       return originalPrepare(sql);

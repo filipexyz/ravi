@@ -105,7 +105,6 @@ describe("ephemeral TTL prune boot scheduling", () => {
     const db = getDb();
     const sessionEventDeletes: string[] = [];
     const originalPrepare = db.prepare.bind(db);
-    // @ts-expect-error wrapping prepare for the test
     db.prepare = (sql: string) => {
       if (/DELETE FROM session_events/i.test(sql)) sessionEventDeletes.push(sql);
       return originalPrepare(sql);
