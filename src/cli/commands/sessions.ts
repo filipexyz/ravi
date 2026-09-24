@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -1851,24 +1851,57 @@ function formatWaitTimeoutError(sessionName: string): string {
   return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
 }
 
+function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+  });
+}
+
+function failSessionRelay(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof ContractError) throw error;
+  contractFail(op, "SESSION_RELAY_FAILED", publicRuntimeFailureDetail(error), {
+    asJson,
+    details: {
+      suggestedAction: "Confirm the daemon and NATS runtime are available, then retry",
+    },
+  });
+}
+
 function resolveDeliveryBarrierOptionWithDefault(
   value: string | undefined,
   fallback: DeliveryBarrier,
-  options: { steer?: boolean; immediate?: boolean } = {},
+  options: { steer?: boolean; immediate?: boolean; op: string; asJson?: boolean },
 ): { barrier: DeliveryBarrier; source: DeliveryBarrierSource } {
   const barrier = normalizeDeliveryBarrier(value);
   if (options.immediate && options.steer) {
-    throw new Error("--immediate cannot be combined with --steer.");
+    failSessionUsage(
+      options.op,
+      "--immediate cannot be combined with --steer.",
+      "Use either --immediate or --steer, not both",
+      options.asJson,
+    );
   }
   if (options.immediate) {
     if (value && barrier !== "immediate_interrupt") {
-      throw new Error("--immediate cannot be combined with a non-immediate --barrier value.");
+      failSessionUsage(
+        options.op,
+        "--immediate cannot be combined with a non-immediate --barrier value.",
+        "Use --immediate without --barrier, or pass --barrier immediate / p0",
+        options.asJson,
+      );
     }
     return { barrier: "immediate_interrupt", source: "explicit" };
   }
   if (options.steer) {
     if (value && barrier !== "after_tool") {
-      throw new Error("--steer cannot be combined with a non-steer --barrier value.");
+      failSessionUsage(
+        options.op,
+        "--steer cannot be combined with a non-steer --barrier value.",
+        "Use --steer without --barrier, or pass --barrier steer / p1",
+        options.asJson,
+      );
     }
     return { barrier: "after_tool", source: "explicit" };
   }
@@ -1876,7 +1909,12 @@ function resolveDeliveryBarrierOptionWithDefault(
     return { barrier: fallback, source: "default" };
   }
   if (!barrier) {
-    throw new Error(`Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`);
+    failSessionUsage(
+      options.op,
+      `Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`,
+      "Pass a valid --barrier value: followup, steer, p0, p1, p2, p3",
+      options.asJson,
+    );
   }
   return { barrier, source: "explicit" };
 }
@@ -4293,6 +4331,8 @@ export class SessionCommands {
     const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
       steer: Boolean(steer),
       immediate: Boolean(immediate),
+      op: "sessions send",
+      asJson,
     });
     const deliveryBarrier = delivery.barrier;
 
@@ -4407,6 +4447,7 @@ export class SessionCommands {
               silent: true,
               promptPayload,
               cliDestination,
+              asJson,
               onResponse: (chunk) => {
                 responseText += chunk;
               },
@@ -4457,6 +4498,7 @@ export class SessionCommands {
           {
             promptPayload,
             cliDestination,
+            asJson,
           },
         );
         if (preparedThread) {
@@ -4484,6 +4526,7 @@ export class SessionCommands {
           delivery.source,
           promptPayload,
           cliDestination,
+          asJson,
         );
         if (preparedThread) {
           preparedThread = {
@@ -4564,6 +4607,8 @@ export class SessionCommands {
     const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
       steer: Boolean(steer),
       immediate: Boolean(immediate),
+      op: "sessions ask",
+      asJson,
     });
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
@@ -4577,6 +4622,9 @@ export class SessionCommands {
       to,
       deliveryBarrier,
       delivery.source,
+      undefined,
+      false,
+      asJson,
     );
     if (asJson) {
       const payload = {
@@ -4646,6 +4694,8 @@ export class SessionCommands {
     const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
       steer: Boolean(steer),
       immediate: Boolean(immediate),
+      op: "sessions answer",
+      asJson,
     });
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
@@ -4659,6 +4709,9 @@ export class SessionCommands {
       to,
       deliveryBarrier,
       delivery.source,
+      undefined,
+      false,
+      asJson,
     );
     if (asJson) {
       const payload = {
@@ -4720,6 +4773,8 @@ export class SessionCommands {
     const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task", {
       steer: Boolean(steer),
       immediate: Boolean(immediate),
+      op: "sessions execute",
+      asJson,
     });
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
@@ -4733,6 +4788,9 @@ export class SessionCommands {
       to,
       deliveryBarrier,
       delivery.source,
+      undefined,
+      false,
+      asJson,
     );
     if (asJson) {
       const payload = {
@@ -4793,6 +4851,8 @@ export class SessionCommands {
     const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
       steer: Boolean(steer),
       immediate: Boolean(immediate),
+      op: "sessions inform",
+      asJson,
     });
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
@@ -4806,6 +4866,9 @@ export class SessionCommands {
       to,
       deliveryBarrier,
       delivery.source,
+      undefined,
+      false,
+      asJson,
     );
     if (asJson) {
       const payload = {
@@ -5528,23 +5591,28 @@ export class SessionCommands {
     deliveryBarrierSource: DeliveryBarrierSource = "default",
     promptPayload?: Record<string, unknown>,
     cliDestination = false,
+    asJson?: boolean,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await publishSessionPrompt(sessionName, {
-      prompt,
-      source,
-      context,
-      _approvalSource,
-      deliveryBarrier,
-      deliveryBarrierSource,
-      ...(promptPayload ?? {}),
-      ...(cliDestination ? { _cliDestination: true } : {}),
-      _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
-    } as Record<string, unknown>);
+    try {
+      await publishSessionPrompt(sessionName, {
+        prompt,
+        source,
+        context,
+        _approvalSource,
+        deliveryBarrier,
+        deliveryBarrierSource,
+        ...(promptPayload ?? {}),
+        ...(cliDestination ? { _cliDestination: true } : {}),
+        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
+      } as Record<string, unknown>);
+    } catch (error) {
+      failSessionRelay(`sessions ${action}`, error, asJson);
+    }
   }
 
   /**
@@ -5563,6 +5631,7 @@ export class SessionCommands {
       onResponse?: (chunk: string) => void;
       promptPayload?: Record<string, unknown>;
       cliDestination?: boolean;
+      asJson?: boolean;
     } = {},
   ): Promise<number> {
     let responseLength = 0;
@@ -5672,17 +5741,21 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await publishSessionPrompt(sessionName, {
-      prompt,
-      source,
-      context,
-      _approvalSource,
-      deliveryBarrier,
-      deliveryBarrierSource,
-      ...(options.promptPayload ?? {}),
-      ...(options.cliDestination ? { _cliDestination: true } : {}),
-      _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
-    } as Record<string, unknown>);
+    try {
+      await publishSessionPrompt(sessionName, {
+        prompt,
+        source,
+        context,
+        _approvalSource,
+        deliveryBarrier,
+        deliveryBarrierSource,
+        ...(options.promptPayload ?? {}),
+        ...(options.cliDestination ? { _cliDestination: true } : {}),
+        _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
+      } as Record<string, unknown>);
+    } catch (error) {
+      failSessionRelay("sessions send", error, options.asJson);
+    }
 
     const completionState = await completion;
     cleanup();
@@ -5690,10 +5763,20 @@ export class SessionCommands {
     await Promise.race([streaming, new Promise((r) => setTimeout(r, 100))]);
 
     if (completionState.kind === "failed" || completionState.kind === "interrupted") {
-      throw new Error(publicRuntimeFailureDetail(completionState.error));
+      contractFail("sessions send", "SESSION_RUNTIME_FAILED", publicRuntimeFailureDetail(completionState.error), {
+        asJson: options.asJson,
+        details: {
+          suggestedAction: "Inspect the target session runtime and retry",
+        },
+      });
     }
     if (completionState.kind === "timeout") {
-      throw new Error(formatWaitTimeoutError(sessionName));
+      contractFail("sessions send", "SESSION_WAIT_TIMEOUT", formatWaitTimeoutError(sessionName), {
+        asJson: options.asJson,
+        details: {
+          suggestedAction: "Retry when the target session is running, or omit --wait",
+        },
+      });
     }
 
     if (options.cliDestination) {

@@ -15,6 +15,12 @@ import {
 } from "../router/router-db.js";
 import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { TURN_SCOPED_AUTHORITY_KIND } from "../permissions/delegation.js";
+import {
+  capabilityNotGrantedByParentError,
+  delegatedAgentIdRequiredError,
+  delegatedSessionBindingsMustBePairedError,
+  identityDelegationRequiresAdminError,
+} from "./context-errors.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 /**
@@ -273,9 +279,7 @@ export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRec
 
   for (const capability of requestedCapabilities) {
     if (!canWithCapabilityContext(input.parent, capability.permission, capability.objectType, capability.objectId)) {
-      throw new Error(
-        `Capability not granted by parent context: ${capability.permission}:${capability.objectType}:${capability.objectId}`,
-      );
+      throw capabilityNotGrantedByParentError(capability);
     }
   }
 
@@ -457,15 +461,15 @@ function resolveDelegatedIdentity(
   },
 ): { agentId: string; sessionKey?: string; sessionName?: string } {
   if (!canWithCapabilityContext(parent, "admin", "system", "*")) {
-    throw new Error("Identity delegation requires admin:system:* on the parent context");
+    throw identityDelegationRequiresAdminError();
   }
 
   const agentId = requested.agentId.trim();
   const sessionKey = requested.sessionKey?.trim();
   const sessionName = requested.sessionName?.trim();
-  if (!agentId) throw new Error("Delegated agentId is required");
+  if (!agentId) throw delegatedAgentIdRequiredError();
   if (Boolean(sessionKey) !== Boolean(sessionName)) {
-    throw new Error("Delegated sessionKey and sessionName must be provided together");
+    throw delegatedSessionBindingsMustBePairedError();
   }
 
   return {

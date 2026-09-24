@@ -19,6 +19,7 @@
  */
 import type { Command as CommanderCommand, CommanderError } from "commander";
 import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
+import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
 import { sanitizePublicValue } from "./redaction.js";
@@ -111,6 +112,14 @@ export function unexpectedErrorToContractError(op: string): ContractError {
   });
 }
 
+export function runtimeContextErrorToContractError(op: string, error: unknown): ContractError | null {
+  if (!isRuntimeContextError(error)) return null;
+  return new ContractError(op, error.code, error.message, error.exitCode, {
+    suggestedAction: error.suggestedAction,
+    ...error.details,
+  });
+}
+
 export function sqliteCapacityToContractError(op: string, error: unknown): ContractError | null {
   if (!isSqliteCapacityError(error)) return null;
   return new ContractError(op, "SQLITE_CAPACITY", SQLITE_CAPACITY_USER_MESSAGE, CONTRACT_EXIT_ERROR, {
@@ -123,6 +132,7 @@ export function sqliteCapacityToContractError(op: string, error: unknown): Contr
 export function mapExecutionErrorToContractError(op: string, error: unknown): ContractError {
   return (
     expectedErrorToContractError(op, error) ??
+    runtimeContextErrorToContractError(op, error) ??
     sqliteCapacityToContractError(op, error) ??
     unexpectedErrorToContractError(op)
   );
