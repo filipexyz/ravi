@@ -24,6 +24,7 @@ type RouteRecord = {
 let routes: RouteRecord[] = [];
 let instanceNames = new Set<string>(["main"]);
 let deleteInstanceCalls: string[] = [];
+let deleteRouteCalls: Array<{ pattern: string; accountId: string }> = [];
 let contactStatuses = new Map<string, { status: string }>();
 let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
@@ -156,6 +157,7 @@ mock.module("../../router/router-db.js", () => ({
     return route;
   },
   dbDeleteRoute: (pattern: string, accountId: string) => {
+    deleteRouteCalls.push({ pattern, accountId });
     const before = routes.length;
     routes = routes.filter((route) => !(route.accountId === accountId && route.pattern === pattern));
     return routes.length !== before;
@@ -163,8 +165,10 @@ mock.module("../../router/router-db.js", () => ({
   dbRestoreRoute: () => true,
   dbListDeletedRoutes: () => [],
   DmScopeSchema: {
-    options: ["main", "per-peer"],
-    safeParse: (value: string) => ({ success: ["main", "per-peer"].includes(value) }),
+    options: ["main", "per-peer", "per-channel-peer", "per-account-channel-peer"],
+    safeParse: (value: string) => ({
+      success: ["main", "per-peer", "per-channel-peer", "per-account-channel-peer"].includes(value),
+    }),
     parse: (value: string) => value,
   },
   DmPolicySchema: {
@@ -276,6 +280,7 @@ describe("RoutesCommands", () => {
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
+    deleteRouteCalls = [];
   });
 
   it("lists routes across all instances with discovery and mutation follow-ups", () => {
@@ -605,6 +610,81 @@ describe("RoutesCommands", () => {
     expect(matchRouteCalls).toContainEqual(expect.objectContaining({ phone: "lid:224420715061374" }));
   });
 
+  it("sets dmScope on an allowlist+whatsapp @lid route without soft-deleting", () => {
+    const addPayload = captureJson(() => {
+      new InstancesRoutesCommands().add(
+        "main",
+        "224420715061374@lid",
+        "john",
+        undefined,
+        "allowlist",
+        undefined,
+        undefined,
+        "whatsapp",
+        undefined,
+        true,
+      );
+    });
+
+    expect((addPayload.route as Record<string, unknown>).pattern).toBe("lid:224420715061374");
+    expect((addPayload.route as Record<string, unknown>).policy).toBe("allowlist");
+    expect((addPayload.route as Record<string, unknown>).channel).toBe("whatsapp");
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "main",
+        "224420715061374@lid",
+        "dmScope",
+        "per-account-channel-peer",
+        undefined,
+        true,
+      );
+    });
+
+    expect(payload.status).toBe("updated");
+    expect(payload.key).toBe("dmScope");
+    expect(payload.value).toBe("per-account-channel-peer");
+    expect((payload.route as Record<string, unknown>).dmScope).toBe("per-account-channel-peer");
+    expect((payload.route as Record<string, unknown>).pattern).toBe("lid:224420715061374");
+    expect(deleteRouteCalls).toEqual([]);
+    expect(routes).toContainEqual(
+      expect.objectContaining({
+        pattern: "lid:224420715061374",
+        dmScope: "per-account-channel-peer",
+        policy: "allowlist",
+        channel: "whatsapp",
+      }),
+    );
+  });
+
+  it("sets dmScope when the operator passes lid:X for a stored lid route", () => {
+    routes = [
+      {
+        id: 1,
+        accountId: "main",
+        pattern: "lid:224420715061374",
+        agent: "john",
+        policy: "allowlist",
+        channel: "whatsapp",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "main",
+        "lid:224420715061374",
+        "dmScope",
+        "per-account-channel-peer",
+        undefined,
+        true,
+      );
+    });
+
+    expect(payload.status).toBe("updated");
+    expect((payload.route as Record<string, unknown>).dmScope).toBe("per-account-channel-peer");
+    expect(deleteRouteCalls).toEqual([]);
+  });
+
   it("looks up stored lid:X routes when the operator passes X@lid", () => {
     routes = [
       {
@@ -689,6 +769,7 @@ describe("instances/routes agent-first contract", () => {
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
+    deleteRouteCalls = [];
   });
 
   function captureThrown(run: () => unknown): unknown {

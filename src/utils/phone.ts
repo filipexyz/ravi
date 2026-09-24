@@ -120,6 +120,17 @@ export function canonicalizeRouteIdentity(input: string): string {
 }
 
 /**
+ * Durable route-pattern key for create/get/update/delete/restore.
+ *
+ * `canonicalizeRouteIdentity` keeps Slack/group case for display matching;
+ * persistence lowercases so `U012…` / `group:C0…` / `LID:*` lookups hit the
+ * same row that `dbCreateRoute` used to store via `.toLowerCase()` only.
+ */
+export function normalizeRoutePattern(input: string): string {
+  return canonicalizeRouteIdentity(input).toLowerCase();
+}
+
+/**
  * Convert a phone number to a WhatsApp JID.
  */
 export function phoneToJid(phone: string): string | null {
