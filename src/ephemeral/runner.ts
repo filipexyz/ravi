@@ -29,15 +29,29 @@ const ROLLUP_INTERVAL_MS = 60 * 60_000; // 1 hour
 /** How often to run the full TTL prune (ms). Daily; rollup has run many times by then. */
 const PRUNE_INTERVAL_MS = 24 * 60 * 60_000;
 
+/**
+ * Delay the first TTL prune until the crash-recovery boot lease (30s) has been
+ * renewed. An immediate unbounded prune on this same event loop is what expired
+ * the lease on large production DBs.
+ */
+export const PRUNE_BOOT_DELAY_MS = 60_000;
+
+export interface StartEphemeralRunnerOptions {
+  /** Override the post-boot delay before the first TTL prune. */
+  pruneBootDelayMs?: number;
+}
+
 /** Track which sessions we already warned */
 const warned = new Set<string>();
 
 let intervalTimer: ReturnType<typeof setInterval> | null = null;
 let rollupTimer: ReturnType<typeof setInterval> | null = null;
 let pruneTimer: ReturnType<typeof setInterval> | null = null;
+let pruneBootTimer: ReturnType<typeof setTimeout> | null = null;
 let lastRollupAt = 0;
 let lastPruneAt = 0;
 let running = false;
+let pruneInFlight = false;
 
 /**
  * Run a single cleanup cycle:
@@ -154,15 +168,18 @@ function rollupTick(): void {
  * Run TTL prune on stale rows. Safe to run regularly because:
  * - rollup runs hourly (well before any data hits its TTL), so daily_metrics
  *   already preserves aggregates
- * - each delete runs in its own short transaction (no long write lock)
+ * - deletes run in bounded batches and yield between them (no long write lock
+ *   and the crash-recovery heartbeat can renew the boot lease)
  * - WAL checkpoint drains the WAL after pruning so the file actually shrinks
  */
-function pruneTick(): void {
+async function pruneTick(): Promise<void> {
+  if (pruneInFlight) return;
   const now = Date.now();
   if (now - lastPruneAt < PRUNE_INTERVAL_MS / 2) return;
   lastPruneAt = now;
+  pruneInFlight = true;
   try {
-    const result = dbPruneStaleRows({ walCheckpoint: true });
+    const result = await dbPruneStaleRows({ walCheckpoint: true });
     const total =
       result.messageMetadata +
       result.sessionEvents +
@@ -182,6 +199,8 @@ function pruneTick(): void {
     }
   } catch (err) {
     log.error("TTL prune failed", err);
+  } finally {
+    pruneInFlight = false;
   }
 }
 
@@ -189,7 +208,7 @@ export async function runEphemeralCleanupTick(): Promise<void> {
   await tick();
 }
 
-export async function startEphemeralRunner(): Promise<void> {
+export async function startEphemeralRunner(options: StartEphemeralRunnerOptions = {}): Promise<void> {
   if (running) return;
   running = true;
 
@@ -200,18 +219,27 @@ export async function startEphemeralRunner(): Promise<void> {
   // Kick off an initial rollup so a freshly-restarted daemon backfills any
   // missing days from the last shutdown without waiting an hour.
   rollupTick();
-  // Run prune on startup so a long-stopped daemon catches up on stale rows.
-  pruneTick();
+
+  const pruneBootDelayMs = options.pruneBootDelayMs ?? PRUNE_BOOT_DELAY_MS;
+  // Do not prune on the boot stack. A large session_events DELETE can occupy
+  // this event loop longer than the 30s crash-recovery boot lease.
+  pruneBootTimer = setTimeout(() => {
+    pruneBootTimer = null;
+    void pruneTick();
+  }, pruneBootDelayMs);
 
   // Then run periodically
   intervalTimer = setInterval(tick, CHECK_INTERVAL_MS);
   rollupTimer = setInterval(rollupTick, ROLLUP_INTERVAL_MS);
-  pruneTimer = setInterval(pruneTick, PRUNE_INTERVAL_MS);
+  pruneTimer = setInterval(() => {
+    void pruneTick();
+  }, PRUNE_INTERVAL_MS);
 
   log.info("Ephemeral runner started", {
     checkIntervalMs: CHECK_INTERVAL_MS,
     rollupIntervalMs: ROLLUP_INTERVAL_MS,
     pruneIntervalMs: PRUNE_INTERVAL_MS,
+    pruneBootDelayMs,
   });
 }
 
@@ -231,7 +259,13 @@ export async function stopEphemeralRunner(): Promise<void> {
     clearInterval(pruneTimer);
     pruneTimer = null;
   }
+  if (pruneBootTimer) {
+    clearTimeout(pruneBootTimer);
+    pruneBootTimer = null;
+  }
 
+  lastPruneAt = 0;
+  pruneInFlight = false;
   warned.clear();
   log.info("Ephemeral runner stopped");
 }

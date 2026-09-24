@@ -143,7 +143,7 @@ describe("router context queries", () => {
     ).toEqual(["active", "expired-recent"]);
   });
 
-  it("does not let a stale trace export cursor block the local retention TTL", () => {
+  it("does not let a stale trace export cursor block the local retention TTL", async () => {
     recordSessionEvent({
       sessionKey: "agent:dev",
       eventType: "turn.complete",
@@ -159,7 +159,7 @@ describe("router context queries", () => {
     enqueueTraceExportBatch({ limit: 1, now: 3 });
 
     expect(getSyncCursor("runtime_trace", "session_events_enqueued")?.cursorValue).toBe("1");
-    expect(dbPruneStaleRows({ dryRun: true, now: 10 * DAY }).sessionEvents).toBe(2);
+    expect((await dbPruneStaleRows({ dryRun: true, now: 10 * DAY })).sessionEvents).toBe(2);
   });
 
   it("keeps SQLite temp_store on DEFAULT so multi-GB databases do not scratch in RAM", () => {
