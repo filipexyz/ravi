@@ -5207,6 +5207,18 @@ class ContextCleanupAgentRuntimeReturn {
 
 ContextCleanupAgentRuntimeReturn contextCleanupAgentRuntimeReturnFromJson(Object? json) => ContextCleanupAgentRuntimeReturn.fromJsonValue(json);
 
+class ContextCodexBashHookOptions {
+  const ContextCodexBashHookOptions({this.payload});
+
+  final String? payload;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (payload != null) {
+      into["payload"] = RaviJson.from(payload);
+    }
+  }
+}
+
 class ContextCodexBashHookReturn {
   const ContextCodexBashHookReturn({this.hookSpecificOutput});
 

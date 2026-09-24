@@ -617,9 +617,16 @@ export class ContextCommands {
     helpAfter:
       "codex-tool-hook is a deprecated compatibility alias for stale Codex sessions and hooks.json files. It uses the same access and payload as codex-bash-hook. Generated hooks must keep emitting codex-bash-hook.",
   })
-  @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low" })
-  async codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
-    const output = await this.handleCodexBashHook();
+  @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low", redactions: ["payload"] })
+  async codexBashHook(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false,
+    @Option({
+      flags: "--payload <json>",
+      description: "Gateway hook input; process hooks normally read JSON from stdin",
+    })
+    payloadJson?: string,
+  ) {
+    const output = await this.handleCodexBashHook(undefined, payloadJson);
     console.log(JSON.stringify(output));
     return output;
   }
@@ -648,10 +655,13 @@ export class ContextCommands {
     console.log(JSON.stringify(payload, null, 2));
   }
 
-  private async handleCodexBashHook(inputPayload?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async handleCodexBashHook(
+    inputPayload?: Record<string, unknown>,
+    payloadJson?: string,
+  ): Promise<Record<string, unknown>> {
     let payload: Record<string, unknown>;
     try {
-      payload = inputPayload ?? parseCodexHookPayload();
+      payload = inputPayload ?? parseCodexHookPayload(payloadJson);
     } catch (error) {
       return buildPreToolUseDenyResult(
         `Invalid Codex hook payload: ${error instanceof Error ? error.message : String(error)}`,
@@ -1260,13 +1270,21 @@ function formatTimestamp(value: number | null | undefined): string {
   return typeof value === "number" ? new Date(value).toISOString() : "-";
 }
 
-function parseCodexHookPayload(): Record<string, unknown> {
-  const raw = readFileSync(0, "utf8").trim();
+function parseCodexHookPayload(payloadJson?: string): Record<string, unknown> {
+  if (payloadJson === undefined && getContext({ localOnly: true })?.transport === "gateway") {
+    throw new Error("gateway hook payload is missing");
+  }
+  const raw = (payloadJson ?? readFileSync(0, "utf8")).trim();
   if (!raw) {
     throw new Error("stdin is empty");
   }
 
-  const parsed = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("malformed JSON");
+  }
   return asRecord(parsed) ?? {};
 }
 

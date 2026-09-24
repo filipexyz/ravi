@@ -1388,3 +1388,23 @@ TypeScript/Swift foram alinhados em commit dedicado, com `GIT_SHA` preservado.
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. O
 head final com este registro e os snapshots atualizados ainda precisa passar a
 CI completa antes de restaurar o veredito **APPROVE**.
+
+---
+
+## Codex hook: preservar stdin no gateway (2026-09-24)
+
+O encaminhamento generico do CLI transportava argumentos e opcoes, mas o hook
+PreToolUse recebia seu payload por stdin. O handler remoto lia o stdin do
+daemon e negava comandos validos por falta de payload. Um teste com subprocesso
+e socket Unix reproduziu a falha antes da correcao.
+
+O CLI agora transporta o JSON bruto no campo `payload`, redigido na auditoria.
+O handler remoto usa esse campo e nunca consulta o stdin do daemon. Erros de
+transporte, autenticacao e resposta remota viram JSON `deny` do protocolo
+Codex. Autorizacao de Bash, skill gates e o alias legado permanecem cobertos.
+OpenAPI e SDKs TypeScript, Swift e Dart foram regenerados pelo registry.
+
+Validacao local inicial: build, typecheck, Biome dos arquivos alterados,
+19 testes de transporte e 39 testes de contexto passaram. A suite completa e
+o quality gate do head final continuam obrigatorios; este registro nao declara
+CI aprovada. Fixtures e evidencias desta mudanca usam somente dados sinteticos.

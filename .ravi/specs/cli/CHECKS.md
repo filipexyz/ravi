@@ -24,6 +24,11 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Remote dispatch is authorized by the target gateway, accepts only a complete
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
+- The Codex `PreToolUse` hook exception preserves caller stdin in gateway
+  `payload`, never reads daemon stdin, and returns provider-native deny JSON
+  with exit `0` for transport, payload and authorization failures. Synthetic
+  subprocess tests cover automatic socket dispatch, the compatibility alias,
+  malformed responses, Bash permissions and payload audit redaction.
 - Remote detail projection preserves only bounded stable identifiers,
   canonical flag/positional shapes, HTTP `status`, sanitized validation
   `issues`, and explicitly projected typed plan metadata; sentinel free text,
@@ -102,6 +107,7 @@ bun test src/cli/transport-contract.test.ts
 bun test src/cli/tools-export.test.ts
 bun test src/sdk/gateway/dispatcher.test.ts
 bun test src/cli/remote-gateway.test.ts
+bun test src/cli/commands/context-hook-gateway.test.ts
 bun test src/cli/redaction.test.ts
 bun test src/cli/audit.test.ts
 bun test src/cli/provenance.test.ts

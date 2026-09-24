@@ -1754,11 +1754,13 @@ export class RaviClient {
       });
     },
     /** Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context */
-    codexBashHook: async (): Promise<ContextCodexBashHookReturn> => {
+    codexBashHook: async (options?: {
+      payload?: string;
+    }): Promise<ContextCodexBashHookReturn> => {
       return this.transport.call({
         groupSegments: ["context"],
         command: "codex-bash-hook",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     credentials: {

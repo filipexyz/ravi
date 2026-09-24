@@ -23,3 +23,8 @@
   a,b,c --json` MUST return items containing only the requested fields.
 - The test suite `bun test src/cli/commands/context.test.ts` SHOULD pass after
   any change to this contract surface.
+- `bun test src/cli/commands/context-hook-gateway.test.ts` MUST preserve the
+  stdin payload through the real CLI registry and host gateway, including the
+  deprecated alias. Missing payloads MUST deny without reading daemon stdin;
+  invalid credentials, transport failures and malformed gateway output MUST
+  produce Codex deny JSON with exit `0`. Audit MUST redact `payload`.

@@ -24975,7 +24975,12 @@ class RaviSchemas {
   static const contextCodexBashHookInputSchema = r'''
 {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "payload": {
+      "description": "Gateway hook input; process hooks normally read JSON from stdin",
+      "type": "string"
+    }
+  },
   "type": "object"
 }
 ''';
