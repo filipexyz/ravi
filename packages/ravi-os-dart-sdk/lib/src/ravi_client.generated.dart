@@ -1851,8 +1851,9 @@ class ContextNamespace {
     );
   }
 
-  Future<ContextCodexBashHookReturn> codexBashHook() async {
+  Future<ContextCodexBashHookReturn> codexBashHook([ContextCodexBashHookOptions options = const ContextCodexBashHookOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["context"],
       command: "codex-bash-hook",

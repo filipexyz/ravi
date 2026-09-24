@@ -113,6 +113,11 @@ details and policy outcome:
 - Gateway/SDK: returns the canonical envelope plus `exitCode` and `outcome`.
   HTTP status MAY communicate the broad class, but a known `ContractError`
   MUST NOT become a generic HTTP 500 body.
+- Codex PreToolUse hook invocations retain their provider-required hook JSON
+  contract. Remote hook calls MUST carry the process stdin in an explicit,
+  redacted request field. Transport/authentication failures and invalid remote
+  replies MUST become a hook `deny`, never an empty success or generic CLI
+  failure that the provider could ignore. See `cli/context`.
 - Audit: records the same operation and outcome as `succeeded`, `blocked`,
   `usage_error`, `denied` or `failed`. A policy block MUST NOT be recorded as
   an executed mutation or generic failure.

@@ -1447,8 +1447,9 @@ public struct ContextNamespace: Sendable {
     return try await transport.call(groupSegments: ["context"], command: "cleanup-agent-runtime", body: requestBody, as: ContextCleanupAgentRuntimeReturn.self)
   }
 
-  public func codexBashHook() async throws -> ContextCodexBashHookReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func codexBashHook(_ options: ContextCodexBashHookOptions = .init()) async throws -> ContextCodexBashHookReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["context"], command: "codex-bash-hook", body: requestBody, as: ContextCodexBashHookReturn.self)
   }
 

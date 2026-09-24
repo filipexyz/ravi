@@ -4709,7 +4709,9 @@ export type ContextCleanupAgentRuntimeReturn = {
 };
 
 /** Input shape for `context.codex-bash-hook`. */
-export type ContextCodexBashHookInput = Record<string, never>;
+export type ContextCodexBashHookInput = {
+  payload?: string;
+};
 
 /** Return shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookReturn = {

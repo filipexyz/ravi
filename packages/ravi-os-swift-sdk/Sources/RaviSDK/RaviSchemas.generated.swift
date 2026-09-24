@@ -24975,7 +24975,12 @@ public enum RaviSchemas {
   public static let ContextCodexBashHookInputSchema = #"""
   {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "payload": {
+        "description": "Gateway hook input; process hooks normally read JSON from stdin",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
   """#

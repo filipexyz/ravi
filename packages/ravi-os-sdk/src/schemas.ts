@@ -24712,7 +24712,12 @@ export const ContextCleanupAgentRuntimeReturnSchema = {
 /** JSON Schema for the input body of `context.codex-bash-hook`. */
 export const ContextCodexBashHookInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "payload": {
+      "description": "Gateway hook input; process hooks normally read JSON from stdin",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "86205cb6a600b5b7"
+    "version": "09b136dc668a0873"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -29020,6 +29020,23 @@
     "/api/v1/context/codex-bash-hook": {
       "post": {
         "operationId": "context.codex-bash-hook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "payload": {
+                    "description": "Gateway hook input; process hooks normally read JSON from stdin",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {

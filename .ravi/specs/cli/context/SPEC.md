@@ -65,6 +65,15 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 9. `context cleanup-agent-runtime` keeps its pre-existing local equivalent
    (dry-run by default, opt-in `--revoke`); the flag MUST NOT be renamed.
 10. Without `--json`, error output keeps the legacy text path (exit 1).
+11. `codex-bash-hook` and its `codex-tool-hook` alias preserve the Codex
+    PreToolUse JSON contract. The process CLI reads stdin and forwards it as
+    the `payload` string when using the host or explicit remote gateway.
+    The gateway MUST evaluate that payload with the authenticated runtime
+    context and MUST NOT read daemon stdin. The transported field MUST be
+    redacted from command audit.
+12. Missing/malformed hook input, denied or invalid credentials, unavailable
+    gateways, and invalid gateway replies MUST produce a PreToolUse `deny`.
+    Valid inputs still pass through Bash permission checks and skill gates.
 
 ## Write classification (brake decision per op)
 

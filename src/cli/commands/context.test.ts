@@ -933,7 +933,7 @@ describe("ContextCommands", () => {
       expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
     });
 
-    it("runs runtime skill gates from the Codex Bash hook path", async () => {
+    it("runs runtime skill gates with the transported Codex hook payload", async () => {
       commandSkillGateDecision = {
         allowed: false,
         code: "RAVI_SKILL_REQUIRED",
@@ -941,11 +941,10 @@ describe("ContextCommands", () => {
         reason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
       };
 
-      const result = await callCodexBashHook({
-        tool_input: {
-          command: "ravi skill-gates list",
-        },
-      });
+      const result = await new ContextCommands().codexBashHook(
+        false,
+        JSON.stringify({ tool_input: { command: "ravi skill-gates list" } }),
+      );
 
       expect(result).toMatchObject({
         hookSpecificOutput: {

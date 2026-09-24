@@ -6216,6 +6216,24 @@ public struct ContextCleanupAgentRuntimeReturn: Codable, Sendable {
   }
 }
 
+public struct ContextCodexBashHookOptions: Codable, Sendable {
+  public var payload: String?
+
+  public init(payload: String? = nil) {
+    self.payload = payload
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case payload = "payload"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.payload {
+      body["payload"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct ContextCodexBashHookReturn: Codable, Sendable {
   public var hookSpecificOutput: RaviJSON?
 
