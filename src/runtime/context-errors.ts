@@ -7,8 +7,7 @@
  */
 export type RuntimeContextErrorCode = "PERMISSION_DENIED" | "USAGE_ERROR";
 
-export const IDENTITY_DELEGATION_REQUIRES_ADMIN =
-  "Identity delegation requires admin:system:* on the parent context";
+export const IDENTITY_DELEGATION_REQUIRES_ADMIN = "Identity delegation requires admin:system:* on the parent context";
 export const IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION =
   "Re-run from a parent context that has admin:system:*, or omit --as-agent / --as-session-key / --as-session-name";
 
@@ -18,8 +17,7 @@ export const DELEGATED_SESSION_BINDINGS_MUST_BE_PAIRED_ACTION =
   "Pass both --as-session-key and --as-session-name, or omit both";
 
 export const DELEGATED_AGENT_ID_REQUIRED = "Delegated agentId is required";
-export const DELEGATED_AGENT_ID_REQUIRED_ACTION =
-  "Pass --as-agent when using --as-session-key or --as-session-name";
+export const DELEGATED_AGENT_ID_REQUIRED_ACTION = "Pass --as-agent when using --as-session-key or --as-session-name";
 
 export class RuntimeContextError extends Error {
   readonly code: RuntimeContextErrorCode;

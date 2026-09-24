@@ -1,13 +1,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
-import {
-  CONTRACT_EXIT_USAGE,
-  contractDryRun,
-  contractFail,
-  pickFields,
-  suggestSimilar,
-} from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {

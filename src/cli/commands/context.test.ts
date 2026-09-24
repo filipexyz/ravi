@@ -355,8 +355,9 @@ mock.module("../../runtime/credentials-store.js", () => ({
 
 const { ContextCommands, ContextCredentialsCommands } = await import("./context.js");
 const { ContractError } = await import("../agent-contract.js");
-const { IDENTITY_DELEGATION_REQUIRES_ADMIN, IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION } =
-  await import("../../runtime/context-errors.js");
+const { IDENTITY_DELEGATION_REQUIRES_ADMIN, IDENTITY_DELEGATION_REQUIRES_ADMIN_ACTION } = await import(
+  "../../runtime/context-errors.js"
+);
 const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
 async function callCodexBashHook(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -899,15 +900,7 @@ describe("ContextCommands", () => {
     };
     let caught: unknown;
     try {
-      command.issue(
-        "hub-client-issuer",
-        undefined,
-        undefined,
-        false,
-        true,
-        "main",
-        "agent:main:main",
-      );
+      command.issue("hub-client-issuer", undefined, undefined, false, true, "main", "agent:main:main");
     } catch (error) {
       caught = error;
     } finally {
@@ -930,20 +923,15 @@ describe("ContextCommands", () => {
   it("returns USAGE_ERROR when the delegated session does not belong to --as-agent", () => {
     listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
     const command = new ContextCommands();
+    const originalLog = console.log;
+    console.log = () => {};
     let caught: unknown;
     try {
-      command.issue(
-        "hub-client-issuer",
-        undefined,
-        undefined,
-        false,
-        true,
-        "main",
-        "agent:other:main",
-        "other-main",
-      );
+      command.issue("hub-client-issuer", undefined, undefined, false, true, "main", "agent:other:main", "other-main");
     } catch (error) {
       caught = error;
+    } finally {
+      console.log = originalLog;
     }
 
     expect(caught).toBeInstanceOf(ContractError);
@@ -957,6 +945,14 @@ describe("ContextCommands", () => {
 
   it("issues a delegated child context when the parent has admin:system:*", () => {
     listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    resolvedSession = {
+      sessionKey: "agent:main:main",
+      name: "main",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
     resolvedContext = {
       ...resolvedContext!,
       capabilities: [
@@ -982,7 +978,7 @@ describe("ContextCommands", () => {
         "main",
         "agent:main:main",
         "main",
-      ) as Record<string, unknown>;
+      ) as unknown as Record<string, unknown>;
     } finally {
       console.log = originalLog;
     }

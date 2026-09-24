@@ -1087,16 +1087,7 @@ describe("SessionCommands delivery barriers", () => {
       message: "--immediate cannot be combined with --steer.",
     });
 
-    const executeAttempt = commands.execute(
-      "dev",
-      "do the thing",
-      undefined,
-      undefined,
-      undefined,
-      true,
-      true,
-      true,
-    );
+    const executeAttempt = commands.execute("dev", "do the thing", undefined, undefined, undefined, true, true, true);
     await expect(executeAttempt).rejects.toMatchObject({
       name: "ContractError",
       code: "USAGE_ERROR",
@@ -1109,12 +1100,33 @@ describe("SessionCommands delivery barriers", () => {
     publishSessionPromptError = new Error("NATS connection refused");
     const commands = new SessionCommands();
 
-    await expect(commands.send("dev", "hello", false, false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, false, false, true)).rejects.toMatchObject({
+    await expect(
+      commands.send(
+        "dev",
+        "hello",
+        false,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).rejects.toMatchObject({
       name: "ContractError",
       code: "SESSION_RELAY_FAILED",
       message: "NATS connection refused",
     });
-    await expect(commands.execute("dev", "do the thing", undefined, undefined, undefined, false, false, true)).rejects.toMatchObject({
+    await expect(
+      commands.execute("dev", "do the thing", undefined, undefined, undefined, false, false, true),
+    ).rejects.toMatchObject({
       name: "ContractError",
       code: "SESSION_RELAY_FAILED",
       message: "NATS connection refused",
