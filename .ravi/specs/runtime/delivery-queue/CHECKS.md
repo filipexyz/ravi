@@ -56,6 +56,9 @@
 
 ## Regression Tests
 
+- Canonical barriers round-trip through inference and strict parsing. In
+  particular, `p0` normalizes to `immediate_interrupt`, which the session
+  publisher accepts without an `UNHANDLED_ERROR`.
 - External follow-up arrives during active text generation and waits for turn completion.
 - External immediate arrives during active text generation and interrupts once safe.
 - External follow-up arrives while a tool is running and waits.
