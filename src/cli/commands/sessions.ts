@@ -10,6 +10,7 @@ import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickF
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
+  agentSessionRematerializeReportSchema,
   commandEnvelopeReturnSchema,
   declareCommandReturns,
   pagedItemsReturnSchema,
@@ -270,7 +271,7 @@ const sessionAgentDefaultDiffReturnSchema = {
   hint: z.string().nullable().optional(),
   propagateCommand: z.string().nullable().optional(),
   propagated: z.boolean().optional(),
-  rematerializedSessions: z.array(z.object({}).passthrough()).optional(),
+  rematerializedSessions: z.array(agentSessionRematerializeReportSchema).optional(),
 };
 const sessionSetProviderReturnSchema = z.object({
   action: z.literal("set-provider"),

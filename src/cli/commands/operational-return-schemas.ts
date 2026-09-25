@@ -2109,7 +2109,7 @@ const agentSessionOverrideReportSchema = z
   })
   .strict();
 
-const agentSessionRematerializeReportSchema = z
+export const agentSessionRematerializeReportSchema = z
   .object({
     sessionName: z.string(),
     sessionKey: z.string(),
