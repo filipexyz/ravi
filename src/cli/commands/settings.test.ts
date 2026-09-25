@@ -152,6 +152,25 @@ describe("SettingsCommands", () => {
     expect(settingsStore["runtime.model_broker.required"]).toBe("true");
   });
 
+  it("registers announceCompaction as a known opt-in switch defaulting to false", () => {
+    const commands = new SettingsCommands();
+    let setting: ReturnType<SettingsCommands["get"]>["setting"] | undefined;
+    captureLogs(() => {
+      setting = commands.get("announceCompaction", true).setting;
+    });
+    expect(setting).toMatchObject({
+      key: "announceCompaction",
+      value: null,
+      isSet: false,
+      known: true,
+      defaultValue: "false",
+    });
+
+    expect(() => commands.set("announceCompaction", "yes")).toThrow(/true, false/);
+    expect(() => commands.set("announceCompaction", "true", true)).not.toThrow();
+    expect(settingsStore.announceCompaction).toBe("true");
+  });
+
   it("rejects writes to legacy account settings", () => {
     const commands = new SettingsCommands();
 

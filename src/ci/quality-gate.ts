@@ -48,6 +48,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/resolver.test.ts",
     // Route CRUD persistence: pattern normalize, dmScope updates, soft-delete.
     "src/router/router-db.routes.test.ts",
+    // Channel compaction notices stay off unless announceCompaction is true.
+    "src/router/router-db.announce-compaction.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/session-goals.test.ts",

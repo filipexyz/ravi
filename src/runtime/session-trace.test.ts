@@ -15,7 +15,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
-import { dbUpsertChat, getDb } from "../router/router-db.js";
+import { dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
@@ -2411,7 +2411,40 @@ describe("runtime session trace instrumentation", () => {
     }
   });
 
-  it("emits external compaction announcements for a human/channel turn", async () => {
+  it("does not emit external compaction announcements by default for a human/channel turn", async () => {
+    const attachedSource = attachSpeakingOutputChat();
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: attachedSource,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
+    });
+    seedAdapterTrace(streaming);
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        const response = (data as { response?: unknown }).response;
+        if (typeof response === "string") responses.push(response);
+      }
+    });
+
+    try {
+      await runTraceLoop(streaming, makeRuntimeSession(compactingThenIdle));
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses.some((text) => text.includes("Compactando") || text.includes("compactada"))).toBe(false);
+    expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "complete",
+      materializedOutput: false,
+    });
+  });
+
+  it("emits external compaction announcements for a human/channel turn when announceCompaction is enabled", async () => {
+    dbSetSetting("announceCompaction", "true");
     const attachedSource = attachSpeakingOutputChat();
     const streaming = makeStreamingSession({
       agentMode: "active",

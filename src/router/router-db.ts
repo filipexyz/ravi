@@ -10092,10 +10092,11 @@ export function getAccountForAgent(agentId: string): string | undefined {
 
 /**
  * Whether to announce compaction start/end to the active session's channel.
- * Setting value: "true" or "false" (default: "true")
+ * Setting value: "true" or "false" (default: "false").
+ * Compaction itself still runs; this only controls the user-facing chat notices.
  */
 export function getAnnounceCompaction(): boolean {
-  return dbGetSetting("announceCompaction") !== "false";
+  return dbGetSetting("announceCompaction") === "true";
 }
 
 // ============================================================================

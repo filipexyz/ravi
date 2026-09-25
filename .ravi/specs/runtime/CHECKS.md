@@ -27,6 +27,7 @@
 
 ## Compaction Announcements
 
+- A human/channel turn with `announceCompaction` unset or `false` emits no external compaction announcement, while still recording internal compaction observability.
 - A human/channel turn with `announceCompaction` enabled and normal (non-sentinel) mode emits the external compaction start/end announcements.
 - A cron-originated turn (`_cron`) with a reply source emits no external compaction announcement.
 - A trigger-originated turn (`_trigger`) with a reply source emits no external compaction announcement.

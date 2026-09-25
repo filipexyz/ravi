@@ -120,6 +120,14 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       }
     },
   },
+  announceCompaction: {
+    description: "Post compacting/compacted notices to the conversation channel (default: false)",
+    validate: (value: string) => {
+      if (value !== "true" && value !== "false") {
+        throw new Error("Invalid value. Must be one of: true, false");
+      }
+    },
+  },
   defaultAgent: {
     description: "Default agent when no route matches",
     validate: (value: string) => {
@@ -240,6 +248,7 @@ function printJson(payload: unknown): void {
 function knownSettingDefault(key: string): string | null {
   if (key === "defaultAgent") return "main";
   if (key === "defaultDmScope") return "per-peer";
+  if (key === "announceCompaction") return "false";
   if (key === "image.mode") return "fast";
   if (key === "tasks.sessionTtl") return "1d";
   if (key === "tasks.sessionTtl.knowledgeEngineer") return "5m";
@@ -397,6 +406,8 @@ export class SettingsCommands {
           console.log("  Default: main");
         } else if (key === "defaultDmScope") {
           console.log("  Default: per-peer");
+        } else if (key === "announceCompaction") {
+          console.log("  Default: false");
         } else if (key === RUNTIME_DEFAULT_PROVIDER_SETTING) {
           console.log(`  Fallback: ${DEFAULT_RUNTIME_PROVIDER_ID} (hardcoded)`);
         } else if (key === RUNTIME_DEFAULT_MODEL_SETTING) {
