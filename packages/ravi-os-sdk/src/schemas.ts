@@ -63852,8 +63852,53 @@ export const SessionsSetModelReturnSchema = {
     },
     "rematerializedSessions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "clearedProviderSession": {
+            "type": "boolean"
+          },
+          "previousRuntimeProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reasons": {
+            "items": {
+              "const": "stale_runtime_provider",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "runtimeProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName",
+          "sessionKey",
+          "reasons",
+          "previousRuntimeProvider",
+          "runtimeProvider",
+          "clearedProviderSession"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -64461,8 +64506,53 @@ export const SessionsSetProviderReturnSchema = {
     },
     "rematerializedSessions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "clearedProviderSession": {
+            "type": "boolean"
+          },
+          "previousRuntimeProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reasons": {
+            "items": {
+              "const": "stale_runtime_provider",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "runtimeProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName",
+          "sessionKey",
+          "reasons",
+          "previousRuntimeProvider",
+          "runtimeProvider",
+          "clearedProviderSession"
+        ],
         "type": "object"
       },
       "type": "array"

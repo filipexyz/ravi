@@ -18228,7 +18228,7 @@ class SessionsSetModelReturn {
   final Map<String, RaviJson>? notification;
   final RaviJson? propagateCommand;
   final bool? propagated;
-  final List<Map<String, RaviJson>>? rematerializedSessions;
+  final List<RaviJson>? rematerializedSessions;
   final String sessionKey;
   final RaviJson sessionName;
 
@@ -18248,7 +18248,7 @@ class SessionsSetModelReturn {
       notification: json["notification"] == null ? null : raviJsonAsRaviJsonMap(json["notification"]),
       propagateCommand: json["propagateCommand"] == null ? null : RaviJson.from(json["propagateCommand"]),
       propagated: json["propagated"] == null ? null : raviJsonAsBool(json["propagated"]),
-      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], raviJsonAsRaviJsonMap),
+      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], RaviJson.from),
       sessionKey: raviJsonAsString(json["sessionKey"]),
       sessionName: RaviJson.from(json["sessionName"]),
     );
@@ -18289,7 +18289,7 @@ class SessionsSetProviderReturn {
   final RaviJson? propagateCommand;
   final bool? propagated;
   final String providerSource;
-  final List<Map<String, RaviJson>>? rematerializedSessions;
+  final List<RaviJson>? rematerializedSessions;
   final RaviJson runtimeProviderOverride;
   final String sessionKey;
   final RaviJson sessionName;
@@ -18309,7 +18309,7 @@ class SessionsSetProviderReturn {
       propagateCommand: json["propagateCommand"] == null ? null : RaviJson.from(json["propagateCommand"]),
       propagated: json["propagated"] == null ? null : raviJsonAsBool(json["propagated"]),
       providerSource: raviJsonAsString(json["providerSource"]),
-      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], raviJsonAsRaviJsonMap),
+      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], RaviJson.from),
       runtimeProviderOverride: RaviJson.from(json["runtimeProviderOverride"]),
       sessionKey: raviJsonAsString(json["sessionKey"]),
       sessionName: RaviJson.from(json["sessionName"]),

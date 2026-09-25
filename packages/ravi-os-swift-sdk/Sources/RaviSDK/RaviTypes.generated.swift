@@ -21197,11 +21197,11 @@ public struct SessionsSetModelReturn: Codable, Sendable {
   public var notification: [String: RaviJSON]?
   public var propagateCommand: RaviJSON?
   public var propagated: Bool?
-  public var rematerializedSessions: [[String: RaviJSON]]?
+  public var rematerializedSessions: [RaviJSON]?
   public var sessionKey: String
   public var sessionName: RaviJSON
 
-  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, before: RaviJSON, changed: Bool, effectiveModel: String, event: [String: RaviJSON]? = nil, hint: RaviJSON? = nil, modelOverride: RaviJSON, notification: [String: RaviJSON]? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, rematerializedSessions: [[String: RaviJSON]]? = nil, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, before: RaviJSON, changed: Bool, effectiveModel: String, event: [String: RaviJSON]? = nil, hint: RaviJSON? = nil, modelOverride: RaviJSON, notification: [String: RaviJSON]? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, rematerializedSessions: [RaviJSON]? = nil, sessionKey: String, sessionName: RaviJSON) {
     self.action = action
     self.after = after
     self.agentDefaultDiffers = agentDefaultDiffers
@@ -21274,12 +21274,12 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
   public var propagateCommand: RaviJSON?
   public var propagated: Bool?
   public var providerSource: String
-  public var rematerializedSessions: [[String: RaviJSON]]?
+  public var rematerializedSessions: [RaviJSON]?
   public var runtimeProviderOverride: RaviJSON
   public var sessionKey: String
   public var sessionName: RaviJSON
 
-  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, hint: RaviJSON? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, providerSource: String, rematerializedSessions: [[String: RaviJSON]]? = nil, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, hint: RaviJSON? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, providerSource: String, rematerializedSessions: [RaviJSON]? = nil, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
     self.action = action
     self.after = after
     self.agentDefaultDiffers = agentDefaultDiffers

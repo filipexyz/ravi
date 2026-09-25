@@ -13055,7 +13055,14 @@ export type SessionsSetModelReturn = {
   notification?: Record<string, unknown>;
   propagateCommand?: string | null;
   propagated?: boolean;
-  rematerializedSessions?: Array<Record<string, unknown>>;
+  rematerializedSessions?: Array<{
+    clearedProviderSession: boolean;
+    previousRuntimeProvider: string | null;
+    reasons: "stale_runtime_provider"[];
+    runtimeProvider: string | null;
+    sessionKey: string;
+    sessionName: string;
+  }>;
   sessionKey: string;
   sessionName: string | null;
 };
@@ -13150,7 +13157,14 @@ export type SessionsSetProviderReturn = {
   propagateCommand?: string | null;
   propagated?: boolean;
   providerSource: string;
-  rematerializedSessions?: Array<Record<string, unknown>>;
+  rematerializedSessions?: Array<{
+    clearedProviderSession: boolean;
+    previousRuntimeProvider: string | null;
+    reasons: "stale_runtime_provider"[];
+    runtimeProvider: string | null;
+    sessionKey: string;
+    sessionName: string;
+  }>;
   runtimeProviderOverride: string | null;
   sessionKey: string;
   sessionName: string | null;
