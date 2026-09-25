@@ -10334,6 +10334,153 @@ const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollu
 const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+/** Rows deleted per TTL write. Sized so one batch stays well under the 30s crash-recovery boot lease. */
+export const TTL_PRUNE_BATCH_SIZE = 2_000;
+const TTL_PRUNE_BATCH_SIZE_MIN = 1;
+const TTL_PRUNE_BATCH_SIZE_MAX = 50_000;
+
+export interface DbPruneResult {
+  messageMetadata: number;
+  sessionEvents: number;
+  sessionTraceBlobs: number;
+  auditLog: number;
+  costEvents: number;
+  expiredSessions: number;
+  vacuumed: boolean;
+  vacuumedBytesReclaimed?: number;
+  walCheckpointed: boolean;
+}
+
+export interface DbPruneBatchInfo {
+  table: string;
+  deleted: number;
+  totalForTable: number;
+}
+
+export interface DbPruneOptions {
+  vacuum?: boolean;
+  dryRun?: boolean;
+  walCheckpoint?: boolean;
+  now?: number;
+  /** Override the default `TTL_PRUNE_BATCH_SIZE` (tests / operator tuning). */
+  batchSize?: number;
+  /**
+   * Yield to the event loop after each full batch so crash-recovery heartbeats
+   * can run. Default yields via `setImmediate`. Pass `false` to keep the loop
+   * tight (CLI), or a function to observe/inject the yield.
+   */
+  yieldBetweenBatches?: boolean | (() => Promise<void> | void);
+  /** Called after every DELETE batch, including the final short/empty one. */
+  onBatch?: (info: DbPruneBatchInfo) => void;
+}
+
+type TtlPruneResultKey = keyof Pick<
+  DbPruneResult,
+  "messageMetadata" | "sessionEvents" | "sessionTraceBlobs" | "auditLog" | "costEvents" | "expiredSessions"
+>;
+
+interface TtlPruneTableSpec {
+  resultKey: TtlPruneResultKey;
+  table: string;
+  whereSql: string;
+  threshold: number;
+}
+
+function ttlPruneTableSpecs(now: number): TtlPruneTableSpec[] {
+  return [
+    {
+      resultKey: "messageMetadata",
+      table: "message_metadata",
+      whereSql: "created_at < ?",
+      threshold: now - MESSAGE_META_TTL_MS,
+    },
+    {
+      resultKey: "sessionEvents",
+      table: "session_events",
+      whereSql: "timestamp < ?",
+      threshold: now - SESSION_EVENTS_TTL_MS,
+    },
+    {
+      resultKey: "sessionTraceBlobs",
+      table: "session_trace_blobs",
+      whereSql: "created_at < ?",
+      threshold: now - SESSION_TRACE_BLOBS_TTL_MS,
+    },
+    { resultKey: "auditLog", table: "audit_log", whereSql: "ts < ?", threshold: now - AUDIT_LOG_TTL_MS },
+    {
+      resultKey: "costEvents",
+      table: "cost_events",
+      whereSql: "created_at < ?",
+      threshold: now - COST_EVENTS_TTL_MS,
+    },
+    {
+      resultKey: "expiredSessions",
+      table: "sessions",
+      whereSql: "ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
+      threshold: now,
+    },
+  ];
+}
+
+function resolveTtlPruneBatchSize(batchSize: number | undefined): number {
+  if (batchSize === undefined) return TTL_PRUNE_BATCH_SIZE;
+  if (
+    !Number.isSafeInteger(batchSize) ||
+    batchSize < TTL_PRUNE_BATCH_SIZE_MIN ||
+    batchSize > TTL_PRUNE_BATCH_SIZE_MAX
+  ) {
+    throw new Error(`batchSize must be an integer between ${TTL_PRUNE_BATCH_SIZE_MIN} and ${TTL_PRUNE_BATCH_SIZE_MAX}`);
+  }
+  return batchSize;
+}
+
+function resolveTtlPruneYield(
+  yieldBetweenBatches: DbPruneOptions["yieldBetweenBatches"],
+): (() => Promise<void> | void) | null {
+  if (yieldBetweenBatches === false) return null;
+  if (typeof yieldBetweenBatches === "function") return yieldBetweenBatches;
+  return yieldToEventLoop;
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+function buildTtlPruneDeleteSql(table: string, whereSql: string): string {
+  return `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${whereSql} LIMIT ?)`;
+}
+
+async function deleteExpiredRowsInBatches(
+  db: Database,
+  spec: TtlPruneTableSpec,
+  batchSize: number,
+  onBatch: DbPruneOptions["onBatch"],
+  yieldBetweenBatches: (() => Promise<void> | void) | null,
+): Promise<number> {
+  const stmt = db.prepare(buildTtlPruneDeleteSql(spec.table, spec.whereSql));
+  let total = 0;
+  let batchIndex = 0;
+  while (true) {
+    const deleted = executeWrite(db, () => Number(stmt.run(spec.threshold, batchSize).changes ?? 0), {
+      label: `ttl-prune:${spec.table}`,
+    });
+    total += deleted;
+    batchIndex += 1;
+    onBatch?.({ table: spec.table, deleted, totalForTable: total });
+    if (batchIndex === 1 || batchIndex % 25 === 0) {
+      log.debug("TTL prune batch", { table: spec.table, batchIndex, deleted, total });
+    }
+    if (deleted < batchSize) break;
+    if (yieldBetweenBatches) {
+      await yieldBetweenBatches();
+    }
+  }
+  return total;
+}
+
 /**
  * Delete message metadata older than 7 days.
  * Returns number of rows deleted.
@@ -10355,38 +10502,21 @@ export function dbCleanupExpiredSessions(): number {
   return getDbChanges();
 }
 
-export interface DbPruneResult {
-  messageMetadata: number;
-  sessionEvents: number;
-  sessionTraceBlobs: number;
-  auditLog: number;
-  costEvents: number;
-  expiredSessions: number;
-  vacuumed: boolean;
-  vacuumedBytesReclaimed?: number;
-  walCheckpointed: boolean;
-}
-
-export interface DbPruneOptions {
-  vacuum?: boolean;
-  dryRun?: boolean;
-  walCheckpoint?: boolean;
-  now?: number;
-}
-
 /**
  * Prune stale rows from large tables.
  *
  * In dry-run mode, returns the row counts that WOULD be deleted (no writes).
  *
- * In live mode, runs each delete in its own transaction so a slow path doesn't
- * block subsequent prunes if the daemon is under load. After pruning, optionally
- * runs `PRAGMA wal_checkpoint(PASSIVE)` to drain the WAL and `VACUUM` to reclaim
- * file space (rewrites the file — slow but reclaims megabytes).
+ * In live mode, deletes run in bounded `LIMIT` batches. Each batch is its own
+ * `BEGIN IMMEDIATE` write so a large backlog cannot hold one multi-minute lock.
+ * The default path yields to the event loop between full batches so crash-recovery
+ * heartbeats can renew the boot lease. After pruning, optionally runs
+ * `PRAGMA wal_checkpoint(PASSIVE)` and `VACUUM`.
  */
-export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
+export async function dbPruneStaleRows(options: DbPruneOptions = {}): Promise<DbPruneResult> {
   const db = getDb();
   const now = options.now ?? Date.now();
+  const specs = ttlPruneTableSpecs(now);
   const result: DbPruneResult = {
     messageMetadata: 0,
     sessionEvents: 0,
@@ -10401,47 +10531,27 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   if (options.dryRun) {
     const count = (sql: string, threshold: number): number =>
       Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
-    result.messageMetadata = count(
-      "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
-      now - MESSAGE_META_TTL_MS,
-    );
     // The local TTL is a hard retention boundary. An optional cloud-export
     // cursor must not pin an unbounded local backlog when export is disabled,
     // unlinked, or stale. The exporter already tolerates gaps and resumes from
     // the first surviving id above its cursor.
-    result.sessionEvents = count(
-      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
-      now - SESSION_EVENTS_TTL_MS,
-    );
-    result.sessionTraceBlobs = count(
-      "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
-      now - SESSION_TRACE_BLOBS_TTL_MS,
-    );
-    result.auditLog = count("SELECT COUNT(*) AS c FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
-    result.costEvents = count("SELECT COUNT(*) AS c FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
-    result.expiredSessions = count(
-      "SELECT COUNT(*) AS c FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
-      now,
-    );
+    for (const spec of specs) {
+      result[spec.resultKey] = count(`SELECT COUNT(*) AS c FROM ${spec.table} WHERE ${spec.whereSql}`, spec.threshold);
+    }
     return result;
   }
 
-  // Each delete runs in its own implicit transaction. We deliberately don't
-  // wrap them in a single BEGIN/COMMIT — a long single transaction is a worse
-  // lock-contention risk than several short ones.
-  const runDelete = (sql: string, threshold: number): number => {
-    db.prepare(sql).run(threshold);
-    return getDbChanges();
-  };
-  result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
-  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
-  result.sessionTraceBlobs = runDelete(
-    "DELETE FROM session_trace_blobs WHERE created_at < ?",
-    now - SESSION_TRACE_BLOBS_TTL_MS,
-  );
-  result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
-  result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
-  result.expiredSessions = dbCleanupExpiredSessions();
+  const batchSize = resolveTtlPruneBatchSize(options.batchSize);
+  const yieldBetweenBatches = resolveTtlPruneYield(options.yieldBetweenBatches);
+  for (const spec of specs) {
+    result[spec.resultKey] = await deleteExpiredRowsInBatches(
+      db,
+      spec,
+      batchSize,
+      options.onBatch,
+      yieldBetweenBatches,
+    );
+  }
 
   if (options.walCheckpoint) {
     db.exec("PRAGMA wal_checkpoint(PASSIVE)");

@@ -265,7 +265,7 @@ export class DbCommands {
   ): Promise<DbPruneResult> {
     const dbPathBefore = join(getRaviStateDir(), "ravi.db");
     const sizeBefore = fileSize(dbPathBefore);
-    const result = dbPruneStaleRows({
+    const result = await dbPruneStaleRows({
       vacuum: vacuum === true,
       walCheckpoint: checkpoint === true,
       dryRun: dryRun === true,
