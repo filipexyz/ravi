@@ -517,6 +517,10 @@ describe("runCoverageGate", () => {
       true,
     );
     expect(
+      runCoverageGate(["src/runtime/agent-session-runtime-sync.ts", "src/runtime/agent-session-runtime-sync.test.ts"])
+        .ok,
+    ).toBe(true);
+    expect(
       runCoverageGate(["src/runtime/daemon-restart-resume.ts", "src/runtime/daemon-restart-resume.test.ts"]).ok,
     ).toBe(true);
     expect(runCoverageGate(["src/runtime/host-event-loop.ts", "src/runtime/session-trace.test.ts"]).ok).toBe(true);
