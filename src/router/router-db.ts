@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
-import { normalizePhone } from "../utils/phone.js";
+import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
@@ -9081,6 +9081,37 @@ export function dbSetAgentSpecMode(id: string, enabled: boolean): void {
 // Route CRUD
 // ============================================================================
 
+function routePatternKey(pattern: string): string {
+  return normalizeRoutePattern(pattern);
+}
+
+function findActiveRouteRow(pattern: string, accountId: string): RouteRow | undefined {
+  const key = routePatternKey(pattern);
+  const s = getStatements();
+  const exact = s.getRoute.get(key, accountId) as RouteRow | undefined;
+  if (exact) return exact;
+  const rows = s.listRoutesByAccount.all(accountId) as RouteRow[];
+  return rows.find((row) => routePatternKey(row.pattern) === key);
+}
+
+function findDeletedRouteRow(pattern: string, accountId: string): RouteRow | undefined {
+  const key = routePatternKey(pattern);
+  const s = getStatements();
+  const rows = s.listDeletedRoutesByAccount.all(accountId) as RouteRow[];
+  return rows.find((row) => routePatternKey(row.pattern) === key);
+}
+
+function rewriteRoutePatternIfFree(row: RouteRow): string {
+  const canonical = routePatternKey(row.pattern);
+  if (canonical === row.pattern) return canonical;
+  const conflict = getDb()
+    .prepare("SELECT id FROM routes WHERE pattern = ? AND account_id = ? AND id != ?")
+    .get(canonical, row.account_id, row.id);
+  if (conflict) return row.pattern;
+  getDb().prepare("UPDATE routes SET pattern = ? WHERE id = ?").run(canonical, row.id);
+  return canonical;
+}
+
 /**
  * Create a new route
  */
@@ -9094,7 +9125,7 @@ export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteCon
   }
 
   const now = Date.now();
-  const normalizedPattern = validated.pattern.toLowerCase();
+  const normalizedPattern = routePatternKey(validated.pattern);
 
   try {
     s.insertRoute.run(
@@ -9120,7 +9151,7 @@ export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteCon
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
       const channelSuffix = validated.channel ? ` [${validated.channel}]` : "";
-      throw new Error(`Route already exists: ${validated.pattern} (account: ${validated.accountId}${channelSuffix})`);
+      throw new Error(`Route already exists: ${normalizedPattern} (account: ${validated.accountId}${channelSuffix})`);
     }
     throw err;
   }
@@ -9130,8 +9161,7 @@ export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteCon
  * Get route by pattern and account
  */
 export function dbGetRoute(pattern: string, accountId: string): (RouteConfig & { id: number }) | null {
-  const s = getStatements();
-  const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
+  const row = findActiveRouteRow(pattern, accountId);
   return row ? rowToRoute(row) : null;
 }
 
@@ -9177,12 +9207,21 @@ export function dbRenameRouteSessionName(oldName: string, newName: string): numb
 /**
  * Update an existing route
  */
-export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, accountId: string): RouteConfig {
+export function dbUpdateRoute(
+  pattern: string,
+  updates: Partial<Omit<RouteConfig, "dmScope" | "session" | "policy" | "channel">> & {
+    dmScope?: DmScope | null;
+    session?: string | null;
+    policy?: string | null;
+    channel?: string | null;
+  },
+  accountId: string,
+): RouteConfig {
   const s = getStatements();
-  const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
+  const row = findActiveRouteRow(pattern, accountId);
 
   if (!row) {
-    throw new Error(`Route not found: ${pattern} (account: ${accountId})`);
+    throw new Error(`Route not found: ${routePatternKey(pattern)} (account: ${accountId})`);
   }
 
   // Verify agent if updating
@@ -9190,8 +9229,8 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
     throw new Error(`Agent not found: ${updates.agent}`);
   }
 
-  // Validate dmScope if provided
-  if (updates.dmScope !== undefined) {
+  // Validate dmScope if provided. null clears the override (SQL stores NULL).
+  if (updates.dmScope !== undefined && updates.dmScope !== null) {
     DmScopeSchema.parse(updates.dmScope);
   }
 
@@ -9204,12 +9243,13 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
     updates.priority ?? row.priority,
     updates.channel !== undefined ? (updates.channel ?? null) : row.channel,
     now,
-    pattern,
+    row.pattern,
     accountId,
   );
 
-  log.info("Updated route", { pattern, accountId });
-  return dbGetRoute(pattern, accountId)!;
+  const storedPattern = rewriteRoutePatternIfFree(row);
+  log.info("Updated route", { pattern: storedPattern, accountId });
+  return dbGetRoute(storedPattern, accountId)!;
 }
 
 /**
@@ -9217,20 +9257,21 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
  */
 export function dbDeleteRoute(pattern: string, accountId: string): boolean {
   const s = getStatements();
-  const route = dbGetRoute(pattern, accountId);
-  if (!route) return false;
+  const row = findActiveRouteRow(pattern, accountId);
+  if (!row) return false;
+  const route = rowToRoute(row);
   const now = Date.now();
-  s.softDeleteRoute.run(now, pattern, accountId);
+  s.softDeleteRoute.run(now, row.pattern, accountId);
   if (getDbChanges() > 0) {
     s.insertAuditLog.run(
       "route.deleted",
       "route",
-      `${pattern}@${accountId}`,
+      `${route.pattern}@${accountId}`,
       JSON.stringify(route),
       process.env.USER ?? "daemon",
       now,
     );
-    log.info("Soft-deleted route", { pattern, accountId });
+    log.info("Soft-deleted route", { pattern: route.pattern, accountId });
     return true;
   }
   return false;
@@ -9241,11 +9282,22 @@ export function dbDeleteRoute(pattern: string, accountId: string): boolean {
  */
 export function dbRestoreRoute(pattern: string, accountId: string): boolean {
   const s = getStatements();
+  const row = findDeletedRouteRow(pattern, accountId);
+  if (!row) return false;
   const now = Date.now();
-  s.restoreRoute.run(pattern, accountId);
+  s.restoreRoute.run(row.pattern, accountId);
   if (getDbChanges() > 0) {
-    s.insertAuditLog.run("route.restored", "route", `${pattern}@${accountId}`, null, process.env.USER ?? "daemon", now);
-    log.info("Restored route", { pattern, accountId });
+    rewriteRoutePatternIfFree(row);
+    const restoredKey = routePatternKey(row.pattern);
+    s.insertAuditLog.run(
+      "route.restored",
+      "route",
+      `${restoredKey}@${accountId}`,
+      null,
+      process.env.USER ?? "daemon",
+      now,
+    );
+    log.info("Restored route", { pattern: restoredKey, accountId });
     return true;
   }
   return false;

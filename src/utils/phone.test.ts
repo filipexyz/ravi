@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { canonicalizeRouteIdentity, isBroadcastJid } from "./phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, normalizeRoutePattern } from "./phone.js";
 
 describe("isBroadcastJid", () => {
   it("recognizes WhatsApp status and broadcast-list feeds", () => {
@@ -48,5 +48,20 @@ describe("canonicalizeRouteIdentity", () => {
 
   it("never promotes bare digits to lid:", () => {
     expect(canonicalizeRouteIdentity("224420715061374")).toBe("224420715061374");
+  });
+});
+
+describe("normalizeRoutePattern", () => {
+  it("stores LID JID forms under lid:<digits>", () => {
+    expect(normalizeRoutePattern("224420715061374@lid")).toBe("lid:224420715061374");
+    expect(normalizeRoutePattern("lid:224420715061374")).toBe("lid:224420715061374");
+    expect(normalizeRoutePattern("lid:224420715061374@lid")).toBe("lid:224420715061374");
+    expect(normalizeRoutePattern("LID:224420715061374")).toBe("lid:224420715061374");
+  });
+
+  it("lowercases Slack and group identities so create/get share one key", () => {
+    expect(normalizeRoutePattern("U012ABCDEF")).toBe("u012abcdef");
+    expect(normalizeRoutePattern("group:C0BG33ZUWJC")).toBe("group:c0bg33zuwjc");
+    expect(normalizeRoutePattern("LID:*")).toBe("lid:*");
   });
 });
