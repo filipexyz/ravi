@@ -334,7 +334,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(error?.envelope()).toMatchObject({
       error: {
         code: "COMMAND_FAILED",
-        message: "Command could not be completed.",
+        message: "instructions: Required",
         status: 422,
         issues: [{ path: ["instructions"], code: "too_small", message: "Required" }],
       },
@@ -450,6 +450,7 @@ describe("remote gateway exit taxonomy", () => {
       );
 
       expect(error).toMatchObject({ op: "commands list", code, exitCode, message, details: { retryable: true } });
+      expect(error?.envelope().error.message).toBe(message);
       const serialized = JSON.stringify(error?.envelope());
       expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
       expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");

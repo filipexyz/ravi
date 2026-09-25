@@ -198,9 +198,9 @@ function assertInstanceMutationRuntime(name: string, allowRuntimeMismatch?: bool
   const summary = inspectCliRuntimeTarget(name);
   const mismatch = getCliRuntimeMismatchMessage(summary);
   if (mismatch && !allowRuntimeMismatch) {
-    fail(
-      `${mismatch}\nTarget instance: ${name}\nRe-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.`,
-    );
+    const suggestedAction =
+      "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
+    fail(`${mismatch}\nTarget instance: ${name}\n${suggestedAction}`, suggestedAction);
   }
 }
 

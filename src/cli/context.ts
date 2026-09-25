@@ -217,9 +217,9 @@ function installContextualConsoleGate(): void {
  * Fail with error. Throws if running inside daemon context,
  * otherwise logs error and exits.
  */
-export function fail(message: string): never {
+export function fail(message: string, suggestedAction?: string): never {
   if (hasContext()) {
-    throw new CliExpectedError(message);
+    throw new CliExpectedError(message, "COMMAND_FAILED", 1, suggestedAction);
   }
   console.error(message);
   process.exit(1);

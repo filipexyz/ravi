@@ -54,6 +54,12 @@ class ContractToolCommands {
     fail("PRIVATE_LEGACY_VALIDATION_8K2R");
   }
 
+  @Command({ name: "legacy-safe", description: "Throw a safe legacy expected failure" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "legacy-safe", risk: "low" })
+  legacySafe() {
+    fail("Agent created, but group create failed: missing participants.");
+  }
+
   @Command({ name: "emitted", description: "Emit then throw a contract envelope" })
   @CommandAccess({ kind: "read", resource: "contract", action: "emitted", risk: "low" })
   emitted() {
@@ -130,6 +136,7 @@ const contractContext: ContextRecord = {
     { permission: "read", objectType: "contract", objectId: "boom", source: "test" },
     { permission: "read", objectType: "contract", objectId: "emitted", source: "test" },
     { permission: "read", objectType: "contract", objectId: "legacy", source: "test" },
+    { permission: "read", objectType: "contract", objectId: "legacy-safe", source: "test" },
     { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
     { permission: "mutate", objectType: "contract", objectId: "dry-run", source: "test" },
     { permission: "read", objectType: "contract", objectId: "missing-binary", source: "test" },
@@ -291,6 +298,25 @@ describe("tools export contract errors", () => {
       error: { code: "COMMAND_FAILED", message: "Command could not be completed." },
     });
     expect(text).not.toContain("PRIVATE_LEGACY_VALIDATION_8K2R");
+  });
+
+  it("preserves a safe legacy expected failure message in the canonical envelope", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_legacy-safe");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      op: "contract legacy-safe",
+      error: {
+        code: "COMMAND_FAILED",
+        message: "Agent created, but group create failed: missing participants.",
+      },
+    });
   });
 
   it("keeps an emitted contract envelope without a duplicate Error line", async () => {

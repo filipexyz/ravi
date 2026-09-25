@@ -13,6 +13,10 @@ import { projectPublicIssues, sanitizePublicValue, type PublicValidationIssue } 
 const SAFE_LOCAL_PAYLOAD_PREFIX =
   /^(?:--|Missing |Conflicting |Refusing |Invalid |Package |Local |Artifact |Duplicate |Asset |Use only |Choose |Subject |No writable |Non-interactive |Password |Passwords |Console )/;
 const PROVIDER_DUMP_PATTERN = /PRIVATE_|SENTINEL_|sk-[A-Za-z0-9]|rctx_|Bearer\s/i;
+
+export function looksLikeProviderDump(message: string): boolean {
+  return PROVIDER_DUMP_PATTERN.test(message);
+}
 const ABSOLUTE_PATH_IN_TEXT = /(^|[\s"'`:(=])((?:[A-Za-z]:[\\/]|(?<!\.)\/)[^\s"'`)]+)/g;
 const MAX_SOURCE_MESSAGE_LENGTH = 4096;
 

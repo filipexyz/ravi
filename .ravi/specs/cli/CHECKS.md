@@ -41,10 +41,13 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
-  `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls, while an
-  unexpected raw exception produces one redacted `UNHANDLED_ERROR` envelope,
-  exit `1`, and the same operation/error code in audit. Gateway HTTP status may
-  remain `500`, but its response body must not expose the raw exception.
+  `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls. The envelope
+  `message` MUST preserve the sanitized expected cause; the generic headline is
+  only used when the cause is empty or unsafe. A throw-site `suggestedAction`
+  MUST survive the envelope. An unexpected raw exception produces one redacted
+  `UNHANDLED_ERROR` envelope, exit `1`, and the same operation/error code in
+  audit. Gateway HTTP status may remain `500`, but its response body must not
+  expose the raw exception.
 - Every implementation with persistent mutation, outbound effect, paid
   generation, provider mutation or triggered execution uses
   `@CommandAccess({ kind: "mutate" })`.
@@ -103,6 +106,7 @@ Run these as independent groups so a failure identifies its contract layer.
 
 ```bash
 bun test src/cli/commands/usage-exit.smoke.test.ts
+bun test src/cli/agent-contract.test.ts
 bun test src/cli/transport-contract.test.ts
 bun test src/cli/tools-export.test.ts
 bun test src/sdk/gateway/dispatcher.test.ts
