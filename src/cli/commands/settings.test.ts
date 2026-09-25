@@ -154,17 +154,16 @@ describe("SettingsCommands", () => {
 
   it("registers announceCompaction as a known opt-in switch defaulting to false", () => {
     const commands = new SettingsCommands();
-    let setting: ReturnType<SettingsCommands["get"]>["setting"] | undefined;
-    captureLogs(() => {
-      setting = commands.get("announceCompaction", true).setting;
+    const output = captureLogs(() => {
+      expect(commands.get("announceCompaction").setting).toMatchObject({
+        key: "announceCompaction",
+        value: null,
+        isSet: false,
+        known: true,
+        defaultValue: "false",
+      });
     });
-    expect(setting).toMatchObject({
-      key: "announceCompaction",
-      value: null,
-      isSet: false,
-      known: true,
-      defaultValue: "false",
-    });
+    expect(output).toContain("Default: false");
 
     expect(() => commands.set("announceCompaction", "yes")).toThrow(/true, false/);
     expect(() => commands.set("announceCompaction", "true", true)).not.toThrow();
