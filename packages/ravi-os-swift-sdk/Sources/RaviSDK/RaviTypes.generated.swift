@@ -552,21 +552,43 @@ public struct AgentsSessionReturn: Codable, Sendable {
   }
 }
 
+public struct AgentsSetOptions: Codable, Sendable {
+  public var force: Bool?
+
+  public init(force: Bool? = nil) {
+    self.force = force
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case force = "force"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.force {
+      body["force"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct AgentsSetReturn: Codable, Sendable {
   public var action: String
   public var agent: [String: RaviJSON]?
   public var agentId: String
   public var changed: Bool
+  public var forcedClearedOverrides: [RaviJSON]
   public var key: String
+  public var rematerializedSessions: [RaviJSON]
   public var sessionOverrides: [RaviJSON]
   public var value: RaviJSON
 
-  public init(action: String, agent: [String: RaviJSON]? = nil, agentId: String, changed: Bool, key: String, sessionOverrides: [RaviJSON], value: RaviJSON) {
+  public init(action: String, agent: [String: RaviJSON]? = nil, agentId: String, changed: Bool, forcedClearedOverrides: [RaviJSON], key: String, rematerializedSessions: [RaviJSON], sessionOverrides: [RaviJSON], value: RaviJSON) {
     self.action = action
     self.agent = agent
     self.agentId = agentId
     self.changed = changed
+    self.forcedClearedOverrides = forcedClearedOverrides
     self.key = key
+    self.rematerializedSessions = rematerializedSessions
     self.sessionOverrides = sessionOverrides
     self.value = value
   }
@@ -576,7 +598,9 @@ public struct AgentsSetReturn: Codable, Sendable {
     case agent = "agent"
     case agentId = "agentId"
     case changed = "changed"
+    case forcedClearedOverrides = "forcedClearedOverrides"
     case key = "key"
+    case rematerializedSessions = "rematerializedSessions"
     case sessionOverrides = "sessionOverrides"
     case value = "value"
   }
@@ -21140,28 +21164,136 @@ public struct SessionsSetEffortReturn: Codable, Sendable {
   }
 }
 
-public typealias SessionsSetModelReturn = [String: RaviJSON]
+public struct SessionsSetModelOptions: Codable, Sendable {
+  public var propagate: Bool?
+
+  public init(propagate: Bool? = nil) {
+    self.propagate = propagate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case propagate = "propagate"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.propagate {
+      body["propagate"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsSetModelReturn: Codable, Sendable {
+  public var action: String
+  public var after: RaviJSON
+  public var agentDefaultDiffers: Bool?
+  public var agentDefaultModel: RaviJSON?
+  public var agentDefaultProvider: RaviJSON?
+  public var before: RaviJSON
+  public var changed: Bool
+  public var effectiveModel: String
+  public var event: [String: RaviJSON]?
+  public var hint: RaviJSON?
+  public var modelOverride: RaviJSON
+  public var notification: [String: RaviJSON]?
+  public var propagateCommand: RaviJSON?
+  public var propagated: Bool?
+  public var rematerializedSessions: [[String: RaviJSON]]?
+  public var sessionKey: String
+  public var sessionName: RaviJSON
+
+  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, before: RaviJSON, changed: Bool, effectiveModel: String, event: [String: RaviJSON]? = nil, hint: RaviJSON? = nil, modelOverride: RaviJSON, notification: [String: RaviJSON]? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, rematerializedSessions: [[String: RaviJSON]]? = nil, sessionKey: String, sessionName: RaviJSON) {
+    self.action = action
+    self.after = after
+    self.agentDefaultDiffers = agentDefaultDiffers
+    self.agentDefaultModel = agentDefaultModel
+    self.agentDefaultProvider = agentDefaultProvider
+    self.before = before
+    self.changed = changed
+    self.effectiveModel = effectiveModel
+    self.event = event
+    self.hint = hint
+    self.modelOverride = modelOverride
+    self.notification = notification
+    self.propagateCommand = propagateCommand
+    self.propagated = propagated
+    self.rematerializedSessions = rematerializedSessions
+    self.sessionKey = sessionKey
+    self.sessionName = sessionName
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case after = "after"
+    case agentDefaultDiffers = "agentDefaultDiffers"
+    case agentDefaultModel = "agentDefaultModel"
+    case agentDefaultProvider = "agentDefaultProvider"
+    case before = "before"
+    case changed = "changed"
+    case effectiveModel = "effectiveModel"
+    case event = "event"
+    case hint = "hint"
+    case modelOverride = "modelOverride"
+    case notification = "notification"
+    case propagateCommand = "propagateCommand"
+    case propagated = "propagated"
+    case rematerializedSessions = "rematerializedSessions"
+    case sessionKey = "sessionKey"
+    case sessionName = "sessionName"
+  }
+}
+
+public struct SessionsSetProviderOptions: Codable, Sendable {
+  public var propagate: Bool?
+
+  public init(propagate: Bool? = nil) {
+    self.propagate = propagate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case propagate = "propagate"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.propagate {
+      body["propagate"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
 
 public struct SessionsSetProviderReturn: Codable, Sendable {
   public var action: String
   public var after: RaviJSON
+  public var agentDefaultDiffers: Bool?
+  public var agentDefaultModel: RaviJSON?
+  public var agentDefaultProvider: RaviJSON?
   public var appliesOn: String
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveProvider: String
+  public var hint: RaviJSON?
+  public var propagateCommand: RaviJSON?
+  public var propagated: Bool?
   public var providerSource: String
+  public var rematerializedSessions: [[String: RaviJSON]]?
   public var runtimeProviderOverride: RaviJSON
   public var sessionKey: String
   public var sessionName: RaviJSON
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, providerSource: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, agentDefaultDiffers: Bool? = nil, agentDefaultModel: RaviJSON? = nil, agentDefaultProvider: RaviJSON? = nil, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, hint: RaviJSON? = nil, propagateCommand: RaviJSON? = nil, propagated: Bool? = nil, providerSource: String, rematerializedSessions: [[String: RaviJSON]]? = nil, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
     self.action = action
     self.after = after
+    self.agentDefaultDiffers = agentDefaultDiffers
+    self.agentDefaultModel = agentDefaultModel
+    self.agentDefaultProvider = agentDefaultProvider
     self.appliesOn = appliesOn
     self.before = before
     self.changed = changed
     self.effectiveProvider = effectiveProvider
+    self.hint = hint
+    self.propagateCommand = propagateCommand
+    self.propagated = propagated
     self.providerSource = providerSource
+    self.rematerializedSessions = rematerializedSessions
     self.runtimeProviderOverride = runtimeProviderOverride
     self.sessionKey = sessionKey
     self.sessionName = sessionName
@@ -21170,11 +21302,18 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case action = "action"
     case after = "after"
+    case agentDefaultDiffers = "agentDefaultDiffers"
+    case agentDefaultModel = "agentDefaultModel"
+    case agentDefaultProvider = "agentDefaultProvider"
     case appliesOn = "appliesOn"
     case before = "before"
     case changed = "changed"
     case effectiveProvider = "effectiveProvider"
+    case hint = "hint"
+    case propagateCommand = "propagateCommand"
+    case propagated = "propagated"
     case providerSource = "providerSource"
+    case rematerializedSessions = "rematerializedSessions"
     case runtimeProviderOverride = "runtimeProviderOverride"
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"

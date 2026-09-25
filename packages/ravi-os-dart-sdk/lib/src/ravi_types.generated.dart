@@ -473,14 +473,28 @@ class AgentsSessionReturn {
 
 AgentsSessionReturn agentsSessionReturnFromJson(Object? json) => AgentsSessionReturn.fromJsonValue(json);
 
+class AgentsSetOptions {
+  const AgentsSetOptions({this.force});
+
+  final bool? force;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (force != null) {
+      into["force"] = RaviJson.from(force);
+    }
+  }
+}
+
 class AgentsSetReturn {
-  const AgentsSetReturn({required this.action, this.agent, required this.agentId, required this.changed, required this.key, required this.sessionOverrides, required this.value});
+  const AgentsSetReturn({required this.action, this.agent, required this.agentId, required this.changed, required this.forcedClearedOverrides, required this.key, required this.rematerializedSessions, required this.sessionOverrides, required this.value});
 
   final String action;
   final Map<String, RaviJson>? agent;
   final String agentId;
   final bool changed;
+  final List<RaviJson> forcedClearedOverrides;
   final String key;
+  final List<RaviJson> rematerializedSessions;
   final List<RaviJson> sessionOverrides;
   final RaviJson value;
 
@@ -490,7 +504,9 @@ class AgentsSetReturn {
       agent: json["agent"] == null ? null : raviJsonAsRaviJsonMap(json["agent"]),
       agentId: raviJsonAsString(json["agentId"]),
       changed: raviJsonAsBool(json["changed"]),
+      forcedClearedOverrides: raviJsonAsList(json["forcedClearedOverrides"], RaviJson.from),
       key: raviJsonAsString(json["key"]),
+      rematerializedSessions: raviJsonAsList(json["rematerializedSessions"], RaviJson.from),
       sessionOverrides: raviJsonAsList(json["sessionOverrides"], RaviJson.from),
       value: RaviJson.from(json["value"]),
     );
@@ -18183,20 +18199,97 @@ class SessionsSetEffortReturn {
 
 SessionsSetEffortReturn sessionsSetEffortReturnFromJson(Object? json) => SessionsSetEffortReturn.fromJsonValue(json);
 
-typedef SessionsSetModelReturn = Map<String, RaviJson>;
+class SessionsSetModelOptions {
+  const SessionsSetModelOptions({this.propagate});
 
-SessionsSetModelReturn sessionsSetModelReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+  final bool? propagate;
 
-class SessionsSetProviderReturn {
-  const SessionsSetProviderReturn({required this.action, required this.after, required this.appliesOn, required this.before, required this.changed, required this.effectiveProvider, required this.providerSource, required this.runtimeProviderOverride, required this.sessionKey, required this.sessionName});
+  void encodeBody(Map<String, RaviJson> into) {
+    if (propagate != null) {
+      into["propagate"] = RaviJson.from(propagate);
+    }
+  }
+}
+
+class SessionsSetModelReturn {
+  const SessionsSetModelReturn({required this.action, required this.after, this.agentDefaultDiffers, this.agentDefaultModel, this.agentDefaultProvider, required this.before, required this.changed, required this.effectiveModel, this.event, this.hint, required this.modelOverride, this.notification, this.propagateCommand, this.propagated, this.rematerializedSessions, required this.sessionKey, required this.sessionName});
 
   final String action;
   final RaviJson after;
+  final bool? agentDefaultDiffers;
+  final RaviJson? agentDefaultModel;
+  final RaviJson? agentDefaultProvider;
+  final RaviJson before;
+  final bool changed;
+  final String effectiveModel;
+  final Map<String, RaviJson>? event;
+  final RaviJson? hint;
+  final RaviJson modelOverride;
+  final Map<String, RaviJson>? notification;
+  final RaviJson? propagateCommand;
+  final bool? propagated;
+  final List<Map<String, RaviJson>>? rematerializedSessions;
+  final String sessionKey;
+  final RaviJson sessionName;
+
+  factory SessionsSetModelReturn.fromJson(Map<String, Object?> json) {
+    return SessionsSetModelReturn(
+      action: raviJsonAsString(json["action"]),
+      after: RaviJson.from(json["after"]),
+      agentDefaultDiffers: json["agentDefaultDiffers"] == null ? null : raviJsonAsBool(json["agentDefaultDiffers"]),
+      agentDefaultModel: json["agentDefaultModel"] == null ? null : RaviJson.from(json["agentDefaultModel"]),
+      agentDefaultProvider: json["agentDefaultProvider"] == null ? null : RaviJson.from(json["agentDefaultProvider"]),
+      before: RaviJson.from(json["before"]),
+      changed: raviJsonAsBool(json["changed"]),
+      effectiveModel: raviJsonAsString(json["effectiveModel"]),
+      event: json["event"] == null ? null : raviJsonAsRaviJsonMap(json["event"]),
+      hint: json["hint"] == null ? null : RaviJson.from(json["hint"]),
+      modelOverride: RaviJson.from(json["modelOverride"]),
+      notification: json["notification"] == null ? null : raviJsonAsRaviJsonMap(json["notification"]),
+      propagateCommand: json["propagateCommand"] == null ? null : RaviJson.from(json["propagateCommand"]),
+      propagated: json["propagated"] == null ? null : raviJsonAsBool(json["propagated"]),
+      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], raviJsonAsRaviJsonMap),
+      sessionKey: raviJsonAsString(json["sessionKey"]),
+      sessionName: RaviJson.from(json["sessionName"]),
+    );
+  }
+
+  static SessionsSetModelReturn fromJsonValue(Object? json) {
+    return SessionsSetModelReturn.fromJson(raviJsonObject(json, "SessionsSetModelReturn"));
+  }
+}
+
+SessionsSetModelReturn sessionsSetModelReturnFromJson(Object? json) => SessionsSetModelReturn.fromJsonValue(json);
+
+class SessionsSetProviderOptions {
+  const SessionsSetProviderOptions({this.propagate});
+
+  final bool? propagate;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (propagate != null) {
+      into["propagate"] = RaviJson.from(propagate);
+    }
+  }
+}
+
+class SessionsSetProviderReturn {
+  const SessionsSetProviderReturn({required this.action, required this.after, this.agentDefaultDiffers, this.agentDefaultModel, this.agentDefaultProvider, required this.appliesOn, required this.before, required this.changed, required this.effectiveProvider, this.hint, this.propagateCommand, this.propagated, required this.providerSource, this.rematerializedSessions, required this.runtimeProviderOverride, required this.sessionKey, required this.sessionName});
+
+  final String action;
+  final RaviJson after;
+  final bool? agentDefaultDiffers;
+  final RaviJson? agentDefaultModel;
+  final RaviJson? agentDefaultProvider;
   final String appliesOn;
   final RaviJson before;
   final bool changed;
   final String effectiveProvider;
+  final RaviJson? hint;
+  final RaviJson? propagateCommand;
+  final bool? propagated;
   final String providerSource;
+  final List<Map<String, RaviJson>>? rematerializedSessions;
   final RaviJson runtimeProviderOverride;
   final String sessionKey;
   final RaviJson sessionName;
@@ -18205,11 +18298,18 @@ class SessionsSetProviderReturn {
     return SessionsSetProviderReturn(
       action: raviJsonAsString(json["action"]),
       after: RaviJson.from(json["after"]),
+      agentDefaultDiffers: json["agentDefaultDiffers"] == null ? null : raviJsonAsBool(json["agentDefaultDiffers"]),
+      agentDefaultModel: json["agentDefaultModel"] == null ? null : RaviJson.from(json["agentDefaultModel"]),
+      agentDefaultProvider: json["agentDefaultProvider"] == null ? null : RaviJson.from(json["agentDefaultProvider"]),
       appliesOn: raviJsonAsString(json["appliesOn"]),
       before: RaviJson.from(json["before"]),
       changed: raviJsonAsBool(json["changed"]),
       effectiveProvider: raviJsonAsString(json["effectiveProvider"]),
+      hint: json["hint"] == null ? null : RaviJson.from(json["hint"]),
+      propagateCommand: json["propagateCommand"] == null ? null : RaviJson.from(json["propagateCommand"]),
+      propagated: json["propagated"] == null ? null : raviJsonAsBool(json["propagated"]),
       providerSource: raviJsonAsString(json["providerSource"]),
+      rematerializedSessions: json["rematerializedSessions"] == null ? null : raviJsonAsList(json["rematerializedSessions"], raviJsonAsRaviJsonMap),
       runtimeProviderOverride: RaviJson.from(json["runtimeProviderOverride"]),
       sessionKey: raviJsonAsString(json["sessionKey"]),
       sessionName: RaviJson.from(json["sessionName"]),

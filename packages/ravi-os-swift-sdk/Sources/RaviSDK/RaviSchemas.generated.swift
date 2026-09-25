@@ -2835,6 +2835,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "force": {
+        "description": "Clear session provider/model overrides so those sessions adopt the agent config",
+        "type": "boolean"
+      },
       "id": {
         "description": "Agent ID",
         "type": "string"
@@ -2876,8 +2880,116 @@ public enum RaviSchemas {
       "changed": {
         "type": "boolean"
       },
+      "forcedClearedOverrides": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "reasons": {
+              "items": {
+                "enum": [
+                  "provider_override",
+                  "model_override",
+                  "effort_override",
+                  "thinking_override"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sessionName": {
+              "type": "string"
+            },
+            "thinking": {
+              "enum": [
+                "off",
+                "normal",
+                "verbose"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionName",
+            "reasons"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
       "key": {
         "type": "string"
+      },
+      "rematerializedSessions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "clearedProviderSession": {
+              "type": "boolean"
+            },
+            "previousRuntimeProvider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reasons": {
+              "items": {
+                "const": "stale_runtime_provider",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "runtimeProvider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionName",
+            "sessionKey",
+            "reasons",
+            "previousRuntimeProvider",
+            "runtimeProvider",
+            "clearedProviderSession"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       },
       "sessionOverrides": {
         "items": {
@@ -2899,6 +3011,21 @@ public enum RaviSchemas {
             "model": {
               "type": "string"
             },
+            "provider": {
+              "type": "string"
+            },
+            "reasons": {
+              "items": {
+                "enum": [
+                  "provider_override",
+                  "model_override",
+                  "effort_override",
+                  "thinking_override"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
             "sessionName": {
               "type": "string"
             },
@@ -2912,7 +3039,8 @@ public enum RaviSchemas {
             }
           },
           "required": [
-            "sessionName"
+            "sessionName",
+            "reasons"
           ],
           "type": "object"
         },
@@ -2926,7 +3054,9 @@ public enum RaviSchemas {
       "agentId",
       "key",
       "value",
-      "sessionOverrides"
+      "sessionOverrides",
+      "rematerializedSessions",
+      "forcedClearedOverrides"
     ],
     "type": "object"
   }
@@ -64137,6 +64267,10 @@ public enum RaviSchemas {
       "nameOrKey": {
         "description": "Session name or key",
         "type": "string"
+      },
+      "propagate": {
+        "description": "Also set the agent default model and rematerialize sibling sessions without overrides",
+        "type": "boolean"
       }
     },
     "required": [
@@ -64149,8 +64283,599 @@ public enum RaviSchemas {
 
   public static let SessionsSetModelReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "set-model",
+        "type": "string"
+      },
+      "after": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "effectiveModel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "effectiveProvider": {
+                "type": "string"
+              },
+              "effortOverride": {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "type": "string"
+              },
+              "ephemeral": {
+                "type": "boolean"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "modelError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelOverride": {
+                "type": "string"
+              },
+              "modelPresetId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelPresetVersion": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "providerSource": {
+                "type": "string"
+              },
+              "runtimeOptions": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "enum": [
+                          "session_override",
+                          "agent_default",
+                          "global_default",
+                          "runtime_default"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "provider": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "thinking": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "sessionKey": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "label",
+              "agentId",
+              "effectiveProvider",
+              "providerSource",
+              "effectiveModel",
+              "modelSource",
+              "modelPresetId",
+              "modelPresetVersion",
+              "modelError",
+              "ephemeral",
+              "expiresAt",
+              "runtimeOptions"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "agentDefaultDiffers": {
+        "type": "boolean"
+      },
+      "agentDefaultModel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "agentDefaultProvider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "before": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "effectiveModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effortOverride": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "ephemeral": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelOverride": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "providerSource": {
+            "type": "string"
+          },
+          "runtimeOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "enum": [
+                      "session_override",
+                      "agent_default",
+                      "global_default",
+                      "runtime_default"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "model": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "provider": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "provider",
+              "model",
+              "effort",
+              "thinking"
+            ],
+            "type": "object"
+          },
+          "sessionKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "label",
+          "agentId",
+          "effectiveProvider",
+          "providerSource",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetId",
+          "modelPresetVersion",
+          "modelError",
+          "ephemeral",
+          "expiresAt",
+          "runtimeOptions"
+        ],
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "effectiveModel": {
+        "type": "string"
+      },
+      "event": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "hint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "modelOverride": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "notification": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "propagateCommand": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "propagated": {
+        "type": "boolean"
+      },
+      "rematerializedSessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "sessionKey",
+      "sessionName",
+      "before",
+      "after",
+      "modelOverride",
+      "effectiveModel"
+    ],
     "type": "object"
   }
   """#
@@ -64162,6 +64887,10 @@ public enum RaviSchemas {
       "nameOrKey": {
         "description": "Session name or key",
         "type": "string"
+      },
+      "propagate": {
+        "description": "Also set the agent default provider and rematerialize sibling sessions without overrides",
+        "type": "boolean"
       },
       "provider": {
         "description": "Runtime provider id (codex, claude, pi, grok) or 'clear' to remove override",
@@ -64429,6 +65158,29 @@ public enum RaviSchemas {
           }
         ]
       },
+      "agentDefaultDiffers": {
+        "type": "boolean"
+      },
+      "agentDefaultModel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "agentDefaultProvider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "appliesOn": {
         "const": "next-turn-runtime-restart",
         "type": "string"
@@ -64677,8 +65429,39 @@ public enum RaviSchemas {
       "effectiveProvider": {
         "type": "string"
       },
+      "hint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "propagateCommand": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "propagated": {
+        "type": "boolean"
+      },
       "providerSource": {
         "type": "string"
+      },
+      "rematerializedSessions": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
       },
       "runtimeProviderOverride": {
         "anyOf": [

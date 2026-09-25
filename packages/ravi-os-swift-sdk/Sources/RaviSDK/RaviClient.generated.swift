@@ -381,11 +381,12 @@ public struct AgentsNamespace: Sendable {
     return try await transport.call(groupSegments: ["agents"], command: "session", body: requestBody, as: AgentsSessionReturn.self)
   }
 
-  public func set(_ id: String, _ key: String, _ value: String) async throws -> AgentsSetReturn {
+  public func set(_ id: String, _ key: String, _ value: String, _ options: AgentsSetOptions = .init()) async throws -> AgentsSetReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     requestBody["key"] = try RaviJSON.fromEncodable(key)
     requestBody["value"] = try RaviJSON.fromEncodable(value)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["agents"], command: "set", body: requestBody, as: AgentsSetReturn.self)
   }
 
@@ -4680,17 +4681,19 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "set-effort", body: requestBody, as: SessionsSetEffortReturn.self)
   }
 
-  public func setModel(_ nameOrKey: String, _ model: String) async throws -> SessionsSetModelReturn {
+  public func setModel(_ nameOrKey: String, _ model: String, _ options: SessionsSetModelOptions = .init()) async throws -> SessionsSetModelReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     requestBody["model"] = try RaviJSON.fromEncodable(model)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "set-model", body: requestBody, as: SessionsSetModelReturn.self)
   }
 
-  public func setProvider(_ nameOrKey: String, _ provider: String) async throws -> SessionsSetProviderReturn {
+  public func setProvider(_ nameOrKey: String, _ provider: String, _ options: SessionsSetProviderOptions = .init()) async throws -> SessionsSetProviderReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     requestBody["provider"] = try RaviJSON.fromEncodable(provider)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "set-provider", body: requestBody, as: SessionsSetProviderReturn.self)
   }
 
