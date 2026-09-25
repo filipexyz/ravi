@@ -13264,24 +13264,34 @@ class PagesUpdateOptions {
 }
 
 class PagesUpdateReturn {
-  const PagesUpdateReturn({required this.consoleUrl, required this.edgeManifestRepair, required this.projectRef, required this.site, required this.siteRef, required this.success, required this.url});
+  const PagesUpdateReturn({required this.consoleUrl, this.defaultVisibility, required this.edgeManifestRepair, this.effectiveVisibility, this.path, required this.projectRef, this.route, required this.site, required this.siteRef, required this.success, this.target, required this.url});
 
   final String consoleUrl;
+  final RaviJson? defaultVisibility;
   final RaviJson edgeManifestRepair;
+  final String? effectiveVisibility;
+  final String? path;
   final String projectRef;
+  final Map<String, RaviJson>? route;
   final Map<String, RaviJson> site;
   final String siteRef;
   final bool success;
+  final String? target;
   final RaviJson url;
 
   factory PagesUpdateReturn.fromJson(Map<String, Object?> json) {
     return PagesUpdateReturn(
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      defaultVisibility: json["defaultVisibility"] == null ? null : RaviJson.from(json["defaultVisibility"]),
       edgeManifestRepair: RaviJson.from(json["edgeManifestRepair"]),
+      effectiveVisibility: json["effectiveVisibility"] == null ? null : raviJsonAsString(json["effectiveVisibility"]),
+      path: json["path"] == null ? null : raviJsonAsString(json["path"]),
       projectRef: raviJsonAsString(json["projectRef"]),
+      route: json["route"] == null ? null : raviJsonAsRaviJsonMap(json["route"]),
       site: raviJsonAsRaviJsonMap(json["site"]),
       siteRef: raviJsonAsString(json["siteRef"]),
       success: raviJsonAsBool(json["success"]),
+      target: json["target"] == null ? null : raviJsonAsString(json["target"]),
       url: RaviJson.from(json["url"]),
     );
   }
@@ -13294,11 +13304,12 @@ class PagesUpdateReturn {
 PagesUpdateReturn pagesUpdateReturnFromJson(Object? json) => PagesUpdateReturn.fromJsonValue(json);
 
 class PagesVisibilityOptions {
-  const PagesVisibilityOptions({this.console, this.execute, this.project});
+  const PagesVisibilityOptions({this.console, this.execute, this.project, this.route});
 
   final String? console;
   final bool? execute;
   final String? project;
+  final String? route;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
@@ -13310,28 +13321,41 @@ class PagesVisibilityOptions {
     if (project != null) {
       into["project"] = RaviJson.from(project);
     }
+    if (route != null) {
+      into["route"] = RaviJson.from(route);
+    }
   }
 }
 
 class PagesVisibilityReturn {
-  const PagesVisibilityReturn({required this.consoleUrl, required this.edgeManifestRepair, required this.projectRef, required this.site, required this.siteRef, required this.success, required this.url});
+  const PagesVisibilityReturn({required this.consoleUrl, this.defaultVisibility, required this.edgeManifestRepair, this.effectiveVisibility, this.path, required this.projectRef, this.route, required this.site, required this.siteRef, required this.success, this.target, required this.url});
 
   final String consoleUrl;
+  final RaviJson? defaultVisibility;
   final RaviJson edgeManifestRepair;
+  final String? effectiveVisibility;
+  final String? path;
   final String projectRef;
+  final Map<String, RaviJson>? route;
   final Map<String, RaviJson> site;
   final String siteRef;
   final bool success;
+  final String? target;
   final RaviJson url;
 
   factory PagesVisibilityReturn.fromJson(Map<String, Object?> json) {
     return PagesVisibilityReturn(
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      defaultVisibility: json["defaultVisibility"] == null ? null : RaviJson.from(json["defaultVisibility"]),
       edgeManifestRepair: RaviJson.from(json["edgeManifestRepair"]),
+      effectiveVisibility: json["effectiveVisibility"] == null ? null : raviJsonAsString(json["effectiveVisibility"]),
+      path: json["path"] == null ? null : raviJsonAsString(json["path"]),
       projectRef: raviJsonAsString(json["projectRef"]),
+      route: json["route"] == null ? null : raviJsonAsRaviJsonMap(json["route"]),
       site: raviJsonAsRaviJsonMap(json["site"]),
       siteRef: raviJsonAsString(json["siteRef"]),
       success: raviJsonAsBool(json["success"]),
+      target: json["target"] == null ? null : raviJsonAsString(json["target"]),
       url: RaviJson.from(json["url"]),
     );
   }

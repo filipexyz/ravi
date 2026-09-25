@@ -126,6 +126,11 @@ describe("pages CLI commands", () => {
     expect(byName.create?.helpAfter).toContain("Prefer");
     expect(byName.publish?.description).toMatch(/Advanced\/compat|art_\*/);
     expect(byName.publish?.helpAfter).toContain("Prefer");
+    expect(byName.visibility?.helpAfter).toContain("--route");
+    expect(byName.visibility?.helpAfter).toContain("defaultVisibility");
+    expect(getOptionsMetadata(new PagesCommands(), "visibility").map((option) => option.flags)).toContain(
+      "--route <path>",
+    );
   });
 
   it("does not expose a password argument or option in command metadata", () => {
@@ -328,7 +333,7 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    await captureConsole(() => command.visibility(["proj", "demo", "private"], undefined, undefined, true));
+    await captureConsole(() => command.visibility(["proj", "demo", "private"], undefined, undefined, undefined, true));
 
     expect(calls).toEqual([
       {
@@ -340,6 +345,119 @@ describe("pages CLI commands", () => {
         },
       },
     ]);
+  });
+
+  it("updates one route visibility through the authorized Console route API", async () => {
+    const calls: Array<{ body: unknown; method: string; path: string }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {
+        site: {
+          id: "site_1",
+          slug: "demo",
+          defaultHostname: "demo.ravi.page",
+          defaultVisibility: "private",
+          status: "active",
+        },
+        route: {
+          bindingId: "binding_1",
+          effectiveVisibility: "public",
+          id: "route_1",
+          path: "/",
+          visibility: "public",
+        },
+        url: "https://demo.ravi.page/",
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.visibility(["proj", "demo", "public"], undefined, "/", undefined, true, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/visibility",
+        body: {
+          siteRef: "demo",
+          path: "/",
+          visibility: "public",
+        },
+      },
+    ]);
+    expect(payload).toMatchObject({
+      success: true,
+      target: "route",
+      path: "/",
+      defaultVisibility: "private",
+      effectiveVisibility: "public",
+      route: { path: "/", visibility: "public", effectiveVisibility: "public" },
+      url: "https://demo.ravi.page/",
+    });
+
+    const human = await captureConsole(() =>
+      command.visibility(["proj", "demo", "public"], undefined, "/", undefined, false, true),
+    );
+    expect(human.output).toContain("Visibility public");
+    expect(human.output).toContain("Default    private (site)");
+  });
+
+  it("route visibility dry-run does not call Console", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {};
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.visibility(["proj", "demo", "public"], undefined, "/", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({
+      site: "demo",
+      scope: "route",
+      route: "/",
+      currentVisibility: "explicit route policy",
+      targetVisibility: "public",
+      siteDefaultVisibility: "unchanged",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("reduces one route visibility immediately without --execute", async () => {
+    const calls: Array<{ body: unknown; method: string; path: string }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {
+        site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public" },
+        route: { path: "/foo", visibility: "private", effectiveVisibility: "private" },
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.visibility(["proj", "demo", "private"], undefined, "foo", undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/visibility",
+        body: { siteRef: "demo", path: "/foo", visibility: "private" },
+      },
+    ]);
+    expect(payload).toMatchObject({
+      target: "route",
+      path: "/foo",
+      effectiveVisibility: "private",
+      defaultVisibility: "public",
+    });
   });
 
   it("binds custom hostnames to a project Pages site through the Console CLI API", async () => {
@@ -896,12 +1014,17 @@ describe("pages agent-first contract", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const error = await expectContractError(
-      () => command.visibility(["proj", "demo", "public"], undefined, undefined, true),
+      () => command.visibility(["proj", "demo", "public"], undefined, undefined, undefined, true),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
-    expect(error.details.plan).toMatchObject({ site: "demo", defaultVisibility: "public" });
+    expect(error.details.plan).toMatchObject({
+      site: "demo",
+      scope: "site",
+      defaultVisibility: "public",
+      targetVisibility: "public",
+    });
     expect(calls).toHaveLength(0);
   });
 

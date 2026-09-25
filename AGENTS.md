@@ -70,6 +70,17 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 those ops is ignored. Domain binding, password changes, and switching a site
 to public visibility are dry-run by default (exit 3): re-run with `--execute`.
 
+Change who can reach an already-published route without re-uploading files:
+
+```bash
+ravi pages visibility <site-slug> public --execute
+ravi pages visibility <site-slug> public --route / --execute
+```
+
+Without `--route`, only site `defaultVisibility` changes. With `--route /`
+(or `/foo`), only that route's policy changes. Success output reports the
+effective visibility.
+
 Protect an active route with a password without republishing its bytes:
 
 ```bash

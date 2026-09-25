@@ -36,6 +36,7 @@ Checklist:
 
 - Usei só `ravi pages ship` para obter a URL, sem `create` + `publish`?
 - Tratei exit 3 como freio só em password/domains/visibility→public, nunca em ship?
+- Se a rota `/` ficou private explícita, usei `pages visibility <slug> public --route / --execute` em vez de re-ship?
 
 ## One-shot
 
@@ -78,7 +79,10 @@ ravi pages password status <slug> --route / --json
 ravi pages password remove <slug> --route / --visibility private --execute
 ravi pages visibility <slug> private
 ravi pages visibility <slug> public --execute
+ravi pages visibility <slug> public --route / --execute
 ravi pages domains <slug> docs.example.com --execute
 ```
+
+`pages visibility` sem `--route` muda só o `defaultVisibility` do site. Rotas publicadas com visibility explícita (ex.: `/` private) continuam private. Use `--route /` (ou `/foo`) para mudar a política daquela rota sem reenviar arquivos. Sem `--execute`, o plano mostra site vs rota e current vs target (exit 3 para `public`). Com `--execute`, o JSON/humano reporta a visibility efetiva da rota alvo.
 
 `password set` sem `--execute` nem pede a senha. Automação: `--stdin` com input redirecionado. Nunca coloque a senha em argumento, env, log ou JSON.

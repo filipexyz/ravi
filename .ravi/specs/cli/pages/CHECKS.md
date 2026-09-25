@@ -25,7 +25,13 @@
   route path.
 - `pages update`/`pages visibility` switching a site to `public` without
   `--execute` MUST exit 3; switching to `private` or `protected_link` MUST
-  write immediately without any brake.
+  write immediately without any brake. Without `--route`, `pages visibility`
+  MUST keep PATCHing only site `defaultVisibility`.
+- `pages visibility <site> public --route /` without `--execute` MUST exit 3
+  and MUST NOT call Console. With `--execute` it MUST call the authorized
+  route-visibility update (no artifact upload) and success JSON/human output
+  MUST report the effective visibility of that route. Help/`--help` MUST
+  mention `--route`.
 - A Console failure whose message matches a site not-found MUST surface as the
   `SITE_NOT_FOUND` envelope (exit 1) with suggestedAction `ravi pages list
   --json`; a route not-found MUST surface as `ROUTE_NOT_FOUND` (exit 1) with

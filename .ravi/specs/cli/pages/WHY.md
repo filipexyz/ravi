@@ -25,6 +25,8 @@ Decisions specific to this domain:
   change would put exit-3 friction inside "make it private NOW". The brake
   keys off the requested value: `public` → dry-run; `private`/`protected_link`
   → immediate. The rule is directional exposure, not the op name.
+  `visibility --route` uses the same brake but targets one published route
+  (no content upload); omitting `--route` still means site default only.
 - **Brake before scope resolution on remaining braked writes.** `pages
   domains` and the password pair resolve the Console project scope before
   mutating; the brake fires even before that, so a dry-run works offline

@@ -9981,11 +9981,16 @@ export type PagesUpdateInput = {
 /** Return shape for `pages.update`. */
 export type PagesUpdateReturn = {
   consoleUrl: string;
+  defaultVisibility?: string | null;
   edgeManifestRepair: unknown;
+  effectiveVisibility?: string;
+  path?: string;
   projectRef: string;
+  route?: Record<string, unknown>;
   site: Record<string, unknown>;
   siteRef: string;
   success: true;
+  target?: "site" | "route";
   url: string | null;
 };
 
@@ -9995,16 +10000,22 @@ export type PagesVisibilityInput = {
   console?: string;
   execute?: boolean;
   project?: string;
+  route?: string;
 };
 
 /** Return shape for `pages.visibility`. */
 export type PagesVisibilityReturn = {
   consoleUrl: string;
+  defaultVisibility?: string | null;
   edgeManifestRepair: unknown;
+  effectiveVisibility?: string;
+  path?: string;
   projectRef: string;
+  route?: Record<string, unknown>;
   site: Record<string, unknown>;
   siteRef: string;
   success: true;
+  target?: "site" | "route";
   url: string | null;
 };
 

@@ -31,6 +31,13 @@ export interface PageSiteUpdateOptions extends PagesClientOptions {
   site: string;
 }
 
+export interface PageRouteVisibilityUpdateOptions extends PagesClientOptions {
+  path: string;
+  project: string;
+  site: string;
+  visibility: PageVisibility;
+}
+
 export interface PageDomainBindOptions extends PagesClientOptions {
   check?: boolean;
   hostnames: string[];
@@ -100,6 +107,31 @@ export interface PageSiteUpdateResult {
   siteRef: string;
   site: PageSitePayload;
   edgeManifestRepair: unknown;
+  url: string | null;
+}
+
+export type PageRouteVisibility = PageVisibility | "password";
+
+export interface PageRouteVisibilityPayload {
+  bindingId?: string;
+  effectiveVisibility: PageRouteVisibility;
+  id?: string;
+  path: string;
+  visibility: PageRouteVisibility;
+}
+
+export interface PageRouteVisibilityUpdateResult {
+  success: true;
+  consoleUrl: string;
+  defaultVisibility: string | null;
+  effectiveVisibility: PageRouteVisibility;
+  edgeManifestRepair: unknown;
+  path: string;
+  projectRef: string;
+  route: PageRouteVisibilityPayload;
+  site: PageSitePayload;
+  siteRef: string;
+  target: "route";
   url: string | null;
 }
 
@@ -206,6 +238,34 @@ export class RaviPagesClient {
       site: normalizeSitePayload(payload),
       edgeManifestRepair: record?.edgeManifestRepair ?? null,
     };
+  }
+
+  /**
+   * Operator path: Console `updateAuthorizedPagesRouteVisibility`.
+   * Changes one published route's visibility without uploading artifacts.
+   */
+  async updateRouteVisibility(
+    accessToken: string,
+    options: PageRouteVisibilityUpdateOptions,
+  ): Promise<{
+    edgeManifestRepair: unknown;
+    route: PageRouteVisibilityPayload;
+    site: PageSitePayload;
+    url: string | null;
+  }> {
+    const path = normalizePageRoutePath(options.path);
+    const visibility = requirePageVisibility(options.visibility);
+    const payload = await this.request<unknown>(
+      "PATCH",
+      `/api/cli/projects/${encodeURIComponent(requireText(options.project, "project"))}/pages/visibility`,
+      {
+        siteRef: requireText(options.site, "site"),
+        path,
+        visibility,
+      },
+      accessToken,
+    );
+    return normalizeRouteVisibilityUpdatePayload(payload, { path, visibility });
   }
 
   async bindDomains(
@@ -355,6 +415,30 @@ export async function updatePageSite(
   };
 }
 
+export async function updatePageRouteVisibility(
+  options: PageRouteVisibilityUpdateOptions,
+  deps: PagesClientDeps = {},
+): Promise<PageRouteVisibilityUpdateResult> {
+  const auth = await createAuthenticatedPagesContext(options, deps);
+  const result = await new RaviPagesClient(auth.client).updateRouteVisibility(auth.accessToken, options);
+  const site = result.site;
+  const defaultVisibility = stringValue(site.defaultVisibility) ?? stringValue(site.visibility);
+  return {
+    success: true,
+    consoleUrl: auth.consoleUrl,
+    defaultVisibility,
+    effectiveVisibility: result.route.effectiveVisibility,
+    edgeManifestRepair: result.edgeManifestRepair,
+    path: result.route.path,
+    projectRef: requireText(options.project, "project"),
+    route: result.route,
+    site,
+    siteRef: requireText(options.site, "site"),
+    target: "route",
+    url: result.url ?? hostedRouteUrl(site, result.route.path),
+  };
+}
+
 export async function bindPageDomains(
   options: PageDomainBindOptions,
   deps: PagesClientDeps = {},
@@ -391,6 +475,12 @@ export function normalizePageVisibility(value: string | undefined): PageVisibili
   const normalized = value.trim().toLowerCase().replace(/-/g, "_");
   if (normalized === "public" || normalized === "private" || normalized === "protected_link") return normalized;
   throw new CloudAuthError("PAYLOAD_INVALID", "--visibility must be one of: public, private, protected_link.");
+}
+
+export function normalizePageRoutePath(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed === "/") return "/";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
 export function normalizePagePasswordReplacementVisibility(
@@ -510,6 +600,57 @@ function normalizeHostnames(values: string[]): string[] {
 function hostedSiteUrl(site: PageSitePayload): string | null {
   const hostname = stringValue(site.defaultHostname) ?? stringValue(site.hostname);
   return hostname ? `https://${hostname}/` : null;
+}
+
+function hostedRouteUrl(site: PageSitePayload, path: string): string | null {
+  const hostname = stringValue(site.defaultHostname) ?? stringValue(site.hostname);
+  if (!hostname) return null;
+  const normalized = normalizePageRoutePath(path);
+  return `https://${hostname}${normalized === "/" ? "/" : normalized}`;
+}
+
+function normalizeRouteVisibilityUpdatePayload(
+  payload: unknown,
+  fallback: { path: string; visibility: PageVisibility },
+): {
+  edgeManifestRepair: unknown;
+  route: PageRouteVisibilityPayload;
+  site: PageSitePayload;
+  url: string | null;
+} {
+  const record = objectValue(payload) ?? {};
+  const site = normalizeSitePayload(payload);
+  const routeRecord = objectValue(record.route) ?? {};
+  const visibilities = ["password", "public", "private", "protected_link"] as const;
+  const visibility =
+    optionalEnumValue(routeRecord.visibility, visibilities) ??
+    optionalEnumValue(record.visibility, visibilities) ??
+    fallback.visibility;
+  const effectiveVisibility =
+    optionalEnumValue(routeRecord.effectiveVisibility, visibilities) ??
+    optionalEnumValue(record.effectiveVisibility, visibilities) ??
+    visibility;
+  const path = stringValue(routeRecord.path) ?? stringValue(record.path) ?? normalizePageRoutePath(fallback.path);
+  const route: PageRouteVisibilityPayload = {
+    effectiveVisibility,
+    path,
+    visibility,
+  };
+  const bindingId = stringValue(routeRecord.bindingId);
+  const routeId = stringValue(routeRecord.id);
+  if (bindingId) route.bindingId = bindingId;
+  if (routeId) route.id = routeId;
+  return {
+    edgeManifestRepair: record.edgeManifestRepair ?? null,
+    route,
+    site,
+    url: stringValue(record.url) ?? hostedRouteUrl(site, path),
+  };
+}
+
+function optionalEnumValue<const T extends readonly string[]>(value: unknown, values: T): T[number] | undefined {
+  if (typeof value === "string" && values.includes(value)) return value as T[number];
+  return undefined;
 }
 
 function contentPublishCommandForSite(projectRef: string, site: PageSitePayload): string | null {
