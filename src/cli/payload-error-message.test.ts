@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   inferPayloadIssuePath,
+  looksLikeProviderDump,
   payloadInvalidIssues,
   redactAbsolutePathsInText,
   sanitizePayloadInvalidMessage,
@@ -33,6 +34,8 @@ describe("payload invalid message sanitization", () => {
   it("drops provider dumps and unstructured secrets", () => {
     expect(sanitizePayloadInvalidMessage("PRIVATE_PROVIDER_BODY_8K2R:PAYLOAD_INVALID")).toBeUndefined();
     expect(sanitizePayloadInvalidMessage("https://user:secret@example.test/private")).toBeUndefined();
+    expect(looksLikeProviderDump("PRIVATE_PROVIDER_BODY_8K2R")).toBe(true);
+    expect(looksLikeProviderDump("CLI/runtime mismatch detected.")).toBe(false);
   });
 
   it("builds a structured issue from the sanitized local message", () => {

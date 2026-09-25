@@ -210,7 +210,7 @@ describe("usage exit taxonomy smoke", () => {
       op: "audio generate",
       error: {
         code: "COMMAND_FAILED",
-        message: "Command could not be completed.",
+        message: "--text-file must not contain '..' path segments.",
         retryable: false,
         suggestedAction: "Inspect the command input and retry 'audio generate'",
       },

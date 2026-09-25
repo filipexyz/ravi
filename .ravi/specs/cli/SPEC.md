@@ -84,10 +84,13 @@ The canonical failure value is a `ContractError` and its envelope:
   including when Commander can suggest a valid command.
 - Expected handler failures that still use the compatibility `fail()` helper
   are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
-  `1`. JSON CLI, tools and gateway MUST receive one canonical envelope; text
-  CLI keeps the concise message. This fallback is not a substitute for a
-  domain-specific code or `USAGE_ERROR` when the handler can classify the
-  failure more precisely.
+  `1`. JSON CLI, tools and gateway MUST receive one canonical envelope whose
+  `message` keeps the sanitized expected/daemon cause (or the generic headline
+  only when that cause is empty or unsafe). Text CLI keeps the same concise
+  message. A throw-site `suggestedAction` (for example
+  `--allow-runtime-mismatch`) MUST reach the envelope. This fallback is not a
+  substitute for a domain-specific code or `USAGE_ERROR` when the handler can
+  classify the failure more precisely.
 - An unexpected exception is normalized as `UNHANDLED_ERROR`, exit `1`, with
   the real operation path and a safe generic message. Process CLI, exported
   tools, gateway and audit MUST NOT expose the raw exception, provider detail
