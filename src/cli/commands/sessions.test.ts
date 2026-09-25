@@ -265,6 +265,50 @@ mock.module("../../router/sessions.js", () => ({
           ? { ...resolvedSession, modelOverride: undefined }
           : { ...resolvedSession, modelOverride: model };
     }
+    listedSessions = listedSessions.map((session) =>
+      session.sessionKey === sessionKey
+        ? { ...session, ...(model === null ? { modelOverride: undefined } : { modelOverride: model }) }
+        : session,
+    );
+  },
+  updateSessionRuntimeProviderOverride: (sessionKey: string, provider: string | null) => {
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession =
+        provider === null
+          ? { ...resolvedSession, runtimeProviderOverride: undefined }
+          : { ...resolvedSession, runtimeProviderOverride: provider };
+    }
+    listedSessions = listedSessions.map((session) =>
+      session.sessionKey === sessionKey
+        ? {
+            ...session,
+            ...(provider === null ? { runtimeProviderOverride: undefined } : { runtimeProviderOverride: provider }),
+          }
+        : session,
+    );
+  },
+  clearProviderSession: (sessionKey: string) => {
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession = {
+        ...resolvedSession,
+        runtimeProvider: undefined,
+        providerSessionId: undefined,
+        sdkSessionId: undefined,
+      };
+    }
+    listedSessions = listedSessions.map((session) =>
+      session.sessionKey === sessionKey
+        ? { ...session, runtimeProvider: undefined, providerSessionId: undefined, sdkSessionId: undefined }
+        : session,
+    );
+  },
+  updateRuntimeProviderState: (sessionKey: string, runtimeProvider: string | null) => {
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession = { ...resolvedSession, runtimeProvider: runtimeProvider ?? undefined };
+    }
+    listedSessions = listedSessions.map((session) =>
+      session.sessionKey === sessionKey ? { ...session, runtimeProvider: runtimeProvider ?? undefined } : session,
+    );
   },
   updateSessionEffortOverride: (sessionKey: string, effort: string | null) => {
     effortUpdates.push({ sessionKey, effort });
@@ -289,6 +333,10 @@ mock.module("../../router/index.js", () => ({
   ...actualRouterIndexModule,
   loadRouterConfig: () => routerConfig,
   expandHome: (path: string) => path,
+  getAgent: (id: string) => routerConfig.agents[id] ?? null,
+  updateAgent: (id: string, partial: Record<string, unknown>) => {
+    routerConfig.agents[id] = { ...(routerConfig.agents[id] ?? {}), ...partial };
+  },
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -2312,6 +2360,174 @@ describe("SessionCommands set-model", () => {
     expect(natsEmits).toHaveLength(1);
     expect(natsEmits[0]?.data.modelOverride).toBeNull();
     expect(natsEmits[0]?.data.effectiveModel).toBe("model-default");
+  });
+
+  it("notes when the session model differs from the agent default", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          model: "model-default",
+          provider: "codex",
+        },
+      },
+    };
+
+    const output = await captureLogsAsync(async () => {
+      await new SessionCommands().setModel("model-switch", "model-live", true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload.agentDefaultDiffers).toBe(true);
+    expect(payload.agentDefaultModel).toBe("model-default");
+    expect(payload.propagateCommand).toBe("ravi sessions set-model model-switch model-live --propagate");
+    expect(payload.propagated).toBe(false);
+  });
+
+  it("propagates a session model to the agent when requested", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+      runtimeProvider: "codex",
+    };
+    listedSessions = [
+      resolvedSession,
+      {
+        sessionKey: "agent:main:sibling",
+        name: "sibling",
+        agentId: "main",
+        runtimeProvider: "claude",
+      },
+    ];
+    routerConfig = {
+      agents: {
+        main: {
+          model: "model-default",
+          provider: "codex",
+        },
+      },
+    };
+
+    const output = await captureLogsAsync(async () => {
+      await new SessionCommands().setModel("model-switch", "model-live", true, true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload.propagated).toBe(true);
+    expect(routerConfig.agents.main?.model).toBe("model-live");
+    expect(payload.agentDefaultDiffers).toBe(false);
+  });
+});
+
+describe("SessionCommands set-provider", () => {
+  beforeEach(() => {
+    listedSessions = [];
+    resolvedSession = null;
+    routerConfig = { agents: {} };
+    natsEmits.length = 0;
+  });
+
+  it("notes when the session provider differs from the agent default", () => {
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+      runtimeProvider: "codex",
+    };
+    routerConfig = {
+      agents: {
+        "ravi-console": {
+          provider: "pi",
+          model: "deepseek/deepseek-flash",
+        },
+      },
+    };
+
+    const output = captureLogs(() => {
+      new SessionCommands().setProvider("wa-group", "codex", true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload.action).toBe("set-provider");
+    expect(payload.runtimeProviderOverride).toBe("codex");
+    expect(payload.agentDefaultDiffers).toBe(true);
+    expect(payload.agentDefaultProvider).toBe("pi");
+    expect(payload.propagateCommand).toBe("ravi sessions set-provider wa-group codex --propagate");
+    expect(payload.propagated).toBe(false);
+  });
+
+  it("rematerializes last-used provider when clearing a session override", () => {
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+      runtimeProvider: "codex",
+      runtimeProviderOverride: "codex",
+    };
+    routerConfig = {
+      agents: {
+        "ravi-console": {
+          provider: "pi",
+        },
+      },
+    };
+
+    const output = captureLogs(() => {
+      new SessionCommands().setProvider("wa-group", "clear", true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload.runtimeProviderOverride).toBeNull();
+    expect(payload.rematerializedSessions).toEqual([
+      expect.objectContaining({
+        sessionName: "wa-group",
+        previousRuntimeProvider: "codex",
+        runtimeProvider: "pi",
+      }),
+    ]);
+    expect(resolvedSession?.runtimeProvider).toBe("pi");
+  });
+
+  it("propagates a session provider to the agent and rematerializes siblings", () => {
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+      runtimeProvider: "codex",
+    };
+    listedSessions = [
+      resolvedSession,
+      {
+        sessionKey: "agent:ravi-console:trigger",
+        name: "trigger-job",
+        agentId: "ravi-console",
+        runtimeProvider: "claude",
+      },
+    ];
+    routerConfig = {
+      agents: {
+        "ravi-console": {
+          provider: "pi",
+        },
+      },
+    };
+
+    const output = captureLogs(() => {
+      new SessionCommands().setProvider("wa-group", "codex", true, true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload.propagated).toBe(true);
+    expect(routerConfig.agents["ravi-console"]?.provider).toBe("codex");
+    expect(payload.rematerializedSessions.map((session: { sessionName: string }) => session.sessionName)).toEqual([
+      "trigger-job",
+    ]);
+    expect(resolvedSession?.runtimeProviderOverride).toBe("codex");
   });
 });
 

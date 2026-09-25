@@ -526,6 +526,7 @@ export type AgentsSessionReturn = {
 
 /** Input shape for `agents.set`. */
 export type AgentsSetInput = {
+  force?: boolean;
   id: string;
   key: string;
   value: string;
@@ -537,10 +538,28 @@ export type AgentsSetReturn = {
   agent?: Record<string, unknown>;
   agentId: string;
   changed: boolean;
+  forcedClearedOverrides: Array<{
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    model?: string;
+    provider?: string;
+    reasons: Array<"provider_override" | "model_override" | "effort_override" | "thinking_override">;
+    sessionName: string;
+    thinking?: "off" | "normal" | "verbose";
+  }>;
   key: string;
+  rematerializedSessions: Array<{
+    clearedProviderSession: boolean;
+    previousRuntimeProvider: string | null;
+    reasons: "stale_runtime_provider"[];
+    runtimeProvider: string | null;
+    sessionKey: string;
+    sessionName: string;
+  }>;
   sessionOverrides: Array<{
     effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     model?: string;
+    provider?: string;
+    reasons: Array<"provider_override" | "model_override" | "effort_override" | "thinking_override">;
     sessionName: string;
     thinking?: "off" | "normal" | "verbose";
   }>;
@@ -12949,14 +12968,109 @@ export type SessionsSetEffortReturn = {
 export type SessionsSetModelInput = {
   model: string;
   nameOrKey: string;
+  propagate?: boolean;
 };
 
 /** Return shape for `sessions.set-model`. */
-export type SessionsSetModelReturn = Record<string, unknown>;
+export type SessionsSetModelReturn = {
+  action: "set-model";
+  after: ({
+    agentId: string;
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelError: string | null;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string | null;
+    name?: string;
+    providerSource: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  }) | null;
+  agentDefaultDiffers?: boolean;
+  agentDefaultModel?: string | null;
+  agentDefaultProvider?: string | null;
+  before: {
+    agentId: string;
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelError: string | null;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string | null;
+    name?: string;
+    providerSource: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  };
+  changed: boolean;
+  effectiveModel: string;
+  event?: Record<string, unknown>;
+  hint?: string | null;
+  modelOverride: string | null;
+  notification?: Record<string, unknown>;
+  propagateCommand?: string | null;
+  propagated?: boolean;
+  rematerializedSessions?: Array<{
+    clearedProviderSession: boolean;
+    previousRuntimeProvider: string | null;
+    reasons: "stale_runtime_provider"[];
+    runtimeProvider: string | null;
+    sessionKey: string;
+    sessionName: string;
+  }>;
+  sessionKey: string;
+  sessionName: string | null;
+};
 
 /** Input shape for `sessions.set-provider`. */
 export type SessionsSetProviderInput = {
   nameOrKey: string;
+  propagate?: boolean;
   provider: string;
 };
 
@@ -12998,6 +13112,9 @@ export type SessionsSetProviderReturn = {
     };
     sessionKey: string;
   }) | null;
+  agentDefaultDiffers?: boolean;
+  agentDefaultModel?: string | null;
+  agentDefaultProvider?: string | null;
   appliesOn: "next-turn-runtime-restart";
   before: {
     agentId: string;
@@ -13036,7 +13153,18 @@ export type SessionsSetProviderReturn = {
   };
   changed: boolean;
   effectiveProvider: string;
+  hint?: string | null;
+  propagateCommand?: string | null;
+  propagated?: boolean;
   providerSource: string;
+  rematerializedSessions?: Array<{
+    clearedProviderSession: boolean;
+    previousRuntimeProvider: string | null;
+    reasons: "stale_runtime_provider"[];
+    runtimeProvider: string | null;
+    sessionKey: string;
+    sessionName: string;
+  }>;
   runtimeProviderOverride: string | null;
   sessionKey: string;
   sessionName: string | null;

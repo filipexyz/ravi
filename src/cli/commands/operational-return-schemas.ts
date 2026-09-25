@@ -2091,6 +2091,35 @@ export const agentDeleteReturnSchema = z
   })
   .passthrough();
 
+const agentSessionOverrideReasonSchema = z.enum([
+  "provider_override",
+  "model_override",
+  "effort_override",
+  "thinking_override",
+]);
+
+const agentSessionOverrideReportSchema = z
+  .object({
+    sessionName: z.string(),
+    reasons: z.array(agentSessionOverrideReasonSchema),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
+    thinking: z.enum(["off", "normal", "verbose"]).optional(),
+  })
+  .strict();
+
+export const agentSessionRematerializeReportSchema = z
+  .object({
+    sessionName: z.string(),
+    sessionKey: z.string(),
+    reasons: z.array(z.literal("stale_runtime_provider")),
+    previousRuntimeProvider: z.string().nullable(),
+    runtimeProvider: z.string().nullable(),
+    clearedProviderSession: z.boolean(),
+  })
+  .strict();
+
 export const agentSetReturnSchema = z
   .object({
     action: z.literal("set"),
@@ -2099,16 +2128,9 @@ export const agentSetReturnSchema = z
     key: z.string(),
     value: z.unknown(),
     agent: agentRecordReturnSchema.optional(),
-    sessionOverrides: z.array(
-      z
-        .object({
-          sessionName: z.string(),
-          model: z.string().optional(),
-          effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
-          thinking: z.enum(["off", "normal", "verbose"]).optional(),
-        })
-        .strict(),
-    ),
+    sessionOverrides: z.array(agentSessionOverrideReportSchema),
+    rematerializedSessions: z.array(agentSessionRematerializeReportSchema),
+    forcedClearedOverrides: z.array(agentSessionOverrideReportSchema),
   })
   .passthrough();
 

@@ -66,6 +66,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-request-context.test.ts",
     "src/runtime/runtime-request-builder.context-key.test.ts",
     "src/runtime/runtime-selection.test.ts",
+    // Agent default vs last-used runtime_provider rematerialize.
+    "src/runtime/agent-session-runtime-sync.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",

@@ -139,12 +139,14 @@ export class RaviClient {
         body: { id },
       });
     },
-    /** Set agent property and report active session runtime overrides */
-    set: async (id: string, key: string, value: string): Promise<AgentsSetReturn> => {
+    /** Set agent property; rematerialize no-override sessions when provider/model changes */
+    set: async (id: string, key: string, value: string, options?: {
+      force?: boolean;
+    }): Promise<AgentsSetReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "set",
-        body: { id, key, value },
+        body: { id, key, value, ...(options ?? {}) },
       });
     },
     /** Show agent details */
@@ -6149,19 +6151,23 @@ export class RaviClient {
       });
     },
     /** Set session model override */
-    setModel: async (nameOrKey: string, model: string): Promise<SessionsSetModelReturn> => {
+    setModel: async (nameOrKey: string, model: string, options?: {
+      propagate?: boolean;
+    }): Promise<SessionsSetModelReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "set-model",
-        body: { nameOrKey, model },
+        body: { nameOrKey, model, ...(options ?? {}) },
       });
     },
     /** Set session runtime provider override */
-    setProvider: async (nameOrKey: string, provider: string): Promise<SessionsSetProviderReturn> => {
+    setProvider: async (nameOrKey: string, provider: string, options?: {
+      propagate?: boolean;
+    }): Promise<SessionsSetProviderReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "set-provider",
-        body: { nameOrKey, provider },
+        body: { nameOrKey, provider, ...(options ?? {}) },
       });
     },
     /** Set session thinking level */

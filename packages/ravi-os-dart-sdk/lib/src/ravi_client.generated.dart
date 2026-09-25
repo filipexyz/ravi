@@ -231,11 +231,12 @@ class AgentsNamespace {
     );
   }
 
-  Future<AgentsSetReturn> set_(String id, String key, String value) async {
+  Future<AgentsSetReturn> set_(String id, String key, String value, [AgentsSetOptions options = const AgentsSetOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
     requestBody["key"] = RaviJson.from(key);
     requestBody["value"] = RaviJson.from(value);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["agents"],
       command: "set",
@@ -6550,10 +6551,11 @@ class SessionsNamespace {
     );
   }
 
-  Future<SessionsSetModelReturn> setModel(String nameOrKey, String model) async {
+  Future<SessionsSetModelReturn> setModel(String nameOrKey, String model, [SessionsSetModelOptions options = const SessionsSetModelOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
     requestBody["model"] = RaviJson.from(model);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["sessions"],
       command: "set-model",
@@ -6562,10 +6564,11 @@ class SessionsNamespace {
     );
   }
 
-  Future<SessionsSetProviderReturn> setProvider(String nameOrKey, String provider) async {
+  Future<SessionsSetProviderReturn> setProvider(String nameOrKey, String provider, [SessionsSetProviderOptions options = const SessionsSetProviderOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
     requestBody["provider"] = RaviJson.from(provider);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["sessions"],
       command: "set-provider",
