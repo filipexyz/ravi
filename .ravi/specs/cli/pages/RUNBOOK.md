@@ -22,7 +22,9 @@
 8. If a domains/password write, or a visibility switch to `public`, executed
    without `--execute`, the brake regressed: check the op still calls
    `contractDryRun` before `resolvePagesProject` (domains/password) or before
-   `updatePageSite` (update/visibility with `public`).
+   `updatePageSite` / `updatePageRouteVisibility` (update/visibility with
+   `public`). The dry-run plan MUST say whether the target is the site
+   default or one `--route`.
 9. If `pages ship`, `pages create` or `pages publish` exits 3 with
    `WRITE_REQUIRES_EXECUTE`, the unbrake regressed: those ops must write
    immediately and treat `--execute` as a no-op.
@@ -47,5 +49,7 @@ ravi pages password set proj site --route / --json                        # expe
 ravi pages password remove proj site --route / --json                     # expect PAYLOAD_INVALID (missing --visibility)
 ravi pages visibility proj site public --json                             # expect exit 3
 ravi pages visibility proj site private --json                            # immediate write (no brake on reductions)
+ravi pages visibility proj site public --route / --json                   # expect exit 3; no route mutation
+ravi pages visibility proj site public --route / --execute --json         # route policy only; effectiveVisibility in output
 ravi pages list --fields slug,status --json                               # expect compact items
 ```

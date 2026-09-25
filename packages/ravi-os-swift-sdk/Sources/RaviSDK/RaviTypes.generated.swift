@@ -15434,30 +15434,45 @@ public struct PagesUpdateOptions: Codable, Sendable {
 
 public struct PagesUpdateReturn: Codable, Sendable {
   public var consoleUrl: String
+  public var defaultVisibility: RaviJSON?
   public var edgeManifestRepair: RaviJSON
+  public var effectiveVisibility: String?
+  public var path: String?
   public var projectRef: String
+  public var route: [String: RaviJSON]?
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
+  public var target: String?
   public var url: RaviJSON
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, defaultVisibility: RaviJSON? = nil, edgeManifestRepair: RaviJSON, effectiveVisibility: String? = nil, path: String? = nil, projectRef: String, route: [String: RaviJSON]? = nil, site: [String: RaviJSON], siteRef: String, success: Bool, target: String? = nil, url: RaviJSON) {
     self.consoleUrl = consoleUrl
+    self.defaultVisibility = defaultVisibility
     self.edgeManifestRepair = edgeManifestRepair
+    self.effectiveVisibility = effectiveVisibility
+    self.path = path
     self.projectRef = projectRef
+    self.route = route
     self.site = site
     self.siteRef = siteRef
     self.success = success
+    self.target = target
     self.url = url
   }
 
   enum CodingKeys: String, CodingKey {
     case consoleUrl = "consoleUrl"
+    case defaultVisibility = "defaultVisibility"
     case edgeManifestRepair = "edgeManifestRepair"
+    case effectiveVisibility = "effectiveVisibility"
+    case path = "path"
     case projectRef = "projectRef"
+    case route = "route"
     case site = "site"
     case siteRef = "siteRef"
     case success = "success"
+    case target = "target"
     case url = "url"
   }
 }
@@ -15466,17 +15481,20 @@ public struct PagesVisibilityOptions: Codable, Sendable {
   public var console: String?
   public var execute: Bool?
   public var project: String?
+  public var route: String?
 
-  public init(console: String? = nil, execute: Bool? = nil, project: String? = nil) {
+  public init(console: String? = nil, execute: Bool? = nil, project: String? = nil, route: String? = nil) {
     self.console = console
     self.execute = execute
     self.project = project
+    self.route = route
   }
 
   enum CodingKeys: String, CodingKey {
     case console = "console"
     case execute = "execute"
     case project = "project"
+    case route = "route"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -15489,35 +15507,53 @@ public struct PagesVisibilityOptions: Codable, Sendable {
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.route {
+      body["route"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
 public struct PagesVisibilityReturn: Codable, Sendable {
   public var consoleUrl: String
+  public var defaultVisibility: RaviJSON?
   public var edgeManifestRepair: RaviJSON
+  public var effectiveVisibility: String?
+  public var path: String?
   public var projectRef: String
+  public var route: [String: RaviJSON]?
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
+  public var target: String?
   public var url: RaviJSON
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, defaultVisibility: RaviJSON? = nil, edgeManifestRepair: RaviJSON, effectiveVisibility: String? = nil, path: String? = nil, projectRef: String, route: [String: RaviJSON]? = nil, site: [String: RaviJSON], siteRef: String, success: Bool, target: String? = nil, url: RaviJSON) {
     self.consoleUrl = consoleUrl
+    self.defaultVisibility = defaultVisibility
     self.edgeManifestRepair = edgeManifestRepair
+    self.effectiveVisibility = effectiveVisibility
+    self.path = path
     self.projectRef = projectRef
+    self.route = route
     self.site = site
     self.siteRef = siteRef
     self.success = success
+    self.target = target
     self.url = url
   }
 
   enum CodingKeys: String, CodingKey {
     case consoleUrl = "consoleUrl"
+    case defaultVisibility = "defaultVisibility"
     case edgeManifestRepair = "edgeManifestRepair"
+    case effectiveVisibility = "effectiveVisibility"
+    case path = "path"
     case projectRef = "projectRef"
+    case route = "route"
     case site = "site"
     case siteRef = "siteRef"
     case success = "success"
+    case target = "target"
     case url = "url"
   }
 }

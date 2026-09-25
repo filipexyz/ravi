@@ -70,7 +70,10 @@ contract errors rethrow first, recognizable Console not-found failures map to
 6. `pages update` and `pages visibility` carry a CONDITIONAL brake: switching
    a site default to `public` requires `--execute` (exit 3 otherwise);
    reducing visibility (`private`/`protected_link`) writes immediately —
-   lockdowns are never slowed down.
+   lockdowns are never slowed down. `pages visibility` without `--route`
+   MUST keep updating only site `defaultVisibility`. With `--route /` (or
+   `/foo`) it MUST change that route's visibility only, without uploading
+   artifacts, and success output MUST report the effective route visibility.
 7. `--execute` is the LAST declared option on every braked op.
 8. `pages list` and `pages published` MUST accept `--fields a,b,c`.
 9. A thrown `ContractError` MUST pass through `runPagesCommand`'s
@@ -98,6 +101,7 @@ contract errors rethrow first, recognizable Console not-found failures map to
 | password set | flips the route access policy on a live site (high) | dry-run + `--execute`, braked before the secret prompt |
 | password remove | widens who can reach the route, up to fully public (high) | dry-run + `--execute`, visibility validated first |
 | update / visibility → `public` | exposes already-hosted content to the open web | conditional dry-run + `--execute` |
+| visibility --route → `public` | flips one published route's access policy without re-uploading bytes | conditional dry-run + `--execute`; plan names site vs route and current vs target |
 | update / visibility → `private`/`protected_link` | reduces exposure, reversible | not braked (declared) |
 | create | creates a host record in Ravi Console | not braked / executes immediately (`--execute` unused no-op) |
 | domains | changes provider-backed hostname bindings and routing | dry-run + `--execute` |
@@ -150,8 +154,11 @@ MUST load the skill for `ravi pages …` and `pages.password`.
   writes the host immediately; `pages publish p s ./site --json` → publishes;
   `pages domains p s docs.example.com --json` → exit 3 before credentials;
   `pages password set p s --json`
-  → exit 3 without prompting; `pages visibility p s public --json` → exit 3;
-  `pages visibility p s private --json` → immediate write; `pages list --json
+  → exit 3 without prompting;   `pages visibility p s public --json` → exit 3;
+  `pages visibility p s private --json` → immediate write;
+  `pages visibility p s public --route / --json` → exit 3 without a route
+  mutation; `pages visibility p s public --route / --execute --json` → route
+  update and `{target:"route", effectiveVisibility}`; `pages list --json
   --fields slug,status` narrows items.
 
 ## Known Failure Modes

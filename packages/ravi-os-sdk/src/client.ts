@@ -4456,11 +4456,12 @@ export class RaviClient {
         body: { args, ...(options ?? {}) },
       });
     },
-    /** Set a Ravi Pages site default visibility */
+    /** Set a Ravi Pages site default visibility, or one route with --route */
     visibility: async (args: string[], options?: {
       console?: string;
       execute?: boolean;
       project?: string;
+      route?: string;
     }): Promise<PagesVisibilityReturn> => {
       return this.transport.call({
         groupSegments: ["pages"],

@@ -18,10 +18,13 @@ import {
   listPublishedPages,
   managePagePassword,
   normalizePagePasswordReplacementVisibility,
+  normalizePageRoutePath,
   normalizePageVisibility,
+  updatePageRouteVisibility,
   updatePageSite,
   type PageDomainBindResult,
   type PagePasswordManageResult,
+  type PageRouteVisibilityUpdateResult,
   type PagesClientDeps,
   type PageSiteCreateResult,
   type PageSiteListResult,
@@ -102,6 +105,29 @@ Write brake:
   Dry-run by default. Without --execute nothing is uploaded and no release is
   activated; the command returns exit 3 with the planned publish. Publishing
   creates content on a reachable route, so it is never implied.
+`;
+
+const PAGES_VISIBILITY_HELP = `
+Examples:
+  ravi pages visibility demo private
+  ravi pages visibility demo public --execute
+  ravi pages visibility demo public --route / --execute
+  ravi pages visibility demo private --route /foo --json
+
+Without --route:
+  Updates the site defaultVisibility only. Routes published with an explicit
+  visibility keep that policy and can still redirect visitors to login.
+
+With --route / or /foo:
+  Changes that route's visibility only. Does not upload files or ship content.
+
+Write brake:
+  Switching to public is dry-run by default (exit 3). Reducing visibility
+  writes immediately. The plan shows site vs route and current vs target.
+
+JSON:
+  Site: { target: "site", defaultVisibility, effectiveVisibility, site, url }
+  Route: { target: "route", route, defaultVisibility, effectiveVisibility, url }
 `;
 
 @Group({
@@ -515,7 +541,11 @@ export class PagesCommands {
     });
   }
 
-  @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
+  @Command({
+    name: "visibility",
+    description: "Set a Ravi Pages site default visibility, or one route with --route",
+    helpAfter: PAGES_VISIBILITY_HELP,
+  })
   @CommandAccess({
     kind: "mutate",
     resource: "pages",
@@ -531,19 +561,40 @@ export class PagesCommands {
     args: string[],
     @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
     projectOption?: string,
+    @Option({
+      flags: "--route <path>",
+      description: "Change this route's visibility only, without uploading content. Omit to set site defaultVisibility",
+    })
+    route?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Required to switch a site to public visibility; other visibilities apply immediately",
+      description: "Required to switch visibility to public; other visibilities apply immediately",
     })
     execute?: boolean,
   ) {
     return runPagesCommand("pages visibility", asJson, async () => {
       const parsed = parseVisibilityArgs(args, projectOption);
       const normalizedVisibility = normalizePageVisibility(parsed.visibility);
-      brakePublicSiteVisibility("pages visibility", parsed, normalizedVisibility, execute, asJson);
+      const routePath = stringValue(route) ? normalizePageRoutePath(route) : undefined;
+      brakePublicVisibility("pages visibility", parsed, normalizedVisibility, execute, asJson, routePath);
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      if (routePath) {
+        const result = await updatePageRouteVisibility(
+          {
+            console: consoleUrl,
+            path: routePath,
+            project: resolved.projectRef,
+            site: parsed.site,
+            visibility: requireVisibilityValue(normalizedVisibility),
+          },
+          this.deps,
+        );
+        const payload = { ...result, scope: resolved.scope };
+        printPayload(payload, asJson, () => printUpdatedRouteVisibility(result));
+        return payload;
+      }
       const result = await updatePageSite(
         {
           project: resolved.projectRef,
@@ -553,7 +604,15 @@ export class PagesCommands {
         },
         this.deps,
       );
-      const payload = { ...result, scope: resolved.scope };
+      const defaultVisibility =
+        stringValue(result.site.defaultVisibility) ?? stringValue(result.site.visibility) ?? normalizedVisibility;
+      const payload = {
+        ...result,
+        defaultVisibility,
+        effectiveVisibility: defaultVisibility,
+        scope: resolved.scope,
+        target: "site" as const,
+      };
       printPayload(payload, asJson, () => printUpdatedSite(result));
       return payload;
     });
@@ -826,16 +885,51 @@ function brakePublicSiteVisibility(
   execute: boolean | undefined,
   asJson: boolean | undefined,
 ): void {
+  brakePublicVisibility(op, parsed, visibility, execute, asJson);
+}
+
+/**
+ * Same directional public brake as site updates. `--route` only changes what
+ * the plan describes (site default vs one explicit route).
+ */
+function brakePublicVisibility(
+  op: string,
+  parsed: { project?: string; site: string },
+  visibility: string | undefined,
+  execute: boolean | undefined,
+  asJson: boolean | undefined,
+  routePath?: string,
+): void {
   if (visibility !== "public" || execute === true) return;
   contractDryRun(
     op,
-    {
-      project: parsed.project ?? "(Console scope default)",
-      site: parsed.site,
-      defaultVisibility: visibility,
-    },
+    routePath
+      ? {
+          project: parsed.project ?? "(Console scope default)",
+          site: parsed.site,
+          scope: "route",
+          route: routePath,
+          currentVisibility: "explicit route policy",
+          targetVisibility: visibility,
+          siteDefaultVisibility: "unchanged",
+        }
+      : {
+          project: parsed.project ?? "(Console scope default)",
+          site: parsed.site,
+          scope: "site",
+          currentVisibility: "site defaultVisibility",
+          targetVisibility: visibility,
+          defaultVisibility: visibility,
+        },
     { asJson },
   );
+}
+
+function requireVisibilityValue(value: ReturnType<typeof normalizePageVisibility>) {
+  if (!value) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "Usage: ravi pages visibility [project] <site> <visibility>.");
+  }
+  return value;
 }
 
 /**
@@ -1043,6 +1137,11 @@ const pageSiteUpdateReturnSchema = z.object({
   site: pageSiteSchema,
   edgeManifestRepair: jsonValueSchema,
   url: z.string().nullable(),
+  target: z.enum(["site", "route"]).optional(),
+  path: z.string().optional(),
+  route: jsonObjectSchema.optional(),
+  defaultVisibility: z.string().nullable().optional(),
+  effectiveVisibility: z.string().optional(),
 });
 
 const pageDomainBindReturnSchema = z.object({
@@ -1296,6 +1395,17 @@ function printUpdatedSite(result: PageSiteUpdateResult): void {
   const repair = objectValue(result.edgeManifestRepair);
   if (repair?.status) console.log(`  Edge:       ${repair.status}`);
   if (result.url) console.log(`  URL:        ${result.url}`);
+}
+
+function printUpdatedRouteVisibility(result: PageRouteVisibilityUpdateResult): void {
+  console.log("✓ Pages route visibility updated");
+  printSiteFields(result.site);
+  console.log(`  Route      ${result.route.path}`);
+  console.log(`  Visibility ${result.effectiveVisibility}`);
+  if (result.defaultVisibility) console.log(`  Default    ${result.defaultVisibility} (site)`);
+  const repair = objectValue(result.edgeManifestRepair);
+  if (repair?.status) console.log(`  Edge:      ${repair.status}`);
+  if (result.url) console.log(`  URL        ${result.url}`);
 }
 
 function printDomainBindings(result: PageDomainBindResult): void {

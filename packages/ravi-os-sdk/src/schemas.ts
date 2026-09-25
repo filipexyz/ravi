@@ -51234,11 +51234,36 @@ export const PagesUpdateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "defaultVisibility": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "edgeManifestRepair": {
       "$ref": "#/$defs/__schema0"
     },
+    "effectiveVisibility": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
+    },
+    "route": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
     },
     "site": {
       "additionalProperties": {
@@ -51255,6 +51280,13 @@ export const PagesUpdateReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "target": {
+      "enum": [
+        "site",
+        "route"
+      ],
+      "type": "string"
     },
     "url": {
       "anyOf": [
@@ -51295,11 +51327,15 @@ export const PagesVisibilityInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Required to switch a site to public visibility; other visibilities apply immediately",
+      "description": "Required to switch visibility to public; other visibilities apply immediately",
       "type": "boolean"
     },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    },
+    "route": {
+      "description": "Change this route's visibility only, without uploading content. Omit to set site defaultVisibility",
       "type": "string"
     }
   },
@@ -51353,11 +51389,36 @@ export const PagesVisibilityReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "defaultVisibility": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "edgeManifestRepair": {
       "$ref": "#/$defs/__schema0"
     },
+    "effectiveVisibility": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
+    },
+    "route": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
     },
     "site": {
       "additionalProperties": {
@@ -51374,6 +51435,13 @@ export const PagesVisibilityReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "target": {
+      "enum": [
+        "site",
+        "route"
+      ],
+      "type": "string"
     },
     "url": {
       "anyOf": [
