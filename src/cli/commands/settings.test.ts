@@ -108,7 +108,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (17 returned of 17, limit 50, offset 0):");
+    expect(output).toContain("Settings (18 returned of 18, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
