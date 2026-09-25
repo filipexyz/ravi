@@ -46,6 +46,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/chat-schema.test.ts",
     "src/router/sessions.test.ts",
     "src/router/resolver.test.ts",
+    // Route CRUD persistence: pattern normalize, dmScope updates, soft-delete.
+    "src/router/router-db.routes.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/session-goals.test.ts",
