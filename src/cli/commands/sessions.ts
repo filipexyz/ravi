@@ -59,7 +59,12 @@ import {
   SessionAttachConflictError,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
-import { loadRouterConfig, expandHome } from "../../router/index.js";
+import { loadRouterConfig, expandHome, getAgent, updateAgent } from "../../router/index.js";
+import {
+  describeSessionAgentDefaultDiff,
+  rematerializeSessionToAgentRuntime,
+  syncAgentSessionsToAgentRuntime,
+} from "../../runtime/agent-session-runtime-sync.js";
 import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
@@ -258,6 +263,15 @@ const sessionSetEffortReturnSchema = z.object({
   effectiveEffortSource: sessionEffortSourceReturnSchema,
   appliesOn: z.literal("next-turn-runtime-restart"),
 });
+const sessionAgentDefaultDiffReturnSchema = {
+  agentDefaultDiffers: z.boolean().optional(),
+  agentDefaultProvider: z.string().nullable().optional(),
+  agentDefaultModel: z.string().nullable().optional(),
+  hint: z.string().nullable().optional(),
+  propagateCommand: z.string().nullable().optional(),
+  propagated: z.boolean().optional(),
+  rematerializedSessions: z.array(z.object({}).passthrough()).optional(),
+};
 const sessionSetProviderReturnSchema = z.object({
   action: z.literal("set-provider"),
   changed: z.boolean(),
@@ -269,6 +283,20 @@ const sessionSetProviderReturnSchema = z.object({
   effectiveProvider: z.string(),
   providerSource: z.string(),
   appliesOn: z.literal("next-turn-runtime-restart"),
+  ...sessionAgentDefaultDiffReturnSchema,
+});
+const sessionSetModelReturnSchema = z.object({
+  action: z.literal("set-model"),
+  changed: z.boolean(),
+  sessionKey: z.string(),
+  sessionName: z.string().nullable(),
+  before: sessionMutationSnapshotReturnSchema,
+  after: sessionMutationSnapshotReturnSchema.nullable(),
+  modelOverride: z.string().nullable(),
+  effectiveModel: z.string(),
+  event: z.object({}).passthrough().optional(),
+  notification: z.object({}).passthrough().optional(),
+  ...sessionAgentDefaultDiffReturnSchema,
 });
 const sessionCommandTargetReturnSchema = z
   .object({
@@ -3386,6 +3414,11 @@ export class SessionCommands {
     provider: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--propagate",
+      description: "Also set the agent default provider and rematerialize sibling sessions without overrides",
+    })
+    propagate?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -3418,10 +3451,42 @@ export class SessionCommands {
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
+    const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
     updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
     if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
       clearProviderSession(s.sessionKey);
     }
+
+    let rematerializedSessions: ReturnType<typeof syncAgentSessionsToAgentRuntime>["rematerializedSessions"] = [];
+    if (!providerOverride && agent) {
+      const clearedSession =
+        resolveSession(s.sessionKey) ??
+        ({
+          ...s,
+          runtimeProviderOverride: undefined,
+        } as SessionEntry);
+      const rematerialized = rematerializeSessionToAgentRuntime(clearedSession, agent);
+      if (rematerialized) rematerializedSessions = [rematerialized];
+    }
+
+    let propagated = false;
+    if (propagate === true && providerOverride && agent) {
+      updateAgent(s.agentId, { provider: providerOverride });
+      const siblingSync = syncAgentSessionsToAgentRuntime({
+        agent: { ...agent, id: s.agentId, provider: providerOverride },
+        rematerialize: true,
+      });
+      rematerializedSessions = siblingSync.rematerializedSessions;
+      propagated = true;
+    }
+
+    const agentDiff = describeSessionAgentDefaultDiff({
+      agentId: s.agentId,
+      sessionName: label,
+      axis: "provider",
+      sessionValue: providerOverride,
+      agent: propagated && providerOverride ? { ...agent, id: s.agentId, provider: providerOverride } : agent,
+    });
 
     if (!asJson) {
       if (providerOverride) {
@@ -3430,6 +3495,21 @@ export class SessionCommands {
         console.log(`Cleared runtime provider override for: ${label}`);
       }
       console.log("Note: takes effect on the next turn; existing provider session state is cleared when incompatible.");
+      if (rematerializedSessions.length > 0 && !providerOverride) {
+        console.log(
+          `Rematerialized last-used runtime_provider to follow agent default (${rematerializedSessions[0]?.runtimeProvider}).`,
+        );
+      }
+      if (propagated) {
+        console.log(
+          `Propagated provider to agent '${s.agentId}'. Rematerialized ${rematerializedSessions.length} sibling session(s) without overrides.`,
+        );
+      } else if (agentDiff.agentDefaultDiffers && agentDiff.hint) {
+        console.log(`Note: ${agentDiff.hint}`);
+        if (agentDiff.propagateCommand) {
+          console.log(`Propagate upward: ${agentDiff.propagateCommand}`);
+        }
+      }
     }
 
     const after =
@@ -3446,6 +3526,9 @@ export class SessionCommands {
         effectiveProvider: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).effectiveProvider,
         providerSource: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).providerSource,
         appliesOn: "next-turn-runtime-restart",
+        ...agentDiff,
+        propagated,
+        rematerializedSessions,
       });
       printJson(payload);
       return payload;
@@ -3467,6 +3550,11 @@ export class SessionCommands {
     model: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--propagate",
+      description: "Also set the agent default model and rematerialize sibling sessions without overrides",
+    })
+    propagate?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -3484,6 +3572,7 @@ export class SessionCommands {
     const label = s.name ?? s.sessionKey;
     const modelOverride = model === "clear" ? null : model;
     const beforeModelOverride = s.modelOverride ?? null;
+    const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
     if (model === "clear") {
       updateSessionModelOverride(s.sessionKey, null);
       if (!asJson) console.log(`Cleared model override for: ${label}`);
@@ -3491,6 +3580,26 @@ export class SessionCommands {
       updateSessionModelOverride(s.sessionKey, model);
       if (!asJson) console.log(`Set model to "${model}" for: ${label}`);
     }
+
+    let rematerializedSessions: ReturnType<typeof syncAgentSessionsToAgentRuntime>["rematerializedSessions"] = [];
+    let propagated = false;
+    if (propagate === true && modelOverride && agent) {
+      updateAgent(s.agentId, { model: modelOverride, modelPresetId: null });
+      const siblingSync = syncAgentSessionsToAgentRuntime({
+        agent: { ...agent, id: s.agentId, model: modelOverride, modelPresetId: undefined },
+        rematerialize: true,
+      });
+      rematerializedSessions = siblingSync.rematerializedSessions;
+      propagated = true;
+    }
+
+    const agentDiff = describeSessionAgentDefaultDiff({
+      agentId: s.agentId,
+      sessionName: label,
+      axis: "model",
+      sessionValue: modelOverride,
+      agent: propagated && modelOverride ? { ...agent, id: s.agentId, model: modelOverride } : agent,
+    });
 
     const event: SessionModelChangedEvent = {
       sessionKey: s.sessionKey,
@@ -3514,6 +3623,19 @@ export class SessionCommands {
       if (!asJson) console.log("Saved override. Live daemon notification failed; next cold session will use it.");
     }
 
+    if (!asJson) {
+      if (propagated) {
+        console.log(
+          `Propagated model to agent '${s.agentId}'. Rematerialized ${rematerializedSessions.length} sibling session(s) without overrides.`,
+        );
+      } else if (agentDiff.agentDefaultDiffers && agentDiff.hint) {
+        console.log(`Note: ${agentDiff.hint}`);
+        if (agentDiff.propagateCommand) {
+          console.log(`Propagate upward: ${agentDiff.propagateCommand}`);
+        }
+      }
+    }
+
     const after =
       resolveSession(s.sessionKey) ??
       ({
@@ -3529,6 +3651,9 @@ export class SessionCommands {
           topic: SESSION_MODEL_CHANGED_TOPIC,
           ...notification,
         },
+        ...agentDiff,
+        propagated,
+        rematerializedSessions,
       });
       printJson(payload);
       return payload;
@@ -6732,7 +6857,7 @@ declareCommandReturns(SessionCommands, {
   send: sessionSendReturnSchema,
   setDisplay: commandEnvelopeReturnSchema,
   setProvider: sessionSetProviderReturnSchema,
-  setModel: commandEnvelopeReturnSchema,
+  setModel: sessionSetModelReturnSchema,
   setEffort: sessionSetEffortReturnSchema,
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,

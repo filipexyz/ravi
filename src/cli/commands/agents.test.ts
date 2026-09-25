@@ -35,6 +35,7 @@ type SessionLike = {
   providerSessionId?: string | null;
   sdkSessionId?: string | null;
   runtimeProvider?: string | null;
+  runtimeProviderOverride?: string | null;
   modelOverride?: string | null;
   effortOverride?: string | null;
   thinkingLevel?: "off" | "normal" | "verbose" | null;
@@ -209,6 +210,18 @@ mock.module("../../router/router-db.js", () => ({
   DmScopeSchema: { safeParse: () => ({ success: true }), options: [] },
 }));
 
+function patchSession(sessionKey: string, patch: Partial<SessionLike>): void {
+  sessionsByAgent = sessionsByAgent.map((session) =>
+    session.sessionKey === sessionKey ? { ...session, ...patch } : session,
+  );
+  if (resolvedSession?.sessionKey === sessionKey) {
+    resolvedSession = { ...resolvedSession, ...patch };
+  }
+  if (mainSession?.sessionKey === sessionKey) {
+    mainSession = { ...mainSession, ...patch };
+  }
+}
+
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   deleteSession: (sessionKey: string) => {
@@ -218,8 +231,25 @@ mock.module("../../router/sessions.js", () => ({
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   getSessionsByAgent: () => sessionsByAgent,
+  getSession: (sessionKey: string) => sessionsByAgent.find((session) => session.sessionKey === sessionKey) ?? null,
   getMainSession: () => mainSession,
   resolveSession: () => resolvedSession,
+  clearProviderSession: (sessionKey: string) => {
+    patchSession(sessionKey, {
+      runtimeProvider: undefined,
+      providerSessionId: undefined,
+      sdkSessionId: undefined,
+    });
+  },
+  updateRuntimeProviderState: (sessionKey: string, runtimeProvider: string | null) => {
+    patchSession(sessionKey, { runtimeProvider: runtimeProvider ?? undefined });
+  },
+  updateSessionRuntimeProviderOverride: (sessionKey: string, provider: string | null) => {
+    patchSession(sessionKey, { runtimeProviderOverride: provider ?? undefined });
+  },
+  updateSessionModelOverride: (sessionKey: string, model: string | null) => {
+    patchSession(sessionKey, { modelOverride: model ?? undefined });
+  },
 }));
 
 mock.module("../../tags/helpers.js", () => ({
@@ -472,16 +502,19 @@ describe("AgentsCommands set session override reporting", () => {
       expect(payload).toMatchObject({
         changed: true,
         sessionOverrides: [
-          { sessionName: "alpha-session", effort: "max" },
+          { sessionName: "alpha-session", effort: "max", reasons: ["effort_override"] },
           {
             sessionName: "zeta-session",
             model: "gpt-5.6",
             effort: "high",
             thinking: "verbose",
+            reasons: ["model_override", "effort_override", "thinking_override"],
           },
         ],
+        rematerializedSessions: [],
+        forcedClearedOverrides: [],
       });
-      expect(Object.keys(payload?.sessionOverrides[0] ?? {})).toEqual(["sessionName", "effort"]);
+      expect(Object.keys(payload?.sessionOverrides[0] ?? {})).toEqual(["sessionName", "reasons", "effort"]);
       expect(agentSetReturnSchema.safeParse(payload).success).toBe(true);
       expect(logCalls.join("\n")).not.toContain("raw-channel");
     } finally {
@@ -510,7 +543,7 @@ describe("AgentsCommands set session override reporting", () => {
 
       expect(payload).toMatchObject({
         changed: false,
-        sessionOverrides: [{ sessionName: "dev-main", thinking: "off" }],
+        sessionOverrides: [{ sessionName: "dev-main", thinking: "off", reasons: ["thinking_override"] }],
       });
     } finally {
       console.log = originalLog;
@@ -563,6 +596,7 @@ describe("AgentsCommands set session override reporting", () => {
         "Warning: 2 sessions have runtime overrides:",
         "  - alpha-session: effort=max",
         "  - bravo-session: model=gpt-5.5, thinking=verbose",
+        "  Re-run with --force to clear those overrides and adopt the agent config.",
       ]);
       expect(logCalls.join("\n")).not.toContain("raw-");
     } finally {
@@ -594,6 +628,209 @@ describe("AgentsCommands set session override reporting", () => {
 
       expect(logCalls).toEqual(["\u2713 model unchanged: dev -> gpt-5.5", "  Session overrides: none"]);
       expect(logCalls.some((line) => line.startsWith("Warning:"))).toBe(false);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("rematerializes no-override sessions whose last-used provider drifted", async () => {
+    currentAgent = { id: "ravi-console", cwd: "/tmp/ravi-console", provider: "codex", model: "gpt-5.5" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:ravi-console:wa",
+        name: "wa-group",
+        agentId: "ravi-console",
+        agentCwd: "/tmp/ravi-console",
+        runtimeProvider: "codex",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:ravi-console:trigger",
+        name: "trigger-job",
+        agentId: "ravi-console",
+        agentCwd: "/tmp/ravi-console",
+        runtimeProvider: "claude",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = await commands.set("ravi-console", "provider", "pi", true);
+
+      expect(agentSetReturnSchema.safeParse(payload).success).toBe(true);
+      expect(payload.changed).toBe(true);
+      expect(payload.sessionOverrides).toEqual([]);
+      expect(payload.rematerializedSessions).toEqual([
+        {
+          sessionName: "trigger-job",
+          sessionKey: "agent:ravi-console:trigger",
+          reasons: ["stale_runtime_provider"],
+          previousRuntimeProvider: "claude",
+          runtimeProvider: "pi",
+          clearedProviderSession: false,
+        },
+        {
+          sessionName: "wa-group",
+          sessionKey: "agent:ravi-console:wa",
+          reasons: ["stale_runtime_provider"],
+          previousRuntimeProvider: "codex",
+          runtimeProvider: "pi",
+          clearedProviderSession: false,
+        },
+      ]);
+      expect(sessionsByAgent.find((session) => session.name === "wa-group")?.runtimeProvider).toBe("pi");
+      expect(sessionsByAgent.find((session) => session.name === "trigger-job")?.runtimeProvider).toBe("pi");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("lists provider overrides with reasons and leaves them in place", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:pinned",
+        name: "pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "codex",
+        runtimeProviderOverride: "codex",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = await commands.set("dev", "provider", "pi", true);
+
+      expect(payload.sessionOverrides).toEqual([
+        { sessionName: "pinned", reasons: ["provider_override"], provider: "codex" },
+      ]);
+      expect(payload.rematerializedSessions).toEqual([]);
+      expect(sessionsByAgent[0]?.runtimeProvider).toBe("codex");
+      expect(sessionsByAgent[0]?.runtimeProviderOverride).toBe("codex");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("clears overrides with --force and rematerializes those sessions", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:pinned",
+        name: "pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "codex",
+        runtimeProviderOverride: "codex",
+        modelOverride: "gpt-5.6",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = await commands.set("dev", "provider", "pi", true, true);
+
+      expect(payload.forcedClearedOverrides).toEqual([
+        { sessionName: "pinned", reasons: ["provider_override"], provider: "codex" },
+      ]);
+      expect(payload.sessionOverrides).toEqual([
+        { sessionName: "pinned", reasons: ["model_override"], model: "gpt-5.6" },
+      ]);
+      expect(payload.rematerializedSessions).toEqual([
+        {
+          sessionName: "pinned",
+          sessionKey: "agent:dev:pinned",
+          reasons: ["stale_runtime_provider"],
+          previousRuntimeProvider: "codex",
+          runtimeProvider: "pi",
+          clearedProviderSession: false,
+        },
+      ]);
+      expect(sessionsByAgent[0]?.runtimeProviderOverride).toBeUndefined();
+      expect(sessionsByAgent[0]?.modelOverride).toBe("gpt-5.6");
+      expect(sessionsByAgent[0]?.runtimeProvider).toBe("pi");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("prints rematerialized drift and remaining overrides on a human provider set", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:wa",
+        name: "wa-group",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "codex",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:pinned",
+        name: "pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        runtimeProviderOverride: "claude",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logCalls.push(args.map(String).join(" "));
+
+    try {
+      await commands.set("dev", "provider", "pi", false);
+
+      expect(logCalls).toEqual([
+        "\u2713 provider set: dev -> pi",
+        "Rematerialized 1 session to follow the agent:",
+        "  - wa-group: runtime_provider=codex → pi",
+        "Warning: 1 session has runtime overrides:",
+        "  - pinned: provider=claude",
+        "  Re-run with --force to clear those overrides and adopt the agent config.",
+      ]);
+      expect(logCalls.join("\n")).not.toContain("raw-");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("does not rematerialize last-used provider when a non-runtime key changes", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:wa",
+        name: "wa-group",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = await commands.set("dev", "name", "Dev Bot", true);
+
+      expect(payload.rematerializedSessions).toEqual([]);
+      expect(sessionsByAgent[0]?.runtimeProvider).toBe("claude");
     } finally {
       console.log = originalLog;
     }
