@@ -2810,11 +2810,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         // External compaction announcements are user-facing runtime responses.
-        // They are suppressed for automation-originated turns (cron, trigger,
-        // session followup, heartbeat, and other background automation) while
-        // human/channel turns keep them when enabled and not in sentinel mode.
-        // Internal status/trace/live-state/skill-visibility handling above is
-        // preserved for every origin.
+        // They stay off unless announceCompaction is explicitly true, and they
+        // are also suppressed for automation-originated turns (cron, trigger,
+        // session followup, heartbeat, and other background automation).
+        // Human/channel turns keep them only when the setting is enabled and
+        // the agent is not in sentinel mode. Internal status/trace/live-state/
+        // skill-visibility handling above is preserved for every origin.
         if (
           getAnnounceCompaction() &&
           streaming.currentSource &&

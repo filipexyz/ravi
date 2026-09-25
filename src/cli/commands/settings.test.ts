@@ -108,7 +108,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (17 returned of 17, limit 50, offset 0):");
+    expect(output).toContain("Settings (18 returned of 18, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
@@ -150,6 +150,24 @@ describe("SettingsCommands", () => {
     expect(() => commands.set("runtime.model_broker.required", "yes")).toThrow(/true, false/);
     expect(() => commands.set("runtime.model_broker.required", "true", true)).not.toThrow();
     expect(settingsStore["runtime.model_broker.required"]).toBe("true");
+  });
+
+  it("registers announceCompaction as a known opt-in switch defaulting to false", () => {
+    const commands = new SettingsCommands();
+    const output = captureLogs(() => {
+      expect(commands.get("announceCompaction").setting).toMatchObject({
+        key: "announceCompaction",
+        value: null,
+        isSet: false,
+        known: true,
+        defaultValue: "false",
+      });
+    });
+    expect(output).toContain("Default: false");
+
+    expect(() => commands.set("announceCompaction", "yes")).toThrow(/true, false/);
+    expect(() => commands.set("announceCompaction", "true", true)).not.toThrow();
+    expect(settingsStore.announceCompaction).toBe("true");
   });
 
   it("rejects writes to legacy account settings", () => {

@@ -67,6 +67,7 @@ ravi settings delete <key> --execute  # apaga de verdade
 | `runtime.defaultProvider` | Provider runtime global (próximo turno sem override) | `codex`, `claude`, `pi` |
 | `runtime.defaultModel` | Model runtime global. `RAVI_MODEL` só é fallback se esta key estiver unset | seletor de model |
 | `runtime.defaultEffort` | Effort runtime global | `none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra` |
+| `announceCompaction` | Avisos de compactação no canal (Compactando memória…) | `true` ou `false` (default: `false`) |
 | `tasks.sessionTtl` | TTL padrão para sessões de trabalho de tasks | duração como 1d, 12h, ou off |
 | `tasks.sessionTtl.knowledgeEngineer` | TTL para sessões de task de `knowledge-engineer-*` | duração como 5m, 1h, ou off |
 
@@ -105,6 +106,11 @@ ravi settings set defaultAgent main
 Configurar timezone:
 ```bash
 ravi settings set defaultTimezone America/Sao_Paulo
+```
+
+Reativar avisos de compactação no canal (off por default):
+```bash
+ravi settings set announceCompaction true
 ```
 
 Configurar retenção de sessões de tasks:

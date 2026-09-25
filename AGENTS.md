@@ -421,6 +421,7 @@ ravi permissions clear                           # Clear manual relations
 - `defaultTimezone` - Default timezone for cron jobs (e.g., `America/Sao_Paulo`)
 - `whatsapp.groupPolicy` - Group policy: `open`, `allowlist`, `closed`
 - `whatsapp.dmPolicy` - DM policy: `open`, `pairing`, `closed`
+- `announceCompaction` - Post compacting/compacted notices to the conversation channel (`true` / `false`, default: `false`)
 
 **Agent Resolution:**
 

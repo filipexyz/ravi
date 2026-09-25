@@ -151,8 +151,9 @@ export interface RuntimeHostStreamingSession {
   /**
    * Whether external compaction announcements may be externalized for the turn
    * effectively executing. Snapshotted per turn from the turn's origin so that
-   * automation-originated turns compact silently while human/channel turns keep
-   * announcements. Internal compaction observability is unaffected.
+   * automation-originated turns compact silently while human/channel turns may
+   * keep announcements when `announceCompaction` is enabled. Internal
+   * compaction observability is unaffected.
    */
   currentTurnProvenance?: TurnProvenance;
   /**

@@ -293,6 +293,13 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/router/"]);
   });
 
+  it("accepts announceCompaction coverage for router persistence changes", () => {
+    const result = runCoverageGate(["src/router/router-db.ts", "src/router/router-db.announce-compaction.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/router/"]);
+  });
+
   it("accepts crash recovery store coverage across router persistence and runtime changes", () => {
     const result = runCoverageGate([
       "src/router/router-db.ts",
