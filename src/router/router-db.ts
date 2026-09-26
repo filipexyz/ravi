@@ -262,6 +262,15 @@ interface DaemonRestartSessionSnapshotRow {
   updated_at: number;
 }
 
+interface DaemonRestartResumeDeliveryRow {
+  restart_epoch: string;
+  session_key: string;
+  session_name: string | null;
+  delivery_kind: string;
+  decision_reason: string | null;
+  delivered_at: number;
+}
+
 interface ChatRow {
   id: string;
   channel: string;
@@ -1091,6 +1100,21 @@ export interface DaemonRestartSessionSnapshotInput {
   pendingMessages?: unknown[];
   metadata?: Record<string, unknown> | null;
   recordedAt?: number;
+}
+
+/**
+ * What actually reached the session for a restart epoch: `resume` continues or
+ * drains durable work, `notice` only reports a restart whose resume was fenced.
+ */
+export type DaemonRestartDeliveryKind = "resume" | "notice";
+
+export interface DaemonRestartResumeDeliveryRecord {
+  restartEpoch: string;
+  sessionKey: string;
+  sessionName?: string;
+  deliveryKind: DaemonRestartDeliveryKind;
+  decisionReason?: string;
+  deliveredAt: number;
 }
 
 export interface ListContextsOptions {
@@ -2354,6 +2378,8 @@ function getDb(): Database {
       restart_epoch TEXT NOT NULL,
       session_key TEXT NOT NULL,
       session_name TEXT,
+      delivery_kind TEXT NOT NULL DEFAULT 'resume',
+      decision_reason TEXT,
       delivered_at INTEGER NOT NULL,
       PRIMARY KEY (restart_epoch, session_key),
       FOREIGN KEY(restart_epoch) REFERENCES daemon_restart_epochs(restart_epoch) ON DELETE CASCADE
@@ -3234,6 +3260,8 @@ function getDb(): Database {
   ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
   ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
   ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
+  ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
+  ensureColumn(db, "daemon_restart_resume_deliveries", "decision_reason", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
@@ -6575,10 +6603,31 @@ export function dbHasDaemonRestartResumeDelivery(restartEpoch: string, sessionKe
   return Boolean(row);
 }
 
+export function dbGetDaemonRestartResumeDelivery(
+  restartEpoch: string,
+  sessionKey: string,
+): DaemonRestartResumeDeliveryRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM daemon_restart_resume_deliveries WHERE restart_epoch = ? AND session_key = ?")
+    .get(restartEpoch, sessionKey) as DaemonRestartResumeDeliveryRow | undefined;
+  if (!row) return null;
+  return {
+    restartEpoch: row.restart_epoch,
+    sessionKey: row.session_key,
+    sessionName: row.session_name ?? undefined,
+    deliveryKind: row.delivery_kind === "notice" ? "notice" : "resume",
+    decisionReason: row.decision_reason ?? undefined,
+    deliveredAt: row.delivered_at,
+  };
+}
+
+/** Record only what was actually published to the session for this restart epoch. */
 export function dbMarkDaemonRestartResumeDelivered(input: {
   restartEpoch: string;
   sessionKey: string;
   sessionName?: string | null;
+  deliveryKind: DaemonRestartDeliveryKind;
+  decisionReason?: string | null;
   deliveredAt?: number;
 }): boolean {
   const deliveredAt = input.deliveredAt ?? Date.now();
@@ -6589,12 +6638,19 @@ export function dbMarkDaemonRestartResumeDelivered(input: {
         .prepare(
           `
           INSERT OR IGNORE INTO daemon_restart_resume_deliveries (
-            restart_epoch, session_key, session_name, delivered_at
+            restart_epoch, session_key, session_name, delivery_kind, decision_reason, delivered_at
           )
-          VALUES (?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?)
         `,
         )
-        .run(input.restartEpoch, input.sessionKey, input.sessionName ?? null, deliveredAt);
+        .run(
+          input.restartEpoch,
+          input.sessionKey,
+          input.sessionName ?? null,
+          input.deliveryKind,
+          input.decisionReason ?? null,
+          deliveredAt,
+        );
       return result.changes > 0;
     },
     { label: "daemon_restart_resume_delivered" },
