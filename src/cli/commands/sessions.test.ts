@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ZodTypeAny } from "zod";
 
 afterAll(() => mock.restore());
 
@@ -66,6 +67,7 @@ let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
 let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
+let dropSessionOverrideWrites = false;
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
 let scopeEnforced = false;
@@ -259,6 +261,7 @@ mock.module("../../router/sessions.js", () => ({
     };
   },
   updateSessionModelOverride: (sessionKey: string, model: string | null) => {
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         model === null
@@ -272,6 +275,7 @@ mock.module("../../router/sessions.js", () => ({
     );
   },
   updateSessionRuntimeProviderOverride: (sessionKey: string, provider: string | null) => {
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         provider === null
@@ -312,6 +316,7 @@ mock.module("../../router/sessions.js", () => ({
   },
   updateSessionEffortOverride: (sessionKey: string, effort: string | null) => {
     effortUpdates.push({ sessionKey, effort });
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         effort === null
@@ -482,7 +487,17 @@ const {
   buildSessionDetachCommand,
   serializeSessionActionMessage,
   extractNormalizedTranscriptMessages,
+  sessionSetEffortReturnSchema,
+  sessionSetModelReturnSchema,
+  sessionSetProviderReturnSchema,
 } = await import("./sessions.js");
+
+function expectReturnShape(schema: ZodTypeAny, payload: unknown): void {
+  const parsed = schema.safeParse(payload);
+  const issues = parsed.error?.issues.map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`) ?? [];
+  expect(issues).toEqual([]);
+  expect(parsed.success).toBe(true);
+}
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -543,6 +558,7 @@ beforeEach(() => {
   renameSessionNameError = null;
   renameRouteReferencesUpdated = 0;
   effortUpdates = [];
+  dropSessionOverrideWrites = false;
   runtimeLiveStates.clear();
   natsEmits.length = 0;
   resetSessionCalls.length = 0;
@@ -2382,6 +2398,7 @@ describe("SessionCommands set-model", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetModelReturnSchema, payload);
     expect(payload.agentDefaultDiffers).toBe(true);
     expect(payload.agentDefaultModel).toBe("model-default");
     expect(payload.propagateCommand).toBe("ravi sessions set-model model-switch model-live --propagate");
@@ -2418,9 +2435,94 @@ describe("SessionCommands set-model", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetModelReturnSchema, payload);
     expect(payload.propagated).toBe(true);
     expect(routerConfig.agents.main?.model).toBe("model-live");
     expect(payload.agentDefaultDiffers).toBe(false);
+  });
+
+  it("prints and returns the same schema-valid envelope with --json", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = { agents: { main: { model: "model-default" } } };
+
+    let returned: unknown;
+    const output = await captureLogsAsync(async () => {
+      returned = await new SessionCommands().setModel("model-switch", "model-live", true);
+    });
+
+    expectReturnShape(sessionSetModelReturnSchema, returned);
+    expect(JSON.parse(output)).toEqual(JSON.parse(JSON.stringify(returned)));
+  });
+
+  it("returns the set-model envelope through the gateway, where --json is stripped", async () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = { agents: { main: { model: "model-default" } } };
+
+    let payload: Record<string, any> | undefined;
+    await captureLogsAsync(async () => {
+      payload = (await new SessionCommands().setModel("model-switch", "model-live")) as Record<string, any>;
+    });
+
+    expectReturnShape(sessionSetModelReturnSchema, payload);
+    expect(payload).toMatchObject({
+      action: "set-model",
+      changed: true,
+      sessionKey: "agent:main:model-switch",
+      sessionName: "model-switch",
+      modelOverride: "model-live",
+      effectiveModel: "model-live",
+      notification: { topic: "ravi.session.model.changed", delivered: true, error: null },
+    });
+    expect(payload?.before.modelOverride).toBeUndefined();
+    expect(payload?.after.modelOverride).toBe("model-live");
+    expect(resolvedSession?.modelOverride).toBe("model-live");
+  });
+
+  it("returns a schema-valid gateway envelope when clearing the model override", async () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:main:model-clear",
+      name: "model-clear",
+      agentId: "main",
+      modelOverride: "model-live",
+    };
+    routerConfig = { agents: { main: { model: "model-default" } } };
+
+    let payload: Record<string, any> | undefined;
+    await captureLogsAsync(async () => {
+      payload = (await new SessionCommands().setModel("model-clear", "clear")) as Record<string, any>;
+    });
+
+    expectReturnShape(sessionSetModelReturnSchema, payload);
+    expect(payload).toMatchObject({ action: "set-model", changed: true, modelOverride: null });
+    expect(payload?.after.modelOverride).toBeUndefined();
+  });
+
+  it("fails instead of returning a success envelope when the model override did not persist", async () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = { agents: { main: { model: "model-default" } } };
+
+    await expect(
+      captureLogsAsync(async () => {
+        await new SessionCommands().setModel("model-switch", "model-live");
+      }),
+    ).rejects.toThrow("sessions set-model did not persist for model-switch.");
+    expect(resolvedSession?.modelOverride).toBeUndefined();
   });
 });
 
@@ -2453,6 +2555,7 @@ describe("SessionCommands set-provider", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetProviderReturnSchema, payload);
     expect(payload.action).toBe("set-provider");
     expect(payload.runtimeProviderOverride).toBe("codex");
     expect(payload.agentDefaultDiffers).toBe(true);
@@ -2482,6 +2585,7 @@ describe("SessionCommands set-provider", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetProviderReturnSchema, payload);
     expect(payload.runtimeProviderOverride).toBeNull();
     expect(payload.rematerializedSessions).toEqual([
       expect.objectContaining({
@@ -2522,12 +2626,124 @@ describe("SessionCommands set-provider", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetProviderReturnSchema, payload);
     expect(payload.propagated).toBe(true);
     expect(routerConfig.agents["ravi-console"]?.provider).toBe("codex");
     expect(payload.rematerializedSessions.map((session: { sessionName: string }) => session.sessionName)).toEqual([
       "trigger-job",
     ]);
     expect(resolvedSession?.runtimeProviderOverride).toBe("codex");
+  });
+
+  it("prints and returns the same schema-valid envelope with --json", () => {
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+    };
+    routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
+
+    let returned: unknown;
+    const output = captureLogs(() => {
+      returned = new SessionCommands().setProvider("wa-group", "codex", true);
+    });
+
+    expectReturnShape(sessionSetProviderReturnSchema, returned);
+    expect(JSON.parse(output)).toEqual(JSON.parse(JSON.stringify(returned)));
+  });
+
+  it("returns the set-provider envelope through the gateway, where --json is stripped", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+      runtimeProvider: "pi",
+    };
+    routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
+
+    let payload: Record<string, any> | undefined;
+    captureLogs(() => {
+      payload = new SessionCommands().setProvider("wa-group", "codex") as Record<string, any>;
+    });
+
+    expectReturnShape(sessionSetProviderReturnSchema, payload);
+    expect(payload).toMatchObject({
+      action: "set-provider",
+      changed: true,
+      sessionKey: "agent:ravi-console:wa",
+      sessionName: "wa-group",
+      runtimeProviderOverride: "codex",
+      effectiveProvider: "codex",
+      providerSource: "session_override",
+      appliesOn: "next-turn-runtime-restart",
+      propagated: false,
+    });
+    expect(payload?.before.runtimeProviderOverride).toBeUndefined();
+    expect(payload?.after.runtimeProviderOverride).toBe("codex");
+    expect(payload?.after.runtimeOptions.provider).toEqual({ value: "codex", source: "session_override" });
+    expect(resolvedSession?.runtimeProviderOverride).toBe("codex");
+  });
+
+  it("returns a schema-valid gateway envelope when clearing and rematerializing the provider", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+      runtimeProvider: "codex",
+      runtimeProviderOverride: "codex",
+    };
+    routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
+
+    let payload: Record<string, any> | undefined;
+    captureLogs(() => {
+      payload = new SessionCommands().setProvider("wa-group", "clear") as Record<string, any>;
+    });
+
+    expectReturnShape(sessionSetProviderReturnSchema, payload);
+    expect(payload).toMatchObject({
+      action: "set-provider",
+      changed: true,
+      runtimeProviderOverride: null,
+      effectiveProvider: "pi",
+    });
+    expect(payload?.rematerializedSessions).toEqual([
+      expect.objectContaining({ sessionName: "wa-group", previousRuntimeProvider: "codex", runtimeProvider: "pi" }),
+    ]);
+    expect(payload?.after.runtimeProviderOverride).toBeUndefined();
+  });
+
+  it("fails instead of returning a success envelope when the provider override did not persist", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+    };
+    routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
+
+    expect(() =>
+      captureLogs(() => {
+        new SessionCommands().setProvider("wa-group", "codex");
+      }),
+    ).toThrow("sessions set-provider did not persist for wa-group.");
+    expect(resolvedSession?.runtimeProviderOverride).toBeUndefined();
+  });
+
+  it("rejects unknown providers through the gateway without persisting", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+    };
+
+    expect(() => new SessionCommands().setProvider("wa-group", "not-a-provider")).toThrow(
+      /Unknown runtime provider: not-a-provider/,
+    );
+    expect(resolvedSession?.runtimeProviderOverride).toBeUndefined();
   });
 });
 
@@ -2587,6 +2803,7 @@ describe("SessionCommands set-effort", () => {
     });
     const payload = JSON.parse(output);
 
+    expectReturnShape(sessionSetEffortReturnSchema, payload);
     expect(payload).toMatchObject({
       action: "set-effort",
       changed: true,
@@ -2607,6 +2824,46 @@ describe("SessionCommands set-effort", () => {
 
     expect(() => new SessionCommands().setEffort("effort-invalid", "turbo", true)).toThrow(/Invalid runtime effort/);
     expect(effortUpdates).toEqual([]);
+  });
+
+  it("returns the set-effort envelope through the gateway, where --json is stripped", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:main:effort-switch",
+      name: "effort-switch",
+      agentId: "main",
+    };
+    routerConfig = { agents: { main: { effort: "max" } } };
+
+    let payload: Record<string, any> | undefined;
+    captureLogs(() => {
+      payload = new SessionCommands().setEffort("effort-switch", "high") as Record<string, any>;
+    });
+
+    expectReturnShape(sessionSetEffortReturnSchema, payload);
+    expect(payload).toMatchObject({
+      action: "set-effort",
+      changed: true,
+      effortOverride: "high",
+      effectiveEffort: "high",
+      effectiveEffortSource: "session_override",
+    });
+    expect(payload?.after.effortOverride).toBe("high");
+  });
+
+  it("fails instead of returning a success envelope when the effort override did not persist", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:main:effort-switch",
+      name: "effort-switch",
+      agentId: "main",
+    };
+
+    expect(() => new SessionCommands().setEffort("effort-switch", "high")).toThrow(
+      "sessions set-effort did not persist for effort-switch.",
+    );
+    expect(resolvedSession?.effortOverride).toBeUndefined();
   });
 });
 

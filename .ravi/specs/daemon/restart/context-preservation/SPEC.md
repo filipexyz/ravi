@@ -34,6 +34,7 @@ This feature covers caller notification. Fan-out resume for every recently non-i
 - Restart notices MUST NOT fall back to an unrelated session while a caller context exists.
 - Slash restart MUST pass enough context for the CLI handoff to identify the caller.
 - Caller notification MUST coexist with active-session resume fan-out without duplicating the same restart event for the caller session.
+- Caller notification MUST survive a fenced resume: when crash recovery resolves the caller's resume to `skip` (including a missing caller snapshot), the caller still receives a notice-only restart event with the restart reason.
 
 ## Validation
 

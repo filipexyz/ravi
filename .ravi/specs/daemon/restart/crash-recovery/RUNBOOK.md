@@ -21,6 +21,8 @@ A failure before provider handoff keeps the unconsumed prompt in the host stash 
 
 The existing graceful daemon-restart snapshot now consumes the same safety fence. It may continue a replay-safe current turn, resume only independently queued durable successors, or suppress the session (`continue`, `pending_only`, `skip`). `pending_only` never appends the generic “continue de onde parou” instruction, a provider-terminal turn is always considered consumed, and a caller restart epoch with no snapshot is `skip`. This is a guard on graceful restart compatibility, not the later abrupt-crash sweeper.
 
+A `skip` session is not silent: boot publishes a notice-only input (`_daemonRestartResume.noticeOnly`) with the restart reason and why the interrupted work was not resumed, and logs `Restart resume fenced by crash recovery; delivering restart notice instead` with `fenceReason`. `daemon_restart_resume_deliveries.delivery_kind` is `notice` for that session and `resume` only when a resume was published. If a session has no delivery row, nothing reached it (publish failed, or it was a finished task session); check `ravi daemon logs` for `Failed to publish restart event` before assuming it was handled.
+
 The former `RaviBot.start()` heuristic that resumed every fresh active task is disabled in this phase. Do not re-enable it from task recency/status: the later classifier must first prove attempt safety and record the recovery decision. A task can remain `in_progress` while its physical provider turn is unsafe to replay.
 
 ## When A Crash Leaves Running Turns

@@ -73,6 +73,7 @@ A session MUST NOT be eligible when all of the following are true:
 ## Idempotency
 
 - Ravi MUST record restart resume delivery per `(restart_epoch, session_key)`.
+- The delivery record MUST reflect what was actually published: `resume` for a continue/pending-only resume, `notice` for a restart notice whose resume was fenced by `daemon/restart/crash-recovery`. A skipped session or a failed publication MUST NOT be recorded as delivered.
 - Re-running boot hooks for the same restart epoch MUST NOT duplicate resume events.
 - If delivery fails transiently before the event is persisted, Ravi MAY retry within the same restart resume window.
 - If the daemon restarts again, the new restart epoch MAY emit a new event only for sessions still eligible under the new 1h window.
@@ -107,5 +108,6 @@ If graceful shutdown does not capture a snapshot, daemon boot MAY reconstruct el
 - Restart while a session is idle emits no resume event to that session.
 - Restart after a session stopped more than 1 hour ago emits no resume event to that session.
 - Reboot hook replay for the same restart epoch does not duplicate events.
+- An active session whose resume is fenced by crash recovery receives one restart notice instead of a resume, and its delivery record says `notice`.
 - The caller-session restart notice from `daemon/restart/context-preservation` continues to work; this feature adds fan-out resume for other active sessions.
 

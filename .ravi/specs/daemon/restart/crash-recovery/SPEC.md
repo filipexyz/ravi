@@ -93,6 +93,8 @@ Attempt terminalization MUST be independent of the historical trace's terminal g
 
 Existing bounded retry and graceful-restart paths MUST consume that durable safety evidence. A physical turn with `started_tool`, `materialized_output`, an `inputMutated` safety marker, or `toolEffectFence=provider_event_only` MUST NOT be stashed or continued by a generic restart prompt. A physical turn already terminal at snapshot time is consumed regardless of its markers. A restart MAY continue a replay-safe current turn, MAY resume only independently queued durable successors, or MUST suppress continuation entirely; these cases are represented explicitly as `continue`, `pending_only`, and `skip` rather than inferred from prose. A caller restart reason/epoch without its expected session snapshot MUST resolve to `skip`; snapshot absence is not evidence that no physical turn existed.
 
+Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, or `ineligible_snapshot`) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice.
+
 Provider-owned ambiguous-turn reconciliation is distinct from generic replay. The host MAY retain an unsafe current turn solely for a live provider handle that advertises `reconcile_by_client_message_id`; the adapter MUST reattach or hydrate the matching native turn and MUST NOT issue another provider start after a failed/interrupted match without separate terminal replay authority. A provider without that advertised strategy MUST receive only replay-safe current input or independent successors.
 
 The legacy `RaviBot.start()` task-recovery heuristic MUST NOT publish a fresh `Continue task ...` prompt from task status/recency alone. It remains disabled until the classifier/sweeper can bind the logical task resume to durable attempt safety and a recovery decision; a fresh task row is not replay authorization.
@@ -191,6 +193,7 @@ It MUST NOT abandon prior boots, persist the live dispatcher queue, classify or 
 - Provider-event-only adapters never replay the current physical turn from absence of an asynchronous tool marker; only independent successors remain eligible.
 - External approval/user-input polls and provider raw events cannot cross their external boundary before durable output/tool evidence.
 - Graceful restart snapshots never revive a provider-terminal or unsafe physical turn; independently queued successors remain recoverable without appending a generic continuation, and a missing caller snapshot fails closed.
+- A fenced (`skip`) graceful restart still delivers a notice-only session input with the restart reason, and the restart delivery ledger records it as `notice`, never as `resume`.
 - Provider approval, physical attempt terminalization, and historical trace terminalization use the same fail-closed binding and first-terminal fence.
 - Native prompt controls cannot bypass the immutable attempt request.
 
