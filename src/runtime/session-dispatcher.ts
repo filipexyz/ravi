@@ -941,7 +941,20 @@ export class RuntimeSessionDispatcher {
     }
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id)) {
+    // Resolve next-turn provider before the live-queue shortcut so a persisted
+    // set-provider override can take provider_change. Last-used / agent-default
+    // mismatches must not block live_session_queue on their own.
+    let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
+      observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+      sessionProviderOverride: sessionRuntimeProviderOverride,
+      lastUsedProvider: sessionEntry?.runtimeProvider,
+      restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+      agent,
+    }).value;
+    if (
+      existing &&
+      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride)
+    ) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
         agentId: sessionEntry?.agentId ?? agent.id,
@@ -960,16 +973,9 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    const requestedProvider: RuntimeProviderId = modelBrokerPlan
-      ? modelBrokerPlan.lease.runtimeProvider
-      : resolveRequestedRuntimeProvider({
-          observationProviderId:
-            prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
-          sessionProviderOverride: sessionRuntimeProviderOverride,
-          lastUsedProvider: sessionEntry?.runtimeProvider,
-          restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
-          agent,
-        }).value;
+    if (modelBrokerPlan) {
+      requestedProvider = modelBrokerPlan.lease.runtimeProvider;
+    }
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -2826,6 +2832,7 @@ export function shouldQueuePromptOnLiveSession(
   existing: RuntimeHostStreamingSession,
   prompt: RuntimeLaunchPrompt,
   agentId: string,
+  sessionProviderOverride?: RuntimeProviderId | null,
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -2838,6 +2845,10 @@ export function shouldQueuePromptOnLiveSession(
     !prompt._observation &&
     existing.queryHandle.provider !== prompt._runtimeProviderId
   ) {
+    return false;
+  }
+  const explicitSessionProvider = sessionProviderOverride?.trim();
+  if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
     return false;
   }
   if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
