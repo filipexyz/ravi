@@ -282,6 +282,26 @@ describe("runtime delivery queue", () => {
     });
   });
 
+  it("keeps an end-of-turn follow-up queued behind a long tool and active text", () => {
+    const longTool = makeStreamingSession({
+      turnActive: true,
+      toolRunning: true,
+      currentToolSafety: "unsafe",
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 30_000,
+    });
+    expect(shouldInterruptRuntimeForIncoming("dev", longTool, "after_response")).toEqual({
+      interrupt: false,
+      reason: "tool",
+    });
+
+    const generating = makeStreamingSession({ turnActive: true, pushMessage: null });
+    expect(shouldInterruptRuntimeForIncoming("dev", generating, "after_response")).toEqual({
+      interrupt: false,
+      reason: "response",
+    });
+  });
+
   it("lets an explicit interrupt win over a running tool", () => {
     const session = makeStreamingSession({
       turnActive: true,
