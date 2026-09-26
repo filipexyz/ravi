@@ -2196,7 +2196,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(false);
   });
 
-  it("still queues when the requested provider matches the live handle", () => {
+  it("still queues when the explicit provider override matches the live handle", () => {
     const activeSession = createActiveSession({
       agentId: "main",
       turnActive: true,
@@ -2213,6 +2213,26 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         { prompt: "second send", deliveryBarrier: "after_response" },
         "main",
         "codex",
+      ),
+    ).toBe(true);
+  });
+
+  it("still queues when the live handle differs from the resolved default without an override", () => {
+    const activeSession = createActiveSession({
+      agentId: "main",
+      turnActive: true,
+      queryHandle: {
+        provider: "trace-provider",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+    });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "provider-fixture",
+        activeSession,
+        { prompt: "second send", deliveryBarrier: "after_response" },
+        "main",
       ),
     ).toBe(true);
   });
@@ -2332,6 +2352,58 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(pushExisting).toHaveLength(1);
       expect(pushExisting[0]?.payloadJson).toMatchObject({ reason: "live_session_queue" });
       expect(pushExisting[0]?.provider).toBe("codex");
+      expect(trace.events.filter((event) => event.eventType === "dispatch.restart_requested")).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("still queues when the live handle differs from last-used and agent default", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-fixture-");
+    try {
+      const sessionKey = "agent:main:test:provider-fixture";
+      const sessionName = "provider-fixture";
+      getOrCreateSession(sessionKey, "main", stateDir, {
+        name: sessionName,
+        runtimeProvider: "claude",
+      });
+
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      dispatcher.startStreamingSession = mock(async () => {
+        throw new Error("no-override overlap must stay on the live handle");
+      });
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentModel: "trace-model",
+        queryHandle: {
+          provider: "trace-provider",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "second overlapping send",
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      });
+
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.launchPrompt?.prompt).toBe("second overlapping send");
+      expect(activeSession.done).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(dispatcher.streamingSessions.get(sessionName)).toBe(activeSession);
+
+      const trace = querySessionTrace({ sessionKey, sessionName });
+      const pushExisting = trace.events.filter((event) => event.eventType === "dispatch.push_existing");
+      expect(pushExisting).toHaveLength(1);
+      expect(pushExisting[0]?.payloadJson).toMatchObject({ reason: "live_session_queue" });
+      expect(pushExisting[0]?.provider).toBe("trace-provider");
       expect(trace.events.filter((event) => event.eventType === "dispatch.restart_requested")).toHaveLength(0);
     } finally {
       await cleanupIsolatedRaviState(stateDir);

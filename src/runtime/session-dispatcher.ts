@@ -941,9 +941,9 @@ export class RuntimeSessionDispatcher {
     }
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    // Resolve next-turn provider before the live-queue shortcut. A persisted
-    // session override (set-provider) must restart the live handle instead of
-    // enqueueing onto the previous provider (`live_session_queue`).
+    // Resolve next-turn provider before the live-queue shortcut so a persisted
+    // set-provider override can take provider_change. Last-used / agent-default
+    // mismatches must not block live_session_queue on their own.
     let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
       observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
       sessionProviderOverride: sessionRuntimeProviderOverride,
@@ -951,7 +951,10 @@ export class RuntimeSessionDispatcher {
       restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
       agent,
     }).value;
-    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, requestedProvider)) {
+    if (
+      existing &&
+      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride)
+    ) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
         agentId: sessionEntry?.agentId ?? agent.id,
@@ -2829,7 +2832,7 @@ export function shouldQueuePromptOnLiveSession(
   existing: RuntimeHostStreamingSession,
   prompt: RuntimeLaunchPrompt,
   agentId: string,
-  requestedProvider?: RuntimeProviderId,
+  sessionProviderOverride?: RuntimeProviderId | null,
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -2844,7 +2847,8 @@ export function shouldQueuePromptOnLiveSession(
   ) {
     return false;
   }
-  if (requestedProvider && existing.queryHandle.provider !== requestedProvider) {
+  const explicitSessionProvider = sessionProviderOverride?.trim();
+  if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
     return false;
   }
   if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
