@@ -124,6 +124,31 @@ describe("RuntimePromptSubscription", () => {
     expect(subscription.promptsReceived).toBe(1);
   });
 
+  it("ACKs a skip-turn prompt without emitting presence-bearing prompt.received", async () => {
+    const note = makePromptMessage("ravi.session.dev.prompt", { prompt: "anota", _skipTurn: true });
+    const normal = makePromptMessage("ravi.session.dev.prompt", { prompt: "continua" });
+    consumedMessages = [note, normal];
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => normal.ack.mock.calls.length === 1 && emitCalls.length > 0);
+
+    expect(note.ack).toHaveBeenCalledTimes(1);
+    expect(handlePrompt).toHaveBeenCalledWith("dev", { prompt: "anota", _skipTurn: true });
+    expect(subscription.promptsReceived).toBe(2);
+    expect(
+      emitCalls.filter((call) => call.topic === "ravi.session.dev.runtime").map((call) => call.payload.prompt),
+    ).toEqual(["continua"]);
+  });
+
   it("delays redelivery without ACKing or counting a prompt when dispatch fails", async () => {
     const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "retry me" });
     consumedMessages = [message];

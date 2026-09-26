@@ -243,6 +243,12 @@ export interface PromptMessage {
    * interactive turn. The dispatcher stashes the inform and prepends it.
    */
   _deferRuntimeStart?: boolean;
+  /**
+   * Channel `!!` message: persisted as a normal user row but never starts,
+   * wakes, or interrupts a turn. The dispatcher holds it in memory and feeds it
+   * to the model ahead of the session's next real turn.
+   */
+  _skipTurn?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

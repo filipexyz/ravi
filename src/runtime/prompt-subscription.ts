@@ -326,6 +326,8 @@ export class RuntimePromptSubscription {
       return;
     }
     this.promptsReceived++;
+    // Any runtime event on the session subject counts as presence activity.
+    if (prompt._skipTurn) return;
 
     try {
       nats

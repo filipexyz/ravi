@@ -13,7 +13,7 @@ export interface SessionPromptPublicationInput {
 export async function publishSessionPromptPublication(input: SessionPromptPublicationInput): Promise<void> {
   await input.publishDurably();
 
-  if (isMessageTarget(input.payload.source)) {
+  if (input.payload._skipTurn !== true && isMessageTarget(input.payload.source)) {
     input
       .emitRuntimeEvent(`ravi.session.${input.sessionName}.runtime`, {
         type: "prompt.published",
