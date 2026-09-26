@@ -20,6 +20,47 @@ const DEFAULT_USER_PLUGIN_NAME = "ravi-user-skills";
 const SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", "__pycache__", "__pypackages__"]);
 const SKIP_FILES = new Set([".DS_Store", "metadata.json"]);
 
+export type SkillSourceErrorCode =
+  | "SKILL_SOURCE_INVALID"
+  | "SKILL_SOURCE_NOT_FOUND"
+  | "SKILL_SOURCE_UNAVAILABLE"
+  | "SKILL_SOURCE_EMPTY"
+  | "SKILL_SELECTION_REQUIRED"
+  | "SKILL_NOT_FOUND"
+  | "SKILL_ALREADY_INSTALLED";
+
+/**
+ * Expected source/selection/install failure. `message` keeps local
+ * diagnostics (paths, git stderr); `publicMessage` crosses CLI/gateway
+ * boundaries and never carries a path or URL.
+ */
+export class SkillSourceError extends Error {
+  readonly code: SkillSourceErrorCode;
+  readonly publicMessage: string;
+  readonly skillName?: string;
+  readonly candidates: string[];
+
+  constructor(
+    code: SkillSourceErrorCode,
+    message: string,
+    options: { publicMessage?: string; skillName?: string; candidates?: string[] } = {},
+  ) {
+    super(message);
+    this.name = "SkillSourceError";
+    this.code = code;
+    this.publicMessage = options.publicMessage ?? message;
+    this.skillName = options.skillName;
+    this.candidates = options.candidates ?? [];
+  }
+}
+
+export interface SkillSourceOptions {
+  /** Base for relative local sources (caller cwd for remote dispatch). */
+  cwd?: string;
+  /** Home used to expand `~` in local sources. */
+  homeDir?: string;
+}
+
 export interface SkillSource {
   type: "local" | "git";
   input: string;
@@ -91,17 +132,25 @@ export function codexSkillsDir(homeDir = homedir(), env: NodeJS.ProcessEnv = pro
   return join(codexHome, "skills");
 }
 
-export function parseSkillSource(input: string): SkillSource {
+export function parseSkillSource(input: string, options: SkillSourceOptions = {}): SkillSource {
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new Error("Missing skill source.");
+    throw new SkillSourceError("SKILL_SOURCE_INVALID", "Missing skill source.");
+  }
+
+  if (isHomeRelativePath(trimmed)) {
+    return {
+      type: "local",
+      input: trimmed,
+      rootPath: join(options.homeDir ?? homedir(), trimmed.slice(1)),
+    };
   }
 
   if (isLocalPath(trimmed)) {
     return {
       type: "local",
       input: trimmed,
-      rootPath: resolve(trimmed),
+      rootPath: options.cwd ? resolve(options.cwd, trimmed) : resolve(trimmed),
     };
   }
 
@@ -147,19 +196,24 @@ export function parseSkillSource(input: string): SkillSource {
   };
 }
 
-export function resolveSkillSource(input: string): ResolvedSkillSource {
-  const source = parseSkillSource(input);
+export function resolveSkillSource(input: string, options: SkillSourceOptions = {}): ResolvedSkillSource {
+  const source = parseSkillSource(input, options);
 
   if (source.type === "local") {
     const rootPath = source.rootPath;
     if (!rootPath || !existsSync(rootPath)) {
-      throw new Error(`Local skill source not found: ${rootPath ?? input}`);
+      throw new SkillSourceError("SKILL_SOURCE_NOT_FOUND", `Local skill source not found: ${rootPath ?? input}`, {
+        publicMessage: "Local skill source not found.",
+      });
     }
-    return { source, rootPath };
+    const isSkillFile = basename(rootPath) === SKILL_FILE && statSync(rootPath).isFile();
+    return { source, rootPath: isSkillFile ? dirname(rootPath) : rootPath };
   }
 
   if (!source.gitUrl) {
-    throw new Error(`Invalid git skill source: ${input}`);
+    throw new SkillSourceError("SKILL_SOURCE_INVALID", `Invalid git skill source: ${input}`, {
+      publicMessage: "Invalid git skill source.",
+    });
   }
 
   const tempDir = mkdtempSync(join(tmpdir(), "ravi-skills-"));
@@ -177,7 +231,13 @@ export function resolveSkillSource(input: string): ResolvedSkillSource {
   if (result.status !== 0) {
     rmSync(tempDir, { recursive: true, force: true });
     const details = result.stderr?.trim() || result.stdout?.trim() || `exit ${result.status}`;
-    throw new Error(`Failed to clone skill source ${source.gitUrl}: ${details}`);
+    throw new SkillSourceError(
+      "SKILL_SOURCE_UNAVAILABLE",
+      `Failed to clone skill source ${source.gitUrl}: ${details}`,
+      {
+        publicMessage: "Could not clone the skill source.",
+      },
+    );
   }
 
   return {
@@ -187,8 +247,12 @@ export function resolveSkillSource(input: string): ResolvedSkillSource {
   };
 }
 
-export function withResolvedSkillSource<T>(input: string, fn: (resolved: ResolvedSkillSource) => T): T {
-  const resolved = resolveSkillSource(input);
+export function withResolvedSkillSource<T>(
+  input: string,
+  fn: (resolved: ResolvedSkillSource) => T,
+  options: SkillSourceOptions = {},
+): T {
+  const resolved = resolveSkillSource(input, options);
   try {
     return fn(resolved);
   } finally {
@@ -199,12 +263,16 @@ export function withResolvedSkillSource<T>(input: string, fn: (resolved: Resolve
 export function discoverSkills(resolved: ResolvedSkillSource): RaviSkill[] {
   const subpath = resolved.source.subpath;
   if (subpath && !isSubpathSafe(resolved.rootPath, subpath)) {
-    throw new Error(`Invalid skill subpath: ${subpath}`);
+    throw new SkillSourceError("SKILL_SOURCE_INVALID", `Invalid skill subpath: ${subpath}`, {
+      publicMessage: "Invalid skill subpath.",
+    });
   }
 
   const searchPath = subpath ? join(resolved.rootPath, subpath) : resolved.rootPath;
   if (!existsSync(searchPath)) {
-    throw new Error(`Skill source path not found: ${searchPath}`);
+    throw new SkillSourceError("SKILL_SOURCE_NOT_FOUND", `Skill source path not found: ${searchPath}`, {
+      publicMessage: "Skill source subpath not found.",
+    });
   }
 
   const discovered: RaviSkill[] = [];
@@ -241,13 +309,24 @@ export function discoverSkills(resolved: ResolvedSkillSource): RaviSkill[] {
 
 export function selectSkills(skills: RaviSkill[], options: { skill?: string; all?: boolean } = {}): RaviSkill[] {
   if (skills.length === 0) {
-    throw new Error("No skills found in source.");
+    throw new SkillSourceError("SKILL_SOURCE_EMPTY", "No skills found in source.", {
+      publicMessage: "No skills found in source. A skill directory must contain a SKILL.md file.",
+    });
   }
 
+  const names = skills.map((skill) => skill.name);
   if (options.skill?.trim()) {
     const match = findSkillByName(skills, options.skill);
     if (!match) {
-      throw new Error(`Skill not found: ${options.skill}. Available: ${skills.map((skill) => skill.name).join(", ")}`);
+      throw new SkillSourceError(
+        "SKILL_NOT_FOUND",
+        `Skill not found: ${options.skill}. Available: ${names.join(", ")}`,
+        {
+          publicMessage: `Skill not found: ${options.skill.trim()}`,
+          skillName: options.skill.trim(),
+          candidates: names,
+        },
+      );
     }
     return [match];
   }
@@ -260,10 +339,13 @@ export function selectSkills(skills: RaviSkill[], options: { skill?: string; all
     return skills;
   }
 
-  throw new Error(
-    `Source has ${skills.length} skills. Pass --skill <name> or --all. Available: ${skills
-      .map((skill) => skill.name)
-      .join(", ")}`,
+  throw new SkillSourceError(
+    "SKILL_SELECTION_REQUIRED",
+    `Source has ${skills.length} skills. Pass --skill <name> or --all. Available: ${names.join(", ")}`,
+    {
+      publicMessage: `Source has ${skills.length} skills. Pass a skill name or --all.`,
+      candidates: names,
+    },
   );
 }
 
@@ -278,11 +360,17 @@ export function installSkills(skills: RaviSkill[], options: InstallSkillsOptions
     const skillsRoot = join(pluginDir, "skills");
 
     if (!isPathSafe(skillsRoot, installPath)) {
-      throw new Error(`Unsafe skill name: ${skill.name}`);
+      throw new SkillSourceError("SKILL_SOURCE_INVALID", `Unsafe skill name: ${skill.name}`, {
+        publicMessage: "Unsafe skill name.",
+      });
     }
 
     if (existsSync(installPath) && !options.overwrite) {
-      throw new Error(`Skill already installed: ${skill.name}. Pass --overwrite to replace it.`);
+      throw new SkillSourceError(
+        "SKILL_ALREADY_INSTALLED",
+        `Skill already installed: ${skill.name}. Pass --overwrite to replace it.`,
+        { publicMessage: `Skill already installed: ${skill.name}.`, skillName: skill.name },
+      );
     }
 
     if (skill.files) {
@@ -453,8 +541,19 @@ function extractFrontmatter(content: string): string | null {
 
 function frontmatterValue(frontmatter: string | null, key: string): string | null {
   if (!frontmatter) return null;
-  const match = new RegExp(`^${key}:\\s*["']?([^"'\\n]+)["']?\\s*$`, "m").exec(frontmatter);
-  return match?.[1]?.trim() ?? null;
+  const raw = new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*\\r?$`, "m").exec(frontmatter)?.[1]?.trim();
+  if (!raw) return null;
+  return unquoteFrontmatterScalar(raw).trim() || null;
+}
+
+/** Plain scalars keep inner quotes (`asks "how do I"`); only a wrapping pair is stripped. */
+function unquoteFrontmatterScalar(value: string): string {
+  const quote = value[0];
+  if ((quote !== '"' && quote !== "'") || value.length < 2 || !value.endsWith(quote)) {
+    return value;
+  }
+  const inner = value.slice(1, -1);
+  return quote === "'" ? inner.replace(/''/g, "'") : inner.replace(/\\"/g, '"');
 }
 
 function frontmatterDescription(frontmatter: string | null): string | undefined {
@@ -588,6 +687,10 @@ function isExcludedRelativePath(path: string): boolean {
     );
 }
 
+function isHomeRelativePath(input: string): boolean {
+  return input === "~" || input.startsWith("~/");
+}
+
 function isLocalPath(input: string): boolean {
   return (
     isAbsolute(input) ||
@@ -654,7 +757,9 @@ function sanitizeSubpath(subpath: string): string {
   const normalized = subpath.replace(/\\/g, "/");
   for (const segment of normalized.split("/")) {
     if (segment === "..") {
-      throw new Error(`Unsafe skill subpath: ${subpath}`);
+      throw new SkillSourceError("SKILL_SOURCE_INVALID", `Unsafe skill subpath: ${subpath}`, {
+        publicMessage: "Unsafe skill subpath.",
+      });
     }
   }
   return normalized;

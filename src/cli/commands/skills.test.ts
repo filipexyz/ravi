@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,11 +8,19 @@ import {
   createIsolatedRaviState,
   withoutRaviRuntimeContextEnv,
 } from "../../test/ravi-state.js";
+import { getOrCreateSession } from "../../router/index.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
+import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { createRuntimeHostServices } from "../../runtime/host-services.js";
+import { authorizePiToolCall } from "../../runtime/pi-tool-permissions.js";
+import { formatSkillNotAuthorizedReason } from "../../runtime/skill-authorization.js";
+import { contractErrorResponse } from "../../sdk/gateway/errors.js";
 import * as skillManager from "../../skills/manager.js";
 import type { ResolvedSkillSource } from "../../skills/manager.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { remoteGatewayErrorToContractError } from "../remote-gateway.js";
 import { SkillsCommands } from "./skills.js";
 
 let stateDir: string | null = null;
@@ -723,7 +731,11 @@ describe("skills agent-first contract", () => {
       ),
     );
     expect(contractError.exitCode).toBe(1);
-    expect(contractError.envelope().error.code).toBe("SKILL_NOT_AUTHORIZED");
+    const denied = contractError.envelope().error;
+    expect(denied.code).toBe("SKILL_NOT_AUTHORIZED");
+    expect(denied.message).toBe(`Skill '${deniedSkill!.name}' is not authorized for agent '${agentId}'.`);
+    expect(String(denied.suggestedAction)).toContain(`ravi skills grant ${agentId} ${deniedSkill!.name}`);
+    expect(String(denied.suggestedAction)).toContain("ravi skills install --source <skill-dir>");
 
     expect(() =>
       withoutLogs(() => runWithContext({}, () => commands.show(deniedSkill!.name, undefined, undefined, true))),
@@ -774,4 +786,359 @@ describe("skills agent-first contract", () => {
     expect(payload.total).toBe(1);
     expect(Object.keys(payload.grants[0] ?? {})).toEqual(["agentId"]);
   });
+});
+
+async function throughRemoteGateway(error: InstanceType<typeof ContractError>) {
+  const response = contractErrorResponse(error);
+  return {
+    status: response.status,
+    remote: remoteGatewayErrorToContractError(error.op, {
+      status: response.status,
+      ok: false,
+      body: await response.text(),
+      contentType: response.headers.get("content-type"),
+    }),
+  };
+}
+
+function writeSkillDir(root: string, name: string, description: string): string {
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`);
+  return dir;
+}
+
+describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", () => {
+  function spyInstall() {
+    const installed: string[] = [];
+    const spy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) => {
+      installed.push(...skills.map((skill) => skill.name));
+      return skills.map((skill) => ({
+        ...skill,
+        installPath: join(tmpdir(), "skills-install-control", skill.name),
+        pluginName: options.pluginName ?? "ravi-user-skills",
+      }));
+    });
+    return { spy, installed };
+  }
+
+  it("installs a single-skill directory without a name or --all", () => {
+    const root = mkdtempSync(join(tmpdir(), "skills-single-source-"));
+    const { spy, installed } = spyInstall();
+    try {
+      const source = writeSkillDir(root, "find-skills", 'Use when users ask "how do I do X".');
+      const result = withoutLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            undefined,
+            source,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+      expect(result.success).toBe(true);
+      expect(installed).toEqual(["find-skills"]);
+      expect((result.installed[0] as Record<string, unknown> | undefined)?.description).toBe(
+        'Use when users ask "how do I do X".',
+      );
+      expect(result.nextSteps).toEqual(["ravi skills grant <agent> find-skills"]);
+    } finally {
+      spy.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a relative local source against the caller cwd, not the daemon cwd", () => {
+    const root = mkdtempSync(join(tmpdir(), "skills-caller-cwd-"));
+    const { spy, installed } = spyInstall();
+    try {
+      writeSkillDir(join(root, "skills"), "find-skills", "Caller cwd fixture");
+      const result = withoutLogs(() =>
+        runWithContext({ cwd: root }, () =>
+          new SkillsCommands().install(
+            undefined,
+            "./skills/find-skills",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+      expect(result.success).toBe(true);
+      expect(installed).toEqual(["find-skills"]);
+    } finally {
+      spy.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the selection cause visible through the remote gateway for a multi-skill source", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skills-multi-source-"));
+    try {
+      writeSkillDir(join(root, "skills"), "alpha", "Alpha fixture");
+      writeSkillDir(join(root, "skills"), "beta", "Beta fixture");
+      const error = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            undefined,
+            root,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+      expect(error).toMatchObject({ code: "SKILL_SELECTION_REQUIRED", exitCode: 2, op: "skills install" });
+      expect(error.envelope().error.suggestions).toEqual(["alpha", "beta"]);
+
+      const { status, remote } = await throughRemoteGateway(error);
+      expect(status).toBe(400);
+      expect(remote?.message).toBe("name: Source has 2 skills. Pass a skill name or --all.");
+      expect(remote?.message).not.toBe("Remote command failed.");
+      expect(JSON.stringify(remote?.envelope())).not.toContain(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a missing local source explicitly without echoing its path", async () => {
+    const missing = join(tmpdir(), "SENTINEL_MISSING_SKILL_SOURCE_2b7fcc09");
+    const error = expectContractError(() =>
+      runWithContext({}, () =>
+        new SkillsCommands().install(
+          undefined,
+          missing,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+        ),
+      ),
+    );
+    expect(error).toMatchObject({ code: "SKILL_SOURCE_NOT_FOUND", exitCode: 1 });
+    const { status, remote } = await throughRemoteGateway(error);
+    expect(status).toBe(422);
+    expect(remote?.message).toBe("source: Local skill source not found.");
+    expect(remote?.details.issues).toEqual([
+      { path: ["source"], code: "SKILL_SOURCE_NOT_FOUND", message: "Local skill source not found." },
+      {
+        path: ["suggestedAction"],
+        code: "SUGGESTED_ACTION",
+        message: expect.stringContaining("contains SKILL.md"),
+      },
+    ]);
+    expect(JSON.stringify(error.envelope())).not.toContain("SENTINEL_MISSING_SKILL_SOURCE");
+  });
+
+  it("maps an already-installed skill to SKILL_ALREADY_INSTALLED pointing at grant", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skills-already-installed-"));
+    const spy = spyOn(skillManager, "installSkills").mockImplementation(() => {
+      throw new skillManager.SkillSourceError(
+        "SKILL_ALREADY_INSTALLED",
+        "Skill already installed: find-skills. Pass --overwrite to replace it.",
+        { publicMessage: "Skill already installed: find-skills.", skillName: "find-skills" },
+      );
+    });
+    try {
+      const source = writeSkillDir(root, "find-skills", "Already installed fixture");
+      const error = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            undefined,
+            source,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+      expect(error).toMatchObject({ code: "SKILL_ALREADY_INSTALLED", exitCode: 1 });
+      expect(error.envelope().error.suggestedAction).toBe(
+        "Grant it with 'ravi skills grant <agent> find-skills', or replace it with --overwrite --execute",
+      );
+      const { remote } = await throughRemoteGateway(error);
+      expect(remote?.message).toBe("name: Skill already installed: find-skills.");
+    } finally {
+      spy.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still requires a name or --all for catalog installs, as a usage error", async () => {
+    const error = expectContractError(() =>
+      runWithContext({}, () =>
+        new SkillsCommands().install(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+        ),
+      ),
+    );
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    const { remote } = await throughRemoteGateway(error);
+    expect(remote?.message).toBe("name: Pass a catalog skill name, --source <skill-dir>, or --all.");
+  });
+
+  it("points a SKILL_NOT_FOUND grant at install --source", async () => {
+    const error = expectContractError(() =>
+      runWithContext({}, () => new SkillsCommands().grant("main", "find-skills-not-installed", undefined, true)),
+    );
+    expect(error.code).toBe("SKILL_NOT_FOUND");
+    expect(String(error.envelope().error.suggestedAction)).toContain("ravi skills install --source <skill-dir>");
+    const { remote } = await throughRemoteGateway(error);
+    expect(remote?.message).toBe("skill: Skill not found: find-skills-not-installed");
+    expect(JSON.stringify(remote?.details.issues)).toContain("ravi skills install --source <skill-dir>");
+  });
+
+  it("closes the loop: ~/.agents skill → install → grant → gate allows it and still denies others", async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), "skills-loop-home-"));
+    const agentId = "loop-agent";
+    try {
+      dbCreateAgent({ id: agentId, cwd: "/tmp/loop-agent" });
+      const agentsSkills = join(tempHome, ".agents", "skills");
+      writeSkillDir(agentsSkills, "find-skills", 'Helps when users ask "how do I do X".');
+      writeSkillDir(agentsSkills, "other-skill", "Never granted.");
+      const findSkillFile = join(agentsSkills, "find-skills", "SKILL.md");
+      const otherSkillFile = join(agentsSkills, "other-skill", "SKILL.md");
+
+      // os.homedir() ignores HOME changes after start: run install/grant in a
+      // fresh process that owns the redirected home (see catalog install test).
+      const execution = spawnSync(
+        process.execPath,
+        [
+          "--eval",
+          `
+            import { homedir } from "node:os";
+            import { runWithContext } from "./src/cli/context.ts";
+            import { SkillsCommands } from "./src/cli/commands/skills.ts";
+
+            if (homedir() !== process.env.RAVI_TEST_EXPECTED_HOME) {
+              console.error("Redirected home was not honored; refusing skills install");
+              process.exit(70);
+            }
+            const commands = new SkillsCommands();
+            const capture = (run) => {
+              try {
+                return { ok: run() };
+              } catch (error) {
+                return { error: typeof error?.envelope === "function" ? error.envelope().error : String(error) };
+              }
+            };
+            const originalLog = console.log;
+            console.log = () => {};
+            let out;
+            try {
+              out = runWithContext({}, () => ({
+                grantBefore: capture(() => commands.grant(${JSON.stringify(agentId)}, "find-skills", undefined, true)),
+                install: capture(() =>
+                  commands.install(undefined, "~/.agents/skills/find-skills", undefined, undefined, undefined, undefined, true, true, undefined),
+                ),
+                grantAfter: capture(() => commands.grant(${JSON.stringify(agentId)}, "find-skills", undefined, true)),
+              }));
+            } finally {
+              console.log = originalLog;
+            }
+            process.stdout.write(JSON.stringify(out));
+          `,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...withoutRaviRuntimeContextEnv(),
+            HOME: tempHome,
+            USERPROFILE: tempHome,
+            RAVI_TEST_EXPECTED_HOME: tempHome,
+            RAVI_LOG_LEVEL: "error",
+          },
+        },
+      );
+      expect(execution.status).toBe(0);
+      expect(execution.stderr).not.toContain("Redirected home");
+      const steps = JSON.parse(execution.stdout) as {
+        grantBefore: { error?: { code: string; suggestedAction?: string } };
+        install: { ok?: { installed: Array<{ name: string; installPath: string }> } };
+        grantAfter: { ok?: { skillName: string } };
+      };
+
+      expect(steps.grantBefore.error?.code).toBe("SKILL_NOT_FOUND");
+      expect(steps.grantBefore.error?.suggestedAction).toContain("ravi skills install --source <skill-dir>");
+      expect(steps.install.ok?.installed.map((skill) => skill.name)).toEqual(["find-skills"]);
+      const installedSkillFile = join(String(steps.install.ok?.installed[0]?.installPath), "SKILL.md");
+      expect(installedSkillFile.startsWith(tempHome)).toBe(true);
+      expect(steps.grantAfter.ok?.skillName).toBe("find-skills");
+      expect(dbListSkillGrantsForAgent(agentId).map((grant) => grant.skillName)).toEqual(["find-skills"]);
+
+      const { allowlist, hasConfiguration } = resolveAgentSkills(agentId);
+      expect(hasConfiguration).toBe(true);
+      const piHandlers = {
+        canUseTool: async () => ({ behavior: "allow" as const }),
+        allowedSkills: allowlist,
+        agentId,
+      };
+      await expect(authorizePiToolCall("read", { path: installedSkillFile }, piHandlers)).resolves.toEqual({
+        allowed: true,
+      });
+      await expect(authorizePiToolCall("read", { path: findSkillFile }, piHandlers)).resolves.toEqual({
+        allowed: true,
+      });
+      await expect(authorizePiToolCall("read", { path: otherSkillFile }, piHandlers)).resolves.toEqual({
+        allowed: false,
+        reason: formatSkillNotAuthorizedReason("other-skill", agentId),
+      });
+
+      getOrCreateSession(`agent:${agentId}:main`, agentId, stateDir!, { name: "loop", runtimeProvider: "pi" });
+      const services = createRuntimeHostServices({
+        context: createRuntimeContext({
+          kind: "agent-runtime",
+          agentId,
+          sessionKey: `agent:${agentId}:main`,
+          sessionName: "loop",
+          capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+        }),
+        agentId,
+        sessionName: "loop",
+        toolContext: {},
+      });
+      const deniedRead = await services.authorizeCommandExecution({ command: `head -20 ${otherSkillFile}`, input: {} });
+      expect(deniedRead).toEqual({
+        approved: false,
+        reason:
+          "SKILL_NOT_AUTHORIZED: Skill 'other-skill' is not authorized for agent 'loop-agent'. " +
+          "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
+          "('ravi skills grant loop-agent other-skill').",
+      });
+      const grantedRead = await services.authorizeCommandExecution({ command: `head -20 ${findSkillFile}`, input: {} });
+      expect(String(grantedRead.reason ?? "")).not.toContain("SKILL_NOT_AUTHORIZED");
+    } finally {
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

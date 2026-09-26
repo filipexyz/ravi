@@ -208,7 +208,7 @@ describe("capability-aware official skill visibility", () => {
     expect(envelopeError.suggestedAction).toContain("ravi skills grant restricted permissions-manager");
     expect(envelopeError.issues).toEqual([
       { path: [], code: "SKILL_NOT_AUTHORIZED", message: envelopeError.message },
-      { path: ["grant"], code: "SKILL_GRANT_REQUIRED", message: envelopeError.suggestedAction },
+      { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: envelopeError.suggestedAction },
     ]);
 
     await expect(

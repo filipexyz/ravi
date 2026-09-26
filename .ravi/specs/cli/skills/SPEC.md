@@ -61,7 +61,15 @@ the global envelope, exit taxonomy, authorization or transport behavior.
    - Git not-found errors are evaluated only after confirmation with
      `--execute`, because Git selection is intentionally deferred. Catalog and
      local not-found errors, including overwrite invocations, remain exit 1
-     before the exit-3 brake and before any write.
+     before the exit-3 brake and before any write;
+   - selection: a catalog install requires a name or `--all` (`USAGE_ERROR`,
+     exit 2). A source that resolves to exactly one skill (a directory holding
+     `SKILL.md`, or the `SKILL.md` file itself) installs without a name; a
+     source with several skills requires a name or `--all`
+     (`SKILL_SELECTION_REQUIRED`, exit 2, candidate names as suggestions);
+   - a local `--source` resolves relative paths against the caller's cwd (not
+     the daemon's) and treats `~`/`~/...` as the caller's home directory, never
+     as a GitHub shorthand.
 6. Every dry-run MUST cause zero effects. A Git dry-run performs no source
    resolution, discovery, selection, temporary clone, resource creation,
    destination write or Codex synchronization. A catalog/local overwrite may
@@ -85,6 +93,16 @@ the global envelope, exit taxonomy, authorization or transport behavior.
     `--source`, its URL/path/basename/subpath or source content. Suggestions may
     contain only bounded visible skill identifiers from the universe already
     resolved at the permitted stage.
+13. Every expected `skills list|show|install --source` failure MUST be a typed
+    contract error, never a generic `COMMAND_FAILED`/`UNHANDLED_ERROR`. Its
+    envelope MUST carry `issues[0] = {path, code, message}` with a path-free
+    public message, plus a trailing `suggestedAction` issue, so the real cause
+    survives the remote gateway (which only projects `issues`) instead of
+    rendering as "Remote command failed.".
+14. A successful install MUST NOT imply visibility. Its payload lists
+    `nextSteps` with the `ravi skills grant <agent> <skill>` command for each
+    installed skill, and `skills grant` on a non-installed skill points to
+    `ravi skills install --source <skill-dir>`.
 
 ## Write classification (brake decision per invocation)
 
@@ -108,7 +126,14 @@ per invocation from source kind and overwrite intent.
 |---|---|---|
 | skill not found after the permitted resolution stage | `SKILL_NOT_FOUND` + suggestions | 1 |
 | agent not found | `AGENT_NOT_FOUND` + suggestions | 1 |
-| invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
+| invalid flag/arg; catalog install with neither name nor `--all` | `USAGE_ERROR` + acceptedFlags/issues | 2 |
+| multi-skill source with neither name nor `--all` | `SKILL_SELECTION_REQUIRED` + candidate names | 2 |
+| malformed source, unsafe skill name or subpath | `SKILL_SOURCE_INVALID` | 2 |
+| local source path does not exist | `SKILL_SOURCE_NOT_FOUND` | 1 |
+| source holds no `SKILL.md` | `SKILL_SOURCE_EMPTY` | 1 |
+| Git clone failed | `SKILL_SOURCE_UNAVAILABLE` (retryable) | 1 |
+| selected skill already installed without `--overwrite` | `SKILL_ALREADY_INSTALLED` (suggests grant or overwrite) | 1 |
+| runtime agent reads a skill outside its allowlist | `SKILL_NOT_AUTHORIZED` (`Skill '<skill>' is not authorized for agent '<agent>'.` + install/grant action) | 1 |
 | Git install or overwrite without `--execute` | `WRITE_REQUIRES_EXECUTE` + source-appropriate minimal plan | 3 |
 
 ## Domain exceptions and ordering
@@ -157,10 +182,15 @@ catalog/local examples run directly, while Git and overwrite examples carry
   call to additive catalog/local installs.
 - Resolving or discovering a Git source before the brake can perform network
   or temporary-file work before the operator confirms.
-- `selectSkills` throws plain errors rather than returning null. Additive
+- `selectSkills` throws `SkillSourceError` rather than returning null. Additive
   and overwrite catalog/local installs map that result before any write. Git
   invocations MUST NOT call it before the exit-3 brake; their not-found mapping
   occurs only after `--execute` and after resolved-source cleanup.
+- A plain `Error`/`fail()` in the source path used to surface as
+  `COMMAND_FAILED` (HTTP 422) or `UNHANDLED_ERROR` with no `issues`, which the
+  remote client rendered as an opaque "Remote command failed." (bug
+  `2b7fcc09`: a single-skill `--source` without a name hit
+  `fail("Pass a skill name or --all.")`).
 - `installSkills` resolves its destination from `homedir()` with no CLI
   override, so execute-path tests redirect `HOME`/`USERPROFILE` to a temporary
   directory and assert the redirect before any write.
