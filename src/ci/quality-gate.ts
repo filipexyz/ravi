@@ -50,6 +50,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.routes.test.ts",
     // Channel compaction notices stay off unless announceCompaction is true.
     "src/router/router-db.announce-compaction.test.ts",
+    // Daemon restart ledger records resume vs notice, only for published events.
+    "src/router/router-db.daemon-restart.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/session-goals.test.ts",
