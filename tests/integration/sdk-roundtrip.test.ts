@@ -21,7 +21,7 @@ import { SessionCommands } from "../../src/cli/commands/sessions.js";
 import { buildRegistry } from "../../src/cli/registry-snapshot.js";
 import { createArtifact } from "../../src/artifacts/store.js";
 import { saveMessage } from "../../src/db.js";
-import { getOrCreateSession } from "../../src/router/sessions.js";
+import { getOrCreateSession, resolveSession } from "../../src/router/sessions.js";
 import {
   cleanupIsolatedRaviState,
   createIsolatedRaviState,
@@ -44,6 +44,7 @@ const allowedContext: ContextRecord = {
     { permission: "execute", objectType: "group", objectId: "artifacts", source: "test" },
     { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
     { permission: "access", objectType: "session", objectId: "managed-sdk-roundtrip", source: "test" },
+    { permission: "modify", objectType: "session", objectId: "managed-sdk-roundtrip", source: "test" },
     { permission: "mutate", objectType: "agent", objectId: "main", source: "test" },
   ],
   metadata: { authorityMode: "delegated" },
@@ -139,6 +140,78 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     if (!("messages" in result)) throw new Error("sessions.read did not return history");
     expect(result.transcript.source).toBe("chat-db");
     expect(result.messages.map((message) => message.text)).toEqual(["pergunta remota", "resposta remota"]);
+  });
+
+  it("sessions.setProvider returns the mutation envelope after persisting the override", async () => {
+    const sessionName = "managed-sdk-roundtrip";
+    getOrCreateSession("agent:sdk-roundtrip-agent:managed", allowedContext.agentId!, stateDir!, {
+      name: sessionName,
+    });
+
+    const result = await buildClient().sessions.setProvider(sessionName, "codex");
+
+    expect(result).toMatchObject({
+      action: "set-provider",
+      changed: true,
+      sessionKey: "agent:sdk-roundtrip-agent:managed",
+      sessionName,
+      runtimeProviderOverride: "codex",
+      effectiveProvider: "codex",
+      providerSource: "session_override",
+      appliesOn: "next-turn-runtime-restart",
+    });
+    expect(result.before.runtimeOptions.provider.source).not.toBe("session_override");
+    expect(result.after?.runtimeOptions.provider).toEqual({ value: "codex", source: "session_override" });
+    expect(resolveSession(sessionName)?.runtimeProviderOverride).toBe("codex");
+
+    const cleared = await buildClient().sessions.setProvider(sessionName, "clear");
+    expect(cleared).toMatchObject({ action: "set-provider", changed: true, runtimeProviderOverride: null });
+    expect(resolveSession(sessionName)?.runtimeProviderOverride).toBeUndefined();
+  });
+
+  it("sessions.setModel returns the mutation envelope after persisting the override", async () => {
+    const sessionName = "managed-sdk-roundtrip";
+    getOrCreateSession("agent:sdk-roundtrip-agent:managed", allowedContext.agentId!, stateDir!, {
+      name: sessionName,
+    });
+
+    const result = await buildClient().sessions.setModel(sessionName, "sdk-roundtrip-model");
+
+    expect(result).toMatchObject({
+      action: "set-model",
+      changed: true,
+      sessionKey: "agent:sdk-roundtrip-agent:managed",
+      sessionName,
+      modelOverride: "sdk-roundtrip-model",
+      effectiveModel: "sdk-roundtrip-model",
+    });
+    expect(result.before.modelOverride).toBeUndefined();
+    expect(result.after?.modelOverride).toBe("sdk-roundtrip-model");
+    expect(result.notification).toMatchObject({ topic: "ravi.session.model.changed" });
+    expect(resolveSession(sessionName)?.modelOverride).toBe("sdk-roundtrip-model");
+
+    const unchanged = await buildClient().sessions.setModel(sessionName, "sdk-roundtrip-model");
+    expect(unchanged).toMatchObject({ action: "set-model", changed: false, modelOverride: "sdk-roundtrip-model" });
+  });
+
+  it("session setters keep failed mutations as contract errors without persisting", async () => {
+    const sessionName = "managed-sdk-roundtrip";
+    getOrCreateSession("agent:sdk-roundtrip-agent:managed", allowedContext.agentId!, stateDir!, {
+      name: sessionName,
+    });
+    const client = buildClient();
+
+    const unknownProvider = await client.sessions.setProvider(sessionName, "not-a-provider").catch((err) => err);
+    expect(unknownProvider).toBeInstanceOf(RaviContractError);
+    expect(unknownProvider).toMatchObject({ command: "sessions.set-provider", exitCode: 1, outcome: "failed" });
+    expect((unknownProvider as RaviContractError).code).not.toBe("RETURN_SHAPE_ERROR");
+    expect(resolveSession(sessionName)?.runtimeProviderOverride).toBeUndefined();
+
+    const missingSession = await client.sessions.setModel("missing-sdk-roundtrip", "sonnet").catch((err) => err);
+    expect(missingSession).toBeInstanceOf(RaviContractError);
+    expect(missingSession).toMatchObject({ command: "sessions.set-model", exitCode: 1, outcome: "failed" });
+    expect((missingSession as RaviContractError).code).not.toBe("RETURN_SHAPE_ERROR");
+    expect(resolveSession(sessionName)?.modelOverride).toBeUndefined();
   });
 
   it("creates canonical chats and actor messages idempotently through the generated client", async () => {

@@ -252,7 +252,7 @@ const sessionMutationSnapshotReturnSchema = z.object({
   expiresAt: z.number().nullable(),
   runtimeOptions: sessionRuntimeOptionsReturnSchema,
 });
-const sessionSetEffortReturnSchema = z.object({
+export const sessionSetEffortReturnSchema = z.object({
   action: z.literal("set-effort"),
   changed: z.boolean(),
   sessionKey: z.string(),
@@ -273,7 +273,7 @@ const sessionAgentDefaultDiffReturnSchema = {
   propagated: z.boolean().optional(),
   rematerializedSessions: z.array(agentSessionRematerializeReportSchema).optional(),
 };
-const sessionSetProviderReturnSchema = z.object({
+export const sessionSetProviderReturnSchema = z.object({
   action: z.literal("set-provider"),
   changed: z.boolean(),
   sessionKey: z.string(),
@@ -286,7 +286,7 @@ const sessionSetProviderReturnSchema = z.object({
   appliesOn: z.literal("next-turn-runtime-restart"),
   ...sessionAgentDefaultDiffReturnSchema,
 });
-const sessionSetModelReturnSchema = z.object({
+export const sessionSetModelReturnSchema = z.object({
   action: z.literal("set-model"),
   changed: z.boolean(),
   sessionKey: z.string(),
@@ -3521,18 +3521,18 @@ export class SessionCommands {
           ? { runtimeProviderOverride: undefined }
           : { runtimeProviderOverride: providerOverride }),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
+      const effective = resolveEffectiveSessionSelection(after, after.modelOverride ?? null);
       const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
         runtimeProviderOverride: providerOverride,
-        effectiveProvider: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).effectiveProvider,
-        providerSource: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).providerSource,
+        effectiveProvider: effective.effectiveProvider,
+        providerSource: effective.providerSource,
         appliesOn: "next-turn-runtime-restart",
         ...agentDiff,
         propagated,
         rematerializedSessions,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
   }
 
@@ -3643,7 +3643,7 @@ export class SessionCommands {
         ...s,
         ...(modelOverride === null ? { modelOverride: undefined } : { modelOverride }),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-model", s, after, beforeModelOverride !== modelOverride, {
         modelOverride,
         effectiveModel: event.effectiveModel,
@@ -3656,8 +3656,7 @@ export class SessionCommands {
         propagated,
         rematerializedSessions,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
   }
 
@@ -3714,15 +3713,14 @@ export class SessionCommands {
         ...s,
         ...(effortOverride === null ? { effortOverride: undefined } : { effortOverride }),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-effort", s, after, beforeEffortOverride !== effortOverride, {
         effortOverride,
         effectiveEffort: effective.effort,
         effectiveEffortSource: effective.source,
         appliesOn: "next-turn-runtime-restart",
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
 
     console.log("Note: takes effect on the next turn; active runtime restarts when effort changes.");
