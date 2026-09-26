@@ -241,4 +241,37 @@ describe("task automations", () => {
     expect(followUp?.instructions).toContain(`Primary ${join(projectDir, "render/video.mp4")}`);
     expect(followUp?.instructions).toContain(`ravi sessions read ${created.task.id}-work`);
   });
+
+  it("skips instead of spawning when the automation filter is invalid (fail-closed)", async () => {
+    const automation = createTaskAutomation({
+      name: "Broken filter follow-up",
+      eventTypes: ["task.done"],
+      filter: "data.task.priority == high",
+      titleTemplate: "QC :: {{data.task.title}}",
+      instructionsTemplate: "Review delivery for {{data.task.id}}",
+      agentId: "qa-auto",
+    });
+
+    const created = createTask({
+      title: "Ship runtime feature",
+      instructions: "Finish implementation and sync the runtime.",
+      priority: "high",
+    });
+    const completed = await completeTask(created.task.id, {
+      actor: "dev-session",
+      agentId: "dev",
+      sessionName: "dev-session",
+      message: "Implementation shipped.",
+    });
+
+    await emitTaskEvent(completed.task, completed.event);
+
+    expect(listTasks({ archiveMode: "include" }).map((task) => task.id)).toEqual([created.task.id]);
+    const runs = listTaskAutomationRuns(automation.id, 10);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.status).toBe("skipped");
+    expect(runs[0]?.message).toContain("Filter is invalid");
+    expect(runs[0]?.message).toContain("Expected quoted string value");
+    expect(publishedPrompts).toHaveLength(0);
+  });
 });
