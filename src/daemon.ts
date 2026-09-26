@@ -58,10 +58,7 @@ import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
-import {
-  buildDaemonRestartResumePrompt,
-  resolveCrashRecoveryRestartResumeDecision,
-} from "./runtime/daemon-restart-resume.js";
+import { deliverDaemonRestartSessionEvent } from "./runtime/daemon-restart-resume.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
 import { createChannelBackendEgressRequester } from "./channels/backend-egress.js";
@@ -543,6 +540,12 @@ async function notifyRestartReason() {
   });
 
   const callerSessionName = restartInfo.sessionName ?? resolveFallbackRestartSessionName();
+  log.info("Delivering daemon restart events", {
+    restartEpoch: restartInfo.restartEpoch,
+    restartReason: restartInfo.reason,
+    callerSessionName: callerSessionName ?? null,
+    eligibleSnapshots: snapshots.length,
+  });
   const eligibleCallerSnapshot = callerSessionName
     ? findRestartSnapshotForSession(snapshots, callerSessionName)
     : undefined;
@@ -595,93 +598,25 @@ async function publishRestartResumeEvent(
     snapshotEligible?: boolean;
   } = { kind: "active" },
 ): Promise<boolean> {
-  const sessionKey = options.snapshot?.sessionKey ?? resolveRestartSessionKey(sessionName);
-  if (dbHasDaemonRestartResumeDelivery(restartInfo.restartEpoch, sessionKey)) {
-    log.info("Restart resume event already delivered", {
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-      sessionName,
-      kind: options.kind,
-    });
-    return false;
-  }
-
-  const crashRecoveryResumeDecision = resolveCrashRecoveryRestartResumeDecision({
-    metadata: options.snapshot?.metadata,
-    snapshotPresent: Boolean(options.snapshot),
-    snapshotEligible: options.snapshotEligible ?? true,
-    pendingMessageCount: options.snapshot?.pendingMessageCount,
-  });
-  const crashRecoveryResumeMode = crashRecoveryResumeDecision.mode;
-  if (!crashRecoveryResumeDecision.publish) {
-    log.info("Skipping restart resume for a crash-recovery-fenced snapshot", {
-      restartEpoch: restartInfo.restartEpoch,
-      sessionName,
-      sessionKey,
-      kind: options.kind,
-      reason: crashRecoveryResumeDecision.reason,
-    });
-    dbMarkDaemonRestartResumeDelivered({
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-      sessionName,
-    });
-    return false;
-  }
-
-  if (shouldSkipRestartResumeForTerminalTaskSession(sessionName, options.snapshot)) {
-    log.info("Skipping restart resume event for terminal task session", {
-      restartEpoch: restartInfo.restartEpoch,
-      sessionName,
-      sessionKey,
-      kind: options.kind,
-      taskBarrierTaskId: getRestartSnapshotTaskBarrierTaskId(options.snapshot) ?? null,
-    });
-    dbMarkDaemonRestartResumeDelivered({
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-      sessionName,
-    });
-    return false;
-  }
-
-  const payload = buildDaemonRestartResumePrompt({
-    restartEpoch: restartInfo.restartEpoch,
-    reason: restartInfo.reason,
-    sessionKey,
-    mode: crashRecoveryResumeMode,
-    ...(options.snapshot?.runtimeProvider ? { runtimeProvider: options.snapshot.runtimeProvider } : {}),
-  });
-  if (!payload) {
-    return false;
-  }
-  const restartSource = resolveRestartResumeSource(options.snapshot);
-  if (restartSource) {
-    payload.source = restartSource;
-  }
-
-  try {
-    log.info("Publishing restart resume event", {
+  const outcome = await deliverDaemonRestartSessionEvent(
+    {
       restartEpoch: restartInfo.restartEpoch,
       reason: restartInfo.reason,
       sessionName,
-      sessionKey,
+      sessionKey: options.snapshot?.sessionKey ?? resolveRestartSessionKey(sessionName),
       kind: options.kind,
-      sourceActorType: restartSource?.actorType ?? null,
-      sourceContactId: restartSource?.contactId ?? null,
-    });
-    await publishSessionPrompt(sessionName, payload);
-    dbMarkDaemonRestartResumeDelivered({
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-      sessionName,
-    });
-    log.info("Restart resume event published", { sessionName, sessionKey, kind: options.kind });
-    return true;
-  } catch (err) {
-    log.error("Failed to publish restart resume event", { sessionName, sessionKey, error: err });
-    return false;
-  }
+      snapshot: options.snapshot,
+      snapshotEligible: options.snapshotEligible,
+    },
+    {
+      hasDelivery: dbHasDaemonRestartResumeDelivery,
+      markDelivered: dbMarkDaemonRestartResumeDelivered,
+      publish: publishSessionPrompt,
+      isTerminalTaskSession: shouldSkipRestartResumeForTerminalTaskSession,
+      resolveSource: resolveRestartResumeSource,
+    },
+  );
+  return outcome.status === "delivered";
 }
 
 function resolveRestartResumeSource(snapshot?: DaemonRestartSessionSnapshotRecord): MessageTarget | undefined {
