@@ -1136,7 +1136,7 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
           "('ravi skills grant loop-agent other-skill').",
       });
       const grantedRead = await services.authorizeCommandExecution({ command: `head -20 ${findSkillFile}`, input: {} });
-      expect(String(grantedRead.reason ?? "")).not.toContain("SKILL_NOT_AUTHORIZED");
+      expect(String(grantedRead.reason ?? "")).not.toStartWith("SKILL_NOT_AUTHORIZED");
     } finally {
       rmSync(tempHome, { recursive: true, force: true });
     }
@@ -1187,7 +1187,8 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
       command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md 2>&1",
       input: {},
     });
-    expect(String(install.reason ?? "")).not.toContain("SKILL_NOT_AUTHORIZED");
+    // Other layers (e.g. the `ravi skills` skill gate) may still answer; only the skill allowlist must not.
+    expect(String(install.reason ?? "")).not.toStartWith("SKILL_NOT_AUTHORIZED");
     await expect(
       services.authorizeCommandExecution({ command: "cat ~/.agents/skills/find-skills/SKILL.md", input: {} }),
     ).resolves.toEqual({ approved: false, reason: formatSkillNotAuthorizedReason("find-skills", agentId) });
