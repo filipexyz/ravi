@@ -455,6 +455,147 @@ describe("OmniConsumer channel context", () => {
     expect(sender.send).not.toHaveBeenCalled();
   });
 
+  describe("leading message prefixes", () => {
+    function createConsumer() {
+      const sender = {
+        send: mock(async () => {}),
+        sendTyping: mock(async () => {}),
+        markRead: mock(async () => {}),
+      };
+      const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+        resolveGroupMetadata: async () => null,
+      });
+      return { consumer, sender };
+    }
+
+    async function receiveText(consumer: InstanceType<typeof OmniConsumer>, text: string, id = "prefix") {
+      await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${id}`,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: "120363424772797713@g.us",
+          from: "5511947879044@s.whatsapp.net",
+          content: { type: "text", text },
+          rawPayload: {
+            pushName: "Luis Filipe",
+            resolvedSenderPhone: "5511947879044",
+            isGroup: true,
+          },
+        },
+        metadata: {
+          instanceId: "instance-1",
+          channelType: "whatsapp-baileys",
+          ingestMode: "realtime",
+        },
+        timestamp: Date.now(),
+      });
+    }
+
+    it("publishes >> messages for the end of the current turn with the prefix stripped", async () => {
+      const { consumer, sender } = createConsumer();
+
+      await receiveText(consumer, ">> check the deploy");
+
+      expect(promptCalls).toHaveLength(1);
+      const [sessionName, prompt] = promptCalls[0];
+      expect(sessionName).toBe("dev");
+      expect(prompt.prompt).toEndWith("Luis Filipe: check the deploy");
+      expect(prompt.prompt).not.toContain(">>");
+      expect(prompt).toMatchObject({
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "explicit",
+        _humanUrgent: false,
+        source: { channel: "whatsapp-baileys", chatId: "120363424772797713@g.us", sourceMessageId: "msg-prefix" },
+      });
+      expect(prompt._skipTurn).toBeUndefined();
+      expect(sender.sendTyping).toHaveBeenCalled();
+    });
+
+    it("publishes !! messages as normal user messages that skip the turn and typing", async () => {
+      const { consumer, sender } = createConsumer();
+
+      await receiveText(consumer, "!!budget is 10k");
+
+      expect(promptCalls).toHaveLength(1);
+      const [sessionName, prompt] = promptCalls[0];
+      expect(sessionName).toBe("dev");
+      expect(prompt.prompt).toEndWith("Luis Filipe: budget is 10k");
+      expect(prompt.prompt).not.toContain("!!");
+      expect(prompt).toMatchObject({
+        _skipTurn: true,
+        _humanUrgent: false,
+        source: { channel: "whatsapp-baileys", chatId: "120363424772797713@g.us", sourceMessageId: "msg-prefix" },
+        context: { messageId: "msg-prefix", senderName: "Luis Filipe" },
+      });
+      expect(prompt.deliveryBarrier).toBeUndefined();
+      expect(sender.sendTyping).not.toHaveBeenCalled();
+    });
+
+    it("expands Ravi commands from the text after the prefix", async () => {
+      const commandsDir = join(agentCwd, ".ravi", "commands");
+      mkdirSync(commandsDir, { recursive: true });
+      writeFileSync(
+        join(commandsDir, "restart.md"),
+        [
+          "---",
+          "description: Restart with a reason.",
+          "arguments:",
+          "  - reason",
+          "---",
+          'Use `ravi daemon restart -m "$reason"`.',
+          "",
+        ].join("\n"),
+      );
+      const { consumer } = createConsumer();
+
+      await receiveText(consumer, '>> #restart "depois do turno"');
+
+      expect(promptCalls).toHaveLength(1);
+      const [, prompt] = promptCalls[0];
+      expect(prompt.prompt).toContain("## Ravi Command: #restart");
+      expect(prompt.prompt).toContain('Use `ravi daemon restart -m "depois do turno"`.');
+      expect(prompt.commands).toMatchObject([{ id: "restart", originalText: '#restart "depois do turno"' }]);
+      expect(prompt.deliveryBarrier).toBe("after_response");
+    });
+
+    it("passes a bare prefix or a prefix followed only by whitespace to the agent literally", async () => {
+      const { consumer } = createConsumer();
+      const texts = [">>", "!!", ">>   ", "!!  \n"];
+
+      for (const [index, text] of texts.entries()) {
+        await receiveText(consumer, text, `bare-${index}`);
+      }
+
+      expect(promptCalls).toHaveLength(texts.length);
+      for (const [index, text] of texts.entries()) {
+        const prompt = promptCalls[index]?.[1];
+        expect(prompt?.prompt).toEndWith(`Luis Filipe: ${text}`);
+        expect(prompt?.deliveryBarrier).toBeUndefined();
+        expect(prompt?._skipTurn).toBeUndefined();
+        expect(prompt?._humanUrgent).toBe(false);
+      }
+    });
+
+    it("ignores prefixes that are not at the start and keeps urgent words urgent", async () => {
+      const { consumer } = createConsumer();
+
+      await receiveText(consumer, "hello >> world", "mid-end");
+      await receiveText(consumer, "hello !! world", "mid-skip");
+      await receiveText(consumer, "urgente: para tudo", "urgent");
+
+      expect(promptCalls).toHaveLength(3);
+      expect(promptCalls[0]?.[1].prompt).toEndWith("Luis Filipe: hello >> world");
+      expect(promptCalls[1]?.[1].prompt).toEndWith("Luis Filipe: hello !! world");
+      for (const [, prompt] of promptCalls.slice(0, 2)) {
+        expect(prompt.deliveryBarrier).toBeUndefined();
+        expect(prompt._skipTurn).toBeUndefined();
+        expect(prompt._humanUrgent).toBe(false);
+      }
+      expect(promptCalls[2]?.[1]._humanUrgent).toBe(true);
+    });
+  });
+
   it("passes the provider message identifier to intercepted slash commands", async () => {
     handleSlashCommandMock.mockImplementation(async () => true);
     const sender = {
