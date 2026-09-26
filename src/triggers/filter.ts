@@ -23,8 +23,8 @@ function buildFilter(filter: string | undefined): CompiledFilter {
       expression,
       valid: false,
       error: compiled.error,
-      // Historical trigger behavior is deliberately fail-open at runtime.
-      evaluate: () => true,
+      // A broken filter must never widen matching: shell triggers and automations run on match.
+      evaluate: () => false,
     };
   }
   const predicate: CompiledPredicate = compiled.predicate;
@@ -56,7 +56,7 @@ export function validateFilter(filter: string | undefined): FilterValidationResu
 export function evaluateFilter(filter: string | undefined, data: unknown): boolean {
   const compiled = compileFilter(filter);
   if (!compiled.valid) {
-    log.warn("Trigger filter: invalid syntax, failing open", { filter, error: compiled.error });
+    log.warn("Trigger filter: invalid syntax, failing closed", { filter, error: compiled.error });
   }
   return compiled.evaluate(data);
 }

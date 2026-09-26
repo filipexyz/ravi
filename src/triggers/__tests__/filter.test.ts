@@ -136,16 +136,20 @@ describe("evaluateFilter", () => {
   });
 
   describe("invalid syntax", () => {
-    it("returns true (fail open) for completely invalid expression", () => {
-      expect(evaluateFilter("this is not valid", data)).toBe(true);
+    it("returns false (fail closed) for completely invalid expression", () => {
+      expect(evaluateFilter("this is not valid", data)).toBe(false);
     });
 
-    it("returns true (fail open) for missing quotes around value", () => {
-      expect(evaluateFilter("data.cwd == /workspace", data)).toBe(true);
+    it("returns false (fail closed) for missing quotes around value", () => {
+      expect(evaluateFilter("data.cwd == /workspace", data)).toBe(false);
     });
 
-    it("returns true (fail open) for unknown operator", () => {
-      expect(evaluateFilter(`data.cwd contains "Dev"`, data)).toBe(true);
+    it("returns false (fail closed) for unknown operator", () => {
+      expect(evaluateFilter(`data.cwd contains "Dev"`, data)).toBe(false);
+    });
+
+    it("returns false (fail closed) for unquoted numeric values that would otherwise match", () => {
+      expect(evaluateFilter("data.count == 42", { count: 42 })).toBe(false);
     });
   });
 
