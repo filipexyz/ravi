@@ -37,6 +37,26 @@ ravi artifacts create --kind image --path /tmp/example.png --json
 Expected:
 - returned artifact has `kind=image`
 
+## Isolated CLI Relative Path Regression
+
+Run from an isolated agent CLI (host socket or `RAVI_GATEWAY_URL`) whose cwd
+differs from the daemon cwd:
+
+```bash
+cd "$(mktemp -d)" && mkdir out && printf 'ok\n' > out/evidence.md
+ravi artifacts create --path ./out/evidence.md --task task-1 --json
+ravi artifacts attach <id> task task-1 --relation output --json
+ravi artifacts create --path ./out/missing.md --json
+ravi artifacts create --path ./out/evidence.md --kind "Bad Kind" --json
+```
+
+Expected:
+- create succeeds and `filePath` points inside the caller directory
+- attach links the artifact to the task
+- the missing path and bad kind return `USAGE_ERROR`, exit 2, with issue paths
+  `["path"]` and `["kind"]`; never `UNHANDLED_ERROR` / HTTP 500
+- automated coverage: `src/sdk/gateway/artifacts-create.integration.test.ts`
+
 ## Pages boundary
 
 Hosting HTML is `ravi pages ship` (skill `pages`). The artifacts skill and

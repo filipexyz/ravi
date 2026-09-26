@@ -4,10 +4,19 @@
 
 import "reflect-metadata";
 import { file as bunFile } from "bun";
-import { statSync } from "node:fs";
-import { resolve } from "node:path";
+import { accessSync, constants as fsConstants, statSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
+import { ZodError } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  sanitizePublicContractMessage,
+  suggestSimilar,
+} from "../agent-contract.js";
+import { resolveCallerPath } from "../caller-cwd.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -25,6 +34,7 @@ import {
   artifactVersionsReturnSchema,
 } from "./operational-return-schemas.js";
 import {
+  ArtifactInputError,
   archiveArtifact,
   appendArtifactEvent,
   attachArtifact,
@@ -264,11 +274,135 @@ function objectSummary(value: unknown): Record<string, string> {
   return typeof id === "string" ? { id } : {};
 }
 
-function isDirectoryPath(path: string): boolean {
+interface ArtifactInputIssue {
+  path: Array<string | number>;
+  code: string;
+  message: string;
+}
+
+function displayArtifactPath(path: string): string {
+  const trimmed = path.trim();
+  if (!isAbsolute(trimmed)) return trimmed;
+  return basename(trimmed) || "[REDACTED:path]";
+}
+
+function failArtifactInput(op: string, message: string, issues: ArtifactInputIssue[], asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: 2,
+    details: {
+      suggestedAction: `Correct the command input and retry '${op}'.`,
+      ...(issues.length > 0 ? { issues } : {}),
+    },
+  });
+}
+
+function failArtifactPath(op: string, code: string, message: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: 2,
+    details: {
+      suggestedAction: `Pass an existing, readable local path to --path; relative paths resolve against the caller working directory. Then retry '${op}'.`,
+      issues: [{ path: ["path"], code, message }],
+    },
+  });
+}
+
+/**
+ * Gateway and host-socket dispatch run the handler inside the daemon, so a
+ * relative `--path` must resolve against the caller cwd, never the daemon's.
+ */
+function resolveArtifactSourcePath(
+  op: string,
+  path: string,
+  options: { allowDirectory: boolean; asJson?: boolean },
+): { path: string; isDirectory: boolean } {
+  const resolved = resolveCallerPath(path);
+  const display = displayArtifactPath(path);
+  let stat: ReturnType<typeof statSync>;
   try {
-    return statSync(resolve(path)).isDirectory();
+    stat = statSync(resolved);
+  } catch (error) {
+    const errno = (error as NodeJS.ErrnoException).code;
+    if (errno === "EACCES" || errno === "EPERM") {
+      failArtifactPath(op, "not_readable", `--path is not readable: ${display}`, options.asJson);
+    }
+    failArtifactPath(op, "not_found", `--path was not found: ${display}`, options.asJson);
+  }
+  const isDirectory = stat.isDirectory();
+  if (isDirectory && !options.allowDirectory) {
+    failArtifactPath(op, "invalid_type", `--path must be a file: ${display}`, options.asJson);
+  }
+  if (!isDirectory && !stat.isFile()) {
+    failArtifactPath(
+      op,
+      "invalid_type",
+      options.allowDirectory
+        ? `--path must be a regular file or directory: ${display}`
+        : `--path must be a file: ${display}`,
+      options.asJson,
+    );
+  }
+  try {
+    accessSync(resolved, isDirectory ? fsConstants.R_OK | fsConstants.X_OK : fsConstants.R_OK);
   } catch {
-    return false;
+    failArtifactPath(op, "not_readable", `--path is not readable: ${display}`, options.asJson);
+  }
+  return { path: resolved, isDirectory };
+}
+
+const ARTIFACT_INPUT_FIELD_OPTIONS: Record<string, string> = {
+  filePath: "path",
+  mimeType: "mime",
+  taskId: "task",
+  sessionKey: "session",
+  sessionName: "session",
+  messageId: "message",
+};
+
+function optionFlag(option: string): string {
+  return `--${option.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`)}`;
+}
+
+function artifactValidationIssues(error: ZodError): ArtifactInputIssue[] {
+  return error.issues.map((issue) => {
+    const [field, ...rest] = issue.path.map((segment) => (typeof segment === "number" ? segment : String(segment)));
+    const option = typeof field === "string" ? (ARTIFACT_INPUT_FIELD_OPTIONS[field] ?? field) : field;
+    return {
+      path: option === undefined ? [] : [option, ...rest],
+      code: issue.code,
+      message: issue.message,
+    };
+  });
+}
+
+/**
+ * Store schema violations and caller-input failures are expected outcomes:
+ * surface them as USAGE_ERROR with field issues instead of UNHANDLED_ERROR.
+ */
+function failOnArtifactInputError(op: string, error: unknown, asJson?: boolean): void {
+  if (error instanceof ZodError) {
+    const issues = artifactValidationIssues(error);
+    const first = issues[0];
+    const option = typeof first?.path[0] === "string" ? first.path[0] : undefined;
+    const message = first
+      ? `Invalid ${option ? optionFlag(option) : "artifact input"}: ${first.message}`
+      : "Invalid artifact input.";
+    failArtifactInput(op, message, issues, asJson);
+  }
+  if (error instanceof ArtifactInputError) {
+    const message = sanitizePublicContractMessage(error.message) ?? "Artifact input was invalid.";
+    failArtifactInput(op, message, [{ path: error.field ? [error.field] : [], code: "invalid", message }], asJson);
+  }
+}
+
+function withArtifactInputContract<T>(op: string, asJson: boolean | undefined, run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof ContractError) throw error;
+    failOnArtifactInputError(op, error, asJson);
+    throw error;
   }
 }
 
@@ -406,6 +540,7 @@ function withArtifactContract<T>(op: string, artifactRef: string, asJson: boolea
       failArtifactVersionNotFound(op, artifactRef, versionMatch ? Number(versionMatch[1]) : undefined, asJson);
     }
     if (/^artifact not found/i.test(message)) failArtifactNotFound(op, artifactRef, asJson);
+    failOnArtifactInputError(op, error, asJson);
     throw error;
   }
 }
@@ -455,12 +590,16 @@ export class ArtifactsCommands {
     @Option({ flags: "--message <id>", description: "Channel message id" }) messageId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const op = "artifacts create";
+    const source = filePath?.trim()
+      ? resolveArtifactSourcePath(op, filePath, { allowDirectory: true, asJson })
+      : undefined;
     const ctx = contextDefaults();
     const artifactInput = {
       ...(kind?.trim() ? { kind } : {}),
       ...(title?.trim() ? { title } : {}),
       ...(summary?.trim() ? { summary } : {}),
-      ...(filePath?.trim() ? { filePath } : {}),
+      ...(source ? { filePath: source.path } : {}),
       ...(uri?.trim() ? { uri } : {}),
       ...(mimeType?.trim() ? { mimeType } : {}),
       ...(provider?.trim() ? { provider } : {}),
@@ -489,18 +628,18 @@ export class ArtifactsCommands {
       tags: parseCsv(tags) ?? [],
     };
 
-    const packageResult =
-      filePath?.trim() && isDirectoryPath(filePath)
-        ? createArtifactPackage({
-            rootPath: filePath,
-            artifact: artifactInput,
-            ...(entrypoint?.trim() ? { entrypoint } : {}),
-            ...(basePath?.trim() ? { basePath } : {}),
-            ...(assetBase?.trim() ? { assetBase } : {}),
-            ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
-          })
-        : null;
-    const artifact = packageResult?.artifact ?? createArtifact(artifactInput);
+    const { artifact, packageResult } = withArtifactInputContract(op, asJson, () => {
+      if (!source?.isDirectory) return { artifact: createArtifact(artifactInput), packageResult: null };
+      const created = createArtifactPackage({
+        rootPath: source.path,
+        artifact: artifactInput,
+        ...(entrypoint?.trim() ? { entrypoint } : {}),
+        ...(basePath?.trim() ? { basePath } : {}),
+        ...(assetBase?.trim() ? { assetBase } : {}),
+        ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+      });
+      return { artifact: created.artifact, packageResult: created };
+    });
 
     const payload = {
       success: true,
@@ -821,6 +960,9 @@ export class ArtifactsCommands {
     @Option({ flags: "--tags <csv>", description: "Replace tags" }) tags?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const source = filePath?.trim()
+      ? resolveArtifactSourcePath("artifacts update", filePath, { allowDirectory: false, asJson })
+      : undefined;
     const artifact = withArtifactContract("artifacts update", id, asJson, () =>
       updateArtifact(
         id,
@@ -828,7 +970,7 @@ export class ArtifactsCommands {
           ...(title?.trim() ? { title } : {}),
           ...(summary?.trim() ? { summary } : {}),
           ...(status?.trim() ? { status } : {}),
-          ...(filePath?.trim() ? { filePath } : {}),
+          ...(source ? { filePath: source.path } : {}),
           ...(uri?.trim() ? { uri } : {}),
           ...(mimeType?.trim() ? { mimeType } : {}),
           ...(provider?.trim() ? { provider } : {}),
