@@ -10,6 +10,7 @@ import {
   listInstalledSkills,
   parseSkillSource,
   resolveSkillSource,
+  SkillSourceError,
   selectSkills,
   userSkillsPluginDir,
 } from "./manager.js";
@@ -105,6 +106,88 @@ describe("skills manager", () => {
     expect(listInstalledSkills({ homeDir: home }).map((skill) => skill.name)).toEqual(["image"]);
   });
 
+  it("treats ~ and caller-cwd relative paths as local sources instead of GitHub shorthands", () => {
+    expect(parseSkillSource("~/.agents/skills/find-skills", { homeDir: "/home/op" })).toMatchObject({
+      type: "local",
+      rootPath: "/home/op/.agents/skills/find-skills",
+    });
+    expect(parseSkillSource("./find-skills", { cwd: "/work/agent" })).toMatchObject({
+      type: "local",
+      rootPath: "/work/agent/find-skills",
+    });
+    expect(parseSkillSource("owner/repo")).toMatchObject({ type: "git" });
+  });
+
+  it("installs a single-skill directory without an explicit name (find-skills layout)", () => {
+    const root = createTempRoot();
+    const home = join(root, "home");
+    const skillDir = join(home, ".agents", "skills", "find-skills");
+    writeText(
+      join(skillDir, "SKILL.md"),
+      '---\nname: find-skills\ndescription: Helps users when they ask "how do I do X", "find a skill for X", or more.\n---\n\n# Find Skills\n',
+    );
+
+    for (const input of ["~/.agents/skills/find-skills", "~/.agents/skills/find-skills/SKILL.md"]) {
+      const resolved = resolveSkillSource(input, { homeDir: home });
+      expect(resolved.rootPath).toBe(skillDir);
+      const selected = selectSkills(discoverSkills(resolved));
+      expect(selected.map((skill) => skill.name)).toEqual(["find-skills"]);
+      expect(selected[0]?.description).toBe(
+        'Helps users when they ask "how do I do X", "find a skill for X", or more.',
+      );
+    }
+
+    const [installed] = installSkills(selectSkills(discoverSkills(resolveSkillSource(skillDir))), { homeDir: home });
+    expect(installed?.name).toBe("find-skills");
+    expect(listInstalledSkills({ homeDir: home }).map((skill) => skill.name)).toEqual(["find-skills"]);
+
+    const again = captureError(() =>
+      installSkills(selectSkills(discoverSkills(resolveSkillSource(skillDir))), { homeDir: home }),
+    );
+    expect(again).toMatchObject({
+      code: "SKILL_ALREADY_INSTALLED",
+      skillName: "find-skills",
+      publicMessage: "Skill already installed: find-skills.",
+    });
+  });
+
+  it("strips only a wrapping quote pair from frontmatter scalars", () => {
+    const root = createTempRoot();
+    writeText(join(root, "a", "SKILL.md"), "---\nname: \"quoted-name\"\ndescription: 'It''s quoted'\n---\n");
+    writeText(join(root, "b", "SKILL.md"), '---\nname: plain\ndescription: say "hi" twice\n---\n');
+    const skills = discoverSkills(resolveSkillSource(root));
+    expect(skills.map((skill) => [skill.name, skill.description])).toEqual([
+      ["plain", 'say "hi" twice'],
+      ["quoted-name", "It's quoted"],
+    ]);
+  });
+
+  it("raises typed, path-free errors for source and selection failures", () => {
+    const root = createTempRoot();
+    const missing = join(root, "SENTINEL_MISSING_DIR");
+    const notFound = captureError(() => resolveSkillSource(missing));
+    expect(notFound).toBeInstanceOf(SkillSourceError);
+    expect(notFound).toMatchObject({ code: "SKILL_SOURCE_NOT_FOUND", publicMessage: "Local skill source not found." });
+    expect((notFound as SkillSourceError).message).toContain(missing);
+
+    const empty = createTempRoot();
+    expect(captureError(() => selectSkills(discoverSkills(resolveSkillSource(empty))))).toMatchObject({
+      code: "SKILL_SOURCE_EMPTY",
+    });
+
+    const skills = [skillFixture("one"), skillFixture("two")];
+    expect(captureError(() => selectSkills(skills))).toMatchObject({
+      code: "SKILL_SELECTION_REQUIRED",
+      publicMessage: "Source has 2 skills. Pass a skill name or --all.",
+      candidates: ["one", "two"],
+    });
+    expect(captureError(() => selectSkills(skills, { skill: "three" }))).toMatchObject({
+      code: "SKILL_NOT_FOUND",
+      skillName: "three",
+      candidates: ["one", "two"],
+    });
+  });
+
   it("resolves catalog skills by Codex managed aliases", () => {
     const catalogSkills = listCatalogSkills();
 
@@ -115,6 +198,15 @@ describe("skills manager", () => {
     expect(findSkillByName(catalogSkills, "ravi-system-pages")?.name).toBe("pages");
   });
 });
+
+function captureError(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected the call to throw");
+}
 
 function createTempRoot(): string {
   const tempRoot = mkdtempSync(join(tmpdir(), "ravi-skills-manager-"));

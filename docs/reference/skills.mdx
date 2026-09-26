@@ -54,13 +54,28 @@ ravi skills show find-skills --source vercel-labs/skills
 ```bash
 ravi skills install image                         # additive catalog install: runs now
 ravi skills install my-skill --source ./my-skills # additive local install: runs now
+ravi skills install --source ~/.agents/skills/find-skills # single local skill: runs now, no name needed
 ravi skills install find-skills --source vercel-labs/skills # Git: dry-run (exit 3)
 ravi skills install find-skills --source vercel-labs/skills --execute
 ravi skills install image --overwrite             # overwrite: dry-run (exit 3)
 ravi skills install image --overwrite --execute
 ```
 
-If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all`.
+If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all` (otherwise `SKILL_SELECTION_REQUIRED`, exit 2, with the candidate names in `suggestions`). A source holding exactly one skill (the directory containing `SKILL.md`, or the `SKILL.md` file itself) installs without a name. Relative local paths resolve against the caller's working directory, and `~/...` is the caller's home directory, not a GitHub shorthand.
+
+Source failures come back as typed errors instead of a generic `COMMAND_FAILED`: `SKILL_SOURCE_NOT_FOUND`, `SKILL_SOURCE_EMPTY`, `SKILL_SOURCE_INVALID`, `SKILL_SOURCE_UNAVAILABLE` (retryable Git clone failure), and `SKILL_ALREADY_INSTALLED`. None of them repeat the raw source path or URL.
+
+## Install, Then Grant
+
+Installing a skill does not make it visible to agents that have a skill allowlist. A skill that only exists on disk (for example one a harness discovers under `~/.agents/skills`) stays denied with `SKILL_NOT_AUTHORIZED: Skill '<skill>' is not authorized for agent '<agent>'.` until it is installed into Ravi and granted:
+
+```bash
+ravi skills install --source ~/.agents/skills/find-skills
+ravi skills grant <agent> find-skills
+ravi skills inspect <agent>
+```
+
+`skills grant` on a skill that is not installed fails with `SKILL_NOT_FOUND` and points to `ravi skills install --source <skill-dir>`.
 
 Installed operator skills live in:
 

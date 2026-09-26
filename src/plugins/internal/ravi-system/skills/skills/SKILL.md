@@ -22,8 +22,8 @@ Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha 
 Taxonomia de saída:
 
 - `0` sucesso.
-- `1` erro de execução (`SKILL_NOT_FOUND`, `AGENT_NOT_FOUND`). O envelope traz `suggestions` com nomes/ids reais parecidos — consulte antes de concluir "não existe".
-- `2` erro de uso (flag/argumento inválido).
+- `1` erro de execução (`SKILL_NOT_FOUND`, `AGENT_NOT_FOUND`, `SKILL_SOURCE_NOT_FOUND`, `SKILL_SOURCE_EMPTY`, `SKILL_SOURCE_UNAVAILABLE`, `SKILL_ALREADY_INSTALLED`). O envelope traz `suggestions` com nomes/ids reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido, `SKILL_SELECTION_REQUIRED`).
 - `3` freio de política — não é erro. Nada foi gravado; revise o `plan` e repita com `--execute` somente nos casos freados abaixo.
 
 Matriz KISS de `skills install`:
@@ -47,6 +47,7 @@ Exemplos:
 ```bash
 ravi skills install cli-creator                         # catálogo aditivo: instala agora
 ravi skills install minha --source ./minhas-skills      # fonte local aditiva: instala agora
+ravi skills install --source ~/.agents/skills/find-skills  # skill única local: instala agora, sem nome
 ravi skills install find-skills --source vercel-labs/skills  # Git: plano mínimo (exit 3)
 ravi skills install find-skills --source vercel-labs/skills --execute
 ravi skills install cli-creator --overwrite             # overwrite: plano mínimo (exit 3)
@@ -120,10 +121,22 @@ ravi skills install image --overwrite             # dry-run (exit 3)
 ravi skills install image --overwrite --execute
 ```
 
-Quando um catálogo/fonte contém várias skills, não instale implicitamente todas: passe um nome ou `--all`.
+Quando um catálogo/fonte contém várias skills, não instale implicitamente todas: passe um nome ou `--all` (senão `SKILL_SELECTION_REQUIRED`, exit 2, com os nomes em `suggestions`). Uma fonte local com uma única skill (o diretório que contém `SKILL.md`, ou o próprio `SKILL.md`) instala sem nome. Paths relativos resolvem no cwd de quem chama e `~/...` é o HOME, não um shorthand GitHub.
 
 O destino canônico de skills instaladas pelo operador é `~/ravi/plugins/ravi-user-skills/skills/<skill>`.
 Depois da instalação, o CLI sincroniza a materialização em `~/.codex/skills` quando aplicável.
+
+### Skill que o harness anuncia mas o gate nega
+
+Skills que só existem no disco (ex.: `~/.agents/skills/find-skills`) não entram na allowlist sozinhas. Para um agente com allowlist, o caminho é instalar no Ravi e depois grantar — nunca contornar o gate lendo o arquivo por outro comando:
+
+```bash
+ravi skills install --source ~/.agents/skills/find-skills   # skill única local: instala agora
+ravi skills grant <agent> find-skills                        # dá visibilidade (efeito ao vivo)
+ravi skills inspect <agent>                                  # confere a allowlist
+```
+
+`SKILL_NOT_AUTHORIZED` nomeia a skill e o agente (`Skill 'x' is not authorized for agent 'y'.`) e aponta esses dois comandos. `skills grant` de uma skill não instalada falha com `SKILL_NOT_FOUND` e sugere o `install --source`.
 
 ### Sincronizar
 

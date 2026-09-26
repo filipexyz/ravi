@@ -4,7 +4,15 @@
 
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  CONTRACT_EXIT_ERROR,
+  CONTRACT_EXIT_USAGE,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
+import { getCallerCwd } from "../caller-cwd.js";
 import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
@@ -28,13 +36,20 @@ import {
   listInstalledSkills,
   parseSkillSource,
   selectSkills,
+  SkillSourceError,
   withResolvedSkillSource,
   type InstalledRaviSkill,
   type RaviSkill,
+  type SkillSourceErrorCode,
+  type SkillSourceOptions,
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
-import { isSkillAuthorizedForAgent } from "../../runtime/skill-authorization.js";
+import {
+  SKILL_NOT_AUTHORIZED,
+  isSkillAuthorizedForAgent,
+  skillNotAuthorizedCopy,
+} from "../../runtime/skill-authorization.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
@@ -81,19 +96,42 @@ function knownSkillNames(options: { includeCodex?: boolean } = {}): string[] {
   return [...names];
 }
 
+/** Grants resolve against catalog ∪ installed; a skill that only exists on disk (e.g. ~/.agents/skills) must be installed first. */
+const SKILL_GRANT_REQUIRES_INSTALL_ACTION =
+  "Grants only accept catalog or installed skills. Install it first ('ravi skills install --source <skill-dir>', check with 'ravi skills list --installed'), then retry the grant";
+
 interface SkillNotFoundOptions {
   asJson?: boolean;
   candidates?: string[];
   suggestedAction?: string;
 }
 
+/**
+ * The remote gateway client renders issues[] but replaces suggestedAction with
+ * generic copy, so the remediation also travels as a trailing issue.
+ */
+function skillContractIssues(
+  path: string[],
+  code: string,
+  message: string,
+  suggestedAction?: string,
+): Array<{ path: string[]; code: string; message: string }> {
+  return [
+    { path, code, message },
+    ...(suggestedAction ? [{ path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }] : []),
+  ];
+}
+
 function failSkillNotFound(op: string, skillName: string, options: SkillNotFoundOptions = {}): never {
-  contractFail(op, "SKILL_NOT_FOUND", `Skill not found: ${skillName}`, {
+  const message = `Skill not found: ${skillName}`;
+  const suggestedAction =
+    options.suggestedAction ?? "Check the skill name (see suggestions; list with: ravi skills list --json)";
+  contractFail(op, "SKILL_NOT_FOUND", message, {
     asJson: options.asJson,
     details: {
-      suggestedAction:
-        options.suggestedAction ?? "Check the skill name (see suggestions; list with: ravi skills list --json)",
+      suggestedAction,
       suggestions: suggestSimilar(skillName, options.candidates ?? knownSkillNames({ includeCodex: true })),
+      issues: skillContractIssues(["skill"], "SKILL_NOT_FOUND", message, suggestedAction),
     },
   });
 }
@@ -113,13 +151,90 @@ function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never
   });
 }
 
+const SKILL_SOURCE_FAILURES: Record<
+  Exclude<SkillSourceErrorCode, "SKILL_NOT_FOUND">,
+  { exitCode: number; path: string; suggestedAction: string; retryable?: boolean }
+> = {
+  SKILL_SOURCE_INVALID: {
+    exitCode: CONTRACT_EXIT_USAGE,
+    path: "source",
+    suggestedAction: "Pass a skill directory (absolute, ~/... or ./relative) or a GitHub/git URL",
+  },
+  SKILL_SOURCE_NOT_FOUND: {
+    exitCode: CONTRACT_EXIT_ERROR,
+    path: "source",
+    suggestedAction:
+      "Check that the directory exists and contains SKILL.md (absolute, ~/... or relative to your cwd with ./)",
+  },
+  SKILL_SOURCE_UNAVAILABLE: {
+    exitCode: CONTRACT_EXIT_ERROR,
+    path: "source",
+    suggestedAction: "Check the repository URL, ref and access, then retry",
+    retryable: true,
+  },
+  SKILL_SOURCE_EMPTY: {
+    exitCode: CONTRACT_EXIT_ERROR,
+    path: "source",
+    suggestedAction: "Point --source at a directory with SKILL.md, or a repo with skills/<name>/SKILL.md",
+  },
+  SKILL_SELECTION_REQUIRED: {
+    exitCode: CONTRACT_EXIT_USAGE,
+    path: "name",
+    suggestedAction: "Pass one of the suggested skill names, or --all",
+  },
+  SKILL_ALREADY_INSTALLED: {
+    exitCode: CONTRACT_EXIT_ERROR,
+    path: "name",
+    suggestedAction: "Grant it with 'ravi skills grant <agent> <skill>', or replace it with --overwrite --execute",
+  },
+};
+
+/** Map an expected manager failure to a contract error whose cause survives the remote gateway (issues[]). */
+function failSkillSource(op: string, error: SkillSourceError, options: { asJson?: boolean } = {}): never {
+  if (error.code === "SKILL_NOT_FOUND") {
+    failSkillNotFound(op, error.skillName ?? "<skill>", {
+      asJson: options.asJson,
+      candidates: error.candidates,
+      suggestedAction: "Check the skill name in the same source (list with: ravi skills list --source <source> --json)",
+    });
+  }
+  const failure = SKILL_SOURCE_FAILURES[error.code];
+  const suggestedAction =
+    error.code === "SKILL_ALREADY_INSTALLED" && error.skillName
+      ? failure.suggestedAction.replace("<skill>", error.skillName)
+      : failure.suggestedAction;
+  contractFail(op, error.code, error.publicMessage, {
+    asJson: options.asJson,
+    exitCode: failure.exitCode,
+    details: {
+      ...(failure.retryable ? { retryable: true } : {}),
+      suggestedAction,
+      ...(error.candidates.length > 0 ? { suggestions: error.candidates.slice(0, 32) } : {}),
+      issues: skillContractIssues([failure.path], error.code, error.publicMessage, suggestedAction),
+    },
+  });
+}
+
+function withSkillSourceContract<T>(op: string, asJson: boolean | undefined, run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof SkillSourceError) failSkillSource(op, error, { asJson });
+    throw error;
+  }
+}
+
+/** Remote dispatch runs in the daemon: relative `--source` paths belong to the caller's cwd. */
+function callerSkillSourceOptions(): SkillSourceOptions {
+  return { cwd: getCallerCwd() };
+}
+
 /**
- * `selectSkills` throws plain errors ("Skill not found: ...", "Source has N
- * skills...") — survey the selection without throwing so the not-found case can
- * be mapped to the contract envelope OUTSIDE `withResolvedSkillSource` (temp
- * git clones are cleaned up before the process exits on brake/not-found).
+ * Survey the selection without throwing so failures are mapped to the
+ * contract envelope OUTSIDE `withResolvedSkillSource` (temp git clones are
+ * cleaned up first).
  */
-type InstallSelection = { ok: RaviSkill[] } | { notFound: string } | { error: string };
+type InstallSelection = { ok: RaviSkill[] } | { error: SkillSourceError };
 type InstallSourceKind = "catalog" | "local" | "git";
 
 function surveyInstallSelection(
@@ -132,23 +247,22 @@ function surveyInstallSelection(
     const ok = selectSkills(available, { ...(requestedSkill ? { skill: requestedSkill } : {}), all });
     return { selection: { ok }, names };
   } catch (error) {
-    // Re-throw contract errors unchanged so their exit code is preserved.
-    if (error instanceof ContractError) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    if (requestedSkill && /^Skill not found/i.test(message)) {
-      return { selection: { notFound: requestedSkill }, names };
-    }
-    return { selection: { error: message }, names };
+    if (error instanceof SkillSourceError) return { selection: { error }, names };
+    throw error;
   }
 }
 
 function failInstallSelection(
   survey: { selection: InstallSelection; names: string[] },
-  options: { sourceKind: InstallSourceKind; asJson?: boolean },
+  options: { sourceKind: InstallSourceKind; requestedSkill?: string; asJson?: boolean },
 ): never {
   const { selection, names } = survey;
-  if ("notFound" in selection) {
-    failSkillNotFound("skills install", selection.notFound, {
+  const error = "error" in selection ? selection.error : null;
+  if (!error) {
+    throw new Error("Skill selection succeeded; nothing to fail.");
+  }
+  if (error.code === "SKILL_NOT_FOUND") {
+    failSkillNotFound("skills install", options.requestedSkill ?? error.publicMessage, {
       asJson: options.asJson,
       candidates: names,
       suggestedAction:
@@ -157,7 +271,7 @@ function failInstallSelection(
           : "Check the skill name in the same source (list with: ravi skills list --source <source> --json)",
     });
   }
-  fail("error" in selection ? selection.error : "Skill selection failed.");
+  failSkillSource("skills install", error, { asJson: options.asJson });
 }
 
 const SKILLS_LIST_HELP_AFTER = `
@@ -238,11 +352,15 @@ REGRAS HARD (o comando bloqueia)
   • --overwrite local/catálogo sem --execute → valida, conta e retorna exit 3.
   • Catálogo/local sem --overwrite → instala imediatamente, sem --execute.
   • Nome inexistente local/catálogo falha ANTES do freio; em Git, após --execute.
-  • Exige um nome OU --all (senão fail "Pass a skill name or --all.").
+  • Catálogo exige um nome OU --all. Fonte com UMA skill (dir com SKILL.md ou o
+    próprio SKILL.md) instala sem nome; fonte com várias exige nome OU --all.
+  • Path local relativo resolve no cwd de quem chama; \`~/...\` é o HOME (não GitHub).
   • --overwrite é a única forma de substituir uma já instalada (fail-safe).
+  • Install NÃO dá visibilidade: agente com allowlist ainda precisa de \`skills grant\`.
 
 EXAMPLES
   ravi skills install cli-creator                       # catálogo aditivo: instala agora
+  ravi skills install --source ~/.agents/skills/find-skills  # skill única local: instala agora
   ravi skills install minha --source ./path             # local aditivo: instala agora
   ravi skills install --source org/repo --all           # Git: dry-run (exit 3)
   ravi skills install --source org/repo --all --execute
@@ -250,13 +368,21 @@ EXAMPLES
   ravi skills install minha --source ./path --overwrite --execute --json
 
 ON ERROR (reason → fix)
-  exit 3 WRITE_REQUIRES_EXECUTE → fonte Git ou overwrite: revise o plano e confirme.
-  SKILL_NOT_FOUND (exit 1)      → cheque error.suggestions; liste com \`ravi skills list\`.
-  Pass a skill name or --all    → passe o nome ou --all.
-  já instalada (sem efeito)     → use --overwrite pra substituir.
+  exit 3 WRITE_REQUIRES_EXECUTE          → fonte Git ou overwrite: revise o plano e confirme.
+  SKILL_NOT_FOUND (exit 1)               → cheque error.suggestions; liste com \`ravi skills list\`.
+  SKILL_SELECTION_REQUIRED (exit 2)      → fonte com várias skills: passe um nome de error.suggestions ou --all.
+  SKILL_SOURCE_NOT_FOUND (exit 1)        → path não existe: aponte pro dir que contém SKILL.md.
+  SKILL_SOURCE_EMPTY (exit 1)            → nenhum SKILL.md na fonte.
+  SKILL_SOURCE_UNAVAILABLE (exit 1)      → clone Git falhou: cheque URL/rede e repita.
+  SKILL_ALREADY_INSTALLED (exit 1)       → já instalada: só grant, ou --overwrite --execute pra substituir.
+  USAGE_ERROR (exit 2)                   → catálogo sem nome: passe o nome, --source ou --all.
+
+PIPELINE
+  skills list --source <src> → [skills install] → skills grant <agent> <skill> → skills inspect <agent>
 
 SEE ALSO
   ravi skills list --source <src>  (ver antes de instalar)
+  ravi skills grant <agent> <skill> (dar visibilidade depois de instalar)
   ravi skills sync                 (re-materializar Codex sem instalar; sem freio)
 
 FONTES
@@ -310,13 +436,15 @@ EXAMPLES
 
 ON ERROR (reason → fix)
   AGENT_NOT_FOUND (exit 1) → error.suggestions traz ids parecidos; confira \`ravi agents list\`.
-  SKILL_NOT_FOUND (exit 1) → error.suggestions traz nomes parecidos; instale/publique antes.
+  SKILL_NOT_FOUND (exit 1) → error.suggestions traz nomes parecidos; skill só no disco
+                             (ex: ~/.agents/skills/x) → \`ravi skills install --source <dir>\` antes.
 
 SEM FREIO (declarado)
   grant e revoke são reversíveis entre si e têm efeito ao vivo — escrevem na hora.
 
 PIPELINE
   skills list (achar nome) → [skills grant] → skills inspect <agent> (verificar allowlist)
+  skill fora do Ravi: skills install --source <dir> → [skills grant] → skills inspect <agent>
 
 SEE ALSO
   ravi skills grant-batch (lote) · ravi skills revoke (reverter) · ravi skills who <skill>
@@ -537,7 +665,9 @@ export class SkillsCommands {
     fields?: string,
   ) {
     const discovered = source
-      ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
+      ? withSkillSourceContract("skills list", asJson, () =>
+          withResolvedSkillSource(source, (resolved) => discoverSkills(resolved), callerSkillSourceOptions()),
+        )
       : installed === true || includeCodex === true
         ? listInstalledSkills({ includeCodex: includeCodex === true })
         : listCatalogSkills();
@@ -616,10 +746,16 @@ export class SkillsCommands {
     if (source) {
       // Resolve inside the callback (temp clones are cleaned up on return) and
       // fail with the envelope OUTSIDE it, keeping cleanup + exit code intact.
-      const resolved = withResolvedSkillSource(source, (resolvedSource) => {
-        const skills = discoverSkills(resolvedSource);
-        return { skill: findSkillByName(skills, name), names: skills.map((entry) => entry.name) };
-      });
+      const resolved = withSkillSourceContract("skills show", asJson, () =>
+        withResolvedSkillSource(
+          source,
+          (resolvedSource) => {
+            const skills = discoverSkills(resolvedSource);
+            return { skill: findSkillByName(skills, name), names: skills.map((entry) => entry.name) };
+          },
+          callerSkillSourceOptions(),
+        ),
+      );
       skill = resolved.skill;
       candidates = resolved.names;
     } else if (installed === true) {
@@ -641,9 +777,13 @@ export class SkillsCommands {
         capabilities: getContext()?.context?.capabilities,
       });
       if (!authorized) {
-        contractFail("skills show", "SKILL_NOT_AUTHORIZED", `Skill not authorized for agent: ${skill.name}`, {
+        const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId);
+        contractFail("skills show", SKILL_NOT_AUTHORIZED, copy.message, {
           asJson,
-          details: { suggestedAction: `Grant '${skill.name}' to agent '${runtimeAgentId}' before loading it` },
+          details: {
+            suggestedAction: copy.suggestedAction,
+            issues: skillContractIssues([], SKILL_NOT_AUTHORIZED, copy.message, copy.suggestedAction),
+          },
         });
       }
     }
@@ -691,16 +831,54 @@ export class SkillsCommands {
     })
     execute?: boolean,
   ) {
-    const requestedSkill = normalizeRequestedSkillName(name, skillName);
-    if (!requestedSkill && all !== true) {
-      fail("Pass a skill name or --all.");
+    const requestedSkill = normalizeRequestedSkillName(name, skillName, asJson);
+    if (!requestedSkill && all !== true && !source) {
+      const message = "Pass a catalog skill name, --source <skill-dir>, or --all.";
+      contractFail("skills install", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "List installable skills with: ravi skills list --json",
+          issues: skillContractIssues(
+            ["name"],
+            "required",
+            message,
+            "List installable skills with: ravi skills list --json",
+          ),
+        },
+      });
     }
+    return withSkillSourceContract("skills install", asJson, () =>
+      this.runInstallCommand({
+        requestedSkill,
+        source,
+        all: all === true,
+        plugin,
+        overwrite: overwrite === true,
+        skipCodexSync: skipCodexSync === true,
+        asJson,
+        execute: execute === true,
+      }),
+    );
+  }
 
-    const planSource = source ? parseSkillSource(source) : null;
+  private runInstallCommand(input: {
+    requestedSkill?: string;
+    source?: string;
+    all: boolean;
+    plugin?: string;
+    overwrite: boolean;
+    skipCodexSync: boolean;
+    asJson?: boolean;
+    execute: boolean;
+  }) {
+    const { requestedSkill, source, all, plugin, overwrite, skipCodexSync, asJson, execute } = input;
+    const sourceOptions = callerSkillSourceOptions();
+    const planSource = source ? parseSkillSource(source, sourceOptions) : null;
     const sourceKind = planSource?.type ?? "catalog";
     const sourceLabel = sourceKind;
-    const requiresConfirmation = sourceKind === "git" || overwrite === true;
-    if (sourceKind === "git" && execute !== true) {
+    const requiresConfirmation = sourceKind === "git" || overwrite;
+    if (sourceKind === "git" && !execute) {
       // Cloning a Git source is not a side-effect-free lookup. Defer source
       // resolution and selection until the caller confirms the installation.
       contractDryRun(
@@ -709,30 +887,35 @@ export class SkillsCommands {
           sourceKind,
           sourceLabel,
           selectionDeferred: true,
-          overwrite: overwrite === true,
-          codexSync: skipCodexSync !== true,
+          overwrite,
+          codexSync: !skipCodexSync,
         },
         { asJson },
       );
     }
 
-    const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all === true);
-    if (requiresConfirmation && execute !== true) {
+    const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all);
+    const failSelection = (survey: ReturnType<typeof surveySelected>): never =>
+      failInstallSelection(survey, { sourceKind, requestedSkill, asJson });
+    if (requiresConfirmation && !execute) {
       // Catalog and local discovery are side-effect-free. Validate the selected
       // skill before the overwrite brake so not-found remains exit 1, not 3.
       const survey = source
-        ? withResolvedSkillSource(source, (resolvedSource) => surveySelected(discoverSkills(resolvedSource)))
+        ? withResolvedSkillSource(
+            source,
+            (resolvedSource) => surveySelected(discoverSkills(resolvedSource)),
+            sourceOptions,
+          )
         : surveySelected(listCatalogSkills());
-      const planned =
-        "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { sourceKind, asJson });
+      const planned = "ok" in survey.selection ? survey.selection.ok : failSelection(survey);
       contractDryRun(
         "skills install",
         {
           sourceKind,
           sourceLabel,
           skillCount: planned.length,
-          overwrite: overwrite === true,
-          codexSync: skipCodexSync !== true,
+          overwrite,
+          codexSync: !skipCodexSync,
         },
         { asJson },
       );
@@ -740,7 +923,7 @@ export class SkillsCommands {
 
     const installOptions = {
       ...(plugin ? { pluginName: plugin } : {}),
-      overwrite: overwrite === true,
+      overwrite,
     };
     const runInstall = (
       available: RaviSkill[],
@@ -750,14 +933,12 @@ export class SkillsCommands {
       return { survey, installed: installSkills(survey.selection.ok, installOptions) };
     };
     const outcome = source
-      ? withResolvedSkillSource(source, (resolvedSource) => runInstall(discoverSkills(resolvedSource)))
+      ? withResolvedSkillSource(source, (resolvedSource) => runInstall(discoverSkills(resolvedSource)), sourceOptions)
       : runInstall(listCatalogSkills());
-    if (!outcome.installed) {
-      failInstallSelection(outcome.survey, { sourceKind, asJson });
-    }
-    const installed = outcome.installed;
+    const installed = outcome.installed ?? failSelection(outcome.survey);
 
-    const codexSynced = skipCodexSync === true ? [] : syncCodex();
+    const codexSynced = skipCodexSync ? [] : syncCodex();
+    const nextSteps = installed.map((skill) => `ravi skills grant <agent> ${skill.name}`);
     const payload = {
       success: true,
       source: source ?? "catalog",
@@ -766,6 +947,7 @@ export class SkillsCommands {
         installPath: skill.installPath,
       })),
       codexSynced,
+      nextSteps,
     };
 
     if (asJson) {
@@ -775,9 +957,11 @@ export class SkillsCommands {
         console.log(`✓ Installed skill: ${skill.name}`);
         console.log(`  ${skill.installPath}`);
       }
-      if (skipCodexSync !== true) {
+      if (!skipCodexSync) {
         console.log(`Synced Codex skills: ${codexSynced.length}`);
       }
+      console.log("Agents with a skill allowlist still need a grant before loading it:");
+      for (const step of nextSteps) console.log(`  ${step}`);
     }
     return payload;
   }
@@ -832,7 +1016,7 @@ export class SkillsCommands {
       failSkillNotFound("skills grant", skillName, {
         asJson,
         candidates: knownSkillNames({ includeCodex: false }),
-        suggestedAction: "Install or publish the skill before granting (list with: ravi skills list --json)",
+        suggestedAction: SKILL_GRANT_REQUIRES_INSTALL_ACTION,
       });
     }
 
@@ -1046,7 +1230,7 @@ export class SkillsCommands {
         failSkillNotFound(op, single, {
           asJson,
           candidates: knownSkillNames({ includeCodex: false }),
-          suggestedAction: "Install or publish the skill first (list with: ravi skills list --json)",
+          suggestedAction: SKILL_GRANT_REQUIRES_INSTALL_ACTION,
         });
       }
       return [resolved.name];
@@ -1157,11 +1341,19 @@ export class SkillsCommands {
   }
 }
 
-function normalizeRequestedSkillName(name?: string, skillName?: string): string | undefined {
+function normalizeRequestedSkillName(name?: string, skillName?: string, asJson?: boolean): string | undefined {
   const positional = name?.trim();
   const flag = skillName?.trim();
   if (positional && flag && positional !== flag) {
-    fail(`Conflicting skill names: ${positional} and ${flag}`);
+    const message = `Conflicting skill names: ${positional} and ${flag}`;
+    contractFail("skills install", "USAGE_ERROR", message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: "Pass the skill name once (positional or --skill)",
+        issues: [{ path: ["skill"], code: "conflict", message }],
+      },
+    });
   }
   return positional || flag || undefined;
 }

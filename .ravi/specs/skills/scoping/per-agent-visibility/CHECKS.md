@@ -21,6 +21,15 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [x] Pi: Read/`Skill` de skill concedida é autorizado; arquivos comuns (ex. `README.md`) não disparam o gate.
 - [x] Pi: o catálogo do system prompt continua filtrado pela mesma allowlist.
 
+## Revisão v5 — bug `2b7fcc09` (anúncio × gate × install)
+
+- [x] `SKILL_NOT_AUTHORIZED` nomeia skill e agente (`Skill 'x' is not authorized for agent 'y'.`) nos três pontos (Pi extension, host Bash/tool, `ravi skills show`) e aponta `skills install --source` + `skills grant`. Coberto por `skill-capability-visibility.test.ts` e `skills.test.ts`.
+- [x] Pi com allowlist sobe com `--no-skills`: `~/.agents/skills/<x>` não aparece mais no `available_skills` nativo; sem allowlist o flag não é passado. Coberto por `pi-provider.test.ts` + controle ao vivo com Pi 0.73.1 (`get_commands`: `["skill:find-skills"]` → `[]`).
+- [x] Loop fechado: skill só em `~/.agents/skills/find-skills` → `grant` falha `SKILL_NOT_FOUND` apontando `install --source` → `ravi skills install --source ~/.agents/skills/find-skills` (sem nome) → `grant` → Read autorizado; `other-skill` do mesmo diretório segue negada. Coberto por `skills.test.ts`.
+- [x] Nenhuma entrada de `~/.agents/skills` é concedida automaticamente.
+- [x] Linha com skill concedida + não concedida (`head <negada>/SKILL.md; cat <concedida>/SKILL.md`) é negada nomeando a não concedida, no host e no Pi. Antes a linha passava porque só a primeira referência resolvida era checada. Coberto por `skills.test.ts`, `pi-tool-permissions.test.ts` e `skill-visibility.test.ts`.
+- [x] `ravi skills install --source ~/.agents/skills/<x>/SKILL.md` não dispara `SKILL_NOT_AUTHORIZED`; `cat ~/.agents/skills/<x>/SKILL.md` continua negado.
+
 ## Cenários herdados
 
 ### Núcleo v3 (derivação + agnóstico)

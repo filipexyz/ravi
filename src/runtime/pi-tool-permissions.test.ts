@@ -472,12 +472,14 @@ describe("Pi tool permission bridge", () => {
       parsePiPermissionUiDecisionValue(
         formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: image",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
         }),
       ),
     ).toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
     });
     expect(parsePiPermissionUiDecisionValue(false)).toEqual({
       allowed: false,
@@ -639,12 +641,14 @@ describe("Pi tool permission bridge", () => {
       authorizePiToolCall("read", { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" }, handlers),
     ).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
     });
 
     await expect(authorizePiToolCall("Skill", { skill: "ravi-system-image" }, handlers)).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
     });
 
     await expect(
@@ -687,7 +691,8 @@ describe("Pi tool permission bridge", () => {
       ),
     ).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
     });
 
     await expect(
@@ -699,6 +704,35 @@ describe("Pi tool permission bridge", () => {
           approveRuntimeRequest: async () => ({ approved: true }),
           allowedSkills: ["ravi-dev-app-creator"],
         },
+      ),
+    ).resolves.toEqual({ allowed: true });
+  });
+
+  it("denies the unauthorized skill even when a granted skill shares the shell line", async () => {
+    const handlers = {
+      canUseTool: async () => ({ behavior: "allow" as const }),
+      approveRuntimeRequest: async () => ({ approved: true }),
+      allowedSkills: ["ravi-dev-app-creator"],
+    };
+    const denied =
+      "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').";
+
+    for (const command of [
+      "head -20 /tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md; cat /workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",
+      "cat /workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md /tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md",
+      "ravi skills show ravi-dev-app-creator --json && ravi skills show whatsapp-manager --json",
+    ]) {
+      await expect(authorizePiToolCall("bash", { command }, handlers)).resolves.toEqual({
+        allowed: false,
+        reason: denied,
+      });
+    }
+
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json" },
+        handlers,
       ),
     ).resolves.toEqual({ allowed: true });
   });

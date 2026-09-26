@@ -184,7 +184,11 @@ describe("capability-aware official skill visibility", () => {
       input: {},
     });
     expect(show.approved).toBe(false);
-    expect(show.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(show.reason).toBe(
+      "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-permissions-manager' is not authorized for agent 'restricted'. " +
+        "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
+        "('ravi skills grant restricted ravi-system-permissions-manager').",
+    );
 
     const commands = new SkillsCommands();
     let thrown: unknown;
@@ -198,7 +202,14 @@ describe("capability-aware official skill visibility", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(ContractError);
-    expect((thrown as InstanceType<typeof ContractError>).envelope().error.code).toBe("SKILL_NOT_AUTHORIZED");
+    const envelopeError = (thrown as InstanceType<typeof ContractError>).envelope().error;
+    expect(envelopeError.code).toBe("SKILL_NOT_AUTHORIZED");
+    expect(envelopeError.message).toBe("Skill 'permissions-manager' is not authorized for agent 'restricted'.");
+    expect(envelopeError.suggestedAction).toContain("ravi skills grant restricted permissions-manager");
+    expect(envelopeError.issues).toEqual([
+      { path: [], code: "SKILL_NOT_AUTHORIZED", message: envelopeError.message },
+      { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: envelopeError.suggestedAction },
+    ]);
 
     await expect(
       authorizePiToolCall(
@@ -213,7 +224,10 @@ describe("capability-aware official skill visibility", () => {
       ),
     ).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-permissions-manager",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-permissions-manager' is not authorized for agent 'restricted'. " +
+        "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
+        "('ravi skills grant restricted ravi-system-permissions-manager').",
     });
   });
 

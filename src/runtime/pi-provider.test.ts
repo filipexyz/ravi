@@ -367,6 +367,27 @@ describe("Pi runtime provider", () => {
     );
   });
 
+  it("disables Pi native skill discovery only when a skill allowlist is enforced", async () => {
+    const restricted = new FakePiRpcTransport();
+    restricted.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: restricted }).startSession(
+        createStartRequest("restricted skills", { allowedSkills: ["ravi-dev-app-creator"] }),
+      ).events,
+    );
+    expect(restricted.starts[0]?.disableNativeSkillDiscovery).toBe(true);
+    expect(buildPiRpcProcessArgs(restricted.starts[0]!)).toContain("--no-skills");
+
+    const grandfathered = new FakePiRpcTransport();
+    grandfathered.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport: grandfathered }).startSession(createStartRequest("unrestricted skills"))
+        .events,
+    );
+    expect(grandfathered.starts[0]?.disableNativeSkillDiscovery).toBeUndefined();
+    expect(buildPiRpcProcessArgs(grandfathered.starts[0]!)).not.toContain("--no-skills");
+  });
+
   it("denies a restricted Pi tool over the extension UI bridge and allows it when granted", async () => {
     const deniedTransport = new FakePiRpcTransport();
     deniedTransport.pushEvent({
@@ -508,7 +529,8 @@ describe("Pi runtime provider", () => {
         confirmed: false,
         value: formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
         }),
       },
     ]);
@@ -794,7 +816,8 @@ describe("Pi runtime provider", () => {
         confirmed: false,
         value: formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
         }),
       },
     ]);

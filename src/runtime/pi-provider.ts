@@ -119,6 +119,14 @@ export interface PiRpcStartInput {
   thinkingLevel?: PiThinkingLevel;
   systemPromptAppend?: string;
   extensionPath?: string;
+  /**
+   * Pass `--no-skills` so Pi does not announce skills it discovers on disk
+   * (`~/.agents/skills`, `~/.pi/agent/skills`, project `.agents/skills`).
+   * Set whenever Ravi enforces a skill allowlist: Ravi's filtered catalog in
+   * the appended system prompt is then the only advertisement, so the model is
+   * never told about skills the permission gate would deny.
+   */
+  disableNativeSkillDiscovery?: boolean;
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -638,6 +646,7 @@ async function* runPiTurns(
     thinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
+    ...(input.allowedSkills && input.allowedSkills.length > 0 ? { disableNativeSkillDiscovery: true } : {}),
   };
   refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
   let transport = state.transport ?? createTransport();
@@ -1574,6 +1583,9 @@ export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: strin
   }
   if (input.extensionPath) {
     args.push("--extension", input.extensionPath);
+  }
+  if (input.disableNativeSkillDiscovery) {
+    args.push("--no-skills");
   }
 
   return args;
