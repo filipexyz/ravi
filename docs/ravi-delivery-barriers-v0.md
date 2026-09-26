@@ -149,8 +149,23 @@ Também existe inferência no ponto de publish:
   - `immediate_interrupt`
 - prompt `[System] Ask:` e `[System] Inform:`
   - `after_response`
-- inbound humano explicitamente urgente (`!!`, `urgent:`, `urgente:`, `p0:`)
+- inbound humano explicitamente urgente (`urgent:`, `urgente:`, `p0:`)
   - `immediate_interrupt`
+
+## Prefixos de mensagem de canal
+
+Mensagens humanas de canal (WhatsApp/Omni e Slack nativo) aceitam dois prefixos no início do texto:
+
+- `>>texto` → `texto` entra como mensagem normal com `after_response` (`deliveryBarrierSource: explicit`): espera o turno atual terminar, sem interromper resposta nem tool.
+- `!!texto` → `texto` é salvo no histórico como mensagem normal do usuário, mas não abre, não acorda e não interrompe turno. O runtime guarda o texto em memória e o entrega ao modelo junto com o próximo turno real da sessão.
+
+Regra de parsing:
+
+- só vale se o prefixo for o primeiro texto não-branco da mensagem; menção antes dele (`@ravi >>texto`) desativa o prefixo
+- `>>>` e `!!!` não são prefixos (citação do Slack / ênfase)
+- o prefixo e os espaços logo depois dele são removidos
+- sem texto depois do prefixo (`>>` ou `!!` sozinhos, ou seguidos só de espaços), a mensagem vai literal para o agente
+- edição de mensagem não reinterpreta prefixo
 
 ## Garantias do v0
 

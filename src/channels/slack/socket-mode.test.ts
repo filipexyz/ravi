@@ -1205,6 +1205,98 @@ describe("Slack Socket Mode routing", () => {
     expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
   });
 
+  it("interprets leading >> and !! prefixes on Slack messages", async () => {
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+    const send = async (text: string, index: number) => {
+      const ts = `1713000100.00010${index}`;
+      await service.handleEnvelope({
+        envelope_id: `env-prefix-${index}`,
+        payload: {
+          team_id: "T1",
+          event_id: `EvPrefix${index}`,
+          event_time: 1_713_000_100,
+          event: {
+            type: "message",
+            channel: "C123",
+            channel_type: "channel",
+            user: "U123",
+            text,
+            ts,
+          },
+        },
+      });
+      expect(published).toHaveLength(index + 1);
+      return published[index]!.payload;
+    };
+
+    const endOfTurn = await send("&gt;&gt; check the deploy", 0);
+    expect(endOfTurn).toMatchObject({
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "explicit",
+    });
+    expect(endOfTurn._skipTurn).toBeUndefined();
+    expect(String(endOfTurn.prompt)).toEndWith("<@U123>: check the deploy");
+    expect(String(endOfTurn.prompt)).not.toContain("&gt;");
+
+    const skipTurn = await send("!!budget is 10k", 1);
+    expect(skipTurn).toMatchObject({
+      _skipTurn: true,
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+      source: { channel: "slack", chatId: "C123", sourceMessageId: "1713000100.000101" },
+    });
+    expect(String(skipTurn.prompt)).toEndWith("<@U123>: budget is 10k");
+    const skipBackend = skipTurn._channelBackend as { binding?: { turnId?: string } } | undefined;
+    expect(dbGetChannelBackendIngressReceiptByTurnId(skipBackend?.binding?.turnId ?? "")).toMatchObject({
+      prompt: { _skipTurn: true },
+    });
+
+    for (const [offset, text] of ["&gt;&gt;", "!!  ", "&gt;&gt;&gt; quoted", "hello &gt;&gt; world"].entries()) {
+      const literal = await send(text, offset + 2);
+      expect(literal).toMatchObject({ deliveryBarrier: "after_tool", deliveryBarrierSource: "default" });
+      expect(literal._skipTurn).toBeUndefined();
+    }
+    expect(String(published[2]?.payload.prompt)).toEndWith("<@U123>: &gt;&gt;");
+    expect(String(published[4]?.payload.prompt)).toEndWith("<@U123>: &gt;&gt;&gt; quoted");
+  });
+
   it("persists a message envelope before ack and resumes it after transient publication failure", async () => {
     const config: RouterConfig = {
       agents: {

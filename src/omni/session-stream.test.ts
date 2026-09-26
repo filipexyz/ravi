@@ -245,6 +245,44 @@ describe("session prompt JetStream infrastructure", () => {
     ]);
     expect(errors).toEqual([]);
   });
+
+  it("does not announce a skip-turn prompt to runtime presence but still traces it", async () => {
+    const runtimeEvents: unknown[] = [];
+    const publishedTraces: unknown[] = [];
+    const errors: unknown[] = [];
+    let durable = false;
+
+    await publishSessionPromptPublication({
+      sessionName: "ravi-slack-channel",
+      payload: {
+        prompt: "o orçamento é 10k",
+        source: { channel: "slack", accountId: "hana-slack", chatId: "C123" },
+        _skipTurn: true,
+      },
+      publishDurably: async () => {
+        durable = true;
+      },
+      emitRuntimeEvent: async (_topic, payload) => {
+        runtimeEvents.push(payload);
+      },
+      recordPublishedTrace: (input) => {
+        publishedTraces.push(input);
+      },
+      onRuntimeEventError: (error) => {
+        errors.push(error);
+      },
+      onTraceError: (error) => {
+        errors.push(error);
+      },
+    });
+
+    expect(durable).toBe(true);
+    expect(runtimeEvents).toEqual([]);
+    expect(publishedTraces).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ _skipTurn: true }) }),
+    ]);
+    expect(errors).toEqual([]);
+  });
 });
 
 function makePromptJsm(overrides: PromptJsmOverrides = {}): PromptJsm {

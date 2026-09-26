@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { getRecentHistory } from "../db.js";
 import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
@@ -294,6 +295,33 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(prompts[1].prompt).toBe("mensagem humana");
     expect(prompts[1].deliveryBarrier).toBe("after_tool");
     expect(prompts[1].taskBarrierTaskId).toBeUndefined();
+  });
+
+  it("carries a skip-turn message inside the pending debounce batch instead of its own turn", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-debounce-");
+    try {
+      const dispatcher = createDispatcher();
+      const prompts: RuntimeLaunchPrompt[] = [];
+      (
+        dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+      ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+        prompts.push(prompt);
+      });
+      const source = { channel: "whatsapp", accountId: "main", chatId: "group:123" };
+
+      dispatcher.handlePromptWithDebounce("session", { prompt: "primeira", source, _agentId: "main" }, 60_000);
+      await dispatcher.handlePrompt("session", { prompt: "anota isso", source, _agentId: "main", _skipTurn: true });
+
+      expect(prompts).toHaveLength(0);
+      await dispatcher.flushDebounce("session");
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0].prompt).toBe("primeira\n\nanota isso");
+      expect(prompts[0]._skipTurn).toBeUndefined();
+      expect(dispatcher.heldSkipTurnMessages.size).toBe(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("does not merge prompts across typed authority origins", async () => {
@@ -2128,6 +2156,92 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("records a skip-turn message without touching the live turn and feeds it to the next one", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-live-");
+    try {
+      getOrCreateSession("agent:main:test:skip-turn-live", "main", stateDir, { name: "skip-turn-live" });
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("skip-turn-live", activeSession);
+      const source = { channel: "whatsapp", accountId: "main", chatId: "group:123" };
+
+      await dispatcher.handlePrompt("skip-turn-live", {
+        prompt: "Luis: o orçamento é 10k",
+        source: { ...source, sourceMessageId: "m-note" },
+        _agentId: "main",
+        _skipTurn: true,
+      });
+
+      expect(activeSession.pendingMessages).toHaveLength(0);
+      expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(dispatcher.heldSkipTurnMessages.get("skip-turn-live")).toEqual(["Luis: o orçamento é 10k"]);
+      expect(getRecentHistory("skip-turn-live")).toEqual([
+        expect.objectContaining({ role: "user", content: "Luis: o orçamento é 10k", source_message_id: "m-note" }),
+      ]);
+
+      await dispatcher.handlePrompt("skip-turn-live", {
+        prompt: "Luis: qual o orçamento?",
+        source: { ...source, sourceMessageId: "m-question" },
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "explicit",
+      });
+
+      expect(dispatcher.heldSkipTurnMessages.has("skip-turn-live")).toBe(false);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+      const delivered = String(activeSession.pendingMessages[0]?.message.content);
+      expect(delivered.startsWith("[session surface]")).toBe(true);
+      expect(delivered).toEndWith("\nLuis: o orçamento é 10k\n\nLuis: qual o orçamento?");
+      expect(interrupt).not.toHaveBeenCalled();
+      const history = getRecentHistory("skip-turn-live").map((row) => row.content);
+      expect(history).toHaveLength(2);
+      expect(history[1]).toEndWith("Luis: qual o orçamento?");
+      expect(history[1]).not.toContain("10k");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("queues an end-of-turn follow-up behind a long tool that would interrupt for a normal message", () => {
+    const activeSession = createActiveSession({
+      agentId: "main",
+      turnActive: true,
+      toolRunning: true,
+      currentToolSafety: "unsafe",
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 30_000,
+    });
+
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "long-tool",
+        activeSession,
+        { prompt: "depois", deliveryBarrier: "after_response", deliveryBarrierSource: "explicit" },
+        "main",
+      ),
+    ).toBe(true);
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "long-tool",
+        activeSession,
+        { prompt: "agora", deliveryBarrier: "after_tool" },
+        "main",
+      ),
+    ).toBe(false);
+  });
+
   it("does not queue onto a live session that belongs to another agent", () => {
     const activeSession = createActiveSession({
       agentId: "main",
@@ -3460,6 +3574,69 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("hello from the group");
       expect(dispatcher.pendingStarts[0]?.prompt._turnOrigin).toBeUndefined();
       expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+
+      dispatcher.shutdownAll();
+      await Promise.all([bootstrap, humanStart]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not start a session for a skip-turn message and feeds it to the next cold start", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-cold-");
+    try {
+      getOrCreateSession("agent:dev:test:skip-turn-cold", "dev", stateDir, { name: "skip-turn-group" });
+      const dispatcher = createDispatcher(1);
+      const source = {
+        channel: "whatsapp",
+        accountId: "demo",
+        chatId: "group:test-group-1",
+        actorType: "contact" as const,
+      };
+
+      await dispatcher.handlePrompt("skip-turn-group", {
+        prompt: "Luis: o orçamento é 10k",
+        source,
+        _skipTurn: true,
+      });
+
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(dispatcher.streamingSessions.size).toBe(0);
+      expect(dispatcher.startReservations.size).toBe(0);
+
+      const bootstrap = dispatcher.handlePromptImmediate("skip-turn-group", {
+        prompt: "[System] Inform: group created",
+        _deferRuntimeStart: true,
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap", {
+          type: "automation",
+          id: "channels:session.bootstrap",
+        }),
+        source: { ...source, actorType: "system" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(dispatcher.heldSkipTurnMessages.get("skip-turn-group")).toEqual(["Luis: o orçamento é 10k"]);
+
+      dispatcher.streamingSessions.set("busy", createActiveSession());
+      const humanStart = dispatcher.handlePromptImmediate("skip-turn-group", {
+        prompt: "Luis: qual o orçamento?",
+        source,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(dispatcher.heldSkipTurnMessages.has("skip-turn-group")).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+      const started = dispatcher.pendingStarts[0]!.prompt;
+      expect(started.prompt).toContain("[System] Inform: group created");
+      expect(started.prompt).toEndWith("\nLuis: qual o orçamento?");
+      expect(started.prompt).not.toContain("10k");
+      expect(started._runtimePrompt).toBe(
+        started.prompt.replace(/\nLuis: qual o orçamento\?$/, "\nLuis: o orçamento é 10k\n\nLuis: qual o orçamento?"),
+      );
+      expect(
+        getRecentHistory("skip-turn-group")
+          .map((row) => row.content)
+          .filter((content) => content.includes("10k")),
+      ).toEqual(["Luis: o orçamento é 10k"]);
 
       dispatcher.shutdownAll();
       await Promise.all([bootstrap, humanStart]);

@@ -49,6 +49,11 @@ import {
   type ChannelContent,
 } from "../backend.js";
 import {
+  channelMessagePrefixDelivery,
+  parseChannelMessagePrefix,
+  type ChannelMessagePrefix,
+} from "../message-prefix.js";
+import {
   normalizeSlackReactionName,
   resolveSlackApiChannelId,
   resolveSlackApiTimestamp,
@@ -1774,6 +1779,7 @@ export class SlackSocketModeService {
       message,
       actorIdentity,
     });
+    const leadingPrefix = parseSlackMessagePrefix(message.text);
     const ingress = await acceptResolvedChannelIngress(
       {
         request: {
@@ -1803,11 +1809,12 @@ export class SlackSocketModeService {
           name: sessionName,
         },
         prompt: {
-          prompt: formatSlackPrompt(message, processedFiles),
+          prompt: formatSlackPrompt(leadingPrefix ? { ...message, text: leadingPrefix.body } : message, processedFiles),
           source: { ...source },
           context: { ...context },
           deliveryBarrier: "after_tool",
           deliveryBarrierSource: "default",
+          ...channelMessagePrefixDelivery(leadingPrefix),
         },
       },
       {
@@ -2561,6 +2568,18 @@ function publicError(error: unknown): Record<string, unknown> {
     : {
         message: String(error),
       };
+}
+
+const SLACK_LEADING_ESCAPED_GT = /^(\s*)((?:&gt;)+)/;
+
+// Slack delivers `>` as `&gt;`, so `>>` arrives as `&gt;&gt;`.
+function parseSlackMessagePrefix(text: string): ChannelMessagePrefix | null {
+  return parseChannelMessagePrefix(
+    text.replace(
+      SLACK_LEADING_ESCAPED_GT,
+      (_match, space: string, escaped: string) => `${space}${">".repeat(escaped.length / "&gt;".length)}`,
+    ),
+  );
 }
 
 function formatSlackPrompt(message: SlackNormalizedMessage, files: readonly ProcessedSlackFile[] = []): string {

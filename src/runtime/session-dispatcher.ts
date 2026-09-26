@@ -77,7 +77,12 @@ import {
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { isSameRuntimeTurnSurface } from "./turn-surface.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
-import { resolvePersistedUserText, resolveRuntimePromptText, withSessionSurfaceHint } from "./session-surface-hint.js";
+import {
+  combineSessionSurfacePromptContents,
+  resolvePersistedUserText,
+  resolveRuntimePromptText,
+  withSessionSurfaceHint,
+} from "./session-surface-hint.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
@@ -182,6 +187,7 @@ export class RuntimeSessionDispatcher {
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
   readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
+  readonly heldSkipTurnMessages = new Map<string, string[]>();
   private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
   private readonly barrierStuckTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly barrierStuckAlerted = new Set<string>();
@@ -422,6 +428,10 @@ export class RuntimeSessionDispatcher {
     if (this.deferredBootstraps.size > 0) {
       log.info("Clearing deferred session bootstraps", { count: this.deferredBootstraps.size });
       this.deferredBootstraps.clear();
+    }
+    if (this.heldSkipTurnMessages.size > 0) {
+      log.info("Clearing held skip-turn messages", { count: this.heldSkipTurnMessages.size });
+      this.heldSkipTurnMessages.clear();
     }
     if (this.pendingStarts.length > 0) {
       log.info("Clearing pending session starts", { count: this.pendingStarts.length });
@@ -836,6 +846,11 @@ export class RuntimeSessionDispatcher {
       return;
     }
 
+    if (prompt._skipTurn) {
+      this.holdSkipTurnMessage(sessionName, prompt, sessionEntry, agent.id);
+      return;
+    }
+
     const isGroup = sessionEntry?.chatType === "group" || sessionName.includes(":group:");
     const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
@@ -939,6 +954,7 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    prompt = this.consumeHeldSkipTurnMessages(sessionName, prompt);
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     // Resolve next-turn provider before the live-queue shortcut so a persisted
@@ -2207,12 +2223,79 @@ export class RuntimeSessionDispatcher {
     }
     this.deferredBootstraps.delete(sessionName);
     const prefix = deferred.prompt?.trim();
-    const incoming = prompt.prompt?.trim();
-    const combined = prefix && incoming && prefix !== incoming ? `${prefix}\n\n${incoming}` : incoming || prefix;
+    const prepend = (text: string) => {
+      const incoming = text.trim();
+      const combined = prefix && incoming && prefix !== incoming ? `${prefix}\n\n${incoming}` : incoming || prefix;
+      return combined || text;
+    };
     return {
       ...prompt,
-      prompt: combined || prompt.prompt,
+      prompt: prepend(prompt.prompt),
+      ...(prompt._runtimePrompt === undefined ? {} : { _runtimePrompt: prepend(prompt._runtimePrompt) }),
       _deferRuntimeStart: undefined,
+    };
+  }
+
+  private holdSkipTurnMessage(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionEntry: SessionEntry | null,
+    agentId: string,
+  ): void {
+    const debounce = this.debounceStates.get(sessionName);
+    const lastDebounced = debounce?.messages.at(-1);
+    if (debounce && lastDebounced) {
+      // Ride along with the batch that is already waiting so arrival order
+      // holds, without extending its window.
+      debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
+      log.info("Joined skip-turn message to the pending debounce batch", { sessionName });
+      return;
+    }
+
+    saveMessage(
+      sessionName,
+      "user",
+      resolvePersistedUserText(prompt),
+      sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+      {
+        agentId: sessionEntry?.agentId ?? agentId,
+        channel: prompt.source?.channel ?? prompt.context?.channelId,
+        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
+      },
+    );
+    const held = [...(this.heldSkipTurnMessages.get(sessionName) ?? []), prompt.prompt];
+    this.heldSkipTurnMessages.set(sessionName, held);
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: sessionEntry?.agentId ?? agentId,
+      eventType: "dispatch.skip_turn",
+      eventGroup: "dispatch",
+      status: "held",
+      source: prompt.source,
+      messageId: prompt.context?.messageId,
+      payloadJson: { held: held.length },
+    });
+    log.info("Held skip-turn message for the next turn", { sessionName, held: held.length });
+  }
+
+  private consumeHeldSkipTurnMessages(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    // Deferred bootstraps are re-read from `prompt` only, and resume envelopes
+    // replay already persisted atoms; the next real turn carries the text.
+    if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
+      return prompt;
+    }
+    const held = this.heldSkipTurnMessages.get(sessionName);
+    if (!held) {
+      return prompt;
+    }
+    this.heldSkipTurnMessages.delete(sessionName);
+    return {
+      ...prompt,
+      _runtimePrompt: combineSessionSurfacePromptContents([...held, resolveRuntimePromptText(prompt)]),
     };
   }
 
@@ -2945,6 +3028,16 @@ export function canReuseLivePiSteerAuthority(contextKey: string | undefined): bo
   } catch {
     return false;
   }
+}
+
+function appendSkipTurnText(prompt: RuntimeLaunchPrompt, skipTurn: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+  const append = (text: string) => `${text}\n\n${skipTurn.prompt}`;
+  return {
+    ...prompt,
+    prompt: append(prompt.prompt),
+    ...(prompt._runtimePrompt === undefined ? {} : { _runtimePrompt: append(prompt._runtimePrompt) }),
+    ...(skipTurn.commands?.length ? { commands: [...(prompt.commands ?? []), ...skipTurn.commands] } : {}),
+  };
 }
 
 function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt[] {

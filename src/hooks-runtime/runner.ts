@@ -231,7 +231,7 @@ export class HookRunner {
     this.subscribe("ravi.session.*.prompt", async (subject, data) => {
       const parsed = parseSessionSubject(subject);
       if (!parsed || parsed.kind !== "prompt") return;
-      if (data._hook) return;
+      if (data._hook || data._skipTurn) return;
       const event = this.buildBaseEvent(parsed.sessionName, {
         eventName: "SessionStart",
         source: "session.prompt",

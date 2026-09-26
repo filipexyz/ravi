@@ -21,7 +21,8 @@ mock.module("../tasks/index.js", () => ({
   listTasks: () => [],
 }));
 
-const { dbCreateHook, dbDeleteHook, dbGetHook, runHookById } = await import("./index.js");
+const { HookRunner, dbCreateHook, dbDeleteHook, dbGetHook, runHookById } = await import("./index.js");
+const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../test/ravi-state.js");
 
 const createdHookIds: string[] = [];
 
@@ -173,6 +174,35 @@ describe("hooks-runtime runner", () => {
         }),
       },
     ]);
+  });
+
+  it("does not fire SessionStart for a skip-turn prompt", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-hooks-runner-skip-turn-");
+    try {
+      type Handler = (subject: string, data: Record<string, unknown>) => Promise<void>;
+      const handlers = new Map<string, Handler>();
+      const dispatched: string[] = [];
+      const internals = new HookRunner() as unknown as {
+        subscribe(subject: string, handler: Handler): void;
+        dispatchEvent(event: { eventName: string; metadata?: { prompt?: string } }): Promise<void>;
+        subscribeToSessionEvents(): void;
+      };
+      internals.subscribe = (subject, handler) => {
+        handlers.set(subject, handler);
+      };
+      internals.dispatchEvent = async (event) => {
+        dispatched.push(`${event.eventName}:${event.metadata?.prompt}`);
+      };
+      internals.subscribeToSessionEvents();
+
+      const onPrompt = handlers.get("ravi.session.*.prompt");
+      await onPrompt?.("ravi.session.hook-session.prompt", { prompt: "anota", _skipTurn: true });
+      await onPrompt?.("ravi.session.hook-session.prompt", { prompt: "continua" });
+
+      expect(dispatched).toEqual(["SessionStart:continua"]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });
 afterAll(() => mock.restore());

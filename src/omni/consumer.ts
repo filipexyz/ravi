@@ -12,6 +12,7 @@ import { execFile } from "node:child_process";
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
+import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
 import { handleSlashCommand } from "../slash/index.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 import { promisify } from "node:util";
@@ -236,7 +237,6 @@ function isUrgentInboundText(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
   return (
-    normalized.startsWith("!!") ||
     normalized.startsWith("urgent") ||
     normalized.startsWith("urgent:") ||
     normalized.startsWith("urgente") ||
@@ -1514,7 +1514,14 @@ export class OmniConsumer {
     }
 
     const rawText = editInfo?.newText ?? payload.content.text ?? "";
-    const humanUrgent = isUrgentInboundText(rawText);
+    const leadingPrefix = editInfo ? null : parseChannelMessagePrefix(payload.content.text);
+    const prefixDelivery = channelMessagePrefixDelivery(leadingPrefix);
+    const skipTurn = prefixDelivery._skipTurn === true;
+    const promptPayload = leadingPrefix
+      ? { ...payload, content: { ...payload.content, text: leadingPrefix.body } }
+      : payload;
+    const promptText = leadingPrefix?.body ?? rawText;
+    const humanUrgent = !leadingPrefix && isUrgentInboundText(rawText);
     const context = this.buildContext(
       channelType,
       effectiveAccountId,
@@ -1536,7 +1543,7 @@ export class OmniConsumer {
     if (agentMode === "sentinel") {
       const sentinelEnvelope = this.formatEnvelope(
         channelType,
-        payload,
+        promptPayload,
         isGroup,
         senderPhone,
         senderName,
@@ -1555,6 +1562,7 @@ export class OmniConsumer {
           prompt: sentinelPrompt,
           _humanUrgent: humanUrgent,
           context,
+          ...prefixDelivery,
         });
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
@@ -1593,7 +1601,7 @@ export class OmniConsumer {
     };
 
     const commandExpansion = await this.expandInboundRaviCommand({
-      rawText,
+      rawText: promptText,
       sessionName,
       sessionKey: resolved.sessionKey,
       agent,
@@ -1606,7 +1614,7 @@ export class OmniConsumer {
 
     const envelope = this.formatEnvelope(
       channelType,
-      payload,
+      promptPayload,
       isGroup,
       senderPhone,
       senderName,
@@ -1662,7 +1670,9 @@ export class OmniConsumer {
         .catch(() => {});
     }
 
-    await this.activateTarget(sessionName, source, instanceId, chatJid);
+    if (!skipTurn) {
+      await this.activateTarget(sessionName, source, instanceId, chatJid);
+    }
 
     // Read receipts are real only on WhatsApp-compatible channels. Slack,
     // Discord, and Telegram either do not expose a bot read receipt or only
@@ -1678,10 +1688,13 @@ export class OmniConsumer {
         source,
         _humanUrgent: humanUrgent || Boolean(editInfo),
         context,
+        ...prefixDelivery,
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
-      await this.clearActiveTarget(sessionName);
+      if (!skipTurn) {
+        await this.clearActiveTarget(sessionName);
+      }
     }
   }
 

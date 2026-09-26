@@ -410,6 +410,10 @@ export function shouldInterruptRuntimeForIncoming(
     if (barrier === "immediate_interrupt") {
       return { interrupt: true, reason: "explicit_interrupt" };
     }
+    // Follow-ups wait for the turn to end, however long its tool runs.
+    if (barrier === "after_response" || barrier === "after_task") {
+      return { interrupt: false, reason: "tool" };
+    }
     const toolAgeMs = typeof session.toolStartTime === "number" ? Date.now() - session.toolStartTime : 0;
     if (toolAgeMs >= resolveLongToolInterruptMs()) {
       return { interrupt: true, reason: "long_running_tool" };
