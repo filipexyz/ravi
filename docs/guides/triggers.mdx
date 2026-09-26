@@ -158,7 +158,14 @@ Values are coerced to strings for comparison. If the path does not exist in the 
 
 ### Invalid Syntax
 
-`ravi triggers add --filter ...` and `ravi triggers set <id> filter ...` reject invalid syntax before saving it. Existing legacy filters that are already persisted still fail open at runtime and log a warning, which prevents old bad filters from silently disabling triggers.
+`ravi triggers add --filter ...` and `ravi triggers set <id> filter ...` reject invalid syntax before saving it.
+
+Filters that are already persisted but do not compile (for example, written by an older version or by code that bypassed the CLI) **fail closed**: the daemon does not load the trigger, logs an error with the parse error, and the trigger never fires. A broken filter never widens matching, which matters most for `--shell` triggers. `ravi triggers list` shows these triggers with `STATE: invalid_filter` plus a warning, and `ravi triggers show <id>` prints the parse error. Fix the filter or clear it, and the runner activates the trigger on the next refresh:
+
+```bash
+ravi triggers set <id> filter 'data.number == "42"'   # fix
+ravi triggers set <id> filter -                       # clear (fires on every event)
+```
 
 ### Filter Examples
 
@@ -438,7 +445,14 @@ The trigger agent should load that state by `{{data.targetMessageId}}`, publish 
 ravi triggers list
 ```
 
-Verify that the trigger shows `ENABLED: yes` and that the topic pattern is correct.
+Verify that the trigger shows `ENABLED: yes`, `STATE: active`, and that the topic pattern is correct. The `STATE` column (`runtimeState` in `--json`) is the same verdict the daemon uses when it subscribes:
+
+| State | Meaning |
+|-------|---------|
+| `active` | Enabled and loaded by the runner |
+| `disabled` | Turned off with `ravi triggers disable` |
+| `invalid_filter` | The persisted filter does not compile, so the runner does not load the trigger (fail-closed). `filterError` has the parse error. |
+| `blocked_topic` | Subscribes to an internal `ravi.session.*` subject, which the runner skips to prevent loops |
 
 ### Watch for trigger events in real time
 
@@ -460,7 +474,7 @@ Look for log entries from `triggers:runner`:
 - `"Firing trigger"` — trigger matched and is being processed
 - `"Trigger cooldown active, skipping"` — event matched but cooldown is active
 - `"Trigger filter did not match, skipping"` — event matched but filter excluded it
-- `"Trigger filter: invalid syntax, failing open"` — filter has bad syntax (trigger fires anyway)
+- `"Skipping trigger with invalid filter (fail-closed); fix or clear the filter to activate it"` — the persisted filter does not compile, so the trigger is not loaded and never fires
 
 ### Force subscription refresh
 

@@ -126,7 +126,7 @@ data.tool includes "Bash"
 data.senderId == "5511999999999" && (data.emoji == "👍" || data.emoji == "👍🏻")
 ```
 
-Precedence is `!` before `&&` before `||`. If the filter is empty or missing, the trigger always fires. CLI commands reject invalid filter syntax before persisting it. Runtime evaluation still fails open for legacy invalid filters and logs a warning. If the data path doesn't exist, the filter returns false (no match).
+Precedence is `!` before `&&` before `||`. If the filter is empty or missing, the trigger always fires. CLI commands reject invalid filter syntax before persisting it. Persisted filters that do not compile fail closed: the daemon does not load the trigger, logs an error, and `ravi triggers list` shows it as `invalid_filter`. If the data path doesn't exist, the filter returns false (no match).
 
 ### Message Templates
 

@@ -200,7 +200,7 @@ Operadores: `==`, `!=`, `startsWith`, `endsWith`, `includes`
 
 Precedencia: `!` antes de `&&` antes de `||`.
 
-Valores devem ser strings com aspas. O CLI rejeita filtros invalidos em `add` e `set` antes de salvar. Filtros legados invalidos ja persistidos continuam em fail open no runtime, com log de warning.
+Valores devem ser strings com aspas. O CLI rejeita filtros invalidos em `add` e `set` antes de salvar. Filtros invalidos ja persistidos falham fechado: o daemon nao carrega o trigger, loga erro com o motivo e o trigger nunca dispara. `ravi triggers list` mostra `STATE: invalid_filter` (`runtimeState` no `--json`) e `ravi triggers show <id>` mostra `filterError`. Corrija com `ravi triggers set <id> filter '...'` ou limpe com `filter -`.
 
 ## Template Variables
 

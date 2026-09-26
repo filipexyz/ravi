@@ -59,7 +59,11 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - Trigger filter values MUST be quoted strings; event values are coerced to strings for comparison.
 - Trigger filter evaluation MUST NOT use JavaScript `eval`, `new Function`, or shell execution.
 - The CLI MUST reject invalid filter syntax before persisting a new or updated trigger filter.
-- Runtime evaluation MAY fail open for legacy persisted invalid filters, but it MUST log a warning with the parse error.
+- Runtime evaluation MUST fail closed for persisted filters that do not compile: the runner MUST NOT activate the trigger (no subscription entry, no agent prompt, no shell command) and MUST log an error with the trigger id and parse error. A broken filter MUST NEVER widen matching.
+- Compiled invalid filters MUST evaluate to no-match, so consumers that skip the validity check still fail closed.
+- `ravi triggers list` and `ravi triggers show` MUST expose the runner's activation verdict (`runtimeState`: `active`, `disabled`, `invalid_filter`, `blocked_topic`) and, for invalid filters, the parse error (`filterError`). Both surfaces MUST derive it from the same activation function the runner uses.
+- Fixing or clearing an invalid filter MUST activate the trigger on the next `ravi.triggers.refresh` without a daemon restart.
+- Code that generates trigger filters programmatically (for example `gh` PR follow, bug follow, watch triggers) MUST emit filters that pass `validateFilter`.
 
 ## Acceptance Criteria
 
@@ -77,4 +81,7 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - `ravi triggers add --filter 'data.chatId == "X" && (data.status == "approved" || data.status == "manual")'` persists the filter and evaluates correctly.
 - Reaction approval examples filter on fields present in the reaction payload, such as `data.emoji` or `data.senderId`, and tell the agent to load domain state by `data.targetMessageId`.
 - `ravi triggers set <id> filter 'data.ok == true'` fails clearly because values must be quoted.
+- A persisted enabled `--shell` trigger whose filter is `data.branch == main` never runs its command, and the daemon logs `Skipping trigger with invalid filter (fail-closed)` with the trigger id.
+- `ravi triggers list --json` reports that trigger with `runtimeState: "invalid_filter"`, `filterStatus: "invalid"`, a `filterError`, and a top-level `warnings[]` entry with the fix command; text mode shows `invalid_filter` in the `STATE` column.
+- `ravi triggers enable <id>` on a trigger with an invalid filter succeeds but warns that the trigger will not fire.
 - Skills and docs point users to the catalog instead of asking them to infer subjects by symmetry.
