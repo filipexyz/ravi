@@ -945,8 +945,7 @@ export class RuntimeSessionDispatcher {
     // session override (set-provider) must restart the live handle instead of
     // enqueueing onto the previous provider (`live_session_queue`).
     let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
-      observationProviderId:
-        prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+      observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
       sessionProviderOverride: sessionRuntimeProviderOverride,
       lastUsedProvider: sessionEntry?.runtimeProvider,
       restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
