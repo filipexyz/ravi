@@ -8,10 +8,20 @@
  * ContractError instead of exiting the process.
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { z } from "zod";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
+
+const callerDir = mkdtempSync(join(tmpdir(), "ravi-artifacts-cli-caller-"));
+mkdirSync(join(callerDir, "out", "site"), { recursive: true });
+writeFileSync(join(callerDir, "out", "report.md"), "# report\n");
+writeFileSync(join(callerDir, "out", "site", "index.html"), "<h1>ok</h1>");
 
 afterAll(() => {
   mock.restore();
+  rmSync(callerDir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -28,6 +38,19 @@ const restoreCalls: Array<{ id: string; versionNumber: number }> = [];
 const eventCalls: Array<{ id: string; input: Record<string, unknown> }> = [];
 const schemaInitializingStoreCalls: string[] = [];
 const readOnlyArtifactInspectionCalls: Array<{ id: string; versionNumber?: number }> = [];
+const createCalls: Array<Record<string, unknown>> = [];
+const createPackageCalls: Array<Record<string, unknown>> = [];
+let createFailure: unknown = null;
+let currentContext: { cwd?: string } | undefined;
+
+class MockArtifactInputError extends Error {
+  readonly field?: string;
+  constructor(message: string, options: { field?: string } = {}) {
+    super(message);
+    this.name = "ArtifactInputError";
+    if (options.field) this.field = options.field;
+  }
+}
 
 const knownArtifacts: Array<Record<string, unknown>> = [
   {
@@ -86,7 +109,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => currentContext,
   // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
@@ -112,12 +135,21 @@ mock.module("./operational-return-schemas.js", () => ({
 }));
 
 mock.module("../../artifacts/store.js", () => ({
-  createArtifact: (input: Record<string, unknown>) => ({ id: "art_new", ...input }),
-  createArtifactPackage: () => ({
-    artifact: { id: "art_new" },
-    version: versionFixture,
-    package: { fileCount: 1, entrypoint: "index.html" },
-  }),
+  ArtifactInputError: MockArtifactInputError,
+  createArtifact: (input: Record<string, unknown>) => {
+    if (createFailure) throw createFailure;
+    createCalls.push(input);
+    return { id: "art_new", ...input };
+  },
+  createArtifactPackage: (input: Record<string, unknown>) => {
+    if (createFailure) throw createFailure;
+    createPackageCalls.push(input);
+    return {
+      artifact: { id: "art_new" },
+      version: versionFixture,
+      package: { fileCount: 1, entrypoint: "index.html" },
+    };
+  },
   createArtifactVersion: (id: string, input: Record<string, unknown> = {}) => {
     requireKnownArtifact(id);
     snapshotCalls.push({ id, input });
@@ -282,6 +314,10 @@ beforeEach(() => {
   eventCalls.length = 0;
   schemaInitializingStoreCalls.length = 0;
   readOnlyArtifactInspectionCalls.length = 0;
+  createCalls.length = 0;
+  createPackageCalls.length = 0;
+  createFailure = null;
+  currentContext = undefined;
 });
 
 // ---------------------------------------------------------------------------
@@ -722,5 +758,183 @@ describe("artifacts envelopes and compact mode", () => {
     for (const item of payload.items as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["id", "kind"]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// artifacts create/update — local --path and typed input errors
+// ---------------------------------------------------------------------------
+
+type CreateArgs = Parameters<InstanceType<typeof ArtifactsCommands>["create"]>;
+type UpdateArgs = Parameters<InstanceType<typeof ArtifactsCommands>["update"]>;
+
+function createArgs(options: { path?: string; mime?: string; tags?: string; task?: string }): CreateArgs {
+  const args = new Array(28).fill(undefined) as CreateArgs;
+  args[3] = options.path;
+  args[8] = options.mime;
+  args[23] = options.tags;
+  args[25] = options.task;
+  args[27] = true;
+  return args;
+}
+
+function updateArgs(id: string, options: { path?: string }): UpdateArgs {
+  const args = new Array(26).fill(undefined) as UpdateArgs;
+  args[0] = id;
+  args[4] = options.path;
+  args[25] = true;
+  return args;
+}
+
+describe("artifacts create/update local --path", () => {
+  it("resolves a relative --path against the caller cwd, not the process cwd", async () => {
+    currentContext = { cwd: callerDir };
+    expect(process.cwd()).not.toBe(callerDir);
+
+    const payload = await silenced(() =>
+      new ArtifactsCommands().create(...createArgs({ path: "./out/report.md", task: "task-1", tags: "e2e,custody" })),
+    );
+
+    expect(payload.success).toBe(true);
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      filePath: join(callerDir, "out", "report.md"),
+      taskId: "task-1",
+      tags: ["e2e", "custody"],
+    });
+    expect(createPackageCalls).toHaveLength(0);
+  });
+
+  it("ingests a relative directory as a package rooted at the caller cwd", async () => {
+    currentContext = { cwd: callerDir };
+
+    await silenced(() => new ArtifactsCommands().create(...createArgs({ path: "out/site" })));
+
+    expect(createCalls).toHaveLength(0);
+    expect(createPackageCalls).toHaveLength(1);
+    expect(createPackageCalls[0]).toMatchObject({ rootPath: join(callerDir, "out", "site") });
+  });
+
+  it("rejects a missing --path with USAGE_ERROR before touching the store", async () => {
+    currentContext = { cwd: callerDir };
+
+    const error = await expectContractError(
+      () => new ArtifactsCommands().create(...createArgs({ path: "./missing.md" })),
+      "USAGE_ERROR",
+      2,
+    );
+
+    expect(error.message).toBe("--path was not found: ./missing.md");
+    expect(error.details.issues).toEqual([
+      { path: ["path"], code: "not_found", message: "--path was not found: ./missing.md" },
+    ]);
+    expect(createCalls).toHaveLength(0);
+    expect(createPackageCalls).toHaveLength(0);
+  });
+
+  it("never echoes the absolute directory of a missing --path", async () => {
+    const error = await expectContractError(
+      () => new ArtifactsCommands().create(...createArgs({ path: join(callerDir, "nope", "missing.md") })),
+      "USAGE_ERROR",
+      2,
+    );
+
+    expect(error.message).toBe("--path was not found: missing.md");
+    expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(callerDir);
+  });
+
+  it("update resolves a relative --path against the caller cwd", async () => {
+    currentContext = { cwd: callerDir };
+
+    await silenced(() => new ArtifactsCommands().update(...updateArgs("art_aaa111", { path: "out/report.md" })));
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.updates).toMatchObject({ filePath: join(callerDir, "out", "report.md") });
+  });
+
+  it("update rejects a directory or missing --path with USAGE_ERROR without mutating", async () => {
+    currentContext = { cwd: callerDir };
+    const commands = new ArtifactsCommands();
+
+    const directory = await expectContractError(
+      () => commands.update(...updateArgs("art_aaa111", { path: "out/site" })),
+      "USAGE_ERROR",
+      2,
+    );
+    expect(directory.message).toBe("--path must be a file: out/site");
+    await expectContractError(
+      () => commands.update(...updateArgs("art_aaa111", { path: "out/gone.md" })),
+      "USAGE_ERROR",
+      2,
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe("artifacts create typed store failures", () => {
+  it("maps store schema violations to USAGE_ERROR naming the offending flag", async () => {
+    currentContext = { cwd: callerDir };
+    createFailure = z.object({ mimeType: z.string().max(3) }).safeParse({ mimeType: "text/markdown" }).error;
+
+    const error = await expectContractError(
+      () => new ArtifactsCommands().create(...createArgs({ path: "out/report.md", mime: "text/markdown" })),
+      "USAGE_ERROR",
+      2,
+    );
+
+    expect(error.message).toStartWith("Invalid --mime: ");
+    expect(error.details.issues).toEqual([expect.objectContaining({ path: ["mime"], code: "too_big" })]);
+  });
+
+  it("maps ArtifactInputError to USAGE_ERROR without leaking absolute paths", async () => {
+    currentContext = { cwd: callerDir };
+    const absolute = join(callerDir, "out", "report.md");
+    createFailure = new MockArtifactInputError(`Artifact file not found: ${absolute}`, { field: "path" });
+
+    const error = await expectContractError(
+      () => new ArtifactsCommands().create(...createArgs({ path: "out/report.md" })),
+      "USAGE_ERROR",
+      2,
+    );
+
+    expect(error.message).toStartWith("Artifact file not found:");
+    expect(error.details.issues).toEqual([expect.objectContaining({ path: ["path"], code: "invalid" })]);
+    expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(callerDir);
+  });
+
+  it("maps package entrypoint failures to an entrypoint issue", async () => {
+    currentContext = { cwd: callerDir };
+    createFailure = new MockArtifactInputError("Artifact package entrypoint not found: index.html", {
+      field: "entrypoint",
+    });
+
+    const error = await expectContractError(
+      () => new ArtifactsCommands().create(...createArgs({ path: "out/site" })),
+      "USAGE_ERROR",
+      2,
+    );
+
+    expect(error.message).toBe("Artifact package entrypoint not found: index.html");
+    expect(error.details.issues).toEqual([
+      { path: ["entrypoint"], code: "invalid", message: "Artifact package entrypoint not found: index.html" },
+    ]);
+  });
+
+  it("leaves unexpected store failures unhandled so real defects still surface", async () => {
+    currentContext = { cwd: callerDir };
+    createFailure = new Error("unexpected ledger failure");
+
+    let caught: unknown;
+    await silenced(async () => {
+      try {
+        await new ArtifactsCommands().create(...createArgs({ path: "out/report.md" }));
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(ContractError);
+    expect((caught as Error).message).toBe("unexpected ledger failure");
   });
 });

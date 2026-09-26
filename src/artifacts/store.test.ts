@@ -6,6 +6,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
 import { setArtifactLifecycleEventPublisherForTests } from "./events.js";
 import {
+  ArtifactInputError,
   appendArtifactEvent,
   attachArtifact,
   createArtifact,
@@ -336,6 +337,45 @@ describe("artifact store", () => {
         artifact: { title: "Symlink package" },
       }),
     ).toThrow(/symlink/);
+  });
+
+  it("throws typed ArtifactInputError for caller-input failures without writing ledger rows", () => {
+    const expectInputError = (run: () => unknown, field: string, message: RegExp) => {
+      let caught: unknown;
+      try {
+        run();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(ArtifactInputError);
+      expect((caught as InstanceType<typeof ArtifactInputError>).field).toBe(field);
+      expect((caught as Error).message).toMatch(message);
+    };
+
+    expectInputError(
+      () => createArtifact({ title: "Missing file", filePath: join(stateDir!, "missing.md") }),
+      "path",
+      /^Artifact file not found:/,
+    );
+
+    const emptyDir = join(stateDir!, "empty-package");
+    mkdirSync(emptyDir, { recursive: true });
+    expectInputError(
+      () => createArtifactPackage({ rootPath: emptyDir, artifact: { title: "Empty" } }),
+      "path",
+      /^Artifact package directory is empty:/,
+    );
+
+    const noIndexDir = join(stateDir!, "no-index-package");
+    mkdirSync(noIndexDir, { recursive: true });
+    writeFileSync(join(noIndexDir, "page.html"), "<h1>Hello</h1>");
+    expectInputError(
+      () => createArtifactPackage({ rootPath: noIndexDir, artifact: { title: "No index" } }),
+      "entrypoint",
+      /^Artifact package entrypoint is not included in files: index\.html$/,
+    );
+
+    expect(listArtifactsPage().total).toBe(0);
   });
 
   it("restores an old version as a new audit-preserving version", () => {

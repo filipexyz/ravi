@@ -49,6 +49,13 @@ file exists, while it is being produced, and after completion or failure.
 - Local directory/package ingestion MUST copy package files into the artifact
   blob store and MUST reject symlinks, traversal paths, hidden path segments, and
   reserved `_ravi` segments.
+- A relative `--path` on `artifacts create` and `artifacts update` MUST resolve
+  against the caller working directory (the `x-ravi-cwd` sent by isolated and
+  remote CLIs), never the daemon or gateway process cwd.
+- Expected input failures (missing or unreadable `--path`, schema violations,
+  unsafe or incomplete packages) MUST return `USAGE_ERROR` (exit 2, HTTP 400)
+  with the offending field in `issues`. They MUST NOT surface as
+  `UNHANDLED_ERROR` / HTTP 500 and MUST NOT echo absolute host paths.
 - Publishability MUST be determined from version assets and manifests, not from
   `artifact.kind`.
 - Artifact creation for long-running generation SHOULD happen before provider

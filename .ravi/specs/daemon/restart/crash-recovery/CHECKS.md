@@ -71,6 +71,8 @@ normative: false
 - Unterminated turns with durable tool/output evidence are not stashed by timeout, credential retry, provider interruption, dispatcher restart, or daemon restart snapshot paths.
 - A first-terminal latch retains safety markers after the active attempt binding is removed; daemon restart treats every provider-terminal physical turn as consumed.
 - Graceful restart uses explicit `continue`, `pending_only`, or `skip` mode. `pending_only` contains only durable independent successors and never appends the generic continuation prompt; a caller without its expected snapshot is `skip`.
+- A `skip` decision MUST still publish one notice-only restart input (`_daemonRestartResume.noticeOnly`) with the restart reason and the fence reason; it never contains "Continue de onde parou" and the dispatcher never hydrates persisted pending work into it.
+- The restart delivery ledger records `notice` for a fenced restart and `resume` only for a published `continue`/`pending_only` resume; a failed publish or a terminal task session skip leaves no delivery record.
 - Persisted pending successors remain separate atoms with their original pending id, source, actor metadata, task barrier, and delivery barrier when hydrated into an existing or starting runtime.
 - Bot startup does not invoke the legacy task-status/recency resume producer; task continuation waits for a durable classifier decision.
 - A durable-preparation failure stashes the still-unconsumed prompt before the failed runtime session releases its slot.

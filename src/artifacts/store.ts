@@ -24,6 +24,20 @@ const ARTIFACT_VERSION_ID_PATTERN = /^artv_[a-z0-9]+_[a-z0-9]+$/;
 const ARTIFACT_VERSION_ASSET_ID_PATTERN = /^artva_[a-z0-9]+_[a-z0-9]+$/;
 const VERSIONABLE_UPDATE_KEYS = new Set(["blobPath", "filePath", "mimeType", "output", "sha256", "sizeBytes", "uri"]);
 
+/**
+ * Caller-input failure (missing/unsupported local path, invalid package
+ * layout). Surfaces map it to a usage error instead of an unhandled failure.
+ */
+export class ArtifactInputError extends Error {
+  readonly field?: string;
+
+  constructor(message: string, options: { field?: string } = {}) {
+    super(message);
+    this.name = "ArtifactInputError";
+    if (options.field) this.field = options.field;
+  }
+}
+
 export const ArtifactInputSchema = z
   .object({
     id: z.string().regex(ARTIFACT_ID_PATTERN).optional(),
@@ -631,7 +645,7 @@ function normalizeVersionAssetPath(path: string): string {
     /^[A-Za-z]:\//.test(normalized) ||
     parts.some((part) => !part || part === "." || part === "..")
   ) {
-    throw new Error(`Invalid artifact version asset path: ${path}`);
+    throw new ArtifactInputError(`Invalid artifact version asset path: ${path}`);
   }
   return normalized;
 }
@@ -640,7 +654,7 @@ function normalizePackageAssetPath(path: string): string {
   const normalized = normalizeVersionAssetPath(path);
   const parts = normalized.split("/");
   if (parts.some((part) => part.startsWith(".")) || parts.includes("_ravi")) {
-    throw new Error(`Invalid artifact package asset path: ${path}`);
+    throw new ArtifactInputError(`Invalid artifact package asset path: ${path}`, { field: "path" });
   }
   return normalized;
 }
@@ -654,12 +668,12 @@ function ingestFile(path: string): {
 } {
   const filePath = resolve(path);
   if (!existsSync(filePath)) {
-    throw new Error(`Artifact file not found: ${filePath}`);
+    throw new ArtifactInputError(`Artifact file not found: ${filePath}`, { field: "path" });
   }
 
   const stat = statSync(filePath);
   if (!stat.isFile()) {
-    throw new Error(`Artifact path is not a file: ${filePath}`);
+    throw new ArtifactInputError(`Artifact path is not a file: ${filePath}`, { field: "path" });
   }
 
   const sha256 = hashFile(filePath);
@@ -686,11 +700,16 @@ function collectPackageFiles(rootRealPath: string): Array<{ absolutePath: string
       if (entry.name === ".DS_Store" || entry.name === ".git") continue;
       const absolutePath = resolve(dir, entry.name);
       if (entry.isSymbolicLink()) {
-        throw new Error(`Refusing to create artifact package from symlink: ${relative(rootRealPath, absolutePath)}`);
+        throw new ArtifactInputError(
+          `Refusing to create artifact package from symlink: ${relative(rootRealPath, absolutePath)}`,
+          { field: "path" },
+        );
       }
       const resolvedPath = realpathSync(absolutePath);
       if (resolvedPath !== rootRealPath && !resolvedPath.startsWith(`${rootRealPath}${sep}`)) {
-        throw new Error(`Refusing to create artifact package from path outside root: ${absolutePath}`);
+        throw new ArtifactInputError(`Refusing to create artifact package from path outside root: ${absolutePath}`, {
+          field: "path",
+        });
       }
       if (entry.isDirectory()) {
         visit(resolvedPath);
@@ -711,7 +730,9 @@ function collectPackageFiles(rootRealPath: string): Array<{ absolutePath: string
 function resolvePackageEntrypoint(files: Array<{ packagePath: string }>, entrypoint: string | undefined): string {
   const normalized = entrypoint ? normalizePackageAssetPath(entrypoint) : "index.html";
   if (!files.some((file) => file.packagePath === normalized)) {
-    throw new Error(`Artifact package entrypoint is not included in files: ${normalized}`);
+    throw new ArtifactInputError(`Artifact package entrypoint is not included in files: ${normalized}`, {
+      field: "entrypoint",
+    });
   }
   return normalized;
 }
@@ -997,7 +1018,7 @@ export function createArtifactVersion(
   const assetPaths = new Set<string>();
   for (const asset of assets) {
     if (assetPaths.has(asset.path)) {
-      throw new Error(`Duplicate artifact version asset path: ${asset.path}`);
+      throw new ArtifactInputError(`Duplicate artifact version asset path: ${asset.path}`);
     }
     assetPaths.add(asset.path);
   }
@@ -1295,20 +1316,22 @@ export function createArtifactPackage(input: CreateArtifactPackageInput): Create
   ensureArtifactSchema();
   const rootPath = resolve(input.rootPath);
   if (!existsSync(rootPath)) {
-    throw new Error(`Artifact package path not found: ${rootPath}`);
+    throw new ArtifactInputError(`Artifact package path not found: ${rootPath}`, { field: "path" });
   }
   if (lstatSync(rootPath).isSymbolicLink()) {
-    throw new Error(`Refusing to create artifact package from symlink root: ${rootPath}`);
+    throw new ArtifactInputError(`Refusing to create artifact package from symlink root: ${rootPath}`, {
+      field: "path",
+    });
   }
   const rootRealPath = realpathSync(rootPath);
   const rootStat = statSync(rootRealPath);
   if (!rootStat.isDirectory()) {
-    throw new Error(`Artifact package path is not a directory: ${rootRealPath}`);
+    throw new ArtifactInputError(`Artifact package path is not a directory: ${rootRealPath}`, { field: "path" });
   }
 
   const files = collectPackageFiles(rootRealPath);
   if (files.length === 0) {
-    throw new Error(`Artifact package directory is empty: ${rootRealPath}`);
+    throw new ArtifactInputError(`Artifact package directory is empty: ${rootRealPath}`, { field: "path" });
   }
   const entrypoint = resolvePackageEntrypoint(files, input.entrypoint);
   const ingested = files.map((file) => ({
