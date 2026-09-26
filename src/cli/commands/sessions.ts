@@ -1224,6 +1224,22 @@ function buildSessionMutationJson(
   };
 }
 
+function readPersistedSessionMutation(
+  before: SessionEntry,
+  command: string,
+  persisted: (session: SessionEntry) => boolean,
+): SessionEntry {
+  const label = before.name ?? before.sessionKey;
+  const after = resolveSession(before.sessionKey);
+  if (!after || !persisted(after)) {
+    fail(
+      `sessions ${command} did not persist for ${label}.`,
+      `Inspect the session with 'ravi sessions info ${label}' before retrying`,
+    );
+  }
+  return after;
+}
+
 function toIsoTimestamp(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "";
   if (typeof value === "number") {
@@ -3513,15 +3529,12 @@ export class SessionCommands {
       }
     }
 
-    const after =
-      resolveSession(s.sessionKey) ??
-      ({
-        ...s,
-        ...(providerOverride === null
-          ? { runtimeProviderOverride: undefined }
-          : { runtimeProviderOverride: providerOverride }),
-      } as SessionEntry);
     if (shouldReturnStructuredResult(asJson)) {
+      const after = readPersistedSessionMutation(
+        s,
+        "set-provider",
+        (session) => (session.runtimeProviderOverride ?? null) === providerOverride,
+      );
       const effective = resolveEffectiveSessionSelection(after, after.modelOverride ?? null);
       const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
         runtimeProviderOverride: providerOverride,
@@ -3637,13 +3650,12 @@ export class SessionCommands {
       }
     }
 
-    const after =
-      resolveSession(s.sessionKey) ??
-      ({
-        ...s,
-        ...(modelOverride === null ? { modelOverride: undefined } : { modelOverride }),
-      } as SessionEntry);
     if (shouldReturnStructuredResult(asJson)) {
+      const after = readPersistedSessionMutation(
+        s,
+        "set-model",
+        (session) => (session.modelOverride ?? null) === modelOverride,
+      );
       const payload = buildSessionMutationJson("set-model", s, after, beforeModelOverride !== modelOverride, {
         modelOverride,
         effectiveModel: event.effectiveModel,
@@ -3707,13 +3719,12 @@ export class SessionCommands {
     }
 
     const effective = resolveEffectiveSessionEffort(s, effortOverride);
-    const after =
-      resolveSession(s.sessionKey) ??
-      ({
-        ...s,
-        ...(effortOverride === null ? { effortOverride: undefined } : { effortOverride }),
-      } as SessionEntry);
     if (shouldReturnStructuredResult(asJson)) {
+      const after = readPersistedSessionMutation(
+        s,
+        "set-effort",
+        (session) => (session.effortOverride ?? null) === effortOverride,
+      );
       const payload = buildSessionMutationJson("set-effort", s, after, beforeEffortOverride !== effortOverride, {
         effortOverride,
         effectiveEffort: effective.effort,

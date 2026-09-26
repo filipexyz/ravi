@@ -67,6 +67,7 @@ let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
 let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
+let dropSessionOverrideWrites = false;
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
 let scopeEnforced = false;
@@ -260,6 +261,7 @@ mock.module("../../router/sessions.js", () => ({
     };
   },
   updateSessionModelOverride: (sessionKey: string, model: string | null) => {
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         model === null
@@ -273,6 +275,7 @@ mock.module("../../router/sessions.js", () => ({
     );
   },
   updateSessionRuntimeProviderOverride: (sessionKey: string, provider: string | null) => {
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         provider === null
@@ -313,6 +316,7 @@ mock.module("../../router/sessions.js", () => ({
   },
   updateSessionEffortOverride: (sessionKey: string, effort: string | null) => {
     effortUpdates.push({ sessionKey, effort });
+    if (dropSessionOverrideWrites) return;
     if (resolvedSession?.sessionKey === sessionKey) {
       resolvedSession =
         effort === null
@@ -554,6 +558,7 @@ beforeEach(() => {
   renameSessionNameError = null;
   renameRouteReferencesUpdated = 0;
   effortUpdates = [];
+  dropSessionOverrideWrites = false;
   runtimeLiveStates.clear();
   natsEmits.length = 0;
   resetSessionCalls.length = 0;
@@ -2501,6 +2506,24 @@ describe("SessionCommands set-model", () => {
     expect(payload).toMatchObject({ action: "set-model", changed: true, modelOverride: null });
     expect(payload?.after.modelOverride).toBeUndefined();
   });
+
+  it("fails instead of returning a success envelope when the model override did not persist", async () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = { agents: { main: { model: "model-default" } } };
+
+    await expect(
+      captureLogsAsync(async () => {
+        await new SessionCommands().setModel("model-switch", "model-live");
+      }),
+    ).rejects.toThrow("sessions set-model did not persist for model-switch.");
+    expect(resolvedSession?.modelOverride).toBeUndefined();
+  });
 });
 
 describe("SessionCommands set-provider", () => {
@@ -2691,6 +2714,24 @@ describe("SessionCommands set-provider", () => {
     expect(payload?.after.runtimeProviderOverride).toBeUndefined();
   });
 
+  it("fails instead of returning a success envelope when the provider override did not persist", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:ravi-console:wa",
+      name: "wa-group",
+      agentId: "ravi-console",
+    };
+    routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
+
+    expect(() =>
+      captureLogs(() => {
+        new SessionCommands().setProvider("wa-group", "codex");
+      }),
+    ).toThrow("sessions set-provider did not persist for wa-group.");
+    expect(resolvedSession?.runtimeProviderOverride).toBeUndefined();
+  });
+
   it("rejects unknown providers through the gateway without persisting", () => {
     toolContext = { suppressCliOutput: true, transport: "gateway" };
     resolvedSession = {
@@ -2808,6 +2849,21 @@ describe("SessionCommands set-effort", () => {
       effectiveEffortSource: "session_override",
     });
     expect(payload?.after.effortOverride).toBe("high");
+  });
+
+  it("fails instead of returning a success envelope when the effort override did not persist", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    dropSessionOverrideWrites = true;
+    resolvedSession = {
+      sessionKey: "agent:main:effort-switch",
+      name: "effort-switch",
+      agentId: "main",
+    };
+
+    expect(() => new SessionCommands().setEffort("effort-switch", "high")).toThrow(
+      "sessions set-effort did not persist for effort-switch.",
+    );
+    expect(resolvedSession?.effortOverride).toBeUndefined();
   });
 });
 
