@@ -10,6 +10,9 @@ import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata } from "../decorators.js";
+import { dbCreateAgent } from "../../router/router-db.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
+import { pageCommentFilter } from "../../pages/comment-follow.js";
 import { PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
@@ -1245,6 +1248,17 @@ describe("pages agent-first contract", () => {
     expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
     expect(payload).toEqual({
       artifactId: "cloud_art_ship",
+      commentFollow: {
+        filter: pageCommentFilter({ pageId: "site_1", orgId: "org_1" }),
+        ok: false,
+        orgId: "org_1",
+        pageId: "site_1",
+        projectId: null,
+        session: "main",
+        skipped: "missing_creator",
+        topic: "ravi.watch.console.page.comment.created",
+        warning: "Page comment trigger skipped: no creator agent in the current session.",
+      },
       route: "/",
       site: {
         id: "site_1",
@@ -1257,6 +1271,85 @@ describe("pages agent-first contract", () => {
       url: "https://weekly-report.ravi.page/",
       visibility: "private",
     });
+  });
+
+  it("ship --execute creates one page-comment trigger for the creator and reuses it", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-comment-follow-");
+    dbCreateAgent({ id: "creator", cwd: "/tmp/page-creator-home" });
+    const client = {
+      me: mock(async () => ({
+        user: { email: "alice@example.com" },
+        organization: { id: "org_1" },
+      })),
+      requestJson: mock(async (method: string, path: string) => {
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+          return [{ id: "site_1", slug: "weekly-report", defaultHostname: "weekly-report.ravi.page" }];
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async () => ({
+        uploadSession: { id: "upl_follow" },
+        uploadPolicy: { directUpload: false },
+      })),
+      finalizeArtifactPublish: mock(async () => ({
+        artifact: { id: "cloud_art_follow", projectId: "proj_real" },
+        site: { id: "site_1", slug: "weekly-report", projectId: "proj_real" },
+        url: "https://weekly-report.ravi.page/",
+      })),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      pageCommentFollow: { emitTriggersRefresh: async () => {} },
+    });
+    const ship = () =>
+      runWithContext({ agentId: "creator", sessionName: "creator-main" }, () =>
+        command.ship(
+          [],
+          "proj",
+          "Weekly report",
+          "<h1>OK</h1>",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
+      );
+
+    const first = await captureConsole(ship);
+    const second = await captureConsole(ship);
+    const firstPayload = JSON.parse(first.output);
+    const secondPayload = JSON.parse(second.output);
+    const triggers = dbListTriggers();
+
+    expect(firstPayload.commentFollow).toMatchObject({
+      ok: true,
+      reused: false,
+      agentId: "creator",
+      pageId: "site_1",
+      orgId: "org_1",
+      projectId: "proj_real",
+      topic: "ravi.watch.console.page.comment.created",
+      session: "main",
+    });
+    expect(secondPayload.commentFollow).toMatchObject({
+      ok: true,
+      reused: true,
+      triggerId: firstPayload.commentFollow.triggerId,
+      agentId: "creator",
+    });
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]).toMatchObject({
+      name: "page-comment:site_1",
+      agentId: "creator",
+      topic: "ravi.watch.console.page.comment.created",
+      replySession: "creator-main",
+    });
+    expect(triggers[0]?.filter).toBe(pageCommentFilter({ pageId: "site_1", orgId: "org_1", projectId: "proj_real" }));
   });
 
   it("ship with --execute creates the host when the slug is new", async () => {

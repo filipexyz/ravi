@@ -118,6 +118,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/watch/local-runner.test.ts",
     "src/watch/local-state.test.ts",
     "src/watch/operations.test.ts",
+    "src/watch/events.test.ts",
   ],
   "src/hooks/": [
     "src/hooks/gh-watch.test.ts",

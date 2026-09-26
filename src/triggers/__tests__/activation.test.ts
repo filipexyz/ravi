@@ -41,4 +41,20 @@ describe("resolveTriggerActivation", () => {
     expect(activation.state).toBe("blocked_topic");
     expect(activation.reason).toContain("ravi.session.*");
   });
+
+  it("reports unbound_agent when the bound agent does not exist", () => {
+    const missing = resolveTriggerActivation(
+      { ...base, agentId: "gone-creator", filter: `data.pageId == "site_1"` },
+      { agentExists: () => false },
+    );
+    expect(missing.state).toBe("unbound_agent");
+    expect(missing.reason).toContain("gone-creator");
+    expect(missing.reason).toContain("will not activate");
+
+    const present = resolveTriggerActivation(
+      { ...base, agentId: "creator", filter: `data.pageId == "site_1"` },
+      { agentExists: () => true },
+    );
+    expect(present.state).toBe("active");
+  });
 });

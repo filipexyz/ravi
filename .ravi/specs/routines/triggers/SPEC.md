@@ -61,9 +61,10 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - The CLI MUST reject invalid filter syntax before persisting a new or updated trigger filter.
 - Runtime evaluation MUST fail closed for persisted filters that do not compile: the runner MUST NOT activate the trigger (no subscription entry, no agent prompt, no shell command) and MUST log an error with the trigger id and parse error. A broken filter MUST NEVER widen matching.
 - Compiled invalid filters MUST evaluate to no-match, so consumers that skip the validity check still fail closed.
-- `ravi triggers list` and `ravi triggers show` MUST expose the runner's activation verdict (`runtimeState`: `active`, `disabled`, `invalid_filter`, `blocked_topic`) and, for invalid filters, the parse error (`filterError`). Both surfaces MUST derive it from the same activation function the runner uses.
+- `ravi triggers list` and `ravi triggers show` MUST expose the runner's activation verdict (`runtimeState`: `active`, `disabled`, `invalid_filter`, `blocked_topic`, `unbound_agent`) and, for invalid filters, the parse error (`filterError`). Both surfaces MUST derive it from the same activation function the runner uses.
+- A trigger whose `agentId` does not resolve to an agent row MUST report `unbound_agent`. The runner MUST NOT subscribe it and MUST NOT create a session under `/tmp/ravi-<agentId>`.
 - Fixing or clearing an invalid filter MUST activate the trigger on the next `ravi.triggers.refresh` without a daemon restart.
-- Code that generates trigger filters programmatically (for example `gh` PR follow, bug follow, watch triggers) MUST emit filters that pass `validateFilter`.
+- Code that generates trigger filters programmatically (for example `gh` PR follow, bug follow, page comment follow, watch triggers) MUST emit filters that pass `validateFilter`.
 
 ## Acceptance Criteria
 

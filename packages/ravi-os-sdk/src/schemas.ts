@@ -51111,6 +51111,74 @@ export const PagesShipReturnSchema = {
         }
       ]
     },
+    "commentFollow": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "orgId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pageId": {
+          "type": "string"
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "session": {
+          "const": "main",
+          "type": "string"
+        },
+        "skipped": {
+          "enum": [
+            "missing_page",
+            "missing_creator",
+            "invalid_filter",
+            "unbound_agent"
+          ],
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "triggerId": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "topic",
+        "session"
+      ],
+      "type": "object"
+    },
     "route": {
       "type": "string"
     },
@@ -51146,6 +51214,7 @@ export const PagesShipReturnSchema = {
   },
   "required": [
     "artifactId",
+    "commentFollow",
     "route",
     "site",
     "slug",

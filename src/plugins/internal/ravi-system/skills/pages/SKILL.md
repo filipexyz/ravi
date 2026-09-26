@@ -52,6 +52,7 @@ Regras:
 - Conteúdo: exatamente um de `--body` (fragmento, wrap HTML5), `--html` (arquivo) ou `--dir` (diretório + entrypoint).
 - Defaults: `--visibility private`, `--route /`, `--entrypoint index.html`.
 - Slug existente: reusa o host. Não falha.
+- Depois de um ship com sucesso, o Ravi cria ou reusa um trigger `page-comment:<site id>` no tópico `ravi.watch.console.page.comment.created`, filtrado a essa page e ligado ao agent que fez o ship. Um segundo ship não troca o agent. Comentário do próprio creator ainda acorda o agent. Sem agent no contexto, o ship segue e `commentFollow.skipped` fica `missing_creator`.
 - `[project]` é opcional (scope do Console). `--project` também vale.
 - `--visibility public` vale no mesmo comando. Não precisa de `--execute`.
 

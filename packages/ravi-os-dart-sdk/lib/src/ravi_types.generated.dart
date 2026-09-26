@@ -13210,9 +13210,10 @@ class PagesShipOptions {
 }
 
 class PagesShipReturn {
-  const PagesShipReturn({required this.artifactId, required this.route, required this.site, required this.slug, required this.success, required this.url, required this.visibility});
+  const PagesShipReturn({required this.artifactId, required this.commentFollow, required this.route, required this.site, required this.slug, required this.success, required this.url, required this.visibility});
 
   final RaviJson artifactId;
+  final RaviJson commentFollow;
   final String route;
   final Map<String, RaviJson> site;
   final String slug;
@@ -13223,6 +13224,7 @@ class PagesShipReturn {
   factory PagesShipReturn.fromJson(Map<String, Object?> json) {
     return PagesShipReturn(
       artifactId: RaviJson.from(json["artifactId"]),
+      commentFollow: RaviJson.from(json["commentFollow"]),
       route: raviJsonAsString(json["route"]),
       site: raviJsonAsRaviJsonMap(json["site"]),
       slug: raviJsonAsString(json["slug"]),

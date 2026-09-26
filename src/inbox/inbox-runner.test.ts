@@ -625,6 +625,21 @@ describe("inbox NATS delivery", () => {
     ]);
   });
 
+  it("publishes page.comment.created on the normalized watch subject", async () => {
+    const subjects = await publishInboxNatsEvents(
+      {
+        payload: makePayload("page.comment.created"),
+        inboxItemId: 7,
+      },
+      {
+        publish: async () => {},
+        flush: async () => {},
+      },
+    );
+
+    expect(subjects).toEqual(["ravi.console.inbox.item", "ravi.watch.console.page.comment.created"]);
+  });
+
   it("publishes only the canonical subject for non-watch items", async () => {
     const actions: string[] = [];
     const subjects = await publishInboxNatsEvents(

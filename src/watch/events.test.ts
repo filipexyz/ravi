@@ -51,6 +51,52 @@ describe("watch events", () => {
     expect(watchEventFromInboxPayload(makeInboxPayload({ eventType: "mail.message.received" }))).toBeNull();
   });
 
+  it("maps Agent Inbox page.comment.created onto the page comment watch subject", () => {
+    const event = watchEventFromInboxPayload(
+      makeInboxPayload({
+        eventType: "page.comment.created",
+        payload: {
+          pageId: "site_1",
+          orgId: "org_1",
+          projectId: "proj_1",
+          text: "please fix the chart",
+          url: "https://weekly.ravi.page/",
+        },
+      }),
+      { inboxItemId: 9 },
+    );
+
+    expect(event).toMatchObject({
+      connector: "console",
+      eventType: "page.comment.created",
+      subject: "ravi.watch.console.page.comment.created",
+      pageId: "site_1",
+      orgId: "org_1",
+      projectId: "proj_1",
+      payload: {
+        pageId: "site_1",
+        body: "please fix the chart",
+      },
+      delivery: { inboxItemId: 9 },
+    });
+  });
+
+  it("reserves page.comment.resolved on the same watch bridge", () => {
+    const event = watchEventFromInboxPayload(
+      makeInboxPayload({
+        eventType: "page.comment.resolved",
+        payload: { siteId: "site_1", comment: { body: "done" } },
+      }),
+    );
+
+    expect(event).toMatchObject({
+      eventType: "page.comment.resolved",
+      subject: "ravi.watch.console.page.comment.resolved",
+      siteId: "site_1",
+      payload: { body: "done", siteId: "site_1" },
+    });
+  });
+
   it("keeps watch subject generation stable", () => {
     expect(eventSubject("npm", "package.version_published")).toBe("ravi.watch.npm.package.version_published");
   });

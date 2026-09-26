@@ -9961,6 +9961,20 @@ export type PagesShipInput = {
 /** Return shape for `pages.ship`. */
 export type PagesShipReturn = {
   artifactId: string | null;
+  commentFollow: {
+    agentId?: string;
+    filter?: string;
+    ok: boolean;
+    orgId?: string | null;
+    pageId?: string;
+    projectId?: string | null;
+    reused?: boolean;
+    session: "main";
+    skipped?: "missing_page" | "missing_creator" | "invalid_filter" | "unbound_agent";
+    topic: string;
+    triggerId?: string;
+    warning?: string;
+  };
   route: string;
   site: Record<string, unknown>;
   slug: string;

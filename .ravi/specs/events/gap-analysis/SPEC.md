@@ -109,6 +109,8 @@ The trigger topic catalog exposes these subjects for routine consumption:
 | `inbox.mail.received` | `ravi.inbox.mail.received` | inbox |
 | `console.inbox.item` | `ravi.console.inbox.item` | watch |
 | `watch.console.bug.status` | `ravi.watch.console.bug.status` | watch |
+| `page.comment.created` | `ravi.watch.console.page.comment.created` | watch |
+| `page.comment.resolved` | `ravi.watch.console.page.comment.resolved` | watch |
 | `watch.event` | `ravi.watch.*.*` | watch |
 | `task.event` | `ravi.task.*.event` | tasks |
 | `tags.rule.applied` | `ravi.tags.rule.applied` | custom |

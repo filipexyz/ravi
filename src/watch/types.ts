@@ -162,4 +162,13 @@ export interface WatchNatsPayload {
   delivery?: Record<string, unknown>;
   occurredAt: string;
   createdAt: string;
+  /**
+   * Identity aliases hoisted from a page-comment inbox payload so trigger
+   * filters can match `data.pageId` as well as `data.payload.pageId`.
+   */
+  pageId?: string;
+  siteId?: string;
+  orgId?: string;
+  organizationId?: string;
+  projectId?: string;
 }

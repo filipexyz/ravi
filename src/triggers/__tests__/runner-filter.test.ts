@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dbCreateAgent } from "../../router/router-db.js";
+import { listSessions } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -135,6 +137,7 @@ async function startRunner(): Promise<InstanceType<typeof TriggerRunner>> {
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-trigger-runner-filter-test-");
+  dbCreateAgent({ id: "trigger-test-agent", cwd: "/tmp/trigger-test-agent-real" });
   markerDir = mkdtempSync(join(tmpdir(), "ravi-trigger-shell-marker-"));
   channels.clear();
   subscribedTopics.length = 0;
@@ -237,3 +240,85 @@ describe("TriggerRunner invalid filters fail closed", () => {
     expect(dbGetTrigger(trigger.id)?.fireCount).toBe(0);
   });
 });
+
+describe("page comment wake", () => {
+  it("wakes the bound creator and does not open a session for a deleted agent", async () => {
+    const { ensurePageCommentTrigger, pageCommentFilter } = await import("../../pages/comment-follow.js");
+    const { watchEventFromInboxPayload } = await import("../../watch/events.js");
+    dbCreateAgent({ id: "page-creator", cwd: "/tmp/page-creator-home" });
+    const live = await ensurePageCommentTrigger(
+      { pageId: "site_live", orgId: "org_1", projectId: "proj_1" },
+      { agentId: "page-creator" },
+      { emitTriggersRefresh: async () => {}, agentExists: () => true },
+    );
+    const gone = await ensurePageCommentTrigger(
+      { pageId: "site_gone", orgId: "org_1", projectId: "proj_1" },
+      { agentId: "gone-creator" },
+      { emitTriggersRefresh: async () => {}, agentExists: () => false },
+    );
+    if (!live.ok || !gone.ok) throw new Error("expected both triggers to persist");
+
+    await startRunner();
+
+    const topic = "ravi.watch.console.page.comment.created";
+    expect(subscribedTopics).toContain(topic);
+    const liveEvent = watchEventFromInboxPayload(pageCommentInbox("site_live", "ship the chart"));
+    const goneEvent = watchEventFromInboxPayload(pageCommentInbox("site_gone", "ghost"));
+    const otherEvent = watchEventFromInboxPayload(pageCommentInbox("site_other", "nope"));
+    if (!liveEvent || !goneEvent || !otherEvent) throw new Error("expected watch events");
+
+    emit(topic, goneEvent);
+    emit(topic, otherEvent);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(publishCalls).toEqual([]);
+    expect(
+      listSessions().some(
+        (session) => session.agentId === "gone-creator" || session.agentCwd.includes("/tmp/ravi-gone"),
+      ),
+    ).toBe(false);
+
+    emit(topic, liveEvent);
+    await waitFor(() => publishCalls.length === 1);
+    expect(publishCalls[0]?.payload._triggerId).toBe(live.trigger.id);
+    expect(String(publishCalls[0]?.payload.prompt)).toContain("ship the chart");
+    expect(String(publishCalls[0]?.payload.prompt).includes("Data:")).toBe(false);
+    expect(
+      listSessions().some(
+        (session) => session.agentId === "page-creator" && session.agentCwd === "/tmp/page-creator-home",
+      ),
+    ).toBe(true);
+    expect(listSessions().some((session) => session.agentCwd.includes("/tmp/ravi-"))).toBe(false);
+    expect(live.trigger.filter).toBe(pageCommentFilter({ pageId: "site_live", orgId: "org_1", projectId: "proj_1" }));
+  });
+});
+
+function pageCommentInbox(pageId: string, body: string) {
+  return {
+    version: 1 as const,
+    eventId: `item_${pageId}`,
+    sequence: 1,
+    dedupeKey: `page-comment:${pageId}`,
+    eventType: "page.comment.created",
+    category: "pages",
+    severity: "info",
+    sensitivity: "private",
+    title: "Comment",
+    summary: body,
+    organization: { id: "org_1" },
+    project: { id: "proj_1" },
+    source: { type: "console" },
+    actor: { type: "user", id: "user_1" },
+    target: { type: "page", id: pageId },
+    payload: { pageId, orgId: "org_1", projectId: "proj_1", body, url: `https://${pageId}.ravi.page/` },
+    links: [],
+    delivery: {
+      subscriptionId: "sub_1",
+      installationId: "ins_1",
+      pollId: "poll_1",
+      leaseId: "lease_1",
+      localDeliveredAt: "2026-09-26T00:00:00.000Z",
+    },
+    occurredAt: "2026-09-26T00:00:00.000Z",
+    createdAt: "2026-09-26T00:00:00.000Z",
+  };
+}

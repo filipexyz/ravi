@@ -15368,6 +15368,7 @@ public struct PagesShipOptions: Codable, Sendable {
 
 public struct PagesShipReturn: Codable, Sendable {
   public var artifactId: RaviJSON
+  public var commentFollow: RaviJSON
   public var route: String
   public var site: [String: RaviJSON]
   public var slug: String
@@ -15375,8 +15376,9 @@ public struct PagesShipReturn: Codable, Sendable {
   public var url: RaviJSON
   public var visibility: String
 
-  public init(artifactId: RaviJSON, route: String, site: [String: RaviJSON], slug: String, success: Bool, url: RaviJSON, visibility: String) {
+  public init(artifactId: RaviJSON, commentFollow: RaviJSON, route: String, site: [String: RaviJSON], slug: String, success: Bool, url: RaviJSON, visibility: String) {
     self.artifactId = artifactId
+    self.commentFollow = commentFollow
     self.route = route
     self.site = site
     self.slug = slug
@@ -15387,6 +15389,7 @@ public struct PagesShipReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case artifactId = "artifactId"
+    case commentFollow = "commentFollow"
     case route = "route"
     case site = "site"
     case slug = "slug"

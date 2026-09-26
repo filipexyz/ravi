@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c26ae251439b086d"
+    "version": "4e694e3a7912d270"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -62422,6 +62422,74 @@
                         }
                       ]
                     },
+                    "commentFollow": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "filter": {
+                          "type": "string"
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "orgId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "pageId": {
+                          "type": "string"
+                        },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reused": {
+                          "type": "boolean"
+                        },
+                        "session": {
+                          "const": "main",
+                          "type": "string"
+                        },
+                        "skipped": {
+                          "enum": [
+                            "missing_page",
+                            "missing_creator",
+                            "invalid_filter",
+                            "unbound_agent"
+                          ],
+                          "type": "string"
+                        },
+                        "topic": {
+                          "type": "string"
+                        },
+                        "triggerId": {
+                          "type": "string"
+                        },
+                        "warning": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "topic",
+                        "session"
+                      ],
+                      "type": "object"
+                    },
                     "route": {
                       "type": "string"
                     },
@@ -62457,6 +62525,7 @@
                   },
                   "required": [
                     "artifactId",
+                    "commentFollow",
                     "route",
                     "site",
                     "slug",

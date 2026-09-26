@@ -34,6 +34,12 @@ import {
   type PublishedPagePayload,
 } from "../../pages/client.js";
 import {
+  ensurePageCommentFollow,
+  pageCommentCreatorFromContext,
+  type PageCommentFollowDeps,
+  type PageCommentFollowResult,
+} from "../../pages/comment-follow.js";
+import {
   materializeShipSource,
   requireShipTitle,
   slugifyPageTitle,
@@ -50,6 +56,7 @@ export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishD
   listProjects?: ConsoleScopeResolverDeps["listProjects"];
   env?: ConsoleScopeResolverDeps["env"];
   cwd?: ConsoleScopeResolverDeps["cwd"];
+  pageCommentFollow?: PageCommentFollowDeps;
 }
 
 export interface PagesPasswordCommandDeps extends PagesCommandDeps {
@@ -61,6 +68,8 @@ Examples:
   ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json
   ravi pages ship demo --title "Landing" --html ./landing.html --visibility public
   ravi pages ship proj docs --title "Docs" --dir ./site --route / --json
+
+A successful ship arms or reuses a page.comment.created trigger for the current agent, filtered to this page.
 
 Happy path:
   One command. Do not choreograph pages create + pages publish.
@@ -382,10 +391,22 @@ export class PagesCommands {
           },
           this.deps,
         );
+        const shippedSite = objectValue(result.site) ?? site;
+        const commentFollow = await armPageCommentFollow(
+          {
+            site: shippedSite,
+            ensuredSite: site,
+            publish: result,
+            organizationId: stringValue(resolved.scope.organization?.id),
+            projectId: stringValue(resolved.scope.project?.id),
+          },
+          this.deps,
+        );
         const payload = {
           artifactId: extractPublishedArtifactId(result),
+          commentFollow,
           route: resolvedRoute,
-          site: objectValue(result.site) ?? site,
+          site: shippedSite,
           slug,
           success: true as const,
           url: result.url,
@@ -1171,8 +1192,24 @@ const pagePasswordReturnSchema = z.object({
   url: z.string(),
 });
 
+const pageCommentFollowReturnSchema = z.object({
+  ok: z.boolean(),
+  topic: z.string(),
+  session: z.literal("main"),
+  filter: z.string().optional(),
+  agentId: z.string().optional(),
+  triggerId: z.string().optional(),
+  reused: z.boolean().optional(),
+  pageId: z.string().optional(),
+  orgId: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  warning: z.string().optional(),
+  skipped: z.enum(["missing_page", "missing_creator", "invalid_filter", "unbound_agent"]).optional(),
+});
+
 const pageShipReturnSchema = z.object({
   artifactId: z.string().nullable(),
+  commentFollow: pageCommentFollowReturnSchema,
   route: z.string(),
   site: pageSiteSchema,
   slug: z.string(),
@@ -1323,8 +1360,28 @@ function extractPublishedArtifactId(result: ArtifactPublishResult): string | nul
   return stringValue(objectValue(result.artifact)?.id);
 }
 
+async function armPageCommentFollow(
+  input: Parameters<typeof ensurePageCommentFollow>[0],
+  deps: PagesCommandDeps,
+): Promise<PageCommentFollowResult> {
+  try {
+    return await ensurePageCommentFollow(input, {
+      ...deps.pageCommentFollow,
+      getCreator: deps.pageCommentFollow?.getCreator ?? (() => pageCommentCreatorFromContext(deps.getContext)),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      topic: "ravi.watch.console.page.comment.created",
+      session: "main",
+      warning: `Page comment trigger failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 function printShipResult(result: {
   artifactId: string | null;
+  commentFollow?: PageCommentFollowResult;
   route: string;
   site: PageSitePayload;
   slug: string;
@@ -1338,6 +1395,17 @@ function printShipResult(result: {
   console.log(`  Visibility ${result.visibility}`);
   if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
   console.log(`  URL        ${result.url ?? "not returned by Console"}`);
+  printCommentFollow(result.commentFollow);
+}
+
+function printCommentFollow(follow: PageCommentFollowResult | undefined): void {
+  if (!follow) return;
+  if (follow.triggerId) {
+    const action = follow.reused ? "reused" : "created";
+    console.log(`  Comments   ${action} trigger ${follow.triggerId} for agent ${follow.agentId ?? "(unbound)"}`);
+    return;
+  }
+  if (follow.warning) console.log(`  Comments   ${follow.warning}`);
 }
 
 function printCreatedSite(result: PageSiteCreateResult): void {

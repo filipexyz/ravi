@@ -1,3 +1,10 @@
+import {
+  PAGE_COMMENT_CREATED_MESSAGE,
+  PAGE_COMMENT_CREATED_TOPIC,
+  PAGE_COMMENT_RESOLVED_MESSAGE,
+  PAGE_COMMENT_RESOLVED_TOPIC,
+} from "../watch/page-comment.js";
+
 export type TriggerTopicCategory =
   | "inbound"
   | "cli"
@@ -711,6 +718,97 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       "Console push delivery eventType is watch.console.bug.status. Local NATS after the delivery bridge is ravi.watch.console.bug.status.",
       "Subscribe with POST /api/cli/bugs/:id/subscribe (installation identity in the body) so only this CLI installation receives that bugId.",
       "Always filter by this bugId. Do not create a broad all-my-bugs trigger.",
+    ],
+  },
+  {
+    id: "page.comment.created",
+    category: "watch",
+    pattern: PAGE_COMMENT_CREATED_TOPIC,
+    title: "Page comment created",
+    description:
+      "Normalized watch event after Console delivers page.comment.created through the Agent Inbox for a shipped page.",
+    payload:
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "eventType", type: "string", required: true, description: "Always page.comment.created." },
+        { path: "connector", type: "string", required: true, description: "Always console." },
+        {
+          path: "payload.pageId",
+          type: "string",
+          required: true,
+          description: "Stable page id. Pages ship binds this to the site id Console returned.",
+        },
+        { path: "payload.siteId", type: "string", description: "Site id when Console sends it beside pageId." },
+        { path: "payload.orgId", type: "string", description: "Console organization id." },
+        { path: "payload.organizationId", type: "string", description: "Organization id when Console uses that name." },
+        { path: "payload.projectId", type: "string", description: "Console project id. Slugs are not project ids." },
+        { path: "payload.body", type: "string", description: "Comment text. Inbox text/comment.body is copied here." },
+        { path: "payload.url", type: "string", description: "Page URL." },
+        { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+        { path: "orgId", type: "string", description: "orgId hoisted to the event root for filters." },
+        { path: "projectId", type: "string", description: "projectId hoisted to the event root for filters." },
+      ],
+    },
+    messageTemplate: {
+      id: "page-comment-created-default",
+      description: "Default agent-facing notice for a new page comment.",
+      template: PAGE_COMMENT_CREATED_MESSAGE,
+      variables: ["data.payload.pageId", "data.payload.body", "data.payload.url"],
+    },
+    examples: [
+      `ravi triggers add "Page comment" --topic "${PAGE_COMMENT_CREATED_TOPIC}" --filter '(data.payload.pageId == "<pageId>" || data.pageId == "<pageId>" || data.payload.siteId == "<pageId>" || data.siteId == "<pageId>") && (data.payload.orgId == "<orgId>" || data.orgId == "<orgId>") && (data.payload.projectId == "<projectId>" || data.projectId == "<projectId>")' --session main --cooldown 30s`,
+    ],
+    filters: [
+      'data.payload.pageId == "<pageId>"',
+      'data.pageId == "<pageId>"',
+      'data.payload.siteId == "<pageId>"',
+      'data.siteId == "<pageId>"',
+      'data.payload.orgId == "<orgId>"',
+      'data.orgId == "<orgId>"',
+      'data.payload.projectId == "<projectId>"',
+      'data.projectId == "<projectId>"',
+    ],
+    notes: [
+      "Console Agent Inbox eventType is page.comment.created. Local NATS after the inbox bridge is ravi.watch.console.page.comment.created.",
+      "pages ship creates or reuses one trigger per stable page id, bound to the creator agent. Fanout and history stay in Console.",
+      "Always filter by this page id. Do not create a broad all-pages trigger. Invalid filters fail closed and are not saved.",
+      "Comment anchors are not part of v0. A comment written by the creator still wakes that agent.",
+    ],
+  },
+  {
+    id: "page.comment.resolved",
+    category: "watch",
+    pattern: PAGE_COMMENT_RESOLVED_TOPIC,
+    title: "Page comment resolved",
+    description:
+      "Reserved normalized watch event after Console delivers page.comment.resolved through the Agent Inbox. v0 ship does not arm this topic.",
+    payload:
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "eventType", type: "string", required: true, description: "Always page.comment.resolved." },
+        { path: "connector", type: "string", required: true, description: "Always console." },
+        { path: "payload.pageId", type: "string", required: true, description: "Stable page id." },
+        { path: "payload.body", type: "string", description: "Resolved comment text." },
+        { path: "payload.url", type: "string", description: "Page URL." },
+        { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+      ],
+    },
+    messageTemplate: {
+      id: "page-comment-resolved-default",
+      description: "Default agent-facing notice for a resolved page comment.",
+      template: PAGE_COMMENT_RESOLVED_MESSAGE,
+      variables: ["data.payload.pageId", "data.payload.body", "data.payload.url"],
+    },
+    examples: [
+      `ravi triggers add "Page comment resolved" --topic "${PAGE_COMMENT_RESOLVED_TOPIC}" --filter 'data.payload.pageId == "<pageId>" || data.pageId == "<pageId>"' --session main --cooldown 30s`,
+    ],
+    filters: ['data.payload.pageId == "<pageId>"', 'data.pageId == "<pageId>"'],
+    notes: [
+      "Reserved. The inbox bridge publishes this subject when Console sends page.comment.resolved. pages ship does not create a trigger for it in v0.",
     ],
   },
   {

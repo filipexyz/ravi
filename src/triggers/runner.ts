@@ -167,6 +167,7 @@ export class TriggerRunner {
     // Group by topic to share subscriptions
     const byTopic = new Map<string, PreparedTrigger[]>();
     let skippedInvalidFilter = 0;
+    let skippedUnboundAgent = 0;
     for (const t of triggers) {
       const activation = resolveTriggerActivation(t);
       if (activation.state === "blocked_topic") {
@@ -182,6 +183,17 @@ export class TriggerRunner {
           executionType: t.executionType ?? "agent",
           filter: t.filter,
           error: activation.filter.error,
+        });
+        continue;
+      }
+      if (activation.state === "unbound_agent") {
+        skippedUnboundAgent += 1;
+        log.error("Skipping trigger; bound agent is gone (unbound_agent). No session will be created.", {
+          triggerId: t.id,
+          triggerName: t.name,
+          agentId: t.agentId,
+          topic: t.topic,
+          runtimeState: "unbound_agent",
         });
         continue;
       }
@@ -228,6 +240,7 @@ export class TriggerRunner {
       topics: byTopic.size,
       triggers: triggers.length,
       skippedInvalidFilter,
+      skippedUnboundAgent,
       addedTopics: plan.add.length,
       retainedTopics: plan.keep.length,
       removedTopics: plan.remove.length,
@@ -341,7 +354,17 @@ export class TriggerRunner {
   private async fireTrigger(trigger: Trigger, event: { topic: string; data: unknown }): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
-    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+    if (!agent) {
+      log.error("Skipping trigger fire; bound agent is gone (unbound_agent). No session will be created.", {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        agentId,
+        topic: event.topic,
+        runtimeState: "unbound_agent",
+      });
+      return;
+    }
+    const agentCwd = expandHome(agent.cwd);
 
     let sessionName: string;
     let source: { channel: string; accountId: string; chatId: string } | undefined;

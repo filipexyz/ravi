@@ -133,8 +133,13 @@ function serializeTrigger(trigger: Trigger) {
   };
 }
 
-function invalidFilterWarning(trigger: Pick<Trigger, "id" | "enabled" | "topic" | "filter">): string | undefined {
+function invalidFilterWarning(
+  trigger: Pick<Trigger, "id" | "enabled" | "topic" | "filter" | "agentId">,
+): string | undefined {
   const activation = resolveTriggerActivation(trigger);
+  if (activation.state === "unbound_agent") {
+    return `Trigger ${trigger.id} is bound to missing agent ${trigger.agentId ?? "(unknown)"} (unbound_agent) and will not fire or create a session.`;
+  }
   if (activation.state !== "invalid_filter") return undefined;
   return `Trigger ${trigger.id} has an invalid filter (${activation.filter.error ?? "unknown error"}) and will not fire. Fix it with: ravi triggers set ${trigger.id} filter '<expression>' (or clear it with: ravi triggers set ${trigger.id} filter -)`;
 }
