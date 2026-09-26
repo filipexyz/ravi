@@ -44,7 +44,7 @@ import {
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
-import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
+import { extractRequestedSkillsFromCommandLine, extractRequestedSkillsFromToolCall } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -454,17 +454,14 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
-  const requestedSkill = extractRequestedSkillFromCommandLine(command);
-  if (
-    requestedSkill &&
-    !isSkillAuthorizedForAgent(options.agentId, requestedSkill, {
-      capabilities: options.context.capabilities,
-    })
-  ) {
-    const reason = formatSkillNotAuthorizedReason(requestedSkill, options.agentId);
+  const deniedCommandSkill = extractRequestedSkillsFromCommandLine(command).find(
+    (skill) => !isSkillAuthorizedForAgent(options.agentId, skill, { capabilities: options.context.capabilities }),
+  );
+  if (deniedCommandSkill) {
+    const reason = formatSkillNotAuthorizedReason(deniedCommandSkill, options.agentId);
     emitRuntimePolicyDenied(options, {
       type: "tool",
-      denied: `skill:${requestedSkill}`,
+      denied: `skill:${deniedCommandSkill}`,
       reason,
       command,
       blockType: "runtime_skill_not_authorized",
@@ -650,20 +647,17 @@ async function authorizeRuntimeToolUse(
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
   }
 
-  const requestedSkill = extractRequestedSkillFromToolCall(request.toolName, request.input);
-  if (
-    requestedSkill &&
-    !isSkillAuthorizedForAgent(options.agentId, requestedSkill, {
-      capabilities: options.context.capabilities,
-    })
-  ) {
-    const reason = formatSkillNotAuthorizedReason(requestedSkill, options.agentId);
+  const deniedToolSkill = extractRequestedSkillsFromToolCall(request.toolName, request.input).find(
+    (skill) => !isSkillAuthorizedForAgent(options.agentId, skill, { capabilities: options.context.capabilities }),
+  );
+  if (deniedToolSkill) {
+    const reason = formatSkillNotAuthorizedReason(deniedToolSkill, options.agentId);
     emitRuntimePolicyDenied(options, {
       type: "tool",
-      denied: `skill:${requestedSkill}`,
+      denied: `skill:${deniedToolSkill}`,
       reason,
       blockType: "runtime_skill_not_authorized",
-      detail: { toolName: request.toolName, skill: requestedSkill },
+      detail: { toolName: request.toolName, skill: deniedToolSkill },
     });
     return { approved: false, reason };
   }

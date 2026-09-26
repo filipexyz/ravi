@@ -87,6 +87,7 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 5. O host converte a skill lida de volta ao alias anunciado e persiste a evidência no snapshot do turno.
 6. No Pi, o permission extension chama `authorizePiToolCall` antes de qualquer tool. Além do REBAC e do Bash `authorizeCommandExecution`, o authorize path aplica a allowlist a invocações de skill (Skill tool, `ravi skills show`, Read/Edit de `skills/<name>/SKILL.md`). Filtrar o catálogo no prompt NÃO é a barreira de segurança.
 7. No Pi com allowlist, o spawn RPC recebe `--no-skills`; o catálogo filtrado do Ravi passa a ser o único anúncio de skills. Agente sem allowlist (Invariant F) mantém a descoberta nativa do Pi.
+8. O gate de comando (host Bash e Pi) avalia TODAS as skills referenciadas na linha (`extractRequestedSkillsFromCommandLine`: cada segmento `;`/`&`/`&&`/`||`/`|`/newline e cada token `SKILL.md`) e nega nomeando a primeira não autorizada; uma skill concedida na mesma linha não mascara outra. `ravi skills install|list --source <path>` sem expansão/redirecionamento não conta como leitura de skill, para não bloquear o próprio caminho de remediação. A negação continua por linha: shell não permite executar só parte dela.
 
 ## Scope
 

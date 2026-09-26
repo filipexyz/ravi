@@ -707,4 +707,33 @@ describe("Pi tool permission bridge", () => {
       ),
     ).resolves.toEqual({ allowed: true });
   });
+
+  it("denies the unauthorized skill even when a granted skill shares the shell line", async () => {
+    const handlers = {
+      canUseTool: async () => ({ behavior: "allow" as const }),
+      approveRuntimeRequest: async () => ({ approved: true }),
+      allowedSkills: ["ravi-dev-app-creator"],
+    };
+    const denied =
+      "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').";
+
+    for (const command of [
+      "head -20 /tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md; cat /workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",
+      "cat /workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md /tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md",
+      "ravi skills show ravi-dev-app-creator --json && ravi skills show whatsapp-manager --json",
+    ]) {
+      await expect(authorizePiToolCall("bash", { command }, handlers)).resolves.toEqual({
+        allowed: false,
+        reason: denied,
+      });
+    }
+
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json" },
+        handlers,
+      ),
+    ).resolves.toEqual({ allowed: true });
+  });
 });

@@ -1141,4 +1141,55 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
       rmSync(tempHome, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("gates every skill on a shell line and lets install --source <SKILL.md> through", async () => {
+    const agentId = "line-agent";
+    dbCreateAgent({ id: agentId, cwd: "/tmp/line-agent" });
+    withoutLogs(() => runWithContext({}, () => new SkillsCommands().grant(agentId, "app-creator", undefined, true)));
+    const grantedFile = join(process.cwd(), "src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md");
+    const deniedFile = join(process.cwd(), "src/plugins/internal/ravi-system/skills/whatsapp/SKILL.md");
+    const bypassLine = `head -20 ${deniedFile}; cat ${grantedFile}`;
+    const expectedReason = formatSkillNotAuthorizedReason("whatsapp-manager", agentId);
+
+    const { allowlist } = resolveAgentSkills(agentId);
+    await expect(
+      authorizePiToolCall(
+        "bash",
+        { command: bypassLine },
+        {
+          canUseTool: async () => ({ behavior: "allow" as const }),
+          approveRuntimeRequest: async () => ({ approved: true }),
+          allowedSkills: allowlist,
+          agentId,
+        },
+      ),
+    ).resolves.toEqual({ allowed: false, reason: expectedReason });
+
+    getOrCreateSession(`agent:${agentId}:main`, agentId, stateDir!, { name: "line", runtimeProvider: "pi" });
+    const services = createRuntimeHostServices({
+      context: createRuntimeContext({
+        kind: "agent-runtime",
+        agentId,
+        sessionKey: `agent:${agentId}:main`,
+        sessionName: "line",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      }),
+      agentId,
+      sessionName: "line",
+      toolContext: {},
+    });
+    await expect(services.authorizeCommandExecution({ command: bypassLine, input: {} })).resolves.toEqual({
+      approved: false,
+      reason: expectedReason,
+    });
+
+    const install = await services.authorizeCommandExecution({
+      command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md 2>&1",
+      input: {},
+    });
+    expect(String(install.reason ?? "")).not.toContain("SKILL_NOT_AUTHORIZED");
+    await expect(
+      services.authorizeCommandExecution({ command: "cat ~/.agents/skills/find-skills/SKILL.md", input: {} }),
+    ).resolves.toEqual({ approved: false, reason: formatSkillNotAuthorizedReason("find-skills", agentId) });
+  });
 });

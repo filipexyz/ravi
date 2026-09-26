@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   buildSkillVisibilitySnapshot,
   diffLoadedSkills,
-  extractRequestedSkillFromCommandLine,
-  extractRequestedSkillFromToolCall,
+  extractRequestedSkillsFromCommandLine,
+  extractRequestedSkillsFromToolCall,
   extractSkillNameFromFilesystemPath,
   filterSkillNamesByAllowlist,
   isSkillNameAuthorizedOnAllowlist,
@@ -421,11 +421,11 @@ describe("skill visibility policy", () => {
 
 describe("skill invocation extraction", () => {
   it("extracts dedicated Skill tool names and ravi skills show commands", () => {
-    expect(extractRequestedSkillFromToolCall("Skill", { skill: "ravi-system-image" })).toBe("ravi-system-image");
-    expect(extractRequestedSkillFromToolCall("skills_show", { name: "tiny" })).toBe("tiny");
-    expect(extractRequestedSkillFromCommandLine("ravi skills show ravi-user-skills-tiny --json")).toBe(
+    expect(extractRequestedSkillsFromToolCall("Skill", { skill: "ravi-system-image" })).toEqual(["ravi-system-image"]);
+    expect(extractRequestedSkillsFromToolCall("skills_show", { name: "tiny" })).toEqual(["tiny"]);
+    expect(extractRequestedSkillsFromCommandLine("ravi skills show ravi-user-skills-tiny --json")).toEqual([
       "ravi-user-skills-tiny",
-    );
+    ]);
   });
 
   it("extracts a skill from Read/Edit of skills/<name>/SKILL.md and ignores ordinary files", () => {
@@ -433,12 +433,60 @@ describe("skill invocation extraction", () => {
       "whatsapp-manager",
     );
     expect(
-      extractRequestedSkillFromToolCall("Read", {
+      extractRequestedSkillsFromToolCall("Read", {
         path: "/workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",
       }),
-    ).toBe("app-creator");
-    expect(extractRequestedSkillFromToolCall("Read", { path: "README.md" })).toBeNull();
-    expect(extractRequestedSkillFromCommandLine("cat /tmp/plugins/ravi-system/skills/image/SKILL.md")).toBe("image");
+    ).toEqual(["app-creator"]);
+    expect(extractRequestedSkillsFromToolCall("Read", { path: "README.md" })).toEqual([]);
+    expect(extractRequestedSkillsFromCommandLine("cat /tmp/plugins/ravi-system/skills/image/SKILL.md")).toEqual([
+      "image",
+    ]);
+    expect(extractRequestedSkillsFromCommandLine("ls /tmp/home/.agents/skills/find-skills")).toEqual([]);
+  });
+
+  it("returns every skill a shell line references, so a granted one cannot mask a denied one", () => {
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "cat /tmp/p/skills/app-creator/SKILL.md; head -20 /tmp/p/skills/whatsapp-manager/SKILL.md",
+      ),
+    ).toEqual(["app-creator", "whatsapp-manager"]);
+    expect(
+      extractRequestedSkillsFromCommandLine("cat /tmp/p/skills/app-creator/SKILL.md /tmp/p/skills/image/SKILL.md 2>&1"),
+    ).toEqual(["app-creator", "image"]);
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills show app-creator && ravi skills show whatsapp-manager --json"),
+    ).toEqual(["app-creator", "whatsapp-manager"]);
+    expect(
+      extractRequestedSkillsFromToolCall("Bash", {
+        command: "wc -l /tmp/p/skills/app-creator/SKILL.md | ravi skills show image",
+      }),
+    ).toEqual(["app-creator", "image"]);
+  });
+
+  it("does not treat a ravi skills install/list --source path as a skill load unless the segment expands", () => {
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills install --source ~/.agents/skills/find-skills/SKILL.md 2>&1"),
+    ).toEqual([]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "./bin/ravi skills list --source ~/.agents/skills/find-skills/SKILL.md --json",
+      ),
+    ).toEqual([]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md && cat ~/.agents/skills/find-skills/SKILL.md",
+      ),
+    ).toEqual(["find-skills"]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        'ravi skills install --source "$(cat /tmp/p/skills/whatsapp-manager/SKILL.md)"',
+      ),
+    ).toEqual(["whatsapp-manager"]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "ravi skills show find-skills --source ~/.agents/skills/find-skills/SKILL.md",
+      ),
+    ).toEqual(["find-skills"]);
   });
 
   it("matches catalog aliases when checking a path-derived skill against an allowlist", () => {
