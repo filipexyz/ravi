@@ -19,7 +19,7 @@ owners:
   - main
 status: active
 normative: true
-review: "v5 2026-09-13 — Pi aplica a allowlist no authorize path (tool-time), não só no catálogo do prompt."
+review: "v6 2026-09-26 — Pi com allowlist sobe com --no-skills (anúncio = gate); SKILL_NOT_AUTHORIZED nomeia skill e agente e aponta install --source → grant (bug 2b7fcc09)."
 ---
 
 <!-- markdownlint-disable-next-line MD025 -->
@@ -42,7 +42,7 @@ Ambos produzem uma **allowlist por agente** que alimenta o **filtro nativo do mo
 - **Adaptador de enforcement (por provider):** aplica a allowlist ao motor.
   - `claude` → `Options.skills` nativo, preservando skills locais autorizadas.
   - `codex` → `skills/list` nativo, catálogo lógico deduplicado e `skills.config` desabilitando toda entrada fora da allowlist.
-  - `pi` → catálogo filtrado no prompt; `ravi skills show`, `Skill` e Read/Edit de `SKILL.md` passam pelo mesmo authorize path do permission extension (`canUseTool` / host `authorizeToolUse`). Skill fora da allowlist MUST falhar com `SKILL_NOT_AUTHORIZED`.
+  - `pi` → catálogo filtrado no prompt; com allowlist, o spawn usa `--no-skills`, então a descoberta nativa do Pi (`~/.agents/skills`, `~/.pi/agent/skills`, `.agents/skills` do projeto) não anuncia skills que o gate nega (análogo ao `skills.config` do Codex). `ravi skills show`, `Skill` e Read/Edit de `SKILL.md` passam pelo mesmo authorize path do permission extension (`canUseTool` / host `authorizeToolUse`). Skill fora da allowlist MUST falhar com `SKILL_NOT_AUTHORIZED`.
 - **O SISTEMA NÃO é preso a provider.** Só o passo de *enforcement* varia. (Correção explícita da versão anterior, que tratava a feature inteira como "claude-only".)
 
 ## Estado atual v4 (validado em produção, 2026-09-11)
@@ -70,7 +70,8 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 - **D (derivação compatível).** Uma permissão genérica (`execute:group:*`) MUST NOT ampliar um catálogo com grants explícitos. `admin:system:*` e capabilities específicas de comando (`read|mutate:<resource>:<action>`, `execute:group:<group>`) MUST continuar a expor a skill oficial daquele comando. Visibilidade segue autoridade; autoridade NUNCA é concedida só porque a skill é visível.
 - **B (baseline).** Todo agente MUST receber o baseline, sempre — mesmo sem permissão nenhuma.
 - **U (single-source).** Skill personalizada MUST ter um único arquivo central; N grants MUST NOT duplicar arquivo em disco.
-- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST usar a mesma autorização: allowlist do agente OU skill oficial implicada pelas capabilities efetivas da identidade. Uma skill não concedida e não implicada MUST falhar com `SKILL_NOT_AUTHORIZED`.
+- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST usar a mesma autorização: allowlist do agente OU skill oficial implicada pelas capabilities efetivas da identidade. Uma skill não concedida e não implicada MUST falhar com `SKILL_NOT_AUTHORIZED`. A mensagem MUST nomear skill e agente nessa ordem (`Skill '<skill>' is not authorized for agent '<agent>'.`) e apontar `ravi skills install --source <skill-dir>` + `ravi skills grant <agent> <skill>`.
+- **A (anúncio = gate).** Um provider MUST NOT anunciar ao modelo, por descoberta nativa, skill que o gate negaria para um agente com allowlist. Skill que só existe no disco (ex.: `~/.agents/skills/<skill>`) MUST NOT ser concedida automaticamente: o caminho suportado é `skills install --source` → `skills grant` → leitura liberada.
 - **F (no-break / fallback).** Agente sem configuração explícita mantém a derivação compatível. Grants explícitos NÃO escondem skills oficiais que a identidade já pode executar.
 - **C (cache-friendly).** A allowlist SHOULD ser estável entre turnos do mesmo agente (recomputa, mas idêntica) → o prefixo do prompt mantém cache. SHOULD mudar só em mudança de permissão/grant.
 - **S (camadas independentes).** Visibilidade de skill e permissão de ferramenta são controles distintos. O catálogo e `ravi skills show` MUST aplicar a allowlist; capacidades de efeito continuam sendo autorizadas pela camada de ferramentas.
@@ -85,6 +86,7 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 4. O CLI e o host autorizam `skills show` contra o agente da sessão atual.
 5. O host converte a skill lida de volta ao alias anunciado e persiste a evidência no snapshot do turno.
 6. No Pi, o permission extension chama `authorizePiToolCall` antes de qualquer tool. Além do REBAC e do Bash `authorizeCommandExecution`, o authorize path aplica a allowlist a invocações de skill (Skill tool, `ravi skills show`, Read/Edit de `skills/<name>/SKILL.md`). Filtrar o catálogo no prompt NÃO é a barreira de segurança.
+7. No Pi com allowlist, o spawn RPC recebe `--no-skills`; o catálogo filtrado do Ravi passa a ser o único anúncio de skills. Agente sem allowlist (Invariant F) mantém a descoberta nativa do Pi.
 
 ## Scope
 

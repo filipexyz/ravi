@@ -130,6 +130,17 @@ Important: Pi `turn_end` is an internal LLM/tool-cycle boundary, not always a Ra
   prompt. Unauthorized skill use MUST still be denied on the permission
   extension authorize path (`SKILL_NOT_AUTHORIZED`) even if the model
   bypasses that catalog via Read, Skill, or a raw `skills show`.
+- Pi also discovers skills on disk by itself (`~/.agents/skills`,
+  `~/.pi/agent/skills`, project `.agents/skills`/`.pi/skills`) and lists them
+  to the model as `available_skills`. When Ravi enforces an allowlist
+  (`allowedSkills` non-empty), the adapter MUST spawn Pi with `--no-skills` so
+  Ravi's filtered catalog is the only skill advertisement; otherwise the model
+  is told about skills the gate denies (bug `2b7fcc09`). Explicit `--skill`
+  paths would still load, and Ravi passes none. Agents without an allowlist
+  (grandfathered, Invariant F) keep Pi native discovery unchanged. Disk-only
+  skills are never auto-granted: the supported path is
+  `ravi skills install --source <skill-dir>` followed by
+  `ravi skills grant <agent> <skill>`.
 - Current Pi state and event payloads do not expose a skill list, skill request, skill load, or skill unload event.
 - Pi sessions MUST report an empty `loadedSkills` vector unless Ravi owns an explicit skill injection flow and observes completion.
 - Allowlisted catalog records MUST be reported as `advertised` with declared
