@@ -55,7 +55,7 @@ function pageCommentWatchEvent(
   eventType: PageCommentEventType,
   origin: { inboxItemId?: number | string | null },
 ): WatchNatsPayload {
-  const payload = normalizePageCommentPayload(objectValue(inbox.payload));
+  const payload = normalizePageCommentPayload(objectValue(inbox.payload), inbox.links);
   const source = objectValue(inbox.source) ?? {};
   const sensitivity = normalizeSensitivity(inbox.sensitivity);
   const delivery = {
@@ -85,15 +85,38 @@ function pageCommentWatchEvent(
   };
 }
 
-function normalizePageCommentPayload(payload: Record<string, unknown>): Record<string, unknown> {
+function normalizePageCommentPayload(
+  payload: Record<string, unknown>,
+  links: InboxNatsPayload["links"] | undefined,
+): Record<string, unknown> {
   const next = { ...payload };
-  if (typeof next.body === "string" && next.body.trim()) return next;
-  const text = stringValue(next.text);
-  const comment = objectValue(next.comment);
-  const commentBody = stringValue(comment?.body) ?? stringValue(comment?.text);
-  if (text) next.body = text;
-  else if (commentBody) next.body = commentBody;
+  if (!(typeof next.body === "string" && next.body.trim())) {
+    const text = stringValue(next.text);
+    const comment = objectValue(next.comment);
+    const commentBody = stringValue(comment?.body) ?? stringValue(comment?.text);
+    if (text) next.body = text;
+    else if (commentBody) next.body = commentBody;
+  }
+  if (!stringValue(next.url)) {
+    const url = pageCommentUrlFromLinks(links);
+    if (url) next.url = url;
+  }
   return next;
+}
+
+function pageCommentUrlFromLinks(links: InboxNatsPayload["links"] | undefined): string | null {
+  if (!Array.isArray(links)) return null;
+  const entries = links.flatMap((link) => {
+    const url = typeof link?.url === "string" ? link.url.trim() : "";
+    if (!url) return [];
+    const label = typeof link.label === "string" ? link.label.trim() : "";
+    return [{ label, url }];
+  });
+  const page = entries.find((link) => link.label === "Page");
+  if (page) return page.url;
+  const http = entries.find((link) => /^https?:\/\//i.test(link.url));
+  if (http) return http.url;
+  return entries.find((link) => link.label === "Console")?.url ?? null;
 }
 
 function hoistIdentity(payload: Record<string, unknown>): Partial<WatchNatsPayload> {

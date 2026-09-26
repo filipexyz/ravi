@@ -745,7 +745,12 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
         { path: "payload.organizationId", type: "string", description: "Organization id when Console uses that name." },
         { path: "payload.projectId", type: "string", description: "Console project id. Slugs are not project ids." },
         { path: "payload.body", type: "string", description: "Comment text. Inbox text/comment.body is copied here." },
-        { path: "payload.url", type: "string", description: "Page URL." },
+        {
+          path: "payload.url",
+          type: "string",
+          description:
+            "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
+        },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
         { path: "orgId", type: "string", description: "orgId hoisted to the event root for filters." },
         { path: "projectId", type: "string", description: "projectId hoisted to the event root for filters." },
@@ -774,6 +779,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       "Console Agent Inbox eventType is page.comment.created. Local NATS after the inbox bridge is ravi.watch.console.page.comment.created.",
       "pages ship creates or reuses one trigger per stable page id, bound to the creator agent. Fanout and history stay in Console.",
       "Always filter by this page id. Do not create a broad all-pages trigger. Invalid filters fail closed and are not saved.",
+      "payload.url comes from Console when present. Older inbox items only have links; the bridge copies Page, else the first http(s) link, else Console.",
       "Comment anchors are not part of v0. A comment written by the creator still wakes that agent.",
     ],
   },
@@ -793,7 +799,12 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
         { path: "connector", type: "string", required: true, description: "Always console." },
         { path: "payload.pageId", type: "string", required: true, description: "Stable page id." },
         { path: "payload.body", type: "string", description: "Resolved comment text." },
-        { path: "payload.url", type: "string", description: "Page URL." },
+        {
+          path: "payload.url",
+          type: "string",
+          description:
+            "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
+        },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
       ],
     },

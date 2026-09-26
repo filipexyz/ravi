@@ -31,6 +31,7 @@ This follows bug follow and gh-follow:
 - **Resolved.** The inbox subject is reserved. Ship does not arm it.
 - **Missing creator.** A ship from a CLI session with no agent id records `missing_creator` and does not guess the default agent.
 - **Project slug.** An explicit `--project slug` is not a `projectId`. The filter includes `projectId` only when Console or scope returns an id.
+- **Page URL.** The catalog template reads `payload.url`. Newer Console emits put the URL there. Older emits only put it in inbox `links` (`Page`, otherwise the first http(s) link, otherwise `Console`). The watch remap fills `payload.url` from those links when the payload field is missing or blank, and leaves a present URL unchanged.
 
 ## Rejected
 
