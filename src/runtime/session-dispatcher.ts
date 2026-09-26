@@ -941,7 +941,18 @@ export class RuntimeSessionDispatcher {
     }
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id)) {
+    // Resolve next-turn provider before the live-queue shortcut. A persisted
+    // session override (set-provider) must restart the live handle instead of
+    // enqueueing onto the previous provider (`live_session_queue`).
+    let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
+      observationProviderId:
+        prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+      sessionProviderOverride: sessionRuntimeProviderOverride,
+      lastUsedProvider: sessionEntry?.runtimeProvider,
+      restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+      agent,
+    }).value;
+    if (existing && shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, requestedProvider)) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
         agentId: sessionEntry?.agentId ?? agent.id,
@@ -960,16 +971,9 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    const requestedProvider: RuntimeProviderId = modelBrokerPlan
-      ? modelBrokerPlan.lease.runtimeProvider
-      : resolveRequestedRuntimeProvider({
-          observationProviderId:
-            prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
-          sessionProviderOverride: sessionRuntimeProviderOverride,
-          lastUsedProvider: sessionEntry?.runtimeProvider,
-          restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
-          agent,
-        }).value;
+    if (modelBrokerPlan) {
+      requestedProvider = modelBrokerPlan.lease.runtimeProvider;
+    }
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -2826,6 +2830,7 @@ export function shouldQueuePromptOnLiveSession(
   existing: RuntimeHostStreamingSession,
   prompt: RuntimeLaunchPrompt,
   agentId: string,
+  requestedProvider?: RuntimeProviderId,
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -2838,6 +2843,9 @@ export function shouldQueuePromptOnLiveSession(
     !prompt._observation &&
     existing.queryHandle.provider !== prompt._runtimeProviderId
   ) {
+    return false;
+  }
+  if (requestedProvider && existing.queryHandle.provider !== requestedProvider) {
     return false;
   }
   if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
