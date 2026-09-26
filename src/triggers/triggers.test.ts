@@ -113,6 +113,21 @@ describe("triggers native automation support", () => {
     expect(updated?.onError).toBeUndefined();
   });
 
+  it("clears a persisted filter when updated with null", () => {
+    const trigger = dbCreateTrigger({
+      name: "filtered",
+      agentId: "agent-a",
+      topic: "ravi.watch.github.*",
+      message: "check",
+      filter: "data.payload.number == 7",
+    });
+    expect(dbGetTrigger(trigger.id)?.filter).toBe("data.payload.number == 7");
+
+    dbUpdateTrigger(trigger.id, { filter: null });
+
+    expect(dbGetTrigger(trigger.id)?.filter).toBeUndefined();
+  });
+
   it("compiles and caches boolean filters and fails closed on invalid filters", () => {
     const expression = `data.provider == "slack" && data.actionId startsWith "ticket_"`;
     const compiled = compileFilter(expression);

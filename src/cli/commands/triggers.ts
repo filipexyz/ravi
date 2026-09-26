@@ -834,8 +834,8 @@ export class TriggersCommands {
         }
 
         case "filter": {
-          const filterValue = value === "null" || value === "-" ? undefined : value;
-          assertValidTriggerFilter(filterValue);
+          const filterValue = value === "null" || value === "-" ? null : value;
+          assertValidTriggerFilter(filterValue ?? undefined);
           updated = dbUpdateTrigger(id, { filter: filterValue });
           normalizedValue = filterValue ?? null;
           logHuman(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);

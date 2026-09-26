@@ -193,8 +193,9 @@ export function dbUpdateTrigger(
   id: string,
   updates: Omit<
     Partial<Trigger>,
-    "replySession" | "messageTemplateId" | "shellCommand" | "shellTimeoutMs" | "shellEnvFile" | "onError"
+    "replySession" | "messageTemplateId" | "shellCommand" | "shellTimeoutMs" | "shellEnvFile" | "onError" | "filter"
   > & {
+    filter?: string | null;
     messageTemplateId?: string | null;
     replySession?: string | null;
     shellCommand?: string | null;

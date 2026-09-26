@@ -1005,4 +1005,13 @@ describe("triggers invalid filter visibility", () => {
     expect(payload.trigger).not.toHaveProperty("filterError");
     expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
   });
+
+  it("clearing the filter with set - persists a null filter and reactivates the trigger", async () => {
+    const payload = await captureJson(() => new TriggersCommands().set("trg_bad", "filter", "-", true));
+
+    expect(updatedTriggers).toEqual([{ id: "trg_bad", patch: { filter: null } }]);
+    expect(payload).toMatchObject({ value: null });
+    expect(payload.trigger).toMatchObject({ filterStatus: "none", runtimeState: "active" });
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
 });
