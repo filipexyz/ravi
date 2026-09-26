@@ -34,7 +34,11 @@ import {
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
-import { isSkillAuthorizedForAgent } from "../../runtime/skill-authorization.js";
+import {
+  SKILL_NOT_AUTHORIZED,
+  isSkillAuthorizedForAgent,
+  skillNotAuthorizedCopy,
+} from "../../runtime/skill-authorization.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
@@ -641,9 +645,16 @@ export class SkillsCommands {
         capabilities: getContext()?.context?.capabilities,
       });
       if (!authorized) {
-        contractFail("skills show", "SKILL_NOT_AUTHORIZED", `Skill not authorized for agent: ${skill.name}`, {
+        const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId);
+        contractFail("skills show", SKILL_NOT_AUTHORIZED, copy.message, {
           asJson,
-          details: { suggestedAction: `Grant '${skill.name}' to agent '${runtimeAgentId}' before loading it` },
+          details: {
+            suggestedAction: copy.suggestedAction,
+            issues: [
+              { path: [], code: SKILL_NOT_AUTHORIZED, message: copy.message },
+              { path: ["grant"], code: "SKILL_GRANT_REQUIRED", message: copy.suggestedAction },
+            ],
+          },
         });
       }
     }

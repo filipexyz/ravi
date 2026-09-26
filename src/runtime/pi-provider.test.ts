@@ -508,7 +508,8 @@ describe("Pi runtime provider", () => {
         confirmed: false,
         value: formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
         }),
       },
     ]);
@@ -794,7 +795,8 @@ describe("Pi runtime provider", () => {
         confirmed: false,
         value: formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
         }),
       },
     ]);

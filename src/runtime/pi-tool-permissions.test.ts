@@ -472,12 +472,14 @@ describe("Pi tool permission bridge", () => {
       parsePiPermissionUiDecisionValue(
         formatPiPermissionUiDecisionValue({
           allowed: false,
-          reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: image",
+          reason:
+            "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
         }),
       ),
     ).toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
     });
     expect(parsePiPermissionUiDecisionValue(false)).toEqual({
       allowed: false,
@@ -639,12 +641,14 @@ describe("Pi tool permission bridge", () => {
       authorizePiToolCall("read", { path: "/tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md" }, handlers),
     ).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: whatsapp-manager",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
     });
 
     await expect(authorizePiToolCall("Skill", { skill: "ravi-system-image" }, handlers)).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
     });
 
     await expect(
@@ -687,7 +691,8 @@ describe("Pi tool permission bridge", () => {
       ),
     ).resolves.toEqual({
       allowed: false,
-      reason: "SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ravi-system-image",
+      reason:
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
     });
 
     await expect(

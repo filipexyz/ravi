@@ -11,6 +11,36 @@ function resolveConfiguredAgentSkills(agentId: string) {
   return resolveAgentSkills(agentId);
 }
 
+export const SKILL_NOT_AUTHORIZED = "SKILL_NOT_AUTHORIZED";
+
+export interface SkillNotAuthorizedCopy {
+  message: string;
+  suggestedAction: string;
+}
+
+/**
+ * Denial copy shared by every skill gate (Pi extension, host Bash/tool gate,
+ * `ravi skills show`). The skill is the subject and the agent the object, and
+ * the remediation is the only supported path: install into Ravi, then grant.
+ * Visibility of a skill directory on disk never authorizes it.
+ */
+export function skillNotAuthorizedCopy(skillName: string, agentId?: string): SkillNotAuthorizedCopy {
+  const skill = skillName.trim() || "<skill>";
+  const agent = agentId?.trim();
+  return {
+    message: agent
+      ? `Skill '${skill}' is not authorized for agent '${agent}'.`
+      : `Skill '${skill}' is not authorized for this agent.`,
+    suggestedAction: `Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant ${agent || "<agent>"} ${skill}').`,
+  };
+}
+
+/** Single-line denial reason for tool/command gates: `SKILL_NOT_AUTHORIZED: <message> <action>`. */
+export function formatSkillNotAuthorizedReason(skillName: string, agentId?: string): string {
+  const copy = skillNotAuthorizedCopy(skillName, agentId);
+  return `${SKILL_NOT_AUTHORIZED}: ${copy.message} ${copy.suggestedAction}`;
+}
+
 export interface SkillAuthorizationOptions {
   /**
    * Effective identity capabilities for this turn (session/agent_identity).

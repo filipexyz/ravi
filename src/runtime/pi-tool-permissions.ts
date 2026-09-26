@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ContextCapability } from "../router/router-db.js";
 import { getRaviStateDir } from "../utils/paths.js";
-import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { extractRequestedSkillFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
@@ -372,7 +372,7 @@ export async function authorizePiToolCall(
   if (requestedSkill && !isPiSkillAuthorized(requestedSkill, handlers)) {
     return {
       allowed: false,
-      reason: `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`,
+      reason: formatSkillNotAuthorizedReason(requestedSkill, handlers.agentId),
     };
   }
 

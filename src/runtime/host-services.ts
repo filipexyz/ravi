@@ -43,7 +43,7 @@ import {
   evaluateRuntimeToolSkillGate,
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
-import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { extractRequestedSkillFromCommandLine, extractRequestedSkillFromToolCall } from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
@@ -461,7 +461,7 @@ async function authorizeRuntimeCommandExecution(
       capabilities: options.context.capabilities,
     })
   ) {
-    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    const reason = formatSkillNotAuthorizedReason(requestedSkill, options.agentId);
     emitRuntimePolicyDenied(options, {
       type: "tool",
       denied: `skill:${requestedSkill}`,
@@ -657,7 +657,7 @@ async function authorizeRuntimeToolUse(
       capabilities: options.context.capabilities,
     })
   ) {
-    const reason = `SKILL_NOT_AUTHORIZED: Skill not authorized for agent: ${requestedSkill}`;
+    const reason = formatSkillNotAuthorizedReason(requestedSkill, options.agentId);
     emitRuntimePolicyDenied(options, {
       type: "tool",
       denied: `skill:${requestedSkill}`,
