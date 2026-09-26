@@ -170,7 +170,6 @@ mock.module("../../triggers/index.js", () => ({
   dbUpdateTrigger: (id: string, patch: Record<string, unknown>) => {
     updatedTriggers.push({ id, patch });
     return {
-      id,
       name: "trigger",
       topic: "ravi.external.topic",
       message: "hello",
@@ -180,6 +179,8 @@ mock.module("../../triggers/index.js", () => ({
       session: "isolated",
       fireCount: 0,
       createdAt: 1,
+      ...triggerRecord,
+      id,
       updatedAt: 2,
       ...patch,
     };
@@ -854,6 +855,163 @@ describe("triggers cross-agent access", () => {
 
     expect(payload).toMatchObject({ status: "disabled", target: { type: "trigger", id: "trg_owner" } });
     expect(updatedTriggers).toEqual([{ id: "trg_owner", patch: { enabled: false } }]);
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
+});
+
+describe("triggers invalid filter visibility", () => {
+  const LEGACY_FILTER = `data.payload.repository == "o/r" && data.payload.number == 7`;
+
+  function invalidShellTrigger(): Record<string, unknown> {
+    return {
+      ...buildTriggerRecord(),
+      id: "trg_bad",
+      name: "legacy shell",
+      topic: "ravi.watch.github.*",
+      executionType: "shell",
+      shellCommand: "bun scripts/open-ticket.ts",
+      filter: LEGACY_FILTER,
+    };
+  }
+
+  function validTrigger(): Record<string, unknown> {
+    return { ...buildTriggerRecord(), id: "trg_ok", name: "valid", filter: `data.provider == "slack"` };
+  }
+
+  async function captureOutput(run: () => unknown): Promise<{ log: string; warn: string }> {
+    const logs: string[] = [];
+    const warns: string[] = [];
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "));
+    console.warn = (...args: unknown[]) => warns.push(args.map(String).join(" "));
+    try {
+      await run();
+    } finally {
+      console.log = originalLog;
+      console.warn = originalWarn;
+    }
+    return { log: logs.join("\n"), warn: warns.join("\n") };
+  }
+
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    updatedTriggers.length = 0;
+    deletedTriggerIds.length = 0;
+    emitMock.mockClear();
+    triggerRecord = invalidShellTrigger();
+    triggerList = [validTrigger(), invalidShellTrigger()];
+  });
+
+  it("list --json marks the invalid filter as inactive and leaves valid triggers active", async () => {
+    const payload = await captureJson(async () => new TriggersCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items.find((item) => item.id === "trg_ok")).toMatchObject({
+      enabled: true,
+      filterStatus: "valid",
+      runtimeState: "active",
+    });
+    expect(items.find((item) => item.id === "trg_ok")).not.toHaveProperty("filterError");
+
+    const bad = items.find((item) => item.id === "trg_bad");
+    expect(bad).toMatchObject({
+      enabled: true,
+      executionType: "shell",
+      filterStatus: "invalid",
+      runtimeState: "invalid_filter",
+    });
+    expect(String(bad?.filterError)).toContain("Expected quoted string value");
+    expect(String(bad?.runtimeStateReason)).toContain("will not activate");
+
+    expect(payload.warnings).toEqual([expect.stringContaining("Trigger trg_bad has an invalid filter")]);
+    expect((payload.warnings as string[])[0]).toContain("ravi triggers set trg_bad filter");
+  });
+
+  it("list --fields compact mode still reports invalid filters at the top level", async () => {
+    const payload = await captureJson(async () =>
+      new TriggersCommands().list(true, undefined, undefined, undefined, "id,name"),
+    );
+
+    expect(Object.keys((payload.items as Array<Record<string, unknown>>)[0]).sort()).toEqual(["id", "name"]);
+    expect(payload.warnings).toEqual([expect.stringContaining("trg_bad")]);
+  });
+
+  it("list text output shows a STATE column and warns about the invalid filter", async () => {
+    const output = await captureOutput(() => new TriggersCommands().list());
+
+    expect(output.log).toContain("STATE");
+    const badRow = output.log.split("\n").find((line) => line.includes("trg_bad"));
+    const okRow = output.log.split("\n").find((line) => line.includes("trg_ok"));
+    expect(badRow).toContain("invalid_filter");
+    expect(okRow).toContain("active");
+    expect(output.warn).toContain("Warning: Trigger trg_bad has an invalid filter");
+  });
+
+  it("list omits warnings when every filter is valid", async () => {
+    triggerList = [validTrigger()];
+    const payload = await captureJson(async () => new TriggersCommands().list(true));
+
+    expect(payload).not.toHaveProperty("warnings");
+  });
+
+  it("show surfaces the invalid state, parse error, and fix command", async () => {
+    const payload = await captureJson(async () => new TriggersCommands().show("trg_bad", true));
+    expect(payload.trigger).toMatchObject({
+      id: "trg_bad",
+      filterStatus: "invalid",
+      runtimeState: "invalid_filter",
+    });
+
+    const output = await captureOutput(() => new TriggersCommands().show("trg_bad"));
+    expect(output.log).toMatch(/State:\s+invalid_filter/);
+    expect(output.log).toMatch(/Filter error:\s+Expected quoted string value/);
+    expect(output.log).toContain("ravi triggers set trg_bad filter");
+  });
+
+  it("enable warns that an invalid-filter trigger will still not fire", async () => {
+    triggerRecord = { ...invalidShellTrigger(), enabled: false };
+
+    const payload = await captureJson(() => new TriggersCommands().enable("trg_bad", true));
+    expect(payload).toMatchObject({
+      status: "enabled",
+      trigger: { enabled: true, runtimeState: "invalid_filter" },
+      warnings: [expect.stringContaining("will not fire")],
+    });
+
+    const output = await captureOutput(() => new TriggersCommands().enable("trg_bad"));
+    expect(output.log).toContain("Enabled trigger: trg_bad");
+    expect(output.warn).toContain("Warning: Trigger trg_bad has an invalid filter");
+  });
+
+  it("enable on a valid trigger reports it active without warnings", async () => {
+    triggerRecord = { ...validTrigger(), enabled: false };
+
+    const payload = await captureJson(() => new TriggersCommands().enable("trg_ok", true));
+    expect(payload).toMatchObject({ status: "enabled", trigger: { runtimeState: "active" } });
+    expect(payload).not.toHaveProperty("warnings");
+  });
+
+  it("fixing the filter with set clears the invalid state", async () => {
+    const payload = await captureJson(() =>
+      new TriggersCommands().set("trg_bad", "filter", `data.payload.number == "7"`, true),
+    );
+
+    expect(payload.trigger).toMatchObject({
+      filter: `data.payload.number == "7"`,
+      filterStatus: "valid",
+      runtimeState: "active",
+    });
+    expect(payload.trigger).not.toHaveProperty("filterError");
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
+
+  it("clearing the filter with set - persists a null filter and reactivates the trigger", async () => {
+    const payload = await captureJson(() => new TriggersCommands().set("trg_bad", "filter", "-", true));
+
+    expect(updatedTriggers).toEqual([{ id: "trg_bad", patch: { filter: null } }]);
+    expect(payload).toMatchObject({ value: null });
+    expect(payload.trigger).toMatchObject({ filterStatus: "none", runtimeState: "active" });
     expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
   });
 });

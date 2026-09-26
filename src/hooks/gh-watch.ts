@@ -358,7 +358,8 @@ export function ghFollowTriggerName(repo: string, prNumber: number): string {
  * Filtra por repo *e* número: número de PR sozinho colide entre repositórios.
  */
 export function ghFollowFilter(repo: string, prNumber: number): string {
-  return `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${prNumber} || data.payload.pull_request.number == ${prNumber})`;
+  const number = JSON.stringify(String(prNumber));
+  return `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${number} || data.payload.pull_request.number == ${number})`;
 }
 
 export function buildGhFollowTriggerInput(

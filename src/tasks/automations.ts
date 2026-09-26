@@ -1,7 +1,7 @@
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { logger } from "../utils/logger.js";
-import { evaluateFilter } from "../triggers/filter.js";
+import { compileFilter } from "../triggers/filter.js";
 import { resolveTemplate } from "../triggers/template.js";
 import {
   requireTaskProfileDefinition,
@@ -480,10 +480,18 @@ export async function executeTaskAutomation(
     return null;
   }
   try {
-    if (!evaluateFilter(automation.filter, context.data)) {
+    const filter = compileFilter(automation.filter);
+    if (!filter.valid) {
+      log.warn("Task automation filter is invalid; skipping (fail-closed)", {
+        automationId: automation.id,
+        filter: automation.filter,
+        error: filter.error,
+      });
+    }
+    if (!filter.evaluate(context.data)) {
       const run = dbFinalizeTaskAutomationRun(claimedRun.id, {
         status: "skipped",
-        message: "Filter did not match.",
+        message: filter.valid ? "Filter did not match." : `Filter is invalid: ${filter.error ?? "unknown error"}`,
       });
       return { automation, run };
     }
