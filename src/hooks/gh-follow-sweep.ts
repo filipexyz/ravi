@@ -15,12 +15,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { dbDeleteTrigger, dbListTriggers, type Trigger } from "../triggers/index.js";
+import { dbDeleteTrigger, dbListTriggers, dbUpdateTrigger, type Trigger } from "../triggers/index.js";
+import { validateFilter } from "../triggers/filter.js";
 import { removeWatch as removeWatchOperation, listWatchRecords } from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
-import { ensureGhWatchFollow, isGhFollowManagedWatch } from "./gh-watch.js";
+import { ensureGhWatchFollow, ghFollowFilter, isGhFollowManagedWatch } from "./gh-watch.js";
 import {
   addPendingGhFollow,
   dropExpiredPendingGhFollows,
@@ -39,6 +40,7 @@ export interface GhFollowMaintenanceResult {
   pendingDropped: number;
   triggersRemoved: number;
   triggersKept: number;
+  triggersRepaired: number;
   watchesRemoved: number;
   errors: number;
 }
@@ -48,6 +50,7 @@ export interface GhFollowMaintenanceDeps {
   writePending?: (entries: PendingGhFollow[]) => void;
   listTriggers?: () => Trigger[];
   deleteTrigger?: (id: string) => boolean;
+  updateTrigger?: (id: string, updates: { filter: string }) => unknown;
   listWatches?: () => WatchRecord[];
   removeWatch?: (id: string) => Promise<boolean>;
   ensureFollow?: typeof ensureGhWatchFollow;
@@ -107,6 +110,22 @@ export function selectStaleGhFollowTriggers(
   return stale;
 }
 
+/**
+ * Follows cujo filtro não compila, com o filtro canônico derivado do nome.
+ *
+ * O runner não ativa trigger com filtro inválido (fail-closed), então sem o
+ * reparo o follow ficaria mudo até a PR fechar. Filtro válido não é tocado.
+ */
+export function selectGhFollowFilterRepairs(triggers: Trigger[]): Array<{ trigger: Trigger; filter: string }> {
+  const repairs: Array<{ trigger: Trigger; filter: string }> = [];
+  for (const trigger of triggers) {
+    const parsed = parseGhFollowTriggerName(trigger.name ?? "");
+    if (!parsed || validateFilter(trigger.filter).ok) continue;
+    repairs.push({ trigger, filter: ghFollowFilter(parsed.repo, parsed.prNumber) });
+  }
+  return repairs;
+}
+
 function defaultResolvePrNumber(entry: PendingGhFollow): number | null {
   if (!entry.cwd) return null;
   try {
@@ -151,6 +170,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
   const writePending = deps.writePending ?? ((entries: PendingGhFollow[]) => writePendingGhFollows(entries));
   const listTriggers = deps.listTriggers ?? dbListTriggers;
   const deleteTrigger = deps.deleteTrigger ?? dbDeleteTrigger;
+  const updateTrigger = deps.updateTrigger ?? dbUpdateTrigger;
   const ensureFollow = deps.ensureFollow ?? ensureGhWatchFollow;
   const resolvePrNumber = deps.resolvePrNumber ?? defaultResolvePrNumber;
   const listPrStates = deps.listPrStates ?? defaultListPrStates;
@@ -161,6 +181,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     pendingDropped: 0,
     triggersRemoved: 0,
     triggersKept: 0,
+    triggersRepaired: 0,
     watchesRemoved: 0,
     errors: 0,
   };
@@ -234,7 +255,18 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
         result.errors += 1;
       }
     }
-    if (stale.length > 0) {
+
+    const alive = triggers.filter((trigger) => !removedTriggerIds.has(trigger.id));
+    for (const { trigger, filter } of selectGhFollowFilterRepairs(alive)) {
+      try {
+        updateTrigger(trigger.id, { filter });
+        result.triggersRepaired += 1;
+      } catch (error) {
+        log.warn("Could not repair follow trigger filter", { triggerId: trigger.id, error });
+        result.errors += 1;
+      }
+    }
+    if (stale.length > 0 || result.triggersRepaired > 0) {
       try {
         await emitRefresh();
       } catch {
@@ -273,7 +305,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     log.info("Removed follow watches with no remaining subscription", { count: result.watchesRemoved });
   }
 
-  if (result.pendingResolved || result.triggersRemoved || result.watchesRemoved) {
+  if (result.pendingResolved || result.triggersRemoved || result.triggersRepaired || result.watchesRemoved) {
     log.info("gh follow maintenance", result as unknown as Record<string, unknown>);
   }
   return result;
@@ -313,6 +345,7 @@ export class GhFollowMaintenanceRunner {
         pendingDropped: 0,
         triggersRemoved: 0,
         triggersKept: 0,
+        triggersRepaired: 0,
         watchesRemoved: 0,
         errors: 0,
       };
@@ -327,6 +360,7 @@ export class GhFollowMaintenanceRunner {
         pendingDropped: 0,
         triggersRemoved: 0,
         triggersKept: 0,
+        triggersRepaired: 0,
         watchesRemoved: 0,
         errors: 1,
       };

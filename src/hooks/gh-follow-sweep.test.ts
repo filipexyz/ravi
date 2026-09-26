@@ -7,8 +7,18 @@ import {
   removePendingGhFollow,
   writePendingGhFollows,
 } from "./gh-follow-pending.js";
-import { parseGhFollowTriggerName, runGhFollowMaintenance, selectStaleGhFollowTriggers } from "./gh-follow-sweep.js";
+import {
+  parseGhFollowTriggerName,
+  runGhFollowMaintenance,
+  selectGhFollowFilterRepairs,
+  selectStaleGhFollowTriggers,
+} from "./gh-follow-sweep.js";
+import { ghFollowFilter } from "./gh-watch.js";
+import { validateFilter } from "../triggers/filter.js";
 import type { Trigger } from "../triggers/index.js";
+
+const LEGACY_UNQUOTED_FILTER = (repo: string, prNumber: number) =>
+  `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${prNumber} || data.payload.pull_request.number == ${prNumber})`;
 
 function trigger(name: string, id = "t1"): Trigger {
   return { id, name } as Trigger;
@@ -202,6 +212,60 @@ describe("gh follow maintenance", () => {
     expect(deleted).toEqual(["b"]);
     expect(result.triggersRemoved).toBe(1);
     expect(result.triggersKept).toBe(1);
+    expect(refreshes).toBe(1);
+  });
+
+  it("selects only follows whose filter does not compile", () => {
+    expect(validateFilter(LEGACY_UNQUOTED_FILTER("o/r", 1)).ok).toBe(false);
+
+    const repairs = selectGhFollowFilterRepairs([
+      { ...trigger("gh-follow:o/r#1", "legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 1) },
+      { ...trigger("gh-follow:o/r#2", "canonical"), filter: ghFollowFilter("o/r", 2) },
+      { ...trigger("gh-follow:o/r#3", "custom"), filter: `data.payload.repository == "o/r"` },
+      { ...trigger("bug-follow:x", "not-ours"), filter: "data.bugId == broken" },
+    ]);
+
+    expect(repairs.map(({ trigger: item, filter }) => [item.id, filter])).toEqual([
+      ["legacy", ghFollowFilter("o/r", 1)],
+    ]);
+  });
+
+  it("repairs invalid follow filters on live PRs and refreshes once", async () => {
+    const updates: Array<[string, string]> = [];
+    const deleted: string[] = [];
+    let refreshes = 0;
+
+    const result = await runGhFollowMaintenance({
+      readPending: () => [],
+      listTriggers: () => [
+        { ...trigger("gh-follow:o/r#1", "open_legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 1) },
+        { ...trigger("gh-follow:o/r#2", "merged_legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 2) },
+        { ...trigger("gh-follow:o/r#3", "open_canonical"), filter: ghFollowFilter("o/r", 3) },
+      ],
+      deleteTrigger: (id) => {
+        deleted.push(id);
+        return true;
+      },
+      updateTrigger: (id, patch) => {
+        updates.push([id, patch.filter]);
+      },
+      listPrStates: () =>
+        new Map([
+          [1, "OPEN"],
+          [2, "MERGED"],
+          [3, "OPEN"],
+        ]),
+      listWatches: () => [],
+      emitTriggersRefresh: async () => {
+        refreshes += 1;
+      },
+    });
+
+    // PR morta é removida, não reparada; filtro canônico não é reescrito.
+    expect(deleted).toEqual(["merged_legacy"]);
+    expect(updates).toEqual([["open_legacy", ghFollowFilter("o/r", 1)]]);
+    expect(result.triggersRepaired).toBe(1);
+    expect(result.triggersRemoved).toBe(1);
     expect(refreshes).toBe(1);
   });
 

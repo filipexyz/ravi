@@ -9,6 +9,7 @@ import {
   resetGhWatchCaches,
   tokenizeShellCommand,
 } from "./gh-watch.js";
+import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
 import type { WatchRecord } from "../watch/types.js";
 
@@ -322,7 +323,18 @@ describe("gh watch follow", () => {
     // Número de PR sozinho colidiria entre repos diferentes.
     const filter = ghFollowFilter("o/r", 7);
     expect(filter).toContain(`data.payload.repository == "o/r"`);
-    expect(filter).toContain("data.payload.number == 7");
+    expect(filter).toContain(`data.payload.number == "7"`);
+  });
+
+  it("generates a filter the trigger runtime accepts and matches only that PR", () => {
+    // Filtro inválido não ativa o trigger (fail-closed): o follow ficaria mudo.
+    const filter = ghFollowFilter("o/r", 7);
+    expect(validateFilter(filter)).toEqual({ ok: true });
+
+    expect(evaluateFilter(filter, { payload: { repository: "o/r", number: 7 } })).toBe(true);
+    expect(evaluateFilter(filter, { payload: { repository: "o/r", pull_request: { number: 7 } } })).toBe(true);
+    expect(evaluateFilter(filter, { payload: { repository: "o/r", number: 8 } })).toBe(false);
+    expect(evaluateFilter(filter, { payload: { repository: "o/other", number: 7 } })).toBe(false);
   });
 
   it("finds the existing trigger by name", () => {
