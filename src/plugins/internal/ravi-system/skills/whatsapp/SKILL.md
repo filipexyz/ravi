@@ -70,7 +70,7 @@ ravi whatsapp group create "Nome do Grupo" "5511999999999,5511888888888" --execu
 
 Participantes separados por vírgula. Aceita números de telefone ou JIDs. Sem `--execute` é dry-run (exit 3): mostra o plano (participantes, admins, agent) e não cria nada.
 
-**Com agent (recomendado):** cria o grupo real no WhatsApp, registra o chat local, cria a rota, cria/atacha a sessão e envia um inform inicial ao agent:
+**Com agent (recomendado):** cria o grupo real no WhatsApp, registra o chat local, cria a rota, cria/atacha a sessão e envia um inform inicial ao agent. Esse inform sobe um turno de verdade para o agent se apresentar; ele não fica adiado até a primeira mensagem humana:
 ```bash
 ravi whatsapp group create "Vida - Health" "5511947879044" --agent health --execute
 ```

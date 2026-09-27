@@ -79,6 +79,12 @@ immediate authority reduction.
    operation and always requires `--execute`.
 10. `group demote` MUST execute immediately because it reduces authority. It
     remains a `mutate` operation and MUST call the provider exactly once.
+11. `whatsapp group create --agent` (including `--create-agent`) MUST publish
+    the introduction as an immediate interactive-lane `session.bootstrap`
+    (`_interactiveStart: true`). It MUST NOT set `_deferRuntimeStart`.
+    Success text and JSON `Inform: sent` mean the greeting was dispatched
+    for a real turn. The agent MUST NOT stay mute until the first group
+    message.
 
 ## Write classification (brake decision per op)
 

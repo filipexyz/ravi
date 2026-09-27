@@ -44,4 +44,5 @@ ravi events stream --only runtime
 - `dispatch.queued_busy` with `reason=concurrency_limit` means the runtime pool was full when the start was attempted.
 - `dispatch.queued_busy` with `reason=pending_start_backpressure` means another start was already waiting for capacity; inspect the pool snapshot and pending-start order.
 - `dispatch.queued_busy` with `reason=interactive_reserved_capacity` means a background start was held so reserved interactive capacity remains available.
+- `Deferred channel session bootstrap until first interactive turn` means the prompt set `_deferRuntimeStart` and no turn will start until a later interactive message. A new WhatsApp group that stays mute after `Inform: sent` should instead show `dispatch.cold_start` or an interactive `dispatch.queued_busy` for that session. Group create publishes `_interactiveStart` on `session.bootstrap` and must not defer the greeting.
 - `dispatch.queued_busy` with `reason=cold_start_inflight` should only appear after the dispatcher has reserved a pool slot and is actually launching the runtime. If it appears before a reservation, the dispatcher is misreporting pending-start state.

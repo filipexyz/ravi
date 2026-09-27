@@ -16,6 +16,7 @@ import {
   resolveRuntimeStreamingSession,
   resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
+import { buildChannelTurnOrigin } from "./turn-origin.js";
 
 let stateDir: string | null = null;
 
@@ -130,6 +131,30 @@ describe("runtime session pool", () => {
           chatId: "group:test-group-1",
           actorType: "system",
         },
+      }),
+    ).toBe("background");
+    const groupIntro = {
+      prompt: "[System] Inform: group created",
+      _interactiveStart: true,
+      _turnOrigin: buildChannelTurnOrigin("session.bootstrap", {
+        type: "automation" as const,
+        id: "channels:session.bootstrap",
+      }),
+      source: {
+        channel: "whatsapp" as const,
+        accountId: "demo",
+        chatId: "group:test-group-1",
+        actorType: "system" as const,
+      },
+    };
+    expect(classifyRuntimeSessionStartLane("demo-agent:whatsapp:group:test-group-1", groupIntro)).toBe("interactive");
+    expect(classifyRuntimeSessionStartLane("obs:abc123:proactive-followup", groupIntro)).toBe("background");
+    expect(classifyRuntimeSessionStartLane("task-123-work", groupIntro)).toBe("background");
+    expect(
+      classifyRuntimeSessionStartLane("demo-agent:whatsapp:group:test-group-1", {
+        ...groupIntro,
+        _interactiveStart: true,
+        _turnOrigin: undefined,
       }),
     ).toBe("background");
   });

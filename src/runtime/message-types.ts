@@ -243,8 +243,19 @@ export interface PromptMessage {
   /**
    * Channel bootstrap that must not occupy a runtime pool slot until a later
    * interactive turn. The dispatcher stashes the inform and prepends it.
+   * Group-create introductions MUST NOT set this: the operator asked the
+   * agent to speak, so the greeting has to start a turn on its own.
    */
   _deferRuntimeStart?: boolean;
+  /**
+   * Operator-requested channel introduction. When the turn origin is
+   * `session.bootstrap`, pool admission uses the interactive lane so the
+   * greeting cold-starts (or queues as a real pending start) instead of
+   * waiting for a later human message. Turn provenance stays the channel
+   * bootstrap cause. Observers, task sessions, and any prompt that is not
+   * a channel `session.bootstrap` ignore this flag.
+   */
+  _interactiveStart?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

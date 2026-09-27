@@ -1,6 +1,7 @@
 import { getSession, getSessionByName } from "../router/index.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 
 export const RUNTIME_SESSION_POOL_MAX_ENV = "RAVI_RUNTIME_SESSION_POOL_MAX";
@@ -190,6 +191,18 @@ export function isObserverRuntimeStart(sessionName?: string | null, prompt?: Run
   return isObserverRuntimeSessionName(sessionName) || Boolean(prompt?._observation);
 }
 
+/**
+ * Group-create (and any other operator greeting) opts into the interactive
+ * lane without rewriting turn provenance. The flag is not a general
+ * escalation hatch: observers, task sessions, and non-bootstrap prompts
+ * stay on their normal lane.
+ */
+function isInteractiveChannelIntro(prompt?: RuntimeLaunchPrompt | null): boolean {
+  if (prompt?._interactiveStart !== true) return false;
+  const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  return origin?.producer === "channel" && origin.action === "session.bootstrap";
+}
+
 export function classifyRuntimeSessionStartLane(
   sessionName?: string | null,
   prompt?: RuntimeLaunchPrompt | null,
@@ -197,10 +210,13 @@ export function classifyRuntimeSessionStartLane(
   if (isObserverRuntimeStart(sessionName, prompt)) {
     return "background";
   }
-  if (classifyTurnProvenance({ prompt }).background) {
+  if (sessionName && isTaskSessionName(sessionName)) {
     return "background";
   }
-  if (sessionName && isTaskSessionName(sessionName)) {
+  if (isInteractiveChannelIntro(prompt)) {
+    return "interactive";
+  }
+  if (classifyTurnProvenance({ prompt }).background) {
     return "background";
   }
   const actorType = prompt?.source?.actorType ?? prompt?.context?.actorType;

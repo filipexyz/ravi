@@ -15,6 +15,7 @@
 - Text mode MUST render that `CONTACT_NOT_FOUND` failure exactly once; helper diagnostics MUST NOT preprint a second error.
 - `whatsapp dm send|read|ack` with an unresolvable contact MUST exit 1 with the `CONTACT_NOT_FOUND` envelope.
 - `whatsapp group create` in dry-run MUST NOT create the group, the agent (`--create-agent`), the local chat, the route, or the session.
+- `whatsapp group create --agent --execute` MUST publish `session.bootstrap` with `_interactiveStart: true` and MUST NOT set `_deferRuntimeStart`. The prompt MUST ask the agent to introduce itself.
 - `dm read` MUST always read immediately without any NATS emit, including when history contains an inbound message id. Every `dm ack` MUST exit 3 without `--execute`, before any NATS emit; the matching `--execute` call MUST emit the receipt.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still exit 3 with the envelope — the registry dispatcher MUST preserve `ContractError.exitCode`.
 - `whatsapp group list --fields a,b --json` and `whatsapp dm read <contact> --fields a,b --json` MUST return items containing only the requested fields.

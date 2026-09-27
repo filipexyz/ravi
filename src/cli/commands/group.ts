@@ -1360,9 +1360,11 @@ export class GroupCommands {
               accountId: acctId,
               chatId: `group:${groupId}`,
             },
-            // Do not occupy a background pool slot before anyone speaks.
-            // The dispatcher prepends this inform on the first human turn.
-            _deferRuntimeStart: true,
+            // Operator asked the agent to introduce itself. Admit this
+            // session.bootstrap on the interactive lane so a turn starts
+            // now, instead of stashing the greeting until a human speaks
+            // or filling the background pool (which starves inbound chats).
+            _interactiveStart: true,
           },
         });
         jsonPayload.inform = { status: "sent", sessionName: session.name ?? sessionName };

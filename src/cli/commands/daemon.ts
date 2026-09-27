@@ -5,7 +5,16 @@
 import "reflect-metadata";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  realpathSync,
+  statSync,
+  openSync,
+  closeSync,
+} from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { Group, Command, CommandAccess, CliOnly, Option, Returns } from "../decorators.js";
@@ -19,6 +28,15 @@ import {
   daemonStatusReturnSchema,
 } from "./operational-return-schemas.js";
 import { buildDaemonPm2StartArgs, ensurePm2InertStdinWrapper, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
+import {
+  DAEMON_RESTART_HANDOFF_ENV,
+  DAEMON_RESTART_HANDOFF_WORKER_ENV,
+  appendDaemonRestartLog,
+  daemonRestartLogPath,
+  formatDaemonRestartOutcome,
+  performSupervisedDaemonRestart,
+  shouldHandoffDaemonRestart,
+} from "../daemon-restart-supervision.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import { buildManagedRuntimeIdentity } from "../../managed-runtime.js";
 import {
@@ -42,13 +60,6 @@ import {
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
 const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
-/**
- * Marker set on the detached process that performs the actual restart. Without
- * it the handoff child could decide it also lives inside the daemon tree -- the
- * parent only exits a moment later -- and hand off again, fanning out.
- */
-const RESTART_HANDOFF_ENV = "RAVI_DAEMON_RESTART_HANDOFF";
-
 type RestartReasonFile = {
   reason?: string;
   sessionName?: string;
@@ -361,12 +372,50 @@ function requirePm2() {
   }
 }
 
-function startDaemonPm2Args(bundlePath: string, bunPath = "bun"): string[] {
-  return buildDaemonPm2StartArgs({
+function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunPath?: string } = {}): string[] {
+  const args = buildDaemonPm2StartArgs({
     bundlePath,
-    bunPath,
+    bunPath: options.bunPath ?? "bun",
     stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
   });
+  // A second supervised instance has to exist before the running one is stopped.
+  // PM2 refuses that unless the start is forced; the old pm id is deleted later.
+  if (options.force) args.splice(1, 0, "--force");
+  return args;
+}
+
+function spawnDetachedRestart(args: string[], env: NodeJS.ProcessEnv, cwd: string): void {
+  const logPath = daemonRestartLogPath();
+  mkdirSync(dirname(logPath), { recursive: true });
+  const fd = openSync(logPath, "a");
+  try {
+    const child = spawn(process.execPath, args, {
+      detached: true,
+      stdio: ["ignore", fd, fd],
+      cwd,
+      env,
+    });
+    child.unref();
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function optionalDurationMs(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 @Group({
@@ -472,7 +521,7 @@ export class DaemonCommands {
   @Command({ name: "restart", description: "Restart the daemon" })
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "restart", risk: "high" })
   @Returns(daemonMutationReturnSchema)
-  restart(
+  async restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -483,23 +532,31 @@ export class DaemonCommands {
       fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');
     }
 
-    // Runtime callers and callers that live inside the daemon's own process tree
-    // (cron shell jobs, agent bash tools, hook scripts) must hand the restart off
-    // to a detached orchestrator. The inline path starts with `pm2 delete ravi`,
-    // which kills the daemon -- and pm2's treekill takes the caller down with it,
-    // so the following `pm2 start` never runs and the daemon stays offline until
-    // something external starts it again. The detached child is reparented to
-    // launchd as soon as this process exits, so it survives the kill.
-    const insideDaemonTree = process.env[RESTART_HANDOFF_ENV] === "1" ? false : isInsideDaemonProcessTree();
-    if (hasRuntimeInvocationContext() || insideDaemonTree) {
-      const target = this.requireRuntimeTarget({ build });
+    // Callers inside the daemon cannot run the stop themselves: `pm2 delete`
+    // tree-kills their process group before the successor is started. Hand the
+    // work to a detached worker, and make that worker leave the tree before it
+    // is allowed to stop anything.
+    const insideDaemonTree = isInsideDaemonProcessTree();
+    const decision = shouldHandoffDaemonRestart({
+      handoffEnv: process.env[DAEMON_RESTART_HANDOFF_ENV],
+      workerEnv: process.env[DAEMON_RESTART_HANDOFF_WORKER_ENV],
+      runtimeInvocation: hasRuntimeInvocationContext(),
+      insideDaemonTree,
+    });
 
-      // Save restart reason with session context
+    if (decision === "reparent") {
+      const env = { ...process.env, [DAEMON_RESTART_HANDOFF_WORKER_ENV]: "1" };
+      appendDaemonRestartLog("reparented restart worker");
+      spawnDetachedRestart(process.argv.slice(1), env, process.cwd());
+      process.exit(0);
+    }
+
+    if (decision === "handoff") {
+      const target = this.requireRuntimeTarget({ build });
       const sessionName = getContext()?.sessionName ?? process.env.RAVI_SESSION_NAME;
       writeRestartReason(message, sessionName);
 
-      // Spawn detached process to do the actual restart
-      const args = [target.bundlePath, "daemon", "restart", "-m", message];
+      const args = [target.bundlePath, "daemon", "restart", "-m", message, "--json"];
       if (build) args.push("--build");
 
       const cleanEnv = { ...process.env };
@@ -508,36 +565,38 @@ export class DaemonCommands {
       }
       cleanEnv.RAVI_BUNDLE = target.bundlePath;
       cleanEnv.RAVI_DAEMON_CWD = target.cwd;
-      cleanEnv[RESTART_HANDOFF_ENV] = "1";
+      cleanEnv[DAEMON_RESTART_HANDOFF_ENV] = "1";
 
-      const child = spawn(process.execPath, args, {
-        detached: true,
-        stdio: "ignore",
-        cwd: target.cwd,
-        env: cleanEnv,
-      });
-      child.unref();
+      const logPath = daemonRestartLogPath();
+      appendDaemonRestartLog(
+        `handoff accepted reason=${insideDaemonTree ? "daemon-process-tree" : "runtime-invocation"} session=${sessionName ?? "-"}`,
+      );
+      spawnDetachedRestart(args, cleanEnv, target.cwd);
 
       const payload = {
         action: "restart" as const,
         mode: "handoff" as const,
         handoffReason: insideDaemonTree ? ("daemon-process-tree" as const) : ("runtime-invocation" as const),
+        supervision: "pending" as const,
+        predecessorStopped: false,
         changed: true,
         message,
         build: Boolean(build),
         target,
         sessionName,
+        logPath,
       };
 
       if (asJson) {
         printJson(payload);
       } else {
-        console.log("Daemon restart started");
+        console.log(
+          `Daemon restart handed off. The running daemon stays up until a supervised successor is online. Log: ${logPath}`,
+        );
       }
       return payload;
     }
 
-    // Build first if requested
     const target = this.requireRuntimeTarget({ build });
     let buildResult: { requested: boolean; ok: boolean } = { requested: Boolean(build), ok: true };
     if (build) {
@@ -567,78 +626,64 @@ export class DaemonCommands {
 
     writeRestartReason(message, undefined, { preserveExistingSession: true });
 
-    let pm2Status = 0;
     const previousRunning = isRaviRunning();
     const daemonManaged = getPm2Processes().some((process) => process.name === PM2_PROCESS_NAME);
-    if (daemonManaged) {
-      const stop = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
-      pm2Status = stop.status;
-      if (stop.status !== 0) {
-        fail("Failed to stop daemon before restart");
-      }
+    if (!daemonManaged) this.cleanupLegacyServices({ silent: Boolean(asJson) });
 
-      const args = startDaemonPm2Args(target.bundlePath);
-      const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
-      pm2Status = status;
-      const saveStatus = status === 0 ? persistPm2ProcessList() : null;
-      const payload = {
-        action: "restart" as const,
-        changed: status === 0 && saveStatus === 0,
-        previousRunning,
-        pm2Status,
-        saveStatus,
-        build: buildResult,
-        message,
-        target,
-        status: buildDaemonStatusJson(),
-      };
-      if (asJson) {
-        printJson(payload);
-        if (status !== 0) fail("Failed to restart daemon");
-        if (saveStatus !== 0) fail("Daemon restarted, but failed to save the PM2 process list");
-        return payload;
-      }
-      if (status !== 0) fail("Failed to restart daemon");
-      if (saveStatus !== 0) fail("Daemon restarted, but failed to save the PM2 process list");
-      console.log("Daemon restarted and PM2 startup state saved");
-      return payload;
-    } else {
-      const args = startDaemonPm2Args(target.bundlePath);
-      if (asJson) {
-        const { status } = runPm2Quiet(args, { cwd: target.cwd });
-        const saveStatus = status === 0 ? persistPm2ProcessList() : null;
-        const payload = {
-          action: "restart" as const,
-          changed: status === 0 && saveStatus === 0,
-          previousRunning,
-          pm2Status: status,
-          saveStatus,
-          build: buildResult,
-          message,
-          target,
-          status: buildDaemonStatusJson(),
-        };
-        printJson(payload);
-        if (status !== 0) fail("Failed to restart daemon");
-        if (saveStatus !== 0) fail("Daemon started, but failed to save the PM2 process list");
-        return payload;
-      }
-      const startResult = this.start();
-      const startPm2Status = startResult && "pm2Status" in startResult ? startResult.pm2Status : null;
-      const saveStatus = startPm2Status === 0 ? persistPm2ProcessList() : null;
-      if (saveStatus !== 0) fail("Daemon started, but failed to save the PM2 process list");
-      return {
-        action: "restart" as const,
-        changed: Boolean(startResult?.changed) && saveStatus === 0,
-        previousRunning,
-        pm2Status: startPm2Status,
-        saveStatus,
-        build: buildResult,
-        message,
-        target,
-        status: buildDaemonStatusJson(),
-      };
+    const runPm2Status = (args: string[], cwd?: string) =>
+      (asJson ? runPm2Quiet(args, { cwd }) : runPm2(args, undefined, { cwd })).status;
+    const cutover = await performSupervisedDaemonRestart({
+      processName: PM2_PROCESS_NAME,
+      mustBeDetached: process.env[DAEMON_RESTART_HANDOFF_WORKER_ENV] === "1",
+      isInsidePredecessorTree: () => isInsideDaemonProcessTree(),
+      list: () =>
+        getPm2Processes()
+          .filter((process) => process.name === PM2_PROCESS_NAME)
+          .map((process) => ({
+            name: process.name,
+            pmId: process.pm_id,
+            pid: process.pid,
+            status: process.status,
+          })),
+      start: ({ force }) => runPm2Status(startDaemonPm2Args(target.bundlePath, { force }), target.cwd),
+      deletePmId: (pmId) => runPm2Status(["delete", String(pmId)]),
+      save: () => persistPm2ProcessList(),
+      pidAlive,
+      readyTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
+      detachTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_DETACH_TIMEOUT_MS"),
+      pollMs: optionalDurationMs("RAVI_DAEMON_RESTART_POLL_MS"),
+    });
+
+    const logPath = appendDaemonRestartLog(formatDaemonRestartOutcome(cutover));
+    const payload = {
+      action: "restart" as const,
+      changed: cutover.ok,
+      code: cutover.code,
+      message: cutover.message,
+      predecessorPreserved: cutover.predecessorPreserved,
+      predecessorPmIds: cutover.predecessorPmIds,
+      successorPmId: cutover.successorPmId,
+      replacementStarted: !cutover.ok && cutover.changed,
+      previousRunning,
+      saveStatus: cutover.saveStatus,
+      deletedPmIds: cutover.deletedPmIds,
+      build: buildResult,
+      target,
+      logPath,
+      status: buildDaemonStatusJson(),
+    };
+
+    if (asJson) printJson(payload);
+    if (!cutover.ok) {
+      fail(
+        cutover.message,
+        cutover.predecessorPreserved
+          ? "The running daemon was left supervised. Read the daemon restart log, then retry once a successor can stay online."
+          : "Read the daemon restart log and start the daemon again if no supervised ravi process is online.",
+      );
     }
+    if (!asJson) console.log(cutover.message);
+    return payload;
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })

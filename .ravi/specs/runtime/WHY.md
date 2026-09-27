@@ -19,6 +19,7 @@ The correct design is a stable host runtime with provider adapters behind a narr
 - A strict provider contract makes adapter implementation harder, but prevents runtime behavior from spreading through unrelated modules.
 - Provider-native features should be exposed only when they can be mapped into Ravi concepts. Otherwise they should stay inside provider-local code.
 - A generic runtime abstraction should not hide meaningful differences. It should make differences explicit as capabilities and tested event mappings.
+- Group-create introductions are operator-visible greetings. Deferring them until a human speaks kept the background pool free, but the agent stayed mute after `Inform: sent`. Admitting that `session.bootstrap` on the interactive lane starts a real turn without letting background work consume the reserved human capacity. Provenance stays automation; the lane is the only exception.
 
 ## Why Before Pi
 

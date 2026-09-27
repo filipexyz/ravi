@@ -183,7 +183,11 @@ export function tokenizeShellCommand(command: string): string[] {
 
 const REPO_SLUG = /^[\w.-]+\/[\w.-]+$/;
 const PR_URL = /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/;
-const COMMAND_SEPARATORS = new Set(["&&", "||", ";", "|", "(", ")"]);
+/**
+ * `&` solto também fecha o segmento. `2>&1` vira `2>`, `&`, `1`; sem o `&`
+ * como separador, o `1` entra nos positionals e `gh pr create` acompanha a PR 1.
+ */
+const COMMAND_SEPARATORS = new Set(["&&", "||", ";", "|", "&", "(", ")"]);
 
 /**
  * Flags booleanos do `gh` que não consomem o próximo token.
@@ -257,10 +261,195 @@ function normalizeRepo(value: string | undefined): string | null {
   return trimmed;
 }
 
+function commandBasename(token: string | undefined): string {
+  if (!token) return "";
+  return token.split("/").pop() ?? token;
+}
+
 function isGhExecutable(token: string | undefined): boolean {
-  if (!token) return false;
-  const base = token.split("/").pop() ?? token;
-  return base === "gh";
+  return commandBasename(token) === "gh";
+}
+
+/**
+ * Prefixos cujo trabalho é rodar outro comando. `timeout 200 gh pr create`
+ * continua sendo `gh`; o primeiro token sozinho não é.
+ *
+ * Cada spec diz como consumir os argumentos do wrapper até o executável de
+ * verdade. Não é um shell — só o bastante para não perder o `gh`.
+ */
+interface CommandWrapper {
+  /** Long options que comem o próximo token (`--user name`). `--user=name` já traz o valor. */
+  valueLong: ReadonlySet<string>;
+  /** Short options que comem um valor (`-u name`, `-n10`). */
+  valueShort: string;
+  /** Short options que só imprimem um caminho (`command -v`), sem executar. */
+  lookupShort: string;
+  /** Pula `NAME=value` antes do comando (`env`, `sudo`). */
+  assignments: boolean;
+  /** Pula uma duração (`timeout 200 cmd`). Se não for duração, já é o comando. */
+  duration: boolean;
+}
+
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const TIMEOUT_DURATION = /^(?:\d+(?:\.\d*)?|\.\d+)[smhd]?$/;
+
+function commandWrapper(overrides: Partial<CommandWrapper> = {}): CommandWrapper {
+  return {
+    valueLong: new Set<string>(),
+    valueShort: "",
+    lookupShort: "",
+    assignments: false,
+    duration: false,
+    ...overrides,
+  };
+}
+
+const COMMAND_WRAPPERS: Record<string, CommandWrapper> = {
+  timeout: commandWrapper({
+    valueLong: new Set(["kill-after", "signal"]),
+    valueShort: "ks",
+    duration: true,
+  }),
+  env: commandWrapper({
+    valueLong: new Set(["unset", "chdir", "split-string"]),
+    valueShort: "uCS",
+    assignments: true,
+  }),
+  nice: commandWrapper({
+    valueLong: new Set(["adjustment"]),
+    valueShort: "n",
+  }),
+  sudo: commandWrapper({
+    valueLong: new Set([
+      "auth-type",
+      "chdir",
+      "chroot",
+      "close-from",
+      "command-timeout",
+      "group",
+      "host",
+      "other-user",
+      "prompt",
+      "role",
+      "type",
+      "user",
+    ]),
+    valueShort: "aCDghpRTrtuU",
+    assignments: true,
+  }),
+  command: commandWrapper({ lookupShort: "vV" }),
+  stdbuf: commandWrapper({
+    valueLong: new Set(["input", "output", "error"]),
+    valueShort: "ioe",
+  }),
+  nohup: commandWrapper(),
+  time: commandWrapper({
+    valueLong: new Set(["format", "output"]),
+    valueShort: "fo",
+  }),
+  exec: commandWrapper({ valueShort: "a" }),
+};
+
+function skipLongOption(tokens: string[], index: number, spec: CommandWrapper): number {
+  const body = tokens[index]!.slice(2);
+  const eq = body.indexOf("=");
+  if (eq !== -1) return index + 1;
+  if (!spec.valueLong.has(body)) return index + 1;
+  const valueIndex = index + 1;
+  if (valueIndex < tokens.length && !COMMAND_SEPARATORS.has(tokens[valueIndex]!)) return index + 2;
+  return index + 1;
+}
+
+function skipShortOption(tokens: string[], index: number, spec: CommandWrapper): { index: number; lookup: boolean } {
+  const body = tokens[index]!.slice(1);
+  let lookup = false;
+  for (let cursor = 0; cursor < body.length; cursor += 1) {
+    const flag = body[cursor]!;
+    if (spec.lookupShort.includes(flag)) lookup = true;
+    if (!spec.valueShort.includes(flag)) continue;
+    const attached = body.slice(cursor + 1);
+    if (attached.length > 0) return { index: index + 1, lookup };
+    const valueIndex = index + 1;
+    if (valueIndex < tokens.length && !COMMAND_SEPARATORS.has(tokens[valueIndex]!)) {
+      return { index: index + 2, lookup };
+    }
+    return { index: index + 1, lookup };
+  }
+  return { index: index + 1, lookup };
+}
+
+function skipWrapperOptions(tokens: string[], index: number, spec: CommandWrapper): { index: number; lookup: boolean } {
+  let cursor = index;
+  let lookup = false;
+  while (cursor < tokens.length && !COMMAND_SEPARATORS.has(tokens[cursor]!)) {
+    const token = tokens[cursor]!;
+    if (token === "--") return { index: cursor + 1, lookup };
+    if (token === "-") {
+      cursor += 1;
+      continue;
+    }
+    if (!token.startsWith("-")) break;
+    if (token.startsWith("--")) {
+      cursor = skipLongOption(tokens, cursor, spec);
+      continue;
+    }
+    const skipped = skipShortOption(tokens, cursor, spec);
+    cursor = skipped.index;
+    lookup = lookup || skipped.lookup;
+  }
+  return { index: cursor, lookup };
+}
+
+function skipAssignments(tokens: string[], index: number): number {
+  let cursor = index;
+  while (cursor < tokens.length && !COMMAND_SEPARATORS.has(tokens[cursor]!) && ENV_ASSIGNMENT.test(tokens[cursor]!)) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+/** Índice do comando embrulhado, ou `tokens.length` quando o wrapper não executa nada. */
+function skipWrapperArgs(tokens: string[], wrapperIndex: number, spec: CommandWrapper): number {
+  const options = skipWrapperOptions(tokens, wrapperIndex + 1, spec);
+  if (options.lookup) return tokens.length;
+  let index = options.index;
+  if (spec.assignments) index = skipAssignments(tokens, index);
+  if (
+    spec.duration &&
+    index < tokens.length &&
+    !COMMAND_SEPARATORS.has(tokens[index]!) &&
+    TIMEOUT_DURATION.test(tokens[index]!)
+  ) {
+    index += 1;
+  }
+  return index;
+}
+
+/**
+ * Executável real do segmento. `timeout`, `env VAR=x`, `sudo -n` e afins são
+ * saltados; o primeiro token que não é wrapper é o programa que roda.
+ */
+function executableIndex(tokens: string[], start: number): number {
+  let index = start;
+  while (index < tokens.length && !COMMAND_SEPARATORS.has(tokens[index]!)) {
+    const spec = COMMAND_WRAPPERS[commandBasename(tokens[index])];
+    if (!spec) return index;
+    const next = skipWrapperArgs(tokens, index, spec);
+    if (next <= index) return index;
+    index = next;
+  }
+  return index;
+}
+
+/** Argumentos do executável até o próximo separador. O que vem depois de `|` ou `&` não entra. */
+function segmentArgs(tokens: string[], from: number): string[] {
+  const args: string[] = [];
+  for (let index = from; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (COMMAND_SEPARATORS.has(token)) break;
+    args.push(token);
+  }
+  return args;
 }
 
 /**
@@ -271,12 +460,14 @@ function isGhExecutable(token: string | undefined): boolean {
  */
 export function parseGhWatchIntent(command: string): GhWatchIntent | null {
   const tokens = tokenizeShellCommand(command);
-  // `gh` só conta no começo de um comando: `echo gh pr view 1` é texto, não
-  // intenção de observar PR.
-  const ghIndex = commandStartIndexes(tokens).find((index) => isGhExecutable(tokens[index]));
-  if (ghIndex === undefined || ghIndex === -1) return null;
+  // `gh` é o executável do segmento, não só o primeiro token. `timeout 200 gh`
+  // ainda é `gh`; `echo gh pr view 1` continua sendo texto.
+  const ghIndex = commandStartIndexes(tokens)
+    .map((start) => executableIndex(tokens, start))
+    .find((index) => isGhExecutable(tokens[index]));
+  if (ghIndex === undefined) return null;
 
-  const args = tokens.slice(ghIndex + 1).filter((token) => !COMMAND_SEPARATORS.has(token));
+  const args = segmentArgs(tokens, ghIndex + 1);
   const scopeToken = args.find((token) => !token.startsWith("-"));
   if (!scopeToken || GH_ADMIN_SCOPES.has(scopeToken)) return null;
 

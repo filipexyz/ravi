@@ -46,6 +46,56 @@ function clearDaemonRuntimeEnv(): void {
   delete process.env.RAVI_DAEMON_CWD;
 }
 
+function statefulFakePm2Script(): string {
+  return [
+    "#!/bin/sh",
+    'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
+    'if [ "$1" = "start" ]; then : > "$DAEMON_TEST_STARTED"; fi',
+    'if [ "$1" = "delete" ]; then printf "%s\\n" "$2" >> "$DAEMON_TEST_DELETED"; fi',
+    'if [ "$1" = "jlist" ]; then',
+    "  started=0",
+    '  [ -f "$DAEMON_TEST_STARTED" ] && started=1',
+    "  deleted=0",
+    '  if [ -f "$DAEMON_TEST_DELETED" ] && grep -qx "4" "$DAEMON_TEST_DELETED"; then deleted=1; fi',
+    '  pred="{\\"name\\":\\"ravi\\",\\"pm_id\\":4,\\"pid\\":999999,\\"pm2_env\\":{\\"status\\":\\"online\\"},\\"monit\\":{\\"cpu\\":0,\\"memory\\":0}}"',
+    `  succ="{\\"name\\":\\"ravi\\",\\"pm_id\\":5,\\"pid\\":\${DAEMON_TEST_LIVE_PID},\\"pm2_env\\":{\\"status\\":\\"online\\"},\\"monit\\":{\\"cpu\\":0,\\"memory\\":0}}"`,
+    '  case "$DAEMON_TEST_PM2_MODE" in',
+    "    replace)",
+    '      if [ "$deleted" = "1" ]; then printf "[%s]\\n" "$succ"',
+    '      elif [ "$started" = "1" ]; then printf "[%s,%s]\\n" "$pred" "$succ"',
+    '      else printf "[%s]\\n" "$pred"; fi',
+    "      ;;",
+    "    stuck)",
+    '      printf "[%s]\\n" "$pred"',
+    "      ;;",
+    "    *)",
+    '      if [ "$started" = "1" ]; then printf "[%s]\\n" "$succ"; else printf "[]\\n"; fi',
+    "      ;;",
+    "  esac",
+    "fi",
+    "exit 0",
+  ].join("\n");
+}
+
+function restartCliEnv(tempRoot: string, pm2LogPath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...withoutRaviRuntimeContextEnv(process.env),
+    HOME: join(tempRoot, "home"),
+    PATH: `${join(tempRoot, "bin")}${delimiter}${process.env.PATH ?? ""}`,
+    RAVI_STATE_DIR: join(tempRoot, "state"),
+    RAVI_CREDENTIALS_PATH: join(tempRoot, "missing-credentials.json"),
+    RAVI_BUNDLE: join(tempRoot, "runtime", "index.js"),
+    RAVI_DAEMON_CWD: tempRoot,
+    RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+    DAEMON_TEST_PM2_LOG: pm2LogPath,
+    DAEMON_TEST_STARTED: join(tempRoot, "started"),
+    DAEMON_TEST_DELETED: join(tempRoot, "deleted"),
+    DAEMON_TEST_LIVE_PID: String(process.pid),
+    DAEMON_TEST_CHILD_MARKER: join(tempRoot, "handoff-child.log"),
+    ...extra,
+  };
+}
+
 beforeEach(clearDaemonRuntimeEnv);
 afterEach(clearDaemonRuntimeEnv);
 
@@ -207,16 +257,7 @@ describe("daemon runtime target", () => {
 
     mkdirSync(fakeBinDir, { recursive: true });
     mkdirSync(join(fakeBundlePath, ".."), { recursive: true });
-    writeFileSync(
-      fakePm2Path,
-      [
-        "#!/bin/sh",
-        'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
-        'if [ "$1" = "jlist" ]; then printf "[]\\n"; fi',
-        "exit 0",
-      ].join("\n"),
-      "utf8",
-    );
+    writeFileSync(fakePm2Path, statefulFakePm2Script(), "utf8");
     chmodSync(fakePm2Path, 0o755);
     writeFileSync(
       fakeBundlePath,
@@ -240,6 +281,10 @@ describe("daemon runtime target", () => {
         RAVI_DAEMON_CWD: tempRoot,
         RAVI_SUPPRESS_AUDIT_EVENTS: "1",
         DAEMON_TEST_PM2_LOG: pm2LogPath,
+        DAEMON_TEST_PM2_MODE: "fresh",
+        DAEMON_TEST_STARTED: join(tempRoot, "started"),
+        DAEMON_TEST_DELETED: join(tempRoot, "deleted"),
+        DAEMON_TEST_LIVE_PID: String(process.pid),
         DAEMON_TEST_CHILD_MARKER: childMarkerPath,
       },
     });
@@ -255,6 +300,122 @@ describe("daemon runtime target", () => {
     expect(pm2Log).toContain("daemon run");
     expect(pm2Log).toContain("save --force");
     expect(existsSync(childMarkerPath)).toBe(false);
+    expect(readFileSync(join(tempRoot, "state", "logs", "daemon-restart.log"), "utf8")).toContain("outcome=started");
+  }, 20_000);
+
+  it("cuts over by pm id when a handoff worker still has runtime session env", () => {
+    const tempRoot = makeTempDir("ravi-daemon-restart-cutover-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const bundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(join(fakeBinDir, "pm2"), statefulFakePm2Script(), "utf8");
+    chmodSync(join(fakeBinDir, "pm2"), 0o755);
+    writeFileSync(bundlePath, "export {};\n", "utf8");
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "cut over", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: restartCliEnv(tempRoot, pm2LogPath, {
+        DAEMON_TEST_PM2_MODE: "replace",
+        RAVI_DAEMON_RESTART_HANDOFF: "1",
+        RAVI_DAEMON_RESTART_HANDOFF_WORKER: "1",
+        RAVI_SESSION_NAME: "main",
+        RAVI_DAEMON_RESTART_POLL_MS: "20",
+      }),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('"mode": "handoff"');
+    expect(result.stdout).toContain('"code": "restarted"');
+    expect(result.stdout).toContain('"successorPmId": 5');
+    const lines = readFileSync(pm2LogPath, "utf8").split("\n").filter(Boolean);
+    const startAt = lines.findIndex((line) => line.startsWith("start "));
+    const deleteAt = lines.findIndex((line) => line.startsWith("delete "));
+    expect(startAt).toBeGreaterThanOrEqual(0);
+    expect(lines[startAt]).toContain("--force");
+    expect(deleteAt).toBeGreaterThan(startAt);
+    expect(lines.some((line) => line.startsWith("delete 4"))).toBe(true);
+    expect(lines.some((line) => line.startsWith("delete 5"))).toBe(false);
+    expect(lines.some((line) => line === "delete ravi")).toBe(false);
+    expect(lines.filter((line) => line.startsWith("save --force")).length).toBe(2);
+  }, 20_000);
+
+  it("refuses to stop the running daemon when no successor stays supervised", () => {
+    const tempRoot = makeTempDir("ravi-daemon-restart-abort-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const bundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(join(fakeBinDir, "pm2"), statefulFakePm2Script(), "utf8");
+    chmodSync(join(fakeBinDir, "pm2"), 0o755);
+    writeFileSync(bundlePath, "export {};\n", "utf8");
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "no successor", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: restartCliEnv(tempRoot, pm2LogPath, {
+        DAEMON_TEST_PM2_MODE: "stuck",
+        RAVI_DAEMON_RESTART_HANDOFF: "1",
+        RAVI_DAEMON_RESTART_HANDOFF_WORKER: "1",
+        RAVI_SESSION_NAME: "main",
+        RAVI_DAEMON_RESTART_READY_TIMEOUT_MS: "200",
+        RAVI_DAEMON_RESTART_POLL_MS: "40",
+      }),
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(result.status).not.toBe(0);
+    expect(output).toContain("no supervised successor stayed online");
+    expect(output).toContain("running daemon was not stopped");
+    const lines = readFileSync(pm2LogPath, "utf8").split("\n").filter(Boolean);
+    expect(lines.some((line) => line.startsWith("start "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("delete"))).toBe(false);
+    expect(readFileSync(join(tempRoot, "state", "logs", "daemon-restart.log"), "utf8")).toContain(
+      "outcome=successor_not_supervised",
+    );
+  }, 20_000);
+
+  it("hands the restart off without stopping when the caller is a runtime session", () => {
+    const tempRoot = makeTempDir("ravi-daemon-restart-handoff-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const bundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    const childMarkerPath = join(tempRoot, "handoff-child.log");
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(join(fakeBinDir, "pm2"), statefulFakePm2Script(), "utf8");
+    chmodSync(join(fakeBinDir, "pm2"), 0o755);
+    writeFileSync(
+      bundlePath,
+      [
+        'import { appendFileSync } from "node:fs";',
+        'appendFileSync(process.env.DAEMON_TEST_CHILD_MARKER, process.argv.slice(2).join(" "));',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "hand off", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: restartCliEnv(tempRoot, pm2LogPath, {
+        DAEMON_TEST_PM2_MODE: "replace",
+        RAVI_SESSION_NAME: "main",
+        RAVI_BUNDLE: bundlePath,
+        DAEMON_TEST_CHILD_MARKER: childMarkerPath,
+      }),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('"mode": "handoff"');
+    expect(result.stdout).toContain('"supervision": "pending"');
+    expect(result.stdout).toContain('"predecessorStopped": false');
+    const pm2Log = existsSync(pm2LogPath) ? readFileSync(pm2LogPath, "utf8") : "";
+    expect(pm2Log).not.toContain("start ");
+    expect(pm2Log).not.toContain("delete");
+    expect(readFileSync(join(tempRoot, "state", "logs", "daemon-restart.log"), "utf8")).toContain("handoff accepted");
   }, 20_000);
 });
 

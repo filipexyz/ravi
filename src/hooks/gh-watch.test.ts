@@ -184,6 +184,66 @@ describe("gh watch intent", () => {
       follow: true,
     });
   });
+
+  it("follows gh when a known wrapper sits in front of the executable", () => {
+    const bare =
+      'gh pr create -R filipexyz/ravi --base main --head dev --title "ship" --body-file /tmp/pr-dev-to-main.md';
+    const bareIntent = parseGhWatchIntent(bare);
+    expect(bareIntent).toMatchObject({
+      scope: "pr",
+      repo: "filipexyz/ravi",
+      prNumber: null,
+      follow: true,
+    });
+
+    // `timeout` sem duração, com duração, e o comando real (`2>&1 | tail`)
+    // têm de produzir a mesma intenção que o `gh` nu.
+    expect(parseGhWatchIntent(`timeout ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`timeout 200 ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`timeout --foreground 30 ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`timeout -k 5 200 ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`env VAR=x ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`env FOO=bar BAR=baz ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`timeout 200 env VAR=x ${bare}`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`timeout 200 ${bare} 2>&1 | tail -5`)).toEqual(bareIntent);
+    expect(parseGhWatchIntent(`cd /tmp && timeout 200 ${bare} 2>&1 | tail -5`)).toEqual(bareIntent);
+
+    for (const wrapped of [
+      `nice ${bare}`,
+      `nice -n 10 ${bare}`,
+      `sudo -n ${bare}`,
+      `sudo -u root ${bare}`,
+      `command -p ${bare}`,
+      `stdbuf -oL ${bare}`,
+      `stdbuf -o L ${bare}`,
+      `nohup ${bare}`,
+      `time -p ${bare}`,
+      `exec ${bare}`,
+    ]) {
+      expect(parseGhWatchIntent(wrapped)).toEqual(bareIntent);
+    }
+
+    expect(parseGhWatchIntent("timeout 30 gh pr ready 507 --repo o/r | tail -5")).toMatchObject({
+      follow: true,
+      prNumber: 507,
+      repo: "o/r",
+    });
+    expect(parseGhWatchIntent("env VAR=x gh pr edit 88 -R o/r --title nova")).toMatchObject({
+      follow: true,
+      prNumber: 88,
+      repo: "o/r",
+    });
+  });
+
+  it("does not treat a wrapper around a different program as gh", () => {
+    expect(parseGhWatchIntent("timeout 200 echo gh pr create --title x")).toBeNull();
+    expect(parseGhWatchIntent("env VAR=x echo gh pr create --title x")).toBeNull();
+    expect(parseGhWatchIntent("nice echo gh pr create --title x")).toBeNull();
+    // `command -v` resolve o caminho e não executa.
+    expect(parseGhWatchIntent("command -v gh")).toBeNull();
+    expect(parseGhWatchIntent("command -V gh pr create --title x")).toBeNull();
+    expect(parseGhWatchIntent("echo gh pr create --title x")).toBeNull();
+  });
 });
 
 describe("gh watch follow", () => {
@@ -540,6 +600,31 @@ describe("gh watch observation", () => {
 
     // Um observador que derruba a tool call seria pior que não existir.
     await expect(observeGhBashCommand("gh pr ready 7 --repo o/r", {}, d)).resolves.toBeUndefined();
+  });
+
+  it("queues the same pending follow when gh pr create is wrapped and piped", async () => {
+    resetGhWatchCaches();
+    const queued: string[] = [];
+    let triggers = 0;
+
+    await observeGhBashCommand(
+      'timeout 200 env VAR=x gh pr create -R o/r --base main --head dev --title "ship" --body-file /tmp/pr.md 2>&1 | tail -5',
+      { cwd: "/repo", sessionName: "main" },
+      deps({
+        addPending: (entry) => {
+          queued.push(entry.repo);
+        },
+        createTrigger: () => {
+          triggers += 1;
+          return trigger();
+        },
+      }),
+    );
+
+    // O número nasce na execução. `2>&1` não pode virar a PR 1, senão o follow
+    // cria trigger em vez de enfileirar.
+    expect(queued).toEqual(["o/r"]);
+    expect(triggers).toBe(0);
   });
 
   it("does no work for commands without a gh intent", async () => {

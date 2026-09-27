@@ -142,7 +142,19 @@ jobs:
           fi
 
           git tag "v${VERSION}"
-          git push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/v${VERSION}"
+
+          # A tag vai primeiro e sozinha: a regra de protecao de branch vale para
+          # branches, nao para tags. O push --atomic antigo levava branch+tag juntos
+          # e era rejeitado inteiro em `main` (ruleset exigindo pull_request),
+          # derrubando o job e deixando Build/Publish como skipped.
+          git push origin "refs/tags/v${VERSION}"
+
+          # O bump da branch e best-effort: se o repositorio exigir PR (caso de `main`),
+          # reportamos como aviso e seguimos para build + publish. A versao no package.json
+          # chega na branch pelo promote seguinte; a derivacao de versao usa o npm, nao o arquivo.
+          if ! git push origin "HEAD:refs/heads/${BRANCH}"; then
+            echo "::warning::Push direto para ${BRANCH} recusado (protecao de branch). O bump fica para o proximo promote; a release segue."
+          fi
 
       - name: Build package
         run: bun run build

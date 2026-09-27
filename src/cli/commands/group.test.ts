@@ -603,7 +603,7 @@ describe("whatsapp group write brake", () => {
     expect(upsertChatCalls).toHaveLength(1);
   });
 
-  it("defers the group-create bootstrap inform so it does not occupy a runtime slot", async () => {
+  it("dispatches the group-create intro as an interactive turn instead of deferring it", async () => {
     mockAgent = { id: "demo-agent", cwd: "/tmp/demo-agent" };
     const commands = new GroupCommands();
     await silenced(() =>
@@ -627,8 +627,11 @@ describe("whatsapp group write brake", () => {
     expect(publishPromptCalls).toHaveLength(1);
     expect(publishPromptCalls[0]).toMatchObject({
       action: "session.bootstrap",
-      payload: { _deferRuntimeStart: true },
+      payload: { _interactiveStart: true },
     });
+    const payload = publishPromptCalls[0]?.payload as Record<string, unknown>;
+    expect(payload._deferRuntimeStart).toBeUndefined();
+    expect(String(payload.prompt)).toContain("Se apresente brevemente");
   });
 
   it("create fails BEFORE the brake when the routed agent does not exist", async () => {

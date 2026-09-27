@@ -48,6 +48,9 @@
 - Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
 - Runtime pool backpressure trace events use the canonical session key when the session exists.
 - Background/task starts respect reserved interactive capacity; interactive starts may use that reserved capacity.
+- A group-create introduction (`session.bootstrap` + `_interactiveStart`) is admitted as interactive. It MUST NOT sit in `deferredBootstraps`. When the pool is full it is a pending interactive start, not a silent deferral.
+- The same introduction still claims a free interactive slot while a background `session.bootstrap` (no `_interactiveStart`) stays queued behind reserved interactive capacity.
+- Explicit `_deferRuntimeStart` still stashes until a later interactive turn. `whatsapp group create` MUST NOT set it.
 - Ambiguous recovery keeps its delivery id and does not batch later fresh prompt atoms into the replay.
 
 ## Provider Logs

@@ -37,6 +37,13 @@ Decisions that shaped this wave:
   transactional (omni group + agent creation + chat/route/session
   registration); the brake sits before `ensureGroupAgent`, otherwise a
   dry-run with `--create-agent` would still create agents and directories.
+- **The group-create introduction is a real turn.** Operators who pass
+  `--agent` expect the new agent to introduce itself. Deferring that
+  `session.bootstrap` until the first human message left the group mute
+  after `Inform: sent` and never recorded a runtime turn. The greeting is
+  admitted on the interactive lane so it does not fill the background pool
+  (which starved inbound chats) and does not wait forever for someone else
+  to speak. Turn provenance stays channel bootstrap; only admission changes.
 
 Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
 `acceptedFlags`; command-body errors preserve the same shared taxonomy.

@@ -3584,6 +3584,94 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("admits a group-create intro as an interactive start instead of deferring it", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-group-intro-");
+    try {
+      getOrCreateSession("agent:dev:test:group-intro", "dev", stateDir, { name: "demo-group" });
+      const dispatcher = createDispatcher(2, 1);
+      dispatcher.streamingSessions.set("busy-background", createActiveSession());
+      dispatcher.streamingSessions.set("busy-interactive", createActiveSession());
+
+      const intro = dispatcher.handlePromptImmediate("demo-group", {
+        prompt: "[System] Inform: Você foi adicionado ao grupo. Se apresente brevemente.",
+        _interactiveStart: true,
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap", {
+          type: "automation",
+          id: "channels:session.bootstrap",
+        }),
+        source: {
+          channel: "whatsapp",
+          accountId: "demo",
+          chatId: "group:test-group-1",
+          actorType: "system",
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+      expect(dispatcher.pendingStarts[0]?.sessionName).toBe("demo-group");
+      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
+      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("Se apresente brevemente");
+      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+      expect(dispatcher.streamingSessions.has("demo-group")).toBe(false);
+
+      dispatcher.shutdownAll();
+      await intro;
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("reserves an interactive slot for a group intro while a background bootstrap stays queued", async () => {
+    const dispatcher = createDispatcher(2, 1);
+    dispatcher.streamingSessions.set("busy-background", createActiveSession());
+    const reserve = (
+      dispatcher as unknown as {
+        reserveRuntimeSessionStart: (sessionName: string, prompt: RuntimeLaunchPrompt) => Promise<boolean>;
+      }
+    ).reserveRuntimeSessionStart.bind(dispatcher);
+
+    const backgroundOrigin = buildChannelTurnOrigin("session.bootstrap", {
+      type: "automation",
+      id: "channels:session.bootstrap",
+    });
+    const background = reserve("background-bootstrap", {
+      prompt: "[System] Inform: background bootstrap",
+      _turnOrigin: backgroundOrigin,
+      source: {
+        channel: "whatsapp",
+        accountId: "demo",
+        chatId: "group:test-group-1",
+        actorType: "system",
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
+    expect(dispatcher.pendingStarts[0]?.lane).toBe("background");
+
+    const introReserved = await reserve("demo-group", {
+      prompt: "[System] Inform: Se apresente brevemente.",
+      _interactiveStart: true,
+      _turnOrigin: backgroundOrigin,
+      source: {
+        channel: "whatsapp",
+        accountId: "demo",
+        chatId: "group:test-group-1",
+        actorType: "system",
+      },
+    });
+
+    expect(introReserved).toBe(true);
+    expect(dispatcher.startReservations.has("demo-group")).toBe(true);
+    expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
+    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
+
+    dispatcher.shutdownAll();
+    await background;
+  });
+
   it("promotes a background pending start to interactive when a human inbound arrives", async () => {
     const dispatcher = createDispatcher(3, 1);
     dispatcher.streamingSessions.set("task-one-work", createActiveSession());
