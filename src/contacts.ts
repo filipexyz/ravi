@@ -7593,6 +7593,57 @@ function contactStatusFromIntakeMode(mode?: ContactIntakeMode | null): ContactSt
   return null;
 }
 
+function isWhatsAppLidPlatformUserId(value: string): boolean {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.endsWith("@lid") || trimmed.startsWith("lid:");
+}
+
+/** A provider-resolved phone, not a LID, group, or other channel id. */
+function isResolvablePhoneContactIdentity(value: string): boolean {
+  const normalized = normalizePhone(value);
+  return /^\d+$/.test(normalized);
+}
+
+/**
+ * Intake mode `off` must not create contacts. A WhatsApp LID may still be
+ * linked when the provider resolved a phone that already belongs to a contact.
+ */
+function canAutoLinkWhatsAppLidToExistingContact(
+  channel: string,
+  platformSenderId: string,
+  contactIdentity: string,
+): boolean {
+  return (
+    channel === "whatsapp" &&
+    isWhatsAppLidPlatformUserId(platformSenderId) &&
+    isResolvablePhoneContactIdentity(contactIdentity)
+  );
+}
+
+function findSoleAgentPlatformIdentity(
+  database: Database,
+  channel: string,
+  platformUserId: string,
+): PlatformIdentityRow | "ambiguous" | null {
+  const normalized = normalizeIdentityForChannel(channel, platformUserId);
+  if (!normalized) return null;
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE owner_type = 'agent'
+        AND channel = ?
+        AND normalized_platform_user_id = ?
+      ORDER BY is_primary DESC, last_seen_at DESC, updated_at DESC
+    `,
+    )
+    .all(channel, normalized) as PlatformIdentityRow[];
+  if (rows.length === 0) return null;
+  const ownerIds = new Set(rows.map((row) => row.owner_id).filter((ownerId): ownerId is string => Boolean(ownerId)));
+  if (ownerIds.size !== 1) return "ambiguous";
+  return rows[0] ?? null;
+}
+
 function shouldApplyInboundIntakeStatus(policy: ContactPolicy | null, desiredStatus: ContactStatus): boolean {
   if (!policy) return true;
   if (policy.optOut) return false;
@@ -7734,12 +7785,26 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         contact = findCanonicalContactByIdentity(database, contactIdentity);
       }
 
+      const linkLidToExistingContact =
+        !desiredStatus &&
+        contact !== null &&
+        canAutoLinkWhatsAppLidToExistingContact(channel, platformSenderId, contactIdentity);
+
       if (!desiredStatus && !contact) {
         return;
       }
-      if (!desiredStatus && contact) {
+      if (!desiredStatus && contact && !linkLidToExistingContact) {
         policy = getContactPolicyById(database, contact.id);
         return;
+      }
+      if (linkLidToExistingContact) {
+        const agentIdentity = findSoleAgentPlatformIdentity(database, channel, platformSenderId);
+        if (agentIdentity === "ambiguous") return;
+        if (agentIdentity) {
+          platformIdentity = rowToPlatformIdentity(agentIdentity);
+          contact = null;
+          return;
+        }
       }
       if (normalizePhone(contactIdentity).startsWith("group:")) {
         return;
@@ -7794,7 +7859,7 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
           evidence,
         });
         eventIds.push(createdEvent.id);
-      } else {
+      } else if (!linkLidToExistingContact) {
         upsertCanonicalContactRecord(database, {
           id: contact.id,
           displayName: input.displayName ?? null,

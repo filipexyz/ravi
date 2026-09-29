@@ -73,6 +73,50 @@ Expected:
 - group JID is not stored as contact identity
 - group role/labels stay scoped to chat participant context
 
+### Group LID With Existing Phone Contact And Intake Off
+
+Given:
+
+- instance `contact_intake_mode='off'`
+- inbound WhatsApp group message
+- sender is a LID (`…@lid`)
+- provider resolves a phone (`resolvedSenderPhone` or `participantAlt`)
+- that phone already maps to a canonical contact
+
+Expected:
+
+- no new contact is created
+- the instance-scoped LID platform identity is auto-linked to the existing contact
+- an `auto_link` / `identity.linked` audit event is recorded
+- the inbound actor is `contact` with non-null `contact_id` and `platform_identity_id`
+- existing policy status, opt-out, and tags are unchanged
+
+### Group LID Without A Resolvable Phone
+
+Given:
+
+- intake mode is `off`
+- inbound WhatsApp LID sender
+- no provider-resolved phone
+
+Expected:
+
+- no contact is created
+- no platform identity is created
+- actor stays unresolved (`actor_type='unknown'`)
+
+### Agent-Owned LID
+
+Given:
+
+- the LID platform identity is already owned by an agent
+- a phone contact exists for a provider-resolved phone on the same inbound
+
+Expected:
+
+- the agent ownership is unchanged
+- the LID is not attached to the contact
+
 ### CRM Deferred
 
 Given:

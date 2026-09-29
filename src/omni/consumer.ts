@@ -68,7 +68,7 @@ import {
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { canonicalizeRouteIdentity, isBroadcastJid } from "../utils/phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone } from "../utils/phone.js";
 import type {
   MessageActorMetadata,
   MessageContext,
@@ -304,6 +304,16 @@ function uniqueStrings(values: Array<string | undefined | null>): string[] {
 
 function isWhatsAppLidSender(value: string): boolean {
   return value.trim().toLowerCase().endsWith("@lid");
+}
+
+/** Explicit provider phone for a LID sender. Bare LID digits are not a phone. */
+function explicitResolvedWhatsAppPhone(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || isWhatsAppLidSender(trimmed) || trimmed.toLowerCase().startsWith("lid:")) return null;
+  const normalized = normalizePhone(trimmed);
+  if (!/^\d+$/.test(normalized)) return null;
+  return normalized;
 }
 
 function resolveSenderPlatformIdentity(input: {
@@ -812,15 +822,20 @@ export class OmniConsumer {
     const explicitResolvedSender =
       rawPayloadString(rawPayload, "resolvedSenderPhone") ??
       cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+    const rawSenderIsLid = sessionChannel === "whatsapp" && isWhatsAppLidSender(payload.from);
+    const intakeMode = instanceConfig?.contactIntakeMode ?? "off";
+    // Intake `off` does not create contacts. A provider-resolved phone that
+    // already belongs to a contact is still strong evidence to link the LID.
+    const linkResolvedLidToExistingContact =
+      rawSenderIsLid &&
+      explicitResolvedWhatsAppPhone(explicitResolvedSender) !== null &&
+      senderPlatformIdentity?.ownerType !== "agent";
     const shouldRunContactIntake =
       senderPlatformIdentity?.ownerType !== "agent" &&
-      instanceConfig?.contactIntakeMode &&
-      instanceConfig.contactIntakeMode !== "off" &&
-      (!isGroup || Boolean(explicitResolvedSender));
+      ((intakeMode !== "off" && (!isGroup || Boolean(explicitResolvedSender))) || linkResolvedLidToExistingContact);
 
     if (shouldRunContactIntake) {
       try {
-        const rawSenderIsLid = sessionChannel === "whatsapp" && isWhatsAppLidSender(payload.from);
         const contactIdentity = rawSenderIsLid && !explicitResolvedSender ? `lid:${senderPhone}` : resolvedSenderPhone;
         const intake = ensureContactFromInbound({
           channel: sessionChannel,
@@ -840,7 +855,7 @@ export class OmniConsumer {
           chatType: canonicalChat.chatType,
           sourceEventId: event.id,
           providerMessageId: payload.externalId,
-          intakeMode: instanceConfig?.contactIntakeMode ?? "off",
+          intakeMode,
           defaultTags: instanceConfig?.defaultContactTags ?? null,
           provenance: {
             subject,

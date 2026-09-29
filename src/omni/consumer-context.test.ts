@@ -730,6 +730,170 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("links a group WhatsApp LID through contact intake when intake mode is off and a phone is resolved", async () => {
+    contactIntakeMode = "off";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-group-lid-intake-off",
+      type: "message.received",
+      payload: {
+        externalId: "msg-group-lid-intake-off",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Tars",
+          chatName: "Rbbt <> Nubank",
+          isGroup: true,
+          key: {
+            participantAlt: "551148637337@s.whatsapp.net",
+          },
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(ensureContactFromInboundCalls[0]).toMatchObject({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      displayName: "Tars",
+      chatType: "group",
+      providerMessageId: "msg-group-lid-intake-off",
+      intakeMode: "off",
+    });
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-group-lid-intake-off",
+      rawSenderId: "35082198892544",
+      normalizedSenderId: "551148637337",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+    });
+  });
+
+  it("does not run contact intake for a group WhatsApp LID without a resolved phone when intake is off", async () => {
+    contactIntakeMode = "off";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-group-lid-unresolved",
+      type: "message.received",
+      payload: {
+        externalId: "msg-group-lid-unresolved",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Tars",
+          chatName: "Rbbt <> Nubank",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-group-lid-unresolved",
+      rawSenderId: "35082198892544",
+      normalizedSenderId: "35082198892544",
+      contactId: null,
+      platformIdentityId: null,
+    });
+  });
+
+  it("does not run contact intake for an agent-owned WhatsApp LID", async () => {
+    contactIntakeMode = "off";
+    agentPlatformIdentityByUser.set("lid:35082198892544", {
+      id: "pi_agent_lid",
+      ownerType: "agent",
+      ownerId: "dev",
+      channel: "whatsapp",
+      instanceId: "agent-instance",
+      platformUserId: "35082198892544@lid",
+      normalizedPlatformUserId: "lid:35082198892544",
+      confidence: 1,
+    });
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-group-lid-agent",
+      type: "message.received",
+      payload: {
+        externalId: "msg-group-lid-agent",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Ravi",
+          chatName: "Rbbt <> Nubank",
+          isGroup: true,
+          resolvedSenderPhone: "551148637337",
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-group-lid-agent",
+      actorType: "agent",
+      contactId: null,
+      agentId: "dev",
+      platformIdentityId: "pi_agent_lid",
+    });
+    expect(promptCalls).toHaveLength(0);
+  });
+
   it("routes WhatsApp LID DMs through the resolved sender phone", async () => {
     const route: RouteConfig = {
       pattern: "5511947879044",

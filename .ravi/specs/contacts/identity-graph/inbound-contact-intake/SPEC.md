@@ -58,7 +58,7 @@ default_contact_tags = string[]
 
 Semantics:
 
-- `off`: Ravi stores chat/message provenance but does not auto-create contacts.
+- `off`: Ravi stores chat/message provenance but does not auto-create contacts. A provider-resolved WhatsApp phone that already maps to a canonical contact MAY auto-link a new LID `platform_identity` to that contact. That link MUST NOT create a contact, change policy or tags, or attach an identity owned by an agent.
 - `discovered`: Ravi auto-creates or links contacts with `contact_policies.status='discovered'`.
 - `pending`: Ravi auto-creates or links contacts with `contact_policies.status='pending'`.
 - `default_contact_tags`: list of canonical tag slugs that MUST be attached to any contact created for the first time through this instance's intake (runtime or backfill). Tags MUST NOT be reapplied on subsequent inbound events for the same contact.
@@ -138,6 +138,7 @@ For group messages:
 - The sender resolves to `platform_identities` and then contact or agent when possible.
 - Group participant intake MAY create contacts for human senders when instance policy enables it.
 - Ravi MUST NOT create a contact whose identity is the group JID/chat id.
+- When a group sender arrives as a WhatsApp LID and the provider explicitly resolves a phone (`resolvedSenderPhone` or `participantAlt`) that already belongs to a canonical contact, Ravi MUST link that instance-scoped LID platform identity to the contact even when `contact_intake_mode` is `off`. If no phone is resolved, or the phone does not map to an existing contact, the actor stays unresolved and permissions fail closed. Agent-owned identities MUST NOT be overwritten.
 
 Group-specific labels, roles, and notes SHOULD live on `chat_participants.metadata_json` or a participant annotation model, not global contact tags.
 
@@ -284,6 +285,9 @@ Backfill SHOULD:
 - `ravi contacts list/get` can see automatically discovered contacts.
 - Pending chats, pending contacts, and pending CRM analysis are distinguishable in CLI/API output.
 - A WhatsApp group id never creates a human contact.
+- A group WhatsApp LID with a provider-resolved phone that already maps to a contact is auto-linked when intake mode is `off`, and the inbound actor resolves as that contact.
+- A WhatsApp LID with no resolvable phone stays unresolved when intake mode is `off`.
+- An agent-owned LID is not attached to a contact by automatic intake.
 - Existing blocked/allowed/opt-out policies survive automatic intake.
 - CRM enrichment can run later without being required for contact capture.
 - Raw provider ids remain available as provenance without becoming the product model.

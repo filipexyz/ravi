@@ -1818,6 +1818,177 @@ describe("contacts identity graph schema", () => {
     });
   });
 
+  it("auto-links a group WhatsApp LID to an existing phone contact when intake is off", () => {
+    upsertContact("551148637337", "Tars", "allowed", "manual");
+    const existing = getContact("551148637337");
+    expect(existing).not.toBeNull();
+    addContactTag(existing!.phone, "vip");
+
+    const result = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      displayName: "WhatsApp Push Name",
+      chatType: "group",
+      intakeMode: "off",
+      defaultTags: ["new-contact"],
+      source: "test",
+    });
+
+    expect(result.createdContact).toBe(false);
+    expect(result.createdPlatformIdentity).toBe(true);
+    expect(result.contact).toMatchObject({
+      id: existing!.id,
+      name: "Tars",
+      status: "allowed",
+    });
+    expect(result.contact?.tags).toContain("vip");
+    expect(result.contact?.tags).not.toContain("new-contact");
+    expect(result.policy?.status).toBe("allowed");
+
+    const identity = resolvePlatformIdentity({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "35082198892544@lid",
+    });
+    expect(identity).toMatchObject({
+      ownerType: "contact",
+      ownerId: existing!.id,
+      instanceId: "instance-1",
+      normalizedPlatformUserId: "lid:35082198892544",
+    });
+    expect(
+      resolvePlatformIdentity({
+        channel: "whatsapp",
+        instanceId: "instance-2",
+        platformUserId: "35082198892544@lid",
+      }),
+    ).toBeNull();
+    expect(getContact("35082198892544@lid")?.id).toBe(existing!.id);
+    expect(getContact("lid:35082198892544")?.id).toBe(existing!.id);
+
+    const repeat = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      chatType: "group",
+      intakeMode: "off",
+    });
+    expect(repeat.createdContact).toBe(false);
+    expect(repeat.createdPlatformIdentity).toBe(false);
+    expect(repeat.contact?.id).toBe(existing!.id);
+    expect(repeat.platformIdentity?.id).toBe(identity!.id);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const linkEvents = db
+      .prepare("SELECT event_type, target_owner_id FROM identity_link_events WHERE platform_identity_id = ?")
+      .all(identity!.id) as Array<{ event_type: string; target_owner_id: string }>;
+    db.close();
+    expect(linkEvents).toEqual([{ event_type: "auto_link", target_owner_id: existing!.id }]);
+    expect(listContactEvents(existing!.id, { eventType: "identity.linked", limit: 10 }).items).toHaveLength(1);
+    expect(listContactEvents(existing!.id, { eventType: "profile.tag_added", limit: 10 }).items).toHaveLength(1);
+  });
+
+  it("does not invent a contact for a WhatsApp LID when intake is off and the phone is unresolved", () => {
+    const lidOnly = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "lid:35082198892544",
+      chatType: "group",
+      intakeMode: "off",
+    });
+    expect(lidOnly.contact).toBeNull();
+    expect(lidOnly.platformIdentity).toBeNull();
+    expect(lidOnly.createdContact).toBe(false);
+    expect(lidOnly.createdPlatformIdentity).toBe(false);
+
+    const unknownPhone = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      chatType: "group",
+      intakeMode: "off",
+    });
+    expect(unknownPhone.contact).toBeNull();
+    expect(unknownPhone.platformIdentity).toBeNull();
+    expect(unknownPhone.createdContact).toBe(false);
+    expect(getAllContacts()).toHaveLength(0);
+    expect(
+      resolvePlatformIdentity({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformUserId: "35082198892544@lid",
+      }),
+    ).toBeNull();
+  });
+
+  it("does not attach an agent-owned WhatsApp LID to an existing phone contact", () => {
+    upsertAgentPlatformIdentity({
+      agentId: "dev",
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "35082198892544@lid",
+      linkedBy: "auto",
+    });
+    upsertContact("551148637337", "Tars", "allowed", "manual");
+    const human = getContact("551148637337");
+    expect(human).not.toBeNull();
+
+    const sameInstance = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      chatType: "group",
+      intakeMode: "off",
+    });
+    expect(sameInstance.contact).toBeNull();
+    expect(sameInstance.createdPlatformIdentity).toBe(false);
+    expect(sameInstance.platformIdentity).toMatchObject({ ownerType: "agent", ownerId: "dev" });
+    expect(
+      getContactDetails(human!.id)?.platformIdentities.some(
+        (identity) => identity.normalizedPlatformUserId === "lid:35082198892544",
+      ),
+    ).toBe(false);
+
+    upsertAgentPlatformIdentity({
+      agentId: "dev",
+      channel: "whatsapp",
+      instanceId: "agent-instance",
+      platformUserId: "99887766554433@lid",
+      linkedBy: "auto",
+    });
+    const otherInstance = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "99887766554433@lid",
+      contactIdentity: "551148637337",
+      chatType: "group",
+      intakeMode: "off",
+    });
+    expect(otherInstance.contact).toBeNull();
+    expect(otherInstance.createdPlatformIdentity).toBe(false);
+    expect(otherInstance.platformIdentity).toMatchObject({ ownerType: "agent", ownerId: "dev" });
+    expect(
+      resolvePlatformIdentity({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformUserId: "99887766554433@lid",
+      }),
+    ).toBeNull();
+    expect(
+      resolvePlatformIdentity({
+        channel: "whatsapp",
+        instanceId: "agent-instance",
+        platformUserId: "99887766554433@lid",
+      }),
+    ).toMatchObject({ ownerType: "agent", ownerId: "dev" });
+  });
+
   it("does not create contacts for group chat identities or agent-owned inbound identities", () => {
     const group = ensureContactFromInbound({
       channel: "whatsapp",
