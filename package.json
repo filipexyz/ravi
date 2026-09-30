@@ -54,7 +54,7 @@
     "test:runtime-host": "bun test --timeout 20000 src/runtime/session-trace.test.ts src/runtime/provider-contract.test.ts src/runtime/compaction-announcement.test.ts src/runtime/session-dispatcher.test.ts",
     "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test --timeout 20000 \"$f\" || exit 1; done && bun test --timeout 20000 src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/omni-config.test.ts",
     "test:live": "RAVI_LIVE_TESTS=1 bun test src/runtime/*.live.test.ts && RAVI_LIVE_TESTS=1 bun test src/bot.live.test.ts",
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "prepare": "[ -n \"$GITHUB_ACTIONS\" ] || git config core.hooksPath .githooks 2>/dev/null || true",
     "sdk:generate": "bun src/cli/index.ts sdk client generate",
     "sdk:check": "bun src/cli/index.ts sdk client check",
     "sdk:dart:generate": "bun src/cli/index.ts sdk dart generate",
