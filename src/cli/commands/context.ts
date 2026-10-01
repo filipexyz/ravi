@@ -146,7 +146,11 @@ interface ContextIssuePayload {
   source: ContextRecord["source"] | null;
   metadata: Record<string, unknown> | null;
   env: Record<string, string>;
+  warnings?: string[];
 }
+
+const DELEGATED_SESSION_WITHOUT_ACTOR_WARNING =
+  "Delegated session context carries no human actor; apps that require a verified actor will deny it. Re-issue with --with-session-actor while the target session runs a turn from a resolved human contact.";
 
 interface AgentRuntimeCleanupCandidate {
   context: SerializedContextSummary;
@@ -454,6 +458,10 @@ export class ContextCommands {
         [RAVI_CONTEXT_KEY_ENV]: child.contextKey,
       },
     };
+    if (identity?.sessionKey && !withSessionActor) {
+      payload.warnings = [DELEGATED_SESSION_WITHOUT_ACTOR_WARNING];
+      console.error(`WARNING: ${DELEGATED_SESSION_WITHOUT_ACTOR_WARNING}`);
+    }
 
     this.printPayload(payload, asJson, () => this.printIssuedContext(payload));
     return payload;

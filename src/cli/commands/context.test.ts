@@ -1000,6 +1000,7 @@ describe("ContextCommands", () => {
     const printed = JSON.parse(lines[0] ?? "{}");
     expect(printed.agentId).toBe("main");
     expect(printed.sessionKey).toBe("agent:main:main");
+    expect(printed.warnings).toEqual([expect.stringContaining("--with-session-actor")]);
   });
 
   it("returns USAGE_ERROR when --with-session-actor has no delegated session", () => {
@@ -1042,11 +1043,24 @@ describe("ContextCommands", () => {
     const command = new ContextCommands();
     const originalLog = console.log;
     console.log = () => {};
+    let payload: Record<string, unknown>;
     try {
-      command.issue("nba", undefined, undefined, false, true, "main", "agent:main:main", "main", true);
+      payload = command.issue(
+        "nba",
+        undefined,
+        undefined,
+        false,
+        true,
+        "main",
+        "agent:main:main",
+        "main",
+        true,
+      ) as unknown as Record<string, unknown>;
     } finally {
       console.log = originalLog;
     }
+
+    expect(payload.warnings).toBeUndefined();
 
     expect(lastIssuedIdentity).toEqual({
       agentId: "main",
