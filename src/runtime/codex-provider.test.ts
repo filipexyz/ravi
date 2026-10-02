@@ -1377,7 +1377,7 @@ process.on("SIGTERM", () => {
       model: null,
       billingType: "subscription",
     });
-    expect(completions[0]?.usage.inputTokens).toBe(11);
+    expect(completions[0]?.usage.inputTokens).toBe(8);
     expect(completions[0]?.usage.outputTokens).toBe(7);
     expect(completions[0]?.usage.cacheReadTokens).toBe(3);
   });
@@ -2276,7 +2276,7 @@ rl.on("line", (line) => {
     expect(assistantMessages[0]?.text).toBe("done");
     expect(assistantMessages[0]?.metadata?.item?.phase).toBe("commentary");
     expect(completions[0]?.usage).toEqual({
-      inputTokens: 2,
+      inputTokens: 1,
       outputTokens: 3,
       cacheReadTokens: 1,
       cacheCreationTokens: 0,
@@ -3406,7 +3406,7 @@ createInterface({input:process.stdin}).on("line", (line) => {
       );
       if (ending !== "interrupted" && ending !== "failed") {
         expect(findEventsByType(events, "turn.complete")[0]?.usage).toMatchObject({
-          inputTokens: 30,
+          inputTokens: 22,
           outputTokens: 6,
           cacheReadTokens: 8,
         });
@@ -3459,5 +3459,48 @@ createInterface({input:process.stdin}).on("line", line => {
     ]);
     expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
     expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+  });
+});
+
+describe("Codex app-server token accounting", () => {
+  it("sums every model call in a turn and keeps cached input out of inputTokens", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-usage-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const event = (method, params) => send({method, params: {threadId:"thread_usage", turnId:"turn_usage", ...params}});
+const usage = (last, total) => event("thread/tokenUsage/updated", {tokenUsage:{last, total}});
+createInterface({input:process.stdin}).on("line", (line) => {
+ const m = JSON.parse(line);
+ if (m.method === "initialize") send({id:m.id,result:{}});
+ if (m.method === "thread/start") send({id:m.id,result:{thread:{id:"thread_usage"}}});
+ if (m.method !== "turn/start") return;
+ send({id:m.id,result:{turn:{id:"turn_usage",status:"inProgress",items:[]}}});
+ // Model call 1 asks for a tool.
+ usage({inputTokens:100,cachedInputTokens:40,outputTokens:10}, {inputTokens:100,cachedInputTokens:40,outputTokens:10});
+ // A repeated notification with an unchanged total reports no new call.
+ usage({inputTokens:100,cachedInputTokens:40,outputTokens:10}, {inputTokens:100,cachedInputTokens:40,outputTokens:10});
+ event("item/completed", {item:{id:"tool_1",type:"commandExecution",command:"echo ok",status:"completed",aggregatedOutput:"ok",exitCode:0}});
+ // Model call 2 answers after the tool result.
+ usage({inputTokens:150,cachedInputTokens:90,outputTokens:20}, {inputTokens:250,cachedInputTokens:130,outputTokens:30});
+ event("item/completed", {item:{id:"answer",type:"agentMessage",text:"done"}});
+ event("turn/completed", {turn:{id:"turn_usage",status:"completed",items:[]}});
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const session = createCodexRuntimeProvider({ command }).startSession(makeStartRequest(["work"], { cwd }));
+    const events = await collectEvents(session.events);
+    const completions = findEventsByType(events, "turn.complete");
+    expect(completions).toHaveLength(1);
+    expect(completions[0]?.usage).toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      cacheReadTokens: 130,
+      cacheCreationTokens: 0,
+    });
   });
 });
