@@ -4910,6 +4910,7 @@ export type ContextIssueReturn = {
     instanceId?: string;
     threadId?: string;
   }) | null;
+  warnings?: string[];
 };
 
 /** Input shape for `context.lineage`. */

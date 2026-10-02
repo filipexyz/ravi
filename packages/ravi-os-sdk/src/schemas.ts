@@ -25844,6 +25844,12 @@ export const ContextIssueReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
