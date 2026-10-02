@@ -2330,7 +2330,9 @@ export class OmniConsumer {
     chatJid: string,
   ): Promise<void> {
     this.activeTargets.set(sessionName, source);
-    await this.typingPresence.start(sessionName, { instanceId, to: chatJid });
+    // Do not hold the inbound message on the typing indicator: a slow Omni
+    // presence call must never delay or block dispatch to the agent.
+    void this.typingPresence.start(sessionName, { instanceId, to: chatJid });
   }
 
   /**
