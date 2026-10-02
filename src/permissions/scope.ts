@@ -7,6 +7,7 @@
 
 import { getContext } from "../cli/context.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
+import { authorizationAgentId, authorizationContext } from "./authorization-agent.js";
 import { emitPermissionDeniedAudit, flushPermissionAuditEvents, recordPermissionDenial } from "./denials.js";
 import { buildAuditContextProvenance } from "./audit-provenance.js";
 import {
@@ -131,10 +132,11 @@ function buildScopeDenialDiagnosis(
       };
     }
 
+    const callerAgentId = authorizationAgentId(input.ctx.agentId);
     const executorAgentPrincipal = provenance.executorAgentId
       ? `agent:${provenance.executorAgentId}`
-      : input.ctx.agentId
-        ? `agent:${input.ctx.agentId}`
+      : callerAgentId
+        ? `agent:${callerAgentId}`
         : "agent:<unknown>";
     const identityPrincipal = provenance.agentIdentityPrincipal ?? executorAgentPrincipal;
     const grantSubjects = isActionableGrantSubject(executorAgentPrincipal) ? [executorAgentPrincipal] : [];
@@ -240,7 +242,9 @@ function buildScopeDenialDiagnosis(
     }
   }
 
-  const agentPrincipal = input.ctx.agentId ? `agent:${input.ctx.agentId}` : "agent:<unknown>";
+  // Grant recommendations name real agents only, never an audit-only label.
+  const callerAgentId = authorizationAgentId(input.ctx.agentId);
+  const agentPrincipal = callerAgentId ? `agent:${callerAgentId}` : "agent:<unknown>";
   return {
     blockType: "agent_scope_missing_grant",
     detail: `Scope denied for ${grant}: ${agentPrincipal} lacks the required grant.`,
@@ -315,27 +319,34 @@ export function getScopeContext(): ScopeContext {
 // ============================================================================
 
 /**
+ * Whether a caller may take the local-operator fallback.
+ *
+ * Only a caller with neither an agent nor a runtime context record is the
+ * local operator. A context record without an agent (a Pages app gateway
+ * context, its app child, or an orphaned context whose agent was deleted)
+ * authorizes from its own capabilities only and never gains operator authority.
+ */
+export function isLocalOperatorScope(ctx: { agentId?: string; context?: unknown } | undefined): boolean {
+  return !ctx?.agentId && !ctx?.context;
+}
+
+/**
  * Check if scope enforcement is active.
  * Returns false (no enforcement) when:
  * - Explicit operator-control authorization is available
  * - Agent is superadmin (has admin relation)
  */
 export function isScopeEnforced(ctx: ScopeContext): boolean {
-  if (!ctx.agentId) return !localOperatorCan("admin", "system", "*");
+  if (isLocalOperatorScope(ctx)) return !localOperatorCan("admin", "system", "*");
   return !scopeCan(ctx, "admin", "system", "*");
 }
 
 function scopeCan(ctx: ScopeContext, permission: string, objectType: string, objectId: string): boolean {
   if (ctx.context) {
-    return canWithCapabilityContext(
-      { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },
-      permission,
-      objectType,
-      objectId,
-    );
+    return canWithCapabilityContext(authorizationContext(ctx.context, ctx.agentId), permission, objectType, objectId);
   }
-  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
-  return agentCan(ctx.agentId, permission, objectType, objectId);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(permission, objectType, objectId);
+  return agentCan(authorizationAgentId(ctx.agentId), permission, objectType, objectId);
 }
 
 // ============================================================================
@@ -351,7 +362,7 @@ function scopeCan(ctx: ScopeContext, permission: string, objectType: string, obj
  * 3. Agent has 'access' relation on session:<target> (including wildcards)
  */
 export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "session", targetNameOrKey);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan("access", "session", targetNameOrKey);
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
@@ -364,7 +375,7 @@ export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): bo
  * Filter a list of sessions to only those accessible by the current context.
  */
 export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEntry[]): SessionEntry[] {
-  if (!ctx.agentId) return sessions;
+  if (isLocalOperatorScope(ctx)) return sessions;
 
   return sessions.filter((s) => {
     const name = s.name ?? s.sessionKey;
@@ -381,7 +392,7 @@ export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEnt
  * 3. Agent has 'modify' relation on session:<target>
  */
 export function canModifySession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("modify", "session", targetNameOrKey);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan("modify", "session", targetNameOrKey);
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
@@ -404,14 +415,15 @@ export function canAccessContact(
   _agentConfig?: unknown,
   contactSessions?: { agentId: string }[],
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "contact", contact.id);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan("access", "contact", contact.id);
 
   // write_contacts implies read
   if (scopeCan(ctx, "write_contacts", "system", "*")) return true;
 
   // read_own_contacts: contact has sessions routed to this agent
   if (scopeCan(ctx, "read_own_contacts", "system", "*")) {
-    if (contactSessions?.some((s) => s.agentId === ctx.agentId)) return true;
+    const agentId = authorizationAgentId(ctx.agentId);
+    if (agentId && contactSessions?.some((s) => s.agentId === agentId)) return true;
   }
 
   // read_tagged_contacts: check each tag
@@ -438,10 +450,10 @@ export function canAccessContact(
  * 3. Agent has 'view' relation on agent:<targetId>
  */
 export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "agent", targetAgentId);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan("access", "agent", targetAgentId);
 
   // Own agent
-  if (ctx.agentId === targetAgentId) return true;
+  if (authorizationAgentId(ctx.agentId) === targetAgentId) return true;
 
   return scopeCan(ctx, "view", "agent", targetAgentId);
 }
@@ -450,7 +462,7 @@ export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean 
  * Filter a list of agents to only those visible by the current context.
  */
 export function filterVisibleAgents<T extends { id: string }>(ctx: ScopeContext, agents: T[]): T[] {
-  if (!ctx.agentId) return agents;
+  if (isLocalOperatorScope(ctx)) return agents;
 
   return agents.filter((a) => canViewAgent(ctx, a.id));
 }
@@ -497,7 +509,7 @@ export function canAccessResource(
   resourceAgentId: string | undefined,
   mode: ResourceAccessMode,
 ): boolean {
-  if (!ctx.agentId) {
+  if (isLocalOperatorScope(ctx)) {
     return localOperatorCan(mode === "mutate" ? "modify" : "access", "agent", resourceAgentId ?? "*");
   }
 
@@ -508,7 +520,7 @@ export function canAccessResource(
   if (!resourceAgentId) return false;
 
   // Own resource
-  if (ctx.agentId === resourceAgentId) return true;
+  if (authorizationAgentId(ctx.agentId) === resourceAgentId) return true;
 
   return scopeCan(ctx, resourceAccessRelation(mode), "agent", resourceAgentId);
 }
@@ -541,6 +553,7 @@ export function recordResourceAccessDenial(input: {
   const relation = resourceAccessRelation(mode);
   const verb = mode === "mutate" ? "modify" : "read";
   const principal = ctx.agentId ? `agent:${ctx.agentId}` : "local operator";
+  const grantAgentId = authorizationAgentId(ctx.agentId);
   const ownerDisclosable = canAccessResource(ctx, resourceAgentId, "read");
   const capability = { permission: relation, objectType: "agent", objectId: resourceAgentId };
   const canonicalCapability = formatCanonicalCapability(capability);
@@ -554,7 +567,7 @@ export function recordResourceAccessDenial(input: {
         ...formatAuthorizationGuidanceLines(
           buildAuthorizationGuidance({
             capability,
-            subject: ctx.agentId ? { type: "agent", id: ctx.agentId } : undefined,
+            subject: grantAgentId ? { type: "agent", id: grantAgentId } : undefined,
             scope: "recurring",
             reason: `Needs ${canonicalCapability} to run '${command}' on resources owned by agent:${resourceAgentId}.`,
             includeProviderOwnedTags: true,
@@ -614,7 +627,7 @@ export function enforceScopeCheck(
   const ctx = getScopeContext();
 
   if (scope === "open") {
-    if (!ctx.agentId) {
+    if (isLocalOperatorScope(ctx)) {
       const allowed = localOperatorCan("execute", "group", groupName ?? "*");
       return {
         allowed,

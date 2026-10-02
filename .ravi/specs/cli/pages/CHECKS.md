@@ -60,6 +60,10 @@
 - `pages assertion audiences set` and `remove` without `--execute` MUST exit 3
   before credentials or Console. `list` MUST stay read-only. The contract is
   `pages/assertion-audiences`.
+- `pages apps targets set` and `remove` without `--execute` MUST exit 3 before
+  any Console write; `set` MAY first read `GET /api/cli/me` to name the
+  installation in its plan, `remove` MUST NOT touch credentials or Console.
+  `list` MUST stay read-only. The contract is `pages/app-gateway`.
 - The `pages` skill MUST teach `ravi pages ship … --json` as the only happy
   path to get a URL, without required `--execute`, and MUST NOT teach
   `create` + `publish` choreography. The happy path MUST be project → default

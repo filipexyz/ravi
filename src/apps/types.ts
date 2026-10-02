@@ -89,6 +89,20 @@ export interface RaviAppOperationAuthorizationDeclaration {
   };
 }
 
+/**
+ * Per-operation opt-in for the Pages app gateway (`console/pages/app-gateway`).
+ * Lists what a remote viewer may pass as argv. `"none"` accepts no args.
+ */
+export interface RaviAppOperationGatewayArgsDeclaration {
+  options?: string[];
+  flags?: string[];
+  positional?: number;
+}
+
+export interface RaviAppOperationGatewayDeclaration {
+  args: "none" | RaviAppOperationGatewayArgsDeclaration;
+}
+
 export interface RaviAppOperationDeclaration {
   interface: RaviAppOperationInterface;
   handler?: string;
@@ -104,6 +118,7 @@ export interface RaviAppOperationDeclaration {
   inputSchema?: unknown;
   outputSchema?: unknown;
   authorization?: RaviAppOperationAuthorizationDeclaration;
+  gateway?: RaviAppOperationGatewayDeclaration;
   json?: boolean;
   [key: string]: unknown;
 }
@@ -278,6 +293,17 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   args?: string[];
   json?: boolean;
   execute?: boolean;
+  /**
+   * Resolve `operation` only as an exact manifest key. Aliases, local short
+   * names, virtual builtins, and joining leading args into a longer id are off.
+   */
+  exactOperation?: boolean;
+  /** CLI interface only: kill the child's process group after this many ms. */
+  timeoutMs?: number;
+  /** CLI interface only: kill the child's process group when stdout or stderr exceeds this. */
+  maxOutputBytes?: number;
+  /** CLI interface only: abort kills the child's process group. */
+  signal?: AbortSignal;
   staticRootCommands?: Set<string>;
   runtime?: {
     execPath?: string;

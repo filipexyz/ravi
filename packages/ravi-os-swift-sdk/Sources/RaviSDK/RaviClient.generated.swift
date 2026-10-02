@@ -3382,6 +3382,10 @@ public struct PagesNamespace: Sendable {
     self.transport = transport
   }
 
+  public var apps: PagesAppsNamespace {
+    PagesAppsNamespace(transport: transport)
+  }
+
   public var assertion: PagesAssertionNamespace {
     PagesAssertionNamespace(transport: transport)
   }
@@ -3450,6 +3454,44 @@ public struct PagesNamespace: Sendable {
     requestBody["args"] = try RaviJSON.fromEncodable(args)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["pages"], command: "visibility", body: requestBody, as: PagesVisibilityReturn.self)
+  }
+}
+
+public struct PagesAppsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var targets: PagesAppsTargetsNamespace {
+    PagesAppsTargetsNamespace(transport: transport)
+  }
+}
+
+public struct PagesAppsTargetsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: PagesAppsTargetsListOptions = .init()) async throws -> PagesAppsTargetsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages","apps","targets"], command: "list", body: requestBody, as: PagesAppsTargetsListReturn.self)
+  }
+
+  public func remove(_ options: PagesAppsTargetsRemoveOptions = .init()) async throws -> PagesAppsTargetsRemoveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages","apps","targets"], command: "remove", body: requestBody, as: PagesAppsTargetsRemoveReturn.self)
+  }
+
+  public func set(_ options: PagesAppsTargetsSetOptions = .init()) async throws -> PagesAppsTargetsSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages","apps","targets"], command: "set", body: requestBody, as: PagesAppsTargetsSetReturn.self)
   }
 }
 

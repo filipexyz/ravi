@@ -32,16 +32,26 @@ import {
   EXTERNAL_AUTHORITY_AUDIENCE_SETTING,
   EXTERNAL_AUTHORITY_PUBKEY_SETTING,
 } from "../../permissions/external-authority-provider.js";
+import {
+  APP_GATEWAY_ALLOWED_OPERATIONS_SETTING,
+  APP_GATEWAY_REQUIRE_LINK_SETTING,
+  isAppGatewaySettingKey,
+  parseAllowedOperationsStrict,
+  validateRequireLinkSetting,
+} from "../../app-gateway/settings.js";
 
 /**
  * Settings `permissions.*` definem QUEM tem autoridade (cadeia de providers e
  * raiz de confiança externa). Mudar isso equivale a conceder admin system:*,
  * então exige superadmin — `settings` como grupo exige só admin.
+ *
+ * `apps.gateway.*` widens what org Pages viewers can run on this machine
+ * through the app gateway relay, so it carries the same superadmin guard.
  */
 const PERMISSION_SETTINGS_PREFIX = "permissions.";
 
 function assertCanMutatePermissionSetting(key: string): void {
-  if (!key.startsWith(PERMISSION_SETTINGS_PREFIX)) return;
+  if (!key.startsWith(PERMISSION_SETTINGS_PREFIX) && !isAppGatewaySettingKey(key)) return;
   if (isScopeEnforced(getScopeContext())) {
     fail(`Permission denied: ${key} requires admin on system:* (superadmin)`);
   }
@@ -177,6 +187,18 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   [EXTERNAL_AUTHORITY_AUDIENCE_SETTING]: {
     description: "Expected audience (aud) of external authority assertions. Superadmin only",
   },
+  [APP_GATEWAY_ALLOWED_OPERATIONS_SETTING]: {
+    description:
+      "Pages app gateway: comma-separated exact <appId>:<operationId> pairs this installation may run for org Pages viewers (default: none). Superadmin only",
+    validate: (value: string) => {
+      parseAllowedOperationsStrict(value);
+    },
+  },
+  [APP_GATEWAY_REQUIRE_LINK_SETTING]: {
+    description:
+      "Pages app gateway: require a Ravi Link contact for every viewer invoke (true or false, default: false). Superadmin only",
+    validate: validateRequireLinkSetting,
+  },
   defaultAgent: {
     description: "Default agent when no route matches",
     validate: (value: string) => {
@@ -298,6 +320,7 @@ function knownSettingDefault(key: string): string | null {
   if (key === "defaultAgent") return "main";
   if (key === "defaultDmScope") return "per-peer";
   if (key === "announceCompaction") return "false";
+  if (key === APP_GATEWAY_REQUIRE_LINK_SETTING) return "false";
   if (key === "image.mode") return "fast";
   if (key === "tasks.sessionTtl") return "1d";
   if (key === "tasks.sessionTtl.knowledgeEngineer") return "5m";

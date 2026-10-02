@@ -5,6 +5,7 @@ import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
+import { validateGatewayDeclaration } from "./gateway-declaration.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -508,6 +509,10 @@ function validateOperations(
     validateOperationSchemaReference(operation.inputSchema, `${path}.inputSchema`, errors);
     validateOperationSchemaReference(operation.outputSchema, `${path}.outputSchema`, errors);
     validateOperationAuthorization(operation.authorization, `${path}.authorization`, errors);
+    validateGatewayDeclaration(operation.gateway, `${path}.gateway`, errors);
+    if (operation.gateway !== undefined && operation.mutating !== false) {
+      warnings.push(`${path}.gateway is ignored unless the operation declares "mutating": false.`);
+    }
   }
 }
 

@@ -10,4 +10,5 @@
 - The `pages` skill MUST name `ravi.identity.assertion`, the JWKS URL, and the ban on logging the JWT. Its `set` examples MUST use a Pages host origin (`https://<host>.ravi.page` or a custom hostname of that site) and MUST NOT use an API URL as `--origin`.
 - `pages assertion audiences set --help` MUST say `--origin` is an https origin of this Pages site (default host or active custom hostname), not the third-party API, and MUST example a Pages host origin such as `https://demo.ravi.page`.
 - A Console HTTP 400 `PAYLOAD_INVALID` on `set --execute` whose message says the hostname must be this site's default or active custom hostname MUST be forwarded with the Pages-host rule. A provider dump in that body MUST NOT be forwarded. The CLI MUST NOT reject origins with a local hostname allowlist.
-- App-gateway targets MUST NOT gain a CLI in this change.
+- A Console HTTP 409 on `set --execute` MUST surface `APP_GATEWAY_AUDIENCE_CONFLICT` with exit 2, MUST say the aud is reserved for a Pages app gateway target on this site, and MUST NOT suggest `ravi unlink`.
+- App gateway targets MUST be managed only through `ravi pages apps targets` (contract `pages/app-gateway`), never through `pages assertion audiences`.

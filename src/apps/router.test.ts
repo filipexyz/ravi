@@ -1408,3 +1408,229 @@ describe("Ravi app router", () => {
     });
   });
 });
+
+function isProcessGone(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return true;
+  }
+  // A killed process whose parent already exited can linger as a zombie until
+  // init reaps it. A zombie runs nothing, so treat it as gone.
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return /^\d+ \(.*\) Z /.test(stat);
+  } catch {
+    return false;
+  }
+}
+
+function limitedCliManifest(root: string): string {
+  const body = manifest("khal-tasks");
+  const operations = body.operations as Record<string, unknown>;
+  operations["khal-tasks.hang"] = { interface: "cli", command: "bun hang.mjs", mutating: false };
+  operations["khal-tasks.flood"] = { interface: "cli", command: "bun flood.mjs", mutating: false };
+  operations["khal-tasks.quick"] = { interface: "cli", command: "bun quick.mjs", mutating: false };
+  operations["khal-tasks.leave"] = { interface: "cli", command: "bun leave.mjs", mutating: false };
+  operations["khal-tasks.leave-piped"] = { interface: "cli", command: "bun leave.mjs piped", mutating: false };
+  writeManifest(root, "khal-tasks", body);
+  const appDir = join(root, "src", "apps", "khal-tasks");
+  const pidFile = join(root, "grandchild.pid");
+  writeFileSync(
+    join(appDir, "hang.mjs"),
+    `
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const grandchild = spawn("sleep", ["30"], { stdio: "ignore" });
+writeFileSync(${JSON.stringify(pidFile)}, String(grandchild.pid));
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1000);
+`,
+  );
+  writeFileSync(join(appDir, "flood.mjs"), 'process.stdout.write("x".repeat(4096)); setInterval(() => {}, 1000);');
+  writeFileSync(join(appDir, "quick.mjs"), "console.log(JSON.stringify({ ok: true }))");
+  // Leaves a background grandchild in its group (like `sleep 30 &`) and exits 0.
+  // "piped" keeps the grandchild on the leader's stdout and stderr; it also ignores SIGTERM.
+  writeFileSync(
+    join(appDir, "leave.mjs"),
+    `
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const piped = process.argv[2] === "piped";
+const grandchild = piped
+  ? spawn("sh", ["-c", "trap '' TERM; while :; do sleep 1; done"], { stdio: ["ignore", "inherit", "inherit"] })
+  : spawn("sleep", ["30"], { stdio: "ignore" });
+grandchild.unref();
+writeFileSync(${JSON.stringify(pidFile)}, String(grandchild.pid));
+console.log(JSON.stringify({ ok: true }));
+`,
+  );
+  return pidFile;
+}
+
+describe("Ravi app router exact operations and run limits", () => {
+  it("runs only a direct manifest key with exactOperation", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, Record<string, unknown>>)["khal-tasks.list"]!.aliases = ["ls"];
+    writeManifest(root, "khal-tasks", body);
+
+    const direct = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.list",
+      json: true,
+      exactOperation: true,
+    });
+    expect(direct).toMatchObject({ ok: true, operationId: "khal-tasks.list" });
+
+    for (const operation of ["list", "ls", "help", "show", "check", "khal-tasks.test"]) {
+      const refused = await runAppOperation({
+        appId: "khal-tasks",
+        operation,
+        args: ["a"],
+        json: true,
+        exactOperation: true,
+      });
+      expect(refused).toMatchObject({ ok: false, status: "failed", errorCode: "APP_OPERATION_FAILED" });
+      expect(refused.operationId).toBeNull();
+    }
+
+    // Without exactOperation the same leading args still extend the id.
+    const greedy = await runAppOperation({ appId: "khal-tasks", operation: "test", args: ["a"], json: true });
+    expect(greedy).toMatchObject({ ok: true, operationId: "khal-tasks.test.a" });
+  });
+
+  it("kills the whole process group on timeout and waits for it", async () => {
+    const root = makeRepo();
+    const pidFile = limitedCliManifest(root);
+
+    const startedAt = Date.now();
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.hang",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 400,
+      maxOutputBytes: 1024,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_TIMEOUT",
+      error: "Ravi app operation timed out.",
+    });
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(400);
+    const grandchildPid = Number(readFileSync(pidFile, "utf8"));
+    expect(Number.isInteger(grandchildPid)).toBe(true);
+    expect(isProcessGone(grandchildPid)).toBe(true);
+  });
+
+  it("kills the process group when output exceeds the cap and forwards nothing", async () => {
+    const root = makeRepo();
+    limitedCliManifest(root);
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.flood",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024,
+    });
+    expect(result).toMatchObject({ ok: false, status: "failed", errorCode: "APP_OUTPUT_TOO_LARGE" });
+    expect(result).not.toHaveProperty("stdout");
+    expect(result).not.toHaveProperty("result");
+    expect(JSON.stringify(result)).not.toContain("xxxx");
+  });
+
+  it("kills the process group on abort and refuses an already aborted signal before spawn", async () => {
+    const root = makeRepo();
+    const pidFile = limitedCliManifest(root);
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300);
+    const aborted = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.hang",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 10_000,
+      signal: controller.signal,
+    });
+    expect(aborted).toMatchObject({
+      ok: false,
+      errorCode: "APP_OPERATION_TIMEOUT",
+      error: "Ravi app operation was aborted.",
+    });
+    expect(isProcessGone(Number(readFileSync(pidFile, "utf8")))).toBe(true);
+
+    rmSync(pidFile, { force: true });
+    const preAborted = new AbortController();
+    preAborted.abort();
+    const refused = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.hang",
+      json: true,
+      exactOperation: true,
+      signal: preAborted.signal,
+    });
+    expect(refused).toMatchObject({ ok: false, errorCode: "APP_OPERATION_TIMEOUT" });
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it("kills what the leader leaves in its group once it exits, before settling", async () => {
+    const root = makeRepo();
+    const pidFile = limitedCliManifest(root);
+
+    const startedAt = Date.now();
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.leave",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024,
+    });
+    expect(result).toMatchObject({ ok: true, status: "completed", result: { ok: true } });
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+    const grandchildPid = Number(readFileSync(pidFile, "utf8"));
+    expect(Number.isInteger(grandchildPid)).toBe(true);
+    expect(isProcessGone(grandchildPid)).toBe(true);
+  });
+
+  it("escalates to SIGKILL for a leftover that holds the pipes and ignores SIGTERM", async () => {
+    const root = makeRepo();
+    const pidFile = limitedCliManifest(root);
+
+    const startedAt = Date.now();
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.leave-piped",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024,
+    });
+    const elapsed = Date.now() - startedAt;
+    expect(result).toMatchObject({ ok: true, status: "completed", result: { ok: true } });
+    // Settled only after the 2 s SIGTERM grace, well before the run timeout.
+    expect(elapsed).toBeGreaterThanOrEqual(1_900);
+    expect(elapsed).toBeLessThan(10_000);
+    expect(isProcessGone(Number(readFileSync(pidFile, "utf8")))).toBe(true);
+  });
+
+  it("keeps limited runs that finish in time unchanged", async () => {
+    const root = makeRepo();
+    limitedCliManifest(root);
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "khal-tasks.quick",
+      json: true,
+      exactOperation: true,
+      timeoutMs: 10_000,
+      maxOutputBytes: 1024,
+    });
+    expect(result).toMatchObject({ ok: true, status: "completed", result: { ok: true } });
+  });
+});

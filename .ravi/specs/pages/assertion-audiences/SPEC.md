@@ -52,7 +52,8 @@ ravi pages assertion audiences remove --site <host> --aud <aud> --execute
 6. `list` MUST `GET /api/cli/projects/:projectRef/pages/:siteRef/viewer-assertion-audiences`. `set` MUST `PUT` that path with `{ aud, origins }`. `remove` MUST `DELETE` that path with `{ aud }`. `siteRef` is only the path segment. These paths are the contract in ravi-console#31. The CLI MUST NOT invent a fallback path when Console returns 404.
 7. Success JSON MUST include `jwksUrl`. That URL MUST be `{consoleOrigin}/api/public/pages/viewer-assertions/jwks`, derived from the configured Console base URL. A Console `jwksUrl` is used only when it is that path on the same origin. Any other value MUST be ignored.
 8. `pages ship --uses ravi.identity.assertion` MUST put that id on the finalize publish body as `uses`. Omitting `--uses` MUST leave `uses` off the publish body. An id that is not a dotted capability token, including a JWT, MUST be `PAYLOAD_INVALID` before any Console call. The ship MUST NOT embed an assertion or a CLI JWT in the artifact.
-9. The skill `pages` MUST document this group, that `--origin` is a Pages host origin for the site (not the API URL), the `ravi.identity.assertion` use, the JWKS URL, and the rule against logging the JWT. Skill examples MUST NOT use an API URL as `--origin`.
+9. A Console HTTP 409 on `set` MUST be `APP_GATEWAY_AUDIENCE_CONFLICT` (exit 2). The aud has a Pages app gateway target row on this site in any status, and a revoked target still reserves it. The CLI MUST NOT suggest `ravi unlink` for it.
+10. The skill `pages` MUST document this group, that `--origin` is a Pages host origin for the site (not the API URL), the `ravi.identity.assertion` use, the JWKS URL, and the rule against logging the JWT. Skill examples MUST NOT use an API URL as `--origin`.
 
 ## Write classification
 
@@ -70,12 +71,13 @@ ravi pages assertion audiences remove --site <host> --aud <aud> --execute
 | `set` or `remove` without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | missing `--site`, `--aud`, or `--origin`; non-https origin; JWT passed as aud/origin/uses | `PAYLOAD_INVALID` | 2 |
 | Console HTTP 400 on `set` (`--origin` is not this site's hostname, or another payload rejection) | `PAYLOAD_INVALID` + Pages-host rule when the body is an origin rejection or unsafe; safe Console text forwarded | 2 |
+| Console HTTP 409 on `set` (aud has an app gateway target on this site, active or revoked) | `APP_GATEWAY_AUDIENCE_CONFLICT` | 2 |
 | Console site not found | `SITE_NOT_FOUND` | 1 |
 | Console route for this collection not deployed (404 that is not a site/route miss) | stable CloudAuthError | 1 |
 
-## Future
+## App gateway targets
 
-App-gateway targets CLI is out of scope. Do not add a command that points a page at gateway upstreams in this version.
+App gateway targets are a separate registry with their own CLI, `ravi pages apps targets list|set|remove`. Its contract is `pages/app-gateway`. One `(site, aud)` belongs to at most one registry: Console refuses a viewer-assertion audience that has a gateway target row on the site in any status, and refuses a gateway target whose aud is an active viewer-assertion audience. This group MUST NOT register or remove gateway targets.
 
 ## Console dependency
 

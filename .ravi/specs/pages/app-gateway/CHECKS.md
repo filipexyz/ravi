@@ -1,0 +1,21 @@
+# Pages app gateway (installation side) / CHECKS
+
+- `pages apps targets list --site <ref>` MUST `GET /api/cli/projects/:projectRef/pages/:siteRef/app-gateway-targets`, MUST NOT dry-run, and MUST print only whitelisted target fields with no JWT-shaped value.
+- `pages apps targets set` without `--execute` MUST exit 3 before any Console write. Its plan MUST name the Console installation from `GET /api/cli/me` (`localInstallation.id`) and MUST NOT contain the local `credentials.installationId`.
+- `pages apps targets set --execute` MUST `PUT` `{ audience, installationId?, appId, operations, origins }` on the targets path, and MUST omit `installationId` when Console reports no `localInstallation`.
+- `pages apps targets set` MUST refuse `*` or spaces in `--aud`, a JWT as `--aud`, an uppercase `--app`, `--op slides.*`, more than 16 ops, `http` origins, and a non-UUID `--installation` with `PAYLOAD_INVALID` before Console.
+- A Console 409 on `apps targets set` MUST be `APP_GATEWAY_AUDIENCE_CONFLICT` (exit 2), a 403 installation refusal MUST be `INSTALLATION_ORG_MISMATCH` (exit 1), and a 404 on `remove` MUST be `TARGET_NOT_FOUND` (exit 2).
+- `pages apps targets remove` without `--execute` MUST exit 3 without calling Console. With `--execute` it MUST `DELETE` the targets path with the exact audience in `?aud=`.
+- The relay runner MUST NOT start unless `RAVI_APP_GATEWAY_ENABLED=1`, and MUST park without the `console.apps.relay` scope, without credentials, with an empty or invalid `apps.gateway.allowed_operations`, or without the relay lease.
+- The relay runner MUST send the ticket only in `Authorization`, never in the URL, and MUST bind invokes to the ticket response's installation and organization.
+- After renewing to a second socket, a 4000 on the old socket MUST NOT reconnect while the new socket is live.
+- When the runner's own renewal socket was accepted and then closed before the old socket receives 4000, that 4000 MUST reconnect with the normal backoff and MUST NOT park as `replaced_elsewhere`.
+- A 4000 on the runner's newest accepted socket MUST park as `replaced_elsewhere` for 60 s; 4001 MUST fetch a new ticket at once.
+- The executor MUST refuse a grant whose `installation` or `raviOrgId` differs from the ticket binding with `app_gateway_grant_invalid`, and a replayed `requestId` with `app_gateway_request_replayed`.
+- The executor MUST refuse an operation that is not listed in `apps.gateway.allowed_operations`, lacks `"mutating": false`, or lacks a `gateway` declaration, before spawning anything.
+- The executor MUST refuse undeclared options, short options, `--name=value`, `--`, `--execute`, repeated options, and extra positionals with `payload_invalid`, and MUST pass accepted args unchanged.
+- `runAppOperation` with `exactOperation: true` MUST NOT resolve aliases, virtual builtins, or joined leading args. With `timeoutMs` or `maxOutputBytes` it MUST kill the child's process group and return `APP_OPERATION_TIMEOUT` or `APP_OUTPUT_TOO_LARGE`.
+- `canAccessApp`, `isScopeEnforced`, the session, contact and agent scope helpers, `canUseMailMailbox`, and `canUseCalendar` MUST NOT grant local-operator authority to a caller with a runtime context record and no `agentId`.
+- `ravi settings set apps.gateway.allowed_operations …` from an agent that holds only the `settings` group MUST be refused, and an invalid value MUST be refused at `set`.
+- `ravi agents create pages-app-gateway` MUST fail as a reserved id.
+- `bun run test` MUST include `src/app-gateway/`, `src/apps/gateway-declaration.test.ts`, `src/apps/permissions.test.ts`, `src/mailbox/access.test.ts`, and `src/calendar/access.test.ts`.

@@ -182,4 +182,32 @@ describe("app permission gate", () => {
       expect(canUseApp("secret")).toBe(false);
     });
   });
+
+  it("never falls back to the local operator when a context record has no agent", () => {
+    const gatewayContext = (capabilities: ContextCapability[]): ToolContext => ({
+      context: {
+        contextId: "ctx_apps_gateway",
+        contextKey: "ctx_key_apps_gateway",
+        kind: "pages-app-gateway",
+        capabilities,
+        metadata: {},
+        createdAt: 0,
+      },
+    });
+
+    runWithContext(gatewayContext([]), () => {
+      expect(canUseApp("apps")).toBe(false);
+      expect(canExecuteApp("apps")).toBe(false);
+    });
+    runWithContext(gatewayContext([appCapability("use", "slides")]), () => {
+      expect(canUseApp("slides")).toBe(true);
+      expect(canUseApp("apps")).toBe(false);
+      expect(canExecuteApp("slides")).toBe(false);
+    });
+    // The in-process audit label does not change that authority comes from the record.
+    runWithContext({ ...gatewayContext([appCapability("use", "slides")]), agentId: "pages-app-gateway" }, () => {
+      expect(canUseApp("slides")).toBe(true);
+      expect(canUseApp("apps")).toBe(false);
+    });
+  });
 });

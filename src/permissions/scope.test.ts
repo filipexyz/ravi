@@ -14,6 +14,9 @@ import {
   canAccessResource,
   recordResourceAccessDenial,
   enforceScopeCheck,
+  canViewAgent,
+  filterVisibleAgents,
+  isLocalOperatorScope,
   type ScopeContext,
 } from "./scope.js";
 
@@ -883,6 +886,64 @@ describe("Scope Isolation", () => {
         relation: "view",
         objectType: "agent",
         objectId: "main",
+      });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Context record without an agent (Pages app gateway, orphaned context)
+  // --------------------------------------------------------------------------
+
+  describe("context record without an agent", () => {
+    function agentlessCtx(capabilities: ContextCapability[]): ScopeContext {
+      return {
+        context: {
+          contextId: "ctx_gateway",
+          contextKey: "rctx_gateway",
+          kind: "pages-app-gateway",
+          capabilities,
+          metadata: {},
+          createdAt: 0,
+        },
+      };
+    }
+
+    it("only the caller with neither agent nor context record is the local operator", () => {
+      expect(isLocalOperatorScope({})).toBe(true);
+      expect(isLocalOperatorScope(undefined)).toBe(true);
+      expect(isLocalOperatorScope({ agentId: "dev" })).toBe(false);
+      expect(isLocalOperatorScope(agentlessCtx([]))).toBe(false);
+    });
+
+    it("authorizes from the record's capabilities only", () => {
+      const ctx = agentlessCtx([cap("access", "session", "allowed-session")]);
+      const sessions: MinimalSession[] = [
+        { name: "allowed-session", sessionKey: "agent:main:allowed" },
+        { name: "other-session", sessionKey: "agent:main:other" },
+      ];
+
+      expect(isScopeEnforced(ctx)).toBe(true);
+      expect(canAccessSession(ctx, "allowed-session")).toBe(true);
+      expect(canAccessSession(ctx, "other-session")).toBe(false);
+      expect(canModifySession(ctx, "allowed-session")).toBe(false);
+      expect(
+        filterAccessibleSessions(ctx, sessions as Parameters<typeof filterAccessibleSessions>[1]).map((s) => s.name),
+      ).toEqual(["allowed-session"]);
+      expect(canViewAgent(ctx, "main")).toBe(false);
+      expect(filterVisibleAgents(ctx, [{ id: "main" }, { id: "dev" }])).toEqual([]);
+      expect(canAccessContact(ctx, { id: "contact-1", tags: [] })).toBe(false);
+      expect(canWriteContacts(ctx)).toBe(false);
+      expect(canAccessResource(ctx, "main", "read")).toBe(false);
+      expect(canAccessResource(ctx, undefined, "read")).toBe(false);
+    });
+
+    it("refuses open-scope command groups without a grant on the record", () => {
+      runWithContext(agentlessCtx([]) as ToolContext, () => {
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+        expect(enforceScopeCheck("superadmin", "permissions", "grant").allowed).toBe(false);
+      });
+      runWithContext(agentlessCtx([cap("execute", "group", "sessions")]) as ToolContext, () => {
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(true);
       });
     });
   });

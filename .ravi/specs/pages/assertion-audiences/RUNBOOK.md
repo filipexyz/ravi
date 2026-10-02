@@ -5,3 +5,4 @@
 3. Confirm with `ravi pages assertion audiences list --site <host> --json`. Read `jwksUrl`. It is `{consoleOrigin}/api/public/pages/viewer-assertions/jwks`. The API verifies signatures there. Do not copy an assertion out of a browser into logs.
 4. Ship the page with `--uses ravi.identity.assertion` only when that page will call the registered API. The artifact stays free of tokens.
 5. `remove --execute` drops one `aud`. It does not change visibility or delete the host.
+6. `set --execute` exits 2 with `APP_GATEWAY_AUDIENCE_CONFLICT` when the aud has a Pages app gateway target on this site, even a revoked one. Pick another aud; check with `ravi pages apps targets list --site <host> --json`.

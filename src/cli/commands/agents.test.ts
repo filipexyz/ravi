@@ -444,6 +444,19 @@ describe("AgentsCommands set model validation", () => {
 
     expect(createAgentCalls).toHaveLength(0);
   });
+
+  it("refuses the reserved pages-app-gateway agent id", () => {
+    currentAgent = null;
+    const commands = new AgentsCommands();
+
+    expect(() => commands.create("pages-app-gateway", "/tmp/gateway", undefined, undefined, true, true)).toThrow(
+      /reserved/,
+    );
+    expect(() => commands.create(" Pages-App-Gateway ", "/tmp/gateway", undefined, undefined, true, true)).toThrow(
+      /reserved/,
+    );
+    expect(createAgentCalls).toHaveLength(0);
+  });
 });
 
 describe("AgentsCommands set session override reporting", () => {

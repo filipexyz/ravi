@@ -6,6 +6,7 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { fakeCompactJws } from "../../test/app-gateway-tokens.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
@@ -13,7 +14,12 @@ import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata } from "../
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
-import { PagesAssertionAudienceCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
+import {
+  PagesAppTargetsCommands,
+  PagesAssertionAudienceCommands,
+  PagesCommands,
+  PagesPasswordCommands,
+} from "./pages.js";
 
 const tempDirs: string[] = [];
 let stateDir: string | null = null;
@@ -1814,6 +1820,26 @@ describe("pages agent-first contract", () => {
     expect(error.details.status).toBe(400);
   });
 
+  it("maps a Console 409 on assertion audience set to the gateway audience reservation, not a Link conflict", async () => {
+    // The shared Console error mapper aliases 409 `CONFLICT` to ACTOR_BINDING_CONFLICT for `ravi link`.
+    const client = makeClient(async () => {
+      throw new CloudAuthError("ACTOR_BINDING_CONFLICT", "conflict", { status: 409 });
+    });
+    const command = new PagesAssertionAudienceCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.set("demo", "https://api.example", ["https://demo.ravi.page"], "proj", undefined, true, true),
+      "APP_GATEWAY_AUDIENCE_CONFLICT",
+      2,
+    );
+
+    expect(error.message).toContain("app gateway target");
+    expect(error.details).toMatchObject({ retryable: false, status: 409 });
+    expect(error.details.suggestedAction).toContain("Use another --aud");
+    expect(JSON.stringify(error.envelope())).not.toContain("unlink");
+    expect(JSON.stringify(error.envelope())).not.toContain("ACTOR_BINDING_CONFLICT");
+  });
+
   it("hides a provider dump on assertion audience set 400 and still states the Pages-host rule", async () => {
     const secret = "SENTINEL_PROVIDER_4Q7M";
     const client = makeClient(async () => {
@@ -2055,6 +2081,302 @@ function passwordResponse(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("pages apps targets CLI commands", () => {
+  const CONSOLE_INSTALLATION = "6f1c2b8e-1d2c-4b5a-9e8f-0a1b2c3d4e5f";
+  const AUD = "https://apps.example.ravi.local/slides";
+  const planted = fakeCompactJws();
+
+  function targetClient(
+    handler: (method: string, path: string, body: unknown, accessToken: string) => Promise<unknown>,
+    me: Record<string, unknown> = { localInstallation: { id: CONSOLE_INSTALLATION } },
+  ): ConsoleApiClient {
+    return {
+      me: mock(async () => ({ user: { email: "alice@example.com" }, organization: { id: "org_1" }, ...me })),
+      requestJson: mock(async (method: string, path: string, body: unknown, accessToken: string) =>
+        handler(method, path, body, accessToken),
+      ),
+    } as unknown as ConsoleApiClient;
+  }
+
+  function target(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: "target_1",
+      audience: AUD,
+      appId: "slides",
+      operations: ["slides.list"],
+      origins: ["https://demo.ravi.page"],
+      installationId: CONSOLE_INSTALLATION,
+      organizationId: "org_1",
+      projectId: "project_1",
+      siteId: "site_1",
+      status: "active",
+      revision: 2,
+      grantExpiresAt: "2026-10-01T18:00:00.000Z",
+      createdAt: "2026-10-01T12:00:00.000Z",
+      updatedAt: "2026-10-01T12:00:00.000Z",
+      revokedAt: null,
+      grant: planted,
+      grantJti: "jti_1",
+      ...overrides,
+    };
+  }
+
+  it("registers the group with read list and confirmed high-risk mutations", () => {
+    const commands = getCommandsMetadata(PagesAppTargetsCommands);
+    expect(commands.map((command) => command.name).sort()).toEqual(["list", "remove", "set"]);
+    const set = commands.find((command) => command.name === "set");
+    expect(set?.helpAfter).toContain("ravi pages apps targets set --site demo");
+    const flags = getOptionsMetadata(new PagesAppTargetsCommands(), "set").map((option) => option.flags);
+    expect(flags).toEqual(
+      expect.arrayContaining([
+        "--aud <aud>",
+        "--app <appId>",
+        "--op <operationId...>",
+        "--installation <id>",
+        "--execute",
+      ]),
+    );
+  });
+
+  it("lists targets on the exact path and prints only whitelisted, token-free fields", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = targetClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return {
+        items: [
+          target(),
+          target({ id: "target_2", audience: planted }),
+          target({ id: "t3", status: "revoked", grantExpiresAt: null }),
+        ],
+        projectRef: "proj",
+        siteRef: "demo.ravi.page",
+        token: planted,
+      };
+    });
+    const command = new PagesAppTargetsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list("demo", "proj", undefined, undefined, undefined, true));
+    const payload = JSON.parse(output);
+    expect(calls).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages/demo/app-gateway-targets", body: undefined },
+    ]);
+    expect(payload).toMatchObject({ projectRef: "proj", siteRef: "demo.ravi.page", success: true, total: 2 });
+    expect(payload.targets[0]).toEqual({
+      id: "target_1",
+      audience: AUD,
+      appId: "slides",
+      operations: ["slides.list"],
+      origins: ["https://demo.ravi.page"],
+      installationId: CONSOLE_INSTALLATION,
+      organizationId: "org_1",
+      projectId: "project_1",
+      siteId: "site_1",
+      status: "active",
+      revision: 2,
+      grantExpiresAt: "2026-10-01T18:00:00.000Z",
+      createdAt: "2026-10-01T12:00:00.000Z",
+      updatedAt: "2026-10-01T12:00:00.000Z",
+      revokedAt: null,
+    });
+    expect(payload.targets[1]).toMatchObject({ id: "t3", status: "revoked", grantExpiresAt: null });
+    expect(output).not.toContain(planted);
+    expect(output).not.toContain("jti_1");
+    expect(output).not.toContain("access-secret");
+  });
+
+  it("brakes set before any write, prints the Console installation from /api/cli/me, and PUTs on execute", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = targetClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return { ...target(), projectRef: "proj", siteRef: "demo" };
+    });
+    const command = new PagesAppTargetsCommands({ client, readCredentials: makeReadCredentials() });
+    const set = (execute?: boolean, installation?: string) =>
+      command.set(
+        "demo",
+        AUD,
+        "slides",
+        ["slides.list", "slides.get,slides.list"],
+        ["https://demo.ravi.page"],
+        installation,
+        "proj",
+        undefined,
+        true,
+        execute,
+      );
+
+    const error = await expectContractError(() => set(), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      aud: AUD,
+      app: "slides",
+      operations: ["slides.list", "slides.get"],
+      origins: ["https://demo.ravi.page"],
+      installation: CONSOLE_INSTALLATION,
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain("ins_123");
+    expect(calls).toEqual([]);
+
+    const { output } = await captureConsole(() => set(true));
+    expect(calls).toEqual([
+      {
+        method: "PUT",
+        path: "/api/cli/projects/proj/pages/demo/app-gateway-targets",
+        body: {
+          audience: AUD,
+          installationId: CONSOLE_INSTALLATION,
+          appId: "slides",
+          operations: ["slides.list", "slides.get"],
+          origins: ["https://demo.ravi.page"],
+        },
+      },
+    ]);
+    const payload = JSON.parse(output);
+    expect(payload).toMatchObject({ action: "set", audience: AUD, success: true, target: { id: "target_1" } });
+    expect(output).not.toContain(planted);
+
+    const explicit = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const explicitError = await expectContractError(() => set(undefined, explicit), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(explicitError.details.plan).toMatchObject({ installation: explicit });
+  });
+
+  it("omits installationId when Console does not report localInstallation, never sending the local id", async () => {
+    const calls: Array<{ method: string; body: unknown }> = [];
+    const client = targetClient(async (method, _path, body) => {
+      calls.push({ method, body });
+      return target();
+    }, {});
+    const command = new PagesAppTargetsCommands({ client, readCredentials: makeReadCredentials() });
+    await captureConsole(() =>
+      command.set(
+        "demo",
+        AUD,
+        "slides",
+        ["slides.list"],
+        ["https://demo.ravi.page"],
+        undefined,
+        "proj",
+        undefined,
+        true,
+        true,
+      ),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).not.toHaveProperty("installationId");
+    expect(JSON.stringify(calls)).not.toContain("ins_123");
+  });
+
+  it("refuses malformed input before Console", async () => {
+    const client = targetClient(async () => {
+      throw new Error("console should not be called");
+    });
+    const command = new PagesAppTargetsCommands({ client, readCredentials: makeReadCredentials() });
+    const attempt = (overrides: {
+      aud?: string;
+      app?: string;
+      ops?: string[];
+      origins?: string[];
+      installation?: string;
+    }) =>
+      expectCloudError(() =>
+        runWithContext({}, () =>
+          command.set(
+            "demo",
+            "aud" in overrides ? overrides.aud : AUD,
+            "app" in overrides ? overrides.app : "slides",
+            "ops" in overrides ? overrides.ops : ["slides.list"],
+            "origins" in overrides ? overrides.origins : ["https://demo.ravi.page"],
+            overrides.installation,
+            "proj",
+            undefined,
+            true,
+          ),
+        ),
+      );
+    for (const overrides of [
+      { aud: "https://apps.example/*" },
+      { aud: "has space" },
+      { aud: planted },
+      { app: "Slides" },
+      { ops: [] },
+      { ops: ["slides.*"] },
+      { ops: Array.from({ length: 17 }, (_, index) => `slides.op${String.fromCharCode(97 + index)}`) },
+      { origins: ["http://demo.ravi.page"] },
+      { installation: "ins_123" },
+    ]) {
+      expect((await attempt(overrides)).code).toBe("PAYLOAD_INVALID");
+    }
+  });
+
+  it("maps Console 409, 403, and 404 to target error codes", async () => {
+    const failures: Array<[CloudAuthError, string, number]> = [
+      [new CloudAuthError("ACTOR_BINDING_CONFLICT", "conflict", { status: 409 }), "APP_GATEWAY_AUDIENCE_CONFLICT", 2],
+      [new CloudAuthError("ORG_ACCESS_DENIED", "mismatch", { status: 403 }), "INSTALLATION_ORG_MISMATCH", 1],
+    ];
+    for (const [failure, code, exitCode] of failures) {
+      const command = new PagesAppTargetsCommands({
+        client: targetClient(async () => {
+          throw failure;
+        }),
+        readCredentials: makeReadCredentials(),
+      });
+      await expectContractError(
+        () =>
+          command.set(
+            "demo",
+            AUD,
+            "slides",
+            ["slides.list"],
+            ["https://demo.ravi.page"],
+            undefined,
+            "proj",
+            undefined,
+            true,
+            true,
+          ),
+        code,
+        exitCode,
+      );
+    }
+    const missing = new PagesAppTargetsCommands({
+      client: targetClient(async () => {
+        throw new CloudAuthError("PAYLOAD_INVALID", "not registered", { status: 404 });
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+    await expectContractError(() => missing.remove("demo", AUD, "proj", undefined, true, true), "TARGET_NOT_FOUND", 2);
+  });
+
+  it("brakes remove and revokes by exact audience query on execute", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = targetClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return { audience: AUD, id: "target_1", status: "revoked", projectRef: "proj", siteRef: "demo", grant: planted };
+    });
+    const command = new PagesAppTargetsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.remove("demo", AUD, "proj", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(error.details.plan).toEqual({ project: "proj", site: "demo", aud: AUD });
+    expect(calls).toEqual([]);
+
+    const { output } = await captureConsole(() => command.remove("demo", AUD, "proj", undefined, true, true));
+    expect(calls).toEqual([
+      {
+        method: "DELETE",
+        path: `/api/cli/projects/proj/pages/demo/app-gateway-targets?aud=${encodeURIComponent(AUD)}`,
+        body: undefined,
+      },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({ action: "remove", audience: AUD, id: "target_1", status: "revoked" });
+    expect(output).not.toContain(planted);
+  });
+});
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

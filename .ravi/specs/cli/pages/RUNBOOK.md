@@ -6,7 +6,8 @@
 2. Reproduce the failing call with `--json` and read `error.code` first; the
    code, not the message, is the branch point.
 3. Exit `3`: this is only a remaining brake (`domains`, `password set/remove`,
-   or `update`/`visibility` switching to `public`). Read `error.plan`, confirm
+   `assertion audiences set/remove`, `apps targets set/remove`, or
+   `update`/`visibility` switching to `public`). Read `error.plan`, confirm
    the exposure change is intended, then re-run the same command adding
    `--execute`. For `password set` the dry-run never prompts — the prompt only
    appears with `--execute`. `ship`, `create` and `publish` do not use this

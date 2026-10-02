@@ -22,4 +22,4 @@ OSS only records that registration. Signing, TTL, and the JWKS document stay in 
 - Embedding the CLI access token or a long-lived assertion in the HTML.
 - Signing the assertion in the daemon.
 - A second host per API. Audiences are records on the project host.
-- App-gateway target registration. That is a different routing surface.
+- App-gateway target registration. That is a different routing surface with its own registry and CLI (`pages/app-gateway`), and one `(site, aud)` belongs to only one of them.

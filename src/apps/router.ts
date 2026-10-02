@@ -43,6 +43,22 @@ interface ResolvedOperationInvocation {
   args: string[];
 }
 
+/**
+ * Opt-in limits for a CLI operation child. When present, the child runs in its
+ * own process group and the whole group is killed on timeout, abort, or output
+ * above `maxOutputBytes`, and anything the leader leaves running in its group
+ * (`cmd &`, nohup) is killed once the leader exits. The run settles only after
+ * the group is gone. Callers without limits keep the unbounded behavior.
+ */
+interface CliRunLimits {
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+  signal?: AbortSignal;
+}
+
+const PROCESS_GROUP_KILL_GRACE_MS = 2_000;
+const PROCESS_GROUP_POLL_MS = 50;
+
 const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
 
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
@@ -61,7 +77,10 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       throw new Error(`App manifest is missing for ${app.id}`);
     }
 
-    const invocation = resolveOperationInvocation(app, operationName, options.args ?? []);
+    const invocation =
+      options.exactOperation === true
+        ? resolveExactOperationInvocation(app, operationName, options.args ?? [])
+        : resolveOperationInvocation(app, operationName, options.args ?? []);
     result = await dispatchResolvedOperation(app, invocation.resolved, {
       args: invocation.args,
       json: options.json === true,
@@ -72,6 +91,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       callerContext,
       startedAt,
       execute: options.execute === true,
+      limits: runLimitsFrom(options),
     });
   } catch (error) {
     const errorCode = classifyAppRunError(error);
@@ -248,6 +268,39 @@ function resolveOperationInvocation(
   return { resolved: resolveOperation(app, operationName), args };
 }
 
+/**
+ * Exact resolution for callers that must run precisely the named operation
+ * (the Pages app gateway). Only a direct manifest key matches: no aliases, no
+ * app-prefixed short names, no virtual builtins, and args never extend the id.
+ */
+function resolveExactOperationInvocation(
+  app: RaviAppManifestRecord,
+  operationName: string | null,
+  args: string[],
+): ResolvedOperationInvocation {
+  const operations = manifestOperations(app);
+  const operation =
+    operationName && Object.prototype.hasOwnProperty.call(operations, operationName)
+      ? operations[operationName]
+      : undefined;
+  if (!operationName || !isOperationDeclaration(operation)) {
+    const appId = app.manifest?.id ?? app.id;
+    throw new Error(`Operation not found for app ${appId}: ${operationName}`);
+  }
+  return { resolved: { id: operationName, operation }, args };
+}
+
+function runLimitsFrom(options: RaviAppRunOptions): CliRunLimits | undefined {
+  if (options.timeoutMs === undefined && options.maxOutputBytes === undefined && options.signal === undefined) {
+    return undefined;
+  }
+  return {
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  };
+}
+
 function tryResolveOperation(app: RaviAppManifestRecord, operationName: string | null): ResolvedOperation | null {
   const appId = app.manifest?.id ?? app.id;
   const operationPrefix = appId.replace(/\//g, ".");
@@ -314,6 +367,7 @@ async function dispatchResolvedOperation(
     callerContext?: ContextRecord;
     startedAt: number;
     execute: boolean;
+    limits?: CliRunLimits;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
@@ -412,11 +466,30 @@ async function runCliOperation(
     runtime?: RaviAppRunOptions["runtime"];
     callerContext?: ContextRecord;
     startedAt: number;
+    limits?: CliRunLimits;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
   const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
+  const baseWithoutChild = {
+    appId,
+    operation: localOperationName(appId, resolved.id),
+    operationId: resolved.id,
+    interface: "cli" as const,
+    mutating: resolved.operation.mutating === true,
+    ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+  };
+  if (options.limits?.signal?.aborted) {
+    return {
+      ...baseWithoutChild,
+      durationMs: Date.now() - options.startedAt,
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_TIMEOUT",
+      error: "Ravi app operation was aborted.",
+    };
+  }
   const childContext = issueAppChildContext(app, resolved.id, options.callerContext);
   const run = await spawnExecutable(invocation.executable, invocation.argv, {
     cwd: appRoot,
@@ -427,19 +500,40 @@ async function runCliOperation(
       contextKey: childContext?.contextKey,
     }),
     capture: options.json,
+    ...(options.limits
+      ? {
+          processGroup: true,
+          timeoutMs: options.limits.timeoutMs,
+          maxOutputBytes: options.json ? options.limits.maxOutputBytes : undefined,
+          signal: options.limits.signal,
+        }
+      : {}),
   });
-  const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;
+  const parsed = options.json && !run.truncated ? parseJsonOutput(run.stdout) : undefined;
 
   const base = {
-    appId,
-    operation: localOperationName(appId, resolved.id),
-    operationId: resolved.id,
-    interface: "cli" as const,
-    mutating: resolved.operation.mutating === true,
+    ...baseWithoutChild,
     durationMs: Date.now() - options.startedAt,
-    ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
     ...(childContext ? { childContextId: childContext.contextId } : {}),
   };
+  if (run.truncated) {
+    return {
+      ...base,
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OUTPUT_TOO_LARGE",
+      error: "Ravi app operation output exceeded the limit.",
+    };
+  }
+  if (run.timedOut || run.aborted) {
+    return {
+      ...base,
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_TIMEOUT",
+      error: run.aborted ? "Ravi app operation was aborted." : "Ravi app operation timed out.",
+    };
+  }
   if (run.exitCode !== 0) {
     return {
       ...base,
@@ -681,33 +775,115 @@ function spawnExecutable(
     stdin?: string;
     timeoutMs?: number;
     maxOutputBytes?: number;
+    signal?: AbortSignal;
+    /** Run the child as the leader of its own process group and kill the whole group. */
+    processGroup?: boolean;
   },
 ): Promise<{
   exitCode: number | null;
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  aborted: boolean;
   truncated: boolean;
 }> {
   return new Promise((resolveRun) => {
+    const useProcessGroup = options.processGroup === true && process.platform !== "win32";
     const child = spawn(executable, argv, {
       cwd: options.cwd ?? process.cwd(),
       env: options.env,
       shell: false,
+      detached: useProcessGroup,
       stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let aborted = false;
     let truncated = false;
+    let terminating = false;
+    let leaderExited = false;
+    let closed = false;
+    let exitCode: number | null = null;
+    let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
     const maxOutputBytes = options.maxOutputBytes ?? Number.POSITIVE_INFINITY;
+
+    const signalTree = (signal: NodeJS.Signals): void => {
+      if (useProcessGroup && child.pid) {
+        try {
+          process.kill(-child.pid, signal);
+          return;
+        } catch {
+          // Group already gone; fall back to the direct child.
+        }
+      }
+      try {
+        child.kill(signal);
+      } catch {
+        // Child already exited.
+      }
+    };
+    const groupAlive = (): boolean => {
+      if (!useProcessGroup || !child.pid) return false;
+      try {
+        process.kill(-child.pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    let groupPoll: ReturnType<typeof setInterval> | null = null;
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      if (groupPoll) clearInterval(groupPoll);
+      options.signal?.removeEventListener("abort", onAbort);
+      if (!closed) {
+        // A process outside the group (setsid) may still hold the pipes; stop reading them.
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }
+      resolveRun({
+        exitCode,
+        stdout,
+        stderr: spawnError ? `${stderr}${stderr ? "\n" : ""}${spawnError.message}` : stderr,
+        timedOut,
+        aborted,
+        truncated,
+      });
+    };
+    const terminate = (): void => {
+      if (terminating) return;
+      terminating = true;
+      signalTree("SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        forceKillTimer = null;
+        signalTree("SIGKILL");
+        // The slot is released only after the whole group is gone. Once the
+        // leader exited, the group is dead after SIGKILL even if a process that
+        // left the group still holds the pipes open.
+        if (closed || leaderExited) finish();
+      }, PROCESS_GROUP_KILL_GRACE_MS);
+    };
+    const onAbort = (): void => {
+      aborted = true;
+      terminate();
+    };
+
     const timeout =
       options.timeoutMs === undefined
         ? null
         : setTimeout(() => {
             timedOut = true;
-            child.kill();
+            terminate();
           }, options.timeoutMs);
+    if (options.signal) {
+      if (options.signal.aborted) onAbort();
+      else options.signal.addEventListener("abort", onAbort, { once: true });
+    }
     if (options.capture) {
       child.stdout?.setEncoding("utf8");
       child.stderr?.setEncoding("utf8");
@@ -716,8 +892,7 @@ function spawnExecutable(
         stdout = next.value;
         if (next.truncated) {
           truncated = true;
-          child.kill();
-          return;
+          terminate();
         }
       });
       child.stderr?.on("data", (chunk) => {
@@ -725,8 +900,7 @@ function spawnExecutable(
         stderr = next.value;
         if (next.truncated) {
           truncated = true;
-          child.kill();
-          return;
+          terminate();
         }
       });
       child.stdin?.on("error", () => {});
@@ -736,15 +910,27 @@ function spawnExecutable(
     child.on("error", (error) => {
       spawnError = error;
     });
-    child.on("close", (exitCode) => {
-      if (timeout) clearTimeout(timeout);
-      resolveRun({
-        exitCode,
-        stdout,
-        stderr: spawnError ? `${stderr}${stderr ? "\n" : ""}${spawnError.message}` : stderr,
-        timedOut,
-        truncated,
-      });
+    child.on("exit", (code) => {
+      leaderExited = true;
+      exitCode = code;
+      // The leader is done: whatever it left running in its group (`cmd &`,
+      // nohup) must not outlive the run, its timeout, or the caller's slot.
+      if (groupAlive()) terminate();
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      closed = true;
+      exitCode = code;
+      if (groupAlive()) terminate();
+      if (terminating && forceKillTimer && groupAlive()) {
+        // Wait for the rest of the group (or the SIGKILL deadline) before
+        // reporting, so a caller's concurrency slot covers every process.
+        groupPoll = setInterval(() => {
+          if (!groupAlive()) finish();
+        }, PROCESS_GROUP_POLL_MS);
+        return;
+      }
+      finish();
     });
   });
 }

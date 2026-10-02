@@ -116,11 +116,15 @@ contract errors rethrow first, recognizable Console not-found failures map to
 | assertion audiences set | registers Pages host origins that may receive a viewer assertion for one aud | dry-run + `--execute` (see `pages/assertion-audiences`) |
 | assertion audiences remove | drops one assertion audience | dry-run + `--execute` (see `pages/assertion-audiences`) |
 | assertion audiences list | reads the host allowlist | not braked |
+| apps targets set | lets this site's pages invoke listed operations on one installation for one aud | dry-run + `--execute`; the dry-run MAY read `GET /api/cli/me` to name the installation and MUST NOT write (see `pages/app-gateway`) |
+| apps targets remove | revokes one app gateway target; the aud stays reserved | dry-run + `--execute` before credentials (see `pages/app-gateway`) |
+| apps targets list | reads the site's app gateway targets, active and revoked | not braked |
 
 There is no `pages remove`/route-removal command on this surface today; if one
 is added it MUST arrive braked. Viewer-assertion audience removal is
 `pages assertion audiences remove`, which is braked, and it does not delete a
-route.
+route. App gateway target removal is `pages apps targets remove`, which is
+braked, revokes the target, and does not delete a route.
 
 ## Official error cases
 

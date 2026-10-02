@@ -45,6 +45,21 @@ import {
   type PageAssertionAudienceMutationResult,
 } from "../../pages/assertion-audiences.js";
 import {
+  listPageAppGatewayTargets,
+  normalizeTargetAppId,
+  normalizeTargetAudience,
+  normalizeTargetInstallationId,
+  normalizeTargetOperations,
+  normalizeTargetOrigins,
+  removePageAppGatewayTarget,
+  resolveConsoleInstallationId,
+  setPageAppGatewayTarget,
+  type PageAppGatewayTarget,
+  type PageAppGatewayTargetListResult,
+  type PageAppGatewayTargetRemoveResult,
+  type PageAppGatewayTargetSetResult,
+} from "../../pages/app-gateway-targets.js";
+import {
   ensurePageCommentFollow,
   pageCommentCreatorFromContext,
   type PageCommentFollowDeps,
@@ -1073,6 +1088,27 @@ export class PagesAssertionAudienceCommands {
             },
           });
         }
+        // Audience exclusivity: a gateway target row on this site, in any
+        // status, reserves the audience. The shared Console error mapper
+        // aliases 409 `CONFLICT` to a Ravi Link binding conflict, so name the
+        // real cause here instead of suggesting `ravi unlink`.
+        if (error instanceof CloudAuthError && error.status === 409) {
+          contractFail(
+            "pages assertion audiences set",
+            "APP_GATEWAY_AUDIENCE_CONFLICT",
+            "This audience is reserved for a Pages app gateway target on this site.",
+            {
+              asJson,
+              exitCode: CONTRACT_EXIT_USAGE,
+              details: {
+                retryable: false,
+                status: 409,
+                suggestedAction:
+                  "Use another --aud; gateway audiences stay reserved even after ravi pages apps targets remove",
+              },
+            },
+          );
+        }
         throw error;
       }
       const payload = { ...result, scope: resolved.scope };
@@ -1132,6 +1168,281 @@ export class PagesAssertionAudienceCommands {
       const payload = { ...result, scope: resolved.scope };
       printPayload(payload, asJson, () => printAssertionAudienceMutation(result));
       return payload;
+    });
+  }
+}
+
+const PAGES_APP_TARGETS_SET_HELP = `
+Examples:
+  ravi pages apps targets set --site demo --aud https://apps.example.ravi.local/slides --app slides --op slides.list --origin https://demo.ravi.page --execute
+  ravi pages apps targets set --site demo --aud https://apps.example.ravi.local/slides --app slides --op slides.list --op slides.get --origin https://demo.ravi.page --json --execute
+
+A target lets pages on this site call /_ravi/apps/<app>/<op> with a viewer
+assertion for --aud. Console signs a target grant and pushes it to the edge;
+the grant itself is never printed.
+
+--installation defaults to this installation's Console id (GET /api/cli/me).
+--op is an exact manifest operation id; repeat it (1 to 16). --origin is an
+https origin of this Pages site; repeat it (1 to 8).
+
+This installation still runs nothing until RAVI_APP_GATEWAY_ENABLED=1 and
+apps.gateway.allowed_operations lists <app>:<op>.
+
+Write brake:
+  Without --execute the command is a dry-run: it prints the plan and exits 3.
+  Nothing is written to Console.
+`;
+
+const PAGES_APP_TARGETS_REMOVE_HELP = `
+Examples:
+  ravi pages apps targets remove --site demo --aud https://apps.example.ravi.local/slides --execute
+
+Revokes the target and deletes its edge grant. The audience stays reserved for
+the app gateway on this site. Without --execute the command is a dry-run (exit 3).
+`;
+
+@Group({
+  name: "pages.apps.targets",
+  description: "Register Pages app gateway targets (site audience to this installation's app operations)",
+  scope: "open",
+})
+export class PagesAppTargetsCommands {
+  constructor(private readonly deps: PagesCommandDeps = {}) {}
+
+  @Command({ name: "list", description: "List app gateway targets on a Pages host, active and revoked" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "app-gateway-targets", risk: "low" })
+  async list(
+    @Option({
+      flags: "--site <host>",
+      description: "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+    })
+    site?: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum targets to return (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of targets to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print a token-free JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand("pages apps targets list", asJson, async () => {
+      const siteRef = requireAssertionSite(site);
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      const result = await listPageAppGatewayTargets(
+        { console: consoleUrl, project: resolved.projectRef, site: siteRef },
+        this.deps,
+      );
+      const page = paginateCliItems(result.targets, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "pages", "apps", "targets", "list"],
+        limit: page.limit,
+        offset: page.offset,
+        options: ["--site", siteRef, "--project", resolved.projectRef, consoleUrl ? "--console" : null, consoleUrl],
+        returned: page.items.length,
+        total: page.total,
+      });
+      const payload = { ...result, targets: page.items, pagination, scope: resolved.scope, total: page.total };
+      printPayload(payload, asJson, () => printAppTargetList({ ...result, targets: page.items, total: page.total }));
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "set",
+    description: "Create or replace the app gateway target for one audience on a Pages host",
+    helpAfter: PAGES_APP_TARGETS_SET_HELP,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "app-gateway-targets",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async set(
+    @Option({
+      flags: "--site <host>",
+      description: "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+    })
+    site?: string,
+    @Option({ flags: "--aud <aud>", description: "Viewer-assertion audience reserved for the app gateway" })
+    aud?: string,
+    @Option({ flags: "--app <appId>", description: "Ravi app id served by the target installation" }) app?: string,
+    @Option({
+      flags: "--op <operationId...>",
+      description: "Exact manifest operation id (for example slides.list). Repeat for 1 to 16",
+    })
+    operations?: string[],
+    @Option({
+      flags: "--origin <origin...>",
+      description: "HTTPS origin of this Pages site (default host or active custom hostname). Repeat for 1 to 8",
+    })
+    origins?: string[],
+    @Option({
+      flags: "--installation <id>",
+      description: "Console installation id that serves the target (default: this installation)",
+    })
+    installation?: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a token-free JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Register the target; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages apps targets set", asJson, async () => {
+      const siteRef = requireAssertionSite(site);
+      const audience = normalizeTargetAudience(aud);
+      const appId = normalizeTargetAppId(app);
+      const normalizedOperations = normalizeTargetOperations(operations);
+      const normalizedOrigins = normalizeTargetOrigins(origins);
+      const explicitInstallation = normalizeTargetInstallationId(installation);
+      const installationId =
+        explicitInstallation ?? (await resolveConsoleInstallationId({ console: consoleUrl }, this.deps)) ?? undefined;
+      if (execute !== true) {
+        contractDryRun(
+          "pages apps targets set",
+          {
+            project: projectOption ?? "(Console scope default)",
+            site: siteRef,
+            aud: audience,
+            app: appId,
+            operations: normalizedOperations,
+            origins: normalizedOrigins,
+            installation: installationId ?? "(this CLI session's Console installation)",
+          },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      let result: PageAppGatewayTargetSetResult;
+      try {
+        result = await setPageAppGatewayTarget(
+          {
+            appId,
+            audience,
+            console: consoleUrl,
+            ...(installationId ? { installationId } : {}),
+            operations: normalizedOperations,
+            origins: normalizedOrigins,
+            project: resolved.projectRef,
+            site: siteRef,
+          },
+          this.deps,
+        );
+      } catch (error) {
+        failAppTargetFromConsole("pages apps targets set", error, asJson);
+        throw error;
+      }
+      const payload = { ...result, scope: resolved.scope };
+      printPayload(payload, asJson, () => printAppTargetSet(result));
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "remove",
+    description: "Revoke the app gateway target for one audience on a Pages host",
+    helpAfter: PAGES_APP_TARGETS_REMOVE_HELP,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "app-gateway-targets",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async remove(
+    @Option({
+      flags: "--site <host>",
+      description: "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+    })
+    site?: string,
+    @Option({ flags: "--aud <aud>", description: "Audience of the target to revoke" }) aud?: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a token-free JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Revoke the target; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages apps targets remove", asJson, async () => {
+      const siteRef = requireAssertionSite(site);
+      const audience = normalizeTargetAudience(aud);
+      if (execute !== true) {
+        contractDryRun(
+          "pages apps targets remove",
+          { project: projectOption ?? "(Console scope default)", site: siteRef, aud: audience },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      let result: PageAppGatewayTargetRemoveResult;
+      try {
+        result = await removePageAppGatewayTarget(
+          { audience, console: consoleUrl, project: resolved.projectRef, site: siteRef },
+          this.deps,
+        );
+      } catch (error) {
+        failAppTargetFromConsole("pages apps targets remove", error, asJson);
+        throw error;
+      }
+      const payload = { ...result, scope: resolved.scope };
+      printPayload(payload, asJson, () => printAppTargetRemove(result));
+      return payload;
+    });
+  }
+}
+
+/**
+ * Console answers target conflicts with 409 `CONFLICT` and installation
+ * refusals with 403 `INSTALLATION_ORG_MISMATCH`. The shared Console error
+ * mapper aliases those for `ravi link`, so map them back by status here.
+ */
+function failAppTargetFromConsole(op: string, error: unknown, asJson: boolean | undefined): void {
+  if (!(error instanceof CloudAuthError)) return;
+  if (error.status === 409) {
+    contractFail(op, "APP_GATEWAY_AUDIENCE_CONFLICT", "This audience is a viewer-assertion audience on this site.", {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        status: 409,
+        suggestedAction:
+          "Use another --aud for the app gateway, or remove the viewer-assertion audience first with ravi pages assertion audiences remove",
+      },
+    });
+  }
+  if (error.status === 403 && error.code === "ORG_ACCESS_DENIED") {
+    contractFail(
+      op,
+      "INSTALLATION_ORG_MISMATCH",
+      "The installation is not an active installation of this site's organization, or you cannot manage it.",
+      {
+        asJson,
+        details: {
+          retryable: false,
+          status: 403,
+          suggestedAction:
+            "Omit --installation to use this installation, or ask an organization owner or admin to register the target",
+        },
+      },
+    );
+  }
+  if (error.status === 404 && error.code === "PAYLOAD_INVALID") {
+    contractFail(op, "TARGET_NOT_FOUND", "No app gateway target with this audience on this site.", {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        status: 404,
+        suggestedAction: "List targets with: ravi pages apps targets list --site <site> --json",
+      },
     });
   }
 }
@@ -1492,6 +1803,55 @@ const pageAssertionAudienceMutationReturnSchema = z.object({
   success: z.literal(true),
 });
 
+const pageAppTargetSchema = z.object({
+  id: z.string().nullable(),
+  audience: z.string(),
+  appId: z.string().nullable(),
+  operations: z.array(z.string()),
+  origins: z.array(z.string()),
+  installationId: z.string().nullable(),
+  organizationId: z.string().nullable(),
+  projectId: z.string().nullable(),
+  siteId: z.string().nullable(),
+  status: z.string().nullable(),
+  revision: z.number().nullable(),
+  grantExpiresAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+});
+
+const pageAppTargetListReturnSchema = z.object({
+  consoleUrl: z.string(),
+  pagination: strictCliOffsetPaginationSchema,
+  projectRef: z.string(),
+  siteRef: z.string(),
+  success: z.literal(true),
+  targets: z.array(pageAppTargetSchema),
+  total: z.number(),
+});
+
+const pageAppTargetSetReturnSchema = z.object({
+  action: z.literal("set"),
+  audience: z.string(),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  siteRef: z.string(),
+  success: z.literal(true),
+  target: pageAppTargetSchema.nullable(),
+});
+
+const pageAppTargetRemoveReturnSchema = z.object({
+  action: z.literal("remove"),
+  audience: z.string(),
+  consoleUrl: z.string(),
+  id: z.string().nullable(),
+  projectRef: z.string(),
+  siteRef: z.string(),
+  status: z.string(),
+  success: z.literal(true),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
@@ -1513,6 +1873,12 @@ declareCommandReturns(PagesAssertionAudienceCommands, {
   list: pageAssertionAudienceListReturnSchema,
   set: pageAssertionAudienceMutationReturnSchema,
   remove: pageAssertionAudienceMutationReturnSchema,
+});
+
+declareCommandReturns(PagesAppTargetsCommands, {
+  list: pageAppTargetListReturnSchema,
+  set: pageAppTargetSetReturnSchema,
+  remove: pageAppTargetRemoveReturnSchema,
 });
 
 async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
@@ -1766,6 +2132,34 @@ function printAssertionAudienceMutation(result: PageAssertionAudienceMutationRes
   console.log(`  Aud     ${result.aud}`);
   if (result.action === "set") console.log(`  Origins ${result.origins.join(", ")}`);
   console.log(`  JWKS    ${result.jwksUrl}`);
+}
+
+function printAppTargetList(result: PageAppGatewayTargetListResult): void {
+  console.log(`App gateway targets for ${result.siteRef} (${result.total})`);
+  if (result.targets.length === 0) console.log("  No targets registered.");
+  for (const target of result.targets) printAppTargetFields(target);
+}
+
+function printAppTargetSet(result: PageAppGatewayTargetSetResult): void {
+  console.log("✓ App gateway target set");
+  console.log(`  Site    ${result.siteRef}`);
+  if (result.target) printAppTargetFields(result.target);
+  else console.log(`  Aud     ${result.audience}`);
+}
+
+function printAppTargetRemove(result: PageAppGatewayTargetRemoveResult): void {
+  console.log("✓ App gateway target revoked");
+  console.log(`  Site    ${result.siteRef}`);
+  console.log(`  Aud     ${result.audience}`);
+  console.log(`  Status  ${result.status}`);
+}
+
+function printAppTargetFields(target: PageAppGatewayTarget): void {
+  console.log(`  - ${target.audience} [${target.status ?? "unknown"}]`);
+  console.log(`      app: ${target.appId ?? "(unknown)"}  operations: ${target.operations.join(", ") || "(none)"}`);
+  console.log(`      origins: ${target.origins.join(", ") || "(none)"}`);
+  console.log(`      installation: ${target.installationId ?? "(unknown)"}`);
+  console.log(`      grant expires: ${target.grantExpiresAt ?? "not pushed for this revision"}`);
 }
 
 function printCommentFollow(follow: PageCommentFollowResult | undefined): void {

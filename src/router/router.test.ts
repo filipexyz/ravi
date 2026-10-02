@@ -316,6 +316,22 @@ describe("router context queries", () => {
     ).toEqual({ marker: "materialization" });
   });
 
+  it("creates the Pages app gateway relay lease table with an expiry index", () => {
+    const db = getDb();
+    const columns = db.prepare("PRAGMA table_info(console_executor_relay_locks)").all() as Array<{
+      name: string;
+      pk: number;
+    }>;
+    expect(columns.map((column) => column.name)).toEqual(["lock_key", "owner_id", "acquired_at", "expires_at"]);
+    expect(columns.find((column) => column.pk === 1)?.name).toBe("lock_key");
+    const index = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_console_executor_relay_locks_expiry'",
+      )
+      .get();
+    expect(index).toEqual({ name: "idx_console_executor_relay_locks_expiry" });
+  });
+
   it("persists native Slack instanceId and canonicalChatId on context source", () => {
     dbCreateAgent({ id: "agent-a", cwd: "/tmp/ravi-agent-a" });
     getOrCreateSession("agent:agent-a:slack:hana-slack:C123", "agent-a", "/tmp/ravi-agent-a", {

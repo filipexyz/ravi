@@ -108,6 +108,35 @@ describe("SettingsCommands", () => {
     expect(settingsStore["permissions.provider_ids"]).toBe("external-authority");
   });
 
+  it("requires superadmin or the local operator to set or delete apps.gateway.* settings", () => {
+    // An agent session holding only the settings group is scope-enforced.
+    scopeEnforced = true;
+    settingsStore = { "apps.gateway.allowed_operations": "slides:slides.list" };
+    const commands = new SettingsCommands();
+
+    expect(() => commands.set("apps.gateway.allowed_operations", "slides:slides.get")).toThrow(/superadmin/);
+    expect(() => commands.set("apps.gateway.require_link", "false")).toThrow(/superadmin/);
+    expect(() => commands.set("apps.gateway.anything", "x")).toThrow(/superadmin/);
+    expect(() => commands.delete("apps.gateway.allowed_operations", false, true)).toThrow(/superadmin/);
+    expect(settingsStore["apps.gateway.allowed_operations"]).toBe("slides:slides.list");
+
+    scopeEnforced = false;
+    captureLogs(() => commands.set("apps.gateway.allowed_operations", "slides:slides.list, slides:slides.get"));
+    expect(settingsStore["apps.gateway.allowed_operations"]).toBe("slides:slides.list, slides:slides.get");
+  });
+
+  it("validates apps.gateway.* values at set", () => {
+    const commands = new SettingsCommands();
+    for (const value of ["slides", "slides:*", "*:slides.list", "slides:list", "Slides:slides.list", ",", ""]) {
+      expect(() => commands.set("apps.gateway.allowed_operations", value)).toThrow(/Invalid value/);
+    }
+    expect(() => commands.set("apps.gateway.require_link", "yes")).toThrow(/true, false/);
+    captureLogs(() => commands.set("apps.gateway.require_link", "true"));
+    expect(settingsStore["apps.gateway.require_link"]).toBe("true");
+    captureLogs(() => commands.set("apps.gateway.allowed_operations", "music/player:music.player.list"));
+    expect(settingsStore["apps.gateway.allowed_operations"]).toBe("music/player:music.player.list");
+  });
+
   it("rejects unknown permission provider ids", () => {
     expect(() => new SettingsCommands().set("permissions.provider_ids", "operator-control,nao-existe")).toThrow(
       /nao-existe/,
@@ -138,7 +167,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (22 returned of 22, limit 50, offset 0):");
+    expect(output).toContain("Settings (24 returned of 24, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });

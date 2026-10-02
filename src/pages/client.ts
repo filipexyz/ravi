@@ -2,7 +2,7 @@ import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../
 import { CloudAuthError, classifyConsoleNetworkError } from "../cloud-auth/errors.js";
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
-import type { CloudCredentials } from "../cloud-auth/types.js";
+import type { CloudCredentials, ConsoleMeResponse } from "../cloud-auth/types.js";
 
 export type PageVisibility = "public" | "private" | "protected_link";
 
@@ -68,6 +68,8 @@ export interface AuthenticatedPagesContext {
   accessToken: string;
   client: ConsoleApiClient;
   consoleUrl: string;
+  /** `GET /api/cli/me` of the session (already fetched to refresh credentials). */
+  me: ConsoleMeResponse;
 }
 
 export type PageSitePayload = Record<string, unknown>;
@@ -346,6 +348,7 @@ export async function createAuthenticatedPagesContext(
     accessToken: auth.credentials.accessToken,
     client,
     consoleUrl: auth.credentials.consoleUrl,
+    me: auth.me,
   };
 }
 
