@@ -7,7 +7,7 @@
  */
 
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { logger } from "../utils/logger.js";
 import { expireEphemeralSession, getExpiringSessions, getExpiredSessions, listSessions } from "../router/sessions.js";
 import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";

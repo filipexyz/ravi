@@ -13,17 +13,19 @@ description: |
 
 # WhatsApp Manager
 
-Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, registrar rotas/sessões Ravi e operar grupos pelo CLI.
+Funcionalidades do WhatsApp expostas via Baileys, que roda dentro do runner `ravi channels` (processo PM2 `ravi-channels`). O Ravi fala com o runner por RPC (`_RAVI.channels.whatsapp.rpc.<uuid>`). Permite criar grupos, registrar rotas/sessões Ravi e operar grupos pelo CLI. O Omni nunca participa do WhatsApp.
 
-**Importante:** Todos os comandos precisam que o Omni esteja rodando com WhatsApp conectado.
+**Importante:** Todos os comandos precisam da conta WhatsApp conectada e do runner rodando (`ravi channels start`). Confira com `ravi instances status <conta> --json` (`transport: "whatsapp"`, `status: "connected"`). Se o runner não responder, o erro é `WHATSAPP_RUNNER_UNAVAILABLE`: rode `ravi channels start` (ou `restart`) e repita. Conectar, deslogar e migrar uma conta que estava no Omni ficam no skill de instâncias (`ravi instances connect <conta>`).
 
-**Criação de grupo:** `ravi whatsapp group create` usa a API HTTP pública do Omni (`POST /api/v2/instances/:id/groups`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
+**Saída `--json`:** `source` indica de onde veio o dado (`whatsapp.rpc`, `whatsapp.rpc.group_participants`, `whatsapp.rpc.group_invite`, `whatsapp.group*`, ou `local.chat_model` no fallback). `group send` traz `transport: "whatsapp"`, e mídia enviada por `ravi media send` / `image --send` / `audio --send` vira entrega com `transport: "whatsapp"`.
 
-**Operações de grupo:** `list`, `info` e `invite` são leituras; `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. As mutações usam contratos REST do Omni pelo cliente público. `demote` reduz autoridade e executa imediatamente; as demais mutações (`send`, `add`, `remove`, `promote`, `leave`, `join`, `revoke-invite`, `rename`, `description`, `settings`) são dry-run por default e exigem `--execute` (ver "Contrato Do CLI" abaixo). Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
+**Criação de grupo:** `ravi whatsapp group create` cria o grupo pelo runner (`groups.create`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
+
+**Operações de grupo:** `list`, `info` e `invite` são leituras; `list` e `info` usam `groups.list` no runner e caem para o modelo local `chats` se o runner falhar. As mutações chamam o runner (`groups.*`). `demote` reduz autoridade e executa imediatamente; as demais mutações (`send`, `add`, `remove`, `promote`, `leave`, `join`, `revoke-invite`, `rename`, `description`, `settings`) são dry-run por default e exigem `--execute` (ver "Contrato Do CLI" abaixo). Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`.
 
 **Novo fio de trabalho:** quando o usuário pedir para criar um grupo/agent para um assunto novo, use o fluxo transacional de criação. Não tente localizar o grupo com `ravi whatsapp group list`: listagem não registra chat/rota/sessão. Use `group list` apenas para inspeção.
 
-**Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, status, policies).
+**Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, deslogar, status, policies).
 
 ## Contrato Do CLI
 
@@ -38,7 +40,7 @@ Taxonomia de saída:
 
 Onde o freio existe: `group send`, `group create`, `group add`, `group remove`, `group promote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings`, `dm send` e `dm ack`. Essas operações alteram estado que pessoas reais observam; revise o plano antes do efeito.
 
-Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras; `group demote` é mutação imediata de redução de autoridade. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. O antigo `--no-ack` ainda é aceito como no-op, mas não deve ser usado em chamadas novas. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`.
+Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras; `group demote` é mutação imediata de redução de autoridade. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. O antigo `--no-ack` ainda é aceito como no-op, mas não deve ser usado em chamadas novas. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`. Ele emite `ravi.outbound.receipt`; hoje nenhum processo do Ravi consome esse subject, então o recibo não chega ao WhatsApp.
 
 Compact mode: `group list` e `dm read` aceitam `--fields a,b,c` (ex.: `--fields id,subject`) — use em varredura para não arrastar o objeto inteiro de cada item.
 
@@ -88,7 +90,7 @@ ravi whatsapp group create "Vida - Health" "5511888888888" \
 
 Ao criar agent inline com `--create-agent`, passe todas as configurações conhecidas no mesmo comando: `--agent-cwd`, `--agent-provider` e `--agent-model`. Use ajustes posteriores (`ravi agents set ...`) só para corrigir/migrar agent existente, não como fluxo normal de criação.
 
-Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial/admin. `--admin`/`--admins` também adiciona os números à lista inicial de participantes e o Ravi tenta promovê-los via contrato REST público de participantes do Omni logo após a criação. Quando a promoção passa, o payload retorna `adminPromotion.status = "promoted"` e o Ravi registra esses contatos como `admin`. Se o Omni falhar depois do grupo existir, o payload retorna `adminPromotion.status = "failed"` com o erro e os contatos ficam registrados sem confirmação de admin.
+Quando o comando roda dentro de uma sessão Ravi, o criador pode ser inferido pelo actor do contexto e entra como participante inicial/admin. `--admin`/`--admins` também adiciona os números à lista inicial de participantes e o Ravi tenta promovê-los pelo runner (`groups.updateParticipants`) logo após a criação. Quando a promoção passa, o payload retorna `adminPromotion.status = "promoted"` e o Ravi registra esses contatos como `admin`. Se a promoção falhar depois do grupo existir, o payload retorna `adminPromotion.status = "failed"` com o erro e os contatos ficam registrados sem confirmação de admin.
 
 Se o usuário disser algo ambíguo como "criei um grupo para isso", "abre um grupo", "novo grupo/agent" ou "vamos separar esse assunto", trate como intenção de criar e rotear um novo workspace, salvo quando ele fornecer JID/link ou disser explicitamente que o grupo já existe.
 
@@ -124,7 +126,7 @@ ravi whatsapp group remove <groupId> "5511999999999" --execute
 ```bash
 ravi whatsapp group promote <groupId> "5511999999999" --execute
 ```
-No fluxo `group create`, o Ravi usa o mesmo contrato REST de participantes do Omni para promover actor/admins inferidos ou explicitados. Fora da criação, `promote` chama esse mesmo contrato e deve falhar explicitamente se o endpoint não estiver disponível.
+No fluxo `group create`, o Ravi usa a mesma chamada do runner (`groups.updateParticipants`) para promover actor/admins inferidos ou explicitados. Fora da criação, `promote` chama essa mesma operação e falha explicitamente se o runner recusar.
 
 ### Remover admin
 ```bash

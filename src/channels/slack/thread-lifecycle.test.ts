@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
+import type { PublishSessionPromptOptions } from "../../session-prompts/stream.js";
 import { getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -248,7 +248,7 @@ describe("Slack thread lifecycle", () => {
         isGroup: false,
       },
     });
-    expect((prompts[0]?.payload.context as Record<string, unknown>).groupId).toBeUndefined();
+    expect((prompts[0]!.payload.context as Record<string, unknown>).groupId).toBeUndefined();
   });
 
   it("closes silently or returns one structured completion to the parent, then reopens on inbound", async () => {

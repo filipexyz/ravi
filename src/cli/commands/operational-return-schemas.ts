@@ -1642,7 +1642,7 @@ export const daemonStatusReturnSchema = z
     pm2Available: z.boolean(),
     processName: z.string(),
     ravi: looseObjectSchema,
-    infrastructure: looseObjectSchema,
+    infrastructure: z.object({ nats: looseObjectSchema, legacyBridge: looseObjectSchema }).passthrough(),
     runtime: managedRuntimeIdentityReturnSchema,
     processes: z.array(looseObjectSchema),
   })

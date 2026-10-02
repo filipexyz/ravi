@@ -1,4 +1,4 @@
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 
 type TaskSessionPromptPublisher = (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
 

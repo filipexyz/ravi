@@ -14,7 +14,7 @@
 ## Validation
 
 ```bash
-bun test src/omni/mentions.test.ts src/omni/sender.test.ts src/omni/group-metadata-cache.test.ts src/gateway-session-trace.test.ts src/cli/commands/channels-json.test.ts
+bun test src/channels/mentions.test.ts src/channels/whatsapp/sender.test.ts src/omni/sender.test.ts src/channels/group-metadata/cache.test.ts src/gateway-session-trace.test.ts src/gateway-whatsapp-mentions.test.ts && bun test src/cli/commands/channels-json.test.ts
 bun run typecheck
 bun run build
 ```

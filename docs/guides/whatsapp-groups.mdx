@@ -5,14 +5,14 @@ description: Creating, managing, and routing WhatsApp groups with Ravi.
 
 ## Overview
 
-Ravi can create and manage WhatsApp groups programmatically through the CLI. Groups are managed via the `ravi whatsapp group` commands, which communicate with the WhatsApp instance through NATS request/reply. All commands require the daemon to be running with a connected WhatsApp account.
+Ravi can create and manage WhatsApp groups programmatically through the CLI. Groups are managed via the `ravi whatsapp group` commands, which call the `ravi channels` runner over NATS request/reply (`groups.*` on `_RAVI.channels.whatsapp.rpc.<instanceId>`). All commands require the runner to be running with a connected WhatsApp account.
 
 Risky external mutations (`create`, `add`, `remove`, `promote`, `revoke-invite`, `join`, `leave`, `rename`, `description`, `settings`) are **dry-run by default**: without `--execute` the command exits 3 and only prints the plan — nothing reaches WhatsApp. Re-run with `--execute` to perform the write. `demote` reduces authority and executes immediately. Read-only commands (`list`, `info`, `invite`) take no `--execute`.
 
 ## Prerequisites
 
-- Daemon running: `ravi daemon start`
-- WhatsApp connected: `ravi whatsapp connect`
+- Daemon and channel runner running: `ravi daemon start` and `ravi channels start`
+- WhatsApp connected: `ravi instances connect <name>`
 - Participants must exist as contacts before being added to groups
 
 ## Creating Groups

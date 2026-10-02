@@ -6,10 +6,13 @@ import {
   nativeAccountAliases,
   nativeChannelCredentialConfigured,
   resolveOutboundAccount,
+  unresolvedAccountError,
   type OutboundAccountConfig,
 } from "./account-resolution.js";
 
-const OMNI_UUID = "11111111-1111-1111-1111-111111111111";
+const WA_UUID = "11111111-1111-1111-1111-111111111111";
+const TG_UUID = "22222222-2222-2222-2222-222222222222";
+const UNMAPPED_UUID = "33333333-3333-4333-8333-333333333333";
 
 function slackChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
@@ -23,10 +26,21 @@ function slackChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   };
 }
 
-function omniInstance(overrides: Partial<InstanceConfig> = {}): InstanceConfig {
+function whatsappChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
     name: "main",
-    instanceId: OMNI_UUID,
+    provider: "whatsapp",
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function whatsappInstance(overrides: Partial<InstanceConfig> = {}): InstanceConfig {
+  return {
+    name: "main",
+    instanceId: WA_UUID,
     channel: "whatsapp",
     dmPolicy: "open",
     groupPolicy: "open",
@@ -47,7 +61,7 @@ function config(overrides: Partial<OutboundAccountConfig> = {}): OutboundAccount
 }
 
 describe("resolveOutboundAccount", () => {
-  it("resolves a native Slack account without an Omni instance UUID", () => {
+  it("resolves a native Slack account without an instance UUID", () => {
     const resolved = resolveOutboundAccount("hana-slack", {
       channel: "slack",
       config: config({ channels: { "hana-slack": slackChannel() } }),
@@ -75,71 +89,247 @@ describe("resolveOutboundAccount", () => {
     });
   });
 
-  it("keeps Omni name and UUID resolution for WhatsApp", () => {
+  it("resolves a bound WhatsApp account by name, UUID and with a whatsapp/whatsapp-baileys hint", () => {
     const cfg = config({
-      instances: { main: omniInstance() },
-      instanceToAccount: { [OMNI_UUID]: "main" },
+      channels: { main: whatsappChannel() },
+      instances: { main: whatsappInstance() },
+      instanceToAccount: { [WA_UUID]: "main" },
     });
+    const expected = { kind: "whatsapp" as const, instanceId: WA_UUID, channelName: "main", bound: true };
 
+    expect(resolveOutboundAccount("main", { config: cfg })).toEqual({ ...expected, accountId: "main" });
+    expect(resolveOutboundAccount(WA_UUID, { config: cfg })).toEqual({ ...expected, accountId: WA_UUID });
     expect(resolveOutboundAccount("main", { channel: "whatsapp", config: cfg })).toEqual({
-      kind: "omni",
+      ...expected,
       accountId: "main",
-      instanceId: OMNI_UUID,
     });
-    expect(resolveOutboundAccount(OMNI_UUID, { channel: "whatsapp", config: cfg })).toEqual({
-      kind: "omni",
-      accountId: OMNI_UUID,
-      instanceId: OMNI_UUID,
+    expect(resolveOutboundAccount(WA_UUID, { channel: "whatsapp-baileys", config: cfg })).toEqual({
+      ...expected,
+      accountId: WA_UUID,
     });
   });
 
-  it("does not let a same-named Slack channel steal a WhatsApp Omni account", () => {
-    const resolved = resolveOutboundAccount("main", {
-      channel: "whatsapp",
+  it("resolves a WhatsApp account whose channel name differs from the instance name (defaults.instance)", () => {
+    const resolved = resolveOutboundAccount("Loja São Paulo", {
+      channel: "whatsapp-baileys",
       config: config({
-        channels: { main: slackChannel({ name: "main" }) },
-        instances: { main: omniInstance() },
-        instanceToAccount: { [OMNI_UUID]: "main" },
+        channels: {
+          "Loja-Sao-Paulo": whatsappChannel({ name: "Loja-Sao-Paulo", defaults: { instance: "Loja São Paulo" } }),
+        },
+        instances: { "Loja São Paulo": whatsappInstance({ name: "Loja São Paulo" }) },
+        instanceToAccount: { [WA_UUID]: "Loja São Paulo" },
       }),
     });
 
     expect(resolved).toEqual({
-      kind: "omni",
-      accountId: "main",
-      instanceId: OMNI_UUID,
+      kind: "whatsapp",
+      accountId: "Loja São Paulo",
+      instanceId: WA_UUID,
+      channelName: "Loja-Sao-Paulo",
+      bound: true,
     });
   });
 
-  it("prefers native Slack over a leftover Omni mapping when the channel is Slack", () => {
+  it("resolves an unbound WhatsApp instance as whatsapp with bound:false (never the bridge)", () => {
+    const unbound = config({
+      instances: { main: whatsappInstance() },
+      instanceToAccount: { [WA_UUID]: "main" },
+    });
+    expect(resolveOutboundAccount("main", { channel: "whatsapp", config: unbound })).toEqual({
+      kind: "whatsapp",
+      accountId: "main",
+      instanceId: WA_UUID,
+      channelName: null,
+      bound: false,
+    });
+
+    // A disabled WhatsApp channel does not bind, but is still reported.
+    const disabledChannel = config({
+      channels: { main: whatsappChannel({ enabled: false }) },
+      instances: { main: whatsappInstance() },
+      instanceToAccount: { [WA_UUID]: "main" },
+    });
+    expect(resolveOutboundAccount(WA_UUID, { config: disabledChannel })).toEqual({
+      kind: "whatsapp",
+      accountId: WA_UUID,
+      instanceId: WA_UUID,
+      channelName: "main",
+      bound: false,
+    });
+  });
+
+  it("returns not_bound for a WhatsApp instance without a UUID", () => {
+    const resolved = resolveOutboundAccount("main", {
+      channel: "whatsapp",
+      config: config({ instances: { main: whatsappInstance({ instanceId: undefined }) } }),
+    });
+
+    expect(resolved).toEqual({ kind: "unresolved", accountId: "main", reason: "not_bound" });
+    expect(unresolvedAccountError(resolved as Extract<typeof resolved, { kind: "unresolved" }>)).toBe(
+      "WhatsApp instance main is not connected: ravi instances connect main",
+    );
+  });
+
+  it("returns disabled for a disabled WhatsApp instance, by name and by UUID", () => {
+    const cfg = config({
+      channels: { main: whatsappChannel() },
+      instances: { main: whatsappInstance({ enabled: false }) },
+      instanceToAccount: { [WA_UUID]: "main" },
+    });
+
+    expect(resolveOutboundAccount("main", { channel: "whatsapp", config: cfg })).toEqual({
+      kind: "unresolved",
+      accountId: "main",
+      reason: "disabled",
+    });
+    expect(resolveOutboundAccount(WA_UUID, { config: cfg })).toEqual({
+      kind: "unresolved",
+      accountId: WA_UUID,
+      reason: "disabled",
+    });
+  });
+
+  it("resolves a Telegram instance to the legacy bridge by UUID and by name", () => {
+    const cfg = config({
+      instances: { tg: whatsappInstance({ name: "tg", instanceId: TG_UUID, channel: "telegram" }) },
+      instanceToAccount: { [TG_UUID]: "tg" },
+    });
+
+    expect(resolveOutboundAccount(TG_UUID, { channel: "telegram", config: cfg })).toEqual({
+      kind: "bridge",
+      accountId: TG_UUID,
+      instanceId: TG_UUID,
+    });
+    expect(resolveOutboundAccount("tg", { config: cfg })).toEqual({
+      kind: "bridge",
+      accountId: "tg",
+      instanceId: TG_UUID,
+    });
+  });
+
+  it("returns not_found for an unmapped UUID instead of passing it through", () => {
+    for (const channel of [undefined, "whatsapp", "whatsapp-baileys", "telegram"]) {
+      expect(resolveOutboundAccount(UNMAPPED_UUID, { channel, config: config() })).toEqual({
+        kind: "unresolved",
+        accountId: UNMAPPED_UUID,
+        reason: "not_found",
+      });
+    }
+  });
+
+  it("returns unsupported for a twilio-whatsapp or gupshup instance, and for such a hint", () => {
+    const cfg = config({
+      instances: {
+        twilio: whatsappInstance({ name: "twilio", instanceId: TG_UUID, channel: "twilio-whatsapp" }),
+        gup: whatsappInstance({ name: "gup", instanceId: UNMAPPED_UUID, channel: "gupshup" }),
+      },
+      instanceToAccount: { [TG_UUID]: "twilio", [UNMAPPED_UUID]: "gup" },
+    });
+
+    expect(resolveOutboundAccount("twilio", { config: cfg })).toEqual({
+      kind: "unresolved",
+      accountId: "twilio",
+      reason: "unsupported",
+    });
+    expect(resolveOutboundAccount(TG_UUID, { channel: "whatsapp", config: cfg })).toMatchObject({
+      reason: "unsupported",
+    });
+    expect(resolveOutboundAccount("gup", { channel: "telegram", config: cfg })).toMatchObject({
+      reason: "unsupported",
+    });
+    expect(resolveOutboundAccount("someone", { channel: "twilio-whatsapp", config: config() })).toEqual({
+      kind: "unresolved",
+      accountId: "someone",
+      reason: "unsupported",
+    });
+  });
+
+  it("ignores deleted instance records", () => {
+    const resolved = resolveOutboundAccount("main", {
+      config: config({
+        instances: { main: whatsappInstance({ deletedAt: 5 }) },
+        instanceToAccount: { [WA_UUID]: "main" },
+      }),
+    });
+
+    expect(resolved).toEqual({ kind: "unresolved", accountId: "main", reason: "not_found" });
+  });
+
+  it("does not let a same-named Slack channel steal a WhatsApp account", () => {
+    const resolved = resolveOutboundAccount("main", {
+      channel: "whatsapp",
+      config: config({
+        channels: { main: slackChannel({ name: "main" }) },
+        instances: { main: whatsappInstance() },
+        instanceToAccount: { [WA_UUID]: "main" },
+      }),
+    });
+
+    expect(resolved).toEqual({
+      kind: "whatsapp",
+      accountId: "main",
+      instanceId: WA_UUID,
+      channelName: null,
+      bound: false,
+    });
+  });
+
+  it("keeps a Slack-hinted send on the native Slack channel when a same-named WhatsApp instance exists", () => {
+    const cfg = config({
+      channels: { main: slackChannel({ name: "main", credentialConnection: "main-secret" }) },
+      instances: { main: whatsappInstance() },
+      instanceToAccount: { [WA_UUID]: "main" },
+    });
+
+    expect(resolveOutboundAccount("main", { channel: "slack", config: cfg })).toMatchObject({
+      kind: "native",
+      accountId: "main",
+      instanceId: "main",
+      provider: "slack",
+      channelName: "main",
+    });
+    // Without a Slack hint the WhatsApp instance still wins.
+    expect(resolveOutboundAccount("main", { channel: "whatsapp", config: cfg })).toMatchObject({ kind: "whatsapp" });
+    expect(resolveOutboundAccount("main", { config: cfg })).toMatchObject({ kind: "whatsapp" });
+    // A Slack hint with no matching native channel still falls through to the WhatsApp record.
+    const noSlack = config({ instances: { main: whatsappInstance() }, instanceToAccount: { [WA_UUID]: "main" } });
+    expect(resolveOutboundAccount("main", { channel: "slack", config: noSlack })).toMatchObject({ kind: "whatsapp" });
+  });
+
+  it("prefers native Slack over a leftover bridge mapping when the channel is Slack", () => {
     const resolved = resolveOutboundAccount("hana-slack", {
       channel: "slack",
       config: config({
         channels: { "hana-slack": slackChannel() },
-        instances: { "hana-slack": omniInstance({ name: "hana-slack", channel: "slack" }) },
-        instanceToAccount: { [OMNI_UUID]: "hana-slack" },
+        instances: { "hana-slack": whatsappInstance({ name: "hana-slack", channel: "slack" }) },
+        instanceToAccount: { [WA_UUID]: "hana-slack" },
       }),
     });
 
     expect(resolved.kind).toBe("native");
   });
 
-  it("preserves Omni when no channel hint is given and an Omni mapping exists", () => {
-    const resolved = resolveOutboundAccount("main", {
-      config: config({
-        channels: { main: slackChannel({ name: "main" }) },
-        instances: { main: omniInstance() },
-        instanceToAccount: { [OMNI_UUID]: "main" },
-      }),
+  it("prefers the instance record over a same-named Slack channel when no channel hint is given", () => {
+    const cfg = config({
+      channels: { main: slackChannel({ name: "main" }) },
+      instances: { main: whatsappInstance() },
+      instanceToAccount: { [WA_UUID]: "main" },
     });
+    expect(resolveOutboundAccount("main", { config: cfg })).toMatchObject({ kind: "whatsapp", instanceId: WA_UUID });
 
-    expect(resolved).toEqual({
-      kind: "omni",
+    const bridged = config({
+      channels: { main: slackChannel({ name: "main" }) },
+      instances: { main: whatsappInstance({ channel: "discord" }) },
+      instanceToAccount: { [WA_UUID]: "main" },
+    });
+    expect(resolveOutboundAccount("main", { config: bridged })).toEqual({
+      kind: "bridge",
       accountId: "main",
-      instanceId: OMNI_UUID,
+      instanceId: WA_UUID,
     });
   });
 
-  it("falls back to native Slack when there is no Omni mapping and no channel hint", () => {
+  it("falls back to native Slack when there is no instance record and no channel hint", () => {
     const resolved = resolveOutboundAccount("hana-slack", {
       config: config({ channels: { "hana-slack": slackChannel() } }),
     });
@@ -147,16 +337,16 @@ describe("resolveOutboundAccount", () => {
     expect(resolved.kind).toBe("native");
   });
 
-  it("rejects disabled Omni instances and disabled native channels", () => {
+  it("rejects disabled bridge instances and disabled native channels", () => {
     expect(
-      resolveOutboundAccount("main", {
-        channel: "whatsapp",
+      resolveOutboundAccount("tg", {
+        channel: "telegram",
         config: config({
-          instances: { main: omniInstance({ enabled: false }) },
-          instanceToAccount: { [OMNI_UUID]: "main" },
+          instances: { tg: whatsappInstance({ name: "tg", instanceId: TG_UUID, channel: "telegram", enabled: false }) },
+          instanceToAccount: { [TG_UUID]: "tg" },
         }),
       }),
-    ).toEqual({ kind: "unresolved", accountId: "main", reason: "disabled" });
+    ).toEqual({ kind: "unresolved", accountId: "tg", reason: "disabled" });
 
     expect(
       resolveOutboundAccount("hana-slack", {
@@ -179,7 +369,7 @@ describe("resolveOutboundAccount", () => {
     });
   });
 
-  it("reports missing native credentials without inventing an Omni instance", () => {
+  it("reports missing native credentials without inventing an instance", () => {
     const resolved = resolveOutboundAccount("hana-slack", {
       channel: "slack",
       config: config({ channels: { "hana-slack": slackChannel({ credentialConnection: undefined }) } }),
@@ -193,16 +383,16 @@ describe("resolveOutboundAccount", () => {
 });
 
 describe("native channel helpers", () => {
-  it("derives slug and UUID aliases from Omni instance maps", () => {
+  it("derives slug and UUID aliases from instance maps", () => {
     expect(
       nativeAccountAliases(
         config({
-          instances: { "hana-slack": omniInstance({ name: "hana-slack", instanceId: OMNI_UUID }) },
-          instanceToAccount: { [OMNI_UUID]: "hana-slack" },
+          instances: { "hana-slack": whatsappInstance({ name: "hana-slack", instanceId: WA_UUID }) },
+          instanceToAccount: { [WA_UUID]: "hana-slack" },
         }),
-        OMNI_UUID,
+        WA_UUID,
       ),
-    ).toEqual(expect.arrayContaining(["hana-slack", OMNI_UUID.toLowerCase()]));
+    ).toEqual(expect.arrayContaining(["hana-slack", WA_UUID.toLowerCase()]));
   });
 
   it("does not treat an arbitrary string as a native account", () => {

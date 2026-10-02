@@ -15,6 +15,7 @@ tags:
 applies_to:
   - src/cli/commands/media.ts
   - src/cli/media-send.ts
+  - src/cli/media-send-omni.ts
   - src/cli/media-send-auth.ts
   - src/cli/media-send-access.ts
   - src/cli/remote-gateway.ts
@@ -26,6 +27,7 @@ owners:
 status: active
 normative: true
 ---
+<!-- markdownlint-disable-next-line MD025 -->
 # Media agent-first CLI contract
 
 ## Intent
@@ -33,7 +35,8 @@ normative: true
 Make `ravi media` reliable for agent consumers under the agent-first contract
 defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy and a
 write brake on `media send` — the op that delivers a file to a REAL chat on a
-live channel (WhatsApp/Slack) and cannot be unsent.
+live channel (WhatsApp, Slack, or Telegram/Discord through the legacy bridge)
+and cannot be unsent.
 
 ## Invariants
 
@@ -46,12 +49,18 @@ live channel (WhatsApp/Slack) and cannot be unsent.
    `fileName`, `mimeType`, `mediaType`, `captionPresent`, `voiceNote` and a
    target containing only `channel`, `accountId`, `chatIdPresent` and
    `threadIdPresent`. The plan MUST NOT contain the resolved path, caption,
-   chat ID or thread ID, and MUST NOT call the omni CLI or the Slack native
-   sender.
+   chat ID or thread ID, and MUST NOT call any transport (the WhatsApp runner,
+   the Slack native sender or the legacy-bridge `omni` CLI).
 4. A missing local file MUST exit 1 with `FILE_NOT_FOUND` BEFORE the brake — no
    plan is shown for a send that could never happen.
-5. Delivery failures after `--execute` MUST exit 1 with `MEDIA_SEND_FAILED`
-   (`retryable: true`), except Omni `401` / `Invalid API key` which MUST exit 1
+5. Delivery failures after `--execute` MUST exit 1. A `ChannelTransportError`
+   (WhatsApp RPC errors such as `WHATSAPP_RUNNER_UNAVAILABLE`,
+   `WHATSAPP_NOT_BOUND`, `NOT_CONNECTED` or `WHATSAPP_RPC_TIMEOUT`, and the
+   routing errors `INSTANCE_NOT_FOUND` / `CHANNEL_PROVIDER_UNSUPPORTED`) MUST
+   keep its own code and `retryable`, with a sanitized message and a
+   `suggestedAction` (`mapChannelMediaFailure`). Any other failure maps to
+   `MEDIA_SEND_FAILED` (`retryable: true`), except a legacy-bridge `401` /
+   `Invalid API key`, which MUST exit 1
    with `OMNI_AUTH_FAILED` (`retryable: false`) and a `suggestedAction` that
    names the `servers.list.<active>.apiKey` vs top-level `apiKey` /
    `OMNI_API_KEY` divergence without echoing the key or raw provider payload.
@@ -61,13 +70,22 @@ live channel (WhatsApp/Slack) and cannot be unsent.
    MUST NOT echo remote text, keys, URLs, or provider payloads. `FILE_NOT_FOUND`
    on `media send` uses the same local catalog copy; the same code on another
    `op` MUST NOT receive media copy.
-6. `media send --execute` MUST authenticate the spawned Omni CLI with the same
+6. `media send --execute` MUST route by instance like the outbound router
+   (`classifyInstanceRoute`): Slack → native Slack upload; a WhatsApp instance
+   (bound or not) → `messages.sendMedia` on the `ravi channels` runner with the
+   absolute `filePath`, never Omni and with no Omni fallback; a
+   `twilio-whatsapp` / `gupshup` record → 422 `CHANNEL_PROVIDER_UNSUPPORTED`;
+   an unmapped instance → 404 `INSTANCE_NOT_FOUND`; any other instance → the
+   legacy bridge (`sendMediaWithOmniCli` in `src/cli/media-send-omni.ts`,
+   loaded on demand).
+7. On the legacy-bridge branch, `media send --execute` MUST authenticate the
+   spawned Omni CLI with the same
    `apiUrl`/`apiKey` `resolveOmniConnection()` gives the Ravi Omni
    client/runtime. Because the Omni CLI prefers `servers.list.<active>.apiKey`
    over the flat / env key, the child process MUST receive an isolated
    `OMNI_CONFIG_DIR` whose `servers.list.default` mirrors that resolved
    connection (plus `OMNI_API_URL` / `OMNI_API_KEY`).
-7. When invoked from an agent context (`RAVI_*` envs present), a thrown
+8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 
 ## Write classification (brake decision per op)
@@ -81,8 +99,9 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 | case | code | exit |
 |---|---|---|
 | local file missing | `FILE_NOT_FOUND` | 1 |
-| delivery failure | `MEDIA_SEND_FAILED` (retryable) | 1 |
-| Omni 401 / invalid API key | `OMNI_AUTH_FAILED` (not retryable) + config-divergence suggestedAction | 1 |
+| WhatsApp runner or routing failure | the transport code (`WHATSAPP_RUNNER_UNAVAILABLE`, `WHATSAPP_NOT_BOUND`, `INSTANCE_NOT_FOUND`, `CHANNEL_PROVIDER_UNSUPPORTED`, ...) with its own `retryable` | 1 |
+| other delivery failure | `MEDIA_SEND_FAILED` (retryable) | 1 |
+| legacy-bridge 401 / invalid API key | `OMNI_AUTH_FAILED` (not retryable) + config-divergence suggestedAction | 1 |
 | braked send without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
@@ -108,7 +127,8 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 ## Validation
 
 - `bun test src/cli/commands/media-json.test.ts` green (the `media send
-  contract` block included, including `OMNI_AUTH_FAILED`).
+  contract` block included, including the WhatsApp runner error and
+  `OMNI_AUTH_FAILED`).
 - `bun test src/cli/media-send.test.ts src/cli/media-send-auth.test.ts src/cli/media-send-access.test.ts src/cli/remote-gateway.test.ts src/omni-config.test.ts`
   green (credential wiring + 401 classification + isolated catalog projection).
 - Live checks: `ravi media send /tmp/img.png --json` → exit 3 + plan; adding
@@ -117,10 +137,12 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 
 ## Known Failure Modes
 
-- `sendMediaWithOmniCli` both validates the file and resolves the target; the
-  brake must run BEFORE it, so the command re-implements the cheap local checks
-  (existsSync + mime inference) and shows the context-resolved target in the
-  plan without calling the resolver that can spawn `omni`.
+- `sendChannelMedia` both validates the file and resolves the target, then
+  calls a transport; the brake must run BEFORE it, so the command
+  re-implements the cheap local checks (existsSync + mime inference) and shows
+  the context-resolved target in the plan without calling any transport.
+- A WhatsApp media failure MUST NOT fall back to the legacy bridge: the runner
+  error is the answer (start it with `ravi channels start`).
 - Consumers that teach `ravi media send` without `--execute` put live agents in
   an exit-3 loop; the sessions builders and the image/audio `sendCommand`
   strings are the canonical teaching surfaces and carry the flag.

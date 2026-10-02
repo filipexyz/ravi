@@ -663,6 +663,8 @@ function safeTracePayload(row: SessionEventRow): unknown {
       chatName: source.chatName,
       isGroup: source.isGroup,
       omniType: source.omniType,
+      // New rows always carry eventType (omniType only for the legacy bridge); older rows only omniType.
+      eventType: source.eventType ?? source.omniType,
       instanceId: source.instanceId,
       eventId: source.eventId,
     });

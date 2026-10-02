@@ -7,8 +7,8 @@ description: Install and run Ravi from scratch.
 
 - [Bun](https://bun.sh) >= 1.0
 - A Claude API key (`ANTHROPIC_API_KEY`)
-- NATS server running (downloaded automatically by `ravi setup`)
-- omni API running (for channel support — optional for CLI-only usage)
+- NATS server running (`ravi setup` reuses one that already answers, or downloads nats-server and starts it as `ravi-nats`)
+- Omni is not needed for WhatsApp. It is an optional legacy bridge for Telegram/Discord only.
 
 ## Installation
 
@@ -20,7 +20,7 @@ cd ravi
 # Install dependencies
 bun install
 
-# Run setup wizard (downloads nats-server, configures auth, creates agent)
+# Run setup wizard (NATS, optional legacy bridge, auth, agent, daemon + channel runner)
 ravi setup
 ```
 
@@ -32,9 +32,9 @@ Configure environment in `~/.ravi/.env`:
 # Required
 ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Omni connection (required for WhatsApp/Telegram/Discord)
-OMNI_API_URL=http://127.0.0.1:8882
-OMNI_API_KEY=your-omni-api-key
+# Legacy Omni bridge (only for Telegram/Discord)
+# OMNI_API_URL=http://127.0.0.1:8882
+# OMNI_API_KEY=your-omni-api-key
 
 # NATS (default: nats://127.0.0.1:4222)
 NATS_URL=nats://127.0.0.1:4222
@@ -45,8 +45,9 @@ See [Configuration](/start/configuration) for all environment variables.
 ## Start the Daemon
 
 ```bash
-# Start the daemon (managed by PM2)
+# Start the daemon, then the channel runner (both managed by PM2)
 ravi daemon start
+ravi channels start
 
 # Check status
 ravi daemon status
@@ -58,11 +59,11 @@ ravi daemon logs -f
 ## Connect WhatsApp
 
 ```bash
-# Create and connect an instance
-ravi instances connect main
+# Create and connect an instance (served by the ravi channels runner)
+ravi instances connect main --agent main
 ```
 
-Scan the QR code with WhatsApp on your phone.
+Scan the QR code with WhatsApp on your phone (WhatsApp > Linked devices). Check it with `ravi instances status main` and `ravi channels status`.
 
 ## Test Your Agent
 

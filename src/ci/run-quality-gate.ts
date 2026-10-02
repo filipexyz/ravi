@@ -6,7 +6,7 @@
  *   bun src/ci/run-quality-gate.ts
  *
  * Reads changed files from:
- *   1. CHANGED_FILES env var (newline-separated), or
+ *   1. CHANGED_FILES env var (newline- or space-separated; repo paths contain no whitespace), or
  *   2. git diff against the PR base branch.
  *
  * Exits 0 on pass, 1 on failure with structured output.
@@ -19,7 +19,7 @@ function getChangedFiles(): string[] {
   const envFiles = process.env.CHANGED_FILES;
   if (envFiles) {
     return envFiles
-      .split("\n")
+      .split(/\s+/)
       .map((f) => f.trim())
       .filter(Boolean);
   }

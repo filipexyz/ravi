@@ -6568,7 +6568,11 @@ export type DaemonStatusInput = Record<string, never>;
 
 /** Return shape for `daemon.status`. */
 export type DaemonStatusReturn = {
-  infrastructure: Record<string, unknown>;
+  infrastructure: {
+    legacyBridge: Record<string, unknown>;
+    nats: Record<string, unknown>;
+    [k: string]: unknown;
+  };
   pm2Available: boolean;
   processName: string;
   processes: Array<Record<string, unknown>>;
@@ -7881,6 +7885,30 @@ export type InstancesListInput = {
 
 /** Return shape for `instances.list`. */
 export type InstancesListReturn = Record<string, unknown>;
+
+/** Input shape for `instances.logout`. */
+export type InstancesLogoutInput = {
+  execute?: boolean;
+  name: string;
+};
+
+/** Return shape for `instances.logout`. */
+export type InstancesLogoutReturn = {
+  changedCount: number;
+  instance: string;
+  instanceId: string;
+  logout: ({
+    cause: null;
+    clearedKeys: null;
+    via: "runner";
+  }) | ({
+    cause: string;
+    clearedKeys: number;
+    via: "auth-store";
+  });
+  status: "logged_out";
+  transport: "whatsapp";
+};
 
 /** Input shape for `instances.pending.approve`. */
 export type InstancesPendingApproveInput = {

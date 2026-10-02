@@ -6,13 +6,13 @@
 2. Reproduce the failing call with `--json` and read `error.code` first; the
    code, not the message, is the branch point.
 3. Exit `1` + `INSTANCE_NOT_FOUND`: read `error.suggestions` — real instance
-   names/omni instanceIds similar to what was asked. Retry with one of them.
+   names/instance UUIDs similar to what was asked. Retry with one of them.
 4. Exit `1` + `ROUTE_NOT_FOUND`: read `error.suggestions` — real patterns of
    that instance. Quote patterns with `*` in the shell.
 5. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
-6. Exit `3` is expected only for `pending reject`: read the instance, pending
-   kind, and presence flags in `error.plan`, confirm, and re-run with
-   `--execute`.
+6. Exit `3` is expected only for `logout` and `pending reject`: read
+   `error.plan` (for `pending reject`, the instance, pending kind and presence
+   flags), confirm, and re-run with `--execute`.
 7. `instances delete` and `instances routes remove` are immediate recoverable
    soft-deletes. If either exits 3, an obsolete brake was reintroduced. Route
    removal must still enforce `assertInstanceMutationRuntime` before writing.
@@ -37,6 +37,7 @@ ravi instances list --no-such-flag --json             # expect exit 2 + accepted
 ravi instances delete main --json                     # expect exit 0 + soft-delete
 ravi instances routes remove main "5511*" --json      # expect exit 0 + soft-delete
 ravi instances pending reject main 5511999 --json     # expect exit 3 + kind/presence plan
+ravi instances logout main --json                     # expect exit 3 + plan, credentials untouched
 ravi routes list --fields pattern,agent --json        # expect compact items
 ravi instances list --fields name,channel --json      # expect compact items
 ```

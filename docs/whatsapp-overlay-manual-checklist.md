@@ -1,5 +1,11 @@
 # WhatsApp Overlay Manual Validation
 
+> **Substituído (histórico).** Este documento foi escrito quando o WhatsApp
+> passava pelo Omni. Hoje o WhatsApp roda no runner de canais do Ravi
+> (`ravi channels`), sem Omni; o Omni é só uma ponte legada opcional para
+> Telegram/Discord. As referências ao Omni abaixo descrevem o setup antigo.
+> Contrato atual: `.ravi/specs/channels/adapters/whatsapp/`.
+
 Checklist curto para validar a navegação do cockpit do WhatsApp Overlay em uma sessão real do WhatsApp Web.
 
 ## Pré-condições

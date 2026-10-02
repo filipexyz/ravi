@@ -7,13 +7,13 @@
  *  - `commitMatchedRoute` — writes the session row (idempotent via
  *    `getOrCreateSession`) and assigns a canonical sessionName.
  *
- * These tests pin the contract that lets the omni consumer reject inbound
+ * These tests pin the contract that lets the channel inbound pipeline reject inbound
  * messages on policy without leaving orphan session rows behind: when the
  * caller never invokes `commitMatchedRoute`, no session row may exist.
  *
  * Note: we deliberately only assert the purity side of the contract here.
  * Asserting on `commitMatchedRoute` directly is unreliable inside the
- * full-suite run because `src/omni/consumer-context.test.ts` installs a
+ * full-suite run because `src/channels/inbound/pipeline-context.test.ts` installs a
  * `mock.module("../router/index.js", ...)` whose `commitMatchedRoute`
  * override bun propagates into direct imports of `./resolver.js` — a
  * known limitation of bun's module-mock implementation. The commit-side

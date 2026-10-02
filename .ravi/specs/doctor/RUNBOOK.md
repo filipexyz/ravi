@@ -132,7 +132,7 @@ explicit route command.
 If doctor reports chats without routes, confirm whether those chats are meant
 to be passive, muted, or unowned before creating routes.
 
-## Channels And Omni Findings
+## Channels And Transport Findings
 
 If doctor reports a disconnected enabled instance:
 
@@ -141,8 +141,11 @@ ravi instances list --json
 ravi instances show <instance> --json
 ```
 
-Then inspect Omni/provider health through the channel-specific read-only
-diagnostics.
+Then inspect transport health through the channel-specific read-only
+diagnostics: `ravi instances status <instance> --json` and
+`ravi channels status` for WhatsApp (the `ravi channels` runner), and
+`ravi daemon status --json` (`infrastructure.legacyBridge`) for the legacy
+Omni bridge (Telegram/Discord).
 
 If doctor reports unresolved inbound actor/contact metadata:
 

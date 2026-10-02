@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { loadRouterConfig, expandHome } from "../router/index.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import type { SessionEntry } from "../router/types.js";

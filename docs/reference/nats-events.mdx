@@ -34,9 +34,9 @@ The prompt topic goes via JetStream WorkQueue stream (`SESSION_PROMPTS`). All ot
 |-------|---------|
 | `ravi.inbound.reaction` | `{ targetMessageId, emoji, senderId }` |
 | `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
-| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` |
+| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` (subscribed by the approval service; no Ravi publisher today) |
 
-Inbound channel messages arrive through Omni JetStream subjects such as `message.received.{channelType}.{instanceId}` and are routed into sessions by `OmniConsumer`, not published as Ravi pub/sub aliases like `whatsapp.*.inbound`. Emoji reactions are normalized to the canonical trigger subject `ravi.inbound.reaction`; `whatsapp.*.reaction` is not published.
+Inbound WhatsApp messages arrive on the `CHANNEL_INBOUND` stream, published by the `ravi channels` runner on `ravi.channel.inbound.whatsapp.{message|reaction|connection}.{instanceId}` (envelope `WhatsAppInboundEvent`, `schemaVersion: 1`). Telegram/Discord messages arrive from the optional legacy Omni bridge on `message.received.{channelType}.{instanceId}`. Both are routed into sessions by `ChannelInboundPipeline` (`src/channels/inbound/pipeline.ts`), not published as Ravi pub/sub aliases like `whatsapp.*.inbound`. Omni events with a WhatsApp-family channel type are ignored. Emoji reactions are normalized to the canonical trigger subject `ravi.inbound.reaction`; `whatsapp.*.reaction` is not published.
 
 Reaction events are correlation signals. Use `targetMessageId` to look up routine-owned state; do not assume the event includes the original chat, caption, media metadata, or domain object.
 
@@ -46,7 +46,7 @@ Reaction events are correlation signals. Use `targetMessageId` to look up routin
 |-------|---------|
 | `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
 | `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
-| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` |
+| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` (emitted by `ravi whatsapp dm ack`; no Ravi process subscribes today) |
 
 ## Media Events
 
@@ -145,10 +145,15 @@ Events from Claude Code sessions, published by the hook script:
 
 | Stream | Consumer | Filter | Source |
 |--------|----------|--------|--------|
-| `MESSAGE` | `ravi-messages` | `message.received.>` | omni (channel inbound) |
-| `INSTANCE` | `ravi-instances` | `instance.>` | omni (connection events) |
-| `REACTION` | `ravi-reactions` | `reaction.received.>` | omni (emoji reactions) |
+| `CHANNEL_INBOUND` | `ravi-whatsapp-messages` | `ravi.channel.inbound.whatsapp.message.>` | channel runner (WhatsApp messages) |
+| `CHANNEL_INBOUND` | `ravi-whatsapp-reactions` | `ravi.channel.inbound.whatsapp.reaction.>` | channel runner (WhatsApp reactions) |
+| `CHANNEL_INBOUND` | `ravi-whatsapp-connection` | `ravi.channel.inbound.whatsapp.connection.>` | channel runner (QR, connected, disconnected) |
 | `SESSION_PROMPTS` | `ravi-prompts` | `ravi.session.*.prompt` | ravi (internal routing) |
+| `MESSAGE` | `ravi-messages` | `message.received.>` | legacy Omni bridge (Telegram/Discord) |
+| `INSTANCE` | `ravi-instances` | `instance.>` | legacy Omni bridge (connection events) |
+| `REACTION` | `ravi-reactions` | `reaction.received.>` | legacy Omni bridge (emoji reactions) |
+
+The daemon and the CLI reach the WhatsApp runner over request/reply on `_RAVI.channels.whatsapp.rpc.{instanceId}`. Pairing relays are `ravi.whatsapp.qr|connected.{instanceId}` for WhatsApp and `ravi.bridge.qr|connected.{instanceId}` for the legacy bridge.
 
 ## Programmatic API
 

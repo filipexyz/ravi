@@ -6,16 +6,24 @@
 2. Reproduce the failing call with `--json` and read `error.code` first.
 3. Exit `1` + `FILE_NOT_FOUND`: the local path is wrong — the file must exist
    on the machine running the CLI, not on the channel side.
-4. Exit `1` + `MEDIA_SEND_FAILED`: delivery-side problem (omni CLI missing,
-   unmapped instance, Slack upload failure). Isolated remote projection MUST
+4. Exit `1` + `MEDIA_SEND_FAILED`: delivery-side problem (legacy-bridge
+   `omni` CLI missing, Slack upload failure). Isolated remote projection MUST
    still say `Media delivery failed.` with the local suggested action, not
    only `Remote command failed.` The public message is stable and redacted;
    inspect redacted runtime logs and target configuration before retrying.
+4a. Exit `1` + a WhatsApp or routing code: `WHATSAPP_RUNNER_UNAVAILABLE`
+   (run `ravi channels start`, or `ravi channels restart`, and retry),
+   `WHATSAPP_NOT_BOUND` (`ravi instances connect <name>`), `NOT_CONNECTED`
+   (check `ravi instances status <name>`), `INSTANCE_NOT_FOUND` (check
+   `ravi instances list` or pass `--account`), `CHANNEL_PROVIDER_UNSUPPORTED`
+   (the instance is `twilio-whatsapp`/`gupshup`; use a WhatsApp instance).
+   WhatsApp media never falls back to Omni.
 4b. Exit `1` + `PERMISSION_DENIED` from the remote gateway: the current
    runtime snapshot cannot execute `media send`. Re-run `ravi sessions
    actions --json` and read `unavailableReasonCode`. Explicit `--account` /
    `--to` cannot add the grant. Do not treat this as a transport retry.
-5. Exit `1` + `OMNI_AUTH_FAILED`: Omni returned `401` / `Invalid API key`. The
+5. Exit `1` + `OMNI_AUTH_FAILED` (legacy bridge only): Omni returned `401` /
+   `Invalid API key`. The
    Omni CLI reads `servers.list.<active>.apiKey` from `~/.omni/config.json`,
    which can be stale relative to the top-level `apiKey` or `OMNI_API_KEY`
    that Ravi's runtime (text send, media download) uses. Copy the live primary
@@ -27,7 +35,7 @@
    adding `--execute`. The plan intentionally omits the full path, caption and
    personal target IDs.
 7. If a send executed without `--execute`, the brake regressed: check that
-   `contractDryRun` still runs before `sendMediaWithOmniCli` in
+   `contractDryRun` still runs before `sendChannelMedia` in
    `src/cli/commands/media.ts`.
 
 ## Validation

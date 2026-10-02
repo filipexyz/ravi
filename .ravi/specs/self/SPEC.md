@@ -19,6 +19,7 @@ applies_to:
   - src/runtime/runtime-request-context.ts
   - src/router
   - src/sessions
+  - src/channels
   - src/omni
   - src/knowledge
 owners:
@@ -27,13 +28,14 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Ravi Self
 
 ## Intent
 
 Ravi Self is the agent-facing self-orientation layer.
 
-It lets a running agent ask "who am I, where am I, what context matters, and what can I safely do next?" without reading raw transcripts, raw Omni payloads, or unrelated database tables.
+It lets a running agent ask "who am I, where am I, what context matters, and what can I safely do next?" without reading raw transcripts, raw transport payloads, or unrelated database tables.
 
 The public namespace SHOULD be:
 
@@ -142,7 +144,7 @@ It SHOULD NOT dump raw JSON, full transcripts, or large metadata blocks by defau
 
 Machine output MUST expose typed semantic fields, not only formatted strings.
 
-Raw Omni/channel ids MAY appear under `provenance` or `debug` fields only.
+Raw transport/channel ids MAY appear under `provenance` or `debug` fields only.
 
 JSON MUST include enough absence/authorization metadata for an agent to recover:
 
@@ -156,13 +158,13 @@ JSON MUST include enough absence/authorization metadata for an agent to recover:
 }
 ```
 
-## Relationship to Omni
+## Relationship to Transports
 
-Omni remains transport/provenance.
+The channel transports (the `ravi channels` WhatsApp runner, native Slack, and the legacy Omni bridge for Telegram/Discord) remain transport/provenance; see `self/omni`.
 
 Ravi Self MUST expose Ravi semantics first: actor, contact, platform identity, chat, session, route, policy, and capability.
 
-Raw Omni details MAY be shown only in debug/provenance mode.
+Raw transport details MAY be shown only in debug/provenance mode.
 
 ## Relationship to Knowledge
 

@@ -17,7 +17,7 @@ applies_to:
   - src/router/sessions.ts
   - src/router/router-db.ts
   - src/router/resolver.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/runtime/host-event-loop.ts
   - src/runtime/runtime-request-builder.ts
   - src/cli/commands/sessions.ts
@@ -29,6 +29,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Sessions
 
 ## Intent
@@ -59,7 +60,7 @@ Sessions own:
 
 Sessions do NOT own:
 
-- channel transport behavior (delegated to Omni adapters);
+- channel transport behavior (delegated to the channel adapters: the `ravi channels` runner for WhatsApp, native Slack, and the legacy Omni bridge for Telegram/Discord);
 - chat membership of humans (owned by `channels/chats` and `chat_participants`);
 - provider session state (owned by `runtime/session-continuity`);
 - thread/subject context (owned by `threads`);

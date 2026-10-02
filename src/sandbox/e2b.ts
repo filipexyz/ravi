@@ -15,6 +15,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { natsServerReleaseAsset } from "../nats-server.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 export const DEFAULT_E2B_TEMPLATE = "ravi-runner";
@@ -23,7 +24,6 @@ export const DEFAULT_SANDBOX_MODEL = "sonnet";
 export const DEFAULT_SANDBOX_TIMEOUT_MIN = 55;
 
 const RAVI_REPO = "https://github.com/filipexyz/ravi.git";
-const NATS_VERSION = "2.11.8";
 const TEMPLATE_RAVI_DIR = "/home/user/ravi";
 const REPO_DIR = "/home/user/work/repo";
 const DAEMON_LOG = "/home/user/.ravi/daemon.log";
@@ -126,7 +126,8 @@ export async function buildE2bTemplate(options: BuildE2bTemplateOptions): Promis
   const { Template, waitForPort } = await import("e2b");
   const name = options.name ?? DEFAULT_E2B_TEMPLATE;
   const ref = options.ref ?? DEFAULT_E2B_TEMPLATE_REF;
-  const natsTarball = `nats-server-v${NATS_VERSION}-linux-amd64`;
+  // The template is always linux/amd64; the version is pinned in src/nats-server.ts (NATS_SERVER_VERSION).
+  const nats = natsServerReleaseAsset("linux", "x64");
   // Agent Bash tools call `ravi` by name, so it has to be on the default PATH.
   const raviWrapper = `#!/usr/bin/env bash\nexport RAVI_ALLOW_STALE_BUNDLE=1\nexec ${TEMPLATE_RAVI_DIR}/bin/ravi "$@"\n`;
 
@@ -134,10 +135,7 @@ export async function buildE2bTemplate(options: BuildE2bTemplateOptions): Promis
     .fromBaseImage()
     .aptInstall(["git", "curl", "unzip", "ca-certificates", "jq"])
     .runCmd(
-      [
-        `curl -fsSL https://github.com/nats-io/nats-server/releases/download/v${NATS_VERSION}/${natsTarball}.tar.gz | tar xz -C /tmp`,
-        `mv /tmp/${natsTarball}/nats-server /usr/local/bin/nats-server`,
-      ],
+      [`curl -fsSL ${nats.url} | tar xz -C /tmp`, `mv /tmp/${nats.name}/nats-server /usr/local/bin/nats-server`],
       { user: "root" },
     )
     .runCmd("curl -fsSL https://bun.sh/install | bash")

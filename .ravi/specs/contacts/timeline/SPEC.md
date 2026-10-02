@@ -13,7 +13,7 @@ tags:
 applies_to:
   - src/contacts.ts
   - src/cli/commands/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router
   - src/session-trace
   - src/triggers
@@ -23,13 +23,14 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Contact Timeline
 
 ## Intent
 
 The contact timeline is Ravi's durable history of what is known, changed, observed, or proposed about a contact over time.
 
-It must let Ravi and agents understand a person or organization across channels without making sessions, chats, or raw Omni identifiers the source of truth.
+It must let Ravi and agents understand a person or organization across channels without making sessions, chats, or raw transport identifiers the source of truth.
 
 The public product language remains `contacts`; the timeline is a contact capability, not a separate top-level identity product.
 
@@ -37,7 +38,7 @@ The public product language remains `contacts`; the timeline is a contact capabi
 
 - Timeline events MUST be attached to a canonical `contact_id` when the actor has resolved to a contact.
 - Timeline events MAY reference `platform_identity_id`, `chat_id`, `session_key`, `message_id`, tasks, artifacts, calls, or external ids as provenance.
-- Timeline events MUST NOT use raw Omni ids as the primary target. Raw ids belong in provenance/evidence.
+- Timeline events MUST NOT use raw transport ids as the primary target. Raw ids belong in provenance/evidence.
 - Timeline events MUST NOT replace `platform_identities`, `contact_policies`, `chat_participants`, or `session_participants`.
 - Timeline events MUST NOT infer identity from display name alone.
 - Timeline events MUST distinguish confirmed state changes from low-confidence agent proposals.
@@ -320,7 +321,7 @@ API responses SHOULD expose typed objects, not formatting-only strings.
 
 - Contact tags, metadata, notes, policy changes, and identity changes produce contact timeline events.
 - Timeline entries reference canonical `contact_id` and normalized actor metadata where available.
-- Raw Omni/channel identifiers appear only as provenance/evidence, not as the primary contact target.
+- Raw transport/channel identifiers appear only as provenance/evidence, not as the primary contact target.
 - Timeline entries preserve `scope_type` and `scope_id`; non-global context is not flattened into global contact state.
 - Scoped entries (`scope_type` + `scope_id`) must be filtered consistently when an agent/session is subscribed to a limited context.
 - Agent-generated context is stored as proposed or attributed context, not silent confirmed truth.

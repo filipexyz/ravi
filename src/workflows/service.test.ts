@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
-mock.module("../omni/session-stream.js", () => ({
+mock.module("../session-prompts/stream.js", () => ({
   publishSessionPrompt: mock(async () => {}),
 }));
 

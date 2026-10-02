@@ -10,7 +10,7 @@ import { fail, getContext } from "../context.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
-import { sendMediaWithOmniCli } from "../media-send.js";
+import { sendChannelMedia, type MediaSendExecution } from "../media-send.js";
 import { nats } from "../../nats.js";
 import {
   getTtsPlaybackItem,
@@ -232,7 +232,7 @@ export class AudioCommands {
         voiceNote: boolean;
       };
       sent?: {
-        transport: "omni-send" | "slack-native";
+        transport: MediaSendExecution["transport"];
         channel?: string;
         accountId: string;
         instanceId: string;
@@ -272,7 +272,7 @@ export class AudioCommands {
     }
 
     if (send) {
-      const delivered = await sendMediaWithOmniCli({
+      const delivered = await sendChannelMedia({
         filePath: result.filePath,
         caption: caption ?? resolvedText.slice(0, 100),
         type: "audio",

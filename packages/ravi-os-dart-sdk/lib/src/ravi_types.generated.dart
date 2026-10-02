@@ -8400,7 +8400,7 @@ DaemonStartReturn daemonStartReturnFromJson(Object? json) => DaemonStartReturn.f
 class DaemonStatusReturn {
   const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime});
 
-  final Map<String, RaviJson> infrastructure;
+  final RaviJson infrastructure;
   final bool pm2Available;
   final String processName;
   final List<Map<String, RaviJson>> processes;
@@ -8409,7 +8409,7 @@ class DaemonStatusReturn {
 
   factory DaemonStatusReturn.fromJson(Map<String, Object?> json) {
     return DaemonStatusReturn(
-      infrastructure: raviJsonAsRaviJsonMap(json["infrastructure"]),
+      infrastructure: RaviJson.from(json["infrastructure"]),
       pm2Available: raviJsonAsBool(json["pm2Available"]),
       processName: raviJsonAsString(json["processName"]),
       processes: raviJsonAsList(json["processes"], raviJsonAsRaviJsonMap),
@@ -10436,6 +10436,46 @@ class InstancesListOptions {
 typedef InstancesListReturn = Map<String, RaviJson>;
 
 InstancesListReturn instancesListReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class InstancesLogoutOptions {
+  const InstancesLogoutOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class InstancesLogoutReturn {
+  const InstancesLogoutReturn({required this.changedCount, required this.instance, required this.instanceId, required this.logout, required this.status, required this.transport});
+
+  final int changedCount;
+  final String instance;
+  final String instanceId;
+  final RaviJson logout;
+  final String status;
+  final String transport;
+
+  factory InstancesLogoutReturn.fromJson(Map<String, Object?> json) {
+    return InstancesLogoutReturn(
+      changedCount: raviJsonAsInt(json["changedCount"]),
+      instance: raviJsonAsString(json["instance"]),
+      instanceId: raviJsonAsString(json["instanceId"]),
+      logout: RaviJson.from(json["logout"]),
+      status: raviJsonAsString(json["status"]),
+      transport: raviJsonAsString(json["transport"]),
+    );
+  }
+
+  static InstancesLogoutReturn fromJsonValue(Object? json) {
+    return InstancesLogoutReturn.fromJson(raviJsonObject(json, "InstancesLogoutReturn"));
+  }
+}
+
+InstancesLogoutReturn instancesLogoutReturnFromJson(Object? json) => InstancesLogoutReturn.fromJsonValue(json);
 
 class InstancesPendingApproveOptions {
   const InstancesPendingApproveOptions({this.agent});

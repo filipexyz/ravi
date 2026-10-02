@@ -31,4 +31,20 @@ describe("diagnostics JSON output", () => {
       args: ["src/tui.tsx", "agent:main:main"],
     });
   });
+
+  it("reports WhatsApp as managed by the ravi channels runner", async () => {
+    const { output, result } = await captureConsole(() => new ServiceCommands().wa(true));
+    const payload = JSON.parse(output);
+
+    expect(payload).toEqual({
+      success: true,
+      deprecated: true,
+      service: "whatsapp",
+      managedBy: "ravi-channels",
+      replacementCommand: "ravi channels start",
+      message: "WhatsApp runs in the ravi channels runner",
+    });
+    expect(result).toEqual(payload);
+    expect(output).not.toContain("omni");
+  });
 });

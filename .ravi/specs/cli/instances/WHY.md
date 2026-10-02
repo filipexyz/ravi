@@ -23,8 +23,12 @@ Two domain findings shaped this wave:
   `buildRouteListPayload`/`buildRouteDetailsPayload`/`buildRouteExplanationPayload`
   chain (each caller passes its own `op`) instead of being added per command.
 - `instances disable` with an unknown target is intentionally not a not-found:
-  it adds the target to the ignored-omni-instanceIds setting. Only `enable`
-  maps the unknown-and-not-ignored case to `INSTANCE_NOT_FOUND`.
+  it adds the target to the legacy-bridge ignore list
+  (`omni.ignoreInstanceIds`, read only by the Omni inbound source). Only
+  `enable` maps the unknown-and-not-ignored case to `INSTANCE_NOT_FOUND`.
+- `instances logout` is the one instance write with a brake. It unlinks the
+  WhatsApp device and wipes the saved credentials, which no `restore` can
+  bring back: only a new QR pairing with the phone at hand can.
 
 Suggestions come from the full instance list because instances have no
 per-agent cloak — `instances list` exposes every name (tag filter aside), so

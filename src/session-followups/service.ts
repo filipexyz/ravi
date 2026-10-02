@@ -1,6 +1,6 @@
 import { publish } from "../nats.js";
 import { getLatestExternalUserMessageAt } from "../db.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import {
   dbFindChatByRef,
   dbFindChatReadingList,

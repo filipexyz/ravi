@@ -19,6 +19,7 @@ import {
   NativeChannelDriverRegistry,
   loadNativeChannelDriverModules,
   parseNativeChannelDriverModuleConfigs,
+  type NativeChannelReconcileOptions,
   type NativeInboundChannelActionHandler,
   type NativeChannelDriverRuntime,
 } from "./native/driver.js";
@@ -51,10 +52,151 @@ import {
 import { startChannelBackendPublicationReconciler } from "./backend.js";
 import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
 import type { SlackSocketModeStatus } from "./slack/index.js";
+import { canonicalChannelId } from "./capabilities.js";
+import type { ChannelConfig } from "../router/router-db.js";
+import { WHATSAPP_PROVIDER } from "./whatsapp/contract.js";
+import { createWhatsAppChannelDriver, whatsappChannelBindingKey } from "./whatsapp/driver.js";
 
 const log = logger.child("channels:runner");
 
 export const CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+export const RAVI_CONFIG_CHANGED_SUBJECT = "ravi.config.changed" as const;
+export const NATIVE_CHANNEL_RECONCILE_DEBOUNCE_MS = 250;
+/** Safety net for a missed `ravi.config.changed` (failed channels are not retried by it). */
+export const NATIVE_CHANNEL_RECONCILE_INTERVAL_MS = 60_000;
+/**
+ * Providers `ravi channels probe` never starts: the probe runs a second, short-lived
+ * runner next to the real one, and a second WhatsApp socket for the same account
+ * would replace the live session (Baileys 440 connectionReplaced).
+ */
+export const CHANNEL_PROBE_SKIPPED_PROVIDERS: readonly string[] = [WHATSAPP_PROVIDER];
+
+/** Reconcile key for state a native channel depends on outside its `channels` row. */
+export function nativeChannelBindingKey(
+  config: Parameters<typeof whatsappChannelBindingKey>[0],
+  channel: Pick<ChannelConfig, "name" | "provider">,
+): string | undefined {
+  return canonicalChannelId(channel.provider) === WHATSAPP_PROVIDER
+    ? whatsappChannelBindingKey(config, channel.name)
+    : undefined;
+}
+
+export interface NativeRuntimeSurfaces {
+  deliveries: NativeTextDelivery[];
+  actionDeliveries: NativeChatActionDelivery[];
+  presenceDeliveries: NativePresenceDelivery[];
+  inboundActionHandlers: NativeInboundChannelActionHandler[];
+}
+
+/**
+ * Copy the manager's current surfaces into the runner's arrays IN PLACE: the
+ * outbound/presence consumers and the inbound action responder hold these array
+ * references, so reconciled runtimes become visible to them without a restart.
+ */
+export function syncNativeRuntimeSurfaces(
+  target: NativeRuntimeSurfaces,
+  source: Pick<
+    NativeChannelDriverManager,
+    "deliveries" | "actionDeliveries" | "presenceDeliveries" | "inboundActionHandlers"
+  >,
+): void {
+  target.deliveries.splice(0, target.deliveries.length, ...source.deliveries());
+  target.actionDeliveries.splice(0, target.actionDeliveries.length, ...source.actionDeliveries());
+  target.presenceDeliveries.splice(0, target.presenceDeliveries.length, ...source.presenceDeliveries());
+  target.inboundActionHandlers.splice(0, target.inboundActionHandlers.length, ...source.inboundActionHandlers());
+}
+
+export interface NativeChannelConfigWatchConnection {
+  subscribe(subject: string): AsyncIterable<unknown> & { unsubscribe(): void };
+}
+
+export interface NativeChannelConfigWatch {
+  stop(): Promise<void>;
+}
+
+/**
+ * Run `reconcile` after every `ravi.config.changed` (debounced, coalesced: at most
+ * one pass runs at a time and one more is queued) and on a slow interval.
+ * Config-change passes retry failed channels; interval passes do not.
+ */
+export function startNativeChannelConfigWatch(options: {
+  connection: NativeChannelConfigWatchConnection;
+  reconcile: (options: NativeChannelReconcileOptions) => Promise<void>;
+  debounceMs?: number;
+  intervalMs?: number;
+}): NativeChannelConfigWatch {
+  const debounceMs = options.debounceMs ?? NATIVE_CHANNEL_RECONCILE_DEBOUNCE_MS;
+  const intervalMs = options.intervalMs ?? NATIVE_CHANNEL_RECONCILE_INTERVAL_MS;
+  const subscription = options.connection.subscribe(RAVI_CONFIG_CHANGED_SUBJECT);
+  let stopped = false;
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  let running: Promise<void> | null = null;
+  let queued = false;
+  let retryFailed = false;
+
+  const run = () => {
+    debounce = null;
+    if (stopped) return;
+    if (running) {
+      queued = true;
+      return;
+    }
+    running = (async () => {
+      do {
+        queued = false;
+        const retry = retryFailed;
+        retryFailed = false;
+        try {
+          await options.reconcile({ retryFailed: retry });
+        } catch (error) {
+          log.warn("Native channel reconcile failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } while (queued && !stopped);
+    })().finally(() => {
+      running = null;
+    });
+  };
+  const schedule = (retry: boolean) => {
+    if (stopped) return;
+    retryFailed ||= retry;
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(run, debounceMs);
+  };
+
+  const loop = (async () => {
+    for await (const _event of subscription) {
+      if (stopped) break;
+      schedule(true);
+    }
+  })().catch((error: unknown) => {
+    if (!stopped) {
+      log.warn("Native channel config watch ended", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+  const interval = setInterval(() => schedule(false), intervalMs);
+  interval.unref?.();
+
+  return {
+    async stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(interval);
+      if (debounce) clearTimeout(debounce);
+      debounce = null;
+      try {
+        subscription.unsubscribe();
+      } catch {
+        // Connection already closed.
+      }
+      await loop;
+      await running;
+    },
+  };
+}
 
 export function collectNativeRuntimeDeliveries(
   runtimes: readonly Pick<NativeChannelDriverRuntime, "delivery" | "actions" | "presence">[],
@@ -106,6 +248,11 @@ export interface ChannelRunnerOptions {
   natsUrl?: string;
   consumeOutbound?: boolean;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Foreground probe (`ravi channels probe`): skip CHANNEL_PROBE_SKIPPED_PROVIDERS
+   * (WhatsApp sockets belong to the running runner) and do not watch config changes.
+   */
+  probe?: boolean;
 }
 
 export type ChannelRunnerStatus = ChannelRunnerRuntimeStatus;
@@ -122,7 +269,9 @@ export class ChannelRunner {
   private deliveries: NativeTextDelivery[] = [];
   private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
+  private inboundActionHandlers: NativeInboundChannelActionHandler[] = [];
   private nativeChannelManager: NativeChannelDriverManager | null = null;
+  private nativeChannelConfigWatch: NativeChannelConfigWatch | null = null;
   private inboundActionResponder: NativeInboundChannelActionResponder | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
@@ -214,6 +363,8 @@ export class ChannelRunner {
     this.presenceConsumer = null;
     await this.backendEgressResponder?.stop();
     this.backendEgressResponder = null;
+    await this.nativeChannelConfigWatch?.stop();
+    this.nativeChannelConfigWatch = null;
     await this.inboundActionResponder?.stop();
     this.inboundActionResponder = null;
     await this.nativeChannelManager?.stop();
@@ -221,6 +372,7 @@ export class ChannelRunner {
     this.deliveries = [];
     this.actionDeliveries = [];
     this.presenceDeliveries = [];
+    this.inboundActionHandlers = [];
     this.outboundInfrastructureReady = false;
     this.startedAt = null;
     configStore.stop();
@@ -250,6 +402,7 @@ export class ChannelRunner {
   private async startNativeChannels(env: NodeJS.ProcessEnv): Promise<void> {
     const registry = new NativeChannelDriverRegistry();
     registry.register(createSlackNativeChannelDriver(env));
+    registry.register(createWhatsAppChannelDriver());
 
     try {
       const moduleConfigs = parseNativeChannelDriverModuleConfigs(env.RAVI_NATIVE_CHANNEL_DRIVERS);
@@ -270,15 +423,59 @@ export class ChannelRunner {
     this.nativeChannelManager = new NativeChannelDriverManager({
       channels: configStore.getConfig().channels ?? {},
       registry,
+      bindingKey: (channel) => nativeChannelBindingKey(configStore.getConfig(), channel),
+      ...(this.options.probe ? { skipProviders: CHANNEL_PROBE_SKIPPED_PROVIDERS } : {}),
     });
     await this.nativeChannelManager.start();
-    this.inboundActionResponder = startChannelRunnerInboundActionResponder({
-      connection: getNats(),
-      handlers: this.nativeChannelManager.inboundActionHandlers(),
-    });
-    this.deliveries.push(...this.nativeChannelManager.deliveries());
-    this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
-    this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());
+    await this.syncNativeSurfaces();
+
+    if (!this.options.probe) {
+      this.nativeChannelConfigWatch = startNativeChannelConfigWatch({
+        connection: getNats(),
+        reconcile: (options) => this.reconcileNativeChannels(options),
+      });
+    }
+  }
+
+  private async reconcileNativeChannels(options: NativeChannelReconcileOptions): Promise<void> {
+    const manager = this.nativeChannelManager;
+    if (!manager || !this.running) return;
+    // configStore refreshes on the same event, but its subscription may not have run yet.
+    configStore.refresh();
+    const result = await manager.reconcile(configStore.getConfig().channels ?? {}, options);
+    if (!this.running || this.nativeChannelManager !== manager) return;
+    await this.syncNativeSurfaces();
+    if (result.started.length > 0 || result.stopped.length > 0) {
+      log.info("Native channels reconciled", {
+        started: result.started,
+        stopped: result.stopped,
+        inactive: result.inactive,
+      });
+    }
+  }
+
+  private async syncNativeSurfaces(): Promise<void> {
+    const manager = this.nativeChannelManager;
+    if (!manager) return;
+    syncNativeRuntimeSurfaces(
+      {
+        deliveries: this.deliveries,
+        actionDeliveries: this.actionDeliveries,
+        presenceDeliveries: this.presenceDeliveries,
+        inboundActionHandlers: this.inboundActionHandlers,
+      },
+      manager,
+    );
+    if (this.inboundActionHandlers.length > 0 && !this.inboundActionResponder) {
+      this.inboundActionResponder = startChannelRunnerInboundActionResponder({
+        connection: getNats(),
+        handlers: this.inboundActionHandlers,
+      });
+    } else if (this.inboundActionHandlers.length === 0 && this.inboundActionResponder) {
+      const responder = this.inboundActionResponder;
+      this.inboundActionResponder = null;
+      await responder.stop();
+    }
   }
 
   private currentAdapterStatuses(): AdapterStatus[] {
@@ -390,7 +587,40 @@ export async function startChannelRunner(options: ChannelRunnerOptions = {}): Pr
   return runner;
 }
 
+/** The process-level hooks `installChannelRunnerCrashGuards` registers on. */
+export interface ChannelRunnerProcessHooks {
+  on(event: "unhandledRejection", listener: (reason: unknown) => void): unknown;
+  on(event: "uncaughtException", listener: (error: Error) => void): unknown;
+  off(event: "unhandledRejection", listener: (reason: unknown) => void): unknown;
+  off(event: "uncaughtException", listener: (error: Error) => void): unknown;
+}
+
+/**
+ * Keep the channel runner alive through a stray rejection or exception (a Baileys
+ * listener, a socket callback): log it instead of letting Bun exit, so the other
+ * channels keep running and the failing one reports its state through health. Mirrors
+ * the daemon's handlers. Returns an uninstaller.
+ */
+export function installChannelRunnerCrashGuards(hooks: ChannelRunnerProcessHooks = process): () => void {
+  const onRejection = (reason: unknown) => {
+    log.error("Unhandled rejection in channel runner", {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+  };
+  const onException = (error: Error) => {
+    log.error("Uncaught exception in channel runner", { error: error.message, stack: error.stack });
+  };
+  hooks.on("unhandledRejection", onRejection);
+  hooks.on("uncaughtException", onException);
+  return () => {
+    hooks.off("unhandledRejection", onRejection);
+    hooks.off("uncaughtException", onException);
+  };
+}
+
 export async function runChannelRunnerFromEnv(): Promise<void> {
+  installChannelRunnerCrashGuards();
   const runner = await startChannelRunner({
     consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
   });

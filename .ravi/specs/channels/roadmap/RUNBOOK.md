@@ -21,4 +21,7 @@ Se Slack nativo falhar no piloto:
 - manter `ravi daemon` rodando;
 - desabilitar ou remover a instância Slack nativa;
 - remover/disable a connection Slack se o erro for credencial;
-- manter Omni/WhatsApp intactos.
+- manter intactas as instâncias WhatsApp (`channels/adapters/whatsapp`): o
+  WhatsApp roda no mesmo `ravi channels`, então parar o runner também derruba
+  essas instâncias. Prefira desabilitar só a instância Slack. Não existe
+  rollback do WhatsApp para o Omni; veja o runbook do adapter.

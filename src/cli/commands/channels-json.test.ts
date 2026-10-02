@@ -35,17 +35,17 @@ let createdAgents: Array<{ id: string; cwd: string; provider?: string; model?: s
 let routeCreates: Array<Record<string, unknown>> = [];
 let chatParticipants: Array<Record<string, unknown>> = [];
 let sessionAttachments: Array<Record<string, unknown>> = [];
-let omniGroupCreates: Array<{ instanceId: string; body: { subject: string; participants: string[] } }> = [];
-let omniGroupLists: Array<{ instanceId: string; params?: Record<string, unknown> }> = [];
-let omniGroupParticipantAdds: Array<{ instanceId: string; groupJid: string; participants: string[] }> = [];
-let omniGroupParticipantUpdates: Array<{
+let whatsappGroupCreates: Array<{ instanceId: string; body: { subject: string; participants: string[] } }> = [];
+let whatsappGroupLists: Array<{ instanceId: string; params?: Record<string, unknown> }> = [];
+let whatsappGroupParticipantAdds: Array<{ instanceId: string; groupJid: string; participants: string[] }> = [];
+let whatsappGroupParticipantUpdates: Array<{
   instanceId: string;
   groupJid: string;
   action: string;
   participants: string[];
 }> = [];
-let omniGroupInvites: Array<{ op: string; instanceId: string; groupJid?: string; code?: string }> = [];
-let omniGroupMutations: Array<{ op: string; instanceId: string; groupJid: string; value?: string }> = [];
+let whatsappGroupInvites: Array<{ op: string; instanceId: string; groupJid?: string; code?: string }> = [];
+let whatsappGroupMutations: Array<{ op: string; instanceId: string; groupJid: string; value?: string }> = [];
 let publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 let toolContext: Record<string, unknown> | undefined;
 let firstAccountName = "main";
@@ -86,29 +86,30 @@ mock.module("../../utils/request-reply.js", () => ({
   }),
 }));
 
-mock.module("../../omni-config.js", () => ({
-  resolveOmniConnection: () => ({
-    apiUrl: "http://omni.local",
-    apiKey: "test-key",
-    source: "test",
-  }),
-}));
-
-mock.module("../../omni/client.js", () => ({
-  createOmniClient: () => ({
-    instances: {
-      listGroups: mock(async (instanceId: string, params?: Record<string, unknown>) => {
-        omniGroupLists.push({ instanceId, params });
+// group.ts talks to the WhatsApp runner through the WhatsApp client; this fake records
+// each RPC in the arrays above.
+type GroupParams = Record<string, unknown> & { groupJid: string };
+mock.module("../../channels/whatsapp/client.js", () => ({
+  createWhatsAppClient: () => ({
+    resolveBinding: () => null,
+    request: async () => {
+      throw new Error("unexpected raw WhatsApp RPC");
+    },
+    connection: {},
+    groups: {
+      list: mock(async (instanceId: string, params?: Record<string, unknown>) => {
+        whatsappGroupLists.push({ instanceId, params });
         return {
-          items: [{ externalId: "120363@g.us", name: "Launch", memberCount: 3, isCommunity: false }],
-          meta: { totalMatched: 1 },
+          items: [{ id: "120363@g.us", externalId: "120363@g.us", name: "Launch", memberCount: 3, isCommunity: false }],
         };
       }),
-      createGroup: mock(async (instanceId: string, body: { subject: string; participants: string[] }) => {
-        omniGroupCreates.push({ instanceId, body });
+      create: mock(async (instanceId: string, body: { subject: string; participants: string[] }) => {
+        whatsappGroupCreates.push({ instanceId, body });
         return {
           id: "120363@g.us",
+          externalId: "120363@g.us",
           subject: body.subject,
+          name: body.subject,
           participants: [
             { id: "owner@s.whatsapp.net", admin: "superadmin" },
             ...body.participants.map((participant) => ({
@@ -116,68 +117,79 @@ mock.module("../../omni/client.js", () => ({
               admin: null,
             })),
           ],
+          memberCount: body.participants.length + 1,
+          isCommunity: false,
         };
       }),
-      addGroupParticipants: mock(async (instanceId: string, groupJid: string, body: { participants: string[] }) => {
-        omniGroupParticipantAdds.push({ instanceId, groupJid, participants: body.participants });
-        return { ok: true, participants: body.participants };
+      addParticipants: mock(async (instanceId: string, params: GroupParams & { participants: string[] }) => {
+        whatsappGroupParticipantAdds.push({ instanceId, groupJid: params.groupJid, participants: params.participants });
+        return { groupJid: params.groupJid, results: params.participants.map((jid) => ({ jid, status: "200" })) };
       }),
-      updateGroupParticipants: mock(
-        async (instanceId: string, groupJid: string, body: { action: string; participants: string[] }) => {
-          omniGroupParticipantUpdates.push({
+      updateParticipants: mock(
+        async (instanceId: string, params: GroupParams & { action: string; participants: string[] }) => {
+          whatsappGroupParticipantUpdates.push({
             instanceId,
-            groupJid,
-            action: body.action,
-            participants: body.participants,
+            groupJid: params.groupJid,
+            action: params.action,
+            participants: params.participants,
           });
-          return { ok: true, action: body.action, participants: body.participants };
+          return { groupJid: params.groupJid, results: params.participants.map((jid) => ({ jid, status: "200" })) };
         },
       ),
-      getGroupInvite: mock(async (instanceId: string, groupJid: string) => {
-        omniGroupInvites.push({ op: "invite", instanceId, groupJid });
-        return { code: "invite-code", inviteLink: "https://chat.whatsapp.com/invite-code" };
+      getInvite: mock(async (instanceId: string, params: GroupParams) => {
+        whatsappGroupInvites.push({ op: "invite", instanceId, groupJid: params.groupJid });
+        return { groupJid: params.groupJid, code: "invite-code", inviteLink: "https://chat.whatsapp.com/invite-code" };
       }),
-      revokeGroupInvite: mock(async (instanceId: string, groupJid: string) => {
-        omniGroupInvites.push({ op: "revoke", instanceId, groupJid });
-        return { code: "new-invite-code", inviteLink: "https://chat.whatsapp.com/new-invite-code" };
+      revokeInvite: mock(async (instanceId: string, params: GroupParams) => {
+        whatsappGroupInvites.push({ op: "revoke", instanceId, groupJid: params.groupJid });
+        return {
+          groupJid: params.groupJid,
+          code: "new-invite-code",
+          inviteLink: "https://chat.whatsapp.com/new-invite-code",
+        };
       }),
-      joinGroup: mock(async (instanceId: string, body: { code: string }) => {
-        omniGroupInvites.push({ op: "join", instanceId, code: body.code });
+      join: mock(async (instanceId: string, params: { code: string }) => {
+        whatsappGroupInvites.push({ op: "join", instanceId, code: params.code });
         return { groupJid: "120363@g.us", joined: true };
       }),
-      leaveGroup: mock(async (instanceId: string, groupJid: string) => {
-        omniGroupMutations.push({ op: "leave", instanceId, groupJid });
-        return { ok: true };
+      leave: mock(async (instanceId: string, params: GroupParams) => {
+        whatsappGroupMutations.push({ op: "leave", instanceId, groupJid: params.groupJid });
+        return { groupJid: params.groupJid, left: true };
       }),
-      renameGroup: mock(async (instanceId: string, groupJid: string, body: { subject: string }) => {
-        omniGroupMutations.push({ op: "rename", instanceId, groupJid, value: body.subject });
-        return { ok: true, subject: body.subject };
+      rename: mock(async (instanceId: string, params: GroupParams & { subject: string }) => {
+        whatsappGroupMutations.push({ op: "rename", instanceId, groupJid: params.groupJid, value: params.subject });
+        return { groupJid: params.groupJid, subject: params.subject };
       }),
-      setGroupDescription: mock(async (instanceId: string, groupJid: string, body: { description: string }) => {
-        omniGroupMutations.push({ op: "description", instanceId, groupJid, value: body.description });
-        return { ok: true, description: body.description };
+      setDescription: mock(async (instanceId: string, params: GroupParams & { description: string }) => {
+        whatsappGroupMutations.push({
+          op: "description",
+          instanceId,
+          groupJid: params.groupJid,
+          value: params.description,
+        });
+        return { groupJid: params.groupJid, description: params.description };
       }),
-      setGroupSettings: mock(async (instanceId: string, groupJid: string, body: { setting: string }) => {
-        omniGroupMutations.push({ op: "settings", instanceId, groupJid, value: body.setting });
-        return { ok: true, setting: body.setting };
+      setSettings: mock(async (instanceId: string, params: GroupParams & { setting: string }) => {
+        whatsappGroupMutations.push({ op: "settings", instanceId, groupJid: params.groupJid, value: params.setting });
+        return { groupJid: params.groupJid, setting: params.setting };
       }),
-    },
-    chats: {
-      list: mock(async () => ({
-        items: [{ id: "chat-whatsapp-instance-main-group-120363", externalId: "120363@g.us", name: "Launch" }],
-        meta: { total: 1 },
-      })),
-      listParticipants: mock(async () => ({ items: [], meta: {} })),
-      addParticipant: mock(async () => ({})),
+      metadata: mock(async () => {
+        throw new Error("unexpected groups.metadata RPC");
+      }),
     },
     messages: {
-      send: mock(async () => ({ messageId: "omni-msg-1" })),
-      sendPresence: mock(async () => undefined),
-      sendReaction: mock(async () => ({ messageId: "omni-reaction-1" })),
-      deleteChannel: mock(async () => undefined),
-      editChannel: mock(async () => undefined),
+      sendText: mock(async () => ({ messageId: "whatsapp-msg-1", status: "sent" })),
     },
+    presence: { set: mock(async () => ({})) },
   }),
+  WHATSAPP_CLIENT_TIMEOUTS_MS: {
+    listStatus: 2_500,
+    status: 10_000,
+    presence: 10_000,
+    markRead: 15_000,
+    media: 120_000,
+  },
+  defaultWhatsAppClientTimeoutMs: () => 60_000,
 }));
 
 mock.module("../../contacts.js", () => ({
@@ -297,7 +309,7 @@ mock.module("../../router/router-db.js", () => ({
   },
 }));
 
-mock.module("../../omni/session-stream.js", () => ({
+mock.module("../../session-prompts/stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     publishedPrompts.push({ sessionName, payload });
   }),
@@ -408,12 +420,12 @@ describe("channel command --json output", () => {
     routeCreates = [];
     chatParticipants = [];
     sessionAttachments = [];
-    omniGroupCreates = [];
-    omniGroupLists = [];
-    omniGroupParticipantAdds = [];
-    omniGroupParticipantUpdates = [];
-    omniGroupInvites = [];
-    omniGroupMutations = [];
+    whatsappGroupCreates = [];
+    whatsappGroupLists = [];
+    whatsappGroupParticipantAdds = [];
+    whatsappGroupParticipantUpdates = [];
+    whatsappGroupInvites = [];
+    whatsappGroupMutations = [];
     publishedPrompts = [];
     toolContext = undefined;
     firstAccountName = "main";
@@ -429,8 +441,8 @@ describe("channel command --json output", () => {
     expect(payload.total).toBe(1);
     const groups = payload.groups as Array<Record<string, unknown>>;
     expect(groups[0].subject).toBe("Launch");
-    expect(payload.source).toBe("omni.rest");
-    expect(omniGroupLists).toEqual([{ instanceId: "instance-main", params: { limit: 500 } }]);
+    expect(payload.source).toBe("whatsapp.rpc");
+    expect(whatsappGroupLists).toEqual([{ instanceId: "instance-main", params: { limit: 500 } }]);
     expect(requestCalls.find((call) => call.topic.endsWith(".list"))).toBeUndefined();
   });
 
@@ -442,15 +454,15 @@ describe("channel command --json output", () => {
     expect(payload.status).toBe("added");
     expect(payload.changedCount).toBe(1);
     expect(payload.participants).toEqual(["5511999999999"]);
-    expect((payload.result as Record<string, unknown>).ok).toBe(true);
-    expect(payload.source).toBe("omni.rest.group_participants");
-    expect(omniGroupParticipantAdds).toEqual([
+    expect(payload.result).toEqual({ groupJid: "120363@g.us", results: [{ jid: "5511999999999", status: "200" }] });
+    expect(payload.source).toBe("whatsapp.rpc.group_participants");
+    expect(whatsappGroupParticipantAdds).toEqual([
       { instanceId: "instance-main", groupJid: "120363@g.us", participants: ["5511999999999"] },
     ]);
     expect(requestCalls.find((call) => call.topic.endsWith(".add"))).toBeUndefined();
   });
 
-  it("uses Omni REST for all WhatsApp group operations instead of the legacy NATS bridge", async () => {
+  it("uses the WhatsApp runner for all WhatsApp group operations instead of the legacy NATS bridge", async () => {
     const commands = new GroupCommands();
 
     const remove = await captureJson(() => commands.remove("120363@g.us", "5511999999999", "main", true, true));
@@ -466,33 +478,37 @@ describe("channel command --json output", () => {
     );
     const settings = await captureJson(() => commands.settings("120363@g.us", "announcement", "main", true, true));
 
-    expect(remove).toMatchObject({ status: "removed", source: "omni.rest.group_participants" });
-    expect(promote).toMatchObject({ status: "promoted", source: "omni.rest.group_participants" });
+    expect(remove).toMatchObject({ status: "removed", source: "whatsapp.rpc.group_participants" });
+    expect(promote).toMatchObject({ status: "promoted", source: "whatsapp.rpc.group_participants" });
     expect(promote.localParticipants).toMatchObject({ status: "updated", admins: 1 });
-    expect(demote).toMatchObject({ status: "demoted", source: "omni.rest.group_participants" });
+    expect(demote).toMatchObject({ status: "demoted", source: "whatsapp.rpc.group_participants" });
     expect(demote.localParticipants).toMatchObject({ status: "updated", admins: 0 });
-    expect(invite).toMatchObject({ status: "invite_link", source: "omni.rest.group_invite" });
-    expect(revoke).toMatchObject({ status: "invite_revoked", source: "omni.rest.group_invite" });
-    expect(join).toMatchObject({ status: "joined", source: "omni.rest.group_join", code: "invite-code" });
-    expect(leave).toMatchObject({ status: "left", source: "omni.rest.group" });
-    expect(rename).toMatchObject({ status: "renamed", source: "omni.rest.group", subject: "Renamed" });
+    expect(invite).toMatchObject({ status: "invite_link", source: "whatsapp.rpc.group_invite" });
+    expect(revoke).toMatchObject({ status: "invite_revoked", source: "whatsapp.rpc.group_invite" });
+    expect(join).toMatchObject({ status: "joined", source: "whatsapp.rpc.group_join", code: "invite-code" });
+    expect(leave).toMatchObject({ status: "left", source: "whatsapp.rpc.group" });
+    expect(rename).toMatchObject({ status: "renamed", source: "whatsapp.rpc.group", subject: "Renamed" });
     expect(description).toMatchObject({
       status: "description_updated",
-      source: "omni.rest.group",
+      source: "whatsapp.rpc.group",
       description: "New description",
     });
-    expect(settings).toMatchObject({ status: "setting_applied", source: "omni.rest.group", setting: "announcement" });
-    expect(omniGroupParticipantUpdates).toEqual([
+    expect(settings).toMatchObject({
+      status: "setting_applied",
+      source: "whatsapp.rpc.group",
+      setting: "announcement",
+    });
+    expect(whatsappGroupParticipantUpdates).toEqual([
       { instanceId: "instance-main", groupJid: "120363@g.us", action: "remove", participants: ["5511999999999"] },
       { instanceId: "instance-main", groupJid: "120363@g.us", action: "promote", participants: ["5511999999999"] },
       { instanceId: "instance-main", groupJid: "120363@g.us", action: "demote", participants: ["5511999999999"] },
     ]);
-    expect(omniGroupInvites).toEqual([
+    expect(whatsappGroupInvites).toEqual([
       { op: "invite", instanceId: "instance-main", groupJid: "120363@g.us" },
       { op: "revoke", instanceId: "instance-main", groupJid: "120363@g.us" },
       { op: "join", instanceId: "instance-main", code: "invite-code" },
     ]);
-    expect(omniGroupMutations).toEqual([
+    expect(whatsappGroupMutations).toEqual([
       { op: "leave", instanceId: "instance-main", groupJid: "120363@g.us" },
       { op: "rename", instanceId: "instance-main", groupJid: "120363@g.us", value: "Renamed" },
       { op: "description", instanceId: "instance-main", groupJid: "120363@g.us", value: "New description" },
@@ -535,7 +551,7 @@ describe("channel command --json output", () => {
     expect(createdAgents).toEqual([
       { id: "launch-agent", cwd: "/tmp/launch-agent", provider: "codex", model: "gpt-5.5" },
     ]);
-    expect(omniGroupCreates).toEqual([
+    expect(whatsappGroupCreates).toEqual([
       {
         instanceId: "instance-main",
         body: {
@@ -546,7 +562,7 @@ describe("channel command --json output", () => {
     ]);
     expect(requestCalls.find((call) => call.topic.endsWith(".create"))).toBeUndefined();
     expect(requestCalls.find((call) => call.topic.endsWith(".promote"))).toBeUndefined();
-    expect(omniGroupParticipantUpdates).toEqual([
+    expect(whatsappGroupParticipantUpdates).toEqual([
       {
         instanceId: "instance-main",
         groupJid: "120363@g.us",
@@ -571,7 +587,7 @@ describe("channel command --json output", () => {
     expect(payload.agent).toMatchObject({ status: "created", agentId: "launch-agent" });
     expect(payload.adminPromotion).toMatchObject({
       status: "promoted",
-      source: "omni.rest.group_participants",
+      source: "whatsapp.rpc.group_participants",
       actorAdmins: ["5511888888888"],
       explicitAdmins: [],
       changedCount: 1,
@@ -629,7 +645,7 @@ describe("channel command --json output", () => {
       ),
     );
 
-    expect(omniGroupCreates.at(-1)).toEqual({
+    expect(whatsappGroupCreates.at(-1)).toEqual({
       instanceId: "instance-main",
       body: {
         subject: "Context Account",
@@ -674,7 +690,7 @@ describe("channel command --json output", () => {
       ),
     );
 
-    expect(omniGroupCreates.at(-1)).toEqual({
+    expect(whatsappGroupCreates.at(-1)).toEqual({
       instanceId: "instance-main",
       body: {
         subject: "Actor Group",

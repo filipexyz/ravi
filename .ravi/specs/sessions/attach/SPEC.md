@@ -25,6 +25,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Session Attach
 
 ## Intent
@@ -214,7 +215,7 @@ wiring.
 ```bash
 bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts
 bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts
-bun test src/runtime/session-surface-hint.test.ts src/omni/consumer-context.test.ts
+bun test src/runtime/session-surface-hint.test.ts src/channels/inbound/pipeline-context.test.ts
 bun test src/cli/commands/sessions.test.ts
 bun test src/channels/slack/socket-mode.test.ts src/channels/slack/thread-lifecycle.test.ts
 ```

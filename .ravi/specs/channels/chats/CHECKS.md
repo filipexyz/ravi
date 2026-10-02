@@ -11,6 +11,6 @@
 - Prompt chat context MUST scope participants under `sourceChat` or
   `outputChat`, never a flat session-level `groupMembers` list for new code.
 - Message and event metadata MUST preserve actor type plus contact, agent, or
-  platform identity ids when known, while keeping raw Omni ids as provenance.
+  platform identity ids when known, while keeping raw provider ids as provenance.
 - `ravi specs get channels/chats --mode rules --json` MUST return the full
   inherited channels boundary.

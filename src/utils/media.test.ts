@@ -1,63 +1,37 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { fetchCachedOmniMedia, fetchOmniMedia } from "./media.js";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { MAX_AUDIO_BYTES, MAX_MEDIA_BYTES, saveToAgentAttachments } from "./media.js";
 
-const originalFetch = globalThis.fetch;
+let agentCwd: string | null = null;
 
-afterEach(() => {
-  globalThis.fetch = originalFetch;
+afterEach(async () => {
+  if (agentCwd) await rm(agentCwd, { recursive: true, force: true });
+  agentCwd = null;
 });
 
 describe("media utilities", () => {
-  it("rejects HTML responses when media bytes are expected", async () => {
-    globalThis.fetch = mock(
-      async () =>
-        new Response("<!DOCTYPE html><html><body>login required</body></html>", {
-          status: 200,
-          headers: { "content-type": "text/html; charset=utf-8" },
-        }),
-    ) as unknown as typeof fetch;
-
-    const result = await fetchOmniMedia(
-      "https://files.slack.com/private/photo.png",
-      "http://omni.local",
-      "test-key",
-      undefined,
-      "image/png",
-    );
-
-    expect(result).toBeNull();
+  it("keeps the 20MB limits", () => {
+    expect(MAX_MEDIA_BYTES).toBe(20 * 1024 * 1024);
+    expect(MAX_AUDIO_BYTES).toBe(20 * 1024 * 1024);
   });
 
-  it("fetches media through the Omni cache endpoint", async () => {
-    const calls: string[] = [];
-    globalThis.fetch = mock(async (input: Parameters<typeof fetch>[0]) => {
-      const url = String(input);
-      calls.push(url);
-      if (url.endsWith("/api/v2/messages/media/download")) {
-        return Response.json({
-          data: {
-            downloadUrl: "/api/v2/media/inst-1/2026-06/msg-1.png",
-          },
-        });
-      }
-      return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
-        status: 200,
-        headers: { "content-type": "image/png" },
-      });
-    }) as unknown as typeof fetch;
+  it("saves media under <agentCwd>/attachments with a sanitized name and the mime extension", async () => {
+    agentCwd = await mkdtemp(join(tmpdir(), "ravi-media-attachments-"));
 
-    const result = await fetchCachedOmniMedia(
-      { instanceId: "inst-1", chatExternalId: "C123", externalId: "123.456-file-F1" },
-      "http://omni.local",
-      "test-key",
-      undefined,
-      "image/png",
-    );
+    const saved = await saveToAgentAttachments(Buffer.from("png-bytes"), agentCwd, "3EB0:abc/def", "image/png");
 
-    expect(result?.length).toBe(4);
-    expect(calls).toEqual([
-      "http://omni.local/api/v2/messages/media/download",
-      "http://omni.local/api/v2/media/inst-1/2026-06/msg-1.png",
-    ]);
+    expect(dirname(saved)).toBe(join(agentCwd, "attachments"));
+    expect(basename(saved)).toMatch(/^\d+-3EB0_abc_def\.png$/);
+    expect((await readFile(saved)).toString()).toBe("png-bytes");
+  });
+
+  it("derives the extension from the mime subtype when it is not in the table", async () => {
+    agentCwd = await mkdtemp(join(tmpdir(), "ravi-media-attachments-"));
+
+    const saved = await saveToAgentAttachments(Buffer.from("x"), agentCwd, "m1", "application/zip; charset=binary");
+
+    expect(saved.endsWith("-m1.zip")).toBe(true);
   });
 });

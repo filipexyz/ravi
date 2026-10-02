@@ -58,9 +58,39 @@ Use `ravi triggers topics` to inspect the trigger-ready topic catalog with paylo
 |---------|-------------|
 | `ravi.inbound.reaction` | Emoji reactions received. Payload: `{ targetMessageId, emoji, senderId }` |
 | `ravi.inbound.reply` | Replies to bot messages. Payload: `{ targetMessageId, text, senderId }` |
-| `ravi.inbound.pollVote` | Poll vote events. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }` |
+| `ravi.inbound.pollVote` | Poll vote events. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }`. No Ravi publisher emits it today. |
 
-Channel message aliases such as `whatsapp.*.inbound` and channel reaction aliases such as `whatsapp.*.reaction` are not trigger-ready subjects. Inbound channel messages are consumed by the session router from Omni streams; reaction triggers use `ravi.inbound.reaction`.
+Channel message aliases such as `whatsapp.*.inbound` and channel reaction aliases such as `whatsapp.*.reaction` are not trigger-ready subjects. Inbound channel messages are consumed by the inbound pipeline from `CHANNEL_INBOUND` (WhatsApp, `ravi.channel.inbound.whatsapp.*`) or from the legacy Omni bridge streams (Telegram/Discord); reaction triggers use `ravi.inbound.reaction`.
+
+Triggers on the old Omni WhatsApp subjects (`message.received.whatsapp-baileys.>`, `reaction.received.whatsapp-baileys.>`, `instance.*.whatsapp-baileys.*`) no longer fire. Move each by kind:
+
+- message triggers → `ravi.channel.inbound.whatsapp.message.>` (the payload changed: see below);
+- reaction triggers → `ravi.inbound.reaction`;
+- instance lifecycle triggers → `ravi.instances.>` (unregistered instances) or `ravi.whatsapp.>` (`qr`, `connected` pairing relay); disconnects are only on `ravi.channel.inbound.whatsapp.connection.>`.
+
+A trigger on `ravi.channel.inbound.whatsapp.message.>` receives the raw `WhatsAppInboundEvent`, so filters written for Omni's `data.*` fields must be rewritten (for example `data.payload.content.type == "text"`):
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "whatsapp-baileys:<uuid>:3EB0ABC:message",
+  "instanceId": "<uuid>",
+  "timestamp": 1760000000000,
+  "type": "message.received",
+  "ingestMode": "realtime",
+  "payload": {
+    "externalId": "3EB0ABC",
+    "chatId": "5511999999999@s.whatsapp.net",
+    "from": "5511999999999",
+    "senderName": "Luis",
+    "content": { "type": "text", "text": "oi" },
+    "platformTimestamp": 1760000000,
+    "rawPayload": { "key": { "id": "3EB0ABC" } }
+  }
+}
+```
+
+That subject is outside the built-in catalog (the CLI warns) and also carries history-sync messages; filter with `data.ingestMode == "realtime"` when you only want live messages.
 
 Reaction payloads are correlation events, not full message records. `ravi.inbound.reaction` currently carries `targetMessageId`, `emoji`, and `senderId`; it does not guarantee `chatId`, caption, media metadata, or business/domain state. If a routine needs that state, persist a mapping keyed by the outbound message id before waiting for the reaction.
 
@@ -95,7 +125,7 @@ Reaction payloads are correlation events, not full message records. `ravi.inboun
 | Pattern | Description |
 |---------|-------------|
 | `ravi.audit.denied` | Permission denied events |
-| `ravi.instances.unregistered` | Inbound event from an unregistered Omni instance |
+| `ravi.instances.unregistered` | Inbound event from an instance (WhatsApp or legacy bridge) that is not registered in Ravi |
 
 ## Anti-Loop Protection
 

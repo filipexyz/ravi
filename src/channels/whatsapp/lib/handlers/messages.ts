@@ -1,0 +1,1405 @@
+/**
+ * Message event handlers for Baileys socket
+ *
+ * Handles incoming messages and hands them to the runtime host, which publishes
+ * them as `message.received` (WhatsAppInboundEvent, ../../events.ts).
+ * Supports all WhatsApp message types including:
+ * - Basic: text, image, audio, video, document, sticker
+ * - Interactive: reaction, location, live_location, contact
+ * - Extended: poll, poll_update, event, product
+ * - Lifecycle: edit, delete
+ */
+
+import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import type { MessageUpsertType, WAMessage, WAMessageKey, WASocket, proto } from "baileys";
+import { getRaviStateDir } from "../../../../utils/paths.js";
+import { baileys } from "../../baileys-loader.js";
+import {
+  type ContentType,
+  type DedupeCache,
+  createDownloadGuard,
+  createInboundDedupeCache,
+  createLogger,
+  sanitizeMessage,
+} from "../foundation.js";
+import { fromJid, isLidJid, isUserJid, resolveCanonicalJid, resolveToPhoneJidLegacy } from "../jid.js";
+import type { WhatsAppMessageHost } from "../types.js";
+import type { DecryptFailureTracker } from "../utils/decrypt-failure-tracker.js";
+import {
+  type MediaDownloadContext,
+  detectMediaType,
+  downloadMediaToFile,
+  getExtension,
+  getWhatsAppMediaDownloadMaxBytes,
+} from "../utils/download.js";
+import { getDocumentMessage, getMessageContextInfo } from "../utils/message.js";
+import { guardListener } from "../utils/listener-guard.js";
+import { decryptMsgSecret, getMessageSecret, rememberMessageSecret } from "../utils/msg-secret.js";
+import { getMediaSize } from "./media.js";
+
+const log = createLogger("whatsapp:messages");
+const guarded = (event: string, instanceId: string) => ({ event, instanceId, log });
+
+/** Fallback dedupe cache — used when no per-instance cache is provided */
+const fallbackDedupeCache = createInboundDedupeCache();
+
+/** Download size guard — WhatsApp-scale default; provider processors downsample later */
+const downloadGuard = createDownloadGuard({ maxSizeBytes: getWhatsAppMediaDownloadMaxBytes() });
+
+/**
+ * Extract message content from a WAMessage
+ */
+export interface ExtractedContent {
+  type: ContentType;
+  text?: string;
+  mediaUrl?: string;
+  mediaLocalPath?: string;
+  mimeType?: string;
+  caption?: string;
+  filename?: string;
+  emoji?: string;
+  targetMessageId?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+    address?: string;
+  };
+  contact?: {
+    name: string;
+    phone?: string;
+  };
+  // Poll-specific fields
+  poll?: {
+    name: string;
+    options: string[];
+    selectableCount?: number;
+  };
+  pollVotes?: string[];
+  // Event/calendar specific fields
+  event?: {
+    name: string;
+    description?: string;
+    location?: string;
+    startTime?: Date;
+    endTime?: Date;
+  };
+  // Product-specific fields
+  product?: {
+    id: string;
+    title?: string;
+    description?: string;
+    price?: string;
+    currency?: string;
+    imageUrl?: string;
+  };
+  // Edit-specific fields
+  editedText?: string;
+  editedMessageId?: string;
+  /** msgSecret envelope of an encrypted edit (omni#1061) — decrypted in handleSpecialMessage. */
+  encryptedEdit?: { encIv: Uint8Array; encPayload: Uint8Array };
+}
+
+type MessageContent = proto.IMessage;
+type ContentExtractor = (message: MessageContent) => ExtractedContent | null;
+
+/**
+ * The plaintext inside an encrypted edit is a full `proto.Message` whose
+ * `protocolMessage.editedMessage` holds the new content — the same shape the old
+ * plaintext path carried, just wrapped and encrypted (omni#1061).
+ */
+function decodeEditPlaintext(plaintext: Buffer): MessageContent | undefined {
+  try {
+    const decoded = baileys().proto.Message.decode(plaintext) as unknown as MessageContent;
+    return decoded?.protocolMessage?.editedMessage ?? undefined;
+  } catch (error) {
+    log.debug("Failed to decode decrypted edit payload", { error: String(error) });
+    return undefined;
+  }
+}
+
+/** New text of an edit: body of a text message, or the caption of a media message. */
+function extractEditedText(edited: MessageContent | null | undefined): string | undefined {
+  return (
+    edited?.conversation ||
+    edited?.extendedTextMessage?.text ||
+    edited?.imageMessage?.caption ||
+    edited?.videoMessage?.caption ||
+    edited?.documentMessage?.caption ||
+    undefined
+  );
+}
+
+/**
+ * One edit can reach us twice — as a protocol message on `messages.upsert` (how an
+ * edit from another device of this account syncs) and as `messages.update` (how a
+ * third-party edit arrives). Whoever gets there first emits; the twin is dropped.
+ *
+ * Keyed by `${targetMessageId}:${newText}` so a genuine second edit of the same
+ * message still passes. Bounded so a long-lived socket cannot grow it without end.
+ */
+const SEEN_EDITS = new Set<string>();
+const SEEN_EDITS_MAX = 500;
+/** Test-only: forget every remembered edit (the dedupe set is module-level, shared by all sockets). */
+export function resetEditDedupeForTests(): void {
+  SEEN_EDITS.clear();
+}
+
+function rememberEdit(targetMessageId: string, newText: string): boolean {
+  const key = `${targetMessageId}:${newText}`;
+  if (SEEN_EDITS.has(key)) return false;
+  if (SEEN_EDITS.size >= SEEN_EDITS_MAX) SEEN_EDITS.delete(SEEN_EDITS.values().next().value as string);
+  SEEN_EDITS.add(key);
+  return true;
+}
+
+/** Join non-empty, trimmed parts with newlines; undefined when nothing survives. */
+function joinLines(...parts: Array<string | null | undefined>): string | undefined {
+  const text = parts.filter((p): p is string => typeof p === "string" && p.trim().length > 0).join("\n");
+  return text.length > 0 ? text : undefined;
+}
+
+/** Render visible button labels as `[A] [B]`; undefined when there are none. */
+function bracketButtons(labels: Array<string | null | undefined>): string | undefined {
+  const clean = labels.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+  return clean.length > 0 ? clean.map((l) => `[${l.trim()}]`).join(" ") : undefined;
+}
+
+/**
+ * Bot-interactive message flattening (omni#902).
+ *
+ * WhatsApp's native interactive UX — list menus, quick-reply buttons, and the
+ * modern nativeFlow / template variants — is what a bot SENDS, so it has no
+ * response handler and previously fell through to `extractUnknownContent`,
+ * landing in the DB as `"Unknown message type: listMessage"`. These formatters
+ * flatten each into a readable text transcript (title / body / footer + the
+ * visible option labels) so chat history, audit logs, and QA tooling see the
+ * actual bot output instead of a placeholder.
+ */
+function extractListMessageText(list: proto.Message.IListMessage): string | undefined {
+  const rows = (list.sections ?? []).flatMap((s) => (s.rows ?? []).map((r) => (r.title ? `• ${r.title}` : "")));
+  return joinLines(list.title, list.description, ...rows, list.footerText);
+}
+
+function extractButtonsMessageText(bm: proto.Message.IButtonsMessage): string | undefined {
+  const labels = bracketButtons((bm.buttons ?? []).map((b) => b.buttonText?.displayText));
+  return joinLines(bm.contentText ?? bm.text, bm.footerText, labels);
+}
+
+function extractInteractiveMessageText(im: proto.Message.IInteractiveMessage): string | undefined {
+  const labels = bracketButtons((im.nativeFlowMessage?.buttons ?? []).map((b) => b.name));
+  return joinLines(im.header?.title, im.header?.subtitle, im.body?.text, im.footer?.text, labels);
+}
+
+function extractTemplateMessageText(tpl: proto.Message.ITemplateMessage): string | undefined {
+  const hydrated = tpl.hydratedTemplate ?? tpl.hydratedFourRowTemplate;
+  if (hydrated) {
+    const labels = bracketButtons(
+      (hydrated.hydratedButtons ?? []).map(
+        (b) => b.quickReplyButton?.displayText ?? b.urlButton?.displayText ?? b.callButton?.displayText,
+      ),
+    );
+    return joinLines(hydrated.hydratedTitleText, hydrated.hydratedContentText, hydrated.hydratedFooterText, labels);
+  }
+  return tpl.interactiveMessageTemplate ? extractInteractiveMessageText(tpl.interactiveMessageTemplate) : undefined;
+}
+
+/**
+ * A bot-interactive container (buttonsMessage, interactiveMessage.header, a
+ * hydrated template) can carry a media header — an image/video/document shown
+ * above the buttons. When present, classify the message as that media so the
+ * bytes are downloaded like any other media (mediaUrl hoisted, see omni#500),
+ * and fold the interactive text transcript into the caption. Returns null when
+ * the container has no media header (caller falls back to a text message).
+ */
+interface InteractiveMediaContainer {
+  imageMessage?: proto.Message.IImageMessage | null;
+  videoMessage?: proto.Message.IVideoMessage | null;
+  documentMessage?: proto.Message.IDocumentMessage | null;
+}
+
+function extractInteractiveMediaHeader(
+  container: InteractiveMediaContainer,
+  caption: string | undefined,
+): ExtractedContent | null {
+  if (container.imageMessage) {
+    return {
+      type: "image",
+      caption: caption ?? container.imageMessage.caption ?? undefined,
+      mimeType: container.imageMessage.mimetype ?? "image/jpeg",
+      mediaUrl: container.imageMessage.url ?? undefined,
+    };
+  }
+  if (container.videoMessage) {
+    return {
+      type: "video",
+      caption: caption ?? container.videoMessage.caption ?? undefined,
+      mimeType: container.videoMessage.mimetype ?? "video/mp4",
+      mediaUrl: container.videoMessage.url ?? undefined,
+    };
+  }
+  if (container.documentMessage) {
+    return {
+      type: "document",
+      filename: container.documentMessage.fileName ?? undefined,
+      caption: caption ?? container.documentMessage.caption ?? undefined,
+      mimeType: container.documentMessage.mimetype ?? "application/octet-stream",
+      mediaUrl: container.documentMessage.url ?? undefined,
+    };
+  }
+  return null;
+}
+
+/** buttonsMessage → media header (if any) with the button transcript as caption, else text. */
+function extractButtonsMessage(bm: proto.Message.IButtonsMessage): ExtractedContent {
+  const text = extractButtonsMessageText(bm);
+  return extractInteractiveMediaHeader(bm, text) ?? { type: "text", text };
+}
+
+/** interactiveMessage → media header (if any) with the body transcript as caption, else text. */
+function extractInteractiveMessage(im: proto.Message.IInteractiveMessage): ExtractedContent {
+  const text = extractInteractiveMessageText(im);
+  return extractInteractiveMediaHeader(im.header ?? {}, text) ?? { type: "text", text };
+}
+
+/** templateMessage → media header on the hydrated template (if any) with transcript as caption, else text. */
+function extractTemplateMessage(tpl: proto.Message.ITemplateMessage): ExtractedContent {
+  const text = extractTemplateMessageText(tpl);
+  const hydrated = tpl.hydratedTemplate ?? tpl.hydratedFourRowTemplate;
+  const media = hydrated ? extractInteractiveMediaHeader(hydrated, text) : null;
+  return media ?? { type: "text", text };
+}
+
+/**
+ * Content extractors for each message type
+ * Each extractor handles one specific message type
+ */
+const contentExtractors: Array<{ check: (m: MessageContent) => boolean; extract: ContentExtractor }> = [
+  {
+    check: (m) => !!m.conversation,
+    extract: (m) => ({ type: "text", text: m.conversation ?? undefined }),
+  },
+  {
+    check: (m) => !!m.extendedTextMessage,
+    extract: (m) => ({ type: "text", text: m.extendedTextMessage?.text ?? undefined }),
+  },
+  {
+    check: (m) => !!m.imageMessage,
+    extract: (m) => ({
+      type: "image",
+      caption: m.imageMessage?.caption ?? undefined,
+      mimeType: m.imageMessage?.mimetype ?? "image/jpeg",
+      mediaUrl: m.imageMessage?.url ?? undefined,
+    }),
+  },
+  {
+    check: (m) => !!m.audioMessage,
+    extract: (m) => ({
+      type: "audio",
+      mimeType: m.audioMessage?.mimetype ?? "audio/ogg",
+      mediaUrl: m.audioMessage?.url ?? undefined,
+    }),
+  },
+  {
+    check: (m) => !!m.videoMessage,
+    extract: (m) => ({
+      type: "video",
+      caption: m.videoMessage?.caption ?? undefined,
+      mimeType: m.videoMessage?.mimetype ?? "video/mp4",
+      mediaUrl: m.videoMessage?.url ?? undefined,
+    }),
+  },
+  {
+    check: (m) => !!getDocumentMessage(m),
+    extract: (m) => {
+      const document = getDocumentMessage(m);
+      return {
+        type: "document",
+        filename: document?.fileName ?? undefined,
+        mimeType: document?.mimetype ?? "application/octet-stream",
+        caption: document?.caption ?? undefined,
+        mediaUrl: document?.url ?? undefined,
+      };
+    },
+  },
+  {
+    check: (m) => !!m.stickerMessage,
+    extract: (m) => ({
+      type: "sticker",
+      mimeType: m.stickerMessage?.mimetype ?? "image/webp",
+      mediaUrl: m.stickerMessage?.url ?? undefined,
+    }),
+  },
+  {
+    check: (m) => !!m.locationMessage,
+    extract: (m) => ({
+      type: "location",
+      location: {
+        latitude: m.locationMessage?.degreesLatitude ?? 0,
+        longitude: m.locationMessage?.degreesLongitude ?? 0,
+        name: m.locationMessage?.name ?? undefined,
+        address: m.locationMessage?.address ?? undefined,
+      },
+    }),
+  },
+  {
+    check: (m) => !!m.contactMessage,
+    extract: (m) => ({
+      type: "contact",
+      contact: {
+        name: m.contactMessage?.displayName ?? "Unknown",
+        phone: m.contactMessage?.vcard ? extractPhoneFromVcard(m.contactMessage.vcard) : undefined,
+      },
+    }),
+  },
+  {
+    check: (m) => !!m.reactionMessage,
+    extract: (m) => ({
+      type: "reaction",
+      emoji: m.reactionMessage?.text ?? undefined,
+      targetMessageId: m.reactionMessage?.key?.id ?? undefined,
+    }),
+  },
+  // Poll creation message
+  {
+    check: (m) => !!m.pollCreationMessage || !!m.pollCreationMessageV3,
+    extract: (m) => {
+      const poll = m.pollCreationMessage || m.pollCreationMessageV3;
+      return {
+        type: "poll" as ContentType,
+        text: poll?.name ?? undefined,
+        poll: {
+          name: poll?.name ?? "",
+          options: poll?.options?.map((o: { optionName?: string | null }) => o.optionName ?? "") ?? [],
+          selectableCount: poll?.selectableOptionsCount ?? undefined,
+        },
+      };
+    },
+  },
+  // Poll update (vote) message
+  {
+    check: (m) => !!m.pollUpdateMessage,
+    extract: (m) => ({
+      type: "poll_update" as ContentType,
+      targetMessageId: m.pollUpdateMessage?.pollCreationMessageKey?.id ?? undefined,
+      // Note: votes are encrypted, need decryption with original poll message
+      pollVotes: [],
+    }),
+  },
+  // Event/calendar message (scheduled events)
+  {
+    check: (m) => !!m.eventMessage,
+    extract: (m) => ({
+      type: "event" as ContentType,
+      text: m.eventMessage?.name ?? undefined,
+      event: {
+        name: m.eventMessage?.name ?? "",
+        description: m.eventMessage?.description ?? undefined,
+        location: m.eventMessage?.location?.name ?? undefined,
+        startTime: m.eventMessage?.startTime ? new Date(Number(m.eventMessage.startTime) * 1000) : undefined,
+      },
+    }),
+  },
+  // Live location sharing
+  {
+    check: (m) => !!m.liveLocationMessage,
+    extract: (m) => ({
+      type: "live_location" as ContentType,
+      location: {
+        latitude: m.liveLocationMessage?.degreesLatitude ?? 0,
+        longitude: m.liveLocationMessage?.degreesLongitude ?? 0,
+        name: m.liveLocationMessage?.caption ?? undefined,
+      },
+      text: m.liveLocationMessage?.caption ?? undefined,
+    }),
+  },
+  // Product message (for business accounts)
+  {
+    check: (m) => !!m.productMessage,
+    extract: (m) => ({
+      type: "product" as ContentType,
+      text: m.productMessage?.product?.productId ?? undefined,
+      product: {
+        id: m.productMessage?.product?.productId ?? "",
+        title: m.productMessage?.product?.title ?? undefined,
+        description: m.productMessage?.product?.description ?? undefined,
+        price: m.productMessage?.product?.priceAmount1000
+          ? String(Number(m.productMessage.product.priceAmount1000) / 1000)
+          : undefined,
+        currency: m.productMessage?.product?.currencyCode ?? undefined,
+        imageUrl: m.productMessage?.product?.productImageCount
+          ? (m.productMessage?.product?.productImage?.url ?? undefined)
+          : undefined,
+      },
+    }),
+  },
+  // Secret-encrypted message — WhatsApp's msgSecret envelope. Edits moved here from
+  // the plaintext protocol message (omni#1061): the new text is encrypted under the
+  // ORIGINAL message's secret, so this extractor only surfaces the envelope and the
+  // target; decryption happens in `handleSpecialMessage`, which can reach the secret.
+  {
+    check: (m) => !!m.secretEncryptedMessage,
+    extract: (m) => {
+      const sec = m.secretEncryptedMessage;
+      // SecretEncType: 1 = EVENT_EDIT, 2 = MESSAGE_EDIT
+      const encType = sec?.secretEncType as number | string | undefined;
+      const isMessageEdit = encType === 2 || encType === "MESSAGE_EDIT";
+      if (!isMessageEdit || !sec?.encPayload || !sec?.encIv) return null;
+      return {
+        type: "edit" as ContentType,
+        targetMessageId: sec.targetMessageKey?.id ?? undefined,
+        encryptedEdit: { encIv: sec.encIv, encPayload: sec.encPayload },
+      };
+    },
+  },
+  // Protocol message - handles internal WhatsApp protocol events
+  // Types: 0=REVOKE, 3=EPHEMERAL_SETTING, 4=EPHEMERAL_SYNC, 5=HISTORY_SYNC,
+  //        6=APP_STATE_KEY_SHARE, 7=APP_STATE_KEY_REQUEST, 14=EDIT, 15=KEEP_IN_CHAT (pin)
+  {
+    check: (m) => !!m.protocolMessage,
+    extract: (m) => {
+      const proto = m.protocolMessage;
+      // Cast to number to handle all protocol types (including ones not in the TypeScript enum)
+      const protoType = proto?.type as number | undefined;
+
+      // Message edit (type 14 = MESSAGE_EDIT)
+      if (protoType === 14 || proto?.editedMessage) {
+        return {
+          type: "edit" as ContentType,
+          targetMessageId: proto?.key?.id ?? undefined,
+          editedText: extractEditedText(proto?.editedMessage),
+        };
+      }
+
+      // Message delete/revoke (type 0 = REVOKE)
+      if (protoType === 0) {
+        return {
+          type: "delete" as ContentType,
+          targetMessageId: proto?.key?.id ?? undefined,
+        };
+      }
+
+      // Ephemeral settings (type 3) - disappearing messages toggle
+      if (protoType === 3) {
+        const expiration = proto?.ephemeralExpiration;
+        log.debug("Disappearing messages", { enabled: !!expiration, expiration });
+        return null; // Don't emit as message
+      }
+
+      // Pin message (type 15 = KEEP_IN_CHAT)
+      if (protoType === 15) {
+        log.debug("Message pinned", { msgId: proto?.key?.id });
+        return null; // TODO: emit as 'pin' event when we add support
+      }
+
+      // Internal sync messages - silently ignore
+      // 4=EPHEMERAL_SYNC, 5=HISTORY_SYNC, 6=KEY_SHARE, 7=KEY_REQUEST, 8=MSG_FANOUT
+      // 9=INITIAL_SECURITY, 10=APP_STATE_FATAL, 11=SHARE_PHONE, 12-17=various internal
+      if (protoType !== undefined && protoType !== 0 && protoType !== 14) {
+        // All other protocol types are internal sync - don't emit
+        return null;
+      }
+
+      return null;
+    },
+  },
+  // Template button reply
+  {
+    check: (m) => !!m.templateButtonReplyMessage,
+    extract: (m) => ({
+      type: "text" as ContentType,
+      text: m.templateButtonReplyMessage?.selectedDisplayText ?? m.templateButtonReplyMessage?.selectedId ?? undefined,
+    }),
+  },
+  // List response message
+  {
+    check: (m) => !!m.listResponseMessage,
+    extract: (m) => ({
+      type: "text" as ContentType,
+      text: m.listResponseMessage?.title ?? m.listResponseMessage?.singleSelectReply?.selectedRowId ?? undefined,
+    }),
+  },
+  // Buttons response message
+  {
+    check: (m) => !!m.buttonsResponseMessage,
+    extract: (m) => ({
+      type: "text" as ContentType,
+      text: m.buttonsResponseMessage?.selectedDisplayText ?? m.buttonsResponseMessage?.selectedButtonId ?? undefined,
+    }),
+  },
+  // Bot-sent interactive list menu (omni#902) — flatten to a text transcript.
+  {
+    check: (m) => !!m.listMessage,
+    extract: (m) => ({
+      type: "text" as ContentType,
+      text: m.listMessage ? extractListMessageText(m.listMessage) : undefined,
+    }),
+  },
+  // Bot-sent quick-reply buttons (legacy buttonsMessage) — omni#902.
+  // A media header (image/video/document above the buttons) is classified as
+  // that media with the button transcript as caption; otherwise a text message.
+  {
+    check: (m) => !!m.buttonsMessage,
+    extract: (m) => (m.buttonsMessage ? extractButtonsMessage(m.buttonsMessage) : null),
+  },
+  // Bot-sent modern interactive message (nativeFlow / flows) — omni#902
+  {
+    check: (m) => !!m.interactiveMessage,
+    extract: (m) => (m.interactiveMessage ? extractInteractiveMessage(m.interactiveMessage) : null),
+  },
+  // Bot-sent template message (hydrated four-row / interactive template) — omni#902
+  {
+    check: (m) => !!m.templateMessage,
+    extract: (m) => (m.templateMessage ? extractTemplateMessage(m.templateMessage) : null),
+  },
+  // Sender key distribution - internal E2E encryption, ignore
+  {
+    check: (m) => !!m.senderKeyDistributionMessage,
+    extract: () => null, // Internal encryption key, don't emit
+  },
+  // Message history bundle - internal sync, ignore
+  {
+    check: (m) => !!(m as Record<string, unknown>).messageHistoryBundle,
+    extract: () => null, // History sync, don't emit
+  },
+];
+
+/**
+ * Known internal message types that should be silently ignored
+ */
+const INTERNAL_MESSAGE_TYPES = new Set([
+  "messageContextInfo", // Context info for replies, mentions
+  "senderKeyDistributionMessage", // E2E encryption key distribution
+  "messageHistoryBundle", // History sync
+  "protocolMessage", // Already handled above
+  "encReactionMessage", // Encrypted reaction (handled via messages.reaction event)
+  "peerDataOperationRequestMessage", // Internal peer sync
+  "peerDataOperationRequestResponseMessage", // Internal peer sync response
+  "botInvokeMessage", // Bot-related internal
+  "callLogMessage", // Call log sync
+  "pollResultSnapshotMessage", // Poll result sync (internal, not user-facing content)
+]);
+
+/**
+ * Fallback extractor for unknown message types
+ * Returns null for internal types, captures user-facing unknowns for debugging
+ */
+function extractUnknownContent(message: MessageContent): ExtractedContent | null {
+  // Get all keys that have truthy values (actual message content)
+  const messageKeys = Object.keys(message).filter(
+    (k) => message[k as keyof MessageContent] && k !== "messageContextInfo",
+  );
+
+  // If all keys are internal types, silently ignore
+  const hasOnlyInternalTypes = messageKeys.every((k) => INTERNAL_MESSAGE_TYPES.has(k));
+  if (hasOnlyInternalTypes || messageKeys.length === 0) {
+    return null;
+  }
+
+  // Log unknown types at debug level for future investigation. The keys stay in
+  // the log + rawPayload only — never in `text`, which downstream consumers
+  // (agents, FTS) treat as user speech (omni#1041).
+  log.debug("Unknown message type", { keys: messageKeys });
+
+  return { type: "unknown" as ContentType };
+}
+
+/**
+ * Extract content from a Baileys message using handler map
+ * Falls back to 'unknown' type for unrecognized messages to ensure nothing is lost
+ */
+/**
+ * FutureProofMessage envelopes WhatsApp wraps real content in. Mirrors Baileys'
+ * `normalizeMessageContent` list plus `deviceSentMessage` (own-device sync).
+ * Envelopes nest in any order (e.g. own edit from the phone:
+ * deviceSentMessage → editedMessage → protocolMessage), so unwrap iteratively
+ * instead of special-casing each wrapper (omni#1061).
+ */
+const ENVELOPE_KEYS = [
+  "deviceSentMessage",
+  "ephemeralMessage",
+  "viewOnceMessage",
+  "viewOnceMessageV2",
+  "viewOnceMessageV2Extension",
+  "editedMessage",
+  "documentWithCaptionMessage",
+  "associatedChildMessage",
+  "groupStatusMessage",
+  "groupStatusMessageV2",
+] as const;
+
+function unwrapEnvelopes(message: MessageContent): MessageContent {
+  let current = message;
+  for (let depth = 0; depth < 5; depth++) {
+    const record = current as Record<string, { message?: MessageContent | null } | null | undefined>;
+    const key = ENVELOPE_KEYS.find((k) => record[k]?.message);
+    if (!key) break;
+    current = record[key]?.message as MessageContent;
+  }
+  return current;
+}
+
+export function extractContent(msg: WAMessage): ExtractedContent | null {
+  if (!msg.message) return null;
+  const message = unwrapEnvelopes(msg.message);
+
+  for (const { check, extract } of contentExtractors) {
+    if (check(message)) {
+      const result = extract(message);
+      if (result) return result;
+    }
+  }
+
+  // Fallback: capture unknown message types so they're not lost
+  return extractUnknownContent(message);
+}
+
+/**
+ * Extract phone number from vCard format
+ */
+function extractPhoneFromVcard(vcard: string): string | undefined {
+  const telMatch = vcard.match(/TEL[^:]*:([+\d\s-]+)/i);
+  if (telMatch?.[1]) {
+    return telMatch[1].replace(/[\s-]/g, "");
+  }
+  return undefined;
+}
+
+/**
+ * Get the reply-to message ID if present
+ */
+function getReplyToId(msg: WAMessage): string | undefined {
+  const contextInfo = getMessageContextInfo(msg);
+  return contextInfo?.stanzaId || undefined;
+}
+
+/**
+ * Quoted-message context of a reply, lifted out of `contextInfo` (omni#1090).
+ *
+ * Baileys nests the quoted stanza under `message.<type>.contextInfo.quotedMessage`;
+ * persistence and the agent plugins read a top-level `rawPayload.quotedMessage`
+ * with `conversation` / `participant` / `pushName`, so this is the bridge.
+ */
+export interface QuotedContext {
+  stanzaId?: string;
+  participant?: string;
+  type: ContentType;
+  /** Text, caption, or a `[type]` placeholder for media / non-text quotes. */
+  conversation?: string;
+}
+
+export function extractQuotedContext(msg: WAMessage): QuotedContext | undefined {
+  const contextInfo = getMessageContextInfo(msg);
+  if (!contextInfo?.quotedMessage) return undefined;
+  const content = extractContent({ key: msg.key, message: contextInfo.quotedMessage } as WAMessage);
+  const type = content?.type ?? ("unknown" as ContentType);
+  return {
+    stanzaId: contextInfo.stanzaId || undefined,
+    participant: contextInfo.participant || undefined,
+    type,
+    conversation: content?.text || content?.caption || `[${type}]`,
+  };
+}
+
+// Note: replaceMentionsWithNames removed - mention replacement now handled in
+// agent-dispatcher with database lookup for better reliability across API restarts
+
+/**
+ * Determine if a message is from me (outgoing)
+ */
+function isFromMe(msg: WAMessage): boolean {
+  return msg.key.fromMe === true;
+}
+
+/**
+ * Resolve the actual sender JID for a message.
+ *
+ * LID-first: keeps LID participant JIDs as canonical sender identity.
+ * Stores LID↔phone mapping when participantAlt provides the alternate form.
+ *
+ * Fixes:
+ * - isFromMe in groups: uses the bot's own JID instead of group JID
+ */
+export function resolveSenderJid(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  msg: WAMessage,
+  chatId: string,
+): string {
+  if (isFromMe(msg)) {
+    // Use the bot's own JID for own messages (not chatId, which could be a group)
+    return plugin.getMeJid(instanceId) || chatId;
+  }
+
+  // In groups, msg.key.participant is the actual sender
+  const senderJid = msg.key.participant || msg.key.remoteJid || chatId;
+  const participantAlt = (msg.key as Record<string, unknown>).participantAlt as string | undefined;
+
+  // Always store bidirectional mapping when participantAlt provides the alternate form
+  if (isLidJid(senderJid) && participantAlt && isUserJid(participantAlt)) {
+    plugin.storeLidMapping(instanceId, senderJid, participantAlt);
+  } else if (isUserJid(senderJid) && participantAlt && isLidJid(participantAlt)) {
+    plugin.storeLidMapping(instanceId, participantAlt, senderJid);
+  }
+
+  // DEC-8: when lidFirstEnabled is disabled, resolve LID sender → phone (legacy behavior)
+  if (!plugin.isLidFirstEnabled(instanceId)) {
+    const lidCache = plugin.getLidMappingCache(instanceId);
+    return resolveToPhoneJidLegacy(senderJid, participantAlt, lidCache);
+  }
+
+  // LID-first: canonicalize to LID so per_user sessions stay stable across
+  // the two JID forms Baileys emits for the same human (omni#374).
+  const lidCache = plugin.getLidMappingCache(instanceId);
+  return resolveCanonicalJid(senderJid, participantAlt, lidCache);
+}
+
+/**
+ * Check if a message should be processed
+ */
+function shouldProcessMessage(plugin: WhatsAppMessageHost, instanceId: string, msg: WAMessage): boolean {
+  if (!msg.message) return false;
+
+  // Skip bot-sent message echoes: when we send a message via sendMessage(),
+  // Baileys receives it back as messages.upsert with fromMe=true.
+  // Without this check, agents would reply to their own messages in self-chat.
+  if (isFromMe(msg) && msg.key.id && plugin.isBotSentMessage(instanceId, msg.key.id)) {
+    log.debug("Skipping bot-sent message echo", { instanceId, externalId: msg.key.id });
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Default inbound media root: `<RAVI_STATE_DIR>/media/whatsapp` (the ported plugin
+ * used `MEDIA_STORAGE_PATH`, default `./data/media`). Resolved per call so tests and
+ * runtimes that switch `RAVI_STATE_DIR` see the current value.
+ */
+export function getDefaultWhatsAppMediaBaseDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(getRaviStateDir(env), "media", "whatsapp");
+}
+
+/**
+ * Stream media once with a single retry — iOS/macOS media sometimes needs a
+ * second attempt. `sink` performs the actual write to disk.
+ */
+async function streamMediaWithRetry(
+  sink: () => Promise<{ mimeType: string; size: number } | null>,
+): Promise<{ mimeType: string; size: number } | null> {
+  let result = await sink();
+  if (!result) {
+    await new Promise((r) => setTimeout(r, 1000));
+    result = await sink();
+  }
+  return result;
+}
+
+export interface TryDownloadMediaOptions {
+  /** Media root; files land under `<baseDir>/<instanceId>/<YYYY-MM>/<safeId><ext>`. */
+  baseDir?: string;
+  /** Baileys download context (re-upload request for expired media URLs). */
+  context?: MediaDownloadContext;
+}
+
+/**
+ * Download media from a message to local disk and return its `file://` URL + absolute path.
+ *
+ * Stores under: {baseDir}/{instanceId}/{YYYY-MM}/{externalId}.{ext}
+ * The size guard runs on the declared size first, then while streaming, so
+ * oversized video is never buffered in the heap.
+ *
+ * ravi deviation from the ported plugin: there is no media API and no S3 backend.
+ * `mediaUrl` is `file://<abs>` and `mediaLocalPath` is the absolute path (the plugin
+ * returned an API URL and the path relative to its media root).
+ */
+export async function tryDownloadMedia(
+  msg: WAMessage,
+  instanceId: string,
+  externalId: string,
+  options: TryDownloadMediaOptions = {},
+): Promise<{ mediaUrl: string; mediaLocalPath: string; mimeType: string; size: number } | null> {
+  const mediaInfo = detectMediaType(msg);
+  if (!mediaInfo) return null;
+
+  try {
+    // Enforce size limit from message metadata BEFORE downloading.
+    // WhatsApp proto fileLength is server-declared and available without
+    // fetching the payload, preventing the full buffer from being allocated
+    // for oversized media.
+    const declaredSize = getMediaSize(msg);
+    if (declaredSize !== undefined) {
+      downloadGuard.checkSize(declaredSize, log, { instanceId, channel: "whatsapp" });
+    }
+
+    // File under the message's own month so backfilled media doesn't land in today's folder (omni#1127).
+    const messageDate = new Date(getPlatformTimestamp(msg));
+    const yearMonth = `${messageDate.getFullYear()}-${String(messageDate.getMonth() + 1).padStart(2, "0")}`;
+    const ext = getExtension(mediaInfo.mimeType);
+    // Sanitize externalId and instanceId to prevent path traversal: strip directory
+    // components and replace any non-alphanumeric characters (WhatsApp IDs are hex/alphanum).
+    const safeExternalId = basename(externalId).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeInstanceId = basename(instanceId).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const relativePath = join(safeInstanceId, yearMonth, `${safeExternalId}${ext}`);
+    const absolutePath = join(options.baseDir ?? getDefaultWhatsAppMediaBaseDir(), relativePath);
+
+    const result = await streamMediaWithRetry(() =>
+      downloadMediaToFile(msg, absolutePath, downloadGuard.maxSizeBytes, options.context),
+    );
+    if (!result) return null;
+
+    log.debug("Downloaded media", { externalId, path: absolutePath, size: result.size });
+
+    return {
+      mediaUrl: pathToFileURL(absolutePath).href,
+      mediaLocalPath: absolutePath,
+      mimeType: result.mimeType,
+      size: result.size,
+    };
+  } catch (error) {
+    logMediaDownloadFailure(externalId, error);
+    return null;
+  }
+}
+
+const MEDIA_FAILURE_LOG_WINDOW_MS = 60_000;
+const mediaFailureLog = { windowStart: 0, suppressed: 0 };
+
+/**
+ * Aggregate media download failures: one warn per window, carrying the count
+ * suppressed since the previous one. History backfills with expired CDN links
+ * otherwise emit hundreds of identical warnings (omni#1127).
+ */
+export function logMediaDownloadFailure(externalId: string, error: unknown, now = Date.now()): boolean {
+  if (now - mediaFailureLog.windowStart < MEDIA_FAILURE_LOG_WINDOW_MS) {
+    mediaFailureLog.suppressed++;
+    return false;
+  }
+  log.warn("Media download failed, continuing without media", {
+    externalId,
+    error: String(error),
+    suppressedSinceLastLog: mediaFailureLog.suppressed,
+  });
+  mediaFailureLog.windowStart = now;
+  mediaFailureLog.suppressed = 0;
+  return true;
+}
+
+/**
+ * Encrypted edit (omni#1061): WhatsApp ships the new text under the ORIGINAL message's
+ * secret. Decrypt with the secret we stored for that message; a miss (secret never
+ * seen, process restart, unknown scheme) degrades to the previous behaviour — the
+ * edit stays unreadable and nothing throws.
+ */
+async function handleEncryptedEdit(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  content: ExtractedContent,
+  chatId: string,
+  msg: WAMessage,
+): Promise<void> {
+  const targetMessageId = content.targetMessageId as string;
+  const stored = getMessageSecret(targetMessageId);
+  if (!stored) {
+    log.debug("Encrypted edit with no stored secret for the original message", { instanceId, targetMessageId });
+    return;
+  }
+  const modificationSenderJid = msg.key.participant || msg.key.remoteJid || stored.senderJid;
+  const plaintext = decryptMsgSecret({
+    encIv: content.encryptedEdit?.encIv as Uint8Array,
+    encPayload: content.encryptedEdit?.encPayload as Uint8Array,
+    originalMessageSecret: stored.secret,
+    originalMessageId: targetMessageId,
+    originalSenderJid: stored.senderJid,
+    modificationSenderJid,
+  });
+  const editedText = plaintext ? extractEditedText(decodeEditPlaintext(plaintext)) : undefined;
+  if (!editedText || !rememberEdit(targetMessageId, editedText)) return;
+  await plugin.handleMessageEdited(
+    instanceId,
+    targetMessageId,
+    chatId,
+    editedText,
+    isFromMe(msg),
+    modificationSenderJid,
+  );
+}
+
+/**
+ * Handle special message types (reactions, edits, deletes).
+ * Returns true if the message was handled and should not be processed further.
+ */
+async function handleSpecialMessage(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  content: ExtractedContent,
+  externalId: string,
+  chatId: string,
+  senderId: string,
+  msg: WAMessage,
+): Promise<boolean> {
+  if (content.type === "reaction") {
+    await plugin.handleReactionReceived(
+      instanceId,
+      externalId,
+      chatId,
+      senderId,
+      content.emoji || "",
+      content.targetMessageId || "",
+      isFromMe(msg),
+    );
+    return true;
+  }
+
+  if (content.type === "edit") {
+    if (content.encryptedEdit && content.targetMessageId) {
+      await handleEncryptedEdit(plugin, instanceId, content, chatId, msg);
+      return true;
+    }
+    if (content.editedText && content.targetMessageId && rememberEdit(content.targetMessageId, content.editedText)) {
+      await plugin.handleMessageEdited(
+        instanceId,
+        content.targetMessageId,
+        chatId,
+        content.editedText,
+        isFromMe(msg),
+        msg.key.participant || msg.key.remoteJid || undefined,
+      );
+      return true;
+    }
+    log.debug("Edit protocol message seen on upsert without new text; awaiting messages.update", {
+      instanceId,
+      targetMessageId: content.targetMessageId,
+    });
+    return true;
+  }
+
+  if (content.type === "delete" && content.targetMessageId) {
+    await plugin.handleMessageDeleted(instanceId, content.targetMessageId, chatId, isFromMe(msg));
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Annotate the raw message with LID identity info for downstream persistence.
+ *
+ * LID-first: when chatId is @lid, annotate with both the LID and the resolved phone
+ * (from remoteJidAlt) when available.
+ */
+function annotateLidResolution(msg: WAMessage, rawChatId: string): void {
+  const remoteJidAlt = (msg.key as Record<string, unknown>).remoteJidAlt as string | undefined;
+  const annotated = msg as unknown as Record<string, unknown>;
+
+  // Always preserve the raw remoteJid so audit trails and debugging see what
+  // Baileys actually delivered, independent of any canonicalization.
+  annotated.rawChatId = rawChatId;
+
+  if (isLidJid(rawChatId)) {
+    annotated.originalLidJid = rawChatId;
+    annotated.addressingMode = "lid";
+    if (remoteJidAlt && isUserJid(remoteJidAlt)) {
+      annotated.resolvedPhoneJid = remoteJidAlt;
+    }
+  } else if (isUserJid(rawChatId) && remoteJidAlt && isLidJid(remoteJidAlt)) {
+    annotated.originalLidJid = remoteJidAlt;
+    annotated.resolvedPhoneJid = rawChatId;
+    annotated.addressingMode = "phone";
+  }
+}
+
+/**
+ * Resolve the chat ID from a message.
+ *
+ * LID-first: keeps @lid JIDs as canonical chatId (no phone downconversion).
+ * Stores bidirectional LID↔phone mapping when remoteJidAlt provides it.
+ */
+export function resolveChatId(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  msg: WAMessage,
+): { chatId: string; rawChatId: string } {
+  const rawChatId = msg.key.remoteJid || "";
+  const remoteJidAlt = (msg.key as Record<string, unknown>).remoteJidAlt as string | undefined;
+
+  // Store bidirectional mapping when remoteJidAlt provides the alternate form
+  // (always store mappings regardless of lidFirstEnabled — useful for future enable)
+  if (isLidJid(rawChatId) && remoteJidAlt && isUserJid(remoteJidAlt)) {
+    plugin.storeLidMapping(instanceId, rawChatId, remoteJidAlt);
+    log.debug("Stored LID↔phone mapping from remoteJidAlt", { lid: rawChatId, phone: remoteJidAlt });
+  } else if (isUserJid(rawChatId) && remoteJidAlt && isLidJid(remoteJidAlt)) {
+    plugin.storeLidMapping(instanceId, remoteJidAlt, rawChatId);
+    log.debug("Stored LID↔phone mapping from remoteJidAlt (reverse)", { lid: remoteJidAlt, phone: rawChatId });
+  }
+
+  // DEC-8: when lidFirstEnabled is disabled, resolve LID → phone (legacy behavior)
+  if (!plugin.isLidFirstEnabled(instanceId)) {
+    const lidCache = plugin.getLidMappingCache(instanceId);
+    const chatId = resolveToPhoneJidLegacy(rawChatId, remoteJidAlt, lidCache);
+    return { chatId, rawChatId };
+  }
+
+  // LID-first: canonicalize to a single stable chatId per human so debounce
+  // and session keys don't fragment across the two JID forms Baileys emits
+  // for the same contact (omni#374).
+  const lidCache = plugin.getLidMappingCache(instanceId);
+  const chatId = resolveCanonicalJid(rawChatId, remoteJidAlt, lidCache);
+  return { chatId, rawChatId };
+}
+
+/**
+ * Sanitize inbound text content. Returns false when the message should be dropped.
+ */
+function sanitizeInboundText(content: ExtractedContent, instanceId: string, messageId?: string): boolean {
+  if (!content.text) return true;
+
+  const sanitized = sanitizeMessage(content.text, log, {
+    instanceId,
+    messageId,
+  });
+
+  if (!sanitized.ok) return false;
+  content.text = sanitized.text;
+  return true;
+}
+
+/**
+ * Mark sender as LID for downstream identity resolution.
+ */
+function annotateSenderLidStatus(msg: WAMessage, senderJid: string): void {
+  if (!isLidJid(senderJid)) return;
+  (msg as unknown as Record<string, unknown>).senderIsLid = true;
+}
+
+/**
+ * Resolve a LID sender to their phone number and annotate the message.
+ *
+ * In LID-first mode, access rules are phone-based but the sender identity is
+ * a LID. This resolves the phone using (1) participantAlt from the message key
+ * (group messages), (2) remoteJidAlt from the message key (DM messages), or
+ * (3) the in-memory LID mapping cache built from prior messages.
+ *
+ * The resolved phone is stored as `resolvedSenderPhone` on the raw message so
+ * it flows through rawPayload to the access check in agent-dispatcher.
+ */
+function annotateSenderResolvedPhone(
+  msg: WAMessage,
+  senderJid: string,
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+): void {
+  if (!isLidJid(senderJid)) return;
+
+  const participantAlt = (msg.key as Record<string, unknown>).participantAlt as string | undefined;
+  const remoteJidAlt = (msg.key as Record<string, unknown>).remoteJidAlt as string | undefined;
+  const lidCache = plugin.getLidMappingCache(instanceId);
+
+  // resolveToPhoneJidLegacy tries: (1) the provided alt JID, then (2) the LID cache
+  const altJid = participantAlt || remoteJidAlt;
+  const resolvedPhoneJid = resolveToPhoneJidLegacy(senderJid, altJid, lidCache);
+
+  if (resolvedPhoneJid !== senderJid && isUserJid(resolvedPhoneJid)) {
+    const { id: resolvedPhone } = fromJid(resolvedPhoneJid);
+    (msg as unknown as Record<string, unknown>).resolvedSenderPhone = resolvedPhone;
+  }
+}
+
+/**
+ * Extract platform timestamp (T0) in milliseconds.
+ */
+function getPlatformTimestamp(msg: WAMessage): number {
+  if (!msg.messageTimestamp) return Date.now();
+  const timestamp = typeof msg.messageTimestamp === "number" ? msg.messageTimestamp : Number(msg.messageTimestamp);
+  return timestamp * 1000;
+}
+
+/**
+ * Process a single message
+ */
+async function processMessage(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  msg: WAMessage,
+  dedupeCache: DedupeCache,
+  mediaContext?: MediaDownloadContext,
+): Promise<void> {
+  // DEBUG: Log full raw payload for development
+  if (process.env.DEBUG_PAYLOADS === "true") {
+    log.debug("Raw payload", { msgId: msg.key.id, payload: msg });
+  }
+
+  // An edit arrives encrypted under the ORIGINAL message's secret and never repeats
+  // it, so remember the secret of every message as it lands (omni#1061). Cheap, bounded,
+  // and the only way a later edit becomes readable without a durable secret store.
+  const inboundSecret = msg.message?.messageContextInfo?.messageSecret;
+  if (inboundSecret && msg.key.id) {
+    rememberMessageSecret(msg.key.id, inboundSecret, msg.key.participant || msg.key.remoteJid || "");
+  }
+
+  const ingestedAt = Date.now();
+  const content = extractContent(msg);
+  if (!content) return;
+
+  // ── Sanitize inbound text ──
+  if (!sanitizeInboundText(content, instanceId, msg.key.id || undefined)) return;
+
+  // ── Dedupe check ──
+  const externalIdForDedupe = msg.key.id || "";
+  if (externalIdForDedupe && dedupeCache.isDuplicate(instanceId, externalIdForDedupe, "whatsapp", log)) {
+    return; // Duplicate — drop silently
+  }
+
+  // Note: Mention replacement (@phone → @Name) is handled in agent-dispatcher
+  // with database lookup for better reliability across API restarts
+
+  // Resolve @lid JID to phone-based JID before any event emission
+  const { chatId, rawChatId } = resolveChatId(plugin, instanceId, msg);
+
+  const externalId = msg.key.id || "";
+  const senderJid = resolveSenderJid(plugin, instanceId, msg, chatId);
+  const { id: senderId } = fromJid(senderJid);
+  const replyToId = getReplyToId(msg);
+
+  // Handle special message types (reactions, edits, deletes) — returns true if handled
+  if (await handleSpecialMessage(plugin, instanceId, content, externalId, chatId, senderId, msg)) {
+    return;
+  }
+
+  // Download media if present (non-blocking on failure)
+  const mediaResult = await tryDownloadMedia(msg, instanceId, externalId, {
+    baseDir: plugin.getMediaBaseDir(),
+    context: mediaContext,
+  });
+  if (mediaResult) {
+    content.mediaUrl = mediaResult.mediaUrl;
+    content.mediaLocalPath = mediaResult.mediaLocalPath;
+    content.mimeType = mediaResult.mimeType;
+  }
+  const mediaReadyAt = Date.now();
+
+  // Annotate LID identity info for downstream persistence
+  annotateLidResolution(msg, rawChatId);
+
+  // Annotate sender LID status independently of chat addressing mode.
+  // In group chats the chat JID is @g.us (not @lid), so addressingMode stays unset,
+  // but individual participants can still be @lid. Downstream identity resolution
+  // uses this flag to skip phone extraction for LID sender IDs.
+  annotateSenderLidStatus(msg, senderJid);
+
+  // Resolve LID sender to phone for access rule checks (LID-first mode).
+  // Access rules match phone numbers, so we need the phone even when the
+  // sender is addressed as @lid. Stores resolvedSenderPhone on rawPayload.
+  annotateSenderResolvedPhone(msg, senderJid, plugin, instanceId);
+
+  // Extract platform timestamp (T0) — WhatsApp sends seconds since epoch
+  const platformTimestamp = getPlatformTimestamp(msg);
+
+  // Pass all content fields including extended ones (poll, event, product, etc.)
+  await plugin.handleMessageReceived(
+    instanceId,
+    externalId,
+    chatId,
+    senderId,
+    content,
+    replyToId,
+    msg,
+    isFromMe(msg),
+    platformTimestamp,
+    { ingestedAt, mediaReadyAt },
+  );
+}
+
+/**
+ * Message status codes (proto.WebMessageInfo.Status — stable in WA protobuf).
+ * ERROR=0 fires on a delivery failure that Baileys can't recover from
+ * silently (e.g. recipient PreKeyError on a retry-receipt). Without
+ * propagating it, the original message.sent persistence row stays
+ * status=completed even though the message never landed.
+ */
+const MessageStatus = {
+  ERROR: 0,
+  SERVER_ACK: 2,
+  DELIVERY_ACK: 3,
+  READ: 4,
+  PLAYED: 5,
+} as const;
+
+/**
+ * Process a message status update
+ */
+async function processStatusUpdate(
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  key: WAMessageKey,
+  status: number,
+): Promise<void> {
+  const chatId = key.remoteJid || "";
+  const externalId = key.id || "";
+
+  if (status === MessageStatus.ERROR && key.fromMe) {
+    await plugin.handleMessageFailed(instanceId, externalId, chatId);
+  } else if (status === MessageStatus.DELIVERY_ACK) {
+    await plugin.handleMessageDelivered(instanceId, externalId, chatId);
+  } else if (status >= MessageStatus.READ) {
+    await plugin.handleMessageRead(instanceId, externalId, chatId);
+  }
+}
+
+/** proto.WebMessageInfo.StubType.CIPHERTEXT — stable in the WhatsApp protobuf spec */
+const STUB_TYPE_CIPHERTEXT = 2;
+const TRACK_GROUP_DECRYPT_FAILURES = process.env.WHATSAPP_TRACK_GROUP_DECRYPT_FAILURES !== "false";
+
+/**
+ * Record decrypt failures for messages that arrived as CIPHERTEXT stubs (#70).
+ * Only StubType.CIPHERTEXT (2) indicates a decrypt failure — other stub types
+ * (GROUP_PARTICIPANT_ADD, GROUP_CHANGE_SUBJECT, etc.) are normal system events
+ * that also have no message body. Tracking only CIPHERTEXT avoids false
+ * positives that would block legitimate JIDs.
+ */
+function trackDecryptFailures(tracker: DecryptFailureTracker, messages: WAMessage[]): void {
+  for (const msg of messages) {
+    if (!msg.message && msg.messageStubType === STUB_TYPE_CIPHERTEXT) {
+      const remoteJid = msg.key.remoteJid;
+      if (!remoteJid) continue;
+
+      // Preserve #70 behavior by default: group traffic can be tracked by remoteJid.
+      // Operators can disable group tracking if needed via env var.
+      if (remoteJid.endsWith("@g.us") && !TRACK_GROUP_DECRYPT_FAILURES) continue;
+
+      tracker.recordFailure(remoteJid);
+    }
+  }
+}
+
+/**
+ * Set up message event handlers for a Baileys socket
+ */
+export function setupMessageHandlers(
+  sock: WASocket,
+  plugin: WhatsAppMessageHost,
+  instanceId: string,
+  decryptTracker?: DecryptFailureTracker,
+  dedupeCache?: DedupeCache,
+): void {
+  const cache = dedupeCache ?? fallbackDedupeCache;
+
+  // ravi: let Baileys request a media re-upload when the CDN link expired (the ported code passed no context).
+  const mediaContext: MediaDownloadContext | undefined =
+    typeof sock.updateMediaMessage === "function" && sock.logger
+      ? { reuploadRequest: sock.updateMediaMessage, logger: sock.logger }
+      : undefined;
+
+  // Track JIDs we've already subscribed to for presence updates.
+  // Baileys requires an explicit presenceSubscribe(jid) before typing
+  // indicators are delivered for DM chats. We only need to call it once
+  // per JID per connection lifecycle.
+  const presenceSubscribed = new Set<string>();
+
+  sock.ev.on(
+    "messages.upsert",
+    guardListener(
+      guarded("messages.upsert", instanceId),
+      async (upsert: { messages: WAMessage[]; type: MessageUpsertType }) => {
+        // Log all message types to diagnose missing messages
+        log.debug("messages.upsert received", {
+          instanceId,
+          type: upsert.type,
+          count: upsert.messages.length,
+          messageIds: upsert.messages.map((m) => m.key.id),
+        });
+
+        // Track decrypt failures for dynamic JID blocking (#70)
+        if (decryptTracker) {
+          trackDecryptFailures(decryptTracker, upsert.messages);
+        }
+
+        // Process all message types, not just 'notify'
+        // 'notify' = incoming messages
+        // 'append' = outgoing messages sent from this device
+        // We need both to capture all conversation activity
+        for (const msg of upsert.messages) {
+          // Subscribe to presence updates for DM chats so Baileys delivers
+          // typing indicators (composing/recording). Without this, the WA
+          // server never pushes chatstate nodes for 1-on-1 conversations.
+          const chatJid = msg.key.remoteJid;
+          if (chatJid && isUserJid(chatJid) && !presenceSubscribed.has(chatJid)) {
+            presenceSubscribed.add(chatJid);
+            sock
+              .presenceSubscribe(chatJid)
+              .catch((err) => log.debug("presenceSubscribe failed (non-fatal)", { chatJid, error: String(err) }));
+          }
+
+          if (shouldProcessMessage(plugin, instanceId, msg)) {
+            await processMessage(plugin, instanceId, msg, cache, mediaContext);
+          }
+        }
+      },
+    ),
+  );
+
+  sock.ev.on(
+    "messages.update",
+    guardListener(guarded("messages.update", instanceId), async (updates) => {
+      for (const update of updates) {
+        // Handle delivery/read/error status updates.
+        // status === 0 (WAMessageStatus.ERROR) is the silent-PreKeyError path;
+        // a truthy check would drop it because 0 is falsy.
+        if (update.update.status !== undefined && update.update.status !== null) {
+          await processStatusUpdate(plugin, instanceId, update.key, update.update.status);
+        }
+
+        // Message edits: Baileys re-emits every MESSAGE_EDIT protocol message here as
+        // `{ editedMessage: { message: <new content> } }` keyed by the ORIGINAL message id,
+        // after normalizing whatever envelope the edit arrived in (omni#1061).
+        const newText = extractEditedText(baileys().normalizeMessageContent(update.update.message));
+        if (newText && rememberEdit(update.key.id || "", newText)) {
+          const { chatId } = resolveChatId(plugin, instanceId, { key: update.key } as WAMessage);
+          await plugin.handleMessageEdited(
+            instanceId,
+            update.key.id || "",
+            chatId,
+            newText,
+            update.key.fromMe || false,
+          );
+        }
+      }
+    }),
+  );
+
+  sock.ev.on(
+    "messages.delete",
+    guardListener(guarded("messages.delete", instanceId), async (deletion) => {
+      // Handle message deletions (revoke)
+      if ("keys" in deletion) {
+        // Batch deletion
+        for (const key of deletion.keys) {
+          await plugin.handleMessageDeleted(instanceId, key.id || "", key.remoteJid || "", key.fromMe || false);
+        }
+      }
+    }),
+  );
+
+  // Handle message reactions (separate from upsert for updates to existing reactions)
+  sock.ev.on(
+    "messages.reaction",
+    guardListener(guarded("messages.reaction", instanceId), async (reactions) => {
+      for (const { key, reaction } of reactions) {
+        const chatId = key.remoteJid || "";
+        const messageId = key.id || "";
+        const { id: senderId } = fromJid(reaction.key?.participant || reaction.key?.remoteJid || chatId);
+
+        await plugin.handleReactionReceived(
+          instanceId,
+          reaction.key?.id || messageId,
+          chatId,
+          senderId,
+          reaction.text || "",
+          messageId,
+          reaction.key?.fromMe || false,
+        );
+      }
+    }),
+  );
+}

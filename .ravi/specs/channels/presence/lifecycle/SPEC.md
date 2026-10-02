@@ -11,12 +11,15 @@ tags:
   - gateway
 applies_to:
   - src/gateway.ts
+  - src/channels/inbound/typing-presence.ts
+  - src/channels/inbound/pipeline.ts
 owners:
   - dev
 status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Presence Lifecycle
 
 ## Intent
@@ -32,16 +35,17 @@ Presence should show that Ravi is actively working, and it should disappear quic
 - Low-level provider passthrough events such as `provider.raw` MUST NOT start or renew presence unless they are normalized into a semantic runtime event.
 - Background automation sources, including cron prompts that route replies through a chat/session, MUST suppress `typing=true` presence while the automation is working. The target MAY still receive a final response if the automation produces one.
 - Non-final WhatsApp sends MAY renew presence after a short delay.
-- Presence target matching MUST compare the physical transport target: normalized channel family, resolved Omni instance id, normalized chat JID, and thread id. Account-name targets and instance-id targets that resolve to the same Omni instance MUST be treated as the same target.
+- Presence target matching MUST compare the physical transport target: normalized channel family, resolved transport instance id (instance UUID), normalized chat JID, and thread id. Account-name targets and instance-id targets that resolve to the same instance MUST be treated as the same target.
 - Presence renewal MUST NOT fall back to a direct `typing=true` send when the active target is only an alias of the runtime event source.
 - Presence cleanup MUST NOT send duplicate fallback pauses when the active target is only an alias of the terminal event source.
+- The inbound typing heartbeat (`src/channels/inbound/typing-presence.ts`, driven by `ChannelInboundPipeline`) MUST publish its `ravi.presence.typing` events with `source: "channels.inbound.typing-heartbeat"` (formerly `omni.consumer.typing-heartbeat`).
 - Presence start, renew, stop, fallback, skip, and failure transitions MUST emit `ravi.presence.typing` and MUST be recorded as `presence.typing` in the session trace with `status`, `reason`, session name, and normalized target.
 - Presence cleanup SHOULD await the active heartbeat stop instead of fire-and-forget cleanup when the caller is already in an async lifecycle path.
 
 ## Validation
 
 - `bun test src/gateway-session-trace.test.ts`
-- `bun test src/omni/typing-presence.test.ts`
+- `bun test src/channels/inbound/typing-presence.test.ts`
 
 ## Known Failure Modes
 

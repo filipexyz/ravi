@@ -25,7 +25,7 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
+mock.module("../session-prompts/stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     publishCalls.push({ sessionName, payload });
   }),

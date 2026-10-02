@@ -1,4 +1,4 @@
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { logger } from "../utils/logger.js";
 import { TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
 import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";

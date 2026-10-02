@@ -51,7 +51,7 @@ Um Ravi Command e um arquivo Markdown que vira prompt composto.
 
 Fluxo de mensagem de canal:
 
-1. Omni recebe o texto cru do usuario.
+1. O canal recebe o texto cru do usuario (runner `ravi channels` no WhatsApp, Slack nativo, ponte legada Omni no Telegram/Discord).
 2. Ravi resolve rota, sessao e agent.
 3. Se o texto cru comeca com `#command`, Ravi tenta expandir o command.
 4. Ravi monta o envelope do canal, por exemplo `[WhatsApp ...] Luis: ...`.

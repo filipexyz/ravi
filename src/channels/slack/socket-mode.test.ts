@@ -38,6 +38,7 @@ import {
   buildRuntimeRequestContext,
   refreshRuntimeRequestContextForTurn,
 } from "../../runtime/runtime-request-context.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
   normalizeSlackReactionName,
@@ -172,6 +173,20 @@ function slackChannel(input: {
 }
 
 describe("Slack Socket Mode routing", () => {
+  it("publishes inbound prompts through the SESSION_PROMPTS publisher unless one is injected", () => {
+    const injected = mock(async () => {});
+    const defaulted = new SlackSocketModeService({ appToken: "xapp-test", botToken: "xoxb-test", accountId: "a" });
+    const overridden = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "a",
+      publishPrompt: injected,
+    });
+
+    expect(defaulted["publishPrompt"]).toBe(publishSessionPrompt);
+    expect(overridden["publishPrompt"]).toBe(injected);
+  });
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-slack-socket-mode-");
     seedAgent("ravi-hil", "/tmp/ravi-hil");

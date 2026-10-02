@@ -21,7 +21,7 @@
 ## Migração De Adapter
 
 1. Modele o comportamento no spec de `channels` ou sub-spec aplicável.
-2. Mantenha compatibilidade com Omni como bridge quando necessário.
+2. Use a ponte legada Omni só para Telegram/Discord; WhatsApp nunca passa por ela.
 3. Não promova env vars a fonte de identidade permanente.
 4. Adicione teste focado para a fronteira alterada.
 5. Rode o quality gate antes de abrir PR.

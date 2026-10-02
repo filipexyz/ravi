@@ -20,9 +20,17 @@ ravi daemon env
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude access |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token (alternative to API key) |
 
-### Omni Connection (required for channel support)
+### WhatsApp
 
-Ravi discovers omni via two methods, checked in order:
+WhatsApp needs no connection settings: it runs in the channel runner (`ravi channels start`, PM2 process `ravi-channels`) and talks to the daemon over NATS. Credentials are stored in `~/.ravi/whatsapp/auth.db`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WHATSAPP_MEDIA_MAX_DOWNLOAD_MB` | 2048 (2 GiB) | Maximum size of an inbound WhatsApp media download, in MiB |
+
+### Legacy Omni Bridge (optional, Telegram/Discord only)
+
+Only Telegram and Discord instances use Omni. Ravi discovers it via two methods, checked in order:
 
 1. **Environment variables** — `OMNI_API_URL` and `OMNI_API_KEY`
 2. **Omni config file** — `~/.omni/config.json` (written by omni CLI)
@@ -32,13 +40,13 @@ Ravi discovers omni via two methods, checked in order:
 | `OMNI_API_URL` | Omni API base URL (e.g., `http://127.0.0.1:8882`) |
 | `OMNI_API_KEY` | Omni API key for authentication |
 
-If neither source is available, the daemon starts without channel support (no WhatsApp/Telegram/Discord).
+If neither source is available, the daemon starts without the legacy bridge: WhatsApp keeps working, and sends to Telegram/Discord instances fail with `LEGACY_BRIDGE_NOT_CONFIGURED`.
 
 ### NATS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `NATS_URL` | `nats://127.0.0.1:4222` | NATS server URL. The daemon retries connection up to 30 times on startup (2s intervals) |
+| `NATS_URL` | `nats://127.0.0.1:4222` | NATS server URL. The daemon retries connection up to 30 times on startup (2s intervals). `ravi setup` reuses a NATS that already answers here (`omni-nats` on hosts upgraded from Omni — never stop or delete it) or starts `ravi-nats` |
 | `RAVI_RUNTIME_SESSION_POOL_MAX` | `60` | Maximum number of live runtime sessions this daemon can keep active at once. Saturated pools queue cold starts and checkpoint wakes until a slot is released |
 
 ### AI Services (optional)
@@ -66,9 +74,9 @@ If neither source is available, the daemon starts without channel support (no Wh
 # Authentication
 ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Omni
-OMNI_API_URL=http://127.0.0.1:8882
-OMNI_API_KEY=your-omni-api-key
+# Legacy Omni bridge (only for Telegram/Discord)
+# OMNI_API_URL=http://127.0.0.1:8882
+# OMNI_API_KEY=your-omni-api-key
 
 # NATS
 NATS_URL=nats://127.0.0.1:4222
@@ -151,12 +159,13 @@ ravi instances show <name>
 ravi instances set <name> <key> <value>
 ravi instances connect <name>
 ravi instances disconnect <name>
+ravi instances logout <name> --execute
 ravi instances status <name>
 ravi instances delete <name>
 ravi instances restore <name>
 ```
 
-`instances delete` performs a recoverable local soft-delete immediately.
+`instances connect` for WhatsApp always uses the channel runner; start it first with `ravi channels start`. `instances disconnect` keeps the credentials and persists until the next `connect`. `instances logout` (WhatsApp only, dry-run without `--execute`) wipes the credentials and unlinks the device when the instance is connected; otherwise the CLI tells you to remove it on the phone (WhatsApp > Linked devices). `instances delete` performs a recoverable local soft-delete immediately; for WhatsApp it also logs out and disables the instance's channel, so a restored instance (whose channel `restore` re-enables) needs a new `connect`.
 
 ### Instance Fields
 
@@ -164,7 +173,7 @@ ravi instances restore <name>
 | --- | --- | --- | --- |
 | `name` | string | — | Instance identifier |
 | `channel` | string | `whatsapp` | Channel type (`whatsapp`, `telegram`, etc.) |
-| `instanceId` | string | — | Omni instance UUID (set automatically on connect) |
+| `instanceId` | string | — | Transport instance UUID (set automatically on connect; kept when an instance moves from Omni) |
 | `agent` | string | — | Default agent for this instance |
 | `dmPolicy` | `open` \| `pairing` \| `closed` | `open` | DM access policy |
 | `groupPolicy` | `open` \| `allowlist` \| `closed` | `open` | Group access policy |
@@ -378,9 +387,12 @@ These relations have source `config` and are re-synced on every daemon start. Ma
 
 ~/.ravi/
 ├── .env                 # Environment variables
+├── whatsapp/
+│   └── auth.db          # WhatsApp credentials (mode 0600)
+├── media/whatsapp/      # Inbound WhatsApp media
 └── logs/
     └── daemon.log       # Daemon logs
 
 ~/.omni/
-└── config.json          # Omni config (auto-discovered)
+└── config.json          # Legacy bridge config (auto-discovered, Telegram/Discord only)
 ```

@@ -28,14 +28,14 @@
 
 ## Streaming Compatibility
 
-- `chats/<chatId>` SSE stream receives `reaction.received.>` events.
+- `chats/<chatId>` SSE stream receives `reaction.received.>` (legacy bridge) and `ravi.channel.inbound.whatsapp.reaction.>` events.
 - Events are classified as `"reaction"` by `classifyChatEvent`.
 - Events for other chats are discarded by `extractChatId` filtering.
 
 ## Approval Compatibility
 
 - `src/approval/service.ts` still consumes `ravi.inbound.reaction` for
-  WhatsApp/Omni approval after durable accounting.
+  WhatsApp and legacy-bridge approval after durable accounting.
 - Native Slack approval MUST resolve through authorized Block Kit buttons on
   `ravi.inbound.interaction`, not Slack `reaction_added`.
 - A matching authorized WhatsApp `ravi.inbound.reply` still rejects as before.
@@ -48,7 +48,7 @@
 ## Validation Commands
 
 ```bash
-bun test src/omni/consumer-context.test.ts
+bun test src/channels/inbound/pipeline-context.test.ts
 bun test src/router/chat-schema.test.ts
 bun test src/session-trace/channel-trace.test.ts
 bun test src/triggers/__tests__/topic-catalog.test.ts

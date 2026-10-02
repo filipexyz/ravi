@@ -1,6 +1,6 @@
 import { requireDeliveryBarrier } from "../delivery-barriers.js";
 import { saveMessage } from "../db.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { commentTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";

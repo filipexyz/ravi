@@ -23,7 +23,7 @@ Rules são a base de orquestração: instâncias aplicam tag inicial (`defaultCo
 - `when`: `matched` (default) ou `not-matched` para inverter
 
 Execução:
-- **Reativa**: cada mensagem inbound DM dispara o engine via `queueMicrotask` no consumer
+- **Reativa**: cada mensagem inbound DM dispara o engine via `queueMicrotask` no pipeline de inbound (`ChannelInboundPipeline`)
 - **Periódica**: `ravi tag-rules tick --apply` percorre todos os contatos (recomendado via cron)
 - **Manual**: `ravi tag-rules evaluate <rule-id> --target contact:<id>` (default dry-run)
 

@@ -23,18 +23,19 @@ Decisions that shaped this wave:
   requires confirmation before NATS emission.
 - **Suggestions only from sources already in hand.** `GROUP_NOT_FOUND` in
   `group info` enriches the envelope from the group list that the resolution
-  path had ALREADY fetched (omni REST with local chat-model fallback) — zero
+  path had ALREADY fetched (WhatsApp RPC `groups.list` with local chat-model
+  fallback) — zero
   extra provider calls; when even that list is empty the envelope simply
   carries `suggestedAction: ravi whatsapp group list --json`. Contact
   suggestions (`CONTACT_NOT_FOUND` in group create/add and dm send/read/ack)
   come from `searchContacts`, the local SQLite contacts DB — a cheap local
-  source. No suggestion path ever makes a live bridge call of its own.
+  source. No suggestion path ever makes a live runner call of its own.
 - **Validation stays ahead of the brake.** Unknown participants, an unknown
   routed agent (`group create --agent ghost` without `--create-agent`) and an
   invalid `settings` value all fail with their own error before the dry-run,
   so an exit-3 plan is always an executable plan.
 - **`group create` brakes before its LOCAL side effects too.** The command is
-  transactional (omni group + agent creation + chat/route/session
+  transactional (WhatsApp group + agent creation + chat/route/session
   registration); the brake sits before `ensureGroupAgent`, otherwise a
   dry-run with `--create-agent` would still create agents and directories.
 - **The group-create introduction is a real turn.** Operators who pass

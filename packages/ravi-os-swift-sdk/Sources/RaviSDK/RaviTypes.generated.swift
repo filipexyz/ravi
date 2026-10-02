@@ -9809,14 +9809,14 @@ public struct DaemonStartReturn: Codable, Sendable {
 }
 
 public struct DaemonStatusReturn: Codable, Sendable {
-  public var infrastructure: [String: RaviJSON]
+  public var infrastructure: RaviJSON
   public var pm2Available: Bool
   public var processName: String
   public var processes: [[String: RaviJSON]]
   public var ravi: [String: RaviJSON]
   public var runtime: RaviJSON
 
-  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON) {
+  public init(infrastructure: RaviJSON, pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON) {
     self.infrastructure = infrastructure
     self.pm2Available = pm2Available
     self.processName = processName
@@ -12144,6 +12144,51 @@ public struct InstancesListOptions: Codable, Sendable {
 }
 
 public typealias InstancesListReturn = [String: RaviJSON]
+
+public struct InstancesLogoutOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct InstancesLogoutReturn: Codable, Sendable {
+  public var changedCount: Int
+  public var instance: String
+  public var instanceId: String
+  public var logout: RaviJSON
+  public var status: String
+  public var transport: String
+
+  public init(changedCount: Int, instance: String, instanceId: String, logout: RaviJSON, status: String, transport: String) {
+    self.changedCount = changedCount
+    self.instance = instance
+    self.instanceId = instanceId
+    self.logout = logout
+    self.status = status
+    self.transport = transport
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changedCount = "changedCount"
+    case instance = "instance"
+    case instanceId = "instanceId"
+    case logout = "logout"
+    case status = "status"
+    case transport = "transport"
+  }
+}
 
 public struct InstancesPendingApproveOptions: Codable, Sendable {
   public var agent: String?

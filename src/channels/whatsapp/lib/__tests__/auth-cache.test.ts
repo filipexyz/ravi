@@ -1,0 +1,601 @@
+/**
+ * TDD tests for write-behind cache in auth key store (#70)
+ *
+ * The root cause of #70: storage.set() does a PostgreSQL UPSERT that can hang
+ * indefinitely (row lock from concurrent incoming message processing on the
+ * same sender-key row). Baileys' commitWithRetry awaits this, holding the
+ * meId transaction mutex forever — freezing ALL message processing.
+ *
+ * Fix: keys.set() writes to an in-memory cache and returns immediately.
+ * DB persist happens in the background. keys.get() reads cache first.
+ */
+
+import { describe, expect, it } from "bun:test";
+import type { PluginStorage } from "../foundation.js";
+import { loadBaileys } from "../../baileys-loader.js";
+import { clearSenderKeys, createStorageAuthState } from "../auth.js";
+
+await loadBaileys();
+
+function patternToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const wildcardPattern = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
+  return new RegExp(`^${wildcardPattern}$`);
+}
+
+/**
+ * Create a mock PluginStorage where set() hangs forever (simulating the #70 bug)
+ */
+function createHangingStorage(): PluginStorage & { getCalls: string[]; setCalls: string[] } {
+  const data = new Map<string, string>();
+  const getCalls: string[] = [];
+  const setCalls: string[] = [];
+
+  return {
+    getCalls,
+    setCalls,
+    async get<T>(key: string): Promise<T | null> {
+      getCalls.push(key);
+      const val = data.get(key);
+      if (!val) return null;
+      try {
+        return JSON.parse(val) as T;
+      } catch {
+        return val as unknown as T;
+      }
+    },
+    async set(key: string, value: unknown): Promise<void> {
+      setCalls.push(key);
+      // Simulate the #70 bug: UPSERT hangs forever for sender-key entries
+      if (key.includes("sender-key") && !key.includes("sender-key-memory")) {
+        // Never resolves — this is the exact bug
+        return new Promise<void>(() => {});
+      }
+      data.set(key, typeof value === "string" ? value : JSON.stringify(value));
+    },
+    async delete(key: string): Promise<boolean> {
+      return data.delete(key);
+    },
+    async has(key: string): Promise<boolean> {
+      return data.has(key);
+    },
+    async keys(pattern?: string): Promise<string[]> {
+      const keys = Array.from(data.keys());
+      if (!pattern) return keys;
+      const regex = patternToRegex(pattern);
+      return keys.filter((key) => regex.test(key));
+    },
+  };
+}
+
+/**
+ * Create a fast mock storage (no hangs, for testing normal flow)
+ */
+function createFastStorage(): PluginStorage & {
+  data: Map<string, string>;
+  setCalls: string[];
+} {
+  const data = new Map<string, string>();
+  const setCalls: string[] = [];
+
+  return {
+    data,
+    setCalls,
+    async get<T>(key: string): Promise<T | null> {
+      const val = data.get(key);
+      if (!val) return null;
+      try {
+        return JSON.parse(val) as T;
+      } catch {
+        return val as unknown as T;
+      }
+    },
+    async set(key: string, value: unknown): Promise<void> {
+      setCalls.push(key);
+      data.set(key, typeof value === "string" ? value : JSON.stringify(value));
+    },
+    async delete(key: string): Promise<boolean> {
+      return data.delete(key);
+    },
+    async has(key: string): Promise<boolean> {
+      return data.has(key);
+    },
+    async keys(pattern?: string): Promise<string[]> {
+      const keys = Array.from(data.keys());
+      if (!pattern) return keys;
+      const regex = patternToRegex(pattern);
+      return keys.filter((key) => regex.test(key));
+    },
+  };
+}
+
+describe("Auth key store write-behind cache (#70)", () => {
+  const instanceId = "test-instance";
+
+  describe("keys.set — must not block on storage", () => {
+    it("returns within 200ms even when storage.set hangs forever", async () => {
+      const storage = createHangingStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      const t0 = Date.now();
+
+      // Simulate what Baileys commitWithRetry does: write sender-key + sender-key-memory
+      await state.keys.set({
+        "sender-key": {
+          "group@g.us::participant::0": { fake: "sender-key-data" } as never,
+        },
+        "sender-key-memory": {
+          "group@g.us": { fake: "memory-data" } as never,
+        },
+      });
+
+      const elapsed = Date.now() - t0;
+      // Must return fast — the old code would hang forever here
+      // 200ms threshold allows for CI/GC variance while still catching the real bug (hangs forever)
+      expect(elapsed).toBeLessThan(200);
+    });
+
+    it("updates in-memory cache synchronously", async () => {
+      const storage = createHangingStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      const testData = { keyData: "test-value-123" } as never;
+
+      await state.keys.set({
+        "sender-key": {
+          "group@g.us::me::0": testData,
+        },
+      });
+
+      // Immediately read back — should come from cache, not storage
+      const result = await state.keys.get("sender-key", ["group@g.us::me::0"]);
+      expect(result["group@g.us::me::0"]).toBeTruthy();
+    });
+
+    it("handles null values (deletes) in cache", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // First set a value
+      await state.keys.set({
+        "pre-key": { "42": { keyPair: "test" } as never },
+      });
+
+      // Then delete it via null
+      await state.keys.set({
+        "pre-key": { "42": null as never },
+      });
+
+      // Should not be in cache
+      const result = await state.keys.get("pre-key", ["42"]);
+      expect(result["42"]).toBeUndefined();
+    });
+  });
+
+  describe("keys.get — cache-first reads", () => {
+    it("reads from cache without hitting storage", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // Set data
+      await state.keys.set({
+        session: { "peer-123": { session: "data" } as never },
+      });
+
+      // Clear the storage to prove we read from cache
+      storage.data.clear();
+
+      const result = await state.keys.get("session", ["peer-123"]);
+      expect(result["peer-123"]).toBeTruthy();
+    });
+
+    it("falls through to storage for cache misses", async () => {
+      const storage = createFastStorage();
+
+      // Pre-populate storage with serialized data (simulating restart)
+      const key = `auth:${instanceId}:keys:session:peer-456`;
+      storage.data.set(key, JSON.stringify({ session: "from-db" }));
+
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // Read without prior set — should come from storage
+      const result = await state.keys.get("session", ["peer-456"]);
+      expect(result["peer-456"]).toBeTruthy();
+    });
+  });
+
+  describe("background persist", () => {
+    it("eventually writes to storage", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      await state.keys.set({
+        "pre-key": { "99": { publicKey: "abc" } as never },
+      });
+
+      // Background persist should complete soon
+      await new Promise((r) => setTimeout(r, 50));
+
+      const key = `auth:${instanceId}:keys:pre-key:99`;
+      expect(storage.data.has(key)).toBe(true);
+    });
+
+    it("does not throw when storage.set fails", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // Make storage.set throw
+      storage.set = async () => {
+        throw new Error("DB connection lost");
+      };
+
+      // Should not throw — error is caught and logged
+      await expect(
+        state.keys.set({
+          "pre-key": { "100": { publicKey: "xyz" } as never },
+        }),
+      ).resolves.toBeUndefined();
+
+      // Cache should still have the data
+      const result = await state.keys.get("pre-key", ["100"]);
+      expect(result["100"]).toBeTruthy();
+    });
+
+    it("serializes background persists for the same key", async () => {
+      const persisted = new Map<string, string>();
+      let isFirstWrite = true;
+
+      const storage: PluginStorage = {
+        async get<T>(key: string): Promise<T | null> {
+          const value = persisted.get(key);
+          if (!value) return null;
+          return JSON.parse(value) as T;
+        },
+        async set(key: string, value: unknown): Promise<void> {
+          // Simulate out-of-order completion risk:
+          // first write is slower than second write.
+          const shouldDelay = isFirstWrite;
+          isFirstWrite = false;
+          if (shouldDelay) {
+            await new Promise((r) => setTimeout(r, 75));
+          }
+          persisted.set(key, typeof value === "string" ? value : JSON.stringify(value));
+        },
+        async delete(key: string): Promise<boolean> {
+          return persisted.delete(key);
+        },
+        async has(key: string): Promise<boolean> {
+          return persisted.has(key);
+        },
+        async keys(pattern?: string): Promise<string[]> {
+          const keys = Array.from(persisted.keys());
+          if (!pattern) return keys;
+          const regex = patternToRegex(pattern);
+          return keys.filter((key) => regex.test(key));
+        },
+      };
+
+      const { state } = await createStorageAuthState(storage, instanceId);
+      const keyId = "ordered-key";
+
+      await state.keys.set({
+        "pre-key": { [keyId]: { value: "first" } as never },
+      });
+      await state.keys.set({
+        "pre-key": { [keyId]: { value: "second" } as never },
+      });
+
+      // Allow queued background writes to drain.
+      await new Promise((r) => setTimeout(r, 200));
+
+      const storedRaw = persisted.get(`auth:${instanceId}:keys:pre-key:${keyId}`);
+      expect(storedRaw).toBeTruthy();
+      const stored = JSON.parse(storedRaw ?? "{}") as { value?: string };
+      expect(stored.value).toBe("second");
+    });
+  });
+
+  describe("LID-first guardrail — blocks phone-JID sender keys", () => {
+    it("skips sender-key writes where participant matches bot phone number", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // Simulate creds.me.id being set after connection (phone-based format)
+      (state.creds as { me: { id: string } }).me = { id: "551151999885:4@s.whatsapp.net" };
+
+      // Write both phone-JID and LID-based sender keys
+      await state.keys.set({
+        "sender-key": {
+          // Phone JID for bot's own number → should be BLOCKED
+          "group@g.us::551151999885::4": { key: "phone-based" } as never,
+          // LID for bot → should be ALLOWED
+          "group@g.us::225671238410292_1::4": { key: "lid-based" } as never,
+          // Other participant phone → should be ALLOWED (not the bot)
+          "group@g.us::5511888887777::0": { key: "other-participant" } as never,
+        },
+      });
+
+      // Phone-JID key should NOT be in cache
+      const phoneResult = await state.keys.get("sender-key", ["group@g.us::551151999885::4"]);
+      expect(phoneResult["group@g.us::551151999885::4"]).toBeUndefined();
+
+      // LID key should be in cache
+      const lidResult = await state.keys.get("sender-key", ["group@g.us::225671238410292_1::4"]);
+      expect(lidResult["group@g.us::225671238410292_1::4"]).toBeTruthy();
+
+      // Other participant's key should be in cache
+      const otherResult = await state.keys.get("sender-key", ["group@g.us::5511888887777::0"]);
+      expect(otherResult["group@g.us::5511888887777::0"]).toBeTruthy();
+    });
+
+    it("allows phone-JID sender keys when creds.me is not yet set", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      // creds.me is not set (pre-authentication) — all keys should pass through
+      await state.keys.set({
+        "sender-key": {
+          "group@g.us::551151999885::4": { key: "allowed-pre-auth" } as never,
+        },
+      });
+
+      const result = await state.keys.get("sender-key", ["group@g.us::551151999885::4"]);
+      expect(result["group@g.us::551151999885::4"]).toBeTruthy();
+    });
+
+    it("does not block non-sender-key types", async () => {
+      const storage = createFastStorage();
+      const { state } = await createStorageAuthState(storage, instanceId);
+
+      (state.creds as { me: { id: string } }).me = { id: "551151999885:4@s.whatsapp.net" };
+
+      // session keys with bot phone should NOT be blocked
+      await state.keys.set({
+        session: {
+          "551151999885:4": { session: "data" } as never,
+        },
+      });
+
+      const result = await state.keys.get("session", ["551151999885:4"]);
+      expect(result["551151999885:4"]).toBeTruthy();
+    });
+  });
+
+  describe("clearSenderKeys", () => {
+    it("removes only sender-key entries for the target instance", async () => {
+      const storage = createFastStorage();
+      const otherInstanceId = "other-instance";
+
+      const senderKeyA = `auth:${instanceId}:keys:sender-key:group-a@g.us::participant-a::0`;
+      const senderKeyB = `auth:${instanceId}:keys:sender-key:group-b@g.us::participant-b::0`;
+      const nonSenderKey = `auth:${instanceId}:keys:session:peer-1`;
+      const otherInstanceSenderKey = `auth:${otherInstanceId}:keys:sender-key:group-c@g.us::participant-c::0`;
+
+      storage.data.set(senderKeyA, JSON.stringify({ key: "a" }));
+      storage.data.set(senderKeyB, JSON.stringify({ key: "b" }));
+      storage.data.set(nonSenderKey, JSON.stringify({ session: "keep" }));
+      storage.data.set(otherInstanceSenderKey, JSON.stringify({ key: "keep" }));
+
+      const deleted = await clearSenderKeys(storage, instanceId);
+
+      expect(deleted).toBe(2);
+      expect(storage.data.has(senderKeyA)).toBe(false);
+      expect(storage.data.has(senderKeyB)).toBe(false);
+      expect(storage.data.has(nonSenderKey)).toBe(true);
+      expect(storage.data.has(otherInstanceSenderKey)).toBe(true);
+    });
+  });
+});
+
+/** In-memory store with `writeMany` (one call = one transaction) and scripted failures. */
+function createBatchStorage(options: { failWrites?: number } = {}) {
+  const data = new Map<string, string>();
+  const batches: Array<Array<{ key: string; value: string | null }>> = [];
+  let failuresLeft = options.failWrites ?? 0;
+  let gate: Promise<void> | null = null;
+  const storage: PluginStorage = {
+    async get<T>(key: string): Promise<T | null> {
+      return (data.get(key) ?? null) as T | null;
+    },
+    async set(key: string, value: unknown): Promise<void> {
+      data.set(key, String(value));
+    },
+    async delete(key: string): Promise<boolean> {
+      return data.delete(key);
+    },
+    async has(key: string): Promise<boolean> {
+      return data.has(key);
+    },
+    async keys(pattern?: string): Promise<string[]> {
+      const keys = Array.from(data.keys());
+      return pattern ? keys.filter((key) => patternToRegex(pattern).test(key)) : keys;
+    },
+    async writeMany(writes) {
+      const batch = writes.map((write) => ({ ...write }));
+      batches.push(batch);
+      if (gate) await gate;
+      if (failuresLeft > 0) {
+        failuresLeft--;
+        throw new Error("database is locked");
+      }
+      for (const write of batch) {
+        if (write.value === null) data.delete(write.key);
+        else data.set(write.key, write.value);
+      }
+    },
+  };
+  return {
+    storage,
+    data,
+    batches,
+    /** Hold every write until the returned release function runs. */
+    hold(): () => void {
+      let release = () => {};
+      gate = new Promise<void>((resolve) => {
+        release = () => {
+          gate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+  };
+}
+
+/** Manual retry timers: nothing fires on its own. */
+function manualRetry() {
+  const timers: Array<{ callback: () => void; ms: number }> = [];
+  return {
+    timers,
+    retry: {
+      setTimer: (callback: () => void, ms: number) => {
+        const entry = { callback, ms };
+        timers.push(entry);
+        return entry;
+      },
+      clearTimer: (handle: unknown) => {
+        const index = timers.indexOf(handle as { callback: () => void; ms: number });
+        if (index >= 0) timers.splice(index, 1);
+      },
+      sleep: async () => {},
+      random: () => 0.5,
+    },
+  };
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+describe("auth write queue (auth.db write-behind)", () => {
+  const instanceId = "queue-instance";
+  const preKey = (id: string) => `auth:${instanceId}:keys:pre-key:${id}`;
+
+  it("writes ONE transaction per keys.set, covering every entry", async () => {
+    const store = createBatchStorage();
+    const { state, flush } = await createStorageAuthState(store.storage, instanceId);
+    await state.keys.set({
+      "pre-key": { "1": { public: Buffer.from([1]), private: Buffer.from([2]) }, "2": null },
+      session: { abc: Buffer.from([3]) },
+    });
+    expect(await flush()).toBe(true);
+    expect(store.batches).toHaveLength(1);
+    expect(store.batches[0]?.map((write) => write.key).sort()).toEqual(
+      [preKey("1"), preKey("2"), `auth:${instanceId}:keys:session:abc`].sort(),
+    );
+    expect(store.batches[0]?.find((write) => write.key === preKey("2"))?.value).toBeNull();
+  });
+
+  it("retries a locked store with backoff and flush() waits until the keys are written", async () => {
+    const store = createBatchStorage({ failWrites: 2 });
+    const { timers, retry } = manualRetry();
+    const handle = await createStorageAuthState(store.storage, instanceId, { retry });
+    await handle.state.keys.set({ "pre-key": { "5": { public: Buffer.from([5]), private: Buffer.from([5]) } } });
+    await tick();
+    // First background attempt failed: the key is dirty and a jittered 250 ms retry is armed.
+    expect(store.batches).toHaveLength(1);
+    expect(handle.pendingWrites()).toBe(1);
+    expect(timers.map((timer) => timer.ms)).toEqual([250]);
+
+    // flush() keeps trying (second attempt locked too) and resolves only once written.
+    expect(await handle.flush({ timeoutMs: 5_000 })).toBe(true);
+    expect(store.batches).toHaveLength(3);
+    expect(store.data.has(preKey("5"))).toBe(true);
+    expect(handle.pendingWrites()).toBe(0);
+    expect(timers).toHaveLength(0);
+  });
+
+  it("doubles the retry delay up to the cap, with jitter", async () => {
+    const store = createBatchStorage({ failWrites: 100 });
+    const { timers, retry } = manualRetry();
+    const handle = await createStorageAuthState(store.storage, instanceId, {
+      retry: { ...retry, baseDelayMs: 250, maxDelayMs: 1_000, random: () => 0 },
+    });
+    await handle.state.keys.set({ "pre-key": { "6": null } });
+    await tick();
+    const delays: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const timer = timers.shift();
+      if (!timer) throw new Error("no retry armed");
+      delays.push(timer.ms);
+      timer.callback();
+      await tick();
+    }
+    // random() = 0 → -20% jitter: 250, 500, 1000, 1000 → 200, 400, 800, 800.
+    expect(delays).toEqual([200, 400, 800, 800]);
+    expect(handle.pendingWrites()).toBe(1);
+    await handle.discard();
+  });
+
+  it("a newer value replaces the queued one, also while the older write is in flight or failed", async () => {
+    const store = createBatchStorage({ failWrites: 1 });
+    const { timers, retry } = manualRetry();
+    const handle = await createStorageAuthState(store.storage, instanceId, { retry });
+    const release = store.hold();
+    await handle.state.keys.set({ session: { s: Buffer.from("v1") } });
+    await tick();
+    // v1 is in flight (held); v2 arrives.
+    await handle.state.keys.set({ session: { s: Buffer.from("v2") } });
+    release();
+    await tick();
+    // The v1 write failed; the retry carries only v2.
+    expect(await handle.flush({ timeoutMs: 1_000 })).toBe(true);
+    expect(timers).toHaveLength(0);
+    const last = store.batches.at(-1);
+    expect(last).toHaveLength(1);
+    const stored = store.data.get(`auth:${instanceId}:keys:session:s`) ?? "";
+    expect(JSON.parse(stored, (await loadBaileys()).BufferJSON.reviver)).toEqual(Buffer.from("v2"));
+    // v1 was never written after v2.
+    expect(
+      store.batches.filter((batch) => batch[0]?.value?.includes(Buffer.from("v1").toString("base64"))),
+    ).toHaveLength(1);
+  });
+
+  it("never evicts dirty keys from the cache while the store is down", async () => {
+    const previous = process.env.WHATSAPP_AUTH_KEY_CACHE_MAX_ENTRIES;
+    process.env.WHATSAPP_AUTH_KEY_CACHE_MAX_ENTRIES = "2";
+    try {
+      const store = createBatchStorage({ failWrites: 1_000 });
+      const { retry } = manualRetry();
+      const handle = await createStorageAuthState(store.storage, instanceId, { retry });
+      for (const id of ["a", "b", "c", "d", "e"]) {
+        await handle.state.keys.set({ "pre-key": { [id]: { public: Buffer.from(id), private: Buffer.from(id) } } });
+      }
+      await tick();
+      const read = await handle.state.keys.get("pre-key", ["a", "b", "c", "d", "e"]);
+      expect(Object.keys(read).sort()).toEqual(["a", "b", "c", "d", "e"]);
+      expect(handle.pendingWrites()).toBe(5);
+      expect(await handle.flush({ timeoutMs: 0 })).toBe(false);
+      await handle.discard();
+    } finally {
+      if (previous === undefined) delete process.env.WHATSAPP_AUTH_KEY_CACHE_MAX_ENTRIES;
+      else process.env.WHATSAPP_AUTH_KEY_CACHE_MAX_ENTRIES = previous;
+    }
+  });
+
+  it("saveCreds writes the creds through the queue and fails (keeping them queued) while the store is down", async () => {
+    const store = createBatchStorage({ failWrites: 1 });
+    const { timers, retry } = manualRetry();
+    const handle = await createStorageAuthState(store.storage, instanceId, { retry });
+    await expect(handle.saveCreds()).rejects.toThrow("stay queued");
+    expect(handle.pendingWrites()).toBe(1);
+    expect(timers).toHaveLength(1);
+    await handle.saveCreds();
+    expect(timers).toHaveLength(0);
+    expect(store.data.has(`auth:${instanceId}:creds`)).toBe(true);
+    expect(handle.pendingWrites()).toBe(0);
+  });
+
+  it("discard() drops pending writes and ignores later ones (the auth state is being cleared)", async () => {
+    const store = createBatchStorage({ failWrites: 1_000 });
+    const { timers, retry } = manualRetry();
+    const handle = await createStorageAuthState(store.storage, instanceId, { retry });
+    await handle.state.keys.set({ "pre-key": { x: null } });
+    await tick();
+    await handle.discard();
+    expect(handle.pendingWrites()).toBe(0);
+    expect(timers).toHaveLength(0);
+    await handle.state.keys.set({ "pre-key": { y: null } });
+    await tick();
+    expect(handle.pendingWrites()).toBe(0);
+    expect(await handle.flush()).toBe(true);
+  });
+});

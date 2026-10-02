@@ -61,7 +61,7 @@ function createTopicStream(topic: string): AsyncIterableIterator<BusEvent> {
 }
 
 const actualNatsModule = await import("../../nats.js");
-const actualSessionStreamModule = await import("../../omni/session-stream.js");
+const actualSessionStreamModule = await import("../../session-prompts/stream.js");
 
 mock.module("../../nats.js", () => ({
   ...actualNatsModule,
@@ -76,7 +76,7 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-mock.module("../../omni/session-stream.js", () => ({
+mock.module("../../session-prompts/stream.js", () => ({
   ...actualSessionStreamModule,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     publishCalls.push({ sessionName, payload });
@@ -238,6 +238,50 @@ describe("TriggerRunner invalid filters fail closed", () => {
 
     expect(publishCalls).toEqual([]);
     expect(dbGetTrigger(trigger.id)?.fireCount).toBe(0);
+  });
+});
+
+describe("WhatsApp message triggers (Omni migration)", () => {
+  it("fires on ravi.channel.inbound.whatsapp.message.> for realtime WhatsAppInboundEvents only", async () => {
+    const pattern = "ravi.channel.inbound.whatsapp.message.>";
+    const trigger = createTrigger({
+      name: "wa-inbound",
+      topic: pattern,
+      filter: `data.ingestMode == "realtime" && data.payload.content.type == "text"`,
+    });
+    const instanceId = "11111111-1111-4111-8111-111111111111";
+    const event = (externalId: string, ingestMode: "realtime" | "history-sync") => ({
+      schemaVersion: 1,
+      id: `whatsapp-baileys:${instanceId}:${externalId}:message`,
+      instanceId,
+      timestamp: 1_760_000_000_000,
+      type: "message.received",
+      ingestMode,
+      payload: {
+        externalId,
+        chatId: "5511999999999@s.whatsapp.net",
+        from: "5511999999999",
+        content: { type: "text", text: "oi" },
+      },
+    });
+
+    await startRunner();
+    expect(subscribedTopics).toContain(pattern);
+
+    // The runner publishes each event on the concrete subject; the subscription is the wildcard.
+    const channel = channels.get(pattern);
+    if (!channel) throw new Error(`Runner is not subscribed to ${pattern}`);
+    const subject = `ravi.channel.inbound.whatsapp.message.${instanceId}`;
+    channel.push({ topic: subject, data: event("HISTORY1", "history-sync") });
+    channel.push({ topic: subject, data: event("LIVE1", "realtime") });
+
+    await waitFor(() => publishCalls.length >= 1);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]?.payload._triggerId).toBe(trigger.id);
+    expect(String(publishCalls[0]?.payload.prompt)).toContain("LIVE1");
+    expect(String(publishCalls[0]?.payload.prompt)).not.toContain("HISTORY1");
   });
 });
 

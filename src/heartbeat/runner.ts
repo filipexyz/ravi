@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { logger } from "../utils/logger.js";
 import { dbListAgents } from "../router/router-db.js";
 import {

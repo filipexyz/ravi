@@ -265,8 +265,20 @@ function isReplayableStoredMessage(message: Message): boolean {
   return !isRuntimeRebaseControlPrompt(message.content);
 }
 
+/**
+ * Edit-restart notice headers written by the inbound pipeline. "canal" is current; "Omni" is what
+ * pre-refactor daemons wrote, and existing session histories still hold it.
+ */
+export const MESSAGE_EDIT_RESTART_NOTICE_HEADERS = [
+  "## Mensagem editada detectada pelo canal",
+  "## Mensagem editada detectada pelo Omni",
+] as const;
+
 function isRuntimeRebaseControlPrompt(content: string): boolean {
-  return content.startsWith("## Mensagem editada detectada pelo Omni") && content.includes("## Runtime session rebase");
+  return (
+    MESSAGE_EDIT_RESTART_NOTICE_HEADERS.some((header) => content.startsWith(header)) &&
+    content.includes("## Runtime session rebase")
+  );
 }
 
 function renderTranscriptMessage(input: {

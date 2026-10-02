@@ -142,7 +142,9 @@ details and policy outcome:
   is replaced by a safe local action. For `media send`, catalog codes
   `MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED` and `FILE_NOT_FOUND` MUST keep the
   remote code and use the local catalog message and action; other codes stay
-  on the generic remote failure copy. HTTP `status` and structured `issues`
+  on the generic remote failure copy. `OMNI_AUTH_FAILED` is only produced on
+  the legacy-bridge (Telegram/Discord) branch; WhatsApp media goes through the
+  `ravi channels` runner and fails with its own transport codes. HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
   be projected so CLI text and `--json` stay actionable. This privacy
   projection is the permitted exception to byte-for-byte detail parity;

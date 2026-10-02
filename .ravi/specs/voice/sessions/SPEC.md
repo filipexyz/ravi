@@ -20,6 +20,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Voice Sessions
 
 ## Intent
@@ -170,7 +171,7 @@ Transcript events MAY be shown in:
 - session debug/timeline views;
 - future summaries.
 
-Transcript events MUST NOT be sent as WhatsApp/Omni messages unless the user or agent takes an explicit send/summarize action governed by channel delivery policy.
+Transcript events MUST NOT be sent as channel messages (WhatsApp, Slack or any other channel) unless the user or agent takes an explicit send/summarize action governed by channel delivery policy.
 
 ## Tool Semantics
 

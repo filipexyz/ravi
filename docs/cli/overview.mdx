@@ -16,7 +16,7 @@ description: Complete command reference for the ravi CLI — all groups, subcomm
 ## Setup
 
 ```bash
-ravi setup                                    # Interactive setup wizard (omni, env, agent, settings, daemon)
+ravi setup                                    # Interactive setup wizard (NATS, optional legacy bridge, env, agent, settings, daemon + channel runner)
 ```
 
 ## Daemon
@@ -28,7 +28,7 @@ ravi daemon start                             # Start daemon via PM2
 ravi daemon stop                              # Stop daemon
 ravi daemon restart -m "reason"               # Restart daemon with required reason
 ravi daemon restart --build -m "reason"       # Build before restarting
-ravi daemon status                            # Show daemon + infra status (ravi, omni-nats, omni-api)
+ravi daemon status                            # Show daemon + infra status (NATS owner ravi-nats/omni-nats, legacy bridge omni-api)
 ravi daemon logs                              # Show last 50 lines
 ravi daemon logs -f                           # Follow log output
 ravi daemon logs -t 100                       # Show last 100 lines
@@ -62,7 +62,7 @@ ravi agents debug <id> [nameOrKey] [-n count] # Show last N turns of a session t
 
 ## Instances
 
-Central configuration entity for channels/accounts. Each instance maps to one omni connection.
+Central configuration entity for channels/accounts. A WhatsApp instance is served by the `ravi channels` runner; Telegram/Discord instances use the optional legacy Omni bridge.
 
 ```bash
 ravi instances list                           # List all instances with status
@@ -77,10 +77,11 @@ ravi instances set <name> <key> <value>       # Set instance property (agent, dm
 ravi instances delete <name>                  # Soft-delete instance immediately
 ravi instances restore <name>                 # Restore soft-deleted instance
 ravi instances deleted                        # List soft-deleted instances
-ravi instances connect <name>                 # Connect to omni (QR code for WhatsApp)
+ravi instances connect <name>                 # Connect (QR code for WhatsApp, served by the ravi channels runner)
   --channel <channel>                         #   Channel type
   --agent <id>                                #   Agent to route messages to
-ravi instances disconnect <name>              # Disconnect from omni
+ravi instances disconnect <name>              # Disconnect (keeps credentials; persists until the next connect)
+ravi instances logout <name> --execute        # WhatsApp: wipe credentials, unlink the device when connected (dry-run without --execute)
 ravi instances status <name>                  # Show connection status
 ```
 
@@ -331,7 +332,7 @@ ravi whatsapp.dm ack <contact> <messageId> --execute  # Send a receipt (without 
   --account <id>                              #   WhatsApp account
 ```
 
-`dm read` is always read-only and never sends a receipt. To send a blue-tick receipt intentionally, use `dm ack <contact> <messageId> --execute`.
+`dm read` is always read-only and never sends a receipt. To send a blue-tick receipt intentionally, use `dm ack <contact> <messageId> --execute`. It emits `ravi.outbound.receipt`; no Ravi process consumes that subject yet, so the receipt does not reach WhatsApp.
 
 ## Media
 

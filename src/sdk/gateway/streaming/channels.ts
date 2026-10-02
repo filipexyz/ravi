@@ -1,5 +1,12 @@
 import { nats } from "../../../nats.js";
 import { matchesTopicGlob } from "../../../events/topic-glob.js";
+import { CHANNEL_INBOUND_SUBJECT_PREFIX, WHATSAPP_CHANNEL_TYPE } from "../../../channels/whatsapp/contract.js";
+import {
+  WHATSAPP_INBOUND_SUBJECT_ROOT,
+  WhatsAppInboundEventSchema,
+  parseWhatsAppInboundSubject,
+  type WhatsAppInboundEventType,
+} from "../../../channels/whatsapp/events.js";
 import type { StreamChannel, StreamChannelMatch, StreamEvent, StreamRequestContext } from "./types.js";
 
 const SESSION_DEBUG_EVENT_PATTERNS = ["prompt", "response", "stream", "tool", "runtime", "claude", "delivery"] as const;
@@ -380,16 +387,7 @@ async function* subscribeEvents(ctx: StreamRequestContext): AsyncIterable<Stream
       if (type && type !== "result" && type !== "system") continue;
     }
     if (noHeartbeat && (item.topic.includes("heartbeat") || item.data._heartbeat === true)) continue;
-    if (
-      item.topic.includes("presence.typing") ||
-      item.topic.includes("chat.unread-updated") ||
-      item.topic.includes(".stream") ||
-      item.topic.startsWith("message.") ||
-      item.topic.startsWith("reaction.") ||
-      item.topic.startsWith("instance.")
-    ) {
-      continue;
-    }
+    if (isNoiseEventsTopic(item.topic, { selected: Boolean(filter) || subject !== ">" })) continue;
     if (item.topic.includes(".claude") && item.data.type === "stream_event") continue;
     count++;
     yield {
@@ -493,14 +491,82 @@ async function* subscribeAudit(ctx: StreamRequestContext): AsyncIterable<StreamE
   }
 }
 
+/** Raw channel transport subjects: runner inbound events and runner RPC requests. */
+const CHANNEL_TRANSPORT_PREFIXES = [CHANNEL_INBOUND_SUBJECT_PREFIX, "_RAVI.channels."] as const;
+
+/**
+ * Topics the `events` channel suppresses, like `ravi events stream`: typing/unread/stream chunks and the legacy bridge
+ * JetStream subjects always; `ravi.channel.inbound.*` and `_RAVI.channels.*` unless the client selected them with a
+ * `filter` or an explicit `subject`.
+ */
+export function isNoiseEventsTopic(topic: string, options: { selected?: boolean } = {}): boolean {
+  if (
+    topic.includes("presence.typing") ||
+    topic.includes("chat.unread-updated") ||
+    topic.includes(".stream") ||
+    topic.startsWith("message.") ||
+    topic.startsWith("reaction.") ||
+    topic.startsWith("instance.")
+  ) {
+    return true;
+  }
+  return !options.selected && CHANNEL_TRANSPORT_PREFIXES.some((prefix) => topic.startsWith(prefix));
+}
+
 export const CHAT_TOPIC_PATTERNS = [
   "message.received.>",
   "reaction.received.>",
   "presence.typing",
   "chat.unread-updated",
+  `${WHATSAPP_INBOUND_SUBJECT_ROOT}message.>`,
+  `${WHATSAPP_INBOUND_SUBJECT_ROOT}reaction.>`,
 ] as const;
 
-export const INSTANCE_TOPIC_PATTERNS = ["instance.>"] as const;
+export const INSTANCE_TOPIC_PATTERNS = ["instance.>", `${WHATSAPP_INBOUND_SUBJECT_ROOT}connection.>`] as const;
+
+/** WhatsApp inbound event type → the event type of the (Omni-shaped) envelope SDK stream clients already decode. */
+const STREAM_EVENT_TYPE: Readonly<Record<WhatsAppInboundEventType, string>> = {
+  "message.received": "message.received",
+  "reaction.received": "reaction.received",
+  "connection.qr": "instance.qr_code",
+  "connection.connected": "instance.connected",
+  "connection.disconnected": "instance.disconnected",
+};
+
+/**
+ * Project a WhatsApp runner inbound event (`ravi.channel.inbound.whatsapp.<kind>.<instanceId>`, WhatsAppInboundEvent
+ * v1) onto the envelope and subject SDK chat/instance streams have always delivered:
+ * `{id, type, payload, metadata: {instanceId, channelType: "whatsapp-baileys", ingestMode?, receivedAt?}, timestamp}`
+ * on `<type>.whatsapp-baileys.<instanceId>`. Connection payloads get `instanceId`/`channelType` back. Returns null
+ * for an unparseable subject or envelope, or when the subject and envelope name different instances.
+ * Other topics pass through unchanged.
+ */
+export function projectWhatsAppInbound(item: {
+  topic: string;
+  data: Record<string, unknown>;
+}): { topic: string; data: Record<string, unknown> } | null {
+  if (!item.topic.startsWith(WHATSAPP_INBOUND_SUBJECT_ROOT)) return item;
+  const subject = parseWhatsAppInboundSubject(item.topic);
+  if (!subject) return null;
+  const parsed = WhatsAppInboundEventSchema.safeParse(item.data);
+  if (!parsed.success) return null;
+  const event = parsed.data;
+  if (event.instanceId !== subject.instanceId) return null;
+
+  const type = STREAM_EVENT_TYPE[event.type];
+  const metadata: Record<string, unknown> = { instanceId: event.instanceId, channelType: WHATSAPP_CHANNEL_TYPE };
+  if (event.type === "message.received") metadata.ingestMode = event.ingestMode;
+  if (event.receivedAt !== undefined) metadata.receivedAt = event.receivedAt;
+  const payload: Record<string, unknown> =
+    event.type === "message.received" || event.type === "reaction.received"
+      ? { ...event.payload }
+      : { ...event.payload, instanceId: event.instanceId, channelType: WHATSAPP_CHANNEL_TYPE };
+
+  return {
+    topic: `${type}.${WHATSAPP_CHANNEL_TYPE}.${event.instanceId}`,
+    data: { id: event.id, type, payload, metadata, timestamp: event.timestamp },
+  };
+}
 
 async function* subscribeChat(ctx: StreamRequestContext, match: StreamChannelMatch): AsyncIterable<StreamEvent> {
   const chatId = match.scope.objectId;
@@ -518,7 +584,9 @@ export async function* projectChatEvents(
   chatId: string,
   source: AsyncIterable<{ topic: string; data: Record<string, unknown> }>,
 ): AsyncIterable<StreamEvent> {
-  for await (const item of source) {
+  for await (const raw of source) {
+    const item = projectWhatsAppInbound(raw);
+    if (!item) continue;
     if (extractChatId(item.data) !== chatId) continue;
     yield {
       event: classifyChatEvent(item.topic),
@@ -537,7 +605,9 @@ export async function* projectInstanceEvents(
   instanceId: string,
   source: AsyncIterable<{ topic: string; data: Record<string, unknown> }>,
 ): AsyncIterable<StreamEvent> {
-  for await (const item of source) {
+  for await (const raw of source) {
+    const item = projectWhatsAppInbound(raw);
+    if (!item) continue;
     if (extractInstanceId(item.topic, item.data) !== instanceId) continue;
     yield {
       event: "instance",

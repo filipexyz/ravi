@@ -28,7 +28,7 @@ applies_to:
   - src/tags
   - src/tag-rules
   - src/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router/router-db.ts
 owners:
   - ravi-dev
@@ -36,6 +36,7 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Permissions
 
 ## Intent

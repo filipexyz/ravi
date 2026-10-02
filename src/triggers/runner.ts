@@ -11,7 +11,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";

@@ -15,6 +15,64 @@ const SPECS_PREFIX = ".ravi/specs/";
 const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
 
 /**
+ * Focused tests of the WhatsApp (Baileys) channel: the runner-side runtime, driver,
+ * RPC server and Baileys handlers (`lib/`), and the daemon-side RPC client, typed
+ * client, sender, inbound source and provisioning. Any one of them in the diff covers a
+ * `src/channels/whatsapp/` change.
+ */
+const WHATSAPP_FOCUSED_TESTS = [
+  "src/channels/whatsapp/__tests__/driver.test.ts",
+  "src/channels/whatsapp/__tests__/rpc-server.test.ts",
+  "src/channels/whatsapp/rpc-client.test.ts",
+  "src/channels/whatsapp/inbound-stream.test.ts",
+  "src/channels/whatsapp/__tests__/runtime-helpers.test.ts",
+  "src/channels/whatsapp/__tests__/runtime-inbound.test.ts",
+  "src/channels/whatsapp/__tests__/runtime-lifecycle.test.ts",
+  "src/channels/whatsapp/__tests__/runtime-outbound.test.ts",
+  "src/channels/whatsapp/lib/__tests__/auth-store.test.ts",
+  "src/channels/whatsapp/lib/__tests__/connection.test.ts",
+  "src/channels/whatsapp/lib/__tests__/messages-handler.test.ts",
+  "src/channels/whatsapp/client.test.ts",
+  "src/channels/whatsapp/sender.test.ts",
+  "src/channels/whatsapp/events.test.ts",
+  "src/channels/whatsapp/errors.test.ts",
+  "src/channels/whatsapp/group-metadata.test.ts",
+  "src/channels/whatsapp/inbound-source.test.ts",
+  "src/channels/whatsapp/channel-name.test.ts",
+  "src/channels/whatsapp/provisioning.test.ts",
+  "src/channels/whatsapp/contract.test.ts",
+  "src/channels/whatsapp/reaction-target.test.ts",
+  // Daemon-side reader of runner-downloaded media.
+  "src/channels/whatsapp/local-media.test.ts",
+];
+
+/**
+ * Focused tests of the neutral inbound side: the pipeline every source feeds, its
+ * typing presence, topics and presence targets, and the WhatsApp inbound source.
+ */
+const CHANNEL_INBOUND_FOCUSED_TESTS = [
+  "src/channels/inbound/presence-targets.test.ts",
+  "src/channels/inbound/topics.test.ts",
+  "src/channels/inbound/typing-presence.test.ts",
+  "src/channels/inbound/jetstream-source.test.ts",
+  "src/channels/inbound/pipeline-context.test.ts",
+  "src/channels/inbound/pipeline-policy.test.ts",
+  "src/channels/inbound/pipeline-unregistered.test.ts",
+  "src/channels/whatsapp/inbound-source.test.ts",
+];
+
+/** Focused tests of the neutral outbound sender contract, its router, retry and errors. */
+const CHANNEL_OUTBOUND_FOCUSED_TESTS = [
+  "src/channels/outbound/router.test.ts",
+  "src/channels/outbound/retry.test.ts",
+  "src/channels/outbound/errors.test.ts",
+  "src/channels/whatsapp/sender.test.ts",
+];
+
+/** Focused tests of the transport-neutral group metadata cache. */
+const CHANNEL_GROUP_METADATA_FOCUSED_TESTS = ["src/channels/group-metadata/cache.test.ts"];
+
+/**
  * Runtime/consumer source path prefixes that require focused test coverage.
  * Each prefix maps to a list of known test file glob patterns.
  */
@@ -31,13 +89,31 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
     "src/channels/slack/socket-mode.test.ts",
+    "src/channels/account-resolution.test.ts",
+    "src/channels/chat-actions.test.ts",
+    "src/channels/mentions.test.ts",
+    // A WhatsApp-only change also matches this prefix; its focused tests count here too.
+    ...WHATSAPP_FOCUSED_TESTS,
+    // Same for the nested inbound, outbound and group-metadata prefixes.
+    ...CHANNEL_INBOUND_FOCUSED_TESTS,
+    ...CHANNEL_OUTBOUND_FOCUSED_TESTS,
+    ...CHANNEL_GROUP_METADATA_FOCUSED_TESTS,
   ],
+  "src/channels/whatsapp/": WHATSAPP_FOCUSED_TESTS,
+  "src/channels/inbound/": CHANNEL_INBOUND_FOCUSED_TESTS,
+  "src/channels/outbound/": CHANNEL_OUTBOUND_FOCUSED_TESTS,
+  "src/channels/group-metadata/": CHANNEL_GROUP_METADATA_FOCUSED_TESTS,
+  "src/session-prompts/": ["src/session-prompts/stream.test.ts"],
+  "src/daemon-channels.ts": ["src/daemon-channels.test.ts"],
+  "src/nats-server.ts": ["src/nats-server.test.ts"],
+  // Legacy Omni bridge (Telegram/Discord only; WhatsApp never goes through it).
   "src/omni/": [
-    "src/omni/consumer-context.test.ts",
-    "src/omni/consumer-policy.test.ts",
-    "src/omni/session-stream.test.ts",
-    // Headless Omni stub: presence/renew no-ops when Omni is not installed.
-    "src/omni/stub-consumer.test.ts",
+    // Omni inbound mapping; WhatsApp-family events are dropped.
+    "src/omni/inbound-source.test.ts",
+    "src/omni/legacy-bridge.test.ts",
+    "src/omni/media.test.ts",
+    "src/omni/group-metadata.test.ts",
+    "src/omni/sender.test.ts",
   ],
   "src/router/": [
     "src/channels/backend.test.ts",
@@ -60,6 +136,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
     "src/runtime/allowed-skills.test.ts",
+    // One-time WhatsApp channel backfill and channel_group_metadata copy.
+    "src/router/router-db.whatsapp-backfill.test.ts",
+    "src/router/router-db.group-metadata.test.ts",
   ],
   "src/runtime/": [
     "src/channels/backend.test.ts",
@@ -109,6 +188,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/gh-watch.test.ts",
     // Decisão de promoção de comando longo para job, aplicada por host-services.
     "src/jobs/promotion.test.ts",
+    "src/runtime/session-rebase.test.ts",
   ],
   "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
   "src/watch/": [
@@ -131,8 +211,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Safe/unsafe classification that gates prompt-lane interrupts while a tool runs.
     "src/hooks/tool-safety.test.ts",
   ],
-  "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
-  "src/triggers/": ["src/triggers/triggers.test.ts"],
+  "src/session-trace/": ["src/session-trace/session-trace.test.ts", "src/session-trace/cloud-trace-export.test.ts"],
+  "src/triggers/": [
+    "src/triggers/triggers.test.ts",
+    "src/triggers/__tests__/topic-catalog.test.ts",
+    // Trigger runner: event filtering and the session prompt it publishes.
+    "src/triggers/__tests__/runner-filter.test.ts",
+  ],
   "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
   "src/apps/": ["src/apps/router.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],

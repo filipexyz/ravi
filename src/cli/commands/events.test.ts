@@ -28,8 +28,15 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-const { formatData, formatLiveEventJsonRecord, isLowSignalRuntimeEvent, matchesReplayFilters, parseReplayTime } =
-  await import("./events.js");
+const {
+  formatData,
+  formatLiveEventJsonRecord,
+  formatTopic,
+  isLowSignalRuntimeEvent,
+  isNoiseStreamTopic,
+  matchesReplayFilters,
+  parseReplayTime,
+} = await import("./events.js");
 
 describe("formatData", () => {
   it("includes runtime failure details", () => {
@@ -178,5 +185,49 @@ describe("event stream low-signal filters", () => {
     expect(isLowSignalRuntimeEvent("ravi.session.dev.runtime", { type: "status", status: "thinking" })).toBe(true);
     expect(isLowSignalRuntimeEvent("ravi.session.dev.runtime", { type: "turn.complete" })).toBe(false);
     expect(isLowSignalRuntimeEvent("ravi.session.dev.tool", { type: "status" })).toBe(false);
+  });
+});
+
+describe("event stream channel transport noise", () => {
+  const instanceId = "1a2b3c4d-0000-4000-8000-000000000001";
+
+  it("hides runner inbound and RPC subjects unless a filter selected them", () => {
+    for (const topic of [
+      `ravi.channel.inbound.whatsapp.message.${instanceId}`,
+      `ravi.channel.inbound.whatsapp.connection.${instanceId}`,
+      `_RAVI.channels.whatsapp.rpc.${instanceId}`,
+    ]) {
+      expect(isNoiseStreamTopic(topic)).toBe(true);
+      expect(isNoiseStreamTopic(topic, { filtered: true })).toBe(false);
+    }
+  });
+
+  it("keeps hiding legacy bridge and streaming noise even with a filter", () => {
+    for (const topic of [
+      `message.received.telegram.${instanceId}`,
+      `reaction.received.whatsapp-baileys.${instanceId}`,
+      `instance.qr_code.discord.${instanceId}`,
+      "ravi.session.agent:main:main.stream",
+      "ravi.presence.typing",
+    ]) {
+      expect(isNoiseStreamTopic(topic, { filtered: true })).toBe(true);
+    }
+  });
+
+  it("does not hide curated ravi topics", () => {
+    for (const topic of ["ravi.inbound.reaction", "ravi.whatsapp.qr." + instanceId, "ravi.instances.connected"]) {
+      expect(isNoiseStreamTopic(topic)).toBe(false);
+    }
+  });
+
+  it("shortens WhatsApp runner subjects", () => {
+    expect(formatTopic(`ravi.channel.inbound.whatsapp.message.${instanceId}`)).toBe("whatsapp.message [1a2b3c4d]");
+    expect(formatTopic(`ravi.channel.inbound.whatsapp.reaction.${instanceId}`)).toBe("whatsapp.reaction [1a2b3c4d]");
+    expect(formatTopic(`ravi.channel.inbound.whatsapp.connection.${instanceId}`)).toBe(
+      "whatsapp.connection [1a2b3c4d]",
+    );
+    expect(formatTopic(`_RAVI.channels.whatsapp.rpc.${instanceId}`)).toBe("whatsapp.rpc [1a2b3c4d]");
+    expect(formatTopic("ravi.inbound.reaction")).toBe("inbound.reaction");
+    expect(formatTopic(`message.received.whatsapp-baileys.${instanceId}`)).toBe("message.received");
   });
 });

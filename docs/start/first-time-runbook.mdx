@@ -1,15 +1,16 @@
 ---
 title: First-Time Runbook
-description: End-to-end setup for Omni, Ravi, WhatsApp instances, the main agent, and a REBAC audit group.
+description: End-to-end setup for Ravi, NATS, the WhatsApp channel runner, the main agent, and a REBAC audit group.
 ---
 
 This runbook is the operational path for taking a fresh machine from zero to a
 working Ravi environment:
 
-1. Install and verify Omni.
-2. Install and verify Ravi.
-3. Configure the main WhatsApp instance.
-4. Configure the main agent.
+1. Install Ravi and run `ravi setup` (NATS, optional legacy bridge, daemon,
+   channel runner).
+2. Configure the environment and start the processes.
+3. Configure the main agent.
+4. Configure and connect the main WhatsApp instance.
 5. Create a REBAC audit group and route it to a dedicated audit agent.
 6. Add permission audit triggers.
 7. Run smoke checks.
@@ -20,7 +21,9 @@ Do not create wrapper variables for first-time setup.
 ## 0. Operating Assumptions
 
 - Bun is installed and its global bin directory is on `PATH`.
-- Omni is the channel gateway.
+- WhatsApp runs inside Ravi's channel runner (`ravi channels`, PM2 process
+  `ravi-channels`). Omni is not needed for WhatsApp.
+- Omni is an optional legacy bridge, used only for Telegram and Discord.
 - Ravi owns agents, sessions, routing, policies, permissions, triggers, cron,
   and durable runtime state.
 - The Ravi source repo is only needed for development. A normal install uses the
@@ -34,7 +37,7 @@ Run this first-time setup from the operator's terminal, not from an agent that i
 still being configured.
 
 During bootstrap, several steps mutate host state: global packages, `~/.ravi`,
-`~/.omni`, PM2 processes, permissions, agents, and channel instances. A coding
+PM2 processes, permissions, agents, and channel instances. A coding
 assistant or agent running under restricted auto mode may be blocked from
 editing config, starting daemons, or changing its own permissions. That block is
 expected and should not be bypassed by granting the assistant broad shell access.
@@ -52,7 +55,8 @@ Useful state locations:
 ```text
 ~/.ravi/.env
 ~/.ravi/ravi.db
-~/.omni/config.json
+~/.ravi/whatsapp/auth.db     # WhatsApp credentials (mode 0600)
+~/.omni/config.json          # only when the legacy bridge is installed
 ```
 
 Before starting, check what is already installed:
@@ -61,83 +65,17 @@ Before starting, check what is already installed:
 bun --version
 git --version
 bun pm bin -g
-command -v omni || echo "omni not installed yet"
 command -v ravi || echo "ravi not installed yet"
+pm2 jlist 2>/dev/null | grep -o '"name":"[^"]*"' || echo "pm2 not installed yet"
 ```
 
-## 1. Install Omni
+<Warning>
+If this host already ran Omni, the PM2 process `omni-nats` **is Ravi's NATS**.
+Never run `omni stop`, `omni start`, `omni restart` or `omni install`, and never
+`pm2 stop|delete|restart omni-nats`. `ravi setup` reuses it as is.
+</Warning>
 
-Omni must be installed before Ravi can connect WhatsApp, Telegram, Discord,
-Slack, or other channel accounts.
-
-```bash
-bun add -g @automagik/omni
-omni install
-```
-
-`omni install` is the interactive setup wizard. It handles server setup, process
-manager setup, API key generation, and startup. For scripted installs:
-
-```bash
-omni install --non-interactive
-```
-
-If this machine still has the old Omni CLI package:
-
-```bash
-bun remove -g @omni/cli
-bun add -g @automagik/omni
-```
-
-Alternative install paths from the [Omni repo](https://github.com/automagik-dev/omni):
-
-```bash
-# CLI install script: npm first, git fallback
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install-client.sh | bash
-
-# Full server install script
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --server
-
-# Manual source install
-git clone https://github.com/automagik-dev/omni.git
-cd omni
-make setup
-```
-
-Verify Omni:
-
-```bash
-omni auth status
-omni status
-omni instances list
-```
-
-If `omni auth status` is not authenticated but the server is running, login with
-the API key printed by the install/startup banner:
-
-```bash
-omni auth login --api-key <omni-api-key>
-```
-
-Optional raw Omni WhatsApp smoke test:
-
-```bash
-omni instances create --name "omni-smoke-whatsapp" --channel whatsapp-baileys
-omni instances qr <instance-id> --watch
-omni instances list
-```
-
-Use that raw Omni smoke only to prove the gateway works. The real Ravi-owned
-WhatsApp setup later should go through `ravi instances create` and
-`ravi instances connect`.
-
-Keep the boundary clear:
-
-- Omni owns transport and provider connection.
-- Ravi owns semantic runtime concepts: `agent`, `instance`, `route`, `session`,
-  `contact`, `chat`, `policy`, and `permission`.
-
-## 2. Install Ravi
+## 1. Install Ravi
 
 Install the global CLI:
 
@@ -147,30 +85,56 @@ command -v ravi
 ravi --version
 ```
 
-Configure local environment:
+Run the setup wizard from the operator terminal:
 
 ```bash
-mkdir -p ~/.ravi
-touch ~/.ravi/.env
+ravi setup
+```
+
+It runs six steps:
+
+1. **NATS.** If a NATS server already answers on `NATS_URL` (default
+   `nats://127.0.0.1:4222`), it is reused as is (on hosts that ran Omni this is
+   `omni-nats`). Otherwise the wizard downloads nats-server 2.11.8 and starts it
+   under PM2 as `ravi-nats`. It never stops, deletes or restarts an existing
+   NATS process.
+2. **Legacy Omni bridge (optional, default No).** Only needed for Telegram or
+   Discord. WhatsApp never uses it.
+3. **Environment.** Writes provider credentials to `~/.ravi/.env`.
+4. **Agent.** Creates the default agent workspace.
+5. **Settings.**
+6. **Daemon.** Starts `ravi daemon start` and `ravi channels start` under PM2
+   and saves the PM2 state.
+
+## 2. Configure the Environment
+
+```bash
 ${EDITOR:-nano} ~/.ravi/.env
 ```
 
 At minimum, configure:
 
 - the runtime provider credentials used by this deployment;
-- `OMNI_API_URL`;
-- `OMNI_API_KEY`;
-- `NATS_URL`, if not using the default local NATS endpoint.
+- `NATS_URL`, if not using the default local NATS endpoint;
+- `OMNI_API_URL` and `OMNI_API_KEY`, only if you use the legacy bridge for
+  Telegram/Discord (otherwise Ravi reads `~/.omni/config.json` when it exists).
 
 Use `ravi daemon env --json` only to inspect the env file location without
 opening an editor.
 
-Start the daemon:
+Make sure both processes are running. `ravi setup` starts them; after a manual
+install or an update, start the daemon first and then the channel runner (the
+runner refuses a bundle that differs from the daemon's):
 
 ```bash
 ravi daemon start
+ravi channels start
 ravi daemon status
+ravi channels status
 ```
+
+`ravi daemon status --json` reports `infrastructure.nats` (which process owns
+NATS) and `infrastructure.legacyBridge` (the optional `omni-api`).
 
 If something fails, check logs before changing configuration:
 
@@ -253,20 +217,26 @@ ravi instances create main \
 ravi instances set main dmScope per-account-channel-peer
 ```
 
-Connect the account:
+Connect the account. The channel runner must be running (`ravi channels status`):
 
 ```bash
 ravi instances connect main
 ```
 
-Scan the QR code from WhatsApp.
+`connect` creates the WhatsApp channel for the instance, waits up to 15 seconds
+for the runner to start it, and prints QR codes until the phone links (up to 120
+seconds). Scan the QR code from WhatsApp > Linked devices.
 
 Verify:
 
 ```bash
-ravi instances status main
+ravi instances status main --json    # transport "whatsapp", status "connected"
 ravi instances show main --json
+ravi channels status                 # main: connected
 ```
+
+If `connect` fails with `WHATSAPP_RUNNER_UNAVAILABLE`, run `ravi channels start`
+(or `ravi channels restart`) and repeat the same command.
 
 ### First DM Smoke Test
 
@@ -448,7 +418,7 @@ ravi triggers add "REBAC unregistered instance audit" \
   --account main \
   --session isolated \
   --cooldown 2m \
-  --message "An event arrived for an unregistered instance. Check whether this is a setup gap, stale Omni account, or unexpected inbound source. Report the likely fix. Topic: {{topic}}"
+  --message "An event arrived for an unregistered instance. Check whether this is a setup gap, a stale or unmigrated account, or an unexpected inbound source. Report the likely fix. Topic: {{topic}}"
 ```
 
 If you must create triggers from a shell, immediately test one and confirm where
@@ -469,6 +439,7 @@ Run the cross-checks before calling setup complete:
 
 ```bash
 ravi daemon status
+ravi channels status
 ravi instances list --json
 ravi instances show main --json
 ravi agents list --json
@@ -491,9 +462,9 @@ ravi events replay --stream RAVI_EVENTS --since 15m --json
 
 Expected outcomes:
 
-- Omni is connected.
-- Ravi daemon is running.
-- `main` instance is connected to WhatsApp.
+- NATS answers and `ravi daemon status` shows its owner.
+- Ravi daemon and the channel runner are running.
+- `main` instance is connected to WhatsApp (`ravi channels status`).
 - DM policy is not accidentally open unless this is intentional.
 - Group policy is not accidentally open unless this is intentional.
 - Main DM replies work.
@@ -509,7 +480,10 @@ Once the first environment works, add these next:
 - A metrics observer agent for runtime KPIs.
 - A daily or hourly observer cron for system health.
 - A backup routine for `~/.ravi/ravi.db`.
-- A documented list of connected Omni accounts and their owning agents.
+- A backup routine for `~/.ravi/whatsapp/auth.db` (losing it means pairing
+  every WhatsApp account again).
+- A documented list of connected accounts (WhatsApp, and any legacy-bridge
+  Telegram/Discord accounts) and their owning agents.
 - A route inventory exported from:
 
 ```bash
@@ -554,14 +528,31 @@ REBAC is one permission layer. Runtime hooks, workspace policies, or local
 provider rules can still block execution. Read the denial text before adding
 broader grants.
 
-### Omni is connected but Ravi cannot see channels
-
-Verify Ravi can read Omni config or environment:
+### WhatsApp is not connected
 
 ```bash
-omni status
+ravi channels status
+ravi instances status main --json
+```
+
+- `WHATSAPP_RUNNER_UNAVAILABLE`: the runner is not running. Run
+  `ravi channels start` (or `restart` after an update).
+- `pairing_required` or `logged_out`: run `ravi instances connect main` and
+  scan a new QR code.
+- `manual_disconnect`: someone ran `ravi instances disconnect`;
+  `ravi instances connect main` reconnects.
+- `connection_replaced`: another process holds the same credentials (a second
+  runner, or the account still connected in Omni). Stop it.
+
+### Telegram/Discord: the legacy bridge is not reachable
+
+`LEGACY_BRIDGE_NOT_CONFIGURED` means Omni is not configured. Check
+`OMNI_API_URL`/`OMNI_API_KEY` (or `~/.omni/config.json`) and the bridge
+process:
+
+```bash
+ravi daemon status --json    # infrastructure.legacyBridge
 ravi daemon env --json
-ravi daemon logs -f
 ```
 
 ## 10. Bootstrap Completion Record
@@ -570,8 +561,8 @@ At the end of setup, record:
 
 - machine hostname;
 - Ravi source path;
-- Omni account names;
-- connected Ravi instance names;
+- connected Ravi instance names (and any legacy-bridge accounts);
+- which process owns NATS (`ravi-nats` or `omni-nats`);
 - main agent id and workspace;
 - audit agent id and workspace;
 - audit group id;

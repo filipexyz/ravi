@@ -46,9 +46,9 @@ channel abstraction.
 ## If Matrix Is Reintroduced
 
 Future Matrix support should be modeled as a channel/instance integration backed by
-Omni and Ravi semantic data:
+a channel transport (a native adapter or the legacy Omni bridge) and Ravi semantic data:
 
-- channel capabilities come from Omni through a Ravi boundary
+- channel capabilities come from the transport through a Ravi boundary
 - accounts are instances or agent-owned platform identities
 - rooms are chats, not contacts
 - participants resolve through `platform_identity` into contacts or agents

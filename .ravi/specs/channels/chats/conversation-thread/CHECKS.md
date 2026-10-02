@@ -2,6 +2,15 @@
 
 ## Checks
 
+- The first resolved speaker in a session without `floor_actor` SHOULD get a
+  `speaker_annotation`; contiguous messages from the same speaker SHOULD carry
+  it only on the first message.
+- A system interruption (`[System] Inform`, task event, daemon notice, trigger,
+  recovery notice) MUST NOT change `floor_actor`.
+- Personal-resource tools SHOULD deny scoped access for an unresolved speaker
+  and MUST NOT grant the active speaker access to another participant's
+  calendar.
+
 ## Regression Scenarios
 
 ### First Speaker
@@ -64,5 +73,6 @@ Given a system event occurs after `<speaker-a>` speaks, the system event itself 
 Run existing related coverage while this feature is being implemented:
 
 ```bash
-bun test src/omni/ src/runtime/ src/gateway-session-trace.test.ts src/router/chat-schema.test.ts
+bun test src/channels/inbound/
+bun test src/runtime/ src/gateway-session-trace.test.ts src/router/chat-schema.test.ts
 ```

@@ -19,7 +19,7 @@ For a CRM or relationship system, capture must precede analysis.
 SQL can repair old data and run imports, but ongoing intake needs runtime logic:
 
 - channel and instance scoping
-- Omni-resolved WhatsApp identity values
+- transport-resolved WhatsApp identity values (LID and phone)
 - route and policy boundaries
 - idempotency by provider event/message ids
 - audit event creation

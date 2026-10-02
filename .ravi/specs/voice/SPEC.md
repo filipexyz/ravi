@@ -24,6 +24,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Voice
 
 ## Intent
@@ -53,7 +54,7 @@ Voice does NOT own:
 - Chat identity or chat participants. Those remain in `channels/chats`.
 - Runtime provider lifecycle for normal text turns. That remains in `runtime`.
 - Static TTS/audio file generation. That remains in `audio`.
-- WhatsApp transport delivery. That remains in channels/Omni.
+- WhatsApp transport delivery. That remains in `channels` (the `ravi channels` runner).
 
 ## Core Model
 

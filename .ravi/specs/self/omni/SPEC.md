@@ -1,6 +1,6 @@
 ---
 id: self/omni
-title: "Self Omni Bridge"
+title: "Self Transport Bridge"
 kind: capability
 domain: self
 capability: omni
@@ -13,6 +13,7 @@ tags:
   - channels
   - chats
 applies_to:
+  - src/channels
   - src/omni
   - src/router
   - src/cli/commands/self.ts
@@ -22,15 +23,18 @@ status: draft
 normative: true
 ---
 
-# Self Omni Bridge
+<!-- markdownlint-disable-next-line MD025 -->
+# Self Transport Bridge
 
 ## Intent
 
-The Self Omni Bridge defines how `ravi self` uses Omni-derived data without leaking Omni as the product model.
+The Self Transport Bridge defines how `ravi self` uses transport-derived data without leaking the transport as the product model.
+
+The transports are the `ravi channels` runner for WhatsApp, native Slack, and the legacy Omni bridge for Telegram/Discord. The spec id keeps the historical name `self/omni`.
 
 ## Boundary
 
-Omni owns transport:
+The transport owns:
 
 - raw inbound events;
 - raw channel ids;
@@ -50,10 +54,10 @@ Ravi Self owns orientation:
 
 ## Projection Rule
 
-`ravi self` MUST project Omni data through Ravi semantic records:
+`ravi self` MUST project transport data through Ravi semantic records:
 
 ```text
-Omni raw event
+raw channel inbound event
   -> Ravi chat
   -> platform identity
   -> contact|agent actor
@@ -63,11 +67,11 @@ Omni raw event
 
 If a semantic record is missing, Self MUST show the gap.
 
-It MUST NOT silently fall back to treating raw Omni ids as canonical product ids.
+It MUST NOT silently fall back to treating raw transport ids as canonical product ids.
 
 ## Debug Provenance
 
-Raw Omni ids MAY appear when:
+Raw transport ids MAY appear when:
 
 - `--debug-provenance` is set;
 - an operator is debugging routing/transport;
@@ -87,7 +91,7 @@ Examples:
 - voice/audio supported;
 - thread/topic supported.
 
-Omni SHOULD remain the source of transport capability facts.
+The transport SHOULD remain the source of transport capability facts.
 
 ## Failure Modes
 
@@ -98,11 +102,11 @@ Self must make these states explicit:
 - route matched by fallback;
 - raw provider id known but canonical chat missing;
 - transport capability unknown;
-- Omni unavailable while Ravi semantic context still exists.
+- transport unavailable (WhatsApp runner down, or the legacy bridge not configured) while Ravi semantic context still exists.
 
 ## Acceptance Criteria
 
 - A WhatsApp-originated self context shows Ravi `chat` first.
 - A raw JID/LID appears only under provenance/debug by default.
 - If chat binding is missing, Self tells the agent what diagnostic to run.
-- Self does not query Omni directly from random feature code; access stays behind adapter/service boundaries.
+- Self does not query a transport (the WhatsApp runner or Omni) directly from random feature code; access stays behind adapter/service boundaries.

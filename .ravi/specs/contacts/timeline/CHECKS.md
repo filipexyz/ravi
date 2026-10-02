@@ -8,7 +8,7 @@
 - New contact event payloads should include source, actor, confidence, and evidence.
 - Agent-generated context should use proposed/attributed event types unless explicitly confirmed.
 - Group-specific labels should not be written as global contact tags.
-- NATS contact event consumers should not rely on raw Omni ids as contact identity.
+- NATS contact event consumers should not rely on raw transport ids as contact identity.
 
 Suggested scans:
 

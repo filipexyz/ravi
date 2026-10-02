@@ -661,7 +661,7 @@ export class ChatsCommands {
   @Command({ name: "list", aliases: ["recent"], description: "List recent canonical chats" })
   @CommandAccess({ kind: "read", resource: "chats", action: "list", risk: "low" })
   list(
-    @Option({ flags: "--instance <name-or-id>", description: "Filter by instance name or Omni instance id" })
+    @Option({ flags: "--instance <name-or-id>", description: "Filter by instance name or instance id" })
     instance?: string,
     @Option({ flags: "--channel <channel>", description: "Filter by channel, e.g. whatsapp" }) channel?: string,
     @Option({ flags: "--type <type>", description: "Filter by chat type: dm|group|thread|room" }) type?: string,

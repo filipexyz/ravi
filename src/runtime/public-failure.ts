@@ -80,7 +80,7 @@ export function isRecoverableOpenToolsOrInterruptFailure(input: {
 }
 
 /**
- * Classic WhatsApp/omni chat delivery policy for `turn.failed`.
+ * Chat-channel (WhatsApp, legacy bridge) delivery policy for `turn.failed`.
  * Recoverable open-tools / interrupt-class failures must not emit a
  * user-facing `Error: …` line. The host folds those into
  * `suppressedRecoverable` so this is defense in depth at the emit site.

@@ -137,7 +137,7 @@ ravi contacts backfill --instance <instance-name-or-id> --mode discovered --crea
 ```
 
 Opções principais:
-- `--instance <name-or-id>` filtra uma instância/conta. Aceita nome lógico (`main`, `sde`) ou UUID técnico do Omni; o backfill resolve ambos e consulta o ledger nos dois formatos.
+- `--instance <name-or-id>` filtra uma instância/conta. Aceita nome lógico (`main`, `sde`) ou o UUID técnico da instância (`instanceId`); o backfill resolve ambos e consulta o ledger nos dois formatos.
 - `--channel <channel>` filtra canal, normalmente `whatsapp`.
 - `--mode discovered|pending` define status para contatos novos. Use o mesmo modo de `contactIntakeMode` da instância.
 - `--limit <n>` limita candidatos.

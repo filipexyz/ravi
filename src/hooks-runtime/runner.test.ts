@@ -6,7 +6,7 @@ const actualTasksIndexModule = await import("../tasks/index.js");
 const promptCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 const taskCommentCalls: Array<{ taskId: string; payload: Record<string, unknown> }> = [];
 
-mock.module("../omni/session-stream.js", () => ({
+mock.module("../session-prompts/stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     promptCalls.push({ sessionName, payload });
   }),

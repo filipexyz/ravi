@@ -63,9 +63,12 @@ ravi instances show <name>
 
 ### Conectar nova conta (WhatsApp)
 ```bash
-ravi instances connect <name>                         # cria instância + conecta (mostra QR)
+ravi channels start                                   # runner que segura o WhatsApp (o daemon não sobe sozinho)
+ravi instances connect <name>                         # cria instância + canal + conecta (mostra QR)
 ravi instances connect vendas --agent vendas-agent
 ```
+
+O WhatsApp roda no runner `ravi channels` (Baileys), nunca no Omni.
 
 ### Configurar instância
 ```bash
@@ -122,9 +125,12 @@ ravi instances set suporte groupPolicy allowlist
 ### WhatsApp não conecta
 ```bash
 ravi instances status main    # Ver estado da instância
+ravi channels status          # Runner de pé? estado e motivo de cada canal
 ravi instances connect main   # Reconectar (mostra QR se necessário)
 ravi daemon logs              # Ver logs do daemon
 ```
+
+`WHATSAPP_RUNNER_UNAVAILABLE` → `ravi channels start` (ou `ravi channels restart`) e repita. Mais casos no skill de instâncias.
 
 ### Daemon não inicia
 ```bash

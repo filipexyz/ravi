@@ -11,7 +11,7 @@ rg -n "account_pending|allowed_agents|platform_identities|contact_policies" src/
 2. Inspect current inbound identity usage:
 
 ```bash
-rg -n "getContact|savePendingContact|recordInbound|senderPhone|resolvedSenderPhone|chatJid|stripJid" src/omni src/router src/gateway.ts
+rg -n "getContact|savePendingContact|recordInbound|senderPhone|resolvedSenderPhone|chatJid|stripJid" src/channels src/omni src/router src/gateway.ts
 ```
 
 3. Inspect current CLI aliases:

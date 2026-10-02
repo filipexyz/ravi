@@ -23,76 +23,101 @@ alias nats-local='nats --server nats://127.0.0.1:4222'
 nats stream ls --server nats://127.0.0.1:4222
 ```
 
-Streams: `MESSAGE`, `INSTANCE`, `REACTION`, `SESSION_PROMPTS`.
+Ravi streams: `CHANNEL_INBOUND` (WhatsApp inbound from the `ravi channels`
+runner), `SESSION_PROMPTS`, `RAVI_EVENTS`. On hosts that still use the legacy
+Omni bridge for Telegram/Discord you also see `MESSAGE`, `INSTANCE` and
+`REACTION`.
+
+<Warning>
+On hosts upgraded from Omni, the PM2 process `omni-nats` is Ravi's NATS. Inspect
+it freely, but never run `omni stop|start|restart|install` or
+`pm2 stop|delete|restart omni-nats`. `ravi daemon status --json` shows the owner
+in `infrastructure.nats.processName`.
+</Warning>
 
 ## Inspect a Stream
 
 ```bash
-nats stream info MESSAGE --server nats://127.0.0.1:4222
+nats stream info CHANNEL_INBOUND --server nats://127.0.0.1:4222
 ```
 
-Shows subjects, retention policy, message count, consumer count, and first/last sequence.
+Shows subjects, retention policy, message count, consumer count, and first/last sequence. `CHANNEL_INBOUND` keeps events for 7 days (limits retention, file storage).
 
 ## Read Messages
 
 ### Last message on a subject
 
 ```bash
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>"
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 \
+  --last-for "ravi.channel.inbound.whatsapp.message.>"
 ```
 
 ### Specific sequence number
 
 ```bash
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --seq 5
 ```
 
-### Pretty-print JSON payload
+### Pretty-print the envelope
+
+WhatsApp events use the `WhatsAppInboundEvent` envelope (`schemaVersion`, `id`,
+`instanceId`, `timestamp`, `type`, `ingestMode`, `payload`):
 
 ```bash
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
 import sys, json
 raw = sys.stdin.read()
 start = raw.find('{')
 if start >= 0:
     d = json.loads(raw[start:])
-    print('METADATA:', json.dumps(d.get('metadata', {}), indent=2))
+    print('TYPE:', d.get('type'), 'INGEST:', d.get('ingestMode'))
     print('PAYLOAD:', json.dumps(d.get('payload', {}), indent=2))
 "
 ```
+
+Legacy-bridge events (`MESSAGE` stream) keep Omni's shape, with `metadata` and
+`payload` keys.
 
 ## Consumer Status
 
 ### All consumers with positions
 
 ```bash
-nats consumer report MESSAGE --server nats://127.0.0.1:4222
+nats consumer report CHANNEL_INBOUND --server nats://127.0.0.1:4222
 ```
 
 The "ack floor" shows the last processed sequence number.
 
 ### Ravi consumers
 
-```bash
-nats consumer report MESSAGE --server nats://127.0.0.1:4222 | grep ravi
-nats consumer report INSTANCE --server nats://127.0.0.1:4222 | grep ravi
-```
+| Stream | Consumer |
+|---|---|
+| `CHANNEL_INBOUND` | `ravi-whatsapp-messages`, `ravi-whatsapp-reactions`, `ravi-whatsapp-connection` |
+| `SESSION_PROMPTS` | `ravi-prompts` |
+| `MESSAGE` / `INSTANCE` / `REACTION` (legacy bridge) | `ravi-messages`, `ravi-instances`, `ravi-reactions` |
 
-Consumer names: `ravi-messages` (MESSAGE), `ravi-instances` (INSTANCE), `ravi-reactions` (REACTION), `ravi-prompts` (SESSION_PROMPTS).
+The `ravi-whatsapp-*` durables are created by both the runner and the daemon, so
+events published while the daemon is down wait in the stream.
 
 ## Live Subscribe
 
 Watch events in real time (plain NATS pub/sub, not JetStream):
 
 ```bash
-# All message events
+# All WhatsApp inbound events
+nats sub "ravi.channel.inbound.whatsapp.>" --server nats://127.0.0.1:4222
+
+# One WhatsApp instance's messages
+nats sub "ravi.channel.inbound.whatsapp.message.<instanceId>" --server nats://127.0.0.1:4222
+
+# WhatsApp connection events (qr, connected, disconnected)
+nats sub "ravi.channel.inbound.whatsapp.connection.>" --server nats://127.0.0.1:4222
+
+# Pairing relays the CLI waits on
+nats sub "ravi.whatsapp.>" --server nats://127.0.0.1:4222
+
+# Legacy bridge (Telegram/Discord)
 nats sub "message.received.>" --server nats://127.0.0.1:4222
-
-# Specific instance
-nats sub "message.received.whatsapp-baileys.<instanceId>" --server nats://127.0.0.1:4222
-
-# Instance events (connect, disconnect, qr_code)
-nats sub "instance.>" --server nats://127.0.0.1:4222
 
 # All ravi internal events
 nats sub "ravi.>" --server nats://127.0.0.1:4222
@@ -111,9 +136,9 @@ nats sub "ravi.session.*.tool" --server nats://127.0.0.1:4222
 Subscribe and receive all messages from a specific sequence:
 
 ```bash
-nats consumer sub MESSAGE \
+nats consumer sub CHANNEL_INBOUND \
   --server nats://127.0.0.1:4222 \
-  --filter "message.received.>" \
+  --filter "ravi.channel.inbound.whatsapp.message.>" \
   --deliver-start-sequence 20 \
   --ack
 ```
@@ -121,9 +146,9 @@ nats consumer sub MESSAGE \
 Or from the beginning:
 
 ```bash
-nats consumer sub MESSAGE \
+nats consumer sub CHANNEL_INBOUND \
   --server nats://127.0.0.1:4222 \
-  --filter "message.received.>" \
+  --filter "ravi.channel.inbound.whatsapp.message.>" \
   --deliver-all \
   --ack
 ```
@@ -133,19 +158,23 @@ nats consumer sub MESSAGE \
 Delete the ravi consumer and restart the daemon. Ravi recreates consumers with `DeliverPolicy.New` on startup:
 
 ```bash
-nats consumer rm MESSAGE ravi-messages --server nats://127.0.0.1:4222
+nats consumer rm CHANNEL_INBOUND ravi-whatsapp-messages --server nats://127.0.0.1:4222
 ravi daemon restart -m "recreate NATS consumers"
 ```
 
-This only reprocesses new messages arriving after restart.
+This only reprocesses new messages arriving after restart. For the legacy
+bridge, use `MESSAGE` and `ravi-messages` instead.
 
 ## Check IngestMode
 
-New messages should have `ingestMode: "realtime"`. History-sync messages have `ingestMode: "history-sync"` and are skipped by ravi.
+Live messages have `ingestMode: "realtime"`. History-sync messages, including
+offline backlog older than the channel's `offlineStaleMs` (default 10 minutes),
+have `ingestMode: "history-sync"`: Ravi stores them but never prompts an agent.
 
 ```bash
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>" | \
-  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d['metadata'].get('ingestMode','NOT SET'))"
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 \
+  --last-for "ravi.channel.inbound.whatsapp.message.>" | \
+  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d.get('ingestMode','NOT SET'))"
 ```
 
 ## Using `ravi events stream`
@@ -176,38 +205,38 @@ Use replay for persisted JetStream history. It reads stored stream messages, app
 # Last 15 minutes across all non-KV streams
 ravi events replay
 
-# Channel inbound messages in a fixed window
+# WhatsApp inbound messages in a fixed window
 ravi events replay \
-  --stream MESSAGE \
-  --subject "message.received.>" \
+  --stream CHANNEL_INBOUND \
+  --subject "ravi.channel.inbound.whatsapp.message.>" \
   --since 2026-04-19T11:35:00Z \
   --until 2026-04-19T11:45:00Z
 
 # Find one chat/session by substring and show raw payload
 ravi events replay \
-  --stream MESSAGE \
-  --subject "message.received.>" \
+  --stream CHANNEL_INBOUND \
+  --subject "ravi.channel.inbound.whatsapp.message.>" \
   --chat "63295117615153@lid" \
   --contains "melhor plano" \
   --raw
 
 # Reconstruct a session using session name/key plus its channel chat id
 ravi events replay \
-  --stream RAVI_EVENTS,MESSAGE,REACTION,SYSTEM \
+  --stream RAVI_EVENTS,CHANNEL_INBOUND \
   --session main-dm-615153 \
   --since 2h \
   --raw
 
 # JSON path filters
 ravi events replay \
-  --stream MESSAGE \
+  --stream CHANNEL_INBOUND \
   --where "payload.chatId=63295117615153@lid;payload.content.type=text"
 ```
 
 Useful flags:
 
-- `--stream MESSAGE,CUSTOM,SYSTEM`
-- `--subject "message.received.>"`
+- `--stream CHANNEL_INBOUND,RAVI_EVENTS` (or `MESSAGE,REACTION,SYSTEM` for the legacy bridge)
+- `--subject "ravi.channel.inbound.whatsapp.>"`
 - `--since 15m`, `--since 2026-04-19T11:35:00Z`, or epoch milliseconds
 - `--until 5m`
 - `--contains "text"`
@@ -215,9 +244,9 @@ Useful flags:
 - `--session`, `--chat`, `--agent`
 - `--json` or `--raw`
 
-`--session` attempts to resolve a Ravi session locally. When found, it matches the session name, session key, and channel chat id, so a replay can include both internal session events from `RAVI_EVENTS` and channel events from `MESSAGE`/`REACTION`/`SYSTEM`.
+`--session` attempts to resolve a Ravi session locally. When found, it matches the session name, session key, and channel chat id, so a replay can include both internal session events from `RAVI_EVENTS` and channel events from `CHANNEL_INBOUND` (or `MESSAGE`/`REACTION`/`SYSTEM` on the legacy bridge).
 
-For complete session reconstruction, include `RAVI_EVENTS`. `MESSAGE` alone only captures channel events; it does not capture internal runtime events such as consumed prompts, turn interrupts, tool activity, responses, delivery, or abort requests.
+For complete session reconstruction, include `RAVI_EVENTS`. The channel stream alone only captures channel events; it does not capture internal runtime events such as consumed prompts, turn interrupts, tool activity, responses, delivery, or abort requests.
 
 Delivery events use `status: "delivered" | "failed" | "dropped"` so replay can distinguish a sent response from a silent/drop/missing-target/send-error case.
 
@@ -225,10 +254,13 @@ Delivery events use `status: "delivered" | "failed" | "dropped"` so replay can d
 
 ### Messages not arriving
 
-1. Check if omni is publishing: `nats sub "message.received.>" --server nats://127.0.0.1:4222`
-2. Check consumer position: `nats consumer report MESSAGE --server nats://127.0.0.1:4222`
-3. Check ingestMode: history-sync messages are skipped
-4. Check daemon logs: `ravi daemon logs -f`
+1. Check the runner: `ravi channels status` and `ravi instances status <name> --json`
+2. Check if the runner is publishing: `nats sub "ravi.channel.inbound.whatsapp.>" --server nats://127.0.0.1:4222`
+3. Check consumer position: `nats consumer report CHANNEL_INBOUND --server nats://127.0.0.1:4222`
+4. Check ingestMode: history-sync messages are stored but never prompt
+5. Check daemon logs: `ravi daemon logs -f`. "Ignoring Omni event for a WhatsApp channel type" means the account is still connected in Omni; migrate it with `ravi instances connect <name>`
+
+For Telegram/Discord on the legacy bridge, use `message.received.>` and the `MESSAGE` stream.
 
 ### Bot not responding
 

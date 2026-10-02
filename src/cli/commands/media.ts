@@ -8,9 +8,9 @@ import { basename, resolve } from "node:path";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext } from "../context.js";
-import { contractDryRun, contractFail } from "../agent-contract.js";
+import { contractDryRun, contractFail, sanitizePublicContractMessage } from "../agent-contract.js";
 import { looseObjectSchema } from "../return-schemas.js";
-import { inferMediaMimeType, inferMediaType, sendMediaWithOmniCli } from "../media-send.js";
+import { inferMediaMimeType, inferMediaType, mapChannelMediaFailure, sendChannelMedia } from "../media-send.js";
 import { MEDIA_SEND_COMMAND_ACCESS } from "../media-send-access.js";
 import {
   FILE_NOT_FOUND_CODE,
@@ -86,7 +86,7 @@ export class MediaCommands {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): media reaches a real chat on a live channel
       // and cannot be reliably unsent, so dry-run by default and exit 3 BEFORE
-      // any omni/Slack delivery call.
+      // any WhatsApp/Slack/legacy-bridge delivery call.
       contractDryRun(
         "media send",
         {
@@ -107,7 +107,7 @@ export class MediaCommands {
     }
 
     try {
-      const sent = await sendMediaWithOmniCli({
+      const sent = await sendChannelMedia({
         filePath: absPath,
         caption,
         voiceNote: ptt === true,
@@ -148,6 +148,22 @@ export class MediaCommands {
 
       return payload;
     } catch (error) {
+      const transport = mapChannelMediaFailure(error);
+      if (transport) {
+        const fallback = mapMediaSendFailure(error);
+        contractFail(
+          "media send",
+          transport.code,
+          sanitizePublicContractMessage(transport.message) ?? fallback.message,
+          {
+            asJson,
+            details: {
+              retryable: transport.retryable,
+              suggestedAction: transport.suggestedAction ?? fallback.suggestedAction,
+            },
+          },
+        );
+      }
       const mapped = mapMediaSendFailure(error);
       contractFail("media send", mapped.code, mapped.message, {
         asJson,

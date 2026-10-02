@@ -372,6 +372,56 @@ describe("cloud trace export", () => {
     expect(JSON.stringify(events[0]?.safePayload)).not.toContain("5511999999999");
   });
 
+  it("exports the inbound eventType for every transport and keeps omniType for legacy rows", () => {
+    const sessionKey = "agent:ravi-console:whatsapp:main:group:120363425574381266";
+    const base = {
+      sessionKey,
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      sourceChannel: "whatsapp",
+      sourceAccountId: "main",
+      sourceChatId: "120363425574381266@g.us",
+    } as const;
+    recordSessionEvent({
+      ...base,
+      preview: "whatsapp row",
+      payloadJson: { channelType: "whatsapp-baileys", eventType: "message.received", eventId: "evt_wa" },
+      timestamp: 1,
+    });
+    recordSessionEvent({
+      ...base,
+      preview: "omni bridge row",
+      payloadJson: {
+        channelType: "telegram",
+        eventType: "message.received",
+        omniType: "message.received",
+        eventId: "evt_omni",
+      },
+      timestamp: 2,
+    });
+    recordSessionEvent({
+      ...base,
+      preview: "pre-refactor row",
+      payloadJson: { channelType: "whatsapp-baileys", omniType: "message.received", eventId: "evt_old" },
+      timestamp: 3,
+    });
+
+    const result = enqueueTraceExportBatch();
+    const payload = getOutboxById(result.outboxId!)!.payload as Record<string, unknown>;
+    const events = (payload.events ?? []) as Array<Record<string, unknown>>;
+    const safePayloads = events.map((event) => event.safePayload as Record<string, unknown>);
+
+    expect(safePayloads.map((safe) => safe.eventId)).toEqual(["evt_wa", "evt_omni", "evt_old"]);
+    expect(safePayloads.map((safe) => safe.eventType)).toEqual([
+      "message.received",
+      "message.received",
+      "message.received",
+    ]);
+    expect(safePayloads[0]).not.toHaveProperty("omniType");
+    expect(safePayloads[1]?.omniType).toBe("message.received");
+    expect(safePayloads[2]?.omniType).toBe("message.received");
+  });
+
   it("does not export generic placeholder names as the Console display name", () => {
     recordSessionEvent({
       sessionKey: "agent:khal-desktop:main",

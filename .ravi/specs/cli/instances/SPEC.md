@@ -26,6 +26,7 @@ owners:
 status: active
 normative: true
 ---
+<!-- markdownlint-disable-next-line MD025 -->
 # Instances & routes agent-first CLI contract
 
 ## Intent
@@ -48,7 +49,7 @@ bundle/database.
 3. An unknown instance on `show`, `get`, `set`, `delete`, `enable`,
    `disconnect`, `status`, `target`, every `routes` op that takes an instance,
    and the `pending` ops MUST exit 1 with `INSTANCE_NOT_FOUND` and up to 3
-   `suggestions` drawn from real instance names/omni instanceIds. Instances have
+   `suggestions` drawn from real instance names/instance UUIDs. Instances have
    no per-agent visibility cloak (`instances list` filters only by tag), so
    suggesting across all instances leaks nothing.
 4. An unknown route pattern on `routes show`, `instances routes show|remove|set`
@@ -58,15 +59,22 @@ bundle/database.
 5. `instances delete` and `instances routes remove` MUST execute immediately
    without `--execute`: both are local soft-deletes with explicit restore
    commands. Resolution and the runtime-mismatch check MUST still run before
-   the write. `instances pending reject` has no restore path and MUST retain
-   dry-run + `--execute`. Its plan uses
+   the write. For a WhatsApp instance, `delete` also logs it out and wipes its
+   credentials; `restore` brings back the config, and a new
+   `ravi instances connect` pairs it again. `instances logout` (WhatsApp only)
+   wipes the credentials (and unlinks the device when connected) with no
+   restore path, so it MUST stay dry-run + `--execute`; its plan carries only
+   the instance name, instance UUID, transport and the planned actions.
+   `instances pending reject` has no
+   restore path and MUST retain dry-run + `--execute`. Its plan uses
    `{instance,contactPresent,pendingFound,kind,phonePresent,chatIdPresent,namePresent}`;
    contact, phone, chat id, and name values MUST NOT appear.
 6. Unbraked writes keep immediate-write behavior and MUST be listed as unbraked
    in the shipped skills: `create`, `set`, `enable`, `disable`, `restore`,
    `disconnect`, `delete`, `connect` (interactive QR pairing — human in the
    loop), `routes add`, `routes set`, `routes remove`, `routes restore`,
-   `pending approve`.
+   `pending approve`. A WhatsApp `disconnect` persists across runner restarts
+   (health reason `manual_disconnect`) until the next `connect`.
 7. `instances list` and `routes list` MUST accept `--fields a,b,c`; the
    projection MUST apply to both duplicated payload arrays (`items` +
    `instances` / `items` + `routes`).
@@ -81,6 +89,7 @@ bundle/database.
 |---|---|---|
 | instances delete | local soft-delete; `instances restore` is the inverse | not braked |
 | instances routes remove | local soft-delete; `routes restore` is the inverse; live impact remains high | not braked |
+| instances logout | destructive (unlinks the WhatsApp device, wipes credentials; new QR pairing needed) | dry-run + `--execute` |
 | instances pending reject | destructive (discards pending entry, no restore path) | dry-run + `--execute` |
 | create / set / enable / disable / restore / disconnect | reversible config | not braked (declared) |
 | connect | interactive QR pairing, human in the loop | not braked (declared) |
@@ -94,6 +103,8 @@ bundle/database.
 | instance not found | `INSTANCE_NOT_FOUND` + suggestions | 1 |
 | route pattern not found | `ROUTE_NOT_FOUND` + suggestions | 1 |
 | interactive connection does not complete within 120 seconds | `INSTANCE_CONNECT_TIMEOUT`, retryable | 1 |
+| `connect`/`create`/`disconnect`/`status` on a `twilio-whatsapp` or `gupshup` instance | `USAGE_ERROR` | 2 |
+| `logout` on a non-WhatsApp instance or one without an instance UUID | `USAGE_ERROR` | 2 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
@@ -101,11 +112,11 @@ bundle/database.
 
 `src/plugins/internal/ravi-system/skills/instances/SKILL.md` and
 `.../skills/routes/SKILL.md` teach this surface and MUST document `--execute`
-only on `instances pending reject`; delete/route-remove examples stay
+only on `instances logout` and `instances pending reject`; delete/route-remove examples stay
 brake-free. The `architect` skill's teardown recipe must likewise remove the
 obsolete flag from `instances routes remove`. `docs/cli/overview.mdx`,
-`docs/guides/instances.mdx`, `docs/start/configuration.mdx` and
-`docs/plan-instances.md` teach the same flags. Runtime consumers resolve routes
+`docs/guides/instances.mdx` and `docs/start/configuration.mdx` teach the same
+flags (`docs/plan-instances.md` is superseded). Runtime consumers resolve routes
 through `src/router` (`matchRoute`), not through the CLI, so the brake does not
 affect live message routing.
 
@@ -129,7 +140,8 @@ affect live message routing.
   to thread `op`/`asJson` through a helper regresses that path to plain text +
   exit 1.
 - `instances disable` with an unknown target is NOT a not-found: it registers
-  the target as an ignored omni instanceId (by design). Mapping it to
+  the target in the legacy-bridge ignore list `omni.ignoreInstanceIds` (by
+  design; only the legacy Omni inbound source reads it). Mapping it to
   `INSTANCE_NOT_FOUND` would break the ignore workflow.
 - `routes remove` MUST run `assertInstanceMutationRuntime` before the local
   soft-delete so a runtime split cannot mutate the wrong database.

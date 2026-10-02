@@ -810,7 +810,7 @@ export class ChannelsCommands {
   @CommandAccess({ kind: "mutate", resource: "channels", action: "probe", risk: "high" })
   @Returns(channelsRunStatusReturnSchema)
   async probe(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const runner = new ChannelRunner({ consumeOutbound: false });
+    const runner = new ChannelRunner({ consumeOutbound: false, probe: true });
     try {
       await runner.start();
       const payload = runner.status();

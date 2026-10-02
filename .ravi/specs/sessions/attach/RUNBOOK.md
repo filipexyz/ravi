@@ -36,7 +36,7 @@
 ## Validation
 
 ```bash
-bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts
+bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/channels/inbound/pipeline-context.test.ts
 bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts
 bun run build
 ```

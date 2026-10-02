@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateSerializedCapabilityArray,

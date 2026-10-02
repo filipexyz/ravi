@@ -1,9 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb } from "../router/router-db.js";
-import { buildJobOutcomeSummary, isPidAlive, readJobTail } from "./runner.js";
 import {
   dbCreateJob,
   dbFinishJob,
@@ -14,6 +13,19 @@ import {
   dbMarkJobRunning,
 } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
+
+const publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+const actualSessionStream = await import("../session-prompts/stream.js");
+mock.module("../session-prompts/stream.js", () => ({
+  ...actualSessionStream,
+  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+    publishedPrompts.push({ sessionName, payload });
+  }),
+}));
+
+const { JobsRunner, buildJobOutcomeSummary, isPidAlive, readJobTail } = await import("./runner.js");
+
+afterAll(() => mock.restore());
 
 const createdIds: string[] = [];
 
@@ -177,5 +189,34 @@ describe("process liveness", () => {
     // PIDs acima do limite do kernel não existem; serve para o reconcile não
     // considerar vivo um job órfão.
     expect(isPidAlive(2_147_483_646)).toBe(false);
+  });
+});
+
+describe("job outcome delivery", () => {
+  it("publishes the outcome to the requesting session through SESSION_PROMPTS by default", async () => {
+    publishedPrompts.length = 0;
+    const job = makeJob();
+    const runner = new JobsRunner({
+      spawnCommand: () => ({ pid: null, onExit: (callback) => callback(0, null) }),
+    });
+    // start() would subscribe to NATS; only the started flag matters for startJob.
+    runner["running"] = true;
+
+    expect(runner.startJob(job.id)).toBe(true);
+    const deadline = Date.now() + 1_000;
+    while (!dbGetJob(job.id)?.notifiedAt && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]).toMatchObject({
+      sessionName: job.sessionName,
+      payload: {
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _jobOutcome: { jobId: job.id, status: "succeeded" },
+      },
+    });
+    expect(dbGetJob(job.id)?.notifiedAt).toBeTruthy();
   });
 });

@@ -39,6 +39,7 @@ import {
 } from "../daemon-restart-supervision.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import { buildManagedRuntimeIdentity } from "../../managed-runtime.js";
+import { NATS_PM2_PROCESS, OMNI_NATS_PM2_PROCESS } from "../../nats-server.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -247,6 +248,27 @@ function serializePm2Process(process: Pm2ProcessSnapshot | undefined, fallbackNa
   };
 }
 
+const LEGACY_BRIDGE_PM2_PROCESS = "omni-api";
+
+/**
+ * `daemon status --json` infrastructure block (D15): `nats` is the first PM2 process found among `ravi-nats` and
+ * `omni-nats` (on hosts set up before Ravi provisioned its own NATS, `omni-nats` is Ravi's NATS), plus the
+ * `processName` that owns it; `legacyBridge` is the optional Omni API (Telegram/Discord only). The channels runner is
+ * reported at `runtime.channels`.
+ */
+export function buildDaemonInfrastructureJson(processes: readonly Pm2ProcessSnapshot[]): {
+  nats: Record<string, unknown>;
+  legacyBridge: Record<string, unknown>;
+} {
+  const findProcess = (name: string) => processes.find((process) => process.name === name);
+  const natsProcess = findProcess(NATS_PM2_PROCESS) ?? findProcess(OMNI_NATS_PM2_PROCESS);
+  const natsProcessName = natsProcess?.name ?? NATS_PM2_PROCESS;
+  return {
+    nats: { ...serializePm2Process(natsProcess, natsProcessName), processName: natsProcessName },
+    legacyBridge: serializePm2Process(findProcess(LEGACY_BRIDGE_PM2_PROCESS), LEGACY_BRIDGE_PM2_PROCESS),
+  };
+}
+
 function buildDaemonStatusJson(): Record<string, unknown> {
   const pm2Available = isPm2Available();
   const processes = pm2Available ? getPm2Processes() : [];
@@ -257,10 +279,7 @@ function buildDaemonStatusJson(): Record<string, unknown> {
     pm2Available,
     processName: PM2_PROCESS_NAME,
     ravi: serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME),
-    infrastructure: {
-      omniNats: serializePm2Process(findProcess("omni-nats"), "omni-nats"),
-      omniApi: serializePm2Process(findProcess("omni-api"), "omni-api"),
-    },
+    infrastructure: buildDaemonInfrastructureJson(processes),
     runtime,
     processes: processes.map((process) => serializePm2Process(process, process.name)),
   };
@@ -703,8 +722,9 @@ export class DaemonCommands {
 
     const procs = getPm2Processes();
     const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
-    const omniApi = procs.find((p) => p.name === "omni-api");
-    const omniNats = procs.find((p) => p.name === "omni-nats");
+    const natsProcess =
+      procs.find((p) => p.name === NATS_PM2_PROCESS) ?? procs.find((p) => p.name === OMNI_NATS_PM2_PROCESS);
+    const legacyBridge = procs.find((p) => p.name === LEGACY_BRIDGE_PM2_PROCESS);
     const runtime = buildManagedRuntimeIdentity(procs, process.env.RAVI_BUNDLE ?? process.argv[1]);
 
     console.log("\nRavi Daemon Status");
@@ -726,19 +746,28 @@ export class DaemonCommands {
       console.log("    fix:      ravi update");
     }
 
-    if (omniNats) {
-      console.log(`  omni-nats: ${omniNats.status === "online" ? "online" : omniNats.status}  (PID ${omniNats.pid})`);
-    } else {
-      console.log("  omni-nats: not managed by PM2");
-    }
-
-    if (omniApi) {
-      const mem = (omniApi.memory / 1024 / 1024).toFixed(1);
+    if (natsProcess) {
       console.log(
-        `  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`,
+        `  nats:      ${natsProcess.status === "online" ? "online" : natsProcess.status}  (${natsProcess.name}, PID ${natsProcess.pid})`,
       );
     } else {
-      console.log("  omni-api:  not managed by PM2");
+      console.log(`  nats:      not managed by PM2 (${NATS_PM2_PROCESS}/${OMNI_NATS_PM2_PROCESS} not found)`);
+    }
+
+    const channels = runtime.channels;
+    if (channels.managed) {
+      console.log(`  channels:  ${channels.status}  (${channels.name}${channels.pid ? `, PID ${channels.pid}` : ""})`);
+    } else {
+      console.log("  channels:  not running (WhatsApp runner; start: ravi channels start)");
+    }
+
+    if (legacyBridge) {
+      const mem = (legacyBridge.memory / 1024 / 1024).toFixed(1);
+      console.log(
+        `  bridge:    ${legacyBridge.status === "online" ? "online" : legacyBridge.status}  (${legacyBridge.name}, PID ${legacyBridge.pid}, ${mem}MB; Telegram/Discord)`,
+      );
+    } else {
+      console.log("  bridge:    not installed (optional legacy Omni bridge for Telegram/Discord)");
     }
 
     console.log();
@@ -1074,9 +1103,12 @@ ANTHROPIC_API_KEY=
 # NATS connection (default: nats://127.0.0.1:4222)
 # NATS_URL=nats://127.0.0.1:4222
 
-# Omni overrides (default: read from ~/.omni/config.json)
+# Legacy bridge (Telegram/Discord only; default: read from ~/.omni/config.json)
 # OMNI_API_URL=http://127.0.0.1:8882
 # OMNI_API_KEY=
+
+# WhatsApp (ravi channels runner): max inbound media download size in MB
+# WHATSAPP_MEDIA_MAX_DOWNLOAD_MB=
 
 # Optional
 # OPENAI_API_KEY=

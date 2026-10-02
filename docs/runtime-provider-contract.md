@@ -9,7 +9,7 @@ events, audit, and user-facing responses.
 
 ```text
 channel message
-  -> omni consumer
+  -> ChannelInboundPipeline (WhatsApp runner or legacy bridge)
   -> ravi.<session>.prompt
   -> RuntimePromptSubscription
   -> RuntimeSessionDispatcher

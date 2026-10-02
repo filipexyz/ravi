@@ -1,7 +1,8 @@
 /**
  * Ravi Daemon
  *
- * Connects to external NATS and omni services (managed by PM2/omni CLI).
+ * Connects to external NATS and the channel transports (WhatsApp runner, optional legacy
+ * bridge), all managed by PM2 / the ravi CLI.
  * No child process spawning — all infrastructure is external.
  *
  * This process must never block on stdin. Session dispatch, delivery, and the
@@ -22,7 +23,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
-import { OmniSender, OmniConsumer, createStubOmniConsumer } from "./omni/index.js";
+import { createDaemonChannels, type DaemonChannels } from "./daemon-channels.js";
 
 import { loadConfig } from "./utils/config.js";
 import { connectNats, closeNats } from "./nats.js";
@@ -52,8 +53,7 @@ import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
-import { resolveOmniConnection } from "./omni-config.js";
-import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
+import { ensureSessionPromptsStream, publishSessionPrompt } from "./session-prompts/stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
@@ -197,7 +197,7 @@ let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
-let omniConsumer: OmniConsumer | null = null;
+let channels: DaemonChannels | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
 let hostCliGateway: HostCliGatewayHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
@@ -284,10 +284,8 @@ async function shutdown(signal: string, exitCode = 0) {
       hostCliGateway = null;
     }
 
-    // Stop omni consumer
-    if (omniConsumer) {
-      await omniConsumer.stop();
-    }
+    // Stop inbound sources and the channel pipeline
+    await channels?.stop();
 
     // Stop config store refresh
     configStore.stop();
@@ -296,7 +294,7 @@ async function shutdown(signal: string, exitCode = 0) {
     // Close NATS connection
     await closeNats();
 
-    // Close all SQLite handles AFTER bot/runners/gateway/omni have shut down,
+    // Close all SQLite handles AFTER bot/runners/gateway/channels have shut down,
     // so writes-in-flight have settled. Best-effort: failures are logged but
     // never block the shutdown sequence.
     closeAllRaviDbs();
@@ -334,18 +332,7 @@ export async function startDaemon() {
   // Step 2: Start config store (NATS sub + periodic refresh)
   await configStore.startRefresh();
 
-  // Step 3: Resolve omni connection
-  let omniApiUrl: string | undefined;
-  let omniApiKey: string | undefined;
-
-  const omniConn = resolveOmniConnection();
-  if (omniConn) {
-    omniApiUrl = omniConn.apiUrl;
-    omniApiKey = omniConn.apiKey;
-    log.info("Omni connection resolved", { apiUrl: omniApiUrl, source: omniConn.source });
-  } else {
-    log.warn("Omni not configured — no channel support (install omni: bun add -g @automagik/omni)");
-  }
+  // Step 3: (no-op) the optional legacy bridge is resolved by createDaemonChannels in step 6.
 
   // Step 4: Ensure SESSION_PROMPTS JetStream stream exists
   // This stream replaces NATS core pub/sub for session routing,
@@ -362,37 +349,24 @@ export async function startDaemon() {
   await bot.start();
   log.info("Bot started");
 
-  // Step 6: Set up omni sender + consumer + gateway
-  if (omniApiUrl && omniApiKey) {
-    const sender = new OmniSender(omniApiUrl, omniApiKey);
-    omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey, {
-      isRuntimeSessionActive: (sessionName) => bot?.isRuntimeSessionActive(sessionName) ?? false,
-      abortRuntimeSession: (sessionName, provenance) => bot?.abortSession(sessionName, provenance) ?? false,
-    });
+  // Step 6: Channel transports (shared inbound pipeline, WhatsApp runner source, optional legacy
+  // bridge source, default-deny sender router), then the gateway.
+  channels = await createDaemonChannels({
+    isRuntimeSessionActive: (sessionName) => bot?.isRuntimeSessionActive(sessionName) ?? false,
+    abortRuntimeSession: (sessionName, provenance) => bot?.abortSession(sessionName, provenance) ?? false,
+  });
+  await channels.start();
+  log.info("Channel inbound sources started", {
+    sources: channels.sources.map((source) => source.id),
+    legacyBridge: channels.legacyBridge,
+  });
 
-    try {
-      await omniConsumer.start();
-      log.info("Omni consumer started");
-    } catch (err) {
-      log.error("Failed to start omni consumer", err);
-    }
-
-    gateway = createGateway({
-      logLevel: config.logLevel,
-      omniSender: sender,
-      omniConsumer,
-    });
-  } else {
-    // No omni — create a stub gateway that handles internal routing only
-    log.warn("Creating gateway without omni — channel delivery will fail");
-    const stubSender = createStubSender();
-    const stubConsumer = createStubOmniConsumer();
-    gateway = createGateway({
-      logLevel: config.logLevel,
-      omniSender: stubSender,
-      omniConsumer: stubConsumer,
-    });
-  }
+  gateway = createGateway({
+    logLevel: config.logLevel,
+    sender: channels.sender,
+    presenceTargets: channels.presenceTargets,
+    groupMetadataFetcher: channels.groupMetadataFetcher,
+  });
 
   await gateway.start();
   log.info("Gateway started");
@@ -488,32 +462,6 @@ export async function startDaemon() {
     .catch((err) => {
       log.error("Failed to notify restart reason", err);
     });
-}
-
-/**
- * Stub OmniSender for when omni is not configured.
- * Logs warnings but doesn't throw.
- */
-function createStubSender(): OmniSender {
-  return {
-    send: async (instanceId: string, to: string, _text: string) => {
-      log.warn("OmniSender stub: send called but omni not configured", { instanceId, to });
-      return {};
-    },
-    sendTyping: async () => {},
-    sendReaction: async () => {},
-    deleteMessage: async () => {},
-    editMessage: async () => {},
-    sendMedia: async () => {
-      return {};
-    },
-    sendSticker: async () => {
-      return {};
-    },
-    getClient: () => {
-      throw new Error("Omni not configured");
-    },
-  } as unknown as OmniSender;
 }
 
 /**

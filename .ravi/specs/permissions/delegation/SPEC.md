@@ -19,7 +19,7 @@ applies_to:
   - src/runtime/runtime-request-context.ts
   - src/runtime/context-registry.ts
   - src/runtime/host-services.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/contacts.ts
 owners:
   - ravi-dev
@@ -27,6 +27,7 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Delegation
 
 ## Intent

@@ -20,7 +20,7 @@ import {
 import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
-import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
 import {
   DEFAULT_DELIVERY_BARRIER,
   normalizeDeliveryBarrier,

@@ -1,5 +1,12 @@
 # Plano: Instâncias como Entidade Central
 
+> **Substituído (histórico).** Este documento foi escrito quando o WhatsApp
+> passava pelo Omni. Hoje o WhatsApp roda no runner de canais do Ravi
+> (`ravi channels`), sem Omni; o Omni é só uma ponte legada opcional para
+> Telegram/Discord. As referências ao Omni abaixo descrevem o setup antigo.
+> Contrato atual: `.ravi/specs/channels/adapters/whatsapp/` e o skill de
+> instâncias (`ravi instances`).
+
 **Data:** 2026-02-27
 **Status:** Planejamento
 **Contexto:** Preparação para unificação Ravi + Omni

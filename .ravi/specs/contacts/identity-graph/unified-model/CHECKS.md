@@ -44,7 +44,7 @@ Given:
 
 - contact A has phone identity
 - contact B has WhatsApp platform identity
-- trusted Omni mapping links both
+- trusted transport LID-to-phone mapping links both
 
 Expected:
 

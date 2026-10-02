@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { PublishSessionPromptOptions } from "../omni/session-stream.js";
+import type { PublishSessionPromptOptions } from "../session-prompts/stream.js";
 import { toPersistedChannelContext, type ChannelContext } from "./context.js";
 import { publishChannelSessionPrompt } from "./session-prompt.js";
 

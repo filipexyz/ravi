@@ -1,6 +1,6 @@
 import { handleRuntimeGoalControl, isRuntimeGoalOperation } from "./goal-control-host.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { nats } from "../nats.js";
 import { deleteSession, getSessionByName } from "../router/sessions.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../session-control.js";

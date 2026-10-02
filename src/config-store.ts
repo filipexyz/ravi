@@ -37,8 +37,10 @@ class ConfigStore {
   }
 
   /**
-   * Resolve account name → omni instance UUID.
-   * Returns undefined if not found. Passes through raw UUIDs.
+   * Resolve account name → instance UUID.
+   * Returns undefined if not found or disabled. Passes through raw UUIDs: callers that send
+   * must go through the per-instance sender router, which refuses an unknown UUID
+   * (INSTANCE_NOT_FOUND).
    */
   resolveInstanceId(accountName: string): string | undefined {
     if (!accountName) {
@@ -69,7 +71,7 @@ class ConfigStore {
   }
 
   /**
-   * Resolve omni instance UUID → account name.
+   * Resolve instance UUID → account name.
    * Returns undefined if not registered.
    */
   resolveAccountName(instanceId: string): string | undefined {

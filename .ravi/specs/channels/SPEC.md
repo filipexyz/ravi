@@ -9,10 +9,12 @@ capabilities:
   - chats
   - meetings
 tags:
-  - omni
   - gateway
+  - legacy-bridge
 applies_to:
   - src/gateway.ts
+  - src/channels/inbound/
+  - src/channels/outbound/
   - src/omni/
 owners:
   - dev
@@ -20,13 +22,16 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Channels
 
 ## Intent
 
 Channel behavior protects the boundary between Ravi runtime decisions and transport delivery.
 
-Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing code SHOULD work with Ravi concepts such as contact, platform identity, chat, session, actor, message, route, and policy instead of raw provider ids.
+Ravi MUST abstract every transport (the `ravi channels` runner for WhatsApp and Slack, the optional Omni legacy bridge for Telegram/Discord) behind channel adapters. Product and agent-facing code SHOULD work with Ravi concepts such as contact, platform identity, chat, session, actor, message, route, and policy instead of raw provider ids.
+
+Scope: `src/channels/inbound/` (the shared `ChannelInboundPipeline` and its sources), `src/channels/outbound/` (the default-deny `ChannelSenderRouter`), the gateway, and `src/omni/`, which is only the legacy bridge for Telegram/Discord and is never on the WhatsApp path.
 
 ## Invariants
 
@@ -34,12 +39,18 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 - Every native provider MUST enter Session/Turn execution through the
   provider-neutral Channel Backend after provider normalization and Ravi route
   resolution. A provider adapter MUST NOT publish an ordinary inbound prompt
-  directly.
+  directly. The only exception is WhatsApp
+  (`channels/adapters/whatsapp`): its inbound goes through
+  `ChannelInboundPipeline` (the same pipeline as the legacy bridge), which
+  publishes the session prompt, and its outbound text uses the gateway's
+  direct delivery path through the sender router instead of
+  `CHANNEL_OUTBOUND`, until the Channel Backend covers debounce, gateway text
+  delivery and edit restart. No other provider MAY rely on that exception.
 - The Channel Backend MUST durably accept canonical Chat/Message identity and
   an idempotency receipt before prompt publication.
 - Transport adapters MUST only deliver channel-specific payloads and report delivery state.
 - Ravi MUST NOT patch transport code to compensate for broken runtime lifecycle or routing rules without evidence that the transport contract is wrong.
-- Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
+- Raw channel identifiers (WhatsApp JIDs/LIDs, Omni ids) MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
 - Channel-specific behavior SHOULD be exposed to Ravi through typed capabilities and normalized events when a feature needs it, not through provider conditionals spread across features.
 - Chat-action capabilities MUST be resolved through the typed Ravi capability registry defined by `channels/chat-actions`.
 - Native adapters MUST be the source of capability facts for native channels. Omni MAY remain the source only for channels explicitly backed by the legacy bridge.
@@ -50,7 +61,7 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 
 ## Boundary
 
-Omni owns transport:
+Transports (the `ravi channels` runner, and the Omni legacy bridge for Telegram/Discord) own:
 
 - receiving raw channel events
 - sending channel payloads
@@ -67,7 +78,7 @@ Ravi owns semantics:
 - calls, tasks, artifacts, triggers, and outbound intent
 - event/audit shape consumed by agents and UI
 
-Feature code SHOULD depend on the Ravi semantic layer first. Direct Omni access is allowed only inside channel adapters, diagnostics, migration, and low-level debugging paths.
+Feature code SHOULD depend on the Ravi semantic layer first. Direct transport access (the WhatsApp RPC client, the Omni bridge) is allowed only inside channel adapters, diagnostics, migration, and low-level debugging paths.
 
 ## Children
 

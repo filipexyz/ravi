@@ -9,6 +9,7 @@ import {
   type ChannelOutputSink,
   type ExternalChannelIdentity,
 } from "../backend.js";
+import { canonicalChannelId } from "../capabilities.js";
 import type { ChannelAdapterHealth } from "../health.js";
 import type {
   ChannelInterruptRequest,
@@ -383,53 +384,104 @@ interface ActiveNativeChannelRuntime {
   readonly descriptor: NativeChannelRuntimeDescriptor;
   readonly healthId: string;
   readonly lease: NativeChannelDriverHostLease;
+  readonly channelName: string;
+  readonly fingerprint: string;
+}
+
+/** A configured channel without an active runtime (failed to start, or skipped). */
+interface InactiveNativeChannel {
+  readonly statusId: string;
+  readonly fingerprint: string;
 }
 
 export interface NativeChannelDriverManagerOptions {
+  /** Channels started by `start()` (later changes arrive through `reconcile`). */
   readonly channels: Readonly<Record<string, ChannelConfig>>;
   readonly registry: NativeChannelDriverRegistry;
   readonly createHostLease?: (channel: ChannelConfig, provider: string) => NativeChannelDriverHostLease;
+  /**
+   * Providers whose channels are never started by this manager (e.g. `whatsapp` in
+   * `ravi channels probe`, which must not open a second socket next to the running
+   * runner). They are reported as `disabled` with reason `skipped`.
+   */
+  readonly skipProviders?: readonly string[];
+  /**
+   * Extra reconcile input per channel, for state that lives outside the `channels`
+   * row (e.g. the WhatsApp instance a channel binds). A change restarts the runtime.
+   */
+  readonly bindingKey?: (channel: ChannelConfig) => string | undefined;
 }
+
+export interface NativeChannelReconcileOptions {
+  /**
+   * Retry channels whose previous start failed even when their configuration is
+   * unchanged (a config change elsewhere, e.g. a new instance row, may fix them).
+   * Default true.
+   */
+  readonly retryFailed?: boolean;
+}
+
+export interface NativeChannelReconcileResult {
+  /** Channel names whose runtime was started. */
+  readonly started: readonly string[];
+  /** Channel names whose runtime was stopped (removed, disabled, or changed). */
+  readonly stopped: readonly string[];
+  /** Channel names that are configured but have no active runtime after this pass. */
+  readonly inactive: readonly string[];
+}
+
+const EMPTY_RECONCILE_RESULT: NativeChannelReconcileResult = { started: [], stopped: [], inactive: [] };
 
 export class NativeChannelDriverManager {
   private readonly statuses = new Map<string, ChannelAdapterHealth>();
   private readonly active: ActiveNativeChannelRuntime[] = [];
+  private readonly inactive = new Map<string, InactiveNativeChannel>();
   private started = false;
+  /** Serializes start/stop/reconcile so a config change never races a shutdown. */
+  private operations: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: NativeChannelDriverManagerOptions) {}
 
-  async start(): Promise<void> {
-    if (this.started) return;
-    this.started = true;
-    this.statuses.clear();
-    const channels = Object.values(this.options.channels)
-      .filter((channel) => channel.enabled !== false)
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const [index, channel] of channels.entries()) {
-      await this.startChannel(channel, index);
-    }
+  start(): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.started) return;
+      this.started = true;
+      this.statuses.clear();
+      this.inactive.clear();
+      await this.applyChannels(this.options.channels, { retryFailed: true });
+    });
   }
 
-  async stop(): Promise<void> {
-    for (const active of [...this.active].reverse()) {
-      let reason: NativeChannelDriverFailureReason | undefined;
-      try {
-        await active.runtime.stop();
-      } catch {
-        reason = "stop_failed";
-      } finally {
-        active.lease.dispose();
+  stop(): Promise<void> {
+    return this.enqueue(async () => {
+      for (const active of [...this.active].reverse()) {
+        const reason = await this.stopRuntime(active);
+        this.statuses.set(active.healthId, {
+          id: active.healthId,
+          channelId: active.descriptor.provider,
+          status: reason ? "failed" : "disconnected",
+          ...(reason ? { reason } : {}),
+        });
       }
-      this.statuses.set(active.healthId, {
-        id: active.healthId,
-        channelId: active.descriptor.provider,
-        status: reason ? "failed" : "disconnected",
-        ...(reason ? { reason } : {}),
-      });
-    }
-    this.active.length = 0;
-    this.started = false;
+      this.active.length = 0;
+      this.started = false;
+    });
+  }
+
+  /**
+   * Bring the running set in line with `channels`: start channels that are new,
+   * newly enabled, or whose configuration (provider, credentials, defaults, binding
+   * key) changed; stop runtimes whose channel was removed, disabled, or changed.
+   * Unchanged runtimes keep running. A no-op until `start()` ran.
+   */
+  reconcile(
+    channels: Readonly<Record<string, ChannelConfig>>,
+    options: NativeChannelReconcileOptions = {},
+  ): Promise<NativeChannelReconcileResult> {
+    return this.enqueue(async () => {
+      if (!this.started) return EMPTY_RECONCILE_RESULT;
+      return this.applyChannels(channels, { retryFailed: options.retryFailed ?? true });
+    });
   }
 
   deliveries(): NativeTextDelivery[] {
@@ -466,31 +518,128 @@ export class NativeChannelDriverManager {
     return [...statuses.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  private async startChannel(channel: ChannelConfig, index: number): Promise<void> {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operations.then(operation, operation);
+    this.operations = result.catch(() => {});
+    return result;
+  }
+
+  private async applyChannels(
+    channels: Readonly<Record<string, ChannelConfig>>,
+    options: Required<NativeChannelReconcileOptions>,
+  ): Promise<NativeChannelReconcileResult> {
+    const desired = Object.values(channels)
+      .filter((channel) => channel.enabled !== false && !channel.deletedAt)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const fingerprints = new Map(desired.map((channel) => [channel.name, this.fingerprint(channel)]));
+    const started: string[] = [];
+    const stopped: string[] = [];
+
+    for (const active of [...this.active].reverse()) {
+      if (fingerprints.get(active.channelName) === active.fingerprint) continue;
+      this.active.splice(this.active.indexOf(active), 1);
+      const reason = await this.stopRuntime(active);
+      this.statuses.delete(active.healthId);
+      if (reason) {
+        this.statuses.set(active.healthId, {
+          id: active.healthId,
+          channelId: active.descriptor.provider,
+          status: "failed",
+          reason,
+        });
+      }
+      stopped.push(active.channelName);
+    }
+
+    for (const [name, inactive] of [...this.inactive]) {
+      const fingerprint = fingerprints.get(name);
+      if (fingerprint === inactive.fingerprint && !options.retryFailed) continue;
+      this.statuses.delete(inactive.statusId);
+      this.inactive.delete(name);
+    }
+
+    for (const [index, channel] of desired.entries()) {
+      if (this.active.some((active) => active.channelName === channel.name)) continue;
+      if (this.inactive.has(channel.name)) continue;
+      if (await this.startChannel(channel, index, fingerprints.get(channel.name) ?? "")) {
+        started.push(channel.name);
+      }
+    }
+
+    return { started, stopped, inactive: [...this.inactive.keys()].sort() };
+  }
+
+  private fingerprint(channel: ChannelConfig): string {
+    let bindingKey: string | undefined;
+    try {
+      bindingKey = this.options.bindingKey?.(channel);
+    } catch {
+      bindingKey = "binding-key-error";
+    }
+    return stableStringify({
+      provider: channel.provider,
+      credentialConnection: channel.credentialConnection ?? null,
+      defaults: channel.defaults ?? null,
+      bindingKey: bindingKey ?? null,
+    });
+  }
+
+  private async stopRuntime(active: ActiveNativeChannelRuntime): Promise<NativeChannelDriverFailureReason | undefined> {
+    try {
+      await active.runtime.stop();
+      return undefined;
+    } catch {
+      return "stop_failed";
+    } finally {
+      active.lease.dispose();
+    }
+  }
+
+  private markInactive(channel: ChannelConfig, fingerprint: string, status: ChannelAdapterHealth): void {
+    this.statuses.set(status.id, status);
+    this.inactive.set(channel.name, { statusId: status.id, fingerprint });
+  }
+
+  /** Returns true when a runtime became active. */
+  private async startChannel(channel: ChannelConfig, index: number, fingerprint: string): Promise<boolean> {
     const pendingId = pendingHealthId(channel, index);
     let provider: string;
     try {
       provider = ChannelBackendWireKindSchema.parse(channel.provider);
       ChannelBackendOpaqueIdSchema.parse(channel.name);
     } catch {
-      this.statuses.set(pendingId, {
+      this.markInactive(channel, fingerprint, {
         id: pendingId,
         channelId: "native",
         status: "failed",
         reason: "invalid_channel_configuration",
       });
-      return;
+      return false;
     }
 
-    const driver = this.options.registry.get(provider);
+    // Exact provider first; then its canonical alias (`whatsapp-baileys` → `whatsapp`),
+    // so the runner owns exactly the channels `listWhatsAppBindings` binds.
+    const aliased = this.options.registry.get(provider) ? undefined : canonicalChannelId(provider);
+    const driver = this.options.registry.get(provider) ?? (aliased ? this.options.registry.get(aliased) : undefined);
+    if (driver && aliased) provider = aliased;
     if (!driver) {
-      this.statuses.set(pendingId, {
+      this.markInactive(channel, fingerprint, {
         id: pendingId,
         channelId: provider,
         status: "failed",
         reason: this.options.registry.failure(provider) ?? "driver_not_registered",
       });
-      return;
+      return false;
+    }
+
+    if (this.options.skipProviders?.includes(provider)) {
+      this.markInactive(channel, fingerprint, {
+        id: pendingId,
+        channelId: provider,
+        status: "disabled",
+        reason: "skipped",
+      });
+      return false;
     }
 
     this.statuses.set(pendingId, {
@@ -526,7 +675,8 @@ export class NativeChannelDriverManager {
       }
       await runtime.start();
       this.statuses.delete(pendingId);
-      this.active.push({ runtime, descriptor, healthId, lease });
+      this.active.push({ runtime, descriptor, healthId, lease, channelName: channel.name, fingerprint });
+      return true;
     } catch (error) {
       if (runtime) {
         try {
@@ -536,14 +686,29 @@ export class NativeChannelDriverManager {
         }
       }
       lease?.dispose();
-      this.statuses.set(pendingId, {
+      this.markInactive(channel, fingerprint, {
         id: pendingId,
         channelId: provider,
         status: "failed",
         reason: driverFailureReason(error, "startup_failed"),
       });
+      return false;
     }
   }
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortKeys(value));
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortKeys(value[key])]),
+  );
 }
 
 function extractDriver(moduleValue: unknown): NativeChannelDriver {

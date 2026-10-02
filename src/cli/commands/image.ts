@@ -22,7 +22,12 @@ import {
   type ArtifactRecord,
 } from "../../artifacts/store.js";
 import { sanitizeAtlasCellName, splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
-import { resolveMediaSendTarget, sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
+import {
+  resolveMediaSendTarget,
+  sendChannelMedia,
+  type MediaSendExecution,
+  type MediaSendTargetInput,
+} from "../media-send.js";
 import { imageAtlasSplitReturnSchema, imageGenerateReturnSchema } from "./operational-return-schemas.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -726,7 +731,7 @@ export class ImageCommands {
         outputDir?: string;
       };
       sent: Array<{
-        transport: "omni-send" | "slack-native";
+        transport: MediaSendExecution["transport"];
         channel?: string;
         accountId: string;
         instanceId: string;
@@ -777,7 +782,7 @@ export class ImageCommands {
       try {
         for (const img of results) {
           const artifact = artifacts.find((item) => item.filePath === img.filePath) ?? runningArtifact;
-          const delivered = await sendMediaWithOmniCli({
+          const delivered = await sendChannelMedia({
             filePath: img.filePath,
             caption: caption ?? prompt,
             type: "image",
@@ -890,7 +895,7 @@ export class ImageAtlasCommands {
     send?: boolean,
     @Option({ flags: "--caption <template>", description: "Caption template for sent crops. Supports {name}" })
     caption?: string,
-    @Option({ flags: "--account <id>", description: "Explicit Ravi/Omni account id for --send" })
+    @Option({ flags: "--account <id>", description: "Explicit account id for --send" })
     accountId?: string,
     @Option({ flags: "--to <chatId>", description: "Explicit chat id for --send" })
     chatId?: string,
@@ -1077,7 +1082,7 @@ export class ImageAtlasCommands {
     const sent: Array<Record<string, unknown>> = [];
     if (send) {
       for (const cell of manifest.results) {
-        const delivered = await sendMediaWithOmniCli({
+        const delivered = await sendChannelMedia({
           filePath: cell.output,
           caption: renderCropCaption(caption, cell.name),
           type: "image",

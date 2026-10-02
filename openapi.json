@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "e81d145d03be7f8d"
+    "version": "3a416da5a2cce14c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -21222,7 +21222,7 @@
                     "type": "boolean"
                   },
                   "instance": {
-                    "description": "Filter by instance name or Omni instance id",
+                    "description": "Filter by instance name or instance id",
                     "type": "string"
                   },
                   "limit": {
@@ -39834,7 +39834,22 @@
                   "properties": {
                     "infrastructure": {
                       "additionalProperties": {},
-                      "properties": {},
+                      "properties": {
+                        "legacyBridge": {
+                          "additionalProperties": {},
+                          "properties": {},
+                          "type": "object"
+                        },
+                        "nats": {
+                          "additionalProperties": {},
+                          "properties": {},
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "nats",
+                        "legacyBridge"
+                      ],
                       "type": "object"
                     },
                     "pm2Available": {
@@ -45336,7 +45351,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "account": {
-                    "description": "Explicit Ravi/Omni account id for --send",
+                    "description": "Explicit account id for --send",
                     "type": "string"
                   },
                   "background": {
@@ -47146,7 +47161,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Delete an instance (soft-delete, recoverable)",
+        "summary": "Delete an instance (soft-delete, recoverable; WhatsApp: also logs out, wipes its credentials and disables its channel)",
         "tags": [
           "instances"
         ]
@@ -47202,7 +47217,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "target": {
-                    "description": "Instance name or omni instanceId",
+                    "description": "Instance name or instanceId",
                     "type": "string"
                   }
                 },
@@ -47246,7 +47261,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Disable an instance in Ravi without changing omni",
+        "summary": "Disable an instance in Ravi (WhatsApp: also stops its runner channel; legacy-bridge connections are not changed)",
         "tags": [
           "instances"
         ]
@@ -47306,7 +47321,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Disconnect an instance from omni",
+        "summary": "Disconnect an instance (WhatsApp runner or legacy bridge)",
         "tags": [
           "instances"
         ]
@@ -47322,7 +47337,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "target": {
-                    "description": "Instance name or omni instanceId",
+                    "description": "Instance name or instanceId",
                     "type": "string"
                   }
                 },
@@ -47366,7 +47381,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Enable an instance in Ravi without changing omni",
+        "summary": "Enable an instance in Ravi (WhatsApp: also starts its runner channel)",
         "tags": [
           "instances"
         ]
@@ -47501,6 +47516,146 @@
           }
         ],
         "summary": "List all instances",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/logout": {
+      "post": {
+        "operationId": "instances.logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "execute": {
+                    "description": "Actually log out and wipe the credentials; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Instance name",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "changedCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "instance": {
+                      "type": "string"
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "logout": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cause": {
+                              "type": "null"
+                            },
+                            "clearedKeys": {
+                              "type": "null"
+                            },
+                            "via": {
+                              "const": "runner",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "via",
+                            "clearedKeys",
+                            "cause"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cause": {
+                              "type": "string"
+                            },
+                            "clearedKeys": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "via": {
+                              "const": "auth-store",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "via",
+                            "clearedKeys",
+                            "cause"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "const": "logged_out",
+                      "type": "string"
+                    },
+                    "transport": {
+                      "const": "whatsapp",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "instance",
+                    "instanceId",
+                    "transport",
+                    "logout",
+                    "changedCount"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Log a WhatsApp instance out: wipe its saved credentials and unlink the device when connected (dry-run without --execute)",
         "tags": [
           "instances"
         ]
@@ -47766,7 +47921,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Restore a soft-deleted instance",
+        "summary": "Restore a soft-deleted instance (WhatsApp: re-enables its channel when the instance is enabled)",
         "tags": [
           "instances"
         ]

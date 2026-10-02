@@ -3654,6 +3654,18 @@ class InstancesNamespace {
     );
   }
 
+  Future<InstancesLogoutReturn> logout(String name, [InstancesLogoutOptions options = const InstancesLogoutOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["instances"],
+      command: "logout",
+      body: requestBody,
+      decode: instancesLogoutReturnFromJson,
+    );
+  }
+
   Future<InstancesRestoreReturn> restore(String name) async {
     final requestBody = <String, RaviJson>{};
     requestBody["name"] = RaviJson.from(name);

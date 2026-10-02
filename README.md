@@ -77,10 +77,11 @@ Open the terminal UI:
 ravi tui main
 ```
 
-Connect WhatsApp when Omni is configured:
+Connect WhatsApp (the `ravi channels` runner holds the socket; scan the QR code):
 
 ```bash
-ravi whatsapp connect
+ravi channels start
+ravi instances connect main --agent main
 ```
 
 ## Choose Your Path
@@ -208,13 +209,17 @@ bun run test
 ## Architecture
 
 ```text
+nats-server :4222 (ravi-nats, or omni-nats on hosts upgraded from Omni)
+
+ravi channels start (ravi-channels)
+  `-- WhatsApp (Baileys) + native channel drivers
+
+legacy bridge (optional Omni omni-api)
+  `-- Telegram, Discord
+
 ravi daemon start
-  |-- nats-server :4222
-  |-- omni API / channel adapters
-  |     |-- WhatsApp
-  |     |-- Telegram
-  |     `-- Discord
   `-- ravi runtime
+        |-- inbound pipeline + channel sender router
         |-- router + sessions + delivery queue
         |-- contacts + chats + identity graph
         |-- runtime provider registry
@@ -227,7 +232,7 @@ ravi daemon start
         `-- CLI + TUI + SDK gateway + streams
 ```
 
-Omni owns transport: raw channel payloads, provider ids, delivery state, attachments, and native channel APIs.
+Channel transports own raw channel payloads, provider ids, delivery state, attachments, and native channel APIs: the `ravi channels` runner for WhatsApp and Slack, and the optional Omni bridge for Telegram/Discord.
 
 Ravi owns semantics: chats, contacts, agents, sessions, routing, policies, runtime execution, permissions, tasks, artifacts, specs, traces, and operator APIs.
 
@@ -296,7 +301,8 @@ src/tasks/            task runtime, dependencies, profiles, automations
 src/artifacts/        artifact ledger, blobs, versions, lineage
 src/sdk/              gateway, OpenAPI, generated-client support, streams
 src/cli/commands/     decorated command handlers and CLI surface
-src/omni/             transport boundary to Omni/channel events
+src/channels/         channel runner, WhatsApp, Slack, inbound pipeline, outbound router
+src/omni/             legacy Omni bridge (Telegram/Discord only)
 src/permissions/      REBAC and context-key authorization
 src/plugins/          plugin and skill discovery
 src/specs/            specs indexing and CLI support
@@ -330,9 +336,12 @@ OPENAI_API_KEY=...
 GEMINI_API_KEY=...
 ELEVENLABS_API_KEY=...
 
-# Omni/channel support
-OMNI_DIR=/path/to/omni-v2
-DATABASE_URL=<postgres-url-used-by-omni>
+# NATS (default nats://127.0.0.1:4222)
+NATS_URL=nats://127.0.0.1:4222
+
+# Legacy bridge for Telegram/Discord (default: read from ~/.omni/config.json)
+OMNI_API_URL=http://127.0.0.1:8882
+OMNI_API_KEY=...
 
 # Ravi defaults
 RAVI_MODEL=sonnet

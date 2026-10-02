@@ -40,5 +40,5 @@
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
-- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts`
+- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/channels/inbound/pipeline-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts`
   SHOULD pass after changing attach behavior.

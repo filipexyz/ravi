@@ -14,8 +14,8 @@ tags:
   - prompt
 applies_to:
   - src/contacts.ts
-  - src/omni/mentions.ts
-  - src/omni/consumer.ts
+  - src/channels/mentions.ts
+  - src/channels/inbound/pipeline.ts
   - src/runtime/message-types.ts
   - src/prompt-builder.ts
 owners:
@@ -24,6 +24,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Mentioned Contact Context
 
 ## Intent

@@ -60,8 +60,9 @@ immediate authority reduction.
    provider) · `2` usage error · `3` blocked by policy (write brake).
 4. `whatsapp group info` on an unknown group MUST exit 1 with `GROUP_NOT_FOUND`
    and up to 3 `suggestions` built ONLY from the group list already fetched
-   during resolution (omni REST, or the local chat model fallback) — never from
-   an extra live call made just for suggestions.
+   during resolution (WhatsApp RPC `groups.list` on the `ravi channels`
+   runner, or the local chat model fallback when it fails) — never from an
+   extra live call made just for suggestions.
 5. Participant validation (`group create`, `group add`) and DM target
    resolution (`dm send|read|ack`) MUST fail unknown targets with
    `CONTACT_NOT_FOUND` (exit 1) and suggestions from the LOCAL contacts DB.
@@ -146,7 +147,7 @@ through this CLI, so the brake does not affect runtime message routing.
   `acceptedFlags`.
 - `group send` resolves group metadata via a provider call BEFORE sending when
   mentions are used; if the brake were placed after that resolution, dry-run
-  would still hit the live bridge. The brake sits before ANY provider call.
+  would still hit the live runner. The brake sits before ANY provider call.
 - `group create` performs local side effects (agent creation via
   `--create-agent`, chat/route/session registration) after the WhatsApp call;
   the brake must stay ahead of `ensureGroupAgent`, or dry-run would create

@@ -57,7 +57,7 @@ bun src/tui/index.tsx
 bun test          # Run all tests
 ```
 
-Tests cover: bash tool, hooks, router, heartbeat, permissions, triggers, omni consumer, and bot.
+Tests cover: bash tool, hooks, router, heartbeat, permissions, triggers, the channel inbound pipeline and WhatsApp runner, and bot.
 
 ## Quality Checks
 
@@ -136,7 +136,8 @@ src/
 ├── daemon.ts         # Daemon startup/shutdown
 ├── gateway.ts        # Gateway — response routing
 ├── nats.ts           # NATS connection singleton
-├── omni/             # Omni integration (consumer, sender, config)
+├── channels/         # Channel runner, WhatsApp (Baileys), Slack, inbound pipeline, outbound router
+├── omni/             # Legacy Omni bridge (Telegram/Discord: inbound source, sender)
 ├── router/           # Router, session keys, config store
 ├── permissions/      # REBAC permission engine
 ├── leader/           # Leader election via NATS KV

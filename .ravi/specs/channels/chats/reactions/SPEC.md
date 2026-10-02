@@ -10,9 +10,10 @@ tags:
   - chats
   - reactions
   - accounting
-  - omni
 applies_to:
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
+  - src/channels/whatsapp/inbound-source.ts
+  - src/omni/inbound-source.ts
   - src/channels/slack/socket-mode.ts
   - src/channels/slack/reactions.ts
   - src/router/router-db.ts
@@ -25,6 +26,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Reaction Accounting
 
 ## Intent
@@ -66,7 +68,7 @@ Rationale:
 | --- | --- |
 | `chat_id` | Canonical chat id resolved from reaction `chatId` + instance |
 | `channel` | Normalized channel (e.g. `whatsapp`) |
-| `instance_id` | Omni instance id |
+| `instance_id` | Transport instance id (instance UUID) |
 | `provider_message_id` | `reaction:{targetMessageId}:{emoji}:{senderId}` |
 | `raw_chat_id` | Raw `chatId` from the reaction payload |
 | `raw_sender_id` | Raw `from` from the reaction payload |
@@ -77,7 +79,7 @@ Rationale:
 | `platform_identity_id` | Resolved platform identity id when available |
 | `message_type` | `reaction` |
 | `content_json` | `{ type: "reaction", targetMessageId, emoji, senderId }` |
-| `raw_provenance_json` | `{ source: "omni.reaction.received", eventId, subject, channelType, instanceId, chatId, from, accountId }` |
+| `raw_provenance_json` | `{ source: "<transport>.reaction.received" (`whatsapp` or `omni`), eventId, subject, channelType, instanceId, chatId, from, accountId }` |
 | `provider_timestamp` | Reaction event timestamp |
 | `ingested_at` | Processing timestamp |
 
@@ -90,9 +92,10 @@ Rationale:
 ## Inbound Flow
 
 ```text
-REACTION stream (JetStream)
-  -> handleReactionEvent
-  -> parse subject for channelType + instanceId
+WhatsApp: CHANNEL_INBOUND ravi.channel.inbound.whatsapp.reaction.<uuid> (WhatsAppInboundSource)
+Legacy bridge (Telegram/Discord): Omni REACTION stream (OmniLegacyInboundSource)
+  -> ChannelInboundPipeline.handle (reaction.received)
+  -> channelType + instanceId from the ChannelInboundEvent
   -> resolve accountId from instanceId
   -> resolve/upsert chat from chatId + instance
   -> resolve sender identity (platform identity, contact)
@@ -109,7 +112,7 @@ Native Slack Socket Mode / gateway
 The flow MUST NOT touch route resolution, session dispatch, prompt building, or runtime turn creation.
 
 Native Slack MAY emit `ravi.inbound.reaction` for inbound `reaction_added`
-events so triggers can correlate without Omni. Slack short names that mean
+events so triggers can correlate on one subject. Slack short names that mean
 thumbs-up or heart MUST be published as unicode (`👍`, `❤️`). File and other
 non-message reaction items MUST be skipped. Slack approval MUST NOT depend on
 this emit.
@@ -117,11 +120,11 @@ this emit.
 ## Compatibility
 
 - `ravi.inbound.reaction` payload remains `{ targetMessageId, emoji, senderId }`. No `chatId` or domain state is added to this event without updating specs, catalog, docs, and tests.
-- `src/approval/service.ts` still consumes `ravi.inbound.reaction` for WhatsApp/Omni
-  approval only. Native Slack approval MUST use `ravi.inbound.interaction`
+- `src/approval/service.ts` still consumes `ravi.inbound.reaction` for WhatsApp and
+  legacy-bridge approval only. Native Slack approval MUST use `ravi.inbound.interaction`
   buttons from `channels/slack/approval` and MUST ignore Slack reactions.
 - `src/triggers/topic-catalog.ts` continues to document `ravi.inbound.reaction` as the canonical reaction trigger subject.
-- `src/sdk/gateway/streaming/channels.ts` continues to subscribe to `reaction.received.>` for `chats/<chatId>` streams and filter by `chatId`. The streaming channel receives the raw omni event envelope, not the `ravi.inbound.reaction` event.
+- `src/sdk/gateway/streaming/channels.ts` subscribes to the legacy bridge's `reaction.received.>` and to `ravi.channel.inbound.whatsapp.reaction.>` for `chats/<chatId>` streams and filters by `chatId`. WhatsApp envelopes are projected to the same shape (`projectWhatsAppInbound`). The streaming channel receives the transport event, not the `ravi.inbound.reaction` event.
 
 ## Acceptance Criteria
 

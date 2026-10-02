@@ -9,7 +9,7 @@ import {
   type PlatformIdentity,
 } from "../../contacts.js";
 import { publish } from "../../nats.js";
-import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
 import {
   attachChatToSession,
   commitMatchedRoute,

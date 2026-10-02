@@ -19,7 +19,7 @@ import {
   HEARTBEAT_PROMPT,
 } from "../../heartbeat/index.js";
 import { nats } from "../../nats.js";
-import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 import type { AgentConfig, HeartbeatConfig } from "../../router/types.js";

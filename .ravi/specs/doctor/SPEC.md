@@ -30,6 +30,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Ravi Doctor
 
 Status: draft
@@ -190,7 +191,7 @@ Doctor SHOULD detect:
 - sessions stuck in error or aborted state;
 - eligible chats without a route.
 
-### Channels And Omni
+### Channels And Transports
 
 Doctor SHOULD detect:
 

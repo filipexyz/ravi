@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, openSync, closeSync, readFileSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
+import { publishSessionPrompt } from "../session-prompts/stream.js";
 import { logger } from "../utils/logger.js";
 import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";

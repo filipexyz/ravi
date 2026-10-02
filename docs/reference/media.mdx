@@ -86,7 +86,7 @@ Generating audio...
 Text: Hello, this is a test message
 ```
 
-When `--send` is used, Ravi now calls `omni send` directly and only reports success after the channel delivery request is accepted. The JSON output includes the resolved `instanceId`, optional `threadId`, and delivery metadata such as `messageId` when available.
+When `--send` is used, Ravi delivers the file directly through the channel transport (the `ravi channels` runner for WhatsApp, the native Slack upload, or `omni send` for Telegram/Discord on the legacy bridge) and only reports success after the channel delivery request is accepted. The JSON output includes the resolved `instanceId`, optional `threadId`, and delivery metadata such as `messageId` when available.
 
 ## Audio Transcription
 
@@ -273,7 +273,7 @@ Prompt: a purple cat floating in space
 Mode: fast | Aspect: auto | Size: 1K
 ```
 
-When `--send` is used, Ravi delivers the generated image through `omni send` directly instead of queueing a background NATS event. Success now means the send request reached Omni successfully.
+When `--send` is used, Ravi delivers the generated image directly through the channel transport (the `ravi channels` runner for WhatsApp, the native Slack upload, or `omni send` on the legacy bridge) instead of queueing a background NATS event. Success means the transport accepted the send request.
 
 ## Video Analysis
 
@@ -354,7 +354,7 @@ The output language matches the video's spoken language.
 ## Sending Media
 
 Send any media file (image, video, audio, document) through a connected channel.
-`ravi media send` is synchronous and uses `omni send` under the hood, so it returns a real delivery ack/error instead of only queueing `ravi.media.send`.
+`ravi media send` is synchronous and calls the channel transport directly, so it returns a real delivery ack/error instead of only queueing `ravi.media.send`. WhatsApp files go to the `ravi channels` runner (`messages.sendMedia`, by absolute path, never through Omni); Slack uses the native upload; Telegram/Discord use `omni send` on the legacy bridge. Runner failures keep their own codes, such as `WHATSAPP_RUNNER_UNAVAILABLE` (run `ravi channels start`) or `WHATSAPP_NOT_BOUND` (run `ravi instances connect <name>`).
 
 ### CLI Usage
 
@@ -472,7 +472,7 @@ ravi stickers send wave \
   --execute
 ```
 
-Sticker sending uses the omni media path with sticker media type. Non-WhatsApp channels are rejected before enqueueing.
+Sticker sending goes through the gateway to the WhatsApp channel runner (`messages.sendSticker`, by file path). Non-WhatsApp channels are rejected before enqueueing.
 
 ## Inbound Media
 
@@ -480,9 +480,9 @@ When a message arrives with media (images, videos, documents, stickers, audio), 
 
 ### Download Behavior
 
-- **Download location:** Agent's `attachments/` directory under its CWD (e.g., `~/ravi/main/attachments/`)
+- **Download location:** Agent's `attachments/` directory under its CWD (e.g., `~/ravi/main/attachments/`). For WhatsApp, the channel runner first downloads the file to `~/.ravi/media/whatsapp/<instanceId>/<YYYY-MM>/` (limit `WHATSAPP_MEDIA_MAX_DOWNLOAD_MB`, default 2 GiB) and the daemon copies it from there; legacy-bridge media is fetched from the Omni HTTP API
 - **Max file size:** 20 MB (larger files are skipped with a note)
-- **Naming convention:** `{timestamp}-{messageId}.{ext}`
+- **Naming convention:** `{timestamp}-{externalId}.{ext}` (the provider message id)
 - **Supported types:** Images, videos, PDFs, documents, audio, stickers
 
 ### Prompt Format

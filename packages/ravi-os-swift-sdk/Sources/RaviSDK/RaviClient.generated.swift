@@ -2652,6 +2652,13 @@ public struct InstancesNamespace: Sendable {
     return try await transport.call(groupSegments: ["instances"], command: "list", body: requestBody, as: InstancesListReturn.self)
   }
 
+  public func logout(_ name: String, _ options: InstancesLogoutOptions = .init()) async throws -> InstancesLogoutReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["instances"], command: "logout", body: requestBody, as: InstancesLogoutReturn.self)
+  }
+
   public func restore(_ name: String) async throws -> InstancesRestoreReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["name"] = try RaviJSON.fromEncodable(name)

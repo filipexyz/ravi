@@ -143,7 +143,17 @@ mock.module("../media-send.js", () => ({
       chatId: "chat-1",
     };
   },
-  sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
+  // Same contract as the real mapper: a ChannelTransportError keeps its code and retryability.
+  mapChannelMediaFailure: (error: unknown) =>
+    error instanceof Error && "code" in error && "retryable" in error && error.name === "WhatsAppRpcError"
+      ? {
+          code: String(error.code),
+          message: error.message,
+          retryable: Boolean(error.retryable),
+          suggestedAction: "Start it with `ravi channels start`",
+        }
+      : null,
+  sendChannelMedia: mock(async (input: Record<string, unknown>) => {
     mediaSendCalls.push(input);
     if (mediaSendError !== undefined) throw mediaSendError;
     const filePath = String(input.filePath ?? "/tmp/unknown.bin");
@@ -177,6 +187,7 @@ const { MediaCommands } = await import("./media.js");
 const { ReactCommands } = await import("./react.js");
 const { ContractError } = await import("../agent-contract.js");
 const { MediaSendAuthError, OMNI_AUTH_FAILED_SUGGESTED_ACTION } = await import("../media-send-auth.js");
+const { WhatsAppRpcError } = await import("../../channels/whatsapp/errors.js");
 
 type ContractErrorInstance = InstanceType<typeof ContractError>;
 
@@ -590,6 +601,32 @@ describe("media send contract", () => {
       expect(error.details.retryable).toBe(true);
       expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
       expect(JSON.stringify(error.envelope())).not.toContain("sk-abcdefghijklmnop");
+      expect(mediaSendCalls).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a WhatsApp runner error's code and retryability in the envelope", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-runner-failure-"));
+    const filePath = join(dir, "sample.png");
+    writeFileSync(filePath, "png");
+    mediaSendError = new WhatsAppRpcError("The WhatsApp runner is not answering.", {
+      status: 503,
+      code: "WHATSAPP_RUNNER_UNAVAILABLE",
+      retryable: true,
+    });
+    try {
+      const error = await expectContractError(
+        () =>
+          new MediaCommands().send(filePath, undefined, undefined, undefined, undefined, undefined, false, true, true),
+        "WHATSAPP_RUNNER_UNAVAILABLE",
+        1,
+      );
+
+      expect(error.message).toBe("The WhatsApp runner is not answering.");
+      expect(error.details.retryable).toBe(true);
+      expect(error.details.suggestedAction).toContain("ravi channels start");
       expect(mediaSendCalls).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

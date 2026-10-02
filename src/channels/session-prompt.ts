@@ -1,4 +1,4 @@
-import { publishSessionPrompt, type PublishSessionPromptOptions } from "../omni/session-stream.js";
+import { publishSessionPrompt, type PublishSessionPromptOptions } from "../session-prompts/stream.js";
 import type { ChannelTurnAction, RuntimeTurnOriginPrincipal } from "../runtime/message-types.js";
 import { buildChannelTurnOrigin } from "../runtime/turn-origin.js";
 

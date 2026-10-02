@@ -17,7 +17,7 @@ tags:
   - prompts
 applies_to:
   - src/delivery-barriers.ts
-  - src/omni/session-stream.ts
+  - src/session-prompts/stream.ts
   - src/runtime/delivery-queue.ts
   - src/runtime/session-dispatcher.ts
   - src/runtime/message-types.ts
@@ -29,6 +29,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Runtime Delivery Queue
 
 ## Intent
@@ -197,7 +198,7 @@ Known producers MUST be classified explicitly:
 - `src/daemon.ts`
   - daemon restart resume notices default to `after_response`.
   - resume notices MUST NOT use the fallback barrier implicitly.
-- `src/omni/consumer.ts`
+- `src/channels/inbound/pipeline.ts`
   - human inbound messages may remain `after_tool`.
   - urgent human messages and message edit rebases may be immediate.
 - `src/triggers`, `src/heartbeat`, and task checkpoint producers

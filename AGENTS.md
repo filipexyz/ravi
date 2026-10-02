@@ -1,25 +1,28 @@
 # Ravi Bot
 
-The daemon that gives Claude a life. Ravi runs local agent sessions, native Slack channels, and legacy transport bridges with embedded NATS JetStream.
+The daemon that gives Claude a life. Ravi runs local agent sessions and its own channels (native Slack, WhatsApp) over NATS JetStream, plus an optional legacy bridge (Omni) for Telegram/Discord.
 
 ## Architecture
 
 ```
+nats-server :4222 (JetStream; PM2 ravi-nats, or omni-nats on hosts upgraded from Omni)
+
+ravi channels start (PM2 ravi-channels)
+  ├── WhatsApp (Baileys sockets) → CHANNEL_INBOUND + RPC _RAVI.channels.whatsapp.rpc.<uuid>
+  └── other native channel drivers
+
 ravi daemon start
-  ├── nats-server :4222 (JetStream)
-  ├── legacy channel bridge :8882 (child process bun)
-  │     ├── WhatsApp (Baileys)
-  │     ├── Telegram
-  │     └── Discord
   └── ravi bot
         ├── Native Slack adapter → Socket Mode, Web API, Canvas, files, threads
-        ├── Channel consumer      → JetStream pull consumer (message.received.>)
+        ├── Inbound pipeline      → WhatsApp source (CHANNEL_INBOUND) + legacy bridge source (optional)
         ├── Claude Agent SDK (sessions, tools)
-        ├── Channel sender        → native Slack delivery + bridge delivery
+        ├── Channel sender router → WhatsApp RPC, native Slack delivery, legacy bridge
         └── Runners (cron, heartbeat, triggers)
+
+legacy bridge (optional, external PM2 omni-api :8882) → Telegram, Discord
 ```
 
-**Infrastructure:** nats-server starts automatically for local eventing. Slack runs through the native Ravi Slack adapter. Legacy transport bridges may also start as child processes for channels that have not moved to native adapters yet.
+**Infrastructure:** `ravi setup` provisions NATS (`ravi-nats` under PM2, nats-server 2.11.8) or reuses the one that already answers. On hosts upgraded from Omni, `omni-nats` is Ravi's NATS: never run `omni stop|start|restart|install` or `pm2 delete omni-nats` there. WhatsApp is a first-class channel served by the `ravi channels` runner (see [WhatsApp](#whatsapp)). The legacy bridge is Omni's external `omni-api`, used only for Telegram/Discord; the daemon never spawns it and `ravi setup` installs it only on request.
 
 ## Quick Start
 
@@ -27,21 +30,78 @@ ravi daemon start
 # 1. Install dependencies
 bun install
 
-# 2. Run setup wizard (downloads nats-server, configures auth, creates agent)
+# 2. Run setup wizard (provisions NATS, configures auth, creates agent, starts daemon + channel runner)
 ravi setup
 
 # 3. Configure channel credentials in the Ravi credential broker / ~/.ravi/.env
 
-# 4. Start daemon (nats-server + bot + gateway + configured channel adapters)
+# 4. Start the daemon (bot + gateway) and the channel runner (WhatsApp sockets)
 ravi daemon start
+ravi channels start
 
-# 5. Connect WhatsApp
-ravi whatsapp connect
+# 5. Connect WhatsApp (QR code)
+ravi instances connect main --agent main
 
 # 6. Check status
 ravi daemon status
 ravi daemon logs
 ```
+
+## WhatsApp
+
+WhatsApp is a first-class Ravi channel. The `ravi channels` runner (PM2 process
+`ravi-channels`) holds the Baileys sockets; Omni is never on the WhatsApp path.
+Spec: `.ravi/specs/channels/adapters/whatsapp/` (its RUNBOOK has the Omni
+upgrade procedure).
+
+```bash
+ravi daemon start                          # consumes inbound events, relays QR codes
+ravi channels start                        # holds the WhatsApp sockets (not started by the daemon)
+ravi instances connect <name> --agent <agent>   # QR flow
+ravi instances status <name> --json        # transport "whatsapp", status "connected"
+ravi channels status                       # per-channel health
+ravi channels restart                      # after updating Ravi (restart the daemon first)
+ravi instances disconnect <name>           # close the socket, keep creds (stays disconnected until connect)
+ravi instances logout <name> --execute     # wipe creds, unlink the device when connected (dry-run without --execute)
+```
+
+- `instances connect <name>` mints the instance UUID (or keeps an existing
+  one), creates the `channels` row (provider `whatsapp`, named after the
+  instance or a sanitized name with `defaults.instance`), waits for the runner
+  to hot-add it, and prints QR codes. `--json` returns on the first QR code.
+  There is no `--transport` option and no `whatsapp.transport` setting.
+- A `channels` row with provider `whatsapp` bound to the instance is what the
+  runner serves. The transport instance id stays `instances.instance_id`.
+  `instances enable|disable` also toggle that channel row; `instances delete`
+  logs the device out first and disables the channel row, and
+  `instances restore` re-enables it for an enabled instance.
+- `WHATSAPP_RUNNER_UNAVAILABLE` means no runner answered: run
+  `ravi channels start` (or `restart`) and repeat the command.
+- Health reasons: `pairing_required` / `logged_out` (pair again),
+  `manual_disconnect` (`ravi instances disconnect`; reconnect with `connect`),
+  `connection_replaced` (another process holds the session),
+  `qr_reset_failed` (run `connect` again), `missing_dependency` (the runner
+  cannot load Baileys).
+- Offline backlog older than the channel default `offlineStaleMs` (10 minutes)
+  is stored as history and never prompts an agent.
+
+Upgrading a host that served WhatsApp through Omni: every instance keeps its
+UUID, sessions and chats and is paired again with `ravi instances connect
+<name>` after `omni instances disconnect <uuid>`. Follow the RUNBOOK: it covers
+the silent window, the trigger subjects to move and the NATS warning
+(`omni-nats` is Ravi's NATS there). There is no rollback to Omni for WhatsApp.
+
+Inbound WhatsApp events live on the `CHANNEL_INBOUND` stream under
+`ravi.channel.inbound.whatsapp.<message|reaction|connection>.<instanceId>`
+(`WhatsAppInboundEvent`, `src/channels/whatsapp/events.ts`; durables
+`ravi-whatsapp-messages`, `ravi-whatsapp-reactions` and
+`ravi-whatsapp-connection`, created by both the runner and the daemon). Daemon,
+gateway and CLI reach the runner on `_RAVI.channels.whatsapp.rpc.<instanceId>`
+(RPC schema v2). Omni events for any WhatsApp channel type (`whatsapp-baileys`,
+`whatsapp`, `twilio-whatsapp`, `gupshup`) are ignored; `twilio-whatsapp` and
+`gupshup` are unsupported. Auth state is in `~/.ravi/whatsapp/auth.db` (0600;
+rows of the old `whatsapp_auth_state` table in `~/.ravi/ravi.db` are copied
+once); inbound media in `~/.ravi/media/whatsapp/`.
 
 ## Ravi Pages Publishing
 
@@ -107,11 +167,19 @@ authenticated HTTPS request body.
 
 For full topic reference with payloads, see the **events** skill (`src/plugins/internal/ravi-system/skills/events/SKILL.md`).
 
-**Legacy bridge NATS subjects (JetStream stream: MESSAGE):**
+**WhatsApp subjects (JetStream stream: CHANNEL_INBOUND):**
+- `ravi.channel.inbound.whatsapp.message.{instanceId}` — inbound message
+- `ravi.channel.inbound.whatsapp.reaction.{instanceId}` — inbound reaction
+- `ravi.channel.inbound.whatsapp.connection.{instanceId}` — QR code, connected, disconnected
+- `_RAVI.channels.whatsapp.rpc.{instanceId}` — runner RPC (request/reply)
+- `ravi.whatsapp.qr.{instanceId}` / `ravi.whatsapp.connected.{instanceId}` — pairing relay published by the daemon
+
+**Legacy bridge NATS subjects (Telegram/Discord only; JetStream stream: MESSAGE):**
 - `message.received.{channelType}.{instanceId}` — inbound message
 - `reaction.received.{channelType}.{instanceId}` — inbound reaction
 - `instance.connected.{channelType}.{instanceId}` — account connected
 - `instance.qr_code.{channelType}.{instanceId}` — QR code for pairing
+- `ravi.bridge.qr.{instanceId}` / `ravi.bridge.connected.{instanceId}` — pairing relay published by the daemon
 
 ## Session Keys
 
@@ -460,19 +528,21 @@ ravi permissions clear                           # Clear manual relations
 **Agent Resolution:**
 
 Messages are routed to agents in this priority order:
-1. Account-agent mapping (from `account.<id>.agent` setting)
-2. Route match (from routes table, scoped to account)
+1. Route match (from routes table, scoped to account)
+2. Account-agent mapping (the instance's `agent`)
 3. Default agent (only for default account)
 
-The account-agent mapping is set via `ravi whatsapp connect --agent <id>` or `ravi whatsapp set --account <id> --agent <id>`.
+The account-agent mapping is set with `ravi instances connect <name> --agent <id>` or `ravi instances set <name> agent <id>` (the old `account.<id>.agent` settings are refused).
 
 **Multi-Account:**
 
 Connect multiple accounts (WhatsApp, Telegram), each mapped to a different agent:
 
 ```bash
-ravi whatsapp connect --account vendas --agent vendas --mode active
-ravi whatsapp connect --account suporte --agent suporte --mode sentinel
+ravi instances connect vendas --agent vendas                      # WhatsApp (QR code)
+ravi instances connect suporte --agent suporte
+ravi agents set suporte mode sentinel                             # observe only
+ravi instances connect tg-vendas --channel telegram --agent vendas  # legacy bridge
 ```
 
 **Sentinel Mode:** Agents in sentinel mode observe messages silently without auto-replying. Useful for monitoring accounts where an agent only acts when instructed.
@@ -504,10 +574,12 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 ~/.ravi/
 ├── ravi.db          # Config and sessions (SQLite)
 ├── .env             # Environment variables (loaded by daemon)
-├── omni-api-key     # Auto-generated legacy bridge API key
-├── jetstream/       # NATS JetStream storage
+├── whatsapp/
+│   └── auth.db      # WhatsApp auth state (0600, runner only)
+├── media/whatsapp/  # Inbound WhatsApp media downloaded by the runner
+├── jetstream/       # NATS JetStream storage (ravi-nats)
 ├── bin/
-│   └── nats-server  # nats-server binary (auto-downloaded)
+│   └── nats-server  # nats-server binary (downloaded by ravi setup)
 └── logs/
     └── daemon.log   # Daemon logs
 ```
@@ -547,7 +619,7 @@ This keeps three truths aligned:
 ravi setup             # Interactive setup wizard
 
 # Daemon (recommended)
-ravi daemon start      # Start nats + bot + gateway + configured channel adapters
+ravi daemon start      # Start the daemon (bot + gateway) via PM2
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
@@ -557,12 +629,14 @@ ravi daemon logs -t 100  # Show last 100 lines
 ravi daemon logs --clear --execute # Clear logs (dry-run without --execute)
 ravi daemon env        # Edit ~/.ravi/.env
 
-# WhatsApp
-ravi whatsapp connect                # Connect account (QR code)
-ravi whatsapp connect --account <id> --agent <id> --mode sentinel
-ravi whatsapp status                 # Show connection status
-ravi whatsapp set --account <id> --agent <id>
-ravi whatsapp disconnect             # Disconnect account
+# WhatsApp accounts (instances)
+ravi instances connect <name>                # Connect WhatsApp (QR code, ravi channels runner)
+ravi instances connect <name> --agent <id>   # Connect and route to an agent
+ravi instances connect <name> --channel telegram   # Telegram/Discord through the legacy bridge
+ravi instances status <name>         # Show connection status and transport
+ravi instances disconnect <name>     # Disconnect account (WhatsApp: persists until connect)
+ravi instances logout <name> --execute   # WhatsApp: wipe creds, unlink the device when connected (dry-run without --execute)
+ravi channels start|restart|status   # Channel runner (holds the WhatsApp sockets)
 
 # Agents
 ravi agents list                    # List agents
@@ -741,11 +815,11 @@ Requires `OPENAI_API_KEY` in environment.
 
 ### Media Downloads
 
-Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and the local path is included in the prompt:
+Images, videos, documents, and stickers are saved to the agent's `attachments/` directory and the local path is included in the prompt. WhatsApp media comes from the runner's download under `~/.ravi/media/whatsapp/<instanceId>/<YYYY-MM>/` (read from disk, never over HTTP); legacy-bridge media is fetched from Omni.
 
 ```
 [+5511999 30/01/2026, 14:30]
-[Image: /tmp/ravi-media/1706619000000-ABC123.jpg]
+[Image: ~/ravi/main/attachments/1706619000000-ABC123.jpg]
 ```
 
 - Max file size: 20MB (larger files are skipped with a note)
@@ -759,17 +833,21 @@ Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
 ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Legacy transport bridge (only for channels still using the bridge)
-OMNI_DIR=/path/to/omni-v2
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
-OMNI_API_PORT=8882          # Default
+# NATS (default: nats://127.0.0.1:4222)
+NATS_URL=nats://127.0.0.1:4222
+
+# Legacy bridge (Telegram/Discord only; default: read from ~/.omni/config.json)
+OMNI_API_URL=http://127.0.0.1:8882
+OMNI_API_KEY=xxx
+
+# WhatsApp (ravi channels runner; `ravi channels restart` after changing)
+# WHATSAPP_MEDIA_MAX_DOWNLOAD_MB=   # Max inbound media download size in MB
 
 # Optional
 OPENAI_API_KEY=sk-xxx       # For audio transcription
 GEMINI_API_KEY=AIza...      # For video analysis
 RAVI_MODEL=sonnet
 RAVI_LOG_LEVEL=info         # debug | info | warn | error
-NATS_PORT=4222              # Default
 ```
 
 ## Operational Triangle
@@ -814,7 +892,7 @@ There is no separate `[System] Send:` or `contextualize` contract in the current
 
 ## NATS JetStream Debugging
 
-NATS runs on `:4222`. Use the `nats` CLI (`brew install nats-io/nats-tools/nats`) to inspect streams and replay messages.
+NATS runs on `:4222` (PM2 `ravi-nats`, or `omni-nats` on hosts upgraded from Omni; never stop or restart `omni-nats` there). Use the `nats` CLI (`brew install nats-io/nats-tools/nats`) to inspect streams and replay messages.
 
 ### Connection shortcut
 
@@ -828,32 +906,33 @@ alias nats-local='nats --server nats://127.0.0.1:4222'
 nats stream ls --server nats://127.0.0.1:4222
 ```
 
-Legacy bridge streams: `MESSAGE`, `INSTANCE`, `REACTION`, `MEDIA`, `ACCESS`, `IDENTITY`, `CUSTOM`, `SYSTEM`.
+Ravi streams: `SESSION_PROMPTS`, `RAVI_EVENTS`, `CHANNEL_INBOUND` (WhatsApp inbound, `ravi.channel.inbound.>`), `CHANNEL_OUTBOUND`.
+Legacy bridge streams (only with Omni, Telegram/Discord): `MESSAGE`, `INSTANCE`, `REACTION`, `MEDIA`, `ACCESS`, `IDENTITY`, `CUSTOM`, `SYSTEM`.
 
 ### Inspect a stream
 
 ```bash
-nats stream info MESSAGE --server nats://127.0.0.1:4222
+nats stream info CHANNEL_INBOUND --server nats://127.0.0.1:4222
 # Shows: subjects, retention, message count, consumer count, first/last seq
 ```
 
 ### Read messages from stream
 
 ```bash
-# Last message on a subject pattern
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>"
+# Last WhatsApp message on the stream
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --last-for "ravi.channel.inbound.whatsapp.message.>"
 
 # Specific sequence number
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --seq 5
 
-# Pretty-print the JSON payload
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
+# Pretty-print the WhatsAppInboundEvent envelope
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
 import sys, json
 raw = sys.stdin.read()
 start = raw.find('{')
 if start >= 0:
     d = json.loads(raw[start:])
-    print('METADATA:', json.dumps(d.get('metadata', {}), indent=2))
+    print('TYPE:', d.get('type'), 'INGEST:', d.get('ingestMode'))
     print('PAYLOAD:', json.dumps(d.get('payload', {}), indent=2))
 "
 ```
@@ -862,68 +941,66 @@ if start >= 0:
 
 ```bash
 # All consumers with their positions (ack floor = last processed seq)
-nats consumer report MESSAGE --server nats://127.0.0.1:4222
+nats consumer report CHANNEL_INBOUND --server nats://127.0.0.1:4222
 
-# Ravi consumers
+# Legacy bridge consumers (Telegram/Discord)
 nats consumer report MESSAGE --server nats://127.0.0.1:4222 | grep ravi
 nats consumer report INSTANCE --server nats://127.0.0.1:4222 | grep ravi
 ```
 
-**Ravi consumer names:** `ravi-messages` (MESSAGE stream), `ravi-instances` (INSTANCE stream).
+**Ravi consumer names:** `ravi-whatsapp-messages`, `ravi-whatsapp-reactions`, `ravi-whatsapp-connection` (CHANNEL_INBOUND; created by both the runner and the daemon); legacy bridge: `ravi-messages` (MESSAGE), `ravi-instances` (INSTANCE), `ravi-reactions` (REACTION).
 
 ### Replay messages to ravi (debug)
 
-Create a **temporary ephemeral consumer** that delivers from a specific sequence — useful to re-inject a message into the stream and watch ravi process it:
+Create a **temporary ephemeral consumer** that delivers from a specific sequence — useful to look at what the runner published:
 
 ```bash
-# Subscribe and receive all messages from seq 20 onwards (prints to terminal)
-nats consumer sub MESSAGE \
+# Subscribe and receive all WhatsApp messages from seq 20 onwards (prints to terminal)
+nats consumer sub CHANNEL_INBOUND \
   --server nats://127.0.0.1:4222 \
-  --filter "message.received.>" \
+  --filter "ravi.channel.inbound.whatsapp.message.>" \
   --deliver-start-sequence 20 \
-  --ack
-
-# Or deliver all messages from beginning
-nats consumer sub MESSAGE \
-  --server nats://127.0.0.1:4222 \
-  --filter "message.received.>" \
-  --deliver-all \
   --ack
 ```
 
-To force ravi to **reprocess** a specific message, bump the ravi consumer's ack floor back:
+To force ravi to **reprocess** messages, delete the durable; the daemon recreates it with `DeliverPolicy.New` on restart, so only messages published after that are delivered:
 
 ```bash
-# Delete ravi-messages consumer (ravi recreates it with DeliverPolicy.New on restart)
-# WARNING: ravi won't get new messages until daemon restarts
-nats consumer rm MESSAGE ravi-messages --server nats://127.0.0.1:4222
-ravi daemon restart
+# WARNING: ravi won't get new WhatsApp messages until the daemon restarts
+nats consumer rm CHANNEL_INBOUND ravi-whatsapp-messages --server nats://127.0.0.1:4222
+ravi daemon restart -m "recreate the ravi-whatsapp-messages durable"
 ```
 
 ### Live subscribe (plain pub/sub — no JetStream)
 
-Watch legacy bridge events in real time:
+Watch channel events in real time:
 
 ```bash
-# All message events
-nats sub "message.received.>" --server nats://127.0.0.1:4222
+# All WhatsApp inbound events
+nats sub "ravi.channel.inbound.whatsapp.>" --server nats://127.0.0.1:4222
 
-# Specific instance
-nats sub "message.received.whatsapp-baileys.d1458eb9-eec8-49b2-a7ad-d5f2ced8a280" \
+# Specific WhatsApp instance
+nats sub "ravi.channel.inbound.whatsapp.*.d1458eb9-eec8-49b2-a7ad-d5f2ced8a280" \
   --server nats://127.0.0.1:4222
 
-# Instance events (connect, disconnect, qr_code)
+# WhatsApp runner RPC (requests and replies)
+nats sub "_RAVI.channels.whatsapp.rpc.>" --server nats://127.0.0.1:4222
+
+# Legacy bridge events (Telegram/Discord)
+nats sub "message.received.>" --server nats://127.0.0.1:4222
 nats sub "instance.>" --server nats://127.0.0.1:4222
 ```
 
+`ravi events stream` hides `ravi.channel.inbound.*` and `_RAVI.channels.*` unless `--filter` selects them.
+
 ### Check if ingestMode is set correctly
 
-After the history-sync fix, new messages should have `ingestMode: "realtime"` in metadata. History-sync messages get `ingestMode: "history-sync"` and are skipped by ravi.
+WhatsApp `message.received` events carry `ingestMode`: `realtime`, or `history-sync` for history and for offline backlog older than the channel's `offlineStaleMs` (default 10 minutes). History-sync messages are stored but never prompt an agent.
 
 ```bash
-# Inspect metadata of last received message
-nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>" | \
-  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d['metadata'].get('ingestMode','NOT SET'))"
+# Inspect the ingestMode of the last WhatsApp message
+nats stream get CHANNEL_INBOUND --server nats://127.0.0.1:4222 --last-for "ravi.channel.inbound.whatsapp.message.>" | \
+  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d.get('ingestMode','NOT SET'))"
 ```
 
 ## Development

@@ -24,7 +24,7 @@ applies_to:
   - src/runtime/codex-provider.ts
   - src/runtime/claude-provider.ts
   - src/runtime/pi-provider.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/cli/commands/sessions-runtime.ts
 owners:
   - ravi-dev
@@ -32,6 +32,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Runtime Session Forks
 
 ## Intent

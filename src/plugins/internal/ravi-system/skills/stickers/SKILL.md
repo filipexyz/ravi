@@ -137,4 +137,4 @@ O evento emitido é:
 ravi.stickers.send
 ```
 
-O gateway valida capability de canal e usa o caminho omni de mídia com tipo `sticker`.
+O gateway valida capability de canal e envia pelo sender do canal; no WhatsApp, o runner `ravi channels` recebe o sticker por `filePath` (`messages.sendSticker`).

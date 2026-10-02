@@ -6,12 +6,12 @@ domain: channels
 capability: mentions
 tags:
   - channels
-  - omni
   - whatsapp
   - mentions
 applies_to:
-  - src/omni/mentions.ts
-  - src/omni/consumer.ts
+  - src/channels/mentions.ts
+  - src/channels/inbound/pipeline.ts
+  - src/channels/whatsapp/sender.ts
   - src/omni/sender.ts
   - src/gateway.ts
   - src/cli/commands/group.ts
@@ -21,24 +21,25 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Channel Mentions
 
 ## Intent
 
-Ravi can send native channel mentions while keeping Omni as the transport adapter and Ravi as the semantic owner of chats, participants, contacts, sessions, and outbound intent.
+Ravi can send native channel mentions while keeping the transport (the `ravi channels` runner for WhatsApp, the Omni legacy bridge for Telegram/Discord) as the adapter and Ravi as the semantic owner of chats, participants, contacts, sessions, and outbound intent.
 
 ## WhatsApp Outbound Contract
 
-- WhatsApp mentions MUST be delivered to Omni as both:
+- WhatsApp mentions MUST be delivered to the transport (`ChannelMessageSender.send`, WhatsApp RPC `messages.sendText`) as both:
   - text containing a human-readable visible placeholder such as `@<display-name>` when Ravi knows a safe display label for the participant
   - `mentions: [{ id: "<jid-or-platform-user-id>", type: "user" }]`
 - Ravi MUST NOT introduce WhatsApp LIDs, JIDs, bare phone-like ids, or other raw channel identifiers into user-visible outbound text while resolving automatic inline mentions.
 - When Ravi has a trusted WhatsApp LID-to-phone mapping for a participant, outbound mention delivery SHOULD use the phone JID as the native mention id and keep the LID/raw id as match provenance. The visible text still SHOULD use the participant's safe display label.
-- When no trusted phone mapping exists, the mention `id` MAY preserve the strongest provider identity available from Omni, including WhatsApp LID JIDs such as `<lid-number>@lid`.
+- When no trusted phone mapping exists, the mention `id` MAY preserve the strongest provider identity available from the channel, including WhatsApp LID JIDs such as `<lid-number>@lid`.
 - When no safe display label exists for an automatic inline mention target, Ravi MUST fail closed: leave the visible text unchanged and MUST NOT attach native mention metadata for that alias.
 - Operator-supplied explicit raw targets MAY still be accepted for CLI/diagnostic sends when no participant display label is available. That exception MUST NOT be used by runtime agents as a default rendering strategy.
-- Ravi MUST NOT rely on the Omni CLI or generated SDK types for this MVP; the Omni API `/api/v2/messages/send` is the transport contract.
-- Gateway direct sends MUST pass a provided structured `mentions` array through to Omni without reconstructing or dropping it.
+- The transport contract is the WhatsApp RPC `messages.sendText` (`text`, `mentions`); the legacy bridge for Telegram/Discord sends the same fields to the Omni API `/api/v2/messages/send`.
+- Gateway direct sends MUST pass a provided structured `mentions` array through to the sender without reconstructing or dropping it.
 
 ## Resolution Rules
 
@@ -46,8 +47,8 @@ Ravi can send native channel mentions while keeping Omni as the transport adapte
 - Automatic outbound inline mention resolution MUST use the final output chat participants, not the inbound source chat participants, whenever source and output differ.
 - Inbound mention rendering MAY use source chat metadata because it is explaining the message that arrived from that chat.
 - A session-level participant list MUST NOT be used for outbound mention resolution. The resolver MUST receive a chat-scoped participant set.
-- Participant metadata from Omni MAY be used as the transport source for `displayName -> platformUserId/JID` resolution.
-- Chat participant metadata MAY enrich Omni group members with trusted normalized phone aliases discovered from inbound provider mappings.
+- Group participant metadata (WhatsApp `groups.metadata` RPC, cached in `channel_group_metadata`; Omni REST for the legacy bridge) MAY be used as the transport source for `displayName -> platformUserId/JID` resolution.
+- Chat participant metadata MAY enrich transport group members with trusted normalized phone aliases discovered from inbound provider mappings.
 - Raw JID, LID, and phone-like targets MAY be accepted as explicit mention targets for operator/CLI sends, but automatic runtime output SHOULD prefer names and MUST NOT synthesize raw visible placeholders.
 - Ambiguous explicit display-name matches MUST fail closed and ask for a JID/phone instead of guessing.
 - Automatic inline `@name` placeholders MUST only resolve against exact participant aliases in the target chat/group.
@@ -74,9 +75,9 @@ For that case:
 
 ## Inbound Rendering
 
-- Inbound WhatsApp text MAY arrive from Omni with visible numeric placeholders such as `@<lid-number>`.
-- Ravi SHOULD normalize those placeholders to readable names for agent-facing prompt/history when Omni raw payload includes matching `mentionedContacts` or resolvable `mentionedJids`.
-- Inbound normalization MUST only change Ravi's agent-facing text representation. The original Omni `rawPayload`, `mentionedJids`, and provider ids MUST remain preserved as raw provenance.
+- Inbound WhatsApp text MAY arrive from the runner with visible numeric placeholders such as `@<lid-number>`.
+- Ravi SHOULD normalize those placeholders to readable names for agent-facing prompt/history when the raw payload includes matching `mentionedContacts` or resolvable `mentionedJids`.
+- Inbound normalization MUST only change Ravi's agent-facing text representation. The original `rawPayload`, `mentionedJids`, and provider ids MUST remain preserved as raw provenance.
 - Ravi MUST NOT infer canonical contact identity from mention display names. Mention name rendering is a presentation transform only.
 
 ## Boundaries
@@ -84,11 +85,11 @@ For that case:
 - Contacts and platform identities remain the canonical identity model.
 - Chat participants remain scoped to chats.
 - Raw provider identifiers MUST remain transport provenance, not product-level contact identity.
-- Full Omni/Ravi normalized mention tables are a later improvement; the MVP can render agent-facing names from Omni raw mention metadata first.
+- Full normalized mention tables are a later improvement; the MVP can render agent-facing names from raw mention metadata first.
 
 ## Validation
 
-- `bun test src/omni/mentions.test.ts src/omni/sender.test.ts src/omni/group-metadata-cache.test.ts src/gateway-session-trace.test.ts src/cli/commands/channels-json.test.ts`
-- `bunx biome check src/omni/mentions.ts src/omni/mentions.test.ts src/omni/sender.ts src/omni/sender.test.ts src/gateway.ts src/cli/commands/group.ts src/omni/index.ts`
+- `bun test src/channels/mentions.test.ts src/channels/whatsapp/sender.test.ts src/omni/sender.test.ts src/channels/group-metadata/cache.test.ts src/gateway-session-trace.test.ts src/gateway-whatsapp-mentions.test.ts && bun test src/cli/commands/channels-json.test.ts`
+- `bunx biome check src/channels/mentions.ts src/channels/mentions.test.ts src/channels/whatsapp/sender.ts src/omni/sender.ts src/omni/sender.test.ts src/gateway.ts src/cli/commands/group.ts`
 - `bun run typecheck`
 - `bun run build`

@@ -3,7 +3,14 @@ import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS, type ChannelOutboundPublishResul
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
+  CHANNEL_PROBE_SKIPPED_PROVIDERS,
+  RAVI_CONFIG_CHANGED_SUBJECT,
   collectNativeRuntimeDeliveries,
+  installChannelRunnerCrashGuards,
+  nativeChannelBindingKey,
+  startNativeChannelConfigWatch,
+  syncNativeRuntimeSurfaces,
+  type NativeRuntimeSurfaces,
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
@@ -18,11 +25,30 @@ import type {
   NativeInboundChannelActionResponder,
   NativeInboundChannelActionResponderConnection,
 } from "./inbound-actions.js";
-import type { NativeInboundChannelActionHandler } from "./native/driver.js";
+import type { NativeChannelReconcileOptions, NativeInboundChannelActionHandler } from "./native/driver.js";
+import type { ChannelConfig, InstanceConfig } from "../router/router-db.js";
 import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
+import { createWhatsAppChannelDriver } from "./whatsapp/driver.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
 import { buildRunnerPm2Env } from "./pm2-env.js";
+import { EventEmitter } from "node:events";
+
+describe("channel runner crash guards", () => {
+  it("logs unhandled rejections and uncaught exceptions instead of letting the process exit", () => {
+    const hooks = new EventEmitter();
+    const uninstall = installChannelRunnerCrashGuards(hooks);
+    expect(hooks.listenerCount("unhandledRejection")).toBe(1);
+    expect(hooks.listenerCount("uncaughtException")).toBe(1);
+    // With a listener registered, emitting does not throw (an EventEmitter "error"-style
+    // event without listeners is what makes Bun/Node exit).
+    expect(() => hooks.emit("unhandledRejection", new Error("QR cycle reset failed"))).not.toThrow();
+    expect(() => hooks.emit("uncaughtException", new Error("boom"))).not.toThrow();
+    uninstall();
+    expect(hooks.listenerCount("unhandledRejection")).toBe(0);
+    expect(hooks.listenerCount("uncaughtException")).toBe(0);
+  });
+});
 
 describe("channel runner PM2 environment", () => {
   it("does not use Slack connection env as runner configuration", () => {
@@ -62,6 +88,24 @@ describe("channel runner PM2 environment", () => {
     } finally {
       setOptionalEnv("RAVI_CHANNELS_CONSUME_OUTBOUND", previousConsumeOutbound);
       setOptionalEnv("RAVI_SLACK_THREAD_REPLY_MODE", previousThreadReplyMode);
+    }
+  });
+
+  it("forwards WHATSAPP_MEDIA_MAX_DOWNLOAD_MB and never the retired Omni name", () => {
+    const previous = process.env.WHATSAPP_MEDIA_MAX_DOWNLOAD_MB;
+    const previousLegacy = process.env.OMNI_WHATSAPP_MEDIA_MAX_DOWNLOAD_MB;
+
+    try {
+      process.env.WHATSAPP_MEDIA_MAX_DOWNLOAD_MB = "512";
+      process.env.OMNI_WHATSAPP_MEDIA_MAX_DOWNLOAD_MB = "256";
+
+      const env = buildRunnerPm2Env();
+
+      expect(env).toMatchObject({ WHATSAPP_MEDIA_MAX_DOWNLOAD_MB: "512" });
+      expect(env).not.toHaveProperty("OMNI_WHATSAPP_MEDIA_MAX_DOWNLOAD_MB");
+    } finally {
+      setOptionalEnv("WHATSAPP_MEDIA_MAX_DOWNLOAD_MB", previous);
+      setOptionalEnv("OMNI_WHATSAPP_MEDIA_MAX_DOWNLOAD_MB", previousLegacy);
     }
   });
 });
@@ -613,3 +657,189 @@ describe("channel runner Slack health projection", () => {
     });
   });
 });
+
+describe("channel runner native channel reconcile", () => {
+  it("keeps the WhatsApp provider out of channels probe", () => {
+    expect(CHANNEL_PROBE_SKIPPED_PROVIDERS).toEqual(["whatsapp"]);
+  });
+
+  it("registers the WhatsApp channel driver for the whatsapp provider", () => {
+    expect(createWhatsAppChannelDriver().descriptor).toMatchObject({ driverId: "ravi.whatsapp", provider: "whatsapp" });
+  });
+
+  it("derives binding keys only for WhatsApp channels (including the provider alias)", () => {
+    const instance = {
+      name: "main",
+      instanceId: "0b7d9d58-2d3c-4b8e-9a1f-1234567890ab",
+      channel: "whatsapp",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "pending",
+      createdAt: 1,
+      updatedAt: 1,
+    } satisfies InstanceConfig;
+    const whatsapp: ChannelConfig = { name: "main", provider: "whatsapp", createdAt: 1, updatedAt: 1 };
+    const legacy: ChannelConfig = { ...whatsapp, provider: "whatsapp-baileys" };
+    const config = {
+      channels: { main: whatsapp },
+      instances: { main: instance },
+      instanceToAccount: { [instance.instanceId as string]: "main" },
+    };
+
+    expect(nativeChannelBindingKey(config, whatsapp)).toBe("main:0b7d9d58-2d3c-4b8e-9a1f-1234567890ab");
+    expect(nativeChannelBindingKey({ ...config, channels: { main: legacy } }, legacy)).toBe(
+      "main:0b7d9d58-2d3c-4b8e-9a1f-1234567890ab",
+    );
+    expect(nativeChannelBindingKey({ ...config, instances: {} }, whatsapp)).toBe("unbound");
+    expect(nativeChannelBindingKey(config, { name: "slack-a", provider: "slack" })).toBeUndefined();
+  });
+
+  it("syncs reconciled surfaces into the arrays the consumers already hold", () => {
+    const delivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async () => ({ provider: "slack" })),
+    };
+    const handler: NativeInboundChannelActionHandler = { supports: () => true, handle: mock() as never };
+    const target: NativeRuntimeSurfaces = {
+      deliveries: [{ channelId: "stale", supports: () => false, deliverText: mock() as never }],
+      actionDeliveries: [],
+      presenceDeliveries: [],
+      inboundActionHandlers: [],
+    };
+    const held = target.deliveries;
+
+    syncNativeRuntimeSurfaces(target, {
+      deliveries: () => [delivery],
+      actionDeliveries: () => [],
+      presenceDeliveries: () => [],
+      inboundActionHandlers: () => [handler],
+    });
+
+    expect(target.deliveries).toBe(held);
+    expect(held).toEqual([delivery]);
+    expect(target.inboundActionHandlers).toEqual([handler]);
+  });
+
+  it("reconciles once per burst of config changes and retries failed channels", async () => {
+    const connection = fakeConfigChangedConnection();
+    const calls: NativeChannelReconcileOptions[] = [];
+    const watch = startNativeChannelConfigWatch({
+      connection,
+      reconcile: async (options) => {
+        calls.push(options);
+      },
+      debounceMs: 5,
+      intervalMs: 60_000,
+    });
+
+    expect(connection.subjects).toEqual([RAVI_CONFIG_CHANGED_SUBJECT]);
+    connection.emit();
+    connection.emit();
+    connection.emit();
+    await sleep(30);
+    expect(calls).toEqual([{ retryFailed: true }]);
+
+    await watch.stop();
+    expect(connection.closed).toBe(true);
+    connection.emit();
+    await sleep(15);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("queues one more pass when a change arrives during a reconcile, and survives failures", async () => {
+    const connection = fakeConfigChangedConnection();
+    let release: () => void = () => {};
+    let calls = 0;
+    const watch = startNativeChannelConfigWatch({
+      connection,
+      reconcile: async () => {
+        calls++;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          throw new Error("reconcile failed");
+        }
+      },
+      debounceMs: 1,
+      intervalMs: 60_000,
+    });
+
+    connection.emit();
+    await sleep(10);
+    expect(calls).toBe(1);
+    connection.emit();
+    await sleep(10);
+    connection.emit();
+    await sleep(10);
+    expect(calls).toBe(1);
+
+    release();
+    await sleep(10);
+    expect(calls).toBe(2);
+    await watch.stop();
+  });
+
+  it("runs interval passes without retrying failed channels", async () => {
+    const connection = fakeConfigChangedConnection();
+    const calls: NativeChannelReconcileOptions[] = [];
+    const watch = startNativeChannelConfigWatch({
+      connection,
+      reconcile: async (options) => {
+        calls.push(options);
+      },
+      debounceMs: 1,
+      intervalMs: 10,
+    });
+    await sleep(35);
+    await watch.stop();
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(calls.every((options) => options.retryFailed === false)).toBe(true);
+  });
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fakeConfigChangedConnection() {
+  const subjects: string[] = [];
+  let pending = 0;
+  let wake: (() => void) | null = null;
+  let closed = false;
+  return {
+    subjects,
+    get closed() {
+      return closed;
+    },
+    emit() {
+      if (closed) return;
+      pending++;
+      wake?.();
+    },
+    subscribe(subject: string) {
+      subjects.push(subject);
+      return {
+        unsubscribe() {
+          closed = true;
+          wake?.();
+        },
+        async *[Symbol.asyncIterator]() {
+          while (true) {
+            if (pending > 0) {
+              pending--;
+              yield {};
+              continue;
+            }
+            if (closed) return;
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+            wake = null;
+          }
+        },
+      };
+    },
+  };
+}

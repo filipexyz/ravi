@@ -7,6 +7,7 @@ capability: ci-gates
 status: active
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Why CI Quality Gates Exist
 
 ## Problem
@@ -25,7 +26,7 @@ The gate is deterministic from the diff:
 
 - Extract changed file paths from the PR diff.
 - Map `.ravi/specs/**` paths to spec ids by stripping the prefix.
-- Map `src/{omni,router,runtime,...}/**` paths to required test coverage.
+- Map `src/{channels,omni,router,runtime,...}/**` paths to required test coverage.
 - Run `ravi specs sync --json` and `ravi specs get <id> --mode full --json` for each changed spec.
 - Fail with clear messages naming the spec id, expected kind, and actual kind.
 

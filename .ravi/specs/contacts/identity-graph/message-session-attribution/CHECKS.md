@@ -14,7 +14,7 @@
 Suggested scans:
 
 ```bash
-rg -n "actor_type|contact_id|agent_id|platform_identity_id|raw_sender_id|normalized_sender_id|identity_confidence|identity_provenance" src/omni src/router src/gateway.ts src/session-trace
+rg -n "actor_type|contact_id|agent_id|platform_identity_id|raw_sender_id|normalized_sender_id|identity_confidence|identity_provenance" src/channels src/omni src/router src/gateway.ts src/session-trace
 rg -n "group_id|last_to|source_chat_id|chatJid|senderPhone|resolvedSenderPhone|displayName.*contact|name.*identity" src
 ```
 
@@ -116,7 +116,7 @@ Expected:
 ## Smoke Commands
 
 ```bash
-bun test src/omni/consumer-context.test.ts src/gateway-session-trace.test.ts
+bun test src/channels/inbound/pipeline-context.test.ts src/gateway-session-trace.test.ts
 bun test src/channels/slack/instance-alias.test.ts src/channels/slack/socket-mode.test.ts
 bun test src/runtime/runtime-request-context.test.ts
 bun run build

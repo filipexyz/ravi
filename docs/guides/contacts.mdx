@@ -261,7 +261,7 @@ When a message arrives, the agent is resolved in this order:
 
 1. `contact.allowed_agents` -- if set, only these agents receive the message
 2. Route match via `ravi instances routes` -- pattern-based routing
-3. Account-agent mapping -- from `ravi whatsapp connect --agent`
+3. Instance agent -- from `ravi instances connect <name> --agent <id>` or `ravi instances set <name> agent <id>`
 4. Default agent -- fallback
 
 ## Merging Duplicate Contacts

@@ -18936,7 +18936,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "instance": {
-      "description": "Filter by instance name or Omni instance id",
+      "description": "Filter by instance name or instance id",
       "type": "string"
     },
     "limit": {
@@ -33345,7 +33345,22 @@ class RaviSchemas {
   "properties": {
     "infrastructure": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "legacyBridge": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "nats": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "nats",
+        "legacyBridge"
+      ],
       "type": "object"
     },
     "pm2Available": {
@@ -37982,7 +37997,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "account": {
-      "description": "Explicit Ravi/Omni account id for --send",
+      "description": "Explicit account id for --send",
       "type": "string"
     },
     "background": {
@@ -39292,7 +39307,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "target": {
-      "description": "Instance name or omni instanceId",
+      "description": "Instance name or instanceId",
       "type": "string"
     }
   },
@@ -39340,7 +39355,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "target": {
-      "description": "Instance name or omni instanceId",
+      "description": "Instance name or instanceId",
       "type": "string"
     }
   },
@@ -39417,6 +39432,110 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const instancesLogoutInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually log out and wipe the credentials; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Instance name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+''';
+
+  static const instancesLogoutReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "instance": {
+      "type": "string"
+    },
+    "instanceId": {
+      "type": "string"
+    },
+    "logout": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cause": {
+              "type": "null"
+            },
+            "clearedKeys": {
+              "type": "null"
+            },
+            "via": {
+              "const": "runner",
+              "type": "string"
+            }
+          },
+          "required": [
+            "via",
+            "clearedKeys",
+            "cause"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cause": {
+              "type": "string"
+            },
+            "clearedKeys": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "via": {
+              "const": "auth-store",
+              "type": "string"
+            }
+          },
+          "required": [
+            "via",
+            "clearedKeys",
+            "cause"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "status": {
+      "const": "logged_out",
+      "type": "string"
+    },
+    "transport": {
+      "const": "whatsapp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "instance",
+    "instanceId",
+    "transport",
+    "logout",
+    "changedCount"
+  ],
   "type": "object"
 }
 ''';

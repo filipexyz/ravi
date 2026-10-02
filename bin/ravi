@@ -10,6 +10,12 @@
 # older than `src/` or package.json, so the path stays single and never runs old
 # code. A failed rebuild refuses to run rather than falling back to a stale artifact.
 #
+# The rebuild also writes dist/vendor/baileys.js (`build:vendor`). The WhatsApp
+# runner loads Baileys from that file whenever it exists and only falls back to
+# node_modules/baileys without it, so rebuilding the bundle alone would leave an
+# old Baileys in use after a tarball bump. A bump always changes package.json (the
+# `file:` tarball path carries the version), which is what triggers the rebuild.
+#
 # The published package (bun/npm global install) ships bin/ravi, dist/ and
 # package.json but no src/, so there is nothing to rebuild from: the shipped bundle
 # is the release and runs as is. File mtimes in an extracted package say nothing
@@ -97,7 +103,7 @@ if [ "${RAVI_ALLOW_STALE_BUNDLE:-}" != "1" ]; then
     # Build output is only interesting when the build fails; keep a normal
     # invocation quiet.
     BUILD_LOG="$PROJECT_DIR/dist/.build.log"
-    if ! (cd "$PROJECT_DIR" && bun run build:cli && bun run gen:plugins) >"$BUILD_LOG" 2>&1; then
+    if ! (cd "$PROJECT_DIR" && bun run build:cli && bun run build:vendor && bun run gen:plugins) >"$BUILD_LOG" 2>&1; then
       echo "ravi: build failed; refusing to run a stale bundle." >&2
       tail -20 "$BUILD_LOG" >&2
       exit 1

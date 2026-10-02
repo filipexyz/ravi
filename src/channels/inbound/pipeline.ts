@@ -1,0 +1,2486 @@
+/**
+ * Channel inbound pipeline
+ *
+ * Turns transport-neutral `ChannelInboundEvent`s into ravi session prompts: session
+ * keys, contacts, chats, mentions, edit-restart, the history ledger, reactions and
+ * pairing relays. One instance is shared by every inbound source (the WhatsApp
+ * runner source and the optional legacy bridge source), so the history cutoff,
+ * the reaction dedupe set and the active typing targets are process-wide.
+ *
+ * Sources own the wire format (subjects, envelopes, durables) and pass per-source
+ * behaviour (media loading, group metadata refresh, unknown-instance silencing)
+ * as `InboundSourceHooks` with every event.
+ */
+
+import { execFile } from "node:child_process";
+import { publish, nats } from "../../nats.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
+import { expandRaviCommandPrompt, RaviCommandError } from "../../commands/index.js";
+import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../message-prefix.js";
+import { handleSlashCommand } from "../../slash/index.js";
+import { promisify } from "node:util";
+
+const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
+const CONSUMER_LAG_WARN_MS = 10_000;
+const unregisteredCooldowns = new Map<string, number>();
+import {
+  attachChatToSession,
+  commitMatchedRoute,
+  expandHome,
+  findSessionByAttachedChat,
+  getSession,
+  listSessionSubscriptions,
+  matchRoute,
+  isChatCompatibleWithSession,
+} from "../../router/index.js";
+import { configStore } from "../../config-store.js";
+import {
+  getContact,
+  getContactName,
+  buildMentionedContactPromptContexts,
+  ensureContactFromInbound,
+  isContactAllowedForAgent,
+  recordInbound,
+  resolveAgentPlatformIdentity,
+  resolvePlatformIdentity,
+  saveAccountPending,
+  type PlatformIdentity,
+  upsertAgentPlatformIdentity,
+} from "../../contacts.js";
+import {
+  dbCanonicalizeDmChatForContact,
+  dbContactDmNormalizedChatId,
+  dbFindChat,
+  dbGetMessageMeta,
+  dbSaveMessageMeta,
+  dbUpsertChat,
+  dbUpsertChatMessage,
+  dbUpsertChatParticipant,
+  dbUpsertSessionParticipant,
+} from "../../router/router-db.js";
+import { resetSession } from "../../router/sessions.js";
+import {
+  recordChannelMessageReceivedTrace,
+  recordPresenceTrace,
+  recordRouteRejectedTrace,
+  recordRouteResolvedTrace,
+  type NormalizedSessionTraceSource,
+  type RouteRejectionReason,
+} from "../../session-trace/channel-trace.js";
+import { recordRuntimeTraceEvent } from "../../session-trace/runtime-trace.js";
+import { logger } from "../../utils/logger.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone } from "../../utils/phone.js";
+import type {
+  MessageActorMetadata,
+  MessageContext,
+  MessageTarget,
+  RaviCommandPromptMetadata,
+} from "../../runtime/message-types.js";
+import {
+  actorMetadataFromMessageMetadata,
+  buildRuntimeMessageEditRebasePlan,
+  renderRuntimeMessageEditRebasePrompt,
+  summarizeRuntimeMessageEditRebasePlan,
+  type RuntimeMessageEditRebasePlan,
+} from "../../runtime/session-rebase.js";
+import type { AgentConfig } from "../../router/types.js";
+import { canonicalChannelId } from "../capabilities.js";
+import { formatGroupMembersForPrompt, resolveGroupMetadata } from "../group-metadata/cache.js";
+import { extractInboundMentionTargets, normalizeInboundMentionText } from "../mentions.js";
+import type { ChannelMessageSender } from "../outbound/sender.js";
+import { pairingTopicsFor } from "./topics.js";
+import type {
+  ChannelInboundEvent,
+  ChannelInboundEventOf,
+  ChannelInboundHandler,
+  ChannelInboundTransport,
+  ChannelPresenceTargets,
+  InboundMessagePayload,
+  InboundSourceHooks,
+} from "./types.js";
+import { TypingPresenceHeartbeat, type TypingPresenceEvent } from "./typing-presence.js";
+import { runTagRulesForContact } from "../../tag-rules/index.js";
+import { saveToAgentAttachments, MAX_AUDIO_BYTES } from "../../utils/media.js";
+import { firstProviderTimestampMs, timestampLikeToMs } from "../../utils/provider-timestamp.js";
+import { transcribeAudio } from "../../transcribe/openai.js";
+import { readdir } from "node:fs/promises";
+import type { RuntimeAbortProvenance } from "../../runtime/session-dispatcher.js";
+
+const log = logger.child("channels:inbound");
+const execFileAsync = promisify(execFile);
+
+/** Read receipts are real only on canonical WhatsApp (canonicalChannelId(channelType) === "whatsapp"). */
+export function supportsReadReceipts(channelType: string): boolean {
+  return canonicalChannelId(channelType) === "whatsapp";
+}
+
+function emitPendingReviewEvent(input: {
+  channel: string;
+  accountId: string;
+  senderId: string;
+  chatId: string;
+  isGroup: boolean;
+}): void {
+  const reviewKind = input.isGroup ? "chat" : "contact";
+  const payload = {
+    type: "account",
+    reviewKind,
+    channel: input.channel,
+    accountId: input.accountId,
+    senderId: input.senderId,
+    chatId: input.chatId,
+    isGroup: input.isGroup,
+  };
+  const topic = input.isGroup ? "ravi.chats.pending" : "ravi.contacts.pending";
+  nats.emit(topic, payload).catch((err) => log.warn("Failed to emit pending notification", { topic, error: err }));
+
+  if (input.isGroup) {
+    nats
+      .emit("ravi.contacts.pending", { ...payload, deprecated: true, replacementTopic: "ravi.chats.pending" })
+      .catch((err) => log.warn("Failed to emit legacy pending notification", { error: err }));
+  }
+}
+
+export interface ChannelInboundPipelineOptions {
+  /** Test seam. */
+  resolveGroupMetadata?: typeof resolveGroupMetadata;
+  /** Test seam. */
+  formatGroupMembers?: typeof formatGroupMembersForPrompt;
+  isRuntimeSessionActive?: (sessionName: string) => boolean;
+  abortRuntimeSession?: (sessionName: string, provenance: RuntimeAbortProvenance) => boolean;
+}
+
+/** Message payload as the pipeline reads it (the inbound contract's message payload). */
+type MessageReceivedPayload = InboundMessagePayload;
+type MessageReceivedEvent = ChannelInboundEventOf<"message.received">;
+type ReactionReceivedEvent = ChannelInboundEventOf<"reaction.received">;
+type ConnectionEvent = ChannelInboundEventOf<"connection.qr" | "connection.connected">;
+
+interface MessageEditInfo {
+  editedMessageId: string;
+  editEventId: string;
+  newText: string;
+  editedAt?: number;
+  source: "content-edit" | "raw-is-edited";
+}
+
+interface WorkspaceChangeInspection {
+  state: "clean" | "dirty" | "unavailable";
+  changedFiles: number;
+  preview: string[];
+}
+
+/**
+ * Strip @-suffix from JID to get the phone/id portion.
+ * "5511999999999@s.whatsapp.net" → "5511999999999"
+ * "120363xxx@g.us" → "120363xxx"
+ * "5511999999999" → "5511999999999"
+ */
+function stripJid(jid: string): string {
+  const atIdx = jid.indexOf("@");
+  return atIdx !== -1 ? jid.slice(0, atIdx) : jid;
+}
+
+function isUrgentInboundText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.startsWith("urgent") ||
+    normalized.startsWith("urgent:") ||
+    normalized.startsWith("urgente") ||
+    normalized.startsWith("urgente:") ||
+    normalized.startsWith("p0:")
+  );
+}
+
+function cleanString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return undefined;
+  return trimmed;
+}
+
+function rawPayloadString(rawPayload: Record<string, unknown> | undefined, key: string): string | undefined {
+  return cleanString(rawPayload?.[key]);
+}
+
+function rawPayloadNumber(rawPayload: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = rawPayload?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveMessageProviderTimestampMs(payload: MessageReceivedPayload, envelopeTimestamp: number): number {
+  return (
+    firstProviderTimestampMs(payload.platformTimestamp, payload.rawPayload?.messageTimestamp, envelopeTimestamp) ??
+    Date.now()
+  );
+}
+
+function resolvePluginReceivedAtMs(event: MessageReceivedEvent, payload: MessageReceivedPayload): number | null {
+  return (
+    timestampLikeToMs(payload.rawPayload?.pluginReceivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.plugin_received_at) ??
+    timestampLikeToMs(payload.rawPayload?.receivedAt) ??
+    timestampLikeToMs(payload.rawPayload?.received_at) ??
+    timestampLikeToMs(event.pluginReceivedAt) ??
+    timestampLikeToMs(event.receivedAt) ??
+    null
+  );
+}
+
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
+}
+
+function isWhatsAppLidSender(value: string): boolean {
+  return value.trim().toLowerCase().endsWith("@lid");
+}
+
+/** Explicit provider phone for a LID sender. Bare LID digits are not a phone. */
+function explicitResolvedWhatsAppPhone(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || isWhatsAppLidSender(trimmed) || trimmed.toLowerCase().startsWith("lid:")) return null;
+  const normalized = normalizePhone(trimmed);
+  if (!/^\d+$/.test(normalized)) return null;
+  return normalized;
+}
+
+function resolveSenderPlatformIdentity(input: {
+  channel: string;
+  instanceId: string;
+  normalizedSenderId: string;
+  rawSenderId: string;
+  rawProviderSenderId: string;
+}): PlatformIdentity | null {
+  const rawSenderIsLid = input.channel === "whatsapp" && isWhatsAppLidSender(input.rawProviderSenderId);
+  const senderIds = uniqueStrings([
+    input.normalizedSenderId,
+    input.rawSenderId,
+    rawSenderIsLid ? `lid:${input.rawSenderId}` : undefined,
+  ]);
+  const phoneFallbackIds =
+    input.channel === "whatsapp" && rawSenderIsLid && input.normalizedSenderId === input.rawSenderId
+      ? []
+      : uniqueStrings([input.normalizedSenderId, input.rawSenderId]);
+
+  for (const platformUserId of senderIds) {
+    const identity = resolvePlatformIdentity({ channel: input.channel, instanceId: input.instanceId, platformUserId });
+    if (identity) return identity;
+  }
+
+  // Agent channel accounts are scoped to the instance they own, but in a
+  // shared WhatsApp group their messages are received by every connected
+  // Ravi instance in the group. Resolve exact agent-owned platform ids
+  // across instances before generic/global fallbacks so agent accounts do
+  // not get downgraded to legacy phone contacts on sibling accounts.
+  for (const platformUserId of senderIds) {
+    const identity = resolveAgentPlatformIdentity({ channel: input.channel, platformUserId });
+    if (identity) return identity;
+  }
+
+  const fallbackLookups = [
+    { channel: input.channel, instanceIds: [""], senderIds },
+    ...(input.channel === "whatsapp" ? [{ channel: "phone", instanceIds: [""], senderIds: phoneFallbackIds }] : []),
+  ];
+
+  for (const lookup of fallbackLookups) {
+    for (const instanceId of lookup.instanceIds) {
+      if (lookup.senderIds.length === 0) continue;
+      for (const platformUserId of lookup.senderIds) {
+        const identity = resolvePlatformIdentity({ channel: lookup.channel, instanceId, platformUserId });
+        if (identity) return identity;
+      }
+    }
+  }
+
+  return null;
+}
+export class ChannelInboundPipeline implements ChannelInboundHandler, ChannelPresenceTargets {
+  /** Active targets for typing heartbeat: sessionName → MessageTarget */
+  private activeTargets = new Map<string, MessageTarget>();
+  private readonly typingPresence: TypingPresenceHeartbeat;
+  /** Startup timestamp (ms) — messages older than this are history sync, skip them */
+  private readonly startedAt = Date.now();
+  /** Dedup set for recently processed event IDs (prevents double-processing) */
+  private readonly processedEvents = new Set<string>();
+  private readonly DEDUP_MAX = 500;
+
+  /**
+   * @param sender Outbound sender used for typing, read receipts and slash-command replies.
+   */
+  constructor(
+    private readonly sender: ChannelMessageSender,
+    private readonly options: ChannelInboundPipelineOptions = {},
+  ) {
+    this.typingPresence = new TypingPresenceHeartbeat(
+      (target, active) => this.sender.sendTyping(target.instanceId, target.to, active),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.options.isRuntimeSessionActive,
+      (event) => this.observeTypingPresence(event),
+    );
+  }
+
+  /** Dispatches one inbound event by type. `connection.disconnected` is accepted and ignored. */
+  async handle(event: ChannelInboundEvent, hooks: InboundSourceHooks): Promise<void> {
+    switch (event.type) {
+      case "message.received":
+        return this.handleMessage(event, hooks);
+      case "reaction.received":
+        return this.handleReaction(event);
+      case "connection.qr":
+      case "connection.connected":
+        return this.handleConnection(event);
+      case "connection.disconnected":
+        return;
+    }
+  }
+
+  /** Stops every typing heartbeat and forgets the active targets. Sources are stopped by their owner. */
+  async stop(): Promise<void> {
+    log.info("Stopping channel inbound pipeline...");
+    await this.typingPresence.stopAll();
+    this.activeTargets.clear();
+  }
+
+  /**
+   * Handle a message.received event from any inbound source.
+   */
+  private async handleMessage(event: MessageReceivedEvent, hooks: InboundSourceHooks): Promise<void> {
+    const { channelType, instanceId } = event;
+    const subject = event.provenance.subject;
+    const transport = event.provenance.transport;
+    let payload: MessageReceivedPayload = event.payload;
+
+    // Skip reaction messages — these are handled by the REACTION stream consumer
+    if (payload.content.type === "reaction") return;
+
+    // WhatsApp Status and broadcast-list feeds are not conversations. Treating
+    // their shared chat id as a DM makes different authors repeatedly
+    // canonicalize the same chat into their own contact history. Besides mixing
+    // unrelated histories, that merge is synchronous and can starve daemon
+    // heartbeats. Filter before any chat/contact persistence as defense in depth
+    // even when the channel plugin emits a broadcast event.
+    if (channelType.replace(/-baileys$/, "") === "whatsapp" && isBroadcastJid(payload.chatId)) {
+      log.debug("Ignoring WhatsApp broadcast feed", {
+        instanceId,
+        broadcastKind: payload.chatId.toLowerCase() === "status@broadcast" ? "status" : "broadcast",
+      });
+      return;
+    }
+
+    const handlerStartedAt = Date.now();
+    const pluginReceivedAtMs = resolvePluginReceivedAtMs(event, payload);
+    const consumerLagMs = pluginReceivedAtMs === null ? null : Math.max(0, handlerStartedAt - pluginReceivedAtMs);
+    if (consumerLagMs !== null && consumerLagMs >= CONSUMER_LAG_WARN_MS && event.ingestMode !== "history-sync") {
+      log.warn("Channel inbound lag detected", {
+        eventId: event.id,
+        subject,
+        consumerLagMs,
+        pluginReceivedAtMs,
+        handlerStartedAt,
+      });
+    }
+
+    // Provider timestamps are the source of truth for message ordering.
+    // History-sync batches can share one envelope timestamp while each message
+    // carries its original platform timestamp in the payload.
+    const msgTs = resolveMessageProviderTimestampMs(payload, event.timestamp);
+    // History-sync/old messages must still feed the durable chat/contact ledger.
+    // They are suppressed only before route/runtime dispatch to avoid replaying prompts.
+    const suppressRuntimeReplay = event.ingestMode === "history-sync" || msgTs < this.startedAt - 5_000;
+
+    // Derive phone and group status from JIDs
+    const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
+    let editInfo = this.extractMessageEditInfo(payload, rawPayload);
+    const normalizedMentionText = normalizeInboundMentionText({
+      text: editInfo?.newText ?? payload.content?.text,
+      rawPayload,
+      resolveName: (id) => this.resolveMentionDisplayName(id),
+    });
+    if (
+      normalizedMentionText.text !== undefined &&
+      normalizedMentionText.text !== (editInfo?.newText ?? payload.content?.text)
+    ) {
+      payload = { ...payload, content: { ...payload.content, text: normalizedMentionText.text } };
+      if (editInfo) editInfo = { ...editInfo, newText: normalizedMentionText.text };
+    }
+    // isDm: Slack uses lowercase "isDm", Discord/Telegram use "isDM"
+    const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
+    // rawPayload.isGroup: Telegram sets this explicitly
+    const rawIsGroup = rawPayload?.isGroup;
+    const isGroup =
+      payload.chatId.endsWith("@g.us") ||
+      rawIsGroup === true ||
+      (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
+    const senderPhone = stripJid(payload.from);
+    const resolvedSenderPhone = this.resolveSenderPhone(rawPayload, senderPhone);
+    const chatJid = payload.chatId;
+    const inboundChannel = channelType.replace(/-baileys$/, "");
+    let routePhone: string;
+    if (isGroup) {
+      routePhone = chatJid;
+    } else if (inboundChannel === "whatsapp" && isWhatsAppLidSender(payload.from)) {
+      const explicitResolvedPhone =
+        rawPayloadString(rawPayload, "resolvedSenderPhone") ??
+        cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+      const resolvedIsPhone =
+        explicitResolvedPhone != null &&
+        !isWhatsAppLidSender(explicitResolvedPhone) &&
+        !explicitResolvedPhone.trim().toLowerCase().startsWith("lid:");
+      routePhone = canonicalizeRouteIdentity(resolvedIsPhone ? explicitResolvedPhone : payload.from);
+    } else if (inboundChannel === "whatsapp") {
+      routePhone = canonicalizeRouteIdentity(resolvedSenderPhone || payload.from);
+    } else {
+      routePhone = resolvedSenderPhone || senderPhone;
+    }
+
+    // Channel detection: Slack/Discord non-DM channels use "channel" peerKind.
+    // accountId is still included in the session key for full isolation.
+    const isNonDmChannel = rawIsDm === false && (channelType === "slack" || channelType === "discord");
+    const peerKind = isNonDmChannel ? ("channel" as const) : undefined;
+    // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
+    const routerConfig = configStore.getConfig();
+    const effectiveAccountId = routerConfig.instanceToAccount[instanceId];
+    if (!effectiveAccountId) {
+      if (hooks.isIgnoredInstance?.(instanceId) ?? false) {
+        log.debug("Ignoring unknown instanceId the source is configured to ignore", { instanceId, channelType });
+        return;
+      }
+
+      log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
+      const now = Date.now();
+      const lastEmit = unregisteredCooldowns.get(instanceId) ?? 0;
+      if (now - lastEmit >= UNREGISTERED_COOLDOWN_MS) {
+        unregisteredCooldowns.set(instanceId, now);
+        publish("ravi.instances.unregistered", {
+          instanceId,
+          channelType,
+          subject,
+          from: senderPhone,
+          chatId: chatJid,
+          isGroup,
+          contentType: payload.content?.type,
+          timestamp: event.timestamp,
+        }).catch(() => {});
+      }
+      return;
+    }
+    const instanceConfig = routerConfig.instances?.[effectiveAccountId];
+    if (instanceConfig?.enabled === false) {
+      log.info("Instance disabled in ravi, ignoring inbound", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+      });
+      return;
+    }
+
+    // Thread detection:
+    // - Slack: isThreadReply + threadTs
+    // - Discord: isThread + threadId (in rawPayload)
+    // - Telegram: threadId (set directly when is_topic_message === true)
+    let threadId: string | undefined;
+    if (rawPayload?.isThreadReply === true && rawPayload.threadTs) {
+      threadId = String(rawPayload.threadTs);
+    } else if (rawPayload?.isThread === true && rawPayload.threadId) {
+      threadId = String(rawPayload.threadId);
+    } else if (rawPayload?.threadId) {
+      threadId = String(rawPayload.threadId);
+    }
+
+    log.debug("Message received", {
+      instanceId,
+      channelType,
+      from: senderPhone,
+      chatId: chatJid,
+      isGroup,
+      ...(peerKind ? { peerKind } : {}),
+      ...(threadId ? { threadId } : {}),
+    });
+
+    // Normalize for stable session keys:
+    // - Strip channel implementation suffix (whatsapp-baileys → whatsapp)
+    // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
+    const sessionChannel = channelType.replace(/-baileys$/, "");
+    const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
+    const normalizedSenderId = resolvedSenderPhone || senderPhone;
+    let senderPlatformIdentity = resolveSenderPlatformIdentity({
+      channel: sessionChannel,
+      instanceId,
+      normalizedSenderId,
+      rawSenderId: senderPhone,
+      rawProviderSenderId: payload.from,
+    });
+    let senderContact =
+      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+        ? getContact(senderPlatformIdentity.ownerId)
+        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    const senderContactChatKey =
+      !isGroup && !threadId && !isNonDmChannel && senderPlatformIdentity?.ownerType !== "agent" && senderContact?.id
+        ? dbContactDmNormalizedChatId(senderContact.id)
+        : undefined;
+    let canonicalChat = dbUpsertChat({
+      channel: sessionChannel,
+      instanceId,
+      platformChatId: threadId ? `${chatJid}#${threadId}` : chatJid,
+      normalizedChatId: senderContactChatKey,
+      chatType: threadId ? "thread" : isGroup ? "group" : isNonDmChannel ? "channel" : "dm",
+      title: rawPayloadString(rawPayload, "chatName") ?? null,
+      rawProvenance: {
+        source: `${transport}.message.received`,
+        eventId: event.id,
+        subject,
+        accountId: effectiveAccountId,
+        instanceId,
+        chatId: chatJid,
+        threadId: threadId ?? null,
+      },
+      seenAt: msgTs,
+    });
+    if (senderContactChatKey && senderContact?.id) {
+      canonicalChat = dbCanonicalizeDmChatForContact({
+        chatId: canonicalChat.id,
+        contactId: senderContact.id,
+        platformChatId: chatJid,
+        title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+        rawProvenance: {
+          source: `${transport}.message.received`,
+          eventId: event.id,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          senderId: payload.from,
+        },
+        seenAt: msgTs,
+      });
+    }
+
+    const explicitResolvedSender =
+      rawPayloadString(rawPayload, "resolvedSenderPhone") ??
+      cleanString((rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt);
+    const rawSenderIsLid = sessionChannel === "whatsapp" && isWhatsAppLidSender(payload.from);
+    const intakeMode = instanceConfig?.contactIntakeMode ?? "off";
+    // Intake `off` does not create contacts. A provider-resolved phone that
+    // already belongs to a contact is still strong evidence to link the LID.
+    const linkResolvedLidToExistingContact =
+      rawSenderIsLid &&
+      explicitResolvedWhatsAppPhone(explicitResolvedSender) !== null &&
+      senderPlatformIdentity?.ownerType !== "agent";
+    const shouldRunContactIntake =
+      senderPlatformIdentity?.ownerType !== "agent" &&
+      ((intakeMode !== "off" && (!isGroup || Boolean(explicitResolvedSender))) || linkResolvedLidToExistingContact);
+
+    if (shouldRunContactIntake) {
+      try {
+        const contactIdentity = rawSenderIsLid && !explicitResolvedSender ? `lid:${senderPhone}` : resolvedSenderPhone;
+        const intake = ensureContactFromInbound({
+          channel: sessionChannel,
+          instanceId,
+          platformSenderId: payload.from || senderPhone,
+          contactIdentity,
+          displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+          avatarUrl: rawPayloadString(rawPayload, "avatarUrl") ?? null,
+          profileData: {
+            source: `${transport}.message.received`,
+            eventId: event.id,
+            accountId: effectiveAccountId,
+            rawSenderId: senderPhone,
+            resolvedSenderPhone,
+          },
+          chatId: canonicalChat.id,
+          chatType: canonicalChat.chatType,
+          sourceEventId: event.id,
+          providerMessageId: payload.externalId,
+          intakeMode,
+          defaultTags: instanceConfig?.defaultContactTags ?? null,
+          provenance: {
+            subject,
+            providerChannelType: channelType,
+            providerChatId: chatJid,
+            providerSenderId: payload.from,
+          },
+        });
+        if (intake.platformIdentity) senderPlatformIdentity = intake.platformIdentity;
+        if (intake.contact) senderContact = intake.contact;
+        if (!isGroup && !threadId && !isNonDmChannel && intake.contact?.id) {
+          canonicalChat = dbCanonicalizeDmChatForContact({
+            chatId: canonicalChat.id,
+            contactId: intake.contact.id,
+            platformChatId: chatJid,
+            title: rawPayloadString(rawPayload, "chatName") ?? rawPayloadString(rawPayload, "pushName") ?? null,
+            rawProvenance: {
+              source: `${transport}.message.received`,
+              eventId: event.id,
+              accountId: effectiveAccountId,
+              instanceId,
+              chatId: chatJid,
+              senderId: payload.from,
+            },
+            seenAt: msgTs,
+          });
+        }
+      } catch (error) {
+        log.warn("Failed to ensure inbound contact", {
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: chatJid,
+          senderPhone,
+          error,
+        });
+      }
+    }
+
+    const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+    const actorAgentId =
+      senderPlatformIdentity?.ownerType === "agent" ? (senderPlatformIdentity.ownerId ?? undefined) : undefined;
+    const sourceActorMetadata: MessageActorMetadata = {
+      canonicalChatId: canonicalChat.id,
+      actorType,
+      ...(actorAgentId ? { actorAgentId } : {}),
+      ...(actorType === "contact" && senderContact?.id ? { contactId: senderContact.id } : {}),
+      ...(senderPlatformIdentity?.id ? { platformIdentityId: senderPlatformIdentity.id } : {}),
+      rawSenderId: senderPhone,
+      normalizedSenderId,
+      ...(senderPlatformIdentity?.confidence ? { identityConfidence: senderPlatformIdentity.confidence } : {}),
+      identityProvenance: {
+        source: `${transport}.message.received`,
+        eventId: event.id,
+        instanceId,
+        accountId: effectiveAccountId,
+        ...(senderPlatformIdentity?.id
+          ? {
+              platformIdentityId: senderPlatformIdentity.id,
+              ownerType: senderPlatformIdentity.ownerType,
+              ownerId: senderPlatformIdentity.ownerId,
+            }
+          : {}),
+      },
+    };
+    const editOriginalMessageMeta = editInfo ? dbGetMessageMeta(editInfo.editedMessageId) : null;
+    const effectiveActorMetadata = this.resolveEditedMessageActorMetadata(sourceActorMetadata, editOriginalMessageMeta);
+    const effectiveActorType = effectiveActorMetadata.actorType ?? actorType;
+    const effectiveActorAgentId =
+      effectiveActorMetadata.actorAgentId ?? (effectiveActorType === "agent" ? actorAgentId : undefined);
+    const effectiveContactId =
+      effectiveActorMetadata.contactId ??
+      (effectiveActorType === "contact" && senderContact?.id ? senderContact.id : undefined);
+    const effectivePlatformIdentityId = effectiveActorMetadata.platformIdentityId ?? senderPlatformIdentity?.id;
+    const effectiveRawSenderId = effectiveActorMetadata.rawSenderId ?? senderPhone;
+    const effectiveNormalizedSenderId = effectiveActorMetadata.normalizedSenderId ?? normalizedSenderId;
+    dbUpsertChatMessage({
+      chatId: canonicalChat.id,
+      channel: sessionChannel,
+      instanceId,
+      providerMessageId: payload.externalId,
+      rawChatId: chatJid,
+      rawSenderId: effectiveRawSenderId,
+      normalizedSenderId: effectiveNormalizedSenderId,
+      actorType: effectiveActorType ?? "unknown",
+      contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+      agentId: effectiveActorAgentId ?? null,
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      messageType: payload.content?.type ?? null,
+      content: {
+        type: payload.content?.type ?? null,
+        text: editInfo?.newText ?? payload.content?.text ?? null,
+        mediaUrl: payload.content?.mediaUrl ?? null,
+        mimeType: payload.content?.mimeType ?? null,
+        localPath: payload.content?.localPath ?? null,
+        isVoiceNote: payload.content?.isVoiceNote ?? null,
+        replyToId: payload.replyToId ?? null,
+        edit: editInfo
+          ? {
+              editedMessageId: editInfo.editedMessageId,
+              editEventId: editInfo.editEventId,
+              editedAt: editInfo.editedAt ?? null,
+              source: editInfo.source,
+            }
+          : null,
+      },
+      rawProvenance: {
+        source: `${transport}.message.received`,
+        eventId: event.id,
+        subject,
+        ingestMode: event.ingestMode ?? null,
+        accountId: effectiveAccountId,
+        instanceId,
+        channelType,
+        chatId: chatJid,
+        from: payload.from,
+        rawPayload: rawPayload ?? null,
+      },
+      providerTimestamp: msgTs,
+      ingestedAt: Date.now(),
+    });
+    dbUpsertChatParticipant({
+      chatId: canonicalChat.id,
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+      agentId: effectiveActorAgentId ?? null,
+      rawPlatformUserId: effectiveRawSenderId,
+      normalizedPlatformUserId: effectiveNormalizedSenderId,
+      role: effectiveActorType === "agent" ? "agent" : "member",
+      status: "active",
+      source: "inbound_message",
+      metadata: {
+        displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+        resolvedSenderId: resolvedSenderPhone,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
+      },
+      seenAt: msgTs,
+    });
+
+    if (!isGroup && effectiveActorType === "contact" && effectiveContactId) {
+      const contactIdForRules = effectiveContactId;
+      queueMicrotask(() => {
+        try {
+          runTagRulesForContact({
+            contactRef: contactIdForRules,
+            cause: { evaluation: "reactive", triggerType: "message.received" },
+            apply: true,
+          });
+        } catch (error) {
+          log.warn("Failed to run tag rules for inbound contact", {
+            contactId: contactIdForRules,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    }
+
+    if (suppressRuntimeReplay) {
+      log.debug("Historical inbound captured without runtime replay", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+        chatId: chatJid,
+        canonicalChatId: canonicalChat.id,
+        externalId: payload.externalId,
+        msgTs,
+        startedAt: this.startedAt,
+        ingestMode: event.ingestMode ?? null,
+      });
+      return;
+    }
+
+    // Match route (pure) — no DB writes yet. The session row is only
+    // committed after every policy/scope gate passes so rejected inbounds
+    // don't leave orphan sessions behind (spec contacts/identity-graph/
+    // unified-model: identity → policy → route resolution → persist).
+    let matched = matchRoute(routerConfig, {
+      phone: routePhone,
+      channel: sessionChannel,
+      accountId: effectiveAccountId,
+      isGroup,
+      groupId: sessionGroupId,
+      threadId,
+      peerKind,
+    });
+
+    if (!matched) {
+      const isNew = saveAccountPending(effectiveAccountId, routePhone, {
+        chatId: chatJid,
+        isGroup,
+      });
+      log.info("No route for message, saved as pending", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+        routePhone,
+        canonicalChatId: canonicalChat.id,
+        reviewKind: isGroup ? "chat" : "contact",
+        isNew,
+      });
+      if (isNew) {
+        emitPendingReviewEvent({
+          channel: channelType,
+          accountId: effectiveAccountId,
+          senderId: senderPhone,
+          chatId: chatJid,
+          isGroup,
+        });
+      }
+      return;
+    }
+
+    // sessions/attach: if the canonical chat is already subscribed to a
+    // session, route the inbound there instead of to the route-derived
+    // session. The subscription is an explicit operator decision and
+    // overrides the default route resolution.
+    // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation)
+    const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
+      const ownerSession = getSession(existingSubscription.sessionKey);
+      const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
+      // Instance isolation: never let the subscription override jump
+      // across transport instances. If the override would route an inbound
+      // from instance A into a session that lives on instance B, the
+      // session's outbound would later be emitted via instance B —
+      // hitting a different WhatsApp account entirely. The 2026-05-21
+      // production loop was caused by exactly this jump. Fall back to
+      // the route-derived session when this is detected.
+      const compatibleSession = isChatCompatibleWithSession(canonicalChat.id, existingSubscription.sessionKey);
+      if (!compatibleSession) {
+        log.warn("Subscription override would jump instances — ignoring subscription, using route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          routeSessionKey: matched.sessionKey,
+        });
+      } else if (ownerSession && ownerAgent) {
+        log.info("Inbound rerouted by session subscription", {
+          chatId: canonicalChat.id,
+          fromSessionKey: matched.sessionKey,
+          toSessionKey: existingSubscription.sessionKey,
+        });
+        matched = {
+          agentId: ownerSession.agentId,
+          agent: ownerAgent,
+          sessionKey: existingSubscription.sessionKey,
+          dmScope: matched.dmScope,
+          // The original route stays so policy lookups can still consult
+          // its `policy` override. The subscription doesn't expose a
+          // route — instance-level policy is the next fallback.
+          route: matched.route,
+        };
+      } else {
+        log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          hasSession: !!ownerSession,
+          hasAgent: !!ownerAgent,
+        });
+      }
+    }
+
+    const traceSource: NormalizedSessionTraceSource = {
+      channel: sessionChannel,
+      accountId: effectiveAccountId,
+      instanceId,
+      chatId: chatJid,
+      threadId: threadId ?? null,
+      messageId: payload.externalId ?? null,
+      canonicalChatId: effectiveActorMetadata.canonicalChatId ?? null,
+      actorType: effectiveActorMetadata.actorType ?? null,
+      contactId: effectiveActorMetadata.contactId ?? null,
+      actorAgentId: effectiveActorMetadata.actorAgentId ?? null,
+      platformIdentityId: effectiveActorMetadata.platformIdentityId ?? null,
+      rawSenderId: effectiveActorMetadata.rawSenderId ?? null,
+      normalizedSenderId: effectiveActorMetadata.normalizedSenderId ?? null,
+      identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
+      identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
+    };
+    const saveInboundMessageMeta = (extra: { transcription?: string; mediaPath?: string; mediaType?: string } = {}) => {
+      if (!payload.externalId || !chatJid) return;
+      dbSaveMessageMeta(payload.externalId, chatJid, {
+        canonicalChatId: effectiveActorMetadata.canonicalChatId,
+        actorType: effectiveActorMetadata.actorType,
+        contactId: effectiveActorMetadata.contactId,
+        agentId: effectiveActorMetadata.actorAgentId,
+        platformIdentityId: effectiveActorMetadata.platformIdentityId,
+        rawSenderId: effectiveActorMetadata.rawSenderId,
+        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
+        identityConfidence: effectiveActorMetadata.identityConfidence,
+        identityProvenance: effectiveActorMetadata.identityProvenance,
+        ...extra,
+      });
+    };
+
+    // Fail-soft trace recorder shared by every trace on this path. Trace
+    // writes must never crash the inbound handler, so each call is guarded
+    // with a single warn-on-failure pattern instead of repeating try/catch
+    // at every site.
+    const safeTrace = <T>(description: string, fn: () => T): T | null => {
+      try {
+        return fn();
+      } catch (error) {
+        log.warn(description, { sessionKey: matched.sessionKey, messageId: payload.externalId, error });
+        return null;
+      }
+    };
+
+    // `route.rejected` emitter for the policy / scope rejection sites
+    // below. `sessionName` is null because the session row hasn't been
+    // committed yet — that's the orphan-prevention contract.
+    const rejectRoute = (reason: RouteRejectionReason, payloadJson: Record<string, unknown>) => {
+      safeTrace("Failed to record route.rejected trace", () =>
+        recordRouteRejectedTrace({
+          sessionKey: matched.sessionKey,
+          sessionName: null,
+          agentId: matched.agent.id,
+          timestamp: msgTs,
+          source: traceSource,
+          reason,
+          payloadJson,
+        }),
+      );
+    };
+
+    // Factual "we received this message" trace fires before any rejection
+    // gate. `sessionName` may be unknown until `commitMatchedRoute` runs,
+    // so the trace is keyed by the matched `sessionKey` only — that's
+    // enough for `sessions trace` lookups and for follow-up traces
+    // (`route.resolved` / `route.rejected`) to be correlated.
+    safeTrace("Failed to record channel.message.received trace", () =>
+      recordChannelMessageReceivedTrace({
+        sessionKey: matched.sessionKey,
+        sessionName: null,
+        agentId: matched.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          eventId: event.id,
+          subject,
+          eventType: event.type,
+          ...(transport === "omni" ? { omniType: event.type } : {}),
+          instanceId,
+          channelType,
+          contentType: payload.content?.type ?? null,
+          isGroup,
+          senderId: senderPhone,
+          resolvedSenderPhone,
+          canonicalChatId: canonicalChat.id,
+          actorType: effectiveActorType,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+          actorAgentId: effectiveActorAgentId ?? null,
+          platformIdentityId: effectivePlatformIdentityId ?? null,
+          pluginReceivedAtMs,
+          consumerHandlerStartedAt: handlerStartedAt,
+          consumerLagMs,
+          chatName: rawPayloadString(rawPayload, "chatName") ?? null,
+          routePhone,
+        },
+        preview: payload.content?.text ?? null,
+      }),
+    );
+
+    if (effectiveActorType === "agent") {
+      saveInboundMessageMeta();
+      rejectRoute("agent_actor_observed", {
+        reason: "agent_actor_observed",
+        actorAgentId: effectiveActorAgentId ?? null,
+        platformIdentityId: effectivePlatformIdentityId ?? null,
+        routeSessionKey: matched.sessionKey,
+        routeAgentId: matched.agent.id,
+      });
+      log.info("Agent-origin channel message observed; suppressing runtime dispatch", {
+        instanceId,
+        accountId: effectiveAccountId,
+        chatId: chatJid,
+        senderId: senderPhone,
+        actorAgentId: effectiveActorAgentId,
+        routeSessionKey: matched.sessionKey,
+      });
+      return;
+    }
+
+    // -- Policy resolution helper --
+    // Lookup order: route.policy → instance config → default
+    const resolvePolicy = (
+      policyName: "groupPolicy" | "dmPolicy",
+      routePolicy: string | undefined,
+      defaultValue: string,
+    ): string => {
+      // 1. Explicit override on the matched route
+      if (routePolicy) return routePolicy;
+      // 2. Instance config (from instances table via RouterConfig)
+      const instance = routerConfig.instances?.[effectiveAccountId];
+      if (instance) {
+        const val = policyName === "groupPolicy" ? instance.groupPolicy : instance.dmPolicy;
+        if (val) return val;
+      }
+      return defaultValue;
+    };
+
+    // -- Group policy enforcement --
+    // Skip policy check if the group has an explicit route (not wildcard) —
+    // having a specific route is an implicit approval.
+    const hasExplicitRoute = matched.route && matched.route.pattern !== "*";
+    if (isGroup && !hasExplicitRoute) {
+      const groupPolicy = resolvePolicy("groupPolicy", matched.route?.policy, "open");
+      if (groupPolicy === "closed") {
+        log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
+        rejectRoute("group_closed", { groupPolicy, chatJid, accountId: effectiveAccountId });
+        return;
+      }
+      if (groupPolicy === "allowlist") {
+        const contact = getContact(chatJid);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, chatJid, {
+            chatId: chatJid,
+            isGroup: true,
+            name: getContactName(chatJid) ?? undefined,
+          });
+          log.info("Group not in allowlist, saved as pending", {
+            chatJid,
+            accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "chat",
+            isNew,
+          });
+          if (isNew) {
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: true,
+            });
+          }
+          rejectRoute("group_allowlist_pending", {
+            groupPolicy,
+            chatJid,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
+    // -- DM policy enforcement --
+    if (!isGroup) {
+      const dmPolicy = resolvePolicy("dmPolicy", matched.route?.policy, "open");
+      if (dmPolicy === "closed") {
+        log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
+        rejectRoute("dm_closed", { dmPolicy, senderPhone, accountId: effectiveAccountId });
+        return;
+      }
+      if (dmPolicy === "pairing") {
+        const contact = getContact(senderPhone);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
+            chatId: chatJid,
+            isGroup: false,
+          });
+          log.info("DM contact not approved (pairing policy), saved as pending", {
+            senderPhone,
+            accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "contact",
+            isNew,
+          });
+          if (isNew) {
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: false,
+            });
+          }
+          rejectRoute("dm_pairing_pending", {
+            dmPolicy,
+            senderPhone,
+            accountId: effectiveAccountId,
+            contactStatus: contact?.status ?? null,
+          });
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
+    // -- Per-agent contact scoping --
+    const agentMode = matched.agent.mode ?? "active";
+    if (agentMode !== "sentinel") {
+      const checkId = isGroup ? chatJid : senderPhone;
+      if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
+        log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
+        rejectRoute("agent_contact_scope_denied", { checkId, agentId: matched.agent.id, isGroup });
+        return;
+      }
+    }
+
+    // All policy / scope gates passed — commit the route, bind the
+    // session to the canonical chat, register the participant, and emit
+    // `route.resolved`.
+    const resolved = commitMatchedRoute(matched, {
+      phone: routePhone,
+      isGroup,
+      groupId: sessionGroupId,
+      threadId,
+      peerKind,
+    });
+    // sessions/attach: first-time chats become `primary`; subsequent chats
+    // routed into an existing session become `input`. Idempotent on
+    // re-routing the same chat. Inbound never writes legacy bindings.
+    // See .ravi/specs/sessions/attach/SPEC.md
+    try {
+      const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
+      const existingSubscription = existingSubscriptions.find((s) => s.chatId === canonicalChat.id);
+      const hasPrimary = existingSubscriptions.some((s) => s.role === "primary");
+      const hasOutputTarget = existingSubscriptions.some((s) => s.outputAttachedAt !== undefined);
+      const role = existingSubscription?.role ?? (hasPrimary ? "input" : "primary");
+      const setOutputTarget =
+        existingSubscription?.outputAttachedAt !== undefined ||
+        (!existingSubscription && role === "primary") ||
+        (!hasOutputTarget && role === "primary");
+      attachChatToSession({
+        sessionKey: resolved.sessionKey,
+        chatId: canonicalChat.id,
+        role,
+        attachedByType: "system",
+        attachedReason: "inbound-route",
+        // Inbound routing keeps the subscription index warm, but it must not
+        // steal the session's output attachment after an operator attached a
+        // different chat as the output surface.
+        setOutputTarget,
+      });
+    } catch (error) {
+      // Conflict means the chat is currently attached to another session;
+      // the override block above already detected and reused that owner
+      // (so we shouldn't reach this path with a conflicting chat). Log
+      // defensively and let the inbound continue — active subscriptions
+      // are the sole attach source of truth.
+      log.warn("Failed to record session_chat_subscription", {
+        chatId: canonicalChat.id,
+        sessionKey: resolved.sessionKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    dbUpsertSessionParticipant({
+      sessionKey: resolved.sessionKey,
+      ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",
+      ownerId: effectiveActorType === "agent" ? (effectiveActorAgentId ?? null) : (effectiveContactId ?? null),
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      role: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "human" : "unknown",
+      metadata: {
+        rawSenderId: effectiveRawSenderId,
+        normalizedSenderId: effectiveNormalizedSenderId,
+        canonicalChatId: canonicalChat.id,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
+      },
+      seenAt: msgTs,
+    });
+
+    safeTrace("Failed to record route.resolved trace", () =>
+      recordRouteResolvedTrace({
+        sessionKey: resolved.sessionKey,
+        sessionName: resolved.sessionName,
+        agentId: resolved.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          sessionKey: resolved.sessionKey,
+          sessionName: resolved.sessionName,
+          agentId: resolved.agent.id,
+          dmScope: resolved.dmScope,
+          route: resolved.route
+            ? {
+                pattern: resolved.route.pattern,
+                priority: resolved.route.priority ?? null,
+                policy: resolved.route.policy ?? null,
+                dmScope: resolved.route.dmScope ?? null,
+                session: resolved.route.session ?? null,
+              }
+            : null,
+          peerKind: peerKind ?? (isGroup ? "group" : "dm"),
+          groupId: sessionGroupId ?? null,
+          threadId: threadId ?? null,
+        },
+      }),
+    );
+
+    const { sessionName, agent } = resolved;
+    this.recordInboundContactInteraction(effectiveActorMetadata);
+
+    // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
+    const pushName = rawPayloadString(rawPayload, "pushName");
+    const senderName =
+      pushName || getContactName(resolvedSenderPhone) || getContactName(senderPhone) || resolvedSenderPhone;
+
+    // Resolve group metadata from the local cache/transport, then fall back to the inbound payload.
+    const rawGroupName = isGroup ? this.resolveGroupName(rawPayload, chatJid) : undefined;
+    const resolveMetadata = this.options.resolveGroupMetadata ?? resolveGroupMetadata;
+    const formatGroupMembers = this.options.formatGroupMembers ?? formatGroupMembersForPrompt;
+    const groupMetadata = isGroup
+      ? await resolveMetadata({
+          fetcher: hooks.fetchGroupMetadata,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          channel: channelType,
+          fallbackName: rawGroupName,
+        })
+      : null;
+    const groupName = groupMetadata?.name ?? rawGroupName;
+    const groupMembers =
+      formatGroupMembers(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
+    const mentionedContactsContext = isGroup
+      ? buildMentionedContactPromptContexts({
+          channel: sessionChannel,
+          instanceId,
+          mentions: extractInboundMentionTargets(rawPayload),
+        })
+      : [];
+
+    // Process media (loaded by the source's hook → agent attachments, transcribe audio)
+    const agentCwd = expandHome(agent.cwd);
+    const mediaResult = await this.processMedia({ ...event, payload }, hooks, agentCwd);
+
+    saveInboundMessageMeta({
+      transcription: mediaResult?.transcript,
+      mediaPath: mediaResult?.localPath,
+      mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
+    });
+
+    // Extract reply/quoted message context (works across all channels)
+    const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
+
+    // If reply references media, recover durable metadata from the quoted message.
+    let replyMediaPath: string | undefined;
+    if (replyContext?.quotedId) {
+      const replyMeta = dbGetMessageMeta(replyContext.quotedId);
+      const transcript = replyMeta?.transcription?.trim();
+      if (replyMeta?.mediaType && !replyContext.quotedMediaType) {
+        replyContext.quotedMediaType = replyMeta.mediaType;
+      }
+      if (transcript) {
+        const mediaType = replyMeta?.mediaType ?? replyContext.quotedMediaType;
+        replyContext.quotedText =
+          mediaType === "audio" || mediaType === "voice"
+            ? `[Audio]\nTranscript:\n${transcript}`
+            : `${replyContext.quotedText ?? `[${mediaType ?? "media"}]`}\nTranscript:\n${transcript}`;
+      }
+      if (replyMeta?.mediaPath) {
+        replyMediaPath = replyMeta.mediaPath;
+      }
+    }
+
+    // If reply references media but metadata has no stored path, try to find the saved attachment.
+    if (replyContext?.quotedId && replyContext.quotedMediaType && !replyMediaPath) {
+      replyMediaPath = await this.findAttachmentByMessageId(agentCwd, replyContext.quotedId);
+      log.debug("Reply media lookup", {
+        quotedId: replyContext.quotedId,
+        quotedMediaType: replyContext.quotedMediaType,
+        agentCwd,
+        found: !!replyMediaPath,
+        path: replyMediaPath,
+      });
+    }
+
+    const rawText = editInfo?.newText ?? payload.content.text ?? "";
+    const leadingPrefix = editInfo ? null : parseChannelMessagePrefix(payload.content.text);
+    const prefixDelivery = channelMessagePrefixDelivery(leadingPrefix);
+    const skipTurn = prefixDelivery._skipTurn === true;
+    const promptPayload = leadingPrefix
+      ? { ...payload, content: { ...payload.content, text: leadingPrefix.body } }
+      : payload;
+    const promptText = leadingPrefix?.body ?? rawText;
+    const humanUrgent = !leadingPrefix && isUrgentInboundText(rawText);
+    const context = this.buildContext(
+      channelType,
+      effectiveAccountId,
+      instanceId,
+      payload,
+      isGroup,
+      senderPhone,
+      resolvedSenderPhone,
+      senderName,
+      groupName,
+      groupMembers,
+      mentionedContactsContext,
+      chatJid,
+      event,
+      effectiveActorMetadata,
+      editInfo,
+    );
+
+    if (agentMode === "sentinel") {
+      const sentinelEnvelope = this.formatEnvelope(
+        channelType,
+        promptPayload,
+        isGroup,
+        senderPhone,
+        senderName,
+        groupName,
+        chatJid,
+        event.timestamp,
+        threadId,
+        mediaResult,
+        replyContext,
+        replyMediaPath,
+      );
+      // Sentinel: observe silently, no typing indicator, no source
+      try {
+        const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send --execute to reply if instructed)`;
+        await publishSessionPrompt(sessionName, {
+          prompt: sentinelPrompt,
+          _humanUrgent: humanUrgent,
+          context,
+          ...prefixDelivery,
+        });
+      } catch (err) {
+        log.error("Failed to publish sentinel prompt", err);
+      }
+      return;
+    }
+
+    // Check for slash commands before emitting to agent
+    if (rawText.startsWith("/")) {
+      const handled = await handleSlashCommand({
+        text: rawText,
+        messageId: payload.externalId,
+        senderId: senderPhone,
+        chatId: chatJid,
+        isGroup,
+        channelType,
+        accountId: effectiveAccountId,
+        routerConfig,
+        send: async (_accId, cId, text) => {
+          await this.sender.send(instanceId, cId, text);
+        },
+      });
+      if (handled) return;
+    }
+
+    // Active mode: send typing indicator, emit prompt with source
+    const source: MessageTarget = {
+      channel: channelType,
+      accountId: effectiveAccountId,
+      instanceId,
+      chatId: chatJid,
+      canonicalChatId: canonicalChat.id,
+      ...(threadId ? { threadId } : {}),
+      ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
+      ...effectiveActorMetadata,
+    };
+
+    const commandExpansion = await this.expandInboundRaviCommand({
+      rawText: promptText,
+      sessionName,
+      sessionKey: resolved.sessionKey,
+      agent,
+      source,
+      context,
+    });
+    if (commandExpansion.status === "failed") {
+      return;
+    }
+
+    const envelope = this.formatEnvelope(
+      channelType,
+      promptPayload,
+      isGroup,
+      senderPhone,
+      senderName,
+      groupName,
+      chatJid,
+      event.timestamp,
+      threadId,
+      mediaResult,
+      replyContext,
+      replyMediaPath,
+      commandExpansion.content,
+    );
+    const editRebasePlan = editInfo
+      ? buildRuntimeMessageEditRebasePlan({
+          sessionName,
+          sessionKey: resolved.sessionKey,
+          agentId: agent.id,
+          chatId: chatJid,
+          editedMessageId: editInfo.editedMessageId,
+          editEventId: editInfo.editEventId,
+          editedPrompt: envelope,
+        })
+      : null;
+    const editRestart =
+      editInfo && editRebasePlan
+        ? await this.prepareEditedMessageRestart({
+            sessionName,
+            sessionKey: resolved.sessionKey,
+            agent,
+            source,
+            context,
+            editInfo,
+            agentCwd,
+            rebasePlan: editRebasePlan,
+            transport,
+          })
+        : null;
+    const finalEnvelope =
+      editRestart && editInfo && editRebasePlan
+        ? renderRuntimeMessageEditRebasePrompt({
+            restartNotice: this.formatEditedMessageRestartNotice(editInfo, editRestart),
+            plan: editRebasePlan,
+          })
+        : envelope;
+
+    // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
+    if (payload.replyToId && payload.content.text) {
+      nats
+        .emit("ravi.inbound.reply", {
+          targetMessageId: payload.replyToId,
+          text: payload.content.text,
+          senderId: senderPhone,
+        })
+        .catch(() => {});
+    }
+
+    if (!skipTurn) {
+      await this.activateTarget(sessionName, source, instanceId, chatJid);
+    }
+
+    // Read receipts are real only on WhatsApp-compatible channels. Slack,
+    // Discord, and Telegram either do not expose a bot read receipt or only
+    // expose a token-local cursor, so avoid calling a transport receipt endpoint.
+    if (payload.externalId && supportsReadReceipts(channelType)) {
+      this.sender.markRead(instanceId, chatJid, [payload.externalId]).catch(() => {});
+    }
+
+    try {
+      await publishSessionPrompt(sessionName, {
+        prompt: finalEnvelope,
+        commands: commandExpansion.commands,
+        source,
+        _humanUrgent: humanUrgent || Boolean(editInfo),
+        context,
+        ...prefixDelivery,
+      });
+    } catch (err) {
+      log.error("Failed to publish prompt", err);
+      if (!skipTurn) {
+        await this.clearActiveTarget(sessionName);
+      }
+    }
+  }
+
+  private async expandInboundRaviCommand(input: {
+    rawText: string;
+    sessionName: string;
+    sessionKey: string;
+    agent: AgentConfig;
+    source: MessageTarget;
+    context: MessageContext;
+  }): Promise<{ status: "ready"; content?: string; commands?: RaviCommandPromptMetadata[] } | { status: "failed" }> {
+    if (!input.rawText.trimStart().startsWith("#")) {
+      return { status: "ready" };
+    }
+
+    try {
+      const expanded = expandRaviCommandPrompt(
+        {
+          prompt: input.rawText,
+          source: input.source,
+          context: input.context,
+        },
+        { agent: input.agent },
+      );
+      const commandMetadata = expanded.commands?.at(-1);
+      if (!commandMetadata) {
+        return { status: "ready" };
+      }
+
+      recordRuntimeTraceEvent({
+        sessionKey: input.sessionKey,
+        sessionName: input.sessionName,
+        agentId: input.agent.id,
+        eventType: "command.invoked",
+        eventGroup: "command",
+        status: "expanded",
+        source: input.source,
+        messageId: input.context.messageId,
+        payloadJson: commandMetadata,
+      });
+
+      return {
+        status: "ready",
+        content: expanded.prompt,
+        commands: expanded.commands,
+      };
+    } catch (error) {
+      if (error instanceof RaviCommandError) {
+        await this.emitInboundRaviCommandFailure(input, error);
+        return { status: "failed" };
+      }
+      throw error;
+    }
+  }
+
+  private async emitInboundRaviCommandFailure(
+    input: {
+      rawText: string;
+      sessionName: string;
+      sessionKey: string;
+      agent: AgentConfig;
+      source: MessageTarget;
+      context: MessageContext;
+    },
+    error: RaviCommandError,
+  ): Promise<void> {
+    recordRuntimeTraceEvent({
+      sessionKey: input.sessionKey,
+      sessionName: input.sessionName,
+      agentId: input.agent.id,
+      eventType: "command.failed",
+      eventGroup: "command",
+      status: "failed",
+      source: input.source,
+      messageId: input.context.messageId,
+      error: error.message,
+      payloadJson: {
+        code: error.code,
+        commandId: error.commandId ?? null,
+        originalText: input.rawText,
+      },
+    });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.runtime`, {
+        type: "command.failed",
+        code: error.code,
+        commandId: error.commandId ?? null,
+        error: error.message,
+        source: input.source,
+        context: input.context,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure runtime event", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.response`, {
+        error: error.message,
+        target: input.source,
+        _emitId: Math.random().toString(36).slice(2, 8),
+        _instanceId: input.source.instanceId,
+        _pid: process.pid,
+        _v: 2,
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure response", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
+  }
+
+  private extractMessageEditInfo(
+    payload: MessageReceivedPayload,
+    rawPayload: Record<string, unknown> | undefined,
+  ): MessageEditInfo | null {
+    const editedMessageId =
+      rawPayloadString(rawPayload, "editedMessageId") ??
+      rawPayloadString(rawPayload, "targetMessageId") ??
+      rawPayloadString(rawPayload, "messageId");
+    const editedAt = rawPayloadNumber(rawPayload, "editedAt") ?? rawPayloadNumber(rawPayload, "editDate");
+
+    if (payload.content?.type === "edit") {
+      const newText =
+        cleanString(payload.content.text) ??
+        rawPayloadString(rawPayload, "newText") ??
+        rawPayloadString(rawPayload, "editedText");
+      const targetMessageId = editedMessageId ?? payload.replyToId;
+      if (!targetMessageId || !newText) return null;
+      return {
+        editedMessageId: targetMessageId,
+        editEventId: payload.externalId,
+        newText,
+        ...(editedAt ? { editedAt } : {}),
+        source: "content-edit",
+      };
+    }
+
+    if (rawPayload?.isEdited === true) {
+      const newText =
+        cleanString(payload.content?.text) ??
+        rawPayloadString(rawPayload, "newText") ??
+        rawPayloadString(rawPayload, "editedText");
+      const targetMessageId = editedMessageId ?? payload.externalId;
+      if (!targetMessageId || !newText) return null;
+      return {
+        editedMessageId: targetMessageId,
+        editEventId: payload.externalId,
+        newText,
+        ...(editedAt ? { editedAt } : {}),
+        source: "raw-is-edited",
+      };
+    }
+
+    return null;
+  }
+
+  private async prepareEditedMessageRestart(input: {
+    sessionName: string;
+    sessionKey: string;
+    agent: AgentConfig;
+    source: MessageTarget;
+    context: MessageContext;
+    editInfo: MessageEditInfo;
+    agentCwd: string;
+    rebasePlan: RuntimeMessageEditRebasePlan;
+    transport: ChannelInboundTransport;
+  }): Promise<{
+    aborted: boolean;
+    reset: boolean;
+    workspace: WorkspaceChangeInspection;
+  }> {
+    const aborted =
+      this.options.abortRuntimeSession?.(input.sessionName, {
+        source: input.transport,
+        action: "message.edited",
+        reason: "message_edited_restart",
+        actor: input.source.normalizedSenderId ?? input.context.senderId,
+        correlationId: input.editInfo.editEventId,
+        request: {
+          messageId: input.editInfo.editedMessageId,
+          editEventId: input.editInfo.editEventId,
+        },
+      }) ?? false;
+    const reset = resetSession(input.sessionKey);
+    const workspace = await this.inspectWorkspaceChanges(input.agentCwd);
+
+    try {
+      recordRuntimeTraceEvent({
+        sessionKey: input.sessionKey,
+        sessionName: input.sessionName,
+        agentId: input.agent.id,
+        eventType: "channel.message.edited",
+        eventGroup: "channel",
+        status: "restarted",
+        source: input.source,
+        messageId: input.editInfo.editedMessageId,
+        payloadJson: {
+          editEventId: input.editInfo.editEventId,
+          editSource: input.editInfo.source,
+          editedAt: input.editInfo.editedAt ?? null,
+          aborted,
+          reset,
+          workspace,
+          rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
+        },
+      });
+    } catch (error) {
+      log.warn("Failed to record message edit restart trace", {
+        sessionName: input.sessionName,
+        messageId: input.editInfo.editedMessageId,
+        error,
+      });
+    }
+
+    log.info("Message edit restarted runtime session", {
+      sessionName: input.sessionName,
+      sessionKey: input.sessionKey,
+      agentId: input.agent.id,
+      editedMessageId: input.editInfo.editedMessageId,
+      editEventId: input.editInfo.editEventId,
+      aborted,
+      reset,
+      workspaceState: workspace.state,
+      changedFiles: workspace.changedFiles,
+      rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
+    });
+
+    return { aborted, reset, workspace };
+  }
+
+  private async inspectWorkspaceChanges(cwd: string): Promise<WorkspaceChangeInspection> {
+    try {
+      const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 2_000,
+        maxBuffer: 64 * 1024,
+      });
+      const lines = String(stdout)
+        .split(/\r?\n/)
+        .map((line) => line.trimEnd())
+        .filter(Boolean);
+      return {
+        state: lines.length > 0 ? "dirty" : "clean",
+        changedFiles: lines.length,
+        preview: lines.slice(0, 8),
+      };
+    } catch {
+      return { state: "unavailable", changedFiles: 0, preview: [] };
+    }
+  }
+
+  private resolveEditedMessageActorMetadata(
+    current: MessageActorMetadata,
+    originalMessageMeta: ReturnType<typeof dbGetMessageMeta>,
+  ): MessageActorMetadata {
+    const inherited = actorMetadataFromMessageMetadata(originalMessageMeta);
+    if (!inherited || (!inherited.contactId && !inherited.actorAgentId && inherited.actorType === "unknown")) {
+      return current;
+    }
+
+    return {
+      ...current,
+      ...inherited,
+      canonicalChatId: current.canonicalChatId ?? inherited.canonicalChatId,
+      identityProvenance: {
+        ...(inherited.identityProvenance ?? {}),
+        inheritedFromEditedMessageId: originalMessageMeta?.messageId,
+        editEventActor: {
+          actorType: current.actorType ?? null,
+          rawSenderId: current.rawSenderId ?? null,
+          normalizedSenderId: current.normalizedSenderId ?? null,
+        },
+      },
+    };
+  }
+
+  private recordInboundContactInteraction(actorMetadata: MessageActorMetadata): void {
+    if (actorMetadata.actorType !== "contact" || !actorMetadata.contactId) return;
+    try {
+      recordInbound(actorMetadata.contactId);
+    } catch (error) {
+      log.warn("Failed to record inbound contact interaction", {
+        contactId: actorMetadata.contactId,
+        error,
+      });
+    }
+  }
+
+  private formatEditedMessageRestartNotice(
+    editInfo: MessageEditInfo,
+    restart: {
+      aborted: boolean;
+      reset: boolean;
+      workspace: WorkspaceChangeInspection;
+    },
+  ): string {
+    const lines = [
+      "## Mensagem editada detectada pelo canal",
+      "",
+      `Mensagem original: ${editInfo.editedMessageId}`,
+      `Evento de edicao: ${editInfo.editEventId}`,
+      `Sessao abortada: ${restart.aborted ? "sim" : "nao havia runtime ativo"}`,
+      `Provider state resetado: ${restart.reset ? "sim" : "nao"}`,
+    ];
+
+    if (restart.workspace.state === "dirty") {
+      lines.push(
+        "",
+        `Workspace do agente tem ${restart.workspace.changedFiles} arquivo(s) com alteracoes.`,
+        "Antes de modificar arquivos novamente, peca autorizacao ao usuario para manter ou reverter essas alteracoes.",
+        "Nao reverta nada sem autorizacao explicita.",
+      );
+      if (restart.workspace.preview.length > 0) {
+        lines.push("", "Alteracoes detectadas:");
+        for (const entry of restart.workspace.preview) {
+          lines.push(`- ${entry}`);
+        }
+      }
+    } else if (restart.workspace.state === "clean") {
+      lines.push("", "Workspace do agente esta limpo. Processe a mensagem editada como substituta da anterior.");
+    } else {
+      lines.push(
+        "",
+        "Nao foi possivel verificar o workspace do agente. Antes de modificar arquivos, confira o estado local.",
+      );
+    }
+
+    lines.push("", "---", "");
+    return lines.join("\n");
+  }
+
+  /**
+   * Handle connection events (QR code, connected): relay them to the pairing topic of the
+   * channel type and register the connected account as the agent's platform identity.
+   */
+  private async handleConnection(event: ConnectionEvent): Promise<void> {
+    const { channelType, instanceId } = event;
+    const topics = pairingTopicsFor(channelType, instanceId);
+
+    if (event.type === "connection.qr") {
+      // Relay QR code to any waiting CLI subscriber
+      await nats.emit(topics.qr, {
+        type: "qr",
+        instanceId,
+        qr: event.payload.qrCode,
+        channelType,
+      });
+      log.debug("QR code relayed", { instanceId });
+      return;
+    }
+
+    const payload = event.payload;
+    this.registerAgentPlatformIdentity(event);
+    await nats.emit(topics.connected, {
+      type: "connected",
+      instanceId,
+      channelType,
+      profileName: payload.profileName,
+      ownerIdentifier: payload.ownerIdentifier,
+    });
+    log.info("Instance connected", {
+      instanceId,
+      channelType,
+      profileName: payload.profileName,
+    });
+  }
+
+  private registerAgentPlatformIdentity(event: ChannelInboundEventOf<"connection.connected">): void {
+    const { channelType, instanceId, payload } = event;
+    const transport = event.provenance.transport;
+    const routerConfig = configStore.getConfig();
+    const accountId = routerConfig.instanceToAccount[instanceId];
+    const agentId = accountId
+      ? (routerConfig.instances?.[accountId]?.agent ?? routerConfig.accountAgents?.[accountId])
+      : undefined;
+    if (!agentId || !payload.ownerIdentifier) return;
+
+    try {
+      upsertAgentPlatformIdentity({
+        agentId,
+        channel: channelType,
+        instanceId,
+        platformUserId: payload.ownerIdentifier,
+        platformDisplayName: payload.profileName ?? null,
+        profileData: {
+          source: `${transport}.instance.connected`,
+          instanceId,
+          channelType,
+          accountId,
+          profileName: payload.profileName ?? null,
+          ownerIdentifier: payload.ownerIdentifier,
+        },
+        linkedBy: "auto",
+        linkReason: `${transport}_instance_connected`,
+      });
+    } catch (error) {
+      log.warn("Failed to register agent platform identity", {
+        instanceId,
+        channelType,
+        accountId,
+        agentId,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Handle reaction.received events from any inbound source.
+   * Persists the reaction as a durable chat_messages ledger entry and emits
+   * ravi.inbound.reaction for approval/poll/trigger resolution.
+   */
+  private async handleReaction(event: ReactionReceivedEvent): Promise<void> {
+    // Skip old reactions (before this daemon started)
+    const reactionTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
+    if (reactionTs < this.startedAt - 5_000) return;
+
+    const payload = event.payload;
+    const senderId = stripJid(payload.from);
+
+    // Dedup: transports may publish duplicate events with different IDs for the same reaction
+    const dedupKey = `${payload.messageId}:${payload.emoji}:${senderId}`;
+    if (this.processedEvents.has(dedupKey)) return;
+    this.processedEvents.add(dedupKey);
+    if (this.processedEvents.size > this.DEDUP_MAX) {
+      const first = this.processedEvents.values().next().value;
+      if (first) this.processedEvents.delete(first);
+    }
+
+    log.info("Reaction received", {
+      messageId: payload.messageId,
+      emoji: payload.emoji,
+      senderId,
+      chatId: payload.chatId,
+    });
+
+    // --- Durable accounting (spec: channels/chats/reactions) ---
+    // Persist the reaction as a chat_messages row with message_type = "reaction".
+    // The deterministic provider_message_id guarantees idempotency via the DB
+    // unique constraint, independent of the in-memory dedup set above.
+    this.persistReactionAccounting(event, senderId, reactionTs);
+
+    await nats.emit("ravi.inbound.reaction", {
+      targetMessageId: payload.messageId,
+      emoji: payload.emoji,
+      senderId,
+    });
+  }
+
+  /**
+   * Persist a reaction as a durable chat_messages ledger entry.
+   * Best-effort: logs warnings on resolution failures but never blocks
+   * the ravi.inbound.reaction emission.
+   */
+  private persistReactionAccounting(event: ReactionReceivedEvent, senderId: string, reactionTs: number): void {
+    const payload = event.payload;
+    try {
+      const { channelType, instanceId } = event;
+      const sessionChannel = channelType.replace(/-baileys$/, "");
+
+      const routerConfig = configStore.getConfig();
+      const effectiveAccountId = routerConfig.instanceToAccount[instanceId];
+      if (!effectiveAccountId) {
+        log.debug("Reaction accounting skipped: unknown instanceId", { instanceId, channelType });
+        return;
+      }
+
+      const chat = dbFindChat({ channel: sessionChannel, instanceId, platformChatId: payload.chatId });
+      if (!chat) {
+        log.debug("Reaction accounting skipped: chat not found", {
+          chatId: payload.chatId,
+          instanceId,
+          channel: sessionChannel,
+        });
+        return;
+      }
+
+      const senderPlatformIdentity = resolveSenderPlatformIdentity({
+        channel: sessionChannel,
+        instanceId,
+        normalizedSenderId: senderId,
+        rawSenderId: senderId,
+        rawProviderSenderId: payload.from,
+      });
+      const senderContact =
+        senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+          ? getContact(senderPlatformIdentity.ownerId)
+          : getContact(senderId);
+      const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+      const contactId = actorType === "contact" ? (senderContact?.id ?? null) : null;
+      const agentId =
+        actorType === "agent" && senderPlatformIdentity?.ownerType === "agent"
+          ? (senderPlatformIdentity.ownerId ?? null)
+          : null;
+
+      const providerMessageId = `reaction:${payload.messageId}:${payload.emoji}:${senderId}`;
+
+      dbUpsertChatMessage({
+        chatId: chat.id,
+        channel: sessionChannel,
+        instanceId,
+        providerMessageId,
+        rawChatId: payload.chatId,
+        rawSenderId: payload.from,
+        normalizedSenderId: senderId,
+        actorType,
+        contactId,
+        agentId,
+        platformIdentityId: senderPlatformIdentity?.id ?? null,
+        messageType: "reaction",
+        content: {
+          type: "reaction",
+          targetMessageId: payload.messageId,
+          emoji: payload.emoji,
+          senderId,
+        },
+        rawProvenance: {
+          source: `${event.provenance.transport}.reaction.received`,
+          eventId: event.id,
+          subject: event.provenance.subject,
+          channelType,
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: payload.chatId,
+          from: payload.from,
+        },
+        providerTimestamp: reactionTs,
+        ingestedAt: Date.now(),
+      });
+    } catch (err) {
+      log.warn("Reaction accounting failed", {
+        messageId: payload.messageId,
+        emoji: payload.emoji,
+        senderId,
+        error: err,
+      });
+    }
+  }
+
+  /**
+   * Get active target for a session (used by gateway for typing heartbeat).
+   */
+  getActiveTarget(sessionName: string): MessageTarget | undefined {
+    return this.activeTargets.get(sessionName);
+  }
+
+  async renewActiveTarget(sessionName: string): Promise<boolean> {
+    return this.typingPresence.renew(sessionName);
+  }
+
+  private observeTypingPresence(event: TypingPresenceEvent): void {
+    const activeTarget =
+      this.activeTargets.get(event.sessionName) ??
+      ({
+        channel: "whatsapp",
+        accountId: event.target.instanceId,
+        instanceId: event.target.instanceId,
+        chatId: event.target.to,
+      } satisfies MessageTarget);
+    const status = event.status === "failed" ? "failed" : event.active ? "active" : "inactive";
+    const payload = {
+      sessionName: event.sessionName,
+      active: event.active,
+      status,
+      reason: event.reason,
+      source: "channels.inbound.typing-heartbeat",
+      target: {
+        channel: activeTarget.channel,
+        accountId: activeTarget.accountId,
+        instanceId: activeTarget.instanceId ?? event.target.instanceId,
+        chatId: activeTarget.chatId,
+        threadId: activeTarget.threadId,
+      },
+      transportTarget: event.target,
+      timestamp: event.timestamp,
+      ...(event.error ? { error: event.error } : {}),
+    };
+
+    nats.emit("ravi.presence.typing", payload).catch((error) => {
+      log.debug("Failed to emit typing presence event", { sessionName: event.sessionName, error });
+    });
+
+    try {
+      recordPresenceTrace({
+        sessionName: event.sessionName,
+        status,
+        reason: event.reason,
+        target: activeTarget,
+        timestamp: event.timestamp,
+        error: event.error,
+        payloadJson: payload,
+      });
+    } catch (error) {
+      log.debug("Failed to record typing presence trace", { sessionName: event.sessionName, error });
+    }
+  }
+
+  private async activateTarget(
+    sessionName: string,
+    source: MessageTarget,
+    instanceId: string,
+    chatJid: string,
+  ): Promise<void> {
+    this.activeTargets.set(sessionName, source);
+    await this.typingPresence.start(sessionName, { instanceId, to: chatJid });
+  }
+
+  /**
+   * Clear active target (called when response is sent).
+   */
+  async clearActiveTarget(sessionName: string): Promise<void> {
+    this.activeTargets.delete(sessionName);
+    await this.typingPresence.stop(sessionName);
+  }
+
+  // ============================================================================
+  // Helpers
+  // ============================================================================
+
+  /**
+   * Extract quoted/reply message context. Uses the transport's normalized `replyToId`
+   * (works for all channels), then enriches with WhatsApp's contextInfo when
+   * available (quoted text, sender, media type).
+   */
+  private extractReplyContext(
+    replyToId: string | undefined,
+    rawPayload: Record<string, unknown> | undefined,
+  ): { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null {
+    // Try WhatsApp-specific rich context first
+    const whatsappContext = this.extractWhatsAppReplyContext(rawPayload);
+    if (whatsappContext) return whatsappContext;
+
+    // Fallback: use the normalized replyToId (Telegram, Discord, Slack, etc.)
+    if (!replyToId) return null;
+    return { quotedId: replyToId };
+  }
+
+  /**
+   * Extract rich reply context from WhatsApp/Baileys rawPayload.
+   * contextInfo lives inside message.{messageType}.contextInfo and includes
+   * the full quoted message content, sender, and media type.
+   */
+  private extractWhatsAppReplyContext(
+    rawPayload: Record<string, unknown> | undefined,
+  ): { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null {
+    if (!rawPayload) return null;
+
+    // viewOnceMessageV2 wraps the real message one level deeper
+    let message = rawPayload.message as Record<string, unknown> | undefined;
+    if (!message) return null;
+    const viewOnce = message.viewOnceMessageV2 as Record<string, unknown> | undefined;
+    if (viewOnce?.message) {
+      message = viewOnce.message as Record<string, unknown>;
+    }
+
+    // All Baileys message types that can carry contextInfo
+    const messageTypes = [
+      "extendedTextMessage",
+      "imageMessage",
+      "videoMessage",
+      "documentMessage",
+      "audioMessage",
+      "stickerMessage",
+      "buttonsResponseMessage",
+      "listResponseMessage",
+      "contactMessage",
+      "locationMessage",
+    ];
+    let contextInfo: Record<string, unknown> | undefined;
+
+    for (const type of messageTypes) {
+      const msgData = message[type] as Record<string, unknown> | undefined;
+      if (msgData?.contextInfo) {
+        contextInfo = msgData.contextInfo as Record<string, unknown>;
+        break;
+      }
+    }
+
+    if (!contextInfo) return null;
+
+    const quotedId = contextInfo.stanzaId as string | undefined;
+    if (!quotedId) return null;
+
+    // Extract sender of the quoted message
+    const rawParticipant = (contextInfo.participant as string) ?? (contextInfo.remoteJid as string);
+    const quotedSender = rawParticipant ? stripJid(rawParticipant) : undefined;
+
+    // Extract text and media type from quotedMessage
+    const quotedMessage = contextInfo.quotedMessage as Record<string, unknown> | undefined;
+    let quotedText: string | undefined;
+    let quotedMediaType: string | undefined;
+
+    if (quotedMessage) {
+      // viewOnceMessageV2 inside quoted message
+      let effectiveQuoted = quotedMessage;
+      const qViewOnce = quotedMessage.viewOnceMessageV2 as Record<string, unknown> | undefined;
+      if (qViewOnce?.message) {
+        effectiveQuoted = qViewOnce.message as Record<string, unknown>;
+      }
+
+      if (typeof effectiveQuoted.conversation === "string") {
+        quotedText = effectiveQuoted.conversation;
+      } else if ((effectiveQuoted.extendedTextMessage as Record<string, unknown> | undefined)?.text) {
+        quotedText = (effectiveQuoted.extendedTextMessage as Record<string, unknown>).text as string;
+      } else if (effectiveQuoted.imageMessage) {
+        const img = effectiveQuoted.imageMessage as Record<string, unknown>;
+        quotedMediaType = "image";
+        const caption = typeof img.caption === "string" ? img.caption : undefined;
+        quotedText = caption ? `[image] ${caption}` : "[image]";
+      } else if (effectiveQuoted.videoMessage) {
+        const vid = effectiveQuoted.videoMessage as Record<string, unknown>;
+        quotedMediaType = "video";
+        const caption = typeof vid.caption === "string" ? vid.caption : undefined;
+        quotedText = caption ? `[video] ${caption}` : "[video]";
+      } else if (effectiveQuoted.documentMessage) {
+        const doc = effectiveQuoted.documentMessage as Record<string, unknown>;
+        quotedMediaType = "document";
+        const caption = typeof doc.caption === "string" ? doc.caption : undefined;
+        const filename = typeof doc.fileName === "string" ? doc.fileName : undefined;
+        quotedText = caption ? `[document: ${filename ?? "file"}] ${caption}` : `[document: ${filename ?? "file"}]`;
+      } else if (effectiveQuoted.audioMessage) {
+        quotedMediaType = "audio";
+        quotedText = "[audio]";
+      } else if (effectiveQuoted.stickerMessage) {
+        quotedMediaType = "sticker";
+        quotedText = "[sticker]";
+      }
+    }
+
+    return { quotedText, quotedSender, quotedId, quotedMediaType };
+  }
+
+  /**
+   * Find a previously-saved attachment file by message externalId.
+   * Attachments are saved as `{timestamp}-{externalId}.{ext}` by saveToAgentAttachments.
+   */
+  private async findAttachmentByMessageId(agentCwd: string, messageId: string): Promise<string | undefined> {
+    try {
+      const attachDir = `${agentCwd}/attachments`;
+      const safeId = messageId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const files = await readdir(attachDir);
+      const match = files.find((f) => f.includes(safeId));
+      return match ? `${attachDir}/${match}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Process media: load it through the source's media hook (local runner files for
+   * WhatsApp, the bridge HTTP API for the legacy bridge), save to agent attachments,
+   * transcribe audio.
+   */
+  private async processMedia(
+    event: MessageReceivedEvent,
+    hooks: InboundSourceHooks,
+    agentCwd: string,
+  ): Promise<{ localPath?: string; transcript?: string } | null> {
+    const payload = event.payload;
+    const { content } = payload;
+    if (content.type === "text" || !content.type) return null;
+    if (!content.mediaUrl && !content.localPath) return null;
+
+    const mimeType = content.mimeType ?? "application/octet-stream";
+    const isAudio = content.type === "audio" || content.type === "voice";
+    const maxBytes = isAudio ? MAX_AUDIO_BYTES : undefined;
+
+    const buffer = await hooks.loadMedia(event, { maxBytes, mimeType });
+    if (!buffer) return null;
+
+    // Audio needs both: transcript for the prompt and durable file path for later editing/rendering work.
+    if (isAudio) {
+      let localPath: string | undefined;
+      try {
+        localPath = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
+      } catch (err) {
+        log.warn("Failed to save audio to agent attachments", { error: err });
+      }
+
+      try {
+        const result = await transcribeAudio(buffer, mimeType);
+        return { transcript: result.text, localPath };
+      } catch (err) {
+        log.warn("Audio transcription failed", { error: err });
+        return localPath ? { localPath } : null;
+      }
+    }
+
+    // Images, videos, documents, stickers: save to agent attachments
+    try {
+      const dest = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
+      return { localPath: dest };
+    } catch (err) {
+      log.warn("Failed to save media to agent attachments", { error: err });
+      return null;
+    }
+  }
+
+  /**
+   * Format message content as text for the prompt.
+   * mediaResult comes from processMedia() — undefined for text-only messages.
+   */
+  private formatContent(
+    payload: MessageReceivedPayload,
+    mediaResult?: { localPath?: string; transcript?: string } | null,
+  ): string {
+    const { content } = payload;
+    if (content.type === "text" || !content.type) {
+      return content.text ?? "[message]";
+    }
+
+    if (content.type === "edit") {
+      return `[Message edited]\n${content.text ?? "[message]"}`;
+    }
+
+    const isAudio = content.type === "audio" || content.type === "voice";
+
+    // Audio with transcript
+    if (isAudio && mediaResult?.transcript) {
+      const fileLine = mediaResult.localPath ? `\nfile: ${mediaResult.localPath}` : "";
+      return `[Audio]\nTranscript:\n${mediaResult.transcript}${fileLine}`;
+    }
+
+    // Audio without transcript but with file
+    if (isAudio && mediaResult?.localPath) {
+      return `[Audio]\nfile: ${mediaResult.localPath}`;
+    }
+
+    if (isAudio) {
+      return "[Audio]";
+    }
+
+    // Other media (image, video, document, sticker)
+    const parts: string[] = [];
+    const label = content.type.charAt(0).toUpperCase() + content.type.slice(1);
+
+    if (mediaResult?.localPath) {
+      parts.push(`[${label}: ${mediaResult.localPath}]`);
+    } else {
+      parts.push(`[${label}]`);
+    }
+
+    if (content.text) {
+      parts.push(content.text);
+    }
+
+    return parts.join("\n");
+  }
+
+  private formatEnvelope(
+    channelType: string,
+    payload: MessageReceivedPayload,
+    isGroup: boolean,
+    senderPhone: string,
+    senderName: string,
+    groupName: string | undefined,
+    chatJid: string,
+    timestamp: number,
+    threadId?: string,
+    mediaResult?: { localPath?: string; transcript?: string } | null,
+    replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
+    replyMediaPath?: string,
+    contentOverride?: string,
+  ): string {
+    const channelName = this.channelDisplayName(channelType);
+    const dt = new Date(timestamp);
+    const ts = dt.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const dow = dt
+      .toLocaleDateString("en-US", {
+        timeZone: "America/Sao_Paulo",
+        weekday: "short",
+      })
+      .toLowerCase();
+
+    const content = contentOverride ?? this.formatContent(payload, mediaResult);
+    const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
+    const threadTag = threadId ? ` thread:${threadId}` : "";
+
+    // Build reply context block if present
+    let replyBlock = "";
+    if (replyContext?.quotedId) {
+      const sender = replyContext.quotedSender
+        ? getContactName(replyContext.quotedSender) || replyContext.quotedSender
+        : "unknown";
+      const quotedContent = replyContext.quotedText ?? "[message]";
+      const mediaLine = replyMediaPath ? `\nfile: ${replyMediaPath}` : "";
+      replyBlock = `\n[Replying to ${sender} mid:${replyContext.quotedId}]\n${quotedContent}${mediaLine}\n[/Replying]\n`;
+    }
+
+    if (isGroup) {
+      const groupLabel = groupName || stripJid(chatJid);
+      const header = `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}:`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+    } else {
+      const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
+      const header = `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}]`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
+    }
+  }
+
+  private resolveSenderPhone(rawPayload: Record<string, unknown> | undefined, fallback: string): string {
+    const resolved = rawPayloadString(rawPayload, "resolvedSenderPhone");
+    if (resolved) return stripJid(resolved);
+
+    const participantAlt = (rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt;
+    const alt = cleanString(participantAlt);
+    if (alt) return stripJid(alt);
+
+    return fallback;
+  }
+
+  private resolveMentionDisplayName(id: string): string | null | undefined {
+    const stripped = stripJid(id);
+    return getContactName(id) ?? getContactName(stripped) ?? undefined;
+  }
+
+  private resolveGroupName(rawPayload: Record<string, unknown> | undefined, chatJid: string): string | undefined {
+    return (
+      rawPayloadString(rawPayload, "chatName") ??
+      getContactName(chatJid) ??
+      getContactName(`group:${stripJid(chatJid)}`) ??
+      undefined
+    );
+  }
+
+  private resolveGroupMembers(rawPayload: Record<string, unknown> | undefined): string[] | undefined {
+    const candidates = [rawPayload?.participants, rawPayload?.groupParticipants, rawPayload?.members];
+
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+
+      const members = candidate
+        .map((entry) => this.formatGroupMember(entry))
+        .filter((entry): entry is string => Boolean(entry));
+
+      if (members.length > 0) return Array.from(new Set(members));
+    }
+
+    return undefined;
+  }
+
+  private formatGroupMember(entry: unknown): string | undefined {
+    if (typeof entry === "string") {
+      const id = stripJid(entry);
+      return getContactName(id) ?? getContactName(entry) ?? id;
+    }
+
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+
+    const record = entry as Record<string, unknown>;
+    const name = cleanString(record.name) ?? cleanString(record.pushName) ?? cleanString(record.notify);
+    if (name) return name;
+
+    const id = cleanString(record.id) ?? cleanString(record.jid) ?? cleanString(record.phone);
+    if (!id) return undefined;
+
+    const stripped = stripJid(id);
+    return getContactName(stripped) ?? getContactName(id) ?? stripped;
+  }
+
+  private buildContext(
+    channelType: string,
+    accountId: string,
+    instanceId: string,
+    payload: MessageReceivedPayload,
+    isGroup: boolean,
+    senderPhone: string,
+    resolvedSenderPhone: string,
+    senderName: string,
+    groupName: string | undefined,
+    groupMembers: string[] | undefined,
+    mentionedContactsContext: MessageContext["mentionedContactsContext"] | undefined,
+    chatJid: string,
+    event: MessageReceivedEvent,
+    actorMetadata?: MessageActorMetadata,
+    editInfo?: MessageEditInfo | null,
+  ): MessageContext & { instanceId: string } {
+    const groupId = isGroup ? stripJid(chatJid) : undefined;
+
+    return {
+      channelId: channelType,
+      channelName: this.channelDisplayName(channelType),
+      accountId,
+      instanceId,
+      chatId: chatJid,
+      messageId: payload.externalId,
+      senderId: senderPhone,
+      senderName,
+      senderPhone: resolvedSenderPhone,
+      isGroup,
+      ...(actorMetadata ?? {}),
+      ...(groupName ? { groupName } : {}),
+      ...(groupId ? { groupId } : {}),
+      ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),
+      ...(mentionedContactsContext && mentionedContactsContext.length > 0 ? { mentionedContactsContext } : {}),
+      ...(editInfo
+        ? {
+            isEditedMessage: true,
+            editedMessageId: editInfo.editedMessageId,
+            editEventId: editInfo.editEventId,
+            ...(editInfo.editedAt ? { editedAt: editInfo.editedAt } : {}),
+          }
+        : {}),
+      timestamp: event.timestamp,
+    };
+  }
+
+  private channelDisplayName(channelType: string): string {
+    const map: Record<string, string> = {
+      "whatsapp-baileys": "WhatsApp",
+      discord: "Discord",
+      telegram: "Telegram",
+      slack: "Slack",
+    };
+    return map[channelType] ?? channelType;
+  }
+}

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { publishSessionPrompt, type PublishSessionPromptOptions } from "../omni/session-stream.js";
+import { publishSessionPrompt, type PublishSessionPromptOptions } from "../session-prompts/stream.js";
 import {
   dbAcceptChannelBackendIngress,
   dbClaimChannelBackendIngressPublication,

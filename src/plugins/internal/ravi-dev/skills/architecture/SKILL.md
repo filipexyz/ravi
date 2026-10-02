@@ -11,8 +11,9 @@ description: |
 
 # Ravi - Arquitetura do Sistema
 
-Ravi é um runtime multi-agent com canais via omni, coordenação interna por NATS JetStream,
-estado em SQLite e execução por providers plugáveis atrás de um contrato único.
+Ravi é um runtime multi-agent com canais próprios (WhatsApp no runner `ravi channels`, Slack
+nativo, Telegram/Discord pela ponte legada Omni, opcional), coordenação interna por NATS
+JetStream, estado em SQLite e execução por providers plugáveis atrás de um contrato único.
 
 **Repositório:** `<ravi.bot repo>`
 **Runtime:** Bun
@@ -22,11 +23,15 @@ estado em SQLite e execução por providers plugáveis atrás de um contrato ún
 ## Fluxo Principal de Mensagens
 
 ```text
-WhatsApp/Discord/Telegram/Matrix
-  -> omni API
-  -> NATS JetStream MESSAGE
-  -> OmniConsumer
-  -> ravi.<session>.prompt
+WhatsApp                            Telegram/Discord
+  -> runner `ravi channels`           -> ponte legada Omni (opcional)
+     (Baileys)                        -> NATS JetStream MESSAGE
+  -> NATS JetStream CHANNEL_INBOUND      (message.received.<type>.<uuid>)
+     (ravi.channel.inbound.whatsapp.*)
+  -> WhatsAppInboundSource            -> OmniLegacyInboundSource
+         \                                /
+          -> ChannelInboundPipeline (src/channels/inbound/pipeline.ts)
+  -> ravi.<session>.prompt (SESSION_PROMPTS)
   -> RuntimePromptSubscription
   -> RuntimeSessionDispatcher
   -> RuntimeSessionLauncher
@@ -35,20 +40,29 @@ WhatsApp/Discord/Telegram/Matrix
   -> RuntimeEventLoop
   -> ravi.session.<session>.runtime/tool/stream/response
   -> Gateway
-  -> OmniSender
+  -> ChannelSenderRouter (default-deny)
+       WhatsApp -> WhatsAppSender -> RPC _RAVI.channels.whatsapp.rpc.<uuid> -> runner
+       Telegram/Discord -> sender da ponte legada (Omni)
   -> canal
 ```
 
-## Fronteira Ravi ↔ Omni
+Slack segue pelo adapter nativo (`src/channels/slack/`). WhatsApp nunca passa pelo Omni: o
+daemon ignora eventos do Omni com channel type da família WhatsApp, e o teste
+`src/channels/import-boundary.test.ts` garante que o caminho WhatsApp não importa `src/omni/**`.
 
-O Ravi decide comportamento operacional; o Omni transporta mensagens e presença para o canal.
+## Fronteira Ravi ↔ Transporte
+
+O Ravi decide comportamento operacional; o transporte (runner `ravi channels` no WhatsApp,
+adapter nativo no Slack, ponte legada Omni no Telegram/Discord) leva mensagens e presença
+para o canal.
 
 Quando debugar sintomas que atravessam a fronteira:
 
 - prove primeiro a última linha confiável no Ravi: routing, session, runtime event, target e payload outbound
-- use logs do Omni para observar entrega/transporte, não para mover ownership automaticamente
-- não corrija Omni para compensar lifecycle, routing, presence, task ou session state quebrado no Ravi
+- use `ravi channels status`, `ravi instances status <name> --json` e os logs do runner (ou do Omni, na ponte legada) para observar entrega/transporte, não para mover ownership automaticamente
+- não corrija o transporte para compensar lifecycle, routing, presence, task ou session state quebrado no Ravi
 - só edite Omni ou outro repo externo quando a evidência apontar para contrato/adaptador de transporte e houver autorização explícita
+- em hosts que vieram do Omni, `omni-nats` é o NATS do Ravi: nunca `omni stop|start|restart|install` nem `pm2 delete omni-nats`
 
 Se o usuário delimitar "o problema é no Ravi", mantenha o patch no Ravi e trate o outro repo como evidência externa.
 
@@ -59,10 +73,12 @@ Se o usuário delimitar "o problema é no Ravi", mantenha o patch no Ravi e trat
 Composition root do processo:
 
 - carrega env de `~/.ravi/.env`
-- inicia NATS/JetStream
-- inicia omni
+- conecta ao NATS (`NATS_URL`) e garante os streams `SESSION_PROMPTS` e `RAVI_EVENTS`
 - inicia RaviBot
-- inicia OmniConsumer e Gateway
+- inicia os canais via `src/daemon-channels.ts`: `ChannelInboundPipeline` com a fonte WhatsApp
+  (`CHANNEL_INBOUND`) e, só se o Omni estiver configurado, a fonte da ponte legada; e o
+  `ChannelSenderRouter`
+- inicia o Gateway
 - inicia heartbeat, cron e triggers
 - controla shutdown global
 

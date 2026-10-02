@@ -10,7 +10,7 @@ tags:
   - platform-identities
 applies_to:
   - src/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router/sessions.ts
 owners:
   - ravi-dev
@@ -18,6 +18,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Contact Identity Graph
 
 ## Intent
@@ -129,7 +130,7 @@ Automatic linking is allowed only with strong evidence.
 
 Strong evidence examples:
 
-- WhatsApp LID to phone mapping from provider state or Omni `chat_id_mappings`.
+- WhatsApp LID to phone mapping from provider state (the WhatsApp runner's Baileys LID mapping) or the legacy Omni `chat_id_mappings`.
 - Same platform identity already resolved across instances.
 - Explicit user/operator action.
 

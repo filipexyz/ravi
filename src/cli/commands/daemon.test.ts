@@ -20,7 +20,9 @@ import {
 } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { daemonStatusReturnSchema } from "./operational-return-schemas.js";
 import {
+  buildDaemonInfrastructureJson,
   DaemonCommands,
   findSourceProjectRoot,
   isInsideDaemonProcessTree,
@@ -448,6 +450,124 @@ describe("DaemonCommands --json", () => {
     );
     expect(payload.stdout).toBeUndefined();
     expect(payload.stderr).toBeUndefined();
+    expect(Object.keys(payload.infrastructure).sort()).toEqual(["legacyBridge", "nats"]);
+    expect(payload.infrastructure.omniNats).toBeUndefined();
+    expect(payload.infrastructure.omniApi).toBeUndefined();
+    expect(payload.infrastructure.channelsRunner).toBeUndefined();
+    expect(daemonStatusReturnSchema.safeParse(payload).success).toBe(true);
+  });
+});
+
+describe("daemon status infrastructure", () => {
+  const pm2Process = (name: string, status = "online", pid = 100) => ({
+    name,
+    pid,
+    pm_id: pid,
+    status,
+    cpu: 0,
+    memory: 10 * 1024 * 1024,
+    createdAt: null,
+  });
+
+  it("reports ravi-nats over omni-nats as the NATS process", () => {
+    const infrastructure = buildDaemonInfrastructureJson([
+      pm2Process("omni-nats", "online", 11),
+      pm2Process("ravi-nats", "online", 12),
+      pm2Process("omni-api", "online", 13),
+    ]);
+
+    expect(infrastructure.nats).toMatchObject({
+      name: "ravi-nats",
+      processName: "ravi-nats",
+      managed: true,
+      running: true,
+      pid: 12,
+    });
+    expect(infrastructure.legacyBridge).toMatchObject({ name: "omni-api", managed: true, running: true, pid: 13 });
+  });
+
+  it("reports omni-nats when it is the only NATS process (hosts set up before ravi-nats)", () => {
+    const infrastructure = buildDaemonInfrastructureJson([pm2Process("omni-nats", "online", 21)]);
+
+    expect(infrastructure.nats).toMatchObject({ name: "omni-nats", processName: "omni-nats", running: true, pid: 21 });
+    expect(infrastructure.legacyBridge).toMatchObject({
+      name: "omni-api",
+      managed: false,
+      running: false,
+      status: "not_managed_by_pm2",
+    });
+  });
+
+  it("reports an unmanaged ravi-nats when PM2 has no NATS process", () => {
+    const infrastructure = buildDaemonInfrastructureJson([pm2Process("ravi"), pm2Process("ravi-channels")]);
+
+    expect(infrastructure).toEqual({
+      nats: {
+        name: "ravi-nats",
+        processName: "ravi-nats",
+        managed: false,
+        running: false,
+        status: "not_managed_by_pm2",
+        pid: null,
+        pmId: null,
+        cpu: null,
+        memoryBytes: null,
+        memoryMb: null,
+      },
+      legacyBridge: {
+        name: "omni-api",
+        managed: false,
+        running: false,
+        status: "not_managed_by_pm2",
+        pid: null,
+        pmId: null,
+        cpu: null,
+        memoryBytes: null,
+        memoryMb: null,
+      },
+    });
+  });
+
+  it("rejects the pre-D15 omniNats/omniApi shape", () => {
+    const base = {
+      pm2Available: false,
+      processName: "ravi",
+      ravi: {},
+      runtime: {
+        alignment: "not_running",
+        cli: { bundlePath: null, cwd: null, version: null },
+        daemon: {
+          name: "ravi",
+          managed: false,
+          online: false,
+          status: "not_managed_by_pm2",
+          pid: null,
+          bundlePath: null,
+          cwd: null,
+          version: null,
+          matchesCli: null,
+        },
+        channels: {
+          name: "ravi-channels",
+          managed: false,
+          online: false,
+          status: "not_managed_by_pm2",
+          pid: null,
+          bundlePath: null,
+          cwd: null,
+          version: null,
+          matchesCli: null,
+        },
+      },
+      processes: [],
+    };
+
+    expect(
+      daemonStatusReturnSchema.safeParse({ ...base, infrastructure: buildDaemonInfrastructureJson([]) }).success,
+    ).toBe(true);
+    expect(daemonStatusReturnSchema.safeParse({ ...base, infrastructure: { omniNats: {}, omniApi: {} } }).success).toBe(
+      false,
+    );
   });
 });
 

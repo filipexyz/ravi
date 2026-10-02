@@ -21,6 +21,7 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # CI Quality Gates
 
 ## Intent
@@ -47,8 +48,10 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 
 The following source paths are considered runtime/consumer paths that require focused test coverage:
 
-- `src/channels/**`
-- `src/omni/**`
+- `src/channels/**` (with their own focused lists for `src/channels/whatsapp/`, `src/channels/inbound/`, `src/channels/outbound/` and `src/channels/group-metadata/`)
+- `src/session-prompts/**`
+- `src/daemon-channels.ts`
+- `src/omni/**` (legacy bridge, Telegram/Discord)
 - `src/router/**`
 - `src/runtime/**`
 - `src/session-trace/**`

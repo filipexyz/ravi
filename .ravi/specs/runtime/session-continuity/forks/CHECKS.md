@@ -7,12 +7,12 @@
 - Preserves later atoms in order.
 - Excludes assistant outputs after the edited atom from authoritative replay state.
 - Marks replay as `lossy` when only plain text transcript replay is available.
-- Fails closed when the edit target message id has no atom.
+- The planner MUST fail closed when the edit target message id has no atom.
 
 ## Dispatcher Tests
 
 - Edit rebase aborts the live runtime session.
-- Pending messages are not lost during rebase.
+- Pending messages MUST NOT be lost during rebase.
 - Dirty workspace produces an authorization instruction before any new file changes.
 - Provider state reset does not delete prompt atoms.
 

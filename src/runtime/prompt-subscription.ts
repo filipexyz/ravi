@@ -5,7 +5,7 @@ import {
   ensureSessionPromptInfrastructure,
   getConsumerName,
   type EnsureSessionPromptInfrastructureOptions,
-} from "../omni/session-stream.js";
+} from "../session-prompts/stream.js";
 import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";

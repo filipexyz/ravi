@@ -6,7 +6,21 @@ import * as readline from "node:readline";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import {
+  DEFAULT_NATS_URL,
+  NATS_PM2_PROCESS,
+  NATS_SERVER_VERSION,
+  OMNI_NATS_PM2_PROCESS,
+  ensureNatsServerBinary,
+  findNatsPm2Owner,
+  isNatsReachable,
+  natsPm2StartArgs,
+  parseNatsEndpoint,
+  type NatsServerBinary,
+} from "../../nats-server.js";
+import { getPm2Processes } from "../../pm2.js";
+import { getRaviStateDir } from "../../utils/paths.js";
 
 const RAVI_DOT_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DOT_DIR, ".env");
@@ -147,106 +161,302 @@ function appendEnvKey(key: string, value: string): void {
 }
 
 // ============================================================================
+// System seam (NATS / Omni steps are tested without PM2, network or a shell)
+// ============================================================================
+
+const OMNI_API_HEALTH_URL = "http://127.0.0.1:8882/health";
+const OMNI_API_PM2_PROCESS = "omni-api";
+const TOTAL_STEPS = 6;
+
+export interface SetupPm2Process {
+  name: string;
+  status: string;
+  pid?: number;
+}
+
+export interface SetupCommandResult {
+  status: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SetupSystem {
+  /** NATS URL Ravi connects to (`NATS_URL`, default nats://127.0.0.1:4222). */
+  natsUrl: string;
+  /** JetStream store dir for ravi-nats (`~/.ravi/jetstream`). */
+  natsStoreDir: string;
+  /** False when stdin is not a TTY: opt-in questions are answered with their default (No). */
+  interactive: boolean;
+  which(binary: string): boolean;
+  /** Runs a command without a shell. `inherit` streams its output to the terminal. Never throws. */
+  run(command: string, args: string[], options?: { inherit?: boolean }): SetupCommandResult;
+  pm2Processes(): SetupPm2Process[];
+  isNatsReachable(url: string): Promise<boolean>;
+  ensureNatsServerBinary(): Promise<NatsServerBinary>;
+  omniHealthy(timeoutMs: number): Promise<boolean>;
+  omniConfigExists(): boolean;
+  /** Yes/no question whose default is No. */
+  confirm(question: string): Promise<boolean>;
+  sleep(ms: number): Promise<void>;
+}
+
+function runCommand(command: string, args: string[], options: { inherit?: boolean } = {}): SetupCommandResult {
+  const result = spawnSync(command, args, {
+    stdio: options.inherit ? "inherit" : ["ignore", "pipe", "pipe"],
+    encoding: "utf-8",
+    env: process.env,
+  });
+  return {
+    status: result.error ? 1 : (result.status ?? 1),
+    stdout: typeof result.stdout === "string" ? result.stdout : "",
+    stderr: typeof result.stderr === "string" ? result.stderr : (result.error?.message ?? ""),
+  };
+}
+
+export function createSetupSystem(): SetupSystem {
+  return {
+    natsUrl: process.env.NATS_URL || DEFAULT_NATS_URL,
+    natsStoreDir: join(getRaviStateDir(), "jetstream"),
+    interactive: Boolean(process.stdin.isTTY),
+    which: (binary) => runCommand("which", [binary]).status === 0,
+    run: runCommand,
+    pm2Processes: () => getPm2Processes().map(({ name, status, pid }) => ({ name, status, pid })),
+    isNatsReachable: (url) => isNatsReachable(url),
+    ensureNatsServerBinary: () => ensureNatsServerBinary(),
+    omniHealthy: async (timeoutMs) => {
+      try {
+        const res = await fetch(OMNI_API_HEALTH_URL, { signal: AbortSignal.timeout(timeoutMs) });
+        return res.status < 500;
+      } catch {
+        return false;
+      }
+    },
+    omniConfigExists: () => existsSync(join(homedir(), ".omni", "config.json")),
+    confirm: async (question) => /^(y|yes|s|sim)$/i.test((await prompt(`    ${arrow} ${question} [y/N] `)).trim()),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
+}
+
+function ensurePm2(system: SetupSystem): boolean {
+  if (system.which("pm2")) {
+    done("pm2 encontrado");
+    return true;
+  }
+  info("Instalando pm2...");
+  if (system.run("bun", ["add", "-g", "pm2"]).status === 0) {
+    done("pm2 instalado");
+    return true;
+  }
+  warning("Falha ao instalar pm2 — instale manualmente: bun add -g pm2");
+  return false;
+}
+
+// ============================================================================
 // Wizard steps
 // ============================================================================
 
-async function stepOmni(): Promise<void> {
-  heading(1, 5, "Omni Infrastructure", "nats-server + omni API via PM2");
+export interface SetupNatsResult {
+  action: "reused" | "started" | "not_reachable" | "failed";
+  /** PM2 process that owns the NATS (`ravi-nats`, `omni-nats`), or null when it is not managed by PM2. */
+  owner: string | null;
+  detail?: string;
+}
 
-  // Check pm2
-  let hasPm2 = false;
-  try {
-    execSync("which pm2", { stdio: "pipe" });
-    hasPm2 = true;
-    done("pm2 encontrado");
-  } catch {
-    info("Instalando pm2...");
-    try {
-      execSync("bun add -g pm2", { stdio: "pipe" });
-      done("pm2 instalado");
-      hasPm2 = true;
-    } catch {
-      warning("Falha ao instalar pm2 — instale manualmente: bun add -g pm2");
-    }
+/**
+ * D15: reuse whatever NATS already answers on the NATS URL (on existing hosts that is `omni-nats`, Ravi's NATS);
+ * otherwise download the pinned nats-server and start it under PM2 as `ravi-nats`. It never stops, deletes or
+ * restarts an existing NATS process.
+ */
+export async function setupNats(system: SetupSystem): Promise<SetupNatsResult> {
+  heading(1, TOTAL_STEPS, "NATS", `JetStream em ${system.natsUrl}`);
+
+  if (await system.isNatsReachable(system.natsUrl)) {
+    const owner = findNatsPm2Owner(system.pm2Processes());
+    done(`NATS já responde em ${system.natsUrl}${owner ? ` (PM2: ${owner.name})` : " (fora do PM2)"}`);
+    return { action: "reused", owner: owner?.name ?? null };
   }
 
-  // Check omni
-  let hasOmni = false;
+  let endpoint: ReturnType<typeof parseNatsEndpoint>;
   try {
-    execSync("which omni", { stdio: "pipe" });
-    hasOmni = true;
+    endpoint = parseNatsEndpoint(system.natsUrl);
+  } catch {
+    warning(`NATS_URL inválida: ${system.natsUrl}`);
+    return { action: "failed", owner: null, detail: "invalid_nats_url" };
+  }
+  if (!endpoint.loopback) {
+    warning(`NATS em ${system.natsUrl} não responde — host remoto, o setup não provisiona nada`);
+    return { action: "not_reachable", owner: null, detail: "remote_nats_url" };
+  }
+
+  const registered = system
+    .pm2Processes()
+    .find((process) => process.name === NATS_PM2_PROCESS || process.name === OMNI_NATS_PM2_PROCESS);
+  if (registered) {
+    warning(
+      `${registered.name} existe no PM2 (${registered.status}) mas o NATS não responde — o setup não mexe nele; verifique: pm2 logs ${registered.name}`,
+    );
+    return { action: "not_reachable", owner: registered.name, detail: "existing_process_not_answering" };
+  }
+
+  if (!ensurePm2(system)) {
+    return { action: "failed", owner: null, detail: "pm2_unavailable" };
+  }
+
+  let binary: NatsServerBinary;
+  try {
+    binary = await system.ensureNatsServerBinary();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    warning(`Falha ao obter nats-server ${NATS_SERVER_VERSION}: ${message}`);
+    return { action: "failed", owner: null, detail: message };
+  }
+  if (binary.downloaded) done(`nats-server ${binary.version} baixado em ${c.gray}${binary.path}${c.reset}`);
+  else done(`nats-server em ${c.gray}${binary.path}${c.reset}`);
+
+  const started = system.run(
+    "pm2",
+    natsPm2StartArgs(binary.path, { storeDir: system.natsStoreDir, port: endpoint.port }),
+  );
+  if (started.status !== 0) {
+    warning(`Falha ao iniciar ${NATS_PM2_PROCESS} — veja: pm2 logs ${NATS_PM2_PROCESS}`);
+    return { action: "failed", owner: null, detail: started.stderr.trim() || "pm2_start_failed" };
+  }
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await system.isNatsReachable(system.natsUrl)) {
+      done(`${NATS_PM2_PROCESS} iniciado via PM2 (porta ${endpoint.port}, JetStream em ${system.natsStoreDir})`);
+      return { action: "started", owner: NATS_PM2_PROCESS };
+    }
+    await system.sleep(500);
+  }
+  warning(`${NATS_PM2_PROCESS} iniciado mas ainda não responde — verifique: pm2 logs ${NATS_PM2_PROCESS}`);
+  return { action: "started", owner: NATS_PM2_PROCESS, detail: "not_answering_yet" };
+}
+
+export interface SetupOmniResult {
+  action:
+    | "declined"
+    | "already_running"
+    | "installed_on_ravi_nats"
+    | "started"
+    | "installed"
+    | "skipped_external_nats"
+    | "unavailable"
+    | "failed";
+  /** Every command the step ran, in order (for the summary and for tests). */
+  commands: string[];
+}
+
+/**
+ * Opt-in legacy Omni bridge (Telegram/Discord only; WhatsApp runs in the ravi channels runner).
+ *
+ * - `omni-api` already online, or the API already healthy → nothing to do.
+ * - NATS answers and its PM2 owner is `ravi-nats` → `omni install --non-interactive` (omni-api defaults to
+ *   nats://localhost:4222, i.e. ravi-nats), then `pm2 delete omni-nats`, which can only crash-loop on the taken port.
+ * - No NATS, or NATS owned by `omni-nats` → the classic flow (`omni start` when installed, else `omni install`).
+ * - NATS answers but is not managed by PM2 → nothing is installed (Omni would start a second NATS on the port).
+ * It never runs `omni stop`.
+ */
+export async function setupOmniBridge(system: SetupSystem): Promise<SetupOmniResult> {
+  heading(2, TOTAL_STEPS, "Ponte legada Omni (opcional)", "Telegram/Discord — WhatsApp roda no ravi channels runner");
+  const commands: string[] = [];
+  const run = (command: string, args: string[], inherit = false) => {
+    commands.push([command, ...args].join(" "));
+    return system.run(command, args, { inherit });
+  };
+
+  const omniApi = system.pm2Processes().find((process) => process.name === OMNI_API_PM2_PROCESS);
+  if (omniApi?.status === "online") {
+    done(`${OMNI_API_PM2_PROCESS} já rodando — nada a fazer`);
+    return { action: "already_running", commands };
+  }
+
+  const wanted = system.interactive && (await system.confirm("Instalar a ponte legada Omni para Telegram/Discord?"));
+  if (!wanted) {
+    info(
+      system.interactive
+        ? "Pulado — WhatsApp não precisa do Omni. Para Telegram/Discord rode ravi setup de novo."
+        : "Pulado (não interativo) — WhatsApp não precisa do Omni.",
+    );
+    return { action: "declined", commands };
+  }
+
+  if (!ensurePm2(system)) return { action: "unavailable", commands };
+  if (system.which("omni")) {
     done("omni encontrado");
-  } catch {
-    info("Instalando omni...");
-    try {
-      execSync("bun add -g @automagik/omni", { stdio: "pipe" });
-      done("omni instalado");
-      hasOmni = true;
-    } catch {
-      warning("Falha ao instalar omni — instale manualmente: bun add -g @automagik/omni");
-    }
-  }
-
-  if (!hasOmni || !hasPm2) {
-    warning("Omni ou PM2 não disponíveis — configure manualmente depois");
-    return;
-  }
-
-  // Check if omni is already healthy
-  let healthy = false;
-  try {
-    const res = await fetch("http://127.0.0.1:8882/health", {
-      signal: AbortSignal.timeout(3000),
-    });
-    healthy = res.status < 500;
-  } catch {
-    /* not running */
-  }
-
-  if (healthy) {
-    done("omni API já rodando (porta 8882)");
-    return;
-  }
-
-  // Check if omni is installed but stopped
-  const omniConfigPath = join(homedir(), ".omni", "config.json");
-  if (existsSync(omniConfigPath)) {
-    info("omni instalado mas parado — iniciando...");
-    try {
-      execSync("omni start", { stdio: "inherit" });
-      done("omni iniciado");
-    } catch {
-      warning("Falha ao iniciar omni — execute: omni start");
-    }
   } else {
-    // Fresh install
-    info("Configurando omni pela primeira vez...");
-    try {
-      execSync("omni install --non-interactive", { stdio: "inherit" });
-      done("omni instalado e iniciado");
-    } catch {
-      warning("Falha ao instalar omni — execute: omni install");
+    info("Instalando omni...");
+    if (run("bun", ["add", "-g", "@automagik/omni"]).status === 0) {
+      done("omni instalado");
+    } else {
+      warning("Falha ao instalar omni — instale manualmente: bun add -g @automagik/omni");
+      return { action: "unavailable", commands };
     }
   }
 
-  // Verify health after start
-  await new Promise((r) => setTimeout(r, 2000));
-  try {
-    const res = await fetch("http://127.0.0.1:8882/health", {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.status < 500) {
-      done("omni API respondendo");
-    } else {
-      warning("omni API retornou erro — verifique: omni status");
-    }
-  } catch {
-    warning("omni API não respondeu — verifique: omni status");
+  if (await system.omniHealthy(3000)) {
+    done("omni API já rodando (porta 8882)");
+    return { action: "already_running", commands };
   }
+
+  const natsUp = await system.isNatsReachable(system.natsUrl);
+  const natsOwner = natsUp ? findNatsPm2Owner(system.pm2Processes()) : null;
+
+  if (natsUp && natsOwner?.name === NATS_PM2_PROCESS) {
+    info(`NATS em ${system.natsUrl} é o ${NATS_PM2_PROCESS} — instalando o Omni sobre ele`);
+    const install = run("omni", ["install", "--non-interactive"], true);
+    if (install.status === 0) done("omni install --non-interactive");
+    else warning(`omni install --non-interactive terminou com status ${install.status}`);
+    // Omni starts its own omni-nats on the same port; with ravi-nats holding it, it can only crash-loop.
+    if (system.pm2Processes().some((process) => process.name === OMNI_NATS_PM2_PROCESS)) {
+      const removed = run("pm2", ["delete", OMNI_NATS_PM2_PROCESS]);
+      if (removed.status === 0) done(`pm2 delete ${OMNI_NATS_PM2_PROCESS} (o Omni usa o ${NATS_PM2_PROCESS})`);
+      else warning(`Falha em pm2 delete ${OMNI_NATS_PM2_PROCESS} — remova manualmente`);
+    }
+    info(`Executado: ${commands.join(" ; ")}`);
+    await verifyOmniHealth(system);
+    return { action: install.status === 0 ? "installed_on_ravi_nats" : "failed", commands };
+  }
+
+  if (natsUp && !natsOwner) {
+    warning(
+      `NATS em ${system.natsUrl} não é gerenciado pelo PM2 — o Omni subiria um segundo NATS na mesma porta. Instale o Omni manualmente apontando o NATS dele para ${system.natsUrl}.`,
+    );
+    return { action: "skipped_external_nats", commands };
+  }
+
+  if (natsOwner?.name === OMNI_NATS_PM2_PROCESS) {
+    info(`${OMNI_NATS_PM2_PROCESS} é o NATS do Ravi neste host — o setup nunca o para nem remove`);
+  }
+
+  let result: SetupCommandResult;
+  let action: SetupOmniResult["action"];
+  if (system.omniConfigExists()) {
+    info("omni instalado mas parado — iniciando...");
+    result = run("omni", ["start"], true);
+    action = "started";
+    if (result.status === 0) done("omni iniciado");
+    else warning("Falha ao iniciar omni — execute: omni start");
+  } else {
+    info("Configurando omni pela primeira vez...");
+    result = run("omni", ["install", "--non-interactive"], true);
+    action = "installed";
+    if (result.status === 0) done("omni instalado e iniciado");
+    else warning("Falha ao instalar omni — execute: omni install");
+  }
+
+  await verifyOmniHealth(system);
+  return { action: result.status === 0 ? action : "failed", commands };
+}
+
+async function verifyOmniHealth(system: SetupSystem): Promise<void> {
+  await system.sleep(2000);
+  if (await system.omniHealthy(5000)) done("omni API respondendo");
+  else warning("omni API não respondeu — verifique: omni status");
 }
 
 async function stepEnvironment(): Promise<void> {
-  heading(2, 5, "Ambiente", "~/.ravi/.env");
+  heading(3, TOTAL_STEPS, "Ambiente", "~/.ravi/.env");
 
   mkdirSync(RAVI_DOT_DIR, { recursive: true });
 
@@ -307,7 +517,7 @@ async function stepEnvironment(): Promise<void> {
 }
 
 async function stepAgent(): Promise<void> {
-  heading(3, 5, "Agente", "~/ravi/main");
+  heading(4, TOTAL_STEPS, "Agente", "~/ravi/main");
 
   const { dbListAgents, dbCreateAgent, dbSetSetting } = await import("../../router/router-db.js");
   const { ensureAgentDirs, loadRouterConfig } = await import("../../router/config.js");
@@ -339,7 +549,7 @@ async function stepAgent(): Promise<void> {
 }
 
 async function stepSettings(): Promise<void> {
-  heading(4, 5, "Configurações", "fuso horário, políticas");
+  heading(5, TOTAL_STEPS, "Configurações", "fuso horário, políticas");
 
   const { dbGetSetting, dbSetSetting } = await import("../../router/router-db.js");
 
@@ -375,26 +585,34 @@ async function stepSettings(): Promise<void> {
   }
 }
 
-async function stepDaemon(): Promise<void> {
-  heading(5, 5, "Daemon", "iniciar via PM2");
+async function stepDaemon(system: SetupSystem): Promise<void> {
+  heading(6, TOTAL_STEPS, "Daemon", "daemon + channels runner via PM2");
 
-  try {
-    execSync("ravi daemon start", { stdio: "pipe" });
+  const daemon = system.run("ravi", ["daemon", "start"]);
+  if (daemon.status === 0) {
     done("Daemon iniciado via PM2");
-  } catch (err: any) {
-    const msg = err?.stderr?.toString() || err?.stdout?.toString() || "";
-    if (msg.includes("already running")) {
-      done("Daemon já está rodando");
-    } else {
-      warning("Não foi possível iniciar — execute: ravi daemon start");
-    }
+  } else if (`${daemon.stderr}${daemon.stdout}`.includes("already running")) {
+    done("Daemon já está rodando");
+  } else {
+    warning("Não foi possível iniciar — execute: ravi daemon start");
+  }
+
+  // The WhatsApp runner (and native Slack) live in the channels runner; it answers "already_running" when up.
+  const channels = system.run("ravi", ["channels", "start", "--json"]);
+  if (channels.status === 0) {
+    done(
+      channels.stdout.includes("already_running")
+        ? "Channels runner já está rodando"
+        : "Channels runner iniciado via PM2",
+    );
+  } else {
+    warning("Não foi possível iniciar o channels runner — execute: ravi channels start");
   }
 
   // Save PM2 state
-  try {
-    execSync("pm2 save", { stdio: "pipe" });
+  if (system.run("pm2", ["save"]).status === 0) {
     done("PM2 state salvo");
-  } catch {
+  } else {
     info("Execute: pm2 save && pm2 startup");
   }
 }
@@ -408,11 +626,13 @@ export async function runSetup(): Promise<void> {
   console.log(`  ${c.bold}Ravi Bot${c.reset} ${c.gray}— setup${c.reset}`);
   console.log(`  ${c.gray}${"─".repeat(30)}${c.reset}`);
 
-  await stepOmni();
+  const system = createSetupSystem();
+  await setupNats(system);
+  await setupOmniBridge(system);
   await stepEnvironment();
   await stepAgent();
   await stepSettings();
-  await stepDaemon();
+  await stepDaemon(system);
 
   console.log();
   console.log(`  ${c.green}${c.bold}Configuração completa!${c.reset}`);

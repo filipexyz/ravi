@@ -209,7 +209,7 @@ tags:
   - typing
 applies_to:
   - src/gateway.ts
-  - src/omni/typing-presence.ts
+  - src/channels/inbound/typing-presence.ts
 owners:
   - dev
 status: active
@@ -231,7 +231,7 @@ Presence should communicate real active work. It must not make idle sessions loo
 
 ## Validation
 
-- `bun test src/gateway-session-trace.test.ts src/omni/typing-presence.test.ts`
+- `bun test src/gateway-session-trace.test.ts src/channels/inbound/typing-presence.test.ts`
 
 ## Known Failure Modes
 

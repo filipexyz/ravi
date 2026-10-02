@@ -89,7 +89,8 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     ],
     notes: [
       "This is the canonical reaction trigger subject.",
-      "Producers: Omni `reaction.received` and native Slack `reaction_added`.",
+      "Producers: the inbound pipeline for WhatsApp (ravi channels runner) and the legacy Omni bridge (Telegram/Discord), and native Slack `reaction_added`.",
+      'Omni `message.received.whatsapp-baileys.*`/`reaction.received.whatsapp-baileys.*`/`instance.*.whatsapp-baileys.*` subjects no longer carry WhatsApp traffic. Move message triggers to `ravi.channel.inbound.whatsapp.message.>` (data is a WhatsAppInboundEvent, so rewrite `data.*` filters, e.g. `data.payload.content.type`, and add `data.ingestMode == "realtime"` to skip history-sync), reaction triggers to `ravi.inbound.reaction`, and instance lifecycle triggers to `ravi.instances.>` (unregistered) or `ravi.whatsapp.>` (qr, connected).',
       "The payload identifies the reacted message as targetMessageId. Keep domain mappings keyed by external message id when a routine needs to recover business state.",
     ],
   },
@@ -456,7 +457,8 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     category: "audit",
     pattern: "ravi.instances.unregistered",
     title: "Unregistered instance",
-    description: "Inbound event arrived from an Omni instance not registered in Ravi.",
+    description:
+      "Inbound event arrived from a channel instance (WhatsApp runner or legacy bridge) not registered in Ravi.",
     payload: "{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }",
     schema: {
       version: 1,
@@ -465,7 +467,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           path: "instanceId",
           type: "string",
           required: true,
-          description: "Omni instance id that emitted the inbound event.",
+          description: "Transport instance id that emitted the inbound event.",
         },
         { path: "channelType", type: "string", required: true, description: "Channel type." },
         { path: "subject", type: "string", required: true, description: "Inbound NATS subject." },

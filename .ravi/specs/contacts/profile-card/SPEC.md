@@ -19,13 +19,14 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Contact Profile Card
 
 ## Intent
 
 The contact profile card is the operator-facing summary of what Ravi knows about one canonical contact.
 
-It MUST be built from Ravi contact concepts: `contact`, `platform_identity`, `contact_policy`, `contact_event`, scoped metadata, chat/session actor metadata, and provenance. It MUST NOT treat raw Omni ids as the primary model.
+It MUST be built from Ravi contact concepts: `contact`, `platform_identity`, `contact_policy`, `contact_event`, scoped metadata, chat/session actor metadata, and provenance. It MUST NOT treat raw transport ids as the primary model.
 
 The first target contact is Luis, but the feature MUST be generic. A profile agent should receive a `target_contact_id` and the same workflow should work for any contact.
 

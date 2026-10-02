@@ -57,6 +57,7 @@ mock.module("../nats.js", () => ({
 }));
 
 const { RuntimePromptSubscription } = await import("./prompt-subscription.js");
+const { SESSION_STREAM, getConsumerName } = await import("../session-prompts/stream.js");
 
 afterAll(() => {
   mock.restore();
@@ -89,6 +90,8 @@ describe("RuntimePromptSubscription", () => {
 
     expect(ensureInfrastructureMock).toHaveBeenCalledWith({ force: true });
     expect(fakeJetStream.consumers.get).toHaveBeenCalledWith("SESSION_PROMPTS", "ravi-prompts");
+    // The subscriber pulls from the stream and durable the session-prompts module provisions.
+    expect(fakeJetStream.consumers.get).toHaveBeenCalledWith(SESSION_STREAM, getConsumerName());
     expect(consumeCalls[0]).toMatchObject({
       expires: 2000,
       abort_on_missing_resource: true,

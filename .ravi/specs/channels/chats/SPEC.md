@@ -9,9 +9,9 @@ tags:
   - chats
   - sessions
   - participants
-  - omni
 applies_to:
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
+  - src/channels/group-metadata/
   - src/router/sessions.ts
   - src/router/resolver.ts
   - src/contacts.ts
@@ -21,11 +21,12 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Chat Model
 
 ## Intent
 
-Ravi needs a first-class chat model to abstract channel conversations received from Omni.
+Ravi needs a first-class chat model to abstract channel conversations received from its channel transports (the `ravi channels` runner for WhatsApp and Slack, the Omni legacy bridge for Telegram/Discord).
 
 A chat is the conversation container from the channel. A session is the runtime state of one Ravi agent working inside or about that chat.
 
@@ -104,7 +105,7 @@ Fields:
 - `agent_id`
 - `role`: `member`, `admin`, `owner`, `agent`, `unknown`, or future role
 - `status`: `active`, `left`, `removed`, `unknown`
-- `source`: `omni`, `inbound_message`, `manual`, `import`, or future source
+- `source`: `whatsapp`, `group_metadata`, `omni`, `inbound_message`, `manual`, `import`, `backfill`, or future source
 - `first_seen_at`
 - `last_seen_at`
 - `metadata_json`
@@ -221,7 +222,7 @@ Migration SHOULD treat these as source data:
 - `sessions.channel`, `sessions.account_id`, `sessions.group_id`, `sessions.last_channel`, `sessions.last_account_id`, `sessions.last_to`, and `sessions.last_thread_id`
 - `message_metadata.chat_id`
 - `session_events.source_channel`, `source_account_id`, `source_chat_id`, and `source_thread_id`
-- `omni_group_metadata` and its `participants_json`
+- `channel_group_metadata` (copied once from the older `omni_group_metadata`, which is kept but no longer written) and its `participants_json`
 - `account_pending.chat_id`, `account_pending.phone`, and `account_pending.is_group`
 
 Migration SHOULD move or project this data into:
@@ -231,7 +232,7 @@ Migration SHOULD move or project this data into:
 - `session_chat_subscriptions` (one-time convert from retired `session_chat_bindings`)
 - per-message/per-event chat and actor metadata
 
-`omni_group_metadata` MAY remain as a raw transport cache, but it MUST NOT be the only place Ravi stores group participants.
+`channel_group_metadata` MAY remain as a raw transport cache, but it MUST NOT be the only place Ravi stores group participants.
 
 `account_pending` SHOULD stop treating a group as a pending contact. Pending group/chat state belongs to chat/routing review; pending human state belongs to contact review.
 
@@ -242,7 +243,7 @@ These legacy surfaces MUST be removed, split, or reduced to explicit compatibili
 | Legacy surface | Target replacement | Removal condition |
 | --- | --- | --- |
 | group identity stored as contact | `chats` | all route/policy/session flows resolve group by chat |
-| `omni_group_metadata.participants_json` as participant source of truth | `chat_participants` | group participants are queryable from Ravi chat model |
+| `channel_group_metadata.participants_json` (formerly `omni_group_metadata`) as participant source of truth | `chat_participants` | group participants are queryable from Ravi chat model |
 | `account_pending.is_group` sharing pending-contact semantics | pending chat/route review backed by `chats` | pending humans and pending chats have separate flows; chat approval creates route review state without creating contacts |
 | `sessions.group_id` as implicit chat identity | `session_chat_subscriptions.chat_id` | sessions attach to canonical chat id |
 | `sessions.last_to`/`last_channel`/`last_account_id` as only outbound target memory | explicit chat binding + last target provenance | gateway/outbound can resolve via chat binding |
@@ -254,7 +255,7 @@ These legacy surfaces MUST be removed, split, or reduced to explicit compatibili
 Expected flow:
 
 ```text
-Omni raw inbound
+channel raw inbound (ChannelInboundEvent)
   -> normalize chat id
   -> upsert chat
   -> normalize sender id
@@ -289,7 +290,7 @@ For DMs:
 
 Channel capabilities are not required to implement the chat model.
 
-Omni SHOULD remain the source of transport capability facts when Ravi needs to know whether a channel supports stickers, calls, presence, reactions, or future behaviors.
+The channel transport (WhatsApp runner, native Slack adapter, Omni for Telegram/Discord) SHOULD remain the source of transport capability facts when Ravi needs to know whether a channel supports stickers, calls, presence, reactions, or future behaviors.
 
 Do not introduce a large capability registry for this work unless a concrete feature needs it. The chat/participant model should not be blocked by channel capabilities.
 
@@ -300,4 +301,4 @@ Do not introduce a large capability registry for this work unless a concrete fea
 - Session participants do not overwrite chat participants.
 - A WhatsApp group is a chat, not a contact.
 - Each message/event can preserve the actor that produced it.
-- Diagnostics can still recover raw Omni ids for chat, sender, and message.
+- Diagnostics can still recover raw provider ids for chat, sender, and message.

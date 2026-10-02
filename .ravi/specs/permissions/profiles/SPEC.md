@@ -22,13 +22,14 @@ applies_to:
   - src/permissions/capability-context.ts
   - src/runtime/runtime-request-context.ts
   - src/runtime/context-registry.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
 owners:
   - ravi-dev
 status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Permission Profiles
 
 ## Intent

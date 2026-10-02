@@ -23,7 +23,7 @@ rg -n "message_metadata|session_events|session_participants|chat_participants|ac
 Inspect current inbound/outbound source ids:
 
 ```bash
-rg -n "raw_sender|senderPhone|resolvedSenderPhone|chatJid|source_chat_id|source_message_id|last_to|group_id|session_key" src/omni src/router src/gateway.ts src/session-trace
+rg -n "raw_sender|senderPhone|resolvedSenderPhone|chatJid|source_chat_id|source_message_id|last_to|group_id|session_key" src/channels src/omni src/router src/gateway.ts src/session-trace
 ```
 
 ## Implementation Order

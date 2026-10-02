@@ -23,6 +23,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Doctor Check Catalog
 
 Status: draft
@@ -133,8 +134,10 @@ Initial checks:
 - `runtime.disk_space_low`
 
 Runtime checks MUST normalize process names and known aliases before reporting
-failures. For example, renamed Omni process names MUST not be reported as
-missing when the replacement process is healthy.
+failures. For example, the NATS process MUST not be reported as missing when
+it runs as `omni-nats` (Ravi's NATS on hosts upgraded from Omni) instead of
+`ravi-nats`, and the optional legacy bridge (`omni-api`) MUST not be reported
+as missing when no Telegram/Discord instance needs it.
 
 ### Execution plane (`runtime.isolation`)
 
@@ -234,7 +237,7 @@ Duplicate routes MUST compare effective routing keys, not only raw row ids.
 Chats without routes SHOULD be `warn` only when the chat is eligible for active
 routing. Passive, archived, or intentionally unowned chats MAY be `info`.
 
-## Channels And Omni
+## Channels And Transports
 
 Initial checks:
 

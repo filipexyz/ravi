@@ -29,13 +29,14 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Slack Authorized Approval
 
 ## Intent
 
 Native Slack permission, plan, and spec approvals MUST resolve through
-authorized Block Kit Approve/Reject buttons. WhatsApp/Omni keep
-reaction/reply UX. Every channel MUST enforce the same server-side grantor
+authorized Block Kit Approve/Reject buttons. WhatsApp and the legacy bridge
+(Telegram/Discord) keep reaction/reply UX. Every channel MUST enforce the same server-side grantor
 rule: only an actor who already has authority to grant the requested
 permission may approve.
 
@@ -49,7 +50,8 @@ permission may approve.
 - Approval MUST subscribe to `ravi.inbound.interaction` for Slack and MUST
   NOT treat Slack `reaction_added` / `ravi.inbound.reaction` as an approval
   decision. Event Subscriptions for reactions are not required for this path.
-- WhatsApp/Omni MUST keep reaction-to-approve and reply-to-reject UX.
+- WhatsApp and the legacy bridge (Telegram/Discord) MUST keep
+  reaction-to-approve and reply-to-reject UX.
 - Authorization MUST load the pending request record and check the actor
   through `resolvePlatformIdentity` / contact identity plus
   `materializeSubjectCapabilities` and the capability snapshot matcher

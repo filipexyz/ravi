@@ -131,7 +131,7 @@ mock.module("../media-send.js", () => ({
       ...(target.threadId ? { threadId: target.threadId } : {}),
     };
   },
-  sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
+  sendChannelMedia: mock(async (input: Record<string, unknown>) => {
     imageSendCalls.push(input);
     return {
       target: { channel: "whatsapp", accountId: "main", instanceId: "inst-1", chatId: "chat-1" },

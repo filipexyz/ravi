@@ -31,7 +31,7 @@ ravi sessions read <session> -n 40
 
 ## Message Edit Rebase
 
-1. Detect edit event from Omni.
+1. Detect the edit event from the channel inbound pipeline (WhatsApp runner or legacy bridge).
 2. Resolve the target source message id to an existing prompt atom.
 3. Create a replacement atom with `supersedes_source_message_id`.
 4. Build a rebase plan:
@@ -44,6 +44,13 @@ ravi sessions read <session> -n 40
 8. Materialize the fork/rebase using provider strategy.
 9. Persist new provider state and trace the plan/materialization.
 10. Ask the follow-up question against the rebased provider state.
+
+The restart notice written by the inbound pipeline starts with
+`## Mensagem editada detectada pelo canal`. Histories written before the
+WhatsApp runner hold `## Mensagem editada detectada pelo Omni`. Replay
+recognizes both headers (`MESSAGE_EDIT_RESTART_NOTICE_HEADERS` in
+`src/runtime/session-rebase.ts`) and skips a stored notice that also carries
+the `## Runtime session rebase` section.
 
 ## Trace Events To Add
 

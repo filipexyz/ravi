@@ -22,7 +22,7 @@ rg -n "updateContact|addContactTag|removeContactTag|mergeContactNotes|linkContac
 Inspect current actor/event metadata:
 
 ```bash
-rg -n "actor_type|contact_id|platform_identity_id|identity_provenance|session_events|message_metadata" src/router src/omni src/session-trace
+rg -n "actor_type|contact_id|platform_identity_id|identity_provenance|session_events|message_metadata" src/router src/channels src/omni src/session-trace
 ```
 
 ## Implementation Order

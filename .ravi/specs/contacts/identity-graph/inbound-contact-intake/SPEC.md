@@ -14,7 +14,7 @@ tags:
   - migration
 applies_to:
   - src/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router/router-db.ts
   - src/db.ts
   - src/cli/commands/contacts.ts
@@ -24,6 +24,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Inbound Contact Intake
 
 ## Intent
@@ -91,7 +92,7 @@ For every inbound channel event, Ravi SHOULD perform the semantic intake before 
 Expected flow:
 
 ```text
-Omni raw inbound
+channel raw inbound (WhatsApp runner or legacy bridge)
   -> preserve raw transport provenance
   -> upsert canonical chat
   -> persist durable inbound message record
@@ -123,7 +124,7 @@ Rules:
 
 - The contact record MUST be canonical `contacts`.
 - The channel identity MUST be represented in `platform_identities` with `channel`, `instance_id`, `platform_user_id`, and `normalized_platform_user_id`.
-- WhatsApp technical ids from Omni are stored as WhatsApp identity values, not as a separate contact platform.
+- WhatsApp technical ids (LIDs) from the transport are stored as WhatsApp identity values, not as a separate contact platform.
 - The contact's operational status MUST come from instance intake mode unless an existing policy already has a stronger/manual status.
 - Existing `blocked`, `allowed`, and `opt_out` values MUST NOT be reset by automatic intake.
 - Display name, push name, avatar, and profile data MAY enrich the contact/platform identity, but MUST NOT be used as sole merge proof.
@@ -241,7 +242,7 @@ The service MUST be idempotent for repeated delivery of the same inbound event.
 Strong evidence MAY auto-link or auto-create:
 
 - exact `channel + instance_id + normalized_platform_user_id`
-- trusted WhatsApp identity mapping from Omni
+- trusted WhatsApp identity mapping from the transport (LID to phone)
 - explicit operator action
 - imported record with stable external id
 

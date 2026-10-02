@@ -53,7 +53,7 @@ const executeConsumers: readonly ExecuteConsumer[] = [
   },
   {
     name: "sentinel WhatsApp DM reply hint",
-    path: "src/omni/consumer.ts",
+    path: "src/channels/inbound/pipeline.ts",
     marker: "use whatsapp dm send",
     expected: "--execute",
     matches: 1,

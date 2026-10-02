@@ -8,6 +8,8 @@ import { DeliverPolicy, StringCodec } from "nats";
 import { ensureConnected, nats } from "../../nats.js";
 import { resolveSession } from "../../router/sessions.js";
 import { matchesTopicGlob } from "../../events/topic-glob.js";
+import { CHANNEL_INBOUND_SUBJECT_PREFIX, WHATSAPP_RPC_SUBJECT_PREFIX } from "../../channels/whatsapp/contract.js";
+import { parseWhatsAppInboundSubject } from "../../channels/whatsapp/events.js";
 
 const sc = StringCodec();
 const DEFAULT_REPLAY_LOOKBACK_MS = 15 * 60_000;
@@ -244,7 +246,23 @@ export function formatData(data: Record<string, unknown>, topic: string): string
   return `${c.dim}${truncate(json, 160)}${c.reset}`;
 }
 
-function formatTopic(topic: string): string {
+/** Shortens an instance UUID for one-line display. */
+function shortInstanceId(instanceId: string): string {
+  return instanceId.length > 8 ? instanceId.slice(0, 8) : instanceId;
+}
+
+export function formatTopic(topic: string): string {
+  // WhatsApp runner inbound: ravi.channel.inbound.whatsapp.message.<uuid> → whatsapp.message [1a2b3c4d]
+  const whatsappInbound = parseWhatsAppInboundSubject(topic);
+  if (whatsappInbound) {
+    return `whatsapp.${whatsappInbound.kind} [${shortInstanceId(whatsappInbound.instanceId)}]`;
+  }
+
+  // WhatsApp runner RPC: _RAVI.channels.whatsapp.rpc.<uuid> → whatsapp.rpc [1a2b3c4d]
+  if (topic.startsWith(WHATSAPP_RPC_SUBJECT_PREFIX)) {
+    return `whatsapp.rpc [${shortInstanceId(topic.slice(WHATSAPP_RPC_SUBJECT_PREFIX.length))}]`;
+  }
+
   // Session events: ravi.session.agent:main:dm:5511999.prompt → [dm:5511999] prompt
   const sessionMatch = topic.match(/ravi\.session\.(agent:[^.]+):(.+)\.(\w+)$/);
   if (sessionMatch) {
@@ -263,7 +281,7 @@ function formatTopic(topic: string): string {
     return topic.slice("ravi.".length);
   }
 
-  // Omni JetStream: message.received.whatsapp-baileys.UUID → msg.received
+  // Legacy Omni JetStream: message.received.whatsapp-baileys.UUID → message.received
   const omniMatch = topic.match(/^(message|reaction|instance)\.(\w[\w-]*)\.whatsapp/);
   if (omniMatch) {
     return `${omniMatch[1]}.${omniMatch[2]}`;
@@ -478,6 +496,27 @@ type LiveEventJsonRecord = {
   data: Record<string, unknown>;
 };
 
+/** Raw channel transport subjects (runner inbound events, runner RPC); the curated events are published elsewhere. */
+const CHANNEL_TRANSPORT_PREFIXES = [CHANNEL_INBOUND_SUBJECT_PREFIX, "_RAVI.channels."] as const;
+
+/**
+ * Topics `ravi events stream` hides. Typing/unread/stream chunks and the legacy bridge's JetStream subjects are always
+ * hidden; `ravi.channel.inbound.*` and `_RAVI.channels.*` are hidden unless a `--filter` (already matched) selected them.
+ */
+export function isNoiseStreamTopic(topic: string, options: { filtered?: boolean } = {}): boolean {
+  if (
+    topic.includes("presence.typing") ||
+    topic.includes("chat.unread-updated") ||
+    topic.includes(".stream") ||
+    topic.startsWith("message.") ||
+    topic.startsWith("reaction.") ||
+    topic.startsWith("instance.")
+  ) {
+    return true;
+  }
+  return !options.filtered && CHANNEL_TRANSPORT_PREFIXES.some((prefix) => topic.startsWith(prefix));
+}
+
 export function formatLiveEventJsonRecord(input: {
   count: number;
   topic: string;
@@ -633,16 +672,9 @@ export class EventsCommands {
       // Hide provider-native noise unless explicitly debugging runtime internals.
       if (!runtimeVerbose && isLowSignalRuntimeEvent(topic, data as Record<string, unknown>)) continue;
 
-      // Always hide noisy events (omni JetStream, streaming chunks, stream_event)
-      if (
-        topic.includes("presence.typing") ||
-        topic.includes("chat.unread-updated") ||
-        topic.includes(".stream") ||
-        topic.startsWith("message.") ||
-        topic.startsWith("reaction.") ||
-        topic.startsWith("instance.")
-      )
-        continue;
+      // Always hide noisy events (legacy bridge JetStream, streaming chunks, stream_event); channel transport
+      // traffic is shown only when --filter selected it.
+      if (isNoiseStreamTopic(topic, { filtered: Boolean(filter) })) continue;
 
       // Hide stream_event from claude events
       if (topic.includes(".claude") && (data as Record<string, unknown>).type === "stream_event") continue;

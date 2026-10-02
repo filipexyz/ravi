@@ -356,7 +356,7 @@ Formato preferido:
 
 Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
 
-Não use \`ravi whatsapp group list\` para descobrir grupo recém-criado ou como fallback de criação. \`group list\` é operação de inspeção e não cria nem registra chat/rota/sessão; o caminho correto para novo fio é \`whatsapp group create\`, que cria o grupo pelo Omni e registra chat, rota e sessão localmente.
+Não use \`ravi whatsapp group list\` para descobrir grupo recém-criado ou como fallback de criação. \`group list\` é operação de inspeção e não cria nem registra chat/rota/sessão; o caminho correto para novo fio é \`whatsapp group create\`, que cria o grupo pelo canal WhatsApp do Ravi e registra chat, rota e sessão localmente.
 
 Não sugira grupo novo para perguntas rápidas, correções pequenas, respostas pontuais, ou quando a sugestão atrapalharia o fluxo atual.`;
 }

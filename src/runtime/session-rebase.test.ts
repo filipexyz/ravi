@@ -4,6 +4,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   actorMetadataFromMessageMetadata,
   buildRuntimeMessageEditRebasePlan,
+  MESSAGE_EDIT_RESTART_NOTICE_HEADERS,
   renderRuntimeMessageEditRebasePrompt,
 } from "./session-rebase.js";
 
@@ -92,6 +93,51 @@ describe("runtime session rebase", () => {
     expect(prompt).not.toContain("texto antigo\n</message>");
     expect(prompt).not.toContain("resposta invalida depois do original");
   });
+
+  it("recognises both edit-restart notice headers", () => {
+    expect(MESSAGE_EDIT_RESTART_NOTICE_HEADERS).toEqual([
+      "## Mensagem editada detectada pelo canal",
+      "## Mensagem editada detectada pelo Omni",
+    ]);
+  });
+
+  for (const header of ["## Mensagem editada detectada pelo canal", "## Mensagem editada detectada pelo Omni"]) {
+    it(`does not replay an earlier rebase control prompt with the header "${header}"`, () => {
+      saveMessage("dev", "user", "[WhatsApp group mid:msg-original] Luis: texto antigo", "provider-1", {
+        agentId: "dev",
+        chatId: "chat-1",
+        sourceMessageId: "msg-original",
+      });
+      saveMessage(
+        "dev",
+        "user",
+        [header, "", "## Runtime session rebase", "", "controle de rebase anterior"].join("\n"),
+        "provider-1",
+        { agentId: "dev", chatId: "chat-1", sourceMessageId: "msg-original-edit-old" },
+      );
+      saveMessage("dev", "user", [header, "", "aviso sem rebase"].join("\n"), "provider-1", {
+        agentId: "dev",
+        chatId: "chat-1",
+        sourceMessageId: "msg-notice-only",
+      });
+
+      const plan = buildRuntimeMessageEditRebasePlan({
+        sessionName: "dev",
+        agentId: "dev",
+        chatId: "chat-1",
+        editedMessageId: "msg-original",
+        editEventId: "msg-original-edit-2",
+        editedPrompt: "[WhatsApp group mid:msg-original-edit-2] Luis: texto novo",
+      });
+
+      expect(plan.status).toBe("ready");
+      if (plan.status !== "ready") return;
+      expect(plan.suffixMessages.map((message) => message.source_message_id)).toEqual(["msg-notice-only"]);
+      const prompt = renderRuntimeMessageEditRebasePrompt({ restartNotice: header, plan });
+      expect(prompt).not.toContain("controle de rebase anterior");
+      expect(prompt).toContain("aviso sem rebase");
+    });
+  }
 
   it("fails closed when the edited source message cannot be found", () => {
     const plan = buildRuntimeMessageEditRebasePlan({

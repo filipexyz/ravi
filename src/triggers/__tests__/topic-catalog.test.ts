@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { findTriggerTopicCatalogEntry, getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "../topic-catalog.js";
+import { getTriggerTopicWarnings, isBlockedTriggerTopic } from "../topic-policy.js";
 
 describe("trigger topic catalog", () => {
   it("registers the canonical inbound reaction subject", () => {
@@ -8,6 +9,47 @@ describe("trigger topic catalog", () => {
         pattern: "ravi.inbound.reaction",
         payload: "{ targetMessageId, emoji, senderId }",
       }),
+    );
+  });
+
+  it("names the WhatsApp runner and the legacy bridge as reaction producers", () => {
+    const notes = findTriggerTopicCatalogEntry("ravi.inbound.reaction")?.notes ?? [];
+
+    expect(notes).toContain(
+      "Producers: the inbound pipeline for WhatsApp (ravi channels runner) and the legacy Omni bridge (Telegram/Discord), and native Slack `reaction_added`.",
+    );
+    expect(notes.some((note) => note.startsWith("Producers: Omni"))).toBe(false);
+  });
+
+  it("moves Omni WhatsApp message triggers to the runner's message subject, not to lifecycle subjects", () => {
+    const notes = findTriggerTopicCatalogEntry("ravi.inbound.reaction")?.notes ?? [];
+    const migration = notes.find((note) => note.includes("message.received.whatsapp-baileys"));
+
+    expect(migration).toContain("Move message triggers to `ravi.channel.inbound.whatsapp.message.>`");
+    expect(migration).toContain("WhatsAppInboundEvent");
+    expect(migration).toContain('data.ingestMode == "realtime"');
+    expect(migration).toContain("reaction triggers to `ravi.inbound.reaction`");
+    expect(migration).toContain("instance lifecycle triggers to `ravi.instances.>`");
+    expect(migration).toContain("`ravi.whatsapp.>`");
+  });
+
+  it("accepts the WhatsApp message subject as a custom subject with a warning only", () => {
+    const topic = "ravi.channel.inbound.whatsapp.message.>";
+
+    expect(isBlockedTriggerTopic(topic)).toBe(false);
+    expect(getTriggerTopicDiagnostic(topic)).toMatchObject({
+      level: "warning",
+      message: expect.stringContaining("custom NATS subject"),
+    });
+    expect(getTriggerTopicWarnings(topic)).toHaveLength(1);
+  });
+
+  it("describes unregistered instances without assuming Omni", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.instances.unregistered");
+
+    expect(entry?.description).not.toContain("Omni");
+    expect(entry?.schema?.fields.find((field) => field.path === "instanceId")?.description).toBe(
+      "Transport instance id that emitted the inbound event.",
     );
   });
 

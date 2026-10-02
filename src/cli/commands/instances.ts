@@ -10,6 +10,7 @@
  * ravi instances disable <name-or-instanceId>
  * ravi instances connect <name> [--channel whatsapp]
  * ravi instances disconnect <name>
+ * ravi instances logout <name> [--execute]
  * ravi instances status <name>
  * ravi routes list [name]
  * ravi routes show <name> <pattern>
@@ -28,9 +29,11 @@ import "reflect-metadata";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
+import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   commandEnvelopeReturnSchema,
@@ -39,8 +42,36 @@ import {
   routeShowReturnSchema,
   routesListReturnSchema,
 } from "./operational-return-schemas.js";
-import { nats } from "../../nats.js";
-import { createOmniClient } from "../../omni/client.js";
+import { ensureConnected, nats } from "../../nats.js";
+import {
+  bridgeConnectedTopic,
+  bridgeQrTopic,
+  whatsappConnectedTopic,
+  whatsappQrTopic,
+} from "../../channels/inbound/topics.js";
+import {
+  createWhatsAppClient,
+  WHATSAPP_CLIENT_TIMEOUTS_MS,
+  type WhatsAppClient,
+} from "../../channels/whatsapp/client.js";
+import {
+  WHATSAPP_RPC_ERROR_CODES,
+  findWhatsAppChannelForInstance,
+  isWhatsAppChannelType,
+  isWhatsAppFamilyChannelType,
+  isWhatsAppInstanceConfig,
+} from "../../channels/whatsapp/contract.js";
+import { isWhatsAppRpcError, isWhatsAppRunnerUnavailable } from "../../channels/whatsapp/errors.js";
+import {
+  ensureWhatsAppInstance,
+  isWhatsAppProvisioningError,
+  WHATSAPP_INSTANCE_CONFLICT,
+  WHATSAPP_INSTANCE_DELETED,
+  type EnsureWhatsAppInstanceOptions,
+  type WhatsAppInstanceResult,
+  type WhatsAppInstanceSettings,
+} from "../../channels/whatsapp/provisioning.js";
+import { WHATSAPP_RUNNER_UNAVAILABLE_MESSAGE } from "../../channels/whatsapp/rpc-client.js";
 import {
   dbGetInstance,
   dbGetInstanceByInstanceId,
@@ -66,6 +97,8 @@ import {
   ContactIntakeModeSchema,
   dbGetSetting,
   dbSetSetting,
+  dbUpdateChannel,
+  type InstanceConfig,
 } from "../../router/router-db.js";
 import { loadRouterConfig, matchRoute } from "../../router/index.js";
 import {
@@ -73,7 +106,6 @@ import {
   parseIgnoredOmniInstanceIds,
   serializeIgnoredOmniInstanceIds,
 } from "../../router/omni-ignore.js";
-import { resolveOmniConnection } from "../../omni-config.js";
 import {
   getContact,
   listAccountPending,
@@ -99,8 +131,8 @@ import { formatInspectionSection, printInspectionField } from "../inspection-out
 
 const CONFIG_DB_META = { source: "config-db", freshness: "persisted" } as const;
 const LIVE_OMNI_META = { source: "live-omni", freshness: "live" } as const;
+const LIVE_WHATSAPP_META = { source: "live-whatsapp", freshness: "live", via: "whatsapp-runner-rpc" } as const;
 type ListedRoute = ReturnType<typeof dbListRoutes>[number];
-type OmniInstanceStatus = { isConnected?: boolean; profileName?: string; state?: string };
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -720,10 +752,349 @@ function deleteConflictingSessions(
   return deleted;
 }
 
-function getOmniClient() {
-  const conn = resolveOmniConnection();
-  if (!conn) fail("Omni not configured. Is omni running?");
-  return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
+// ============================================================================
+// Transport: WhatsApp runs in the ravi channels runner; Telegram/Discord go
+// through the legacy bridge (Omni), loaded only when one of them needs it.
+// ============================================================================
+
+type PairingEvent = { topic: string; data: Record<string, unknown> };
+type InstanceTransport = "whatsapp" | "omni";
+type LiveStatus = { isConnected?: boolean; profileName?: string | null; state?: string };
+
+/** Legacy bridge instance record (subset of Omni's). */
+interface LegacyInstanceRecord {
+  id?: string;
+  name?: string;
+  channel?: string;
+  isActive?: boolean;
+  profileName?: string | null;
+  state?: string;
+}
+
+/** The subset of the Omni client's `instances` API used by Telegram/Discord. */
+interface LegacyInstancesClient {
+  list(params?: Record<string, string | number | boolean | undefined>): Promise<{ items: LegacyInstanceRecord[] }>;
+  create(body: { name: string; channel: string }): Promise<LegacyInstanceRecord>;
+  status(id: string): Promise<{ state: string; isConnected: boolean; profileName?: string | null }>;
+  connect(id: string, body?: unknown): Promise<{ status: string; message: string }>;
+  disconnect(id: string): Promise<void>;
+}
+
+export interface InstancesTransportDependencies {
+  /** WhatsApp runner client (resolves an instance to its WhatsApp channel binding). */
+  whatsapp(): WhatsAppClient;
+  /** Legacy bridge client for Telegram/Discord; null when the bridge is not configured. */
+  legacy(): Promise<LegacyInstancesClient | null>;
+  /** Make an instance a WhatsApp instance served by the runner (instance UUID + channel row). */
+  provision(name: string, options: EnsureWhatsAppInstanceOptions): WhatsAppInstanceResult;
+  /** Wipe the saved WhatsApp credentials of an instance locally (runner not answering). Returns rows removed. */
+  clearWhatsAppAuthState(instanceId: string): Promise<number>;
+  subscribe(...topics: string[]): AsyncIterable<PairingEvent>;
+  /** Opens the NATS connection before the pairing subscription starts. */
+  ensureNats(): Promise<unknown>;
+  emitConfigChanged(): void;
+  sleep(ms: number): Promise<void>;
+  printQr(qr: string): void;
+  exit(code: number): void;
+  /** How long WhatsApp `connect` keeps retrying while the runner hot-adds the channel. */
+  runnerRetryTimeoutMs: number;
+  runnerRetryIntervalMs: number;
+  pairingTimeoutMs: number;
+}
+
+async function loadLegacyInstancesClient(): Promise<LegacyInstancesClient | null> {
+  const [{ resolveOmniConnection }, { createOmniClient }] = await Promise.all([
+    import("../../omni-config.js"),
+    import("../../omni/client.js"),
+  ]);
+  const connection = resolveOmniConnection();
+  if (!connection) return null;
+  return createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey }).instances;
+}
+
+async function clearSavedWhatsAppCredentials(instanceId: string): Promise<number> {
+  const { clearWhatsAppAuthState } = await import("../../channels/whatsapp/lib/auth-store.js");
+  return clearWhatsAppAuthState(instanceId);
+}
+
+function defaultInstancesTransportDependencies(): InstancesTransportDependencies {
+  return {
+    whatsapp: () => createWhatsAppClient(),
+    legacy: loadLegacyInstancesClient,
+    provision: (name, options) => ensureWhatsAppInstance(name, options),
+    clearWhatsAppAuthState: clearSavedWhatsAppCredentials,
+    subscribe: (...topics) => nats.subscribe(...topics),
+    ensureNats: () => ensureConnected(),
+    emitConfigChanged,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    printQr: (qr) => qrcode.generate(qr, { small: true }),
+    exit: (code) => process.exit(code),
+    runnerRetryTimeoutMs: 15_000,
+    runnerRetryIntervalMs: 1_000,
+    pairingTimeoutMs: 120_000,
+  };
+}
+
+let transportDependencyOverrides: Partial<InstancesTransportDependencies> = {};
+
+export function setInstancesTransportDependenciesForTests(overrides?: Partial<InstancesTransportDependencies>): void {
+  transportDependencyOverrides = overrides ?? {};
+}
+
+function transportDeps(): InstancesTransportDependencies {
+  return { ...defaultInstancesTransportDependencies(), ...transportDependencyOverrides };
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isWhatsAppNotBound(err: unknown): boolean {
+  return isWhatsAppRpcError(err) && err.code === WHATSAPP_RPC_ERROR_CODES.notBound;
+}
+
+/** "whatsapp" for canonical WhatsApp, "omni" for legacy-bridge channels, null for unsupported WhatsApp-family types. */
+function instanceTransport(inst: Pick<InstanceConfig, "channel">): InstanceTransport | null {
+  if (isWhatsAppChannelType(inst.channel)) return "whatsapp";
+  if (isWhatsAppFamilyChannelType(inst.channel)) return null;
+  return "omni";
+}
+
+function liveStatusMeta(transport: InstanceTransport | null) {
+  return transport === "whatsapp" ? LIVE_WHATSAPP_META : LIVE_OMNI_META;
+}
+
+function transportLabel(transport: InstanceTransport | null): string {
+  if (transport === "whatsapp") return "WhatsApp (ravi channels runner)";
+  if (transport === "omni") return "Legacy bridge (Omni)";
+  return "unsupported";
+}
+
+function unsupportedWhatsAppFamilyMessage(channel: string): string {
+  return `Channel "${channel}" is not supported. WhatsApp runs natively in ravi: use --channel whatsapp.`;
+}
+
+/** twilio-whatsapp, gupshup, whatsapp-cloud, …: refused before any RPC, DB write or bridge import. */
+function failUnsupportedWhatsAppFamily(op: string, name: string, channel: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", unsupportedWhatsAppFamilyMessage(channel), {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Retry with the native WhatsApp channel: ravi instances connect ${name} --channel whatsapp`,
+    },
+  });
+}
+
+function failLegacyBridgeNotConfigured(): never {
+  fail(
+    "Legacy bridge (Omni) not configured. Telegram/Discord instances need it: is omni running?",
+    "Install or start the legacy bridge (ravi setup), or set OMNI_API_URL and OMNI_API_KEY.",
+  );
+}
+
+function failProvisioning(op: string, name: string, err: unknown, asJson?: boolean): never {
+  if (isWhatsAppProvisioningError(err) && err.code === WHATSAPP_INSTANCE_DELETED) {
+    contractFail(op, "USAGE_ERROR", err.message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `Restore the instance first: ravi instances restore ${name}` },
+    });
+  }
+  if (isWhatsAppProvisioningError(err)) {
+    contractFail(op, WHATSAPP_INSTANCE_CONFLICT, err.message, {
+      asJson,
+      details: {
+        suggestedAction: `Inspect the instance and its channel: ravi instances show ${name}; ravi channels list`,
+      },
+    });
+  }
+  fail(`Failed to provision WhatsApp instance "${name}": ${errorText(err)}`);
+}
+
+/** Live status of one instance through its transport. Throws when the transport cannot answer. */
+async function readLiveStatus(
+  deps: InstancesTransportDependencies,
+  instanceId: string,
+  transport: InstanceTransport,
+): Promise<LiveStatus> {
+  if (transport === "whatsapp") {
+    const status = await deps.whatsapp().connection.status(instanceId, {});
+    return { state: status.state, isConnected: status.isConnected, profileName: status.profileName };
+  }
+  const legacy = await deps.legacy();
+  if (!legacy) failLegacyBridgeNotConfigured();
+  return legacy.status(instanceId);
+}
+
+interface PairingWaitOptions {
+  instanceId: string;
+  qrTopic: string;
+  connectedTopic: string;
+  asJson?: boolean;
+  deps: InstancesTransportDependencies;
+  qrPayload(qr: unknown): Record<string, unknown>;
+  connectedPayload(live: Record<string, unknown>): Record<string, unknown>;
+  timeoutSuggestion: string;
+}
+
+interface PairingWait {
+  done: Promise<void>;
+  cancel(): void;
+}
+
+/**
+ * Wait for the pairing relay the daemon publishes: `ravi.whatsapp.qr|connected.<uuid>` for
+ * WhatsApp, `ravi.bridge.qr|connected.<uuid>` for the legacy bridge. With `--json` it resolves
+ * on the first QR code; otherwise it prints each QR and exits on connect.
+ */
+function waitForPairing(options: PairingWaitOptions): PairingWait {
+  const { asJson, deps, qrTopic, connectedTopic } = options;
+  let settled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const done = new Promise<void>((resolve, reject) => {
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        contractFail("instances connect", "INSTANCE_CONNECT_TIMEOUT", "Timed out waiting for instance connection.", {
+          asJson,
+          details: {
+            retryable: true,
+            timeoutSeconds: deps.pairingTimeoutMs / 1_000,
+            suggestedAction: options.timeoutSuggestion,
+          },
+        });
+      } catch (error) {
+        reject(error);
+      }
+    }, deps.pairingTimeoutMs);
+
+    (async () => {
+      try {
+        for await (const event of deps.subscribe(qrTopic, connectedTopic)) {
+          if (settled) break;
+          const data = event.data;
+          if (event.topic === qrTopic && data.type === "qr") {
+            if (asJson) {
+              if (timer) clearTimeout(timer);
+              settled = true;
+              printJson(options.qrPayload(data.qr ?? null));
+              resolve();
+              return;
+            }
+            console.log("Scan this QR code:\n");
+            deps.printQr(String(data.qr ?? ""));
+          } else if (event.topic === connectedTopic && data.type === "connected") {
+            if (timer) clearTimeout(timer);
+            settled = true;
+            if (asJson) {
+              printJson(options.connectedPayload(data));
+              resolve();
+              return;
+            }
+            const profile = data.profileName ? ` as ${data.profileName}` : "";
+            console.log(`\n✓ Connected${profile}`);
+            resolve();
+            deps.exit(0);
+            return;
+          }
+        }
+      } catch (err) {
+        if (!settled) {
+          if (timer) clearTimeout(timer);
+          settled = true;
+          reject(err);
+        }
+      }
+    })();
+  });
+
+  // Callers may await `done` only after the connect request; mark it handled meanwhile.
+  done.catch(() => {});
+  return {
+    done,
+    cancel() {
+      settled = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+function failRunnerUnavailable(name: string, err: unknown, asJson?: boolean): never {
+  contractFail("instances connect", WHATSAPP_RPC_ERROR_CODES.runnerUnavailable, WHATSAPP_RUNNER_UNAVAILABLE_MESSAGE, {
+    asJson,
+    details: {
+      retryable: true,
+      cause: errorText(err),
+      suggestedAction: `Start the channel runner with \`ravi channels start\` (or \`ravi channels restart\` if it is already running), make sure the ravi daemon is up, then retry: ravi instances connect ${name}`,
+    },
+  });
+}
+
+/**
+ * Call a WhatsApp RPC, retrying while the runner is unavailable: right after provisioning
+ * the runner needs a moment to hot-add the channel (it reconciles on `ravi.config.changed`)
+ * before it answers for the new instance.
+ */
+async function withRunnerRetry<T>(deps: InstancesTransportDependencies, call: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + deps.runnerRetryTimeoutMs;
+  for (;;) {
+    try {
+      return await call();
+    } catch (err) {
+      if (!isWhatsAppRunnerUnavailable(err) || Date.now() + deps.runnerRetryIntervalMs > deadline) throw err;
+      await deps.sleep(deps.runnerRetryIntervalMs);
+    }
+  }
+}
+
+/**
+ * `unlinked`: WhatsApp was asked to unlink the device. Only a connected runtime can do that; in
+ * every other case the device stays listed on the phone (WhatsApp > Linked devices).
+ */
+type WhatsAppLogoutOutcome =
+  | { via: "runner"; unlinked: boolean; clearedKeys: null; cause: null }
+  | { via: "auth-store"; unlinked: false; clearedKeys: number; cause: string };
+
+const REMOVE_LINKED_DEVICE_HINT = "Remove the linked device on the phone: WhatsApp > Linked devices.";
+
+/**
+ * Ask the runner to log the instance out (wipes its credentials; unlinks the device when the
+ * instance is connected). When the runner cannot do it (not answering, channel not bound, or —
+ * with `fallbackOnAnyError` — any other failure) the saved credentials are wiped locally; the
+ * linked device then has to be removed on the phone.
+ */
+async function logoutWhatsApp(
+  deps: InstancesTransportDependencies,
+  instanceId: string,
+  fallbackOnAnyError: boolean,
+): Promise<WhatsAppLogoutOutcome> {
+  try {
+    const result = await deps.whatsapp().connection.logout(instanceId, {});
+    return { via: "runner", unlinked: result?.unlinked === true, clearedKeys: null, cause: null };
+  } catch (err) {
+    if (!fallbackOnAnyError && !isWhatsAppRunnerUnavailable(err) && !isWhatsAppNotBound(err)) throw err;
+    const clearedKeys = await deps.clearWhatsAppAuthState(instanceId);
+    return { via: "auth-store", unlinked: false, clearedKeys, cause: errorText(err) };
+  }
+}
+
+/**
+ * D18: a WhatsApp instance's channel row follows `instances enable|disable` (and `delete` /
+ * `restore`), so the runner starts or stops its runtime. Returns null for non-WhatsApp
+ * instances or when no channel exists.
+ */
+function syncWhatsAppChannelEnabled(
+  inst: InstanceConfig,
+  enabled: boolean,
+): { name: string; enabled: boolean; changed: boolean } | null {
+  if (!isWhatsAppInstanceConfig(inst)) return null;
+  const channel = findWhatsAppChannelForInstance(loadRouterConfig(), inst.name);
+  if (!channel) return null;
+  if ((channel.enabled !== false) === enabled) return { name: channel.name, enabled, changed: false };
+  dbUpdateChannel(channel.name, { enabled });
+  return { name: channel.name, enabled, changed: true };
 }
 
 const SETTABLE_KEYS = [
@@ -761,6 +1132,294 @@ function parseDefaultContactTagsInput(value: string): string[] {
     .split(",")
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0);
+}
+
+function ensureConnectAgent(agentId: string | undefined, asJson?: boolean): { id: string; cwd: string } | null {
+  if (!agentId || dbGetAgent(agentId)) return null;
+  const cwd = `${homedir()}/ravi/${agentId}`;
+  mkdirSync(cwd, { recursive: true });
+  dbCreateAgent({ id: agentId, cwd });
+  if (!asJson) console.log(`✓ Created agent "${agentId}" at ${cwd}`);
+  return { id: agentId, cwd };
+}
+
+/**
+ * Legacy bridge (Telegram/Discord): resolve or create the instance in Omni, then wait for
+ * the `ravi.bridge.qr|connected.<uuid>` relay. WhatsApp never comes here (exported for tests).
+ */
+export async function connectViaLegacyBridge(
+  name: string,
+  channel: string,
+  agent: string | undefined,
+  asJson: boolean | undefined,
+  deps: InstancesTransportDependencies,
+): Promise<void> {
+  if (isWhatsAppFamilyChannelType(channel)) {
+    contractFail(
+      "instances connect",
+      "USAGE_ERROR",
+      `WhatsApp does not use the legacy bridge (channel "${channel}"). WhatsApp runs natively in ravi: use --channel whatsapp.`,
+      {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `ravi instances connect ${name} --channel whatsapp` },
+      },
+    );
+  }
+  const legacy = await deps.legacy();
+  if (!legacy) failLegacyBridgeNotConfigured();
+  let createdOmniInstance = false;
+
+  let inst = dbGetInstance(name);
+
+  // Resolve or create the bridge instance
+  let instanceId = inst?.instanceId ?? "";
+  if (!instanceId) {
+    // Try to find an existing one in the bridge by name
+    try {
+      const result = await legacy.list({ channel });
+      const existing = result.items.find((i) => i.name === name);
+      if (existing?.id) instanceId = existing.id;
+    } catch {
+      /* bridge offline */
+    }
+  }
+
+  if (!instanceId) {
+    if (!asJson) console.log(`Creating ${channel} instance "${name}" in the legacy bridge...`);
+    try {
+      const created = await legacy.create({ name, channel });
+      instanceId = created.id ?? "";
+      createdOmniInstance = true;
+      if (!asJson) console.log(`✓ Instance created in the legacy bridge: ${instanceId}`);
+    } catch (err) {
+      fail(`Failed to create instance in the legacy bridge: ${errorText(err)}`);
+    }
+  }
+
+  // The agent must exist before the instance row references it.
+  const agentId = agent ?? inst?.agent ?? (dbGetAgent(name) ? name : undefined);
+  const createdAgent = ensureConnectAgent(agentId, asJson);
+  dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined, enabled: inst?.enabled !== false });
+
+  deps.emitConfigChanged();
+  const stored = dbGetInstance(name);
+  if (!stored) fail(`Instance "${name}" could not be stored (is it soft-deleted? ravi instances deleted)`);
+  inst = stored;
+  if (!asJson) console.log(`Connecting: ${name} → agent ${inst.agent ?? "(default)"}  [${channel}]`);
+  const bridge = { transport: "omni" as const, createdOmniInstance, createdAgent };
+
+  // Check if already connected
+  try {
+    const status = await legacy.status(instanceId);
+    if (status.isConnected) {
+      if (asJson) {
+        printJson({ status: "connected", instance: inst, live: status, ...bridge, changedCount: 1 });
+        return;
+      }
+      const profile = status.profileName ? ` as ${status.profileName}` : "";
+      console.log(`\n✓ Already connected${profile}`);
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Initiate connection
+  if (!asJson) console.log("Waiting for QR code...\n");
+  try {
+    await legacy.connect(instanceId, {});
+  } catch (err) {
+    fail(`Failed to initiate connection: ${errorText(err)}`);
+  }
+
+  const connectedInstance = inst;
+  await waitForPairing({
+    instanceId,
+    qrTopic: bridgeQrTopic(instanceId),
+    connectedTopic: bridgeConnectedTopic(instanceId),
+    asJson,
+    deps,
+    timeoutSuggestion: `Check the legacy bridge connection, then retry: ravi instances connect ${name}`,
+    qrPayload: (qr) => ({
+      status: "qr_required",
+      instance: connectedInstance,
+      instanceId,
+      channel,
+      qr,
+      ...bridge,
+      changedCount: 1,
+    }),
+    connectedPayload: (live) => ({
+      status: "connected",
+      instance: connectedInstance,
+      live,
+      ...bridge,
+      changedCount: 1,
+    }),
+  }).done;
+}
+
+/**
+ * WhatsApp: make the instance a WhatsApp instance served by the runner (instance UUID +
+ * `whatsapp` channel row), then ask the channel runner over NATS RPC to connect it. QR codes
+ * and the connected event come back through the daemon on `ravi.whatsapp.qr|connected.<uuid>`.
+ */
+async function connectWhatsApp(
+  name: string,
+  agent: string | undefined,
+  asJson: boolean | undefined,
+  deps: InstancesTransportDependencies,
+): Promise<void> {
+  const before = dbGetInstance(name);
+  const agentId = agent ?? before?.agent ?? (dbGetAgent(name) ? name : undefined);
+  // The agent must exist before the instance row references it.
+  const createdAgent = ensureConnectAgent(agentId, asJson);
+
+  let provisioned: WhatsAppInstanceResult;
+  try {
+    provisioned = deps.provision(name, {
+      ...(agentId ? { agent: agentId } : {}),
+      emitConfigChanged: deps.emitConfigChanged,
+    });
+  } catch (err) {
+    failProvisioning("instances connect", name, err, asJson);
+  }
+  const { instanceId } = provisioned;
+  const inst = dbGetInstance(name) ?? provisioned.instance;
+  const provisioning = {
+    transport: "whatsapp" as const,
+    channelName: provisioned.channel.name,
+    createdInstance: provisioned.createdInstance,
+    createdChannel: provisioned.createdChannel,
+    mintedInstanceId: provisioned.mintedInstanceId,
+    createdAgent,
+  };
+
+  if (!asJson) {
+    if (provisioned.createdInstance) console.log(`✓ Instance created: ${name} (${instanceId})`);
+    else if (provisioned.mintedInstanceId) console.log(`✓ Instance id minted: ${instanceId}`);
+    if (provisioned.createdChannel) console.log(`✓ WhatsApp channel created: ${provisioned.channel.name}`);
+    console.log(`Connecting: ${name} → agent ${inst.agent ?? "(default)"}  [whatsapp]`);
+  }
+
+  const client = deps.whatsapp();
+  // The runner hot-adds the channel on ravi.config.changed; retry while it has no responder.
+  let status: LiveStatus;
+  try {
+    status = await withRunnerRetry(deps, () => client.connection.status(instanceId, {}));
+  } catch (err) {
+    if (isWhatsAppRunnerUnavailable(err)) failRunnerUnavailable(name, err, asJson);
+    fail(`Failed to read WhatsApp status: ${errorText(err)}`);
+  }
+
+  if (status.isConnected) {
+    if (asJson) {
+      printJson({ status: "connected", instance: inst, instanceId, live: status, ...provisioning, changedCount: 1 });
+      return;
+    }
+    const profile = status.profileName ? ` as ${status.profileName}` : "";
+    console.log(`\n✓ Already connected${profile}`);
+    return;
+  }
+
+  // Subscribe before asking for a socket so the first QR code is not missed.
+  await deps.ensureNats();
+  const pairing = waitForPairing({
+    instanceId,
+    qrTopic: whatsappQrTopic(instanceId),
+    connectedTopic: whatsappConnectedTopic(instanceId),
+    asJson,
+    deps,
+    timeoutSuggestion: `Make sure the ravi daemon and the channel runner are running (ravi daemon status; ravi channels status), then retry: ravi instances connect ${name}`,
+    qrPayload: (qr) => ({
+      status: "qr_required",
+      instance: inst,
+      instanceId,
+      channel: "whatsapp",
+      qr,
+      ...provisioning,
+      changedCount: 1,
+    }),
+    connectedPayload: (live) => ({
+      status: "connected",
+      instance: inst,
+      instanceId,
+      live,
+      ...provisioning,
+      changedCount: 1,
+    }),
+  });
+
+  if (!asJson) console.log("Waiting for QR code...\n");
+  let connectResult: { status: string; message: string };
+  try {
+    connectResult = await withRunnerRetry(deps, () =>
+      client.connection.connect(instanceId, { whatsapp: { syncFullHistory: false } }),
+    );
+  } catch (err) {
+    pairing.cancel();
+    if (isWhatsAppRunnerUnavailable(err)) failRunnerUnavailable(name, err, asJson);
+    fail(`Failed to initiate connection: ${errorText(err)}`);
+  }
+
+  if (connectResult.status === "connected") {
+    pairing.cancel();
+    const live = await client.connection.status(instanceId, {}).catch(() => null);
+    if (asJson) {
+      printJson({
+        status: "connected",
+        instance: inst,
+        instanceId,
+        live: live ?? connectResult,
+        ...provisioning,
+        changedCount: 1,
+      });
+      return;
+    }
+    const profile = live?.profileName ? ` as ${live.profileName}` : "";
+    console.log(`\n✓ Connected${profile}`);
+    return;
+  }
+
+  await pairing.done;
+}
+
+/**
+ * `instances create --channel whatsapp`: the instance UUID and its runner channel row are
+ * created together (ensureWhatsAppInstance), so the instance is ready for `connect`.
+ */
+function createWhatsAppInstance(name: string, asJson: boolean | undefined, settings: WhatsAppInstanceSettings) {
+  const deps = transportDeps();
+  let result: WhatsAppInstanceResult;
+  try {
+    result = deps.provision(name, { ...settings, emitConfigChanged: deps.emitConfigChanged });
+  } catch (err) {
+    failProvisioning("instances create", name, err, asJson);
+  }
+  const instanceChanged = result.createdInstance || result.mintedInstanceId || result.updatedInstance;
+  const changedCount = (instanceChanged ? 1 : 0) + (result.createdChannel ? 1 : 0);
+  let status: "created" | "updated" | "unchanged" = "unchanged";
+  if (result.createdInstance) status = "created";
+  else if (changedCount > 0) status = "updated";
+  const payload = {
+    status,
+    instance: result.instance,
+    instanceId: result.instanceId,
+    transport: "whatsapp" as const,
+    channel: { name: result.channel.name, created: result.createdChannel },
+    changedCount,
+  };
+  if (asJson) {
+    printJson(payload);
+  } else {
+    const verb = status === "unchanged" ? "already exists" : status;
+    console.log(`✓ Instance ${verb}: ${name} (channel: whatsapp, instanceId: ${result.instanceId})`);
+    if (result.createdChannel) console.log(`  WhatsApp channel created: ${result.channel.name}`);
+    if (settings.agent) console.log(`  Agent: ${settings.agent}`);
+    console.log(`  Connect it: ravi instances connect ${name}`);
+  }
+  return payload;
 }
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
@@ -803,16 +1462,49 @@ export class InstancesCommands {
     });
     const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
-    // Try to enrich with omni status
-    const omniStatus: Record<string, OmniInstanceStatus> = {};
-    try {
-      const omni = getOmniClient();
-      const result = await omni.instances.list({});
-      for (const item of result.items as Array<{ id?: string; isActive?: boolean; profileName?: string }>) {
-        if (item.id) omniStatus[item.id] = { isConnected: item.isActive, profileName: item.profileName };
+    // Live status: WhatsApp rows ask the channel runner (short timeout, offline when it
+    // does not answer); legacy-bridge rows share one Omni list call when it is configured.
+    const deps = transportDeps();
+    const liveByName: Record<string, LiveStatus> = {};
+    const whatsappRows = pageInstances.filter((inst) => instanceTransport(inst) === "whatsapp" && inst.instanceId);
+    if (whatsappRows.length > 0) {
+      const whatsapp = deps.whatsapp();
+      await Promise.all(
+        whatsappRows.map(async (inst) => {
+          try {
+            const status = await whatsapp.connection.status(
+              inst.instanceId as string,
+              {},
+              { timeoutMs: WHATSAPP_CLIENT_TIMEOUTS_MS.listStatus },
+            );
+            liveByName[inst.name] = {
+              isConnected: status.isConnected,
+              profileName: status.profileName ?? undefined,
+              state: status.state,
+            };
+          } catch {
+            liveByName[inst.name] = { isConnected: false, state: "disconnected" };
+          }
+        }),
+      );
+    }
+    const legacyRows = pageInstances.filter((inst) => instanceTransport(inst) === "omni" && inst.instanceId);
+    if (legacyRows.length > 0) {
+      try {
+        const legacy = await deps.legacy();
+        const result = legacy ? await legacy.list({}) : { items: [] };
+        const bridgeItems = new Map<string, LegacyInstanceRecord>();
+        for (const item of result.items) {
+          // WhatsApp-family bridge records never describe a ravi instance any more.
+          if (item.id && !isWhatsAppFamilyChannelType(item.channel)) bridgeItems.set(item.id, item);
+        }
+        for (const inst of legacyRows) {
+          const item = bridgeItems.get(inst.instanceId as string);
+          if (item) liveByName[inst.name] = { isConnected: item.isActive, profileName: item.profileName ?? undefined };
+        }
+      } catch {
+        /* legacy bridge offline */
       }
-    } catch {
-      /* omni offline */
     }
 
     const instanceRows = pickFields(
@@ -820,7 +1512,8 @@ export class InstancesCommands {
         ...inst,
         tags: listInstanceTags(inst.name),
         raviStatus: inst.enabled === false ? "disabled" : "enabled",
-        live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
+        transport: instanceTransport(inst),
+        live: inst.instanceId ? (liveByName[inst.name] ?? null) : null,
       })),
       fields,
     );
@@ -855,12 +1548,12 @@ export class InstancesCommands {
       );
 
       for (const inst of pageInstances) {
-        const status = inst.instanceId
-          ? omniStatus[inst.instanceId]?.isConnected
-            ? "connected"
-            : "disconnected"
-          : "no-omni-id";
-        const profile = inst.instanceId ? (omniStatus[inst.instanceId]?.profileName ?? "") : "";
+        const live = liveByName[inst.name];
+        let status: string;
+        if (instanceTransport(inst) === null) status = "unsupported";
+        else if (!inst.instanceId) status = "no-instance-id";
+        else status = live?.isConnected ? "connected" : "disconnected";
+        const profile = inst.instanceId ? (live?.profileName ?? "") : "";
         const label = profile ? `${status} (${profile})` : status;
         console.log(
           `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${inst.contactIntakeMode.padEnd(12)} ${label}`,
@@ -897,13 +1590,13 @@ export class InstancesCommands {
 
     const routes = dbListRoutes(name);
 
-    let omniInfo: OmniInstanceStatus = {};
-    if (inst.instanceId) {
+    let live: LiveStatus = {};
+    const transport = instanceTransport(inst);
+    if (inst.instanceId && transport) {
       try {
-        const omni = getOmniClient();
-        omniInfo = (await omni.instances.status(inst.instanceId)) as typeof omniInfo;
+        live = await readLiveStatus(transportDeps(), inst.instanceId, transport);
       } catch {
-        /* omni offline */
+        /* the channel runner or the legacy bridge is offline */
       }
     }
 
@@ -914,7 +1607,8 @@ export class InstancesCommands {
         raviStatus: inst.enabled === false ? "disabled" : "enabled",
       },
       routes,
-      live: inst.instanceId ? omniInfo : null,
+      transport,
+      live: inst.instanceId ? live : null,
     };
 
     if (asJson) {
@@ -941,9 +1635,11 @@ export class InstancesCommands {
       if (inst.defaults && Object.keys(inst.defaults).length > 0) {
         printInspectionField("Defaults", JSON.stringify(inst.defaults), CONFIG_DB_META);
       }
-      if (inst.instanceId) {
-        printInspectionField("Connected", omniInfo.isConnected ?? "unknown", LIVE_OMNI_META);
-        if (omniInfo.profileName) printInspectionField("Profile", omniInfo.profileName, LIVE_OMNI_META);
+      printInspectionField("Transport", transportLabel(transport), CONFIG_DB_META);
+      if (inst.instanceId && transport) {
+        const meta = liveStatusMeta(transport);
+        printInspectionField("Connected", live.isConnected ?? "unknown", meta);
+        if (live.profileName) printInspectionField("Profile", live.profileName, meta);
       }
       console.log(`\n${formatInspectionSection(`  Routes (${routes.length}):`, CONFIG_DB_META)}`);
       if (routes.length === 0) {
@@ -979,6 +1675,9 @@ export class InstancesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const resolvedChannel = channel ?? "whatsapp";
+    if (!isWhatsAppChannelType(resolvedChannel) && isWhatsAppFamilyChannelType(resolvedChannel)) {
+      failUnsupportedWhatsAppFamily("instances create", name, resolvedChannel, asJson);
+    }
     if (agent && !dbGetAgent(agent)) {
       fail(
         `Agent not found: ${agent}. Available: ${dbListAgents()
@@ -986,26 +1685,42 @@ export class InstancesCommands {
           .join(", ")}`,
       );
     }
+    let parsedDmPolicy: InstanceConfig["dmPolicy"] | undefined;
     if (dmPolicy) {
       const r = DmPolicySchema.safeParse(dmPolicy);
       if (!r.success) fail(`Invalid dmPolicy: ${dmPolicy}. Valid: open, pairing, closed`);
+      parsedDmPolicy = r.data;
     }
+    let parsedGroupPolicy: InstanceConfig["groupPolicy"] | undefined;
     if (groupPolicy) {
       const r = GroupPolicySchema.safeParse(groupPolicy);
       if (!r.success) fail(`Invalid groupPolicy: ${groupPolicy}. Valid: open, allowlist, closed`);
+      parsedGroupPolicy = r.data;
     }
+    let parsedIntakeMode: InstanceConfig["contactIntakeMode"] | undefined;
     if (contactIntakeMode) {
       const r = ContactIntakeModeSchema.safeParse(contactIntakeMode);
       if (!r.success) fail(`Invalid contactIntakeMode: ${contactIntakeMode}. Valid: off, discovered, pending`);
+      parsedIntakeMode = r.data;
     }
+
+    if (isWhatsAppChannelType(resolvedChannel)) {
+      return createWhatsAppInstance(name, asJson, {
+        ...(agent ? { agent } : {}),
+        ...(parsedDmPolicy ? { dmPolicy: parsedDmPolicy } : {}),
+        ...(parsedGroupPolicy ? { groupPolicy: parsedGroupPolicy } : {}),
+        ...(parsedIntakeMode ? { contactIntakeMode: parsedIntakeMode } : {}),
+      });
+    }
+
     try {
       const instance = dbUpsertInstance({
         name,
         channel: resolvedChannel,
         agent: agent ?? undefined,
-        dmPolicy: (dmPolicy ?? "open") as "open" | "pairing" | "closed",
-        groupPolicy: (groupPolicy ?? "open") as "open" | "allowlist" | "closed",
-        contactIntakeMode: (contactIntakeMode ?? "off") as "off" | "discovered" | "pending",
+        dmPolicy: parsedDmPolicy ?? "open",
+        groupPolicy: parsedGroupPolicy ?? "open",
+        contactIntakeMode: parsedIntakeMode ?? "off",
       });
       const payload = {
         status: "created" as const,
@@ -1148,10 +1863,10 @@ export class InstancesCommands {
   // --------------------------------------------------------------------------
   // enable
   // --------------------------------------------------------------------------
-  @Command({ name: "enable", description: "Enable an instance in Ravi without changing omni" })
+  @Command({ name: "enable", description: "Enable an instance in Ravi (WhatsApp: also starts its runner channel)" })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "enable", risk: "medium" })
   enable(
-    @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
+    @Arg("target", { description: "Instance name or instanceId" }) target: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = resolveInstanceByNameOrId(target);
@@ -1172,43 +1887,40 @@ export class InstancesCommands {
       }
       return payload;
     }
-    if (inst.enabled !== false) {
-      const payload = {
-        status: "unchanged" as const,
-        target,
-        instance: inst,
-        changedCount: 0,
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`Instance already enabled in ravi: ${inst.name}`);
-      }
-      return payload;
-    }
-    const updated = dbUpdateInstance(inst.name, { enabled: true });
+    const instanceChanged = inst.enabled === false;
+    const updated = instanceChanged ? dbUpdateInstance(inst.name, { enabled: true }) : inst;
+    const channel = syncWhatsAppChannelEnabled(updated, true);
+    const changedCount = (instanceChanged ? 1 : 0) + (channel?.changed ? 1 : 0);
     const payload = {
-      status: "enabled" as const,
+      status: changedCount > 0 ? ("enabled" as const) : ("unchanged" as const),
       target,
       instance: updated,
-      changedCount: 1,
+      channel,
+      changedCount,
     };
     if (asJson) {
       printJson(payload);
+    } else if (changedCount === 0) {
+      console.log(`Instance already enabled in ravi: ${inst.name}`);
     } else {
       console.log(`✓ Instance enabled in ravi: ${inst.name}`);
+      if (channel?.changed) console.log(`  WhatsApp channel enabled: ${channel.name} (the channel runner starts it)`);
     }
-    emitConfigChanged();
+    if (changedCount > 0) emitConfigChanged();
     return payload;
   }
 
   // --------------------------------------------------------------------------
   // disable
   // --------------------------------------------------------------------------
-  @Command({ name: "disable", description: "Disable an instance in Ravi without changing omni" })
+  @Command({
+    name: "disable",
+    description:
+      "Disable an instance in Ravi (WhatsApp: also stops its runner channel; legacy-bridge connections are not changed)",
+  })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "disable", risk: "medium" })
   disable(
-    @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
+    @Arg("target", { description: "Instance name or instanceId" }) target: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = resolveInstanceByNameOrId(target);
@@ -1242,70 +1954,101 @@ export class InstancesCommands {
       }
       return payload;
     }
-    if (inst.enabled === false) {
-      const payload = {
-        status: "unchanged" as const,
-        target,
-        instance: inst,
-        changedCount: 0,
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`Instance already disabled in ravi: ${inst.name}`);
-      }
-      return payload;
-    }
-    const updated = dbUpdateInstance(inst.name, { enabled: false });
+    const instanceChanged = inst.enabled !== false;
+    const updated = instanceChanged ? dbUpdateInstance(inst.name, { enabled: false }) : inst;
+    const channel = syncWhatsAppChannelEnabled(updated, false);
+    const changedCount = (instanceChanged ? 1 : 0) + (channel?.changed ? 1 : 0);
     const payload = {
-      status: "disabled" as const,
+      status: changedCount > 0 ? ("disabled" as const) : ("unchanged" as const),
       target,
       instance: updated,
-      changedCount: 1,
+      channel,
+      changedCount,
     };
     if (asJson) {
       printJson(payload);
+    } else if (changedCount === 0) {
+      console.log(`Instance already disabled in ravi: ${inst.name}`);
     } else {
       console.log(`✓ Instance disabled in ravi: ${inst.name}`);
+      if (channel?.changed) console.log(`  WhatsApp channel disabled: ${channel.name} (the channel runner stops it)`);
     }
-    emitConfigChanged();
+    if (changedCount > 0) emitConfigChanged();
     return payload;
   }
 
   // --------------------------------------------------------------------------
   // delete
   // --------------------------------------------------------------------------
-  @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
+  @Command({
+    name: "delete",
+    description:
+      "Delete an instance (soft-delete, recoverable; WhatsApp: also logs out, wipes its credentials and disables its channel)",
+  })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "delete", risk: "medium" })
-  delete(
+  async delete(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = dbGetInstance(name);
     if (!inst) failInstanceNotFound("instances delete", name, asJson);
-    const deleted = dbDeleteInstance(name);
-    if (deleted) {
-      const payload = {
-        status: "deleted" as const,
-        instance: inst,
-        changedCount: 1,
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`✓ Instance deleted: ${name} (recoverable with: ravi instances restore ${name})`);
+
+    // A deleted WhatsApp instance must not keep a linked device or credentials behind.
+    let whatsappLogout:
+      | WhatsAppLogoutOutcome
+      | { via: "failed"; unlinked: false; clearedKeys: null; cause: string }
+      | null = null;
+    if (isWhatsAppInstanceConfig(inst) && inst.instanceId) {
+      try {
+        whatsappLogout = await logoutWhatsApp(transportDeps(), inst.instanceId, true);
+      } catch (err) {
+        whatsappLogout = { via: "failed", unlinked: false, clearedKeys: null, cause: errorText(err) };
       }
-      emitConfigChanged();
-      return payload;
-    } else {
-      fail(`Failed to delete instance: ${name}`);
     }
+
+    const deleted = dbDeleteInstance(name);
+    if (!deleted) fail(`Failed to delete instance: ${name}`);
+    // Before the config change: the runner then stops the channel instead of retrying an
+    // unbound start (a deleted instance has no binding) and reporting itself degraded.
+    const channel = syncWhatsAppChannelEnabled(inst, false);
+    const payload = {
+      status: "deleted" as const,
+      instance: inst,
+      whatsappLogout,
+      channel,
+      changedCount: 1 + (channel?.changed ? 1 : 0),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Instance deleted: ${name} (recoverable with: ravi instances restore ${name})`);
+      if (channel?.changed) console.log(`  WhatsApp channel disabled: ${channel.name} (the channel runner stops it)`);
+      if (whatsappLogout?.via === "runner" && whatsappLogout.unlinked) {
+        console.log("  WhatsApp logged out: device unlinked, credentials wiped");
+      }
+      if (whatsappLogout?.via === "runner" && !whatsappLogout.unlinked) {
+        console.log("  WhatsApp credentials wiped (the instance was not connected, so the device was not unlinked).");
+        console.log(`  ${REMOVE_LINKED_DEVICE_HINT}`);
+      }
+      if (whatsappLogout?.via === "auth-store") {
+        console.log("  WhatsApp credentials wiped locally (the channel runner did not log out).");
+        console.log(`  ${REMOVE_LINKED_DEVICE_HINT}`);
+      }
+      if (whatsappLogout?.via === "failed") {
+        console.log(`  Warning: WhatsApp credentials were not wiped: ${whatsappLogout.cause}`);
+      }
+    }
+    emitConfigChanged();
+    return payload;
   }
 
   // --------------------------------------------------------------------------
   // restore
   // --------------------------------------------------------------------------
-  @Command({ name: "restore", description: "Restore a soft-deleted instance" })
+  @Command({
+    name: "restore",
+    description: "Restore a soft-deleted instance (WhatsApp: re-enables its channel when the instance is enabled)",
+  })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "restore", risk: "medium" })
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
@@ -1313,15 +2056,23 @@ export class InstancesCommands {
   ) {
     const ok = dbRestoreInstance(name);
     if (ok) {
+      const restored = dbGetInstance(name);
+      // `delete` disabled the WhatsApp channel; it follows the restored instance's state again.
+      const channel = restored ? syncWhatsAppChannelEnabled(restored, restored.enabled !== false) : null;
       const payload = {
         status: "restored" as const,
-        instance: dbGetInstance(name),
-        changedCount: 1,
+        instance: restored,
+        channel,
+        changedCount: 1 + (channel?.changed ? 1 : 0),
       };
       if (asJson) {
         printJson(payload);
       } else {
         console.log(`✓ Instance restored: ${name}`);
+        if (channel?.changed && channel.enabled) {
+          console.log(`  WhatsApp channel enabled: ${channel.name} (the channel runner starts it)`);
+          console.log(`  Pair it again if delete wiped its credentials: ravi instances connect ${name}`);
+        }
       }
       emitConfigChanged();
       return payload;
@@ -1368,7 +2119,10 @@ export class InstancesCommands {
   // --------------------------------------------------------------------------
   // connect
   // --------------------------------------------------------------------------
-  @Command({ name: "connect", description: "Connect an instance to omni (QR code for WhatsApp)" })
+  @Command({
+    name: "connect",
+    description: "Connect an instance (QR code for WhatsApp, served by the ravi channels runner)",
+  })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "connect", risk: "high", input: ["name"] })
   @CliOnly()
   async connect(
@@ -1377,170 +2131,17 @@ export class InstancesCommands {
     @Option({ flags: "--agent <id>", description: "Agent to route messages to" }) agent?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const TIMEOUT_MS = 120_000;
-    const omni = getOmniClient();
-    let createdOmniInstance = false;
-    let createdAgent: { id: string; cwd: string } | null = null;
-
-    let inst = dbGetInstance(name);
-    const channel = channelOpt ?? inst?.channel ?? "whatsapp";
-    const omniChannel = channel === "whatsapp" ? "whatsapp-baileys" : channel;
-
-    // Resolve or create omni instance
-    let instanceId = inst?.instanceId ?? "";
-    if (!instanceId) {
-      // Try to find existing in omni by name
-      try {
-        const result = await omni.instances.list({ channel: omniChannel });
-        const existing = (result.items as Array<{ id?: string; name?: string }>).find((i) => i.name === name);
-        if (existing?.id) instanceId = existing.id;
-      } catch {
-        /* omni offline */
-      }
-    }
-
-    if (!instanceId) {
-      if (!asJson) console.log(`Creating ${channel} instance "${name}" in omni...`);
-      try {
-        const created = (await omni.instances.create({ name, channel: omniChannel })) as { id?: string };
-        instanceId = created.id ?? "";
-        createdOmniInstance = true;
-        if (!asJson) console.log(`✓ Instance created in omni: ${instanceId}`);
-      } catch (err) {
-        fail(`Failed to create instance in omni: ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-    }
-
-    // Upsert local instance record
-    const agentId = agent ?? inst?.agent ?? (dbGetAgent(name) ? name : undefined);
-    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined, enabled: inst?.enabled !== false });
-    if (agentId && !dbGetAgent(agentId)) {
-      const cwd = `${homedir()}/ravi/${agentId}`;
-      mkdirSync(cwd, { recursive: true });
-      dbCreateAgent({ id: agentId, cwd });
-      createdAgent = { id: agentId, cwd };
-      if (!asJson) console.log(`✓ Created agent "${agentId}" at ${cwd}`);
-    }
-
-    emitConfigChanged();
-    inst = dbGetInstance(name)!;
-    if (!asJson) console.log(`Connecting: ${name} → agent ${inst.agent ?? "(default)"}  [${channel}]`);
-
-    // Check if already connected
-    try {
-      const status = (await omni.instances.status(instanceId)) as { isConnected?: boolean; profileName?: string };
-      if (status.isConnected) {
-        if (asJson) {
-          printJson({
-            status: "connected",
-            instance: inst,
-            live: status,
-            createdOmniInstance,
-            createdAgent,
-            changedCount: 1,
-          });
-          return;
-        }
-        const profile = status.profileName ? ` as ${status.profileName}` : "";
-        console.log(`\n✓ Already connected${profile}`);
-        return;
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // Initiate connection
-    if (!asJson) console.log("Waiting for QR code...\n");
-    try {
-      await omni.instances.connect(instanceId, { whatsapp: { syncFullHistory: false } });
-    } catch (err) {
-      fail(`Failed to initiate connection: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-
-    const qrTopic = `ravi.whatsapp.qr.${instanceId}`;
-    const connectedTopic = `ravi.whatsapp.connected.${instanceId}`;
-
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try {
-          contractFail("instances connect", "INSTANCE_CONNECT_TIMEOUT", "Timed out waiting for instance connection.", {
-            asJson,
-            details: {
-              retryable: true,
-              timeoutSeconds: TIMEOUT_MS / 1_000,
-              suggestedAction: `Check the provider connection, then retry: ravi instances connect ${name}`,
-            },
-          });
-        } catch (error) {
-          reject(error);
-        }
-      }, TIMEOUT_MS);
-
-      (async () => {
-        try {
-          for await (const event of nats.subscribe(qrTopic, connectedTopic)) {
-            if (settled) break;
-            const data = event.data as Record<string, unknown>;
-            if (event.topic === qrTopic && data.type === "qr") {
-              if (asJson) {
-                clearTimeout(timer);
-                settled = true;
-                printJson({
-                  status: "qr_required",
-                  instance: inst,
-                  instanceId,
-                  channel,
-                  qr: data.qr ?? null,
-                  createdOmniInstance,
-                  createdAgent,
-                  changedCount: 1,
-                });
-                resolve();
-                return;
-              }
-              console.log("Scan this QR code:\n");
-              qrcode.generate(data.qr as string, { small: true });
-            } else if (event.topic === connectedTopic && data.type === "connected") {
-              clearTimeout(timer);
-              settled = true;
-              if (asJson) {
-                printJson({
-                  status: "connected",
-                  instance: inst,
-                  live: data,
-                  createdOmniInstance,
-                  createdAgent,
-                  changedCount: 1,
-                });
-                resolve();
-                return;
-              }
-              const profile = data.profileName ? ` as ${data.profileName}` : "";
-              console.log(`\n✓ Connected${profile}`);
-              resolve();
-              process.exit(0);
-            }
-          }
-        } catch (err) {
-          if (!settled) {
-            clearTimeout(timer);
-            settled = true;
-            reject(err);
-          }
-        }
-      })();
-    });
+    const deps = transportDeps();
+    const channel = channelOpt ?? dbGetInstance(name)?.channel ?? "whatsapp";
+    if (isWhatsAppChannelType(channel)) return connectWhatsApp(name, agent, asJson, deps);
+    if (isWhatsAppFamilyChannelType(channel)) failUnsupportedWhatsAppFamily("instances connect", name, channel, asJson);
+    return connectViaLegacyBridge(name, channel, agent, asJson, deps);
   }
 
   // --------------------------------------------------------------------------
   // disconnect
   // --------------------------------------------------------------------------
-  @Command({ name: "disconnect", description: "Disconnect an instance from omni" })
+  @Command({ name: "disconnect", description: "Disconnect an instance (WhatsApp runner or legacy bridge)" })
   @CommandAccess({ kind: "mutate", resource: "instances", action: "disconnect", risk: "medium" })
   async disconnect(
     @Arg("name", { description: "Instance name" }) name: string,
@@ -1548,24 +2149,127 @@ export class InstancesCommands {
   ) {
     const inst = dbGetInstance(name);
     if (!inst) failInstanceNotFound("instances disconnect", name, asJson);
-    if (!inst.instanceId) fail(`Instance "${name}" has no omni instanceId set`);
+    const transport = instanceTransport(inst);
+    if (!transport) failUnsupportedWhatsAppFamily("instances disconnect", name, inst.channel, asJson);
+    const instanceId = inst.instanceId;
+    if (!instanceId) fail(`Instance "${name}" has no instanceId set`);
+    const deps = transportDeps();
+    const legacy = transport === "omni" ? await deps.legacy() : null;
+    if (transport === "omni" && !legacy) failLegacyBridgeNotConfigured();
     try {
-      const omni = getOmniClient();
-      await omni.instances.disconnect(inst.instanceId!);
-      const payload = {
-        status: "disconnected" as const,
-        instance: inst,
-        changedCount: 1,
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`✓ Disconnected: ${name}`);
-      }
-      return payload;
+      if (legacy) await legacy.disconnect(instanceId);
+      else await deps.whatsapp().connection.disconnect(instanceId, {});
     } catch (err) {
-      fail(`Failed to disconnect: ${err instanceof Error ? err.message : String(err)}`);
+      fail(`Failed to disconnect: ${errorText(err)}`);
     }
+    const payload = {
+      status: "disconnected" as const,
+      instance: inst,
+      transport,
+      changedCount: 1,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Disconnected: ${name}`);
+      if (transport === "whatsapp") {
+        // R4: the runner persists a manual disconnect; it does not auto-connect again until `connect`.
+        console.log(`  Stays disconnected across runner restarts. Reconnect with: ravi instances connect ${name}`);
+      }
+    }
+    return payload;
+  }
+
+  // --------------------------------------------------------------------------
+  // logout
+  // --------------------------------------------------------------------------
+  @Command({
+    name: "logout",
+    description:
+      "Log a WhatsApp instance out: wipe its saved credentials and unlink the device when connected (dry-run without --execute)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "instances",
+    action: "logout",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
+  async logout(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually log out and wipe the credentials; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    const inst = requireInstance("instances logout", name, asJson);
+    if (!isWhatsAppInstanceConfig(inst)) {
+      contractFail(
+        "instances logout",
+        "USAGE_ERROR",
+        `instances logout only supports WhatsApp (channel "${inst.channel}")`,
+        {
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: `Disconnect it instead: ravi instances disconnect ${name}` },
+        },
+      );
+    }
+    const instanceId = inst.instanceId;
+    if (!instanceId) {
+      contractFail("instances logout", "USAGE_ERROR", `Instance "${name}" has no instanceId: nothing to log out`, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `Pair it first: ravi instances connect ${name}` },
+      });
+    }
+    if (execute !== true) {
+      // Write brake: logging out wipes the credentials and unlinks a connected device (a new QR pairing is needed).
+      contractDryRun(
+        "instances logout",
+        {
+          instance: name,
+          instanceId,
+          transport: "whatsapp",
+          actions: [
+            "ask the channel runner to log out (wipes the saved credentials; unlinks the device when connected)",
+            "when the runner does not answer: wipe the saved credentials locally",
+          ],
+        },
+        { asJson },
+      );
+    }
+
+    let outcome: WhatsAppLogoutOutcome;
+    try {
+      outcome = await logoutWhatsApp(transportDeps(), instanceId, false);
+    } catch (err) {
+      fail(`Failed to log out: ${errorText(err)}`);
+    }
+    const payload = {
+      status: "logged_out" as const,
+      instance: name,
+      instanceId,
+      transport: "whatsapp" as const,
+      logout: outcome,
+      changedCount: 1,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (outcome.via === "runner" && outcome.unlinked) {
+      console.log(`✓ Logged out: ${name} (device unlinked, credentials wiped)`);
+    } else if (outcome.via === "runner") {
+      console.log(
+        `✓ Logged out: ${name} (credentials wiped; the instance was not connected, so the device was not unlinked)`,
+      );
+      console.log(`  ${REMOVE_LINKED_DEVICE_HINT}`);
+    } else {
+      console.log(`✓ Credentials wiped locally: ${name} (the channel runner did not answer: ${outcome.cause})`);
+      console.log(`  ${REMOVE_LINKED_DEVICE_HINT}`);
+    }
+    return payload;
   }
 
   // --------------------------------------------------------------------------
@@ -1579,11 +2283,15 @@ export class InstancesCommands {
   ) {
     const inst = dbGetInstance(name);
     if (!inst) failInstanceNotFound("instances status", name, asJson);
-    if (!inst.instanceId) {
+    const transport = instanceTransport(inst);
+    if (!transport) failUnsupportedWhatsAppFamily("instances status", name, inst.channel, asJson);
+    const instanceId = inst.instanceId;
+    if (!instanceId) {
       const payload = {
         instance: inst,
+        transport,
         live: null,
-        status: "no_omni_id" as const,
+        status: "no_instance_id" as const,
       };
       if (asJson) {
         printJson(payload);
@@ -1592,42 +2300,42 @@ export class InstancesCommands {
       }
       return payload;
     }
+    let s: LiveStatus;
     try {
-      const omni = getOmniClient();
-      const s = (await omni.instances.status(inst.instanceId!)) as {
-        isConnected?: boolean;
-        profileName?: string;
-        state?: string;
-      };
-      const payload = {
-        instance: {
-          ...inst,
-          raviStatus: inst.enabled === false ? "disabled" : "enabled",
-        },
-        live: s,
-        status: (s.isConnected ? "connected" : "disconnected") as "connected" | "disconnected",
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`\nInstance: ${name}\n`);
-        printInspectionField("Instance ID", inst.instanceId, CONFIG_DB_META, { labelWidth: 15 });
-        printInspectionField("Channel", inst.channel, CONFIG_DB_META, { labelWidth: 15 });
-        printInspectionField("Ravi", inst.enabled === false ? "disabled" : "enabled", CONFIG_DB_META, {
-          labelWidth: 15,
-        });
-        printInspectionField("State", s.state ?? "unknown", LIVE_OMNI_META, { labelWidth: 15 });
-        printInspectionField("Connected", s.isConnected ?? false, LIVE_OMNI_META, { labelWidth: 15 });
-        if (s.profileName) printInspectionField("Profile", s.profileName, LIVE_OMNI_META, { labelWidth: 15 });
-        printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META, { labelWidth: 15 });
-        printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META, { labelWidth: 15 });
-        printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META, { labelWidth: 15 });
-        printInspectionField("Contact Intake", inst.contactIntakeMode, CONFIG_DB_META, { labelWidth: 15 });
-      }
-      return payload;
+      s = await readLiveStatus(transportDeps(), instanceId, transport);
     } catch (err) {
-      fail(`Error fetching status: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof CliExpectedError) throw err;
+      fail(`Error fetching status: ${errorText(err)}`);
     }
+    const meta = liveStatusMeta(transport);
+    const payload = {
+      instance: {
+        ...inst,
+        raviStatus: inst.enabled === false ? "disabled" : "enabled",
+      },
+      transport,
+      live: s,
+      status: (s.isConnected ? "connected" : "disconnected") as "connected" | "disconnected",
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nInstance: ${name}\n`);
+      printInspectionField("Instance ID", instanceId, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Channel", inst.channel, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Ravi", inst.enabled === false ? "disabled" : "enabled", CONFIG_DB_META, {
+        labelWidth: 15,
+      });
+      printInspectionField("Transport", transportLabel(transport), CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("State", s.state ?? "unknown", meta, { labelWidth: 15 });
+      printInspectionField("Connected", s.isConnected ?? false, meta, { labelWidth: 15 });
+      if (s.profileName) printInspectionField("Profile", s.profileName, meta, { labelWidth: 15 });
+      printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Contact Intake", inst.contactIntakeMode, CONFIG_DB_META, { labelWidth: 15 });
+    }
+    return payload;
   }
 
   @Command({ name: "target", description: "Explain which runtime, DB, and live instance this CLI would affect" })
@@ -2338,6 +3046,18 @@ export class InstancesPendingCommands {
   }
 }
 
+const instancesLogoutReturnSchema = z.object({
+  status: z.literal("logged_out"),
+  instance: z.string(),
+  instanceId: z.string(),
+  transport: z.literal("whatsapp"),
+  logout: z.discriminatedUnion("via", [
+    z.object({ via: z.literal("runner"), clearedKeys: z.null(), cause: z.null() }),
+    z.object({ via: z.literal("auth-store"), clearedKeys: z.number().int().nonnegative(), cause: z.string() }),
+  ]),
+  changedCount: z.number().int().nonnegative(),
+});
+
 declareCommandReturns(InstancesCommands, {
   create: commandEnvelopeReturnSchema,
   delete: commandEnvelopeReturnSchema,
@@ -2347,6 +3067,7 @@ declareCommandReturns(InstancesCommands, {
   enable: commandEnvelopeReturnSchema,
   get: commandEnvelopeReturnSchema,
   list: commandEnvelopeReturnSchema,
+  logout: instancesLogoutReturnSchema,
   restore: commandEnvelopeReturnSchema,
   set: commandEnvelopeReturnSchema,
   show: commandEnvelopeReturnSchema,

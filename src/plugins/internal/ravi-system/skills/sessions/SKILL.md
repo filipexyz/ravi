@@ -162,9 +162,9 @@ ravi sessions detach <session> --chat <chat-id>
 **Como compõe na prática (sequence diagram resumido):**
 
 ```
-inbound chega ─► consumer normaliza chat
+inbound chega ─► pipeline de inbound (ChannelInboundPipeline) normaliza chat
               ─► matchRoute resolve agent + session_key candidato
-              ─► [Fase 2] consumer.findSessionByAttachedChat(chat_id)
+              ─► [Fase 2] pipeline: findSessionByAttachedChat(chat_id)
                  │ se subscription existe ─► matched.sessionKey = subscription.sessionKey
                  │ (subscription override prevalece sobre matchRoute)
               ─► policy checks

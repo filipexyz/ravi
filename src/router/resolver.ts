@@ -168,7 +168,7 @@ export function matchRoute(
  * `commitMatchedRoute` (DB writes). Callers that need to gate session
  * creation — e.g. inbound policy enforcement — should call the two
  * primitives directly so policy checks run before the session row exists.
- * See `src/omni/consumer.ts` for that pattern.
+ * See `src/channels/inbound/pipeline.ts` for that pattern.
  */
 export function resolveRoute(
   config: RouterConfig,

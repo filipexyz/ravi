@@ -10,5 +10,5 @@
   showing safe display labels to runtime agents.
 - Missing or ambiguous mention targets MUST fail safely instead of sending a
   mention to the wrong participant.
-- `bun test src/omni/mentions.test.ts src/omni/sender.test.ts src/omni/group-metadata-cache.test.ts src/gateway-session-trace.test.ts src/cli/commands/channels-json.test.ts`
+- `bun test src/channels/mentions.test.ts src/channels/whatsapp/sender.test.ts src/omni/sender.test.ts src/channels/group-metadata/cache.test.ts src/gateway-session-trace.test.ts src/gateway-whatsapp-mentions.test.ts && bun test src/cli/commands/channels-json.test.ts`
   SHOULD pass after changing mention behavior.

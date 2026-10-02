@@ -1,5 +1,11 @@
 # WhatsApp Overlay Cockpit v1 Browser Validation
 
+> **Superseded (historical).** This document was written when WhatsApp ran
+> through Omni. WhatsApp now runs in Ravi's channel runner (`ravi channels`),
+> without Omni; Omni is only an optional legacy bridge for Telegram/Discord.
+> Omni references below describe the old setup. Current contract:
+> `.ravi/specs/channels/adapters/whatsapp/`.
+
 Date: 2026-03-28
 
 Status: `FIX-FIRST`

@@ -27,7 +27,7 @@ applies_to:
   - src/runtime/context-registry.ts
   - src/runtime/host-services.ts
   - src/runtime/host-hooks.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/contacts.ts
   - src/router/router-db.ts
 owners:
@@ -36,6 +36,7 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Turn Scoped Authority
 
 ## Intent

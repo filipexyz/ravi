@@ -12,7 +12,7 @@ tags:
   - sessions
   - actors
 applies_to:
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/gateway.ts
   - src/router
   - src/session-trace
@@ -23,6 +23,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Message And Session Identity Attribution
 
 ## Intent

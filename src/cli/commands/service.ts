@@ -119,15 +119,15 @@ export class ServiceCommands {
       success: true,
       deprecated: true,
       service: "whatsapp",
-      managedBy: "omni",
-      replacementCommand: "ravi daemon start",
-      message: "WhatsApp is now managed by the omni process.",
+      managedBy: "ravi-channels",
+      replacementCommand: "ravi channels start",
+      message: "WhatsApp runs in the ravi channels runner",
     };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
     } else {
-      console.log("Note: WhatsApp is now managed by the omni process.");
-      console.log("Use 'ravi daemon start' to start all services including WhatsApp.");
+      console.log("Note: WhatsApp runs in the ravi channels runner.");
+      console.log("Use 'ravi channels start' to start it (pair an account with 'ravi instances connect <name>').");
     }
     return payload;
   }

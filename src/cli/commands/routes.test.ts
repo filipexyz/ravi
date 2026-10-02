@@ -85,17 +85,6 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-mock.module("../../omni/client.js", () => ({
-  createOmniClient: () => ({
-    instances: {
-      list: async () => ({ items: [] }),
-      status: async () => ({}),
-      disconnect: async () => {},
-      connect: async () => ({}),
-    },
-  }),
-}));
-
 mock.module("qrcode-terminal", () => ({
   default: {
     generate: () => {},
@@ -205,13 +194,6 @@ mock.module("../../router/omni-ignore.js", () => ({
   serializeIgnoredOmniInstanceIds: () => "",
 }));
 
-mock.module("../../omni-config.js", () => ({
-  resolveOmniConnection: () => ({
-    apiUrl: "http://127.0.0.1:8882",
-    apiKey: "test-key",
-  }),
-}));
-
 mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
   getContact: (pattern: string) => contactStatuses.get(pattern) ?? null,
@@ -266,10 +248,64 @@ mock.module("../runtime-target.js", () => ({
   getCliRuntimeMismatchMessage: () => null,
 }));
 
-const { InstancesCommands, RoutesCommands, InstancesRoutesCommands, InstancesPendingCommands } = await import(
-  "./instances.js"
-);
+const {
+  InstancesCommands,
+  RoutesCommands,
+  InstancesRoutesCommands,
+  InstancesPendingCommands,
+  setInstancesTransportDependenciesForTests,
+} = await import("./instances.js");
 const { ContractError } = await import("../agent-contract.js");
+const { createWhatsAppClient } = await import("../../channels/whatsapp/client.js");
+
+// The WhatsApp runner and provisioning are faked: "main" is bound to a WhatsApp channel
+// whose runner answers offline, and nothing reaches NATS or the real router DB.
+let whatsappRpcMethods: string[] = [];
+const fakeWhatsAppConfig = {
+  instances: {
+    main: {
+      name: "main",
+      instanceId: "omni-main",
+      channel: "whatsapp",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "off",
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  },
+  channels: { main: { name: "main", provider: "whatsapp", enabled: true, createdAt: 0, updatedAt: 0 } },
+  instanceToAccount: { "omni-main": "main" },
+} as const;
+const fakeWhatsAppResults: Record<string, unknown> = {
+  "connection.status": { state: "disconnected", isConnected: false, profileName: null },
+  "connection.connect": { status: "connecting", message: "" },
+};
+setInstancesTransportDependenciesForTests({
+  whatsapp: () =>
+    createWhatsAppClient({
+      getConfig: () => fakeWhatsAppConfig,
+      connection: {
+        async request(_subject, data) {
+          const request = JSON.parse(new TextDecoder().decode(data)) as { method: string; requestId: string };
+          whatsappRpcMethods.push(request.method);
+          const response = { ok: true, requestId: request.requestId, data: fakeWhatsAppResults[request.method] ?? {} };
+          return { data: new TextEncoder().encode(JSON.stringify(response)) };
+        },
+      },
+    }),
+  legacy: async () => null,
+  provision: (name) => ({
+    instanceId: `omni-${name}`,
+    instance: { ...fakeWhatsAppConfig.instances.main, name },
+    channel: { name, provider: "whatsapp", enabled: true, createdAt: 0, updatedAt: 0 },
+    createdInstance: false,
+    mintedInstanceId: false,
+    createdChannel: false,
+    updatedInstance: false,
+  }),
+  clearWhatsAppAuthState: async () => 0,
+});
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -957,12 +993,21 @@ describe("instances/routes agent-first contract", () => {
     return thrown;
   }
 
-  it("soft-deletes the instance immediately without --execute", () => {
-    const payload = captureJson(() => {
-      new InstancesCommands().delete("main", true);
-    });
+  it("soft-deletes the instance immediately without --execute (WhatsApp: logs out first)", async () => {
+    whatsappRpcMethods = [];
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    try {
+      await new InstancesCommands().delete("main", true);
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(lines.join("\n")) as Record<string, unknown>;
 
     expect(payload.status).toBe("deleted");
+    expect(payload.whatsappLogout).toMatchObject({ via: "runner" });
+    expect(whatsappRpcMethods).toEqual(["connection.logout"]);
     expect(deleteInstanceCalls).toEqual(["main"]);
     expect(instanceNames.has("main")).toBe(false);
   });
@@ -1003,10 +1048,20 @@ describe("instances/routes agent-first contract", () => {
     }
   });
 
-  it("emits INSTANCE_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+  it("emits INSTANCE_NOT_FOUND envelope with suggestions on --json (exit 1)", async () => {
     instanceNames = new Set(["main", "vendas"]);
 
-    const thrown = captureThrown(() => new InstancesCommands().delete("mainn", true));
+    const originalLog = console.log;
+    console.log = () => {};
+    const thrown = await new InstancesCommands()
+      .delete("mainn", true)
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      .finally(() => {
+        console.log = originalLog;
+      });
 
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;

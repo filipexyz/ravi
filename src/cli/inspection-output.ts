@@ -7,6 +7,7 @@ export type InspectionSource =
   | "cron-db"
   | "runtime-snapshot"
   | "live-omni"
+  | "live-whatsapp"
   | "resolver"
   | "derived";
 

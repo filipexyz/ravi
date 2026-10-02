@@ -18,7 +18,7 @@ afterEach(async () => {
 
 function makeGateway(sendSticker: ReturnType<typeof mock>, sendMedia = mock(async () => ({ messageId: "media-1" }))) {
   const gateway = new Gateway({
-    omniSender: {
+    sender: {
       send: mock(async () => ({})),
       sendTyping: mock(async () => {}),
       sendReaction: mock(async () => {}),
@@ -26,7 +26,7 @@ function makeGateway(sendSticker: ReturnType<typeof mock>, sendMedia = mock(asyn
       sendSticker,
       markRead: mock(async () => {}),
     } as never,
-    omniConsumer: {
+    presenceTargets: {
       getActiveTarget: () => undefined,
       clearActiveTarget: () => {},
       renewActiveTarget: mock(async () => false),
@@ -44,7 +44,7 @@ async function handleSticker(gateway: unknown, data: StickerSendEvent): Promise<
 }
 
 describe("Gateway sticker sends", () => {
-  it("uses the dedicated WhatsApp omni sticker path", async () => {
+  it("uses the dedicated WhatsApp sticker path", async () => {
     dbUpsertInstance({
       name: "main",
       instanceId: "11111111-1111-1111-1111-111111111111",
@@ -74,7 +74,7 @@ describe("Gateway sticker sends", () => {
     expect(sendMedia).not.toHaveBeenCalled();
   });
 
-  it("rejects non-WhatsApp channels before calling omni", async () => {
+  it("rejects non-WhatsApp channels before calling the sender", async () => {
     const sendSticker = mock(async () => ({ messageId: "sticker-1" }));
     const gateway = makeGateway(sendSticker);
 

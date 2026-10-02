@@ -145,7 +145,7 @@ ravi sessions attach dev --chat <chat-id> --reason "unificar chat na sessão dev
 
 **Cuidado com a interação:**
 
-- Se um chat tem subscription ativa (atachado a sessão X), o consumer **ignora** o agent escolhido pela route e dispatcha pra sessão X. A route não troca o destino sozinha.
+- Se um chat tem subscription ativa (atachado a sessão X), o pipeline de inbound **ignora** o agent escolhido pela route e dispatcha pra sessão X. A route não troca o destino sozinha.
 - Inbound-route bookkeeping pode criar subscription, mas não deve mudar o output target escolhido por `sessions attach`.
 - `routes add` faz cleanup automático de sessões conflitantes (apaga sessão paralela do agent antigo e libera o chat). Quando isso roda, a próxima inbound segue a nova route normalmente.
 - `routes add ... --session <name>` (redirect estático) força a sessão alvo e cria subscription automaticamente — é o caminho certo quando o requisito já é "este chat deve cair nesta sessão".

@@ -103,7 +103,7 @@ The event types currently recorded by the Session Trace v1 implementation are:
 
 | Event type | Group | Meaning |
 | --- | --- | --- |
-| `channel.message.received` | `channel` | Omni inbound message was accepted and normalized for a resolved session. |
+| `channel.message.received` | `channel` | Channel inbound message (WhatsApp runner or legacy bridge) was accepted and normalized for a resolved session. |
 | `route.resolved` | `routing` | Contact/route/session resolution selected a session and agent. |
 | `prompt.published` | `prompt` | A prompt was published to the session prompt stream. |
 | `dispatch.cold_start` | `dispatch` | Runtime dispatcher chose to start a new streaming session. |

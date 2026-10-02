@@ -33,6 +33,8 @@ interface CheckoutOptions {
   stalePackageJson?: boolean;
   buildOutput?: string;
   buildFails?: boolean;
+  /** A previously built dist/vendor/baileys.js (as `bun run build` leaves it). */
+  withVendor?: boolean;
 }
 
 /**
@@ -54,14 +56,23 @@ function makeCheckout(options: CheckoutOptions = {}): string {
   const buildScript = options.buildFails
     ? "exit 1"
     : `mkdir -p dist/bundle && printf 'console.log("${marker}");\\n' > dist/bundle/index.js`;
+  const vendorScript = "mkdir -p dist/vendor && printf 'VENDOR-REBUILT\\n' > dist/vendor/baileys.js";
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ scripts: { "build:cli": buildScript, "gen:plugins": "exit 0" } }, null, 2),
+    JSON.stringify(
+      { scripts: { "build:cli": buildScript, "build:vendor": vendorScript, "gen:plugins": "exit 0" } },
+      null,
+      2,
+    ),
   );
 
   if (options.withBundle !== false) {
     mkdirSync(join(root, "dist", "bundle"), { recursive: true });
     writeFileSync(join(root, "dist", "bundle", "index.js"), 'console.log("BUNDLE-OK");\n');
+  }
+  if (options.withVendor) {
+    mkdirSync(join(root, "dist", "vendor"), { recursive: true });
+    writeFileSync(join(root, "dist", "vendor", "baileys.js"), "VENDOR-OLD\n");
   }
 
   // Timestamps come last: creating files bumps directory mtimes, and the wrapper
@@ -174,6 +185,23 @@ describe("bin/ravi single execution path", () => {
     expect(result.stdout).toContain("REBUILT-OK");
     expect(result.stderr).toContain("bundle is older than");
     expect(result.stderr).toContain("package.json");
+  });
+
+  it("refreshes dist/vendor/baileys.js with the bundle, so a Baileys bump is never left behind", () => {
+    const root = makeCheckout({ stalePackageJson: true, withVendor: true });
+    const result = runWrapper(root);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("REBUILT-OK");
+    expect(readFileSync(join(root, "dist", "vendor", "baileys.js"), "utf8")).toBe("VENDOR-REBUILT\n");
+  });
+
+  it("leaves dist/vendor/baileys.js alone when the bundle is current", () => {
+    const root = makeCheckout({ withVendor: true });
+    const result = runWrapper(root);
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(join(root, "dist", "vendor", "baileys.js"), "utf8")).toBe("VENDOR-OLD\n");
   });
 
   it("rebuilds when there is no bundle at all", () => {

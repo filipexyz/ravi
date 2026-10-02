@@ -4,11 +4,17 @@
 other generation surface (image, audio, atlas crops) funnels into. A wrong send
 is visible to a real person and cannot be unsent, which is exactly the class of
 mutation the Manual v2 write brake exists for. The brake runs before ANY
-delivery-side code: `sendMediaWithOmniCli` mixes validation, target resolution
-and the actual spawn of the `omni` binary in one call, so the command
-re-implements the two cheap local checks (file existence, mime inference) to
-fail fast with `FILE_NOT_FOUND` and to render an honest plan without spawning
-anything.
+delivery-side code: `sendChannelMedia` mixes validation, target resolution and
+the actual transport call (the WhatsApp runner, a Slack upload, or a spawn of
+the legacy-bridge `omni` binary) in one call, so the command re-implements the
+two cheap local checks (file existence, mime inference) to fail fast with
+`FILE_NOT_FOUND` and to render an honest plan without calling anything.
+
+WhatsApp media goes to the `ravi channels` runner, which reads the file from
+disk by absolute path. Runner failures keep their own code and retryability
+(for example `WHATSAPP_RUNNER_UNAVAILABLE` with "start the runner" advice)
+instead of collapsing into `MEDIA_SEND_FAILED`, so an agent can tell "start
+the runner" from "the provider refused".
 
 The riskiest consumer is not a human: `ravi sessions actions` and the image and
 audio payloads TEACH this command to live agents. If any of those strings drop
@@ -16,7 +22,8 @@ audio payloads TEACH this command to live agents. If any of those strings drop
 That is why the builders in `sessions.ts` and the `sendCommand` fields are part
 of this spec's applies_to surface.
 
-A second live-agent trap is Omni auth divergence. Ravi's HTTP client uses
+A second live-agent trap, on the legacy-bridge (Telegram/Discord) branch
+only, is Omni auth divergence. Ravi's HTTP client uses
 `resolveOmniConnection()` (env, then the top-level `apiKey` in
 `~/.omni/config.json`). The spawned `omni` binary prefers
 `servers.list.<active>.apiKey`. When those keys diverge, text/media download

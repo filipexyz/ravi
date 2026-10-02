@@ -42,6 +42,8 @@ const publishPromptCalls: Array<Record<string, unknown>> = [];
 let mockAgent: { id: string; cwd: string } | undefined;
 
 let listGroupsResult: Array<Record<string, unknown>> = [];
+let mockInstanceId = "inst-1";
+const listGroupsCalls: Array<{ instanceId: string }> = [];
 let metadataResult: Record<string, unknown> | null = null;
 let historyMock: Array<{ role: string; content: string; created_at: string }> = [];
 
@@ -138,7 +140,7 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
-  dbGetInstance: () => ({ instanceId: "inst-1" }),
+  dbGetInstance: () => ({ instanceId: mockInstanceId }),
   getFirstAccountName: () => "main",
   dbListChats: () => ({ items: [], total: 0 }),
   dbFindChat: () => null,
@@ -158,77 +160,131 @@ mock.module("../../channels/session-prompt.js", () => ({
   },
 }));
 
-mock.module("../../omni/group-metadata-cache.js", () => ({
-  resolveOmniGroupMetadata: async (input: Record<string, unknown>) => {
+// Defines every export of cache.js: group.ts imports resolveGroupMetadata, and the
+// fetcher module it imports (whatsapp/group-metadata.js) imports
+// the rest. The real module cannot be spread here: router-db.js is mocked without getDb.
+mock.module("../../channels/group-metadata/cache.js", () => ({
+  resolveGroupMetadata: async (input: Record<string, unknown>) => {
     metadataCalls.push(input);
     return metadataResult;
   },
+  getCachedGroupMetadata: () => null,
+  upsertGroupMetadata: () => {},
+  enrichParticipantsFromChatModel: <T>(metadata: T) => metadata,
+  normalizeGroupParticipant: () => null,
+  formatGroupMembersForPrompt: () => undefined,
 }));
 
-mock.module("../../omni/mentions.js", () => ({
-  prepareOmniMentionMessage: (input: { text: string }) => ({
+const actualMentionsModule = await import("../../channels/mentions.js");
+mock.module("../../channels/mentions.js", () => ({
+  ...actualMentionsModule,
+  prepareMentionMessage: (input: { text: string }) => ({
     text: input.text,
     mentions: [],
     resolved: [],
   }),
 }));
 
-mock.module("../../omni/sender.js", () => ({
-  OmniSender: class OmniSender {
-    async send(instanceId: string, to: string, text: string, extra?: Record<string, unknown>) {
-      senderSendCalls.push({ instanceId, to, text, ...(extra ?? {}) });
-      return { messageId: "wamid-1" };
-    }
+// The WhatsApp runner client group.ts talks to. Every RPC is recorded; the per-call
+// arrays above keep the shape the assertions below use.
+const whatsappCalls: Array<{ method: string; instanceId: string; params: Record<string, unknown> }> = [];
+let whatsappFailure: Error | null = null;
+
+function whatsappRpc<R>(method: string, record: (instanceId: string, params: Record<string, unknown>) => R) {
+  return async (instanceId: string, params: Record<string, unknown>) => {
+    whatsappCalls.push({ method, instanceId, params });
+    if (whatsappFailure) throw whatsappFailure;
+    return record(instanceId, params);
+  };
+}
+
+const fakeWhatsAppClient = {
+  resolveBinding: () => null,
+  request: async () => {
+    throw new Error("unexpected raw WhatsApp RPC");
   },
-}));
+  connection: {},
+  groups: {
+    list: whatsappRpc("groups.list", (instanceId) => {
+      listGroupsCalls.push({ instanceId });
+      return { items: listGroupsResult };
+    }),
+    create: whatsappRpc("groups.create", (instanceId, params) => {
+      createGroupCalls.push({ instanceId, ...params });
+      const participants = (params.participants as string[]).map((id) => ({ id, admin: null }));
+      return {
+        id: "999@g.us",
+        externalId: "999@g.us",
+        subject: params.subject,
+        name: params.subject,
+        participants,
+        memberCount: participants.length,
+        isCommunity: false,
+      };
+    }),
+    addParticipants: whatsappRpc("groups.addParticipants", (instanceId, params) => {
+      addParticipantCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, results: [] };
+    }),
+    updateParticipants: whatsappRpc("groups.updateParticipants", (instanceId, params) => {
+      updateParticipantCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, results: [] };
+    }),
+    getInvite: whatsappRpc("groups.getInvite", (_instanceId, params) => ({
+      groupJid: params.groupJid,
+      code: "CODE",
+      inviteLink: "https://chat.whatsapp.com/CODE",
+    })),
+    revokeInvite: whatsappRpc("groups.revokeInvite", (instanceId, params) => {
+      revokeInviteCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, code: "NEWCODE", inviteLink: "https://chat.whatsapp.com/NEWCODE" };
+    }),
+    join: whatsappRpc("groups.join", (instanceId, params) => {
+      joinCalls.push({ instanceId, ...params });
+      return { groupJid: "999@g.us", joined: true };
+    }),
+    leave: whatsappRpc("groups.leave", (instanceId, params) => {
+      leaveCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, left: true };
+    }),
+    rename: whatsappRpc("groups.rename", (instanceId, params) => {
+      renameCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, subject: params.subject };
+    }),
+    setDescription: whatsappRpc("groups.setDescription", (instanceId, params) => {
+      setDescriptionCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, description: params.description };
+    }),
+    setSettings: whatsappRpc("groups.setSettings", (instanceId, params) => {
+      setSettingsCalls.push({ instanceId, ...params });
+      return { groupJid: params.groupJid, setting: params.setting };
+    }),
+    metadata: whatsappRpc("groups.metadata", (_instanceId, params) => ({
+      groupJid: params.groupJid,
+      subject: "Equipe",
+      participants: [],
+      fetchedAt: 1,
+    })),
+  },
+  messages: {
+    sendText: whatsappRpc("messages.sendText", (instanceId, params) => {
+      senderSendCalls.push({ instanceId, ...params });
+      return { messageId: "wamid-1", status: "sent" };
+    }),
+  },
+  presence: { set: whatsappRpc("presence.set", () => ({})) },
+};
 
-mock.module("../../omni/client.js", () => ({
-  createOmniClient: () => ({
-    instances: {
-      createGroup: async (instanceId: string, input: Record<string, unknown>) => {
-        createGroupCalls.push({ instanceId, ...input });
-        return { id: "999@g.us", subject: input.subject, participants: input.participants };
-      },
-      listGroups: async () => ({ items: listGroupsResult, meta: {} }),
-      addGroupParticipants: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
-        addParticipantCalls.push({ instanceId, groupJid, ...input });
-        return { ok: true };
-      },
-      updateGroupParticipants: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
-        updateParticipantCalls.push({ instanceId, groupJid, ...input });
-        return { ok: true };
-      },
-      getGroupInvite: async () => ({ code: "CODE" }),
-      revokeGroupInvite: async (instanceId: string, groupJid: string) => {
-        revokeInviteCalls.push({ instanceId, groupJid });
-        return { code: "NEWCODE" };
-      },
-      joinGroup: async (instanceId: string, input: Record<string, unknown>) => {
-        joinCalls.push({ instanceId, ...input });
-        return { groupJid: "999@g.us" };
-      },
-      leaveGroup: async (instanceId: string, groupJid: string) => {
-        leaveCalls.push({ instanceId, groupJid });
-        return { ok: true };
-      },
-      renameGroup: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
-        renameCalls.push({ instanceId, groupJid, ...input });
-        return { ok: true };
-      },
-      setGroupDescription: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
-        setDescriptionCalls.push({ instanceId, groupJid, ...input });
-        return { ok: true };
-      },
-      setGroupSettings: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
-        setSettingsCalls.push({ instanceId, groupJid, ...input });
-        return { ok: true };
-      },
-    },
-  }),
-}));
-
-mock.module("../../omni-config.js", () => ({
-  resolveOmniConnection: () => ({ apiUrl: "http://omni.test", apiKey: "key" }),
+mock.module("../../channels/whatsapp/client.js", () => ({
+  createWhatsAppClient: () => fakeWhatsAppClient,
+  WHATSAPP_CLIENT_TIMEOUTS_MS: {
+    listStatus: 2_500,
+    status: 10_000,
+    presence: 10_000,
+    markRead: 15_000,
+    media: 120_000,
+  },
+  defaultWhatsAppClientTimeoutMs: () => 60_000,
 }));
 
 mock.module("../../router/session-key.js", () => ({
@@ -301,6 +357,18 @@ type ContractErrorInstance = InstanceType<typeof ContractError>;
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** The fetcher group.ts passed calls `groups.metadata` on the WhatsApp runner client. */
+async function expectWhatsAppFetcher(fetcher: unknown): Promise<void> {
+  expect(typeof fetcher).toBe("function");
+  const before = whatsappCalls.length;
+  const fetch = fetcher as (input: Record<string, unknown>) => Promise<{ platformMetadata?: unknown } | null>;
+  const fetched = await fetch({ accountId: "main", instanceId: "wa-1", chatId: "111", fetchTimeoutMs: 1234 });
+  expect(whatsappCalls.slice(before)).toEqual([
+    { method: "groups.metadata", instanceId: "wa-1", params: { groupJid: "111@g.us" } },
+  ]);
+  expect(fetched?.platformMetadata).toEqual({ transport: "whatsapp" });
+}
+
 async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
   const originalLog = console.log;
   const originalError = console.error;
@@ -352,6 +420,10 @@ beforeEach(() => {
   upsertChatParticipantCalls.length = 0;
   publishPromptCalls.length = 0;
   mockAgent = undefined;
+  mockInstanceId = "inst-1";
+  whatsappCalls.length = 0;
+  whatsappFailure = null;
+  listGroupsCalls.length = 0;
   listGroupsResult = [];
   metadataResult = null;
   historyMock = [];
@@ -395,7 +467,7 @@ describe("whatsapp group write brake", () => {
     expect(metadataCalls).toHaveLength(0);
   });
 
-  it("send with --execute delivers through the omni sender and strips bash escapes", async () => {
+  it("send with --execute delivers through the WhatsApp runner and strips bash escapes", async () => {
     const commands = new GroupCommands();
     const payload = await silenced(() =>
       commands.send("120363000000000001", "oi\\!", undefined, undefined, true, true),
@@ -453,7 +525,7 @@ describe("whatsapp group write brake", () => {
     expect(addParticipantCalls).toHaveLength(0);
   });
 
-  it("add with --execute calls the omni participants contract", async () => {
+  it("add with --execute calls the WhatsApp participants RPC", async () => {
     const commands = new GroupCommands();
     await silenced(() => commands.add("120363000000000001", "5511999999999", undefined, true, true));
 
@@ -574,7 +646,7 @@ describe("whatsapp group write brake", () => {
     expect(upsertChatCalls).toHaveLength(0);
   });
 
-  it("create with --execute creates the group via omni and registers the local chat", async () => {
+  it("create with --execute creates the group via the WhatsApp runner and registers the local chat", async () => {
     const commands = new GroupCommands();
     await silenced(() =>
       commands.create(
@@ -805,6 +877,156 @@ describe("whatsapp group envelopes and compact mode", () => {
     for (const item of payload.items as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["id", "subject"]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// whatsapp.group — WhatsApp runner transport
+// ---------------------------------------------------------------------------
+
+describe("whatsapp group through the WhatsApp runner", () => {
+  beforeEach(() => {
+    mockInstanceId = "wa-1";
+  });
+
+  it("list calls groups.list and reports the whatsapp.rpc source", async () => {
+    listGroupsResult = [{ id: "111@g.us", subject: "Equipe", memberCount: 3, participants: [] }];
+
+    const commands = new GroupCommands();
+    const payload = await silenced(() => commands.list(undefined, true));
+
+    expect(whatsappCalls).toEqual([{ method: "groups.list", instanceId: "wa-1", params: { limit: 500 } }]);
+    expect(payload).toMatchObject({ instanceId: "wa-1", source: "whatsapp.rpc", total: 1 });
+  });
+
+  it("list falls back to the local chat model when the runner fails", async () => {
+    whatsappFailure = new Error("Instance wa-1 is not bound to a WhatsApp channel. Run: ravi instances connect main");
+
+    const commands = new GroupCommands();
+    const payload = await silenced(() => commands.list(undefined, true));
+
+    expect(payload).toMatchObject({
+      source: "local.chat_model",
+      meta: { fallbackReason: expect.stringContaining("not bound to a WhatsApp channel") },
+    });
+  });
+
+  it("info resolves group metadata through the WhatsApp runner", async () => {
+    listGroupsResult = [{ id: "111@g.us", subject: "Equipe", memberCount: 1 }];
+    metadataResult = {
+      externalId: "111@g.us",
+      name: "Equipe",
+      participantCount: 1,
+      participants: [{ platformUserId: "5511999999999@s.whatsapp.net", role: "admin" }],
+    };
+
+    const commands = new GroupCommands();
+    const result = await silenced(() => commands.info("111", undefined, true));
+
+    expect(metadataCalls).toHaveLength(1);
+    expect(metadataCalls[0]).toMatchObject({ instanceId: "wa-1", chatId: "111@g.us", maxAgeMs: 0 });
+    await expectWhatsAppFetcher(metadataCalls[0]?.fetcher);
+    expect(result).toMatchObject({
+      source: "whatsapp.rpc",
+      participants: [{ id: "5511999999999@s.whatsapp.net", admin: "admin" }],
+    });
+  });
+
+  it("send --execute sends text over the runner with WhatsApp group metadata", async () => {
+    metadataResult = { participants: [] };
+
+    const commands = new GroupCommands();
+    const payload = await silenced(() =>
+      commands.send("120363000000000001", "oi @Joao", undefined, undefined, true, true),
+    );
+
+    expect(metadataCalls[0]).toMatchObject({ instanceId: "wa-1", chatId: "120363000000000001@g.us" });
+    await expectWhatsAppFetcher(metadataCalls[0]?.fetcher);
+    expect(whatsappCalls.find((call) => call.method === "messages.sendText")).toMatchObject({
+      instanceId: "wa-1",
+      params: { to: "120363000000000001@g.us", text: "oi @Joao" },
+    });
+    expect(payload).toMatchObject({ status: "sent", transport: "whatsapp", instanceId: "wa-1", messageId: "wamid-1" });
+  });
+
+  it("participant changes report the whatsapp.rpc source", async () => {
+    const commands = new GroupCommands();
+    const payload = await silenced(() => commands.add("120363000000000001", "5511999999999", undefined, true, true));
+
+    expect(whatsappCalls).toEqual([
+      {
+        method: "groups.addParticipants",
+        instanceId: "wa-1",
+        params: { groupJid: "120363000000000001@g.us", participants: ["5511999999999"] },
+      },
+    ]);
+    expect(payload).toMatchObject({ source: "whatsapp.rpc.group_participants" });
+  });
+
+  it("invite, revoke and join map the runner records", async () => {
+    const commands = new GroupCommands();
+    const invite = await silenced(() => commands.invite("120363000000000001", undefined, true));
+    const revoked = await silenced(() => commands.revokeInvite("120363000000000001", undefined, true, true));
+    const joined = await silenced(() => commands.join("https://chat.whatsapp.com/ABCDEF", undefined, true, true));
+
+    expect(invite).toMatchObject({
+      source: "whatsapp.rpc.group_invite",
+      invite: { code: "CODE", link: "https://chat.whatsapp.com/CODE" },
+    });
+    expect(revoked).toMatchObject({ source: "whatsapp.rpc.group_invite", invite: { code: "NEWCODE" } });
+    expect(joined).toMatchObject({ source: "whatsapp.rpc.group_join", code: "ABCDEF", groupId: "999@g.us" });
+  });
+
+  it("a failed admin promotion after create is reported as whatsapp_group_admin_promotion_failed", async () => {
+    const commands = new GroupCommands();
+    const originalUpdate = fakeWhatsAppClient.groups.updateParticipants;
+    fakeWhatsAppClient.groups.updateParticipants = async () => {
+      throw new Error("not an admin");
+    };
+    try {
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+      try {
+        await commands.create(
+          "Equipe Teste",
+          "5511999999999",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "5511999999999",
+          undefined,
+          undefined,
+          true,
+          true,
+        );
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines.join("\n")) as Record<string, unknown>;
+
+      expect(payload.adminPromotion).toMatchObject({
+        status: "failed",
+        source: "whatsapp.rpc.group_participants",
+        reason: "whatsapp_group_admin_promotion_failed",
+        error: "not an admin",
+      });
+    } finally {
+      fakeWhatsAppClient.groups.updateParticipants = originalUpdate;
+    }
+  });
+
+  it("an account without an instance id fails with a WhatsApp message", async () => {
+    mockInstanceId = "";
+
+    const commands = new GroupCommands();
+    await expect(silenced(() => commands.list("vendas", true))).rejects.toThrow(
+      'No WhatsApp instance mapped for account "vendas".',
+    );
+    expect(whatsappCalls).toHaveLength(0);
   });
 });
 

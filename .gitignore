@@ -39,3 +39,5 @@ coverage/
 /app-session-*.js
 /app-session-*.js.map
 *.tgz
+# Vendored dependency tarballs are part of the lockfile contract (bun install --frozen-lockfile).
+!vendor/**/*.tgz

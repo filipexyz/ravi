@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { nats } from "../../nats.js";
-import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
+import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../session-prompts/stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
 import {
   attachChatToSession,

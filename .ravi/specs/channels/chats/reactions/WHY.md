@@ -2,9 +2,9 @@
 
 ## Problem
 
-Inbound reactions arrive via the `REACTION` JetStream stream and are processed by `OmniConsumer.handleReactionEvent`. The handler deduplicates by `messageId:emoji:senderId`, emits `ravi.inbound.reaction`, and discards the event. No durable record is created.
+Inbound reactions were processed by the Omni consumer's `handleReactionEvent` (now `ChannelInboundPipeline`, shared by WhatsApp and the legacy bridge). It deduplicated by `messageId:emoji:senderId`, emitted `ravi.inbound.reaction`, and discarded the event. No durable record was created.
 
-This means:
+This meant:
 
 - Reaction history is not queryable after the daemon restarts.
 - There is no chat-level ledger entry for reactions, unlike regular messages which are persisted in `chat_messages`.

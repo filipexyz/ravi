@@ -132,9 +132,42 @@ Esse modo não inclui o bloco bruto `Data: {...}`. Triggers manuais/custom conti
 |---------|-----------|
 | `ravi.inbound.reaction` | Reações recebidas. Payload: `{ targetMessageId, emoji, senderId }` |
 | `ravi.inbound.reply` | Replies a mensagens do bot. Payload: `{ targetMessageId, text, senderId }` |
-| `ravi.inbound.pollVote` | Votos em enquetes. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }` |
+| `ravi.inbound.pollVote` | Votos em enquetes. Payload: `{ pollMessageId, votes: [{ name, voters[] }] }`. Hoje nenhum publisher do Ravi emite este subject. |
 
 Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` não são templates built-in e recebem aviso do CLI. Eles ainda são aceitos como subjects custom; para reações Ravi normais, use `ravi.inbound.reaction`.
+
+### WhatsApp: subjects que mudaram
+
+O WhatsApp roda no runner `ravi channels`, sem Omni. Triggers em subjects do Omni para WhatsApp (`message.received.whatsapp-baileys.>`, `reaction.received.whatsapp-baileys.>`, `instance.*.whatsapp-baileys.*`) **não disparam mais**. Mova para:
+
+- `ravi.channel.inbound.whatsapp.message.>` para mensagens: o `data` agora é um `WhatsAppInboundEvent` (abaixo), então reescreva os filtros `data.*` e use `data.ingestMode == "realtime"` para ignorar history-sync;
+- `ravi.inbound.reaction` para reações (mesmo payload para WhatsApp, ponte legada e Slack);
+- `ravi.instances.>` para lifecycle de instâncias (ex.: `ravi.instances.unregistered`);
+- `ravi.whatsapp.>` para pareamento (`ravi.whatsapp.qr.<uuid>`, `ravi.whatsapp.connected.<uuid>`), que é replay-only e fica fora do catálogo. Desconexões só aparecem em `ravi.channel.inbound.whatsapp.connection.>`.
+
+O evento bruto do runner fica em `ravi.channel.inbound.whatsapp.<message|reaction|connection>.<uuid>` (stream `CHANNEL_INBOUND`). É um subject de transporte, fora do catálogo: o CLI aceita com aviso, e a assinatura NATS comum do trigger runner recebe o que o runner publica via JetStream. O `data` é um `WhatsAppInboundEvent`:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "whatsapp-baileys:<uuid>:3EB0ABC:message",
+  "instanceId": "<uuid>",
+  "timestamp": 1760000000000,
+  "type": "message.received",
+  "ingestMode": "realtime",
+  "payload": {
+    "externalId": "3EB0ABC",
+    "chatId": "5511999999999@s.whatsapp.net",
+    "from": "5511999999999",
+    "senderName": "Luis",
+    "content": { "type": "text", "text": "oi" },
+    "platformTimestamp": 1760000000,
+    "rawPayload": { "key": { "id": "3EB0ABC" } }
+  }
+}
+```
+
+Filtro de exemplo: `--filter 'data.payload.content.type == "text"'`. Mensagens `history-sync` também passam por esse subject; filtre `data.ingestMode == "realtime"` quando só quiser mensagens ao vivo.
 
 **Importante para reactions:** `ravi.inbound.reaction` é um evento de correlação, não uma mensagem completa. O payload atual não garante `chatId`, caption, mídia ou estado de negócio. Se a automação precisa saber "qual item foi aprovado", grave antes um mapping durável `targetMessageId -> domain state` quando enviar a mensagem-alvo.
 
@@ -179,7 +212,7 @@ Aliases como `whatsapp.*.reaction`, `whatsapp.*.inbound` e `matrix.*.inbound` n�
 | Pattern | Descrição |
 |---------|-----------|
 | `ravi.audit.denied` | Permissão negada |
-| `ravi.instances.unregistered` | Evento de instância Omni não registrada |
+| `ravi.instances.unregistered` | Mensagem recebida de uma instância (WhatsApp ou ponte legada) sem registro no Ravi |
 
 **Avisos:** O CLI aceita topics fora do catálogo e apenas alerta. O runner ignora assinaturas em `ravi.session.*` para evitar loops internos.
 

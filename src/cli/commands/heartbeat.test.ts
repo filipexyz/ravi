@@ -40,7 +40,7 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-mock.module("../../omni/session-stream.js", () => ({
+mock.module("../../session-prompts/stream.js", () => ({
   publishSessionPrompt: promptMock,
 }));
 
@@ -262,7 +262,7 @@ describe("HeartbeatCommands agent-first contract", () => {
     await expectContractError(() => new HeartbeatCommands().enable("ghost", "1h", true), "AGENT_NOT_FOUND", 1);
 
     expect(emitMock).not.toHaveBeenCalled();
-    expect((agents[0]?.heartbeat as Record<string, unknown>).enabled).toBe(false);
+    expect((agents[0]!.heartbeat as Record<string, unknown>).enabled).toBe(false);
   });
 
   it("trigger on an unknown agent exits 1 with AGENT_NOT_FOUND and publishes no prompt", async () => {

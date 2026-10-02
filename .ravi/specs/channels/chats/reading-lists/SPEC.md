@@ -14,7 +14,7 @@ tags:
   - crm
 applies_to:
   - src/router/router-db.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/db.ts
   - src/cli/commands
   - src/contacts.ts
@@ -24,6 +24,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Chat Reading Lists
 
 ## Intent
@@ -140,7 +141,7 @@ Unacceptable cursor anchors:
 
 - in-memory offset
 - page number
-- raw WhatsApp/Omni timestamp alone
+- raw WhatsApp/provider timestamp alone
 - `message_metadata` row alone
 - runtime session transcript position alone
 

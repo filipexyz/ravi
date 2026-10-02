@@ -1,72 +1,64 @@
 /**
- * Omni Sender
+ * Omni Sender (legacy bridge, Telegram/Discord only)
  *
- * HTTP client for the omni REST API. Sends messages,
- * typing indicators, reactions, and media via omni-managed channel instances.
+ * Sends messages, typing indicators, reactions, and media through the Omni REST API.
+ * WhatsApp never goes through here: the per-instance router
+ * (src/channels/outbound/router.ts) sends it through ravi's own runner.
+ *
+ * Retry: `send`, `sendReaction`, `deleteMessage` and `editMessage` retry network errors and
+ * 5xx (3 attempts, 1s/2s); `sendMedia`/`sendSticker` do not retry; `sendTyping`/`markRead`
+ * never throw. Media is always sent as base64 plus the absolute `filePath`.
  */
 
 import { readFileSync } from "node:fs";
-import { createOmniClient, type OmniClient } from "./client.js";
+import { resolve } from "node:path";
+import { type TransportRetryOptions, withTransportRetry } from "../channels/outbound/retry.js";
+import type {
+  ChannelMediaType,
+  ChannelMessageSender,
+  ChannelSendOptions,
+  ChannelSendResult,
+} from "../channels/outbound/sender.js";
 import { logger } from "../utils/logger.js";
-import type { OmniUserMention } from "./mentions.js";
+import { createOmniClient, type OmniClient } from "./client.js";
 
 const log = logger.child("omni:sender");
 
-const MAX_RETRIES = 3;
-
-/**
- * Determine if an error is retryable (network/server errors, not client errors).
- */
-function isRetryable(err: unknown): boolean {
-  if (err instanceof TypeError) return true; // fetch network error (ECONNREFUSED etc.)
-  if (err && typeof err === "object" && "status" in err) {
-    const status = (err as { status: number }).status;
-    return status >= 500; // Only retry 5xx, not 4xx
-  }
-  return false; // Don't retry unknown errors (could be application bugs)
+export interface OmniSenderOptions {
+  /** Retry settings (attempts, delays, sleep seam). The default policy retries TypeError and 5xx. */
+  retry?: TransportRetryOptions;
 }
 
-export class OmniSender {
+export class OmniSender implements ChannelMessageSender {
   private client: OmniClient;
+  private retry: TransportRetryOptions;
 
-  constructor(apiUrl: string, apiKey: string) {
+  /** Omni REST sender. */
+  constructor(apiUrl: string, apiKey: string, options: OmniSenderOptions = {}) {
     this.client = createOmniClient({ baseUrl: apiUrl, apiKey });
+    this.retry = { ...options.retry };
+  }
+
+  private withRetry<T>(operation: () => Promise<T>, context: string): Promise<T> {
+    return withTransportRetry(operation, context, this.retry);
+  }
+
+  /** Absolute path (relative paths resolve against the daemon cwd) plus the file as base64. */
+  private mediaSource(localPath: string): { filePath: string; base64: string } {
+    const filePath = resolve(localPath);
+    return { filePath, base64: readFileSync(filePath).toString("base64") };
   }
 
   /**
-   * Retry wrapper with exponential backoff.
-   */
-  private async withRetry<T>(operation: () => Promise<T>, context: string): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await operation();
-      } catch (err) {
-        lastError = err;
-        if (attempt < MAX_RETRIES && isRetryable(err)) {
-          const delayMs = attempt * 1000;
-          log.warn(`${context} failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delayMs}ms`, { error: err });
-          await new Promise((r) => setTimeout(r, delayMs));
-        } else {
-          break;
-        }
-      }
-    }
-    throw lastError;
-  }
-
-  /**
-   * Send a text message via omni.
+   * Send a text message via Omni.
    */
   async send(
     instanceId: string,
     to: string,
     text: string,
-    optionsOrThreadId?: string | { threadId?: string; mentions?: OmniUserMention[] },
-  ): Promise<{ messageId?: string }> {
+    options: ChannelSendOptions = {},
+  ): Promise<ChannelSendResult> {
     try {
-      const options =
-        typeof optionsOrThreadId === "string" ? { threadId: optionsOrThreadId } : (optionsOrThreadId ?? {});
       const result = (await this.withRetry(
         () =>
           this.client.messages.send({
@@ -121,14 +113,14 @@ export class OmniSender {
   /**
    * Delete a channel message sent by the current instance.
    */
-  async deleteMessage(instanceId: string, to: string, messageId: string): Promise<void> {
+  async deleteMessage(instanceId: string, chatId: string, messageId: string): Promise<void> {
     try {
       await this.withRetry(
-        () => this.client.messages.deleteChannel({ instanceId, channelId: to, messageId }),
+        () => this.client.messages.deleteChannel({ instanceId, channelId: chatId, messageId }),
         `deleteMessage(${instanceId})`,
       );
     } catch (err) {
-      log.error("Failed to delete message", { instanceId, to, messageId, error: err });
+      log.error("Failed to delete message", { instanceId, to: chatId, messageId, error: err });
       throw err;
     }
   }
@@ -136,39 +128,37 @@ export class OmniSender {
   /**
    * Edit a channel message sent by the current instance.
    */
-  async editMessage(instanceId: string, to: string, messageId: string, text: string): Promise<void> {
+  async editMessage(instanceId: string, chatId: string, messageId: string, text: string): Promise<void> {
     try {
       await this.withRetry(
-        () => this.client.messages.editChannel({ instanceId, channelId: to, messageId, text }),
+        () => this.client.messages.editChannel({ instanceId, channelId: chatId, messageId, text }),
         `editMessage(${instanceId})`,
       );
     } catch (err) {
-      log.error("Failed to edit message", { instanceId, to, messageId, error: err });
+      log.error("Failed to edit message", { instanceId, to: chatId, messageId, error: err });
       throw err;
     }
   }
 
   /**
-   * Send a media file (image, video, document, audio).
-   * Reads the file as base64 and sends via omni.
+   * Send a media file (image, video, document, audio) as base64 plus the absolute `filePath`.
+   * Not retried.
    */
   async sendMedia(
     instanceId: string,
     to: string,
     localPath: string,
-    type: "image" | "video" | "audio" | "document",
+    type: ChannelMediaType,
     filename: string,
     caption?: string,
     voiceNote?: boolean,
-  ): Promise<{ messageId?: string }> {
+  ): Promise<ChannelSendResult> {
     try {
-      const data = readFileSync(localPath);
-      const base64 = data.toString("base64");
       const result = await this.client.messages.sendMedia({
         instanceId,
         to,
         type,
-        base64,
+        ...this.mediaSource(localPath),
         filename,
         caption,
         ...(voiceNote ? { voiceNote: true } : {}),
@@ -181,19 +171,17 @@ export class OmniSender {
   }
 
   /**
-   * Send a WhatsApp sticker.
+   * Send a sticker.
    *
    * Omni exposes stickers as a dedicated contract instead of generic media.
-   * Using /messages/send/media with type=sticker returns 400 on WhatsApp.
+   * Using /messages/send/media with type=sticker returns 400. Not retried.
    */
-  async sendSticker(instanceId: string, to: string, localPath: string): Promise<{ messageId?: string }> {
+  async sendSticker(instanceId: string, to: string, localPath: string): Promise<ChannelSendResult> {
     try {
-      const data = readFileSync(localPath);
-      const base64 = data.toString("base64");
       const result = await this.client.messages.sendSticker({
         instanceId,
         to,
-        base64,
+        ...this.mediaSource(localPath),
       });
       return { messageId: result.messageId };
     } catch (err) {
@@ -216,12 +204,5 @@ export class OmniSender {
       // Best-effort — don't throw
       log.debug("Failed to mark messages as read", { instanceId, chatId, error: err });
     }
-  }
-
-  /**
-   * Get the underlying omni client for advanced operations (CLI commands).
-   */
-  getClient(): OmniClient {
-    return this.client;
   }
 }

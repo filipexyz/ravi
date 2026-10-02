@@ -19,7 +19,7 @@ tags:
 applies_to:
   - src/contacts.ts
   - src/cli/commands/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router
 owners:
   - ravi-dev
@@ -27,6 +27,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Contacts
 
 ## Intent
@@ -39,7 +40,7 @@ The public UX SHOULD remain `ravi contacts`.
 
 Internally, contacts MUST be backed by an identity graph that links channel-specific platform identities to canonical contacts and agents.
 
-Contacts participates in Ravi's channel abstraction boundary: Omni supplies raw transport identifiers, but Ravi owns the semantic identity model.
+Contacts participates in Ravi's channel abstraction boundary: the channel transports supply raw transport identifiers, but Ravi owns the semantic identity model.
 
 ## Boundaries
 
@@ -108,9 +109,9 @@ An internal `identity` service/module MAY exist, but the user-facing command SHO
 
 ## Integration Points
 
-- `omni` is the source of raw transport events, channel identities, LID mappings, platform user ids, display names, avatars, and chat participants.
-- Ravi MUST abstract Omni behind normalized contacts/chats/sessions/actors for product and agent-facing code.
-- Raw Omni/channel ids MUST remain available for provenance, debugging, replay, and transport-level repair.
+- The channel transports (the `ravi channels` WhatsApp runner, native Slack, and the legacy Omni bridge for Telegram/Discord) are the source of raw transport events, channel identities, LID mappings, platform user ids, display names, avatars, and chat participants.
+- Ravi MUST abstract the transports behind normalized contacts/chats/sessions/actors for product and agent-facing code.
+- Raw transport/channel ids MUST remain available for provenance, debugging, replay, and transport-level repair.
 - `contacts` owns canonical CRM/person records and policy.
 - `contacts/authorization` owns which runtime principals can discover, read, or
   mutate contact records.

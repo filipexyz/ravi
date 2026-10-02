@@ -21,6 +21,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Contact CRM Schemas
 
 ## Intent
@@ -1124,7 +1125,7 @@ This pattern keeps CRM lifecycle, access policy, and observer orchestration sepa
 ## Acceptance Criteria
 
 - CRM lifecycle does not change contact access policy.
-- Contacts and accounts never use raw WhatsApp/Omni ids as primary keys.
+- Contacts and accounts never use raw WhatsApp/transport ids as primary keys.
 - Group/chat context references `chat_id`, not contact/account ids.
 - Every CRM write creates a `crm_events` row.
 - Contact-related CRM writes create or link a contact timeline event.

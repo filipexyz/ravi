@@ -14,7 +14,7 @@ tags:
   - prompt-context
   - permissions
 applies_to:
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/runtime/message-types.ts
   - src/runtime/session-dispatcher.ts
   - src/runtime/runtime-request-builder.ts
@@ -25,6 +25,7 @@ status: active
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Conversation Thread
 
 ## Intent
@@ -140,13 +141,13 @@ Default behavior:
 
 This feature belongs to Ravi's semantic layer.
 
-Omni supplies raw chat/sender facts and transport provenance. Ravi owns actor resolution, conversation floor state, prompt annotations, and permission scoping.
+The channel transports (the `ravi channels` runner for WhatsApp, the Omni legacy bridge for Telegram/Discord) supply raw chat/sender facts and transport provenance. Ravi owns actor resolution, conversation floor state, prompt annotations, and permission scoping.
 
 The feature MUST work with chats and actors, not raw WhatsApp JIDs, phone numbers, or group ids as the primary model.
 
 ## Validation
 
-- `bun test src/omni/ src/runtime/ src/gateway-session-trace.test.ts`
+- `bun test src/channels/inbound/ && bun test src/runtime/ src/gateway-session-trace.test.ts`
 - Add targeted tests for speaker annotation transitions before implementation is considered complete.
 - Add targeted tests for personal-resource permission scoping before enabling calendar access.
 

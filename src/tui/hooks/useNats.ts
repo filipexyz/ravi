@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { subscribe } from "../../nats.js";
 import { getRecentHistory } from "../../db.js";
-import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { publishSessionPrompt } from "../../session-prompts/stream.js";
 import { createThrottledFlush, type ThrottledFlush } from "../lib/throttle.js";
 import { applyTerminalUsage, isTerminalRuntimeEvent, type RuntimeFeedUsage } from "./runtime-feed.js";
 

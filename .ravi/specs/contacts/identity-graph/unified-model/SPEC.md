@@ -13,7 +13,7 @@ tags:
 applies_to:
   - src/contacts.ts
   - src/cli/commands/contacts.ts
-  - src/omni/consumer.ts
+  - src/channels/inbound/pipeline.ts
   - src/router/sessions.ts
   - src/router/resolver.ts
 owners:
@@ -22,6 +22,7 @@ status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Unified Contacts Model
 
 ## Intent
@@ -30,7 +31,7 @@ Unify Ravi contact identity handling in one coherent model.
 
 The implementation should be allowed to happen in one coordinated migration, as long as existing user-facing `ravi contacts` workflows keep working on the canonical model.
 
-The model MUST make Ravi the semantic owner above Omni. Omni remains the transport source for raw ids and delivery facts; Ravi exposes contacts, platform identities, chats, sessions, actors, and policies.
+The model MUST make Ravi the semantic owner above the channel transports (the `ravi channels` WhatsApp runner, native Slack, and the legacy Omni bridge for Telegram/Discord). The transports remain the source for raw ids and delivery facts; Ravi exposes contacts, platform identities, chats, sessions, actors, and policies.
 
 ## Target State
 
@@ -207,9 +208,9 @@ Contact timeline entries SHOULD reference canonical `contact_id` plus actor meta
 ## Normalization Rules
 
 - Raw provider identifiers MUST be preserved as provenance even after normalization.
-- Feature code SHOULD use normalized Ravi identity/chat/session abstractions instead of raw Omni ids.
+- Feature code SHOULD use normalized Ravi identity/chat/session abstractions instead of raw transport ids.
 - WhatsApp phone JID and bare phone MUST normalize to a stable phone identity.
-- WhatsApp technical ids from Omni MUST normalize as WhatsApp platform identities, and MAY auto-link to phone when a trusted provider mapping exists.
+- WhatsApp technical ids (LIDs) from the transport MUST normalize as WhatsApp platform identities, and MAY auto-link to phone when a trusted provider mapping exists.
 - WhatsApp group JID MUST normalize as chat/group identity, not contact identity.
 - Telegram user id MUST include channel and instance scope.
 - Email and phone MAY be represented as platform identities even when no chat instance exists.
@@ -245,13 +246,13 @@ For group messages:
 - The sender participant SHOULD resolve to a contact or agent platform identity.
 - Group participant metadata SHOULD populate chat participants when available.
 
-## Ravi/Omni Boundary
+## Ravi/Transport Boundary
 
-Omni-facing code MAY know about:
+Transport-facing code MAY know about:
 
 - provider message ids
 - channel-specific sender ids
-- WhatsApp phone/group ids and technical ids from Omni
+- WhatsApp phone/group ids and technical ids (LIDs)
 - Telegram ids
 - provider delivery and media payloads
 
@@ -267,9 +268,9 @@ Ravi-facing feature code SHOULD know about:
 - `message`
 - `contact_policy`
 
-If a feature needs to branch on a channel capability, it SHOULD ask Omni through the Ravi channel boundary instead of inspecting raw Omni ids directly. A central Ravi capability registry can wait until there is concrete need.
+If a feature needs to branch on a channel capability, it SHOULD ask the transport through the Ravi channel boundary instead of inspecting raw transport ids directly. A central Ravi capability registry can wait until there is concrete need.
 
-Channel capabilities MAY be deferred for this implementation. Omni should be the source of capability facts when Ravi needs them, but contacts/chat identity work MUST NOT be blocked by building a large capability registry.
+Channel capabilities MAY be deferred for this implementation. The transport should be the source of capability facts when Ravi needs them, but contacts/chat identity work MUST NOT be blocked by building a large capability registry.
 
 Examples:
 
@@ -328,7 +329,7 @@ Import MUST preserve:
 Import SHOULD map current active platforms:
 
 - `phone` -> `platform_identities(channel='phone')`
-- WhatsApp technical ids from Omni -> `platform_identities(channel='whatsapp')`
+- WhatsApp technical ids (LIDs) -> `platform_identities(channel='whatsapp')`
 - WhatsApp group ids -> chat/group import path, not person contact
 - `telegram` -> `platform_identities(channel='telegram')`
 
@@ -342,7 +343,7 @@ Old surfaces that MUST be accounted for during import only:
 - old platform/id pairs map to `platform_identities`.
 - old group-scoped contact notes SHOULD move to `chat_participants.metadata_json` or a future participant annotation table, because group-specific labels belong to the relationship between actor and chat.
 - `account_pending` SHOULD split pending humans from pending chats/groups instead of creating group contacts.
-- `omni_group_metadata.participants_json` SHOULD seed `chat_participants`.
+- `channel_group_metadata.participants_json` (copied once from the older `omni_group_metadata`) SHOULD seed `chat_participants`.
 - `message_metadata` and `session_events` SHOULD gain actor metadata rather than storing only raw `chat_id`/source ids.
 - `agents.matrix_account`, `matrix_accounts`, and other dead channel-specific fields SHOULD be removed or archived unless the channel is reactivated.
 
@@ -362,7 +363,7 @@ These surfaces are not target architecture. Runtime contact code MUST NOT read o
 | `agents.matrix_account` | active channel platform identity or removal | no active Matrix channel or replacement identity exists |
 | `matrix_accounts` table | active channel account model or removal/archive | Matrix integration removed or reintroduced through channel abstraction |
 
-Raw transport caches such as `omni_group_metadata` MAY remain after migration, but only as provider/cache provenance. They MUST NOT be the canonical participant model.
+Raw transport caches such as `channel_group_metadata` (and the kept, no longer written `omni_group_metadata`) MAY remain after migration, but only as provider/cache provenance. They MUST NOT be the canonical participant model.
 
 ## Acceptance Criteria
 
@@ -372,7 +373,7 @@ Raw transport caches such as `omni_group_metadata` MAY remain after migration, b
 - A group or shared session can have multiple contact participants without overwriting session identity.
 - Messages/events in multi-contact sessions preserve the actor that produced each message.
 - A reply/inbound event persists resolved contact/platform identity metadata when available.
-- Product/agent-facing code can operate without knowing raw Omni ids, while diagnostics can still recover the raw provider provenance.
+- Product/agent-facing code can operate without knowing raw transport ids, while diagnostics can still recover the raw provider provenance.
 - `ravi contacts get <any-known-id>` returns the same canonical contact for linked identities.
 - `ravi contacts merge` moves identities, preserves policy data, and writes audit events.
 - `ravi contacts duplicates` reports candidates without destructive changes.

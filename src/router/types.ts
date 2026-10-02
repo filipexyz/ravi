@@ -136,7 +136,7 @@ export interface RouteConfig {
   /** Phone pattern (exact match or glob with *) */
   pattern: string;
 
-  /** Account ID this route belongs to (omni instance name) */
+  /** Account ID this route belongs to (instance account name) */
   accountId: string;
 
   /** Agent ID to route to */
@@ -187,7 +187,7 @@ export interface RouterConfig {
   /** Native channel configs keyed by name */
   channels?: Record<string, import("./router-db.js").ChannelConfig>;
 
-  /** Unknown omni instanceIds that Ravi should ignore completely */
+  /** Unknown legacy-bridge (Omni) instanceIds that Ravi ignores (Omni source only) */
   ignoredOmniInstanceIds?: string[];
 }
 

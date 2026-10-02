@@ -363,7 +363,7 @@ ravi sessions recap <session> --json
 
 Agents can send emoji reactions to messages. Inbound messages include `[mid:ID]` tags that identify the message for reactions.
 
-The gateway subscribes to `ravi.outbound.reaction` events and delivers them via the omni sender API. Queue group (`ravi-gateway`) ensures only one gateway daemon sends each reaction.
+The gateway subscribes to `ravi.outbound.reaction` events and delivers them through the channel sender (the `ravi channels` runner for WhatsApp, the legacy Omni bridge for Telegram/Discord). Queue group (`ravi-gateway`) ensures only one gateway daemon sends each reaction.
 
 ```bash
 ravi react send <messageId> <emoji>

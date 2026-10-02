@@ -636,3 +636,281 @@ describe("native channel driver contract", () => {
     expect(registry.get("example")).toBe(first);
   });
 });
+
+function lifecycleDriver(
+  options: { failStart?: (name: string) => boolean; failStop?: (name: string) => boolean; withDelivery?: boolean } = {},
+) {
+  const lifecycle: string[] = [];
+  const driver: NativeChannelDriver = {
+    descriptor: {
+      protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+      schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+      driverId: "example.native",
+      provider: "example",
+      capabilities: options.withDelivery ? ["inbound", "text_delivery"] : ["inbound"],
+    },
+    createRuntime(context) {
+      const name = context.channel.name;
+      const marker = JSON.stringify(context.channel.defaults ?? {});
+      lifecycle.push(`create:${name}:${marker}`);
+      return {
+        descriptor: {
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          driverId: "example.native",
+          provider: "example",
+          runtimeId: name,
+          channelInstanceId: name,
+          capabilities: options.withDelivery ? ["inbound", "text_delivery"] : ["inbound"],
+        },
+        ...(options.withDelivery
+          ? {
+              delivery: {
+                channelId: "example",
+                supports: (target: { accountId?: string }) => target.accountId === name,
+                deliverText: async () => ({ provider: "example", platformMessageId: name }),
+              },
+            }
+          : {}),
+        start() {
+          lifecycle.push(`start:${name}`);
+          if (options.failStart?.(name)) throw new Error("start failed");
+        },
+        stop() {
+          lifecycle.push(`stop:${name}`);
+          if (options.failStop?.(name)) throw new Error("stop failed");
+        },
+        health: () => ({ status: "connected" as const }),
+      };
+    },
+  };
+  return { driver, lifecycle };
+}
+
+function lifecycleManager(
+  driver: NativeChannelDriver,
+  channels: Record<string, ChannelConfig>,
+  extra: { bindingKey?: (channel: ChannelConfig) => string | undefined; skipProviders?: string[] } = {},
+) {
+  const registry = new NativeChannelDriverRegistry();
+  registry.register(driver);
+  return new NativeChannelDriverManager({
+    channels,
+    registry,
+    createHostLease: () => hostLease(),
+    ...extra,
+  });
+}
+
+function channels(...entries: ChannelConfig[]): Record<string, ChannelConfig> {
+  return Object.fromEntries(entries.map((entry) => [entry.name, entry]));
+}
+
+describe("native channel driver manager reconcile", () => {
+  it("starts added channels, stops removed ones, and leaves unchanged runtimes running", async () => {
+    const { driver, lifecycle } = lifecycleDriver({ withDelivery: true });
+    const manager = lifecycleManager(driver, channels(channel("example-a"), channel("example-b")));
+    await manager.start();
+    expect(manager.deliveries().map((delivery) => delivery.channelId)).toHaveLength(2);
+    lifecycle.length = 0;
+
+    const result = await manager.reconcile(channels(channel("example-a"), channel("example-c")));
+
+    expect(result).toEqual({ started: ["example-c"], stopped: ["example-b"], inactive: [] });
+    expect(lifecycle).toEqual(["stop:example-b", "create:example-c:{}", "start:example-c"]);
+    expect(manager.health().map((entry) => entry.id)).toEqual([
+      "example:example-a:example-a",
+      "example:example-c:example-c",
+    ]);
+    const supported = manager
+      .deliveries()
+      .filter((delivery) => delivery.supports({ channel: "example", accountId: "example-c", chatId: "x" }));
+    expect(supported).toHaveLength(1);
+    await manager.stop();
+  });
+
+  it("stops disabled or deleted channels and starts them again when re-enabled", async () => {
+    const { driver, lifecycle } = lifecycleDriver();
+    const manager = lifecycleManager(driver, channels(channel("example-a"), channel("example-b")));
+    await manager.start();
+    lifecycle.length = 0;
+
+    await manager.reconcile(
+      channels({ ...channel("example-a"), enabled: false }, { ...channel("example-b"), deletedAt: 10 }),
+    );
+    expect(lifecycle).toEqual(["stop:example-b", "stop:example-a"]);
+    expect(manager.health()).toEqual([]);
+
+    await manager.reconcile(channels(channel("example-a")));
+    expect(lifecycle.slice(2)).toEqual(["create:example-a:{}", "start:example-a"]);
+    await manager.stop();
+  });
+
+  it("restarts a runtime whose channel configuration or binding key changed", async () => {
+    const { driver, lifecycle } = lifecycleDriver();
+    let binding = "instance-1";
+    const manager = lifecycleManager(driver, channels(channel("example-a")), { bindingKey: () => binding });
+    await manager.start();
+    lifecycle.length = 0;
+
+    // Only timestamps changed: no restart.
+    await manager.reconcile(channels({ ...channel("example-a"), updatedAt: 99 }));
+    expect(lifecycle).toEqual([]);
+
+    await manager.reconcile(channels({ ...channel("example-a"), defaults: { mode: "x", level: 1 } }));
+    expect(lifecycle).toEqual(["stop:example-a", 'create:example-a:{"mode":"x","level":1}', "start:example-a"]);
+
+    // Same defaults with keys in a different order: no restart.
+    lifecycle.length = 0;
+    await manager.reconcile(channels({ ...channel("example-a"), defaults: { level: 1, mode: "x" } }));
+    expect(lifecycle).toEqual([]);
+
+    binding = "instance-2";
+    await manager.reconcile(channels({ ...channel("example-a"), defaults: { level: 1, mode: "x" } }));
+    expect(lifecycle).toEqual(["stop:example-a", 'create:example-a:{"level":1,"mode":"x"}', "start:example-a"]);
+    await manager.stop();
+  });
+
+  it("retries failed channels on demand and clears their failure once they start", async () => {
+    let broken = true;
+    const { driver, lifecycle } = lifecycleDriver({ failStart: () => broken });
+    const manager = lifecycleManager(driver, channels(channel("example-a")));
+    await manager.start();
+    expect(manager.health()).toEqual([
+      { id: "example:example-a", channelId: "example", status: "failed", reason: "startup_failed" },
+    ]);
+    lifecycle.length = 0;
+
+    const skipped = await manager.reconcile(channels(channel("example-a")), { retryFailed: false });
+    expect(skipped).toEqual({ started: [], stopped: [], inactive: ["example-a"] });
+    expect(lifecycle).toEqual([]);
+
+    broken = false;
+    const retried = await manager.reconcile(channels(channel("example-a")));
+    expect(retried).toEqual({ started: ["example-a"], stopped: [], inactive: [] });
+    expect(manager.health()).toEqual([
+      { id: "example:example-a:example-a", channelId: "example", status: "connected" },
+    ]);
+    await manager.stop();
+  });
+
+  it("drops the failure status of a channel that was removed", async () => {
+    const { driver } = lifecycleDriver({ failStart: () => true });
+    const manager = lifecycleManager(driver, channels(channel("example-a")));
+    await manager.start();
+    expect(manager.health()).toHaveLength(1);
+
+    await manager.reconcile({}, { retryFailed: false });
+    expect(manager.health()).toEqual([]);
+    await manager.stop();
+  });
+
+  it("reports stop_failed for a removed runtime that failed to stop", async () => {
+    const { driver } = lifecycleDriver({ failStop: (name) => name === "example-b" });
+    const manager = lifecycleManager(driver, channels(channel("example-a"), channel("example-b")));
+    await manager.start();
+
+    const result = await manager.reconcile(channels(channel("example-a")));
+    expect(result.stopped).toEqual(["example-b"]);
+    expect(manager.health()).toContainEqual({
+      id: "example:example-b:example-b",
+      channelId: "example",
+      status: "failed",
+      reason: "stop_failed",
+    });
+    await manager.stop();
+  });
+
+  it("is a no-op before start and after stop, and serializes with stop", async () => {
+    const { driver, lifecycle } = lifecycleDriver();
+    const manager = lifecycleManager(driver, channels(channel("example-a")));
+    expect(await manager.reconcile(channels(channel("example-b")))).toEqual({
+      started: [],
+      stopped: [],
+      inactive: [],
+    });
+    expect(lifecycle).toEqual([]);
+
+    await manager.start();
+    const reconciling = manager.reconcile(channels(channel("example-a"), channel("example-b")));
+    const stopping = manager.stop();
+    await Promise.all([reconciling, stopping]);
+    // The reconcile ran first; stop then stopped both runtimes, newest first.
+    expect(lifecycle).toEqual([
+      "create:example-a:{}",
+      "start:example-a",
+      "create:example-b:{}",
+      "start:example-b",
+      "stop:example-b",
+      "stop:example-a",
+    ]);
+
+    lifecycle.length = 0;
+    await manager.reconcile(channels(channel("example-c")));
+    expect(lifecycle).toEqual([]);
+  });
+
+  it("reports skipped providers as disabled without creating a runtime", async () => {
+    const { driver, lifecycle } = lifecycleDriver();
+    const manager = lifecycleManager(driver, channels(channel("example-a")), { skipProviders: ["example"] });
+    await manager.start();
+    expect(lifecycle).toEqual([]);
+    expect(manager.health()).toEqual([
+      { id: "example:example-a", channelId: "example", status: "disabled", reason: "skipped" },
+    ]);
+
+    await manager.reconcile(channels(channel("example-a"), channel("example-b")));
+    expect(lifecycle).toEqual([]);
+    expect(manager.health().map((entry) => entry.reason)).toEqual(["skipped", "skipped"]);
+    await manager.stop();
+  });
+
+  it("resolves a channel whose provider is an alias of a registered provider", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const created: string[] = [];
+    registry.register({
+      descriptor: {
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        driverId: "example.whatsapp",
+        provider: "whatsapp",
+        capabilities: ["inbound"],
+      },
+      createRuntime(context) {
+        created.push(`${context.channel.name}:${context.channel.provider}`);
+        return {
+          descriptor: {
+            protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+            schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+            driverId: "example.whatsapp",
+            provider: "whatsapp",
+            runtimeId: context.channel.name,
+            channelInstanceId: context.channel.name,
+            capabilities: ["inbound"],
+          },
+          start() {},
+          stop() {},
+          health: () => ({ status: "connected" as const }),
+        };
+      },
+    });
+    const leases: string[] = [];
+    const manager = new NativeChannelDriverManager({
+      channels: channels(channel("wa-legacy", "whatsapp-baileys")),
+      registry,
+      createHostLease: (_channel, provider) => {
+        leases.push(provider);
+        return hostLease();
+      },
+    });
+
+    await manager.start();
+
+    expect(created).toEqual(["wa-legacy:whatsapp"]);
+    expect(leases).toEqual(["whatsapp"]);
+    expect(manager.health()).toEqual([
+      { id: "whatsapp:wa-legacy:wa-legacy", channelId: "whatsapp", status: "connected" },
+    ]);
+    await manager.stop();
+  });
+});

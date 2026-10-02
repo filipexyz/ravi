@@ -36,23 +36,26 @@ Use `replay` quando precisar reconstruir uma janela histórica do JetStream:
 # Últimos 15 minutos, todos os streams não-KV
 ravi events replay
 
-# Mensagens inbound de canal em uma janela específica
-ravi events replay --stream MESSAGE --subject "message.received.>" --since 2026-04-19T11:35:00Z --until 2026-04-19T11:45:00Z
+# Mensagens inbound do WhatsApp em uma janela específica
+ravi events replay --stream CHANNEL_INBOUND --subject "ravi.channel.inbound.whatsapp.message.>" --since 2026-04-19T11:35:00Z --until 2026-04-19T11:45:00Z
 
 # Filtrar por chat/session/texto e imprimir JSONL
-ravi events replay --stream MESSAGE --subject "message.received.>" --chat "120363...@g.us" --contains "perdeu contexto" --json
+ravi events replay --stream CHANNEL_INBOUND --subject "ravi.channel.inbound.whatsapp.message.>" --chat "120363...@g.us" --contains "perdeu contexto" --json
 
 # Reconstruir uma sessão: resolve session name/key + chatId quando existir
-ravi events replay --stream RAVI_EVENTS,MESSAGE,REACTION,SYSTEM --session main-dm-615153 --since 2h --raw
+ravi events replay --stream RAVI_EVENTS,CHANNEL_INBOUND --session main-dm-615153 --since 2h --raw
 
 # Filtros por JSON path
-ravi events replay --stream MESSAGE --where "payload.chatId=63295117615153@lid;payload.content.type=text"
+ravi events replay --stream CHANNEL_INBOUND --where "payload.chatId=63295117615153@lid;payload.content.type=text"
+
+# Telegram/Discord pela ponte legada Omni
+ravi events replay --stream MESSAGE --subject "message.received.>" --since 1h
 ```
 
 Filtros úteis:
 
-- `--stream`: stream(s) separados por vírgula (`MESSAGE,CUSTOM,SYSTEM`)
-- `--subject`: filtro de subject NATS (`message.received.>`)
+- `--stream`: stream(s) separados por vírgula (`CHANNEL_INBOUND,RAVI_EVENTS`; `MESSAGE,REACTION,SYSTEM` para a ponte legada)
+- `--subject`: filtro de subject NATS (`ravi.channel.inbound.whatsapp.>`)
 - `--since` / `--until`: ISO, epoch ou duração (`15m`, `2h`, `1d`)
 - `--contains`: busca textual no payload bruto e subject
 - `--where`: `path=value`, `path!=value` ou `path~=texto`
@@ -61,8 +64,8 @@ Filtros úteis:
 - `--raw`: imprime payload bruto armazenado
 - `--json`: imprime JSONL
 
-Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTION`/`SYSTEM`.
-`MESSAGE` sozinho cobre canal, mas não cobre eventos internos como prompt consumido, interrupção de turno, tool, response, delivery e abort.
+Para timeline completa de sessão, use `RAVI_EVENTS` junto de `CHANNEL_INBOUND` (WhatsApp) ou `MESSAGE`/`REACTION`/`SYSTEM` (ponte legada, Telegram/Discord).
+O stream do canal sozinho cobre o inbound, mas não cobre eventos internos como prompt consumido, interrupção de turno, tool, response, delivery e abort.
 
 ## Fonte De Verdade
 
@@ -73,7 +76,7 @@ Categorias:
 - `replay-only`: entra no replay/debug, mas não deve ser template público por padrão.
 - `internal-control`: controle entre componentes; pode ser replayável, mas não é workflow de usuário.
 - `workqueue`: stream de trabalho com semântica própria, como `SESSION_PROMPTS`.
-- `external-stream`: assunto externo/omni, consumido por bridge.
+- `external-stream`: stream de transporte consumido pelo daemon (`ravi.channel.inbound.>` no `CHANNEL_INBOUND`, e os subjects da ponte legada Omni).
 
 `RAVI_EVENTS` é derivado desse registry. Ao criar publisher NATS novo, classifique
 o subject no registry antes de documentar ou usar em trigger.
@@ -104,32 +107,37 @@ o subject no registry antes de documentar ou usar em trigger.
 |--------|---------|
 | `ravi.inbound.reaction` | `{ targetMessageId, emoji, senderId }` |
 | `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
-| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` — subscriber existe, publisher vem do omni |
+| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` — o serviço de aprovação assina; hoje nenhum publisher do Ravi emite este subject |
 | `ravi.inbound.thread.created` | `{ provider, eventType, channelId, threadTs, messageTs, userId, canonicalChatId, sessionKey, sessionName, agentId }` — thread nativa de canal criou uma nova sessao Ravi |
 
-> As mensagens inbound dos canais chegam via **omni JetStream** nos subjects `message.received.{channelType}.{instanceId}`, não via pub/sub ravi. O `OmniConsumer` consome esses streams e traduz para prompts de sessão.
-> Reações são normalizadas em `ravi.inbound.reaction` pelo Omni (`reaction.received`) e pelo Slack nativo (`reaction_added`). Aliases como `whatsapp.*.reaction` não são publicados.
+> As mensagens inbound do WhatsApp chegam pelo stream JetStream `CHANNEL_INBOUND`, publicadas pelo runner `ravi channels` em `ravi.channel.inbound.whatsapp.{message|reaction|connection}.{instanceId}` (envelope `WhatsAppInboundEvent`, `schemaVersion: 1`). Telegram/Discord chegam pela ponte legada Omni (`message.received.{channelType}.{instanceId}`). O daemon consome os dois com o `ChannelInboundPipeline` (`src/channels/inbound/pipeline.ts`) e traduz para prompts de sessão. Eventos do Omni com channel type da família WhatsApp são ignorados.
+> Reações são normalizadas em `ravi.inbound.reaction` pelo pipeline (WhatsApp e ponte legada) e pelo Slack nativo (`reaction_added`). Aliases como `whatsapp.*.reaction` não são publicados.
 > O payload de reaction e deliberadamente pequeno: use `targetMessageId` como chave de correlacao. Se uma rotina precisa recuperar chat, caption, produto, campanha ou outro estado de dominio, esse estado deve ter sido gravado pela rotina quando a mensagem-alvo foi enviada.
 
-### Streams externos Omni
+### Streams de transporte
 
 | Tópico | Payload |
 |--------|---------|
-| `message.received.>` | mensagens inbound do Omni, persistidas no stream `MESSAGE` |
-| `reaction.received.>` | reactions inbound do Omni, persistidas no stream `REACTION` |
-| `presence.typing` | presença/typing do canal |
-| `chat.unread-updated` | atualização de unread por chat |
-| `instance.>` | lifecycle/status de instâncias Omni |
+| `ravi.channel.inbound.whatsapp.message.{instanceId}` | `WhatsAppInboundEvent` `message.received`, stream `CHANNEL_INBOUND` (durable `ravi-whatsapp-messages`) |
+| `ravi.channel.inbound.whatsapp.reaction.{instanceId}` | `WhatsAppInboundEvent` `reaction.received` (durable `ravi-whatsapp-reactions`) |
+| `ravi.channel.inbound.whatsapp.connection.{instanceId}` | `WhatsAppInboundEvent` `connection.qr\|connected\|disconnected` (durable `ravi-whatsapp-connection`) |
+| `_RAVI.channels.whatsapp.rpc.{instanceId}` | RPC request/reply do daemon/CLI para o runner (`connection.*`, `groups.*`, `messages.*`, `presence.set`) |
+| `message.received.>` | ponte legada Omni (Telegram/Discord), stream `MESSAGE` |
+| `reaction.received.>` | ponte legada Omni, stream `REACTION` |
+| `presence.typing` / `chat.unread-updated` | ponte legada Omni |
+| `instance.>` | lifecycle de instâncias da ponte legada Omni |
 
-Esses subjects são mapeados no registry como `external-stream`. Eles não entram no stream `RAVI_EVENTS`; para replay histórico use os streams nativos (`MESSAGE`, `REACTION`, `SYSTEM`) com `ravi events replay`.
+Esses subjects são `external-stream` (o RPC é `internal-control`). Eles não entram no stream `RAVI_EVENTS`; para replay histórico use `CHANNEL_INBOUND` (ou `MESSAGE`, `REACTION`, `SYSTEM` para a ponte legada) com `ravi events replay`. `ravi events stream` esconde `ravi.channel.inbound.*` e `_RAVI.channels.*`, a menos que você passe `-f` com esse subject.
 
-### Delivery (bot → gateway → omni)
+### Delivery (bot → gateway → canal)
+
+O gateway entrega pelo sender do canal: WhatsApp vai para o runner por RPC (`WhatsAppSender`), Slack pelo adapter nativo, Telegram/Discord pela ponte legada Omni.
 
 | Tópico | Payload |
 |--------|---------|
 | `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
 | `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
-| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` — sem subscriber no ravi, consumido pelo omni |
+| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` — emitido por `ravi whatsapp dm ack`; hoje nenhum processo do Ravi assina este subject |
 
 ### Mídia
 
@@ -140,7 +148,7 @@ Esses subjects são mapeados no registry como `external-stream`. Eles não entra
 | `ravi.tts.started` | lifecycle TTS iniciado |
 | `ravi.tts.ready` | lifecycle TTS pronto para playback |
 | `ravi.tts.failed` | lifecycle TTS falhou |
-| `ravi.stickers.send` | `{ channel: "whatsapp", accountId, chatId, stickerId, label, filePath, mimeType, filename }` — envia sticker WhatsApp via omni; canais sem capability de sticker são rejeitados |
+| `ravi.stickers.send` | `{ channel: "whatsapp", accountId, chatId, stickerId, label, filePath, mimeType, filename }` — envia sticker WhatsApp pelo runner `ravi channels`; canais sem capability de sticker são rejeitados |
 
 ### Contatos e Aprovações
 
@@ -191,9 +199,10 @@ Esses subjects são mapeados no registry como `external-stream`. Eles não entra
 | Tópico | Payload |
 |--------|---------|
 | `ravi.instances.unregistered` | `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` — cooldown 5min por instanceId |
-| `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` |
+| `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` — QR do WhatsApp repassado pelo daemon |
 | `ravi.whatsapp.connected.{instanceId}` | `{ type: "connected", instanceId, channelType, profileName, ownerIdentifier }` |
-| `ravi.whatsapp.group.{op}` | **Aposentado para o CLI público.** O grupo `ravi whatsapp group` usa REST do Omni; não introduza novos callers request-reply para este tópico. |
+| `ravi.bridge.qr.{instanceId}` / `ravi.bridge.connected.{instanceId}` | mesmos payloads, para instâncias da ponte legada (Telegram/Discord) |
+| `ravi.whatsapp.group.{op}` | **Aposentado.** O grupo `ravi whatsapp group` usa o RPC do runner (`groups.*`); não introduza novos callers request-reply para este tópico. |
 
 ### Auditoria
 

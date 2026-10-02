@@ -14,13 +14,14 @@ tags:
 applies_to:
   - src/artifacts/
   - src/channels/
-  - src/omni/session-stream.ts
+  - src/session-prompts/stream.ts
 owners:
   - ravi-dev
 status: draft
 normative: true
 ---
 
+<!-- markdownlint-disable-next-line MD025 -->
 # Meeting Raw Artifact
 
 ## Intent
