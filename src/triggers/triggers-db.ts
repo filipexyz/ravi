@@ -37,6 +37,8 @@ interface TriggerRow {
   filter: string | null;
   last_fired_at: number | null;
   fire_count: number;
+  filter_reject_count?: number | null;
+  last_filter_reject_at?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -110,6 +112,8 @@ function rowToTrigger(row: TriggerRow): Trigger {
   if (replySource) trigger.replySource = replySource;
   if (row.filter !== null) trigger.filter = row.filter;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
+  if (row.filter_reject_count) trigger.filterRejectCount = row.filter_reject_count;
+  if (row.last_filter_reject_at != null) trigger.lastFilterRejectAt = row.last_filter_reject_at;
 
   return trigger;
 }
@@ -294,6 +298,11 @@ export function dbUpdateTrigger(
     return existing;
   }
 
+  // Reject counters describe the previous filter/topic; start over when either changes.
+  if (updates.filter !== undefined || updates.topic !== undefined) {
+    fields.push("filter_reject_count = 0", "last_filter_reject_at = NULL");
+  }
+
   fields.push("updated_at = ?");
   values.push(now);
   values.push(id);
@@ -336,4 +345,21 @@ export function dbUpdateTriggerState(id: string, state: { lastFiredAt: number; i
   stmt.run(state.lastFiredAt, state.incrementFire ? 1 : 0, now, id);
 
   log.debug("Updated trigger state", { id });
+}
+
+/**
+ * Add filter rejects counted by the runner. Matching on topic and filter keeps a
+ * late flush from charging rejects of an old filter to a trigger that was edited.
+ */
+export function dbRecordTriggerFilterRejects(
+  id: string,
+  rejects: { count: number; lastRejectAt: number; topic: string; filter: string | undefined },
+): void {
+  const db = getDb();
+  db.prepare(`
+    UPDATE triggers SET
+      filter_reject_count = COALESCE(filter_reject_count, 0) + ?,
+      last_filter_reject_at = ?
+    WHERE id = ? AND topic = ? AND filter IS ?
+  `).run(rejects.count, rejects.lastRejectAt, id, rejects.topic, rejects.filter ?? null);
 }
