@@ -6556,8 +6556,9 @@ public struct ContextIssueReturn: Codable, Sendable {
   public var sessionKey: RaviJSON
   public var sessionName: RaviJSON
   public var source: RaviJSON
+  public var warnings: [String]?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: RaviJSON, kind: String, metadata: RaviJSON, parentContextId: String, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON) {
+  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: RaviJSON, kind: String, metadata: RaviJSON, parentContextId: String, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, warnings: [String]? = nil) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6573,6 +6574,7 @@ public struct ContextIssueReturn: Codable, Sendable {
     self.sessionKey = sessionKey
     self.sessionName = sessionName
     self.source = source
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -6591,6 +6593,7 @@ public struct ContextIssueReturn: Codable, Sendable {
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"
     case source = "source"
+    case warnings = "warnings"
   }
 }
 

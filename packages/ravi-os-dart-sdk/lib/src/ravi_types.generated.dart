@@ -5484,7 +5484,7 @@ class ContextIssueOptions {
 }
 
 class ContextIssueReturn {
-  const ContextIssueReturn({required this.agentId, required this.capabilities, required this.capabilitiesCount, required this.cliName, required this.contextId, required this.contextKey, required this.createdAt, required this.env, required this.expiresAt, required this.kind, required this.metadata, required this.parentContextId, required this.sessionKey, required this.sessionName, required this.source});
+  const ContextIssueReturn({required this.agentId, required this.capabilities, required this.capabilitiesCount, required this.cliName, required this.contextId, required this.contextKey, required this.createdAt, required this.env, required this.expiresAt, required this.kind, required this.metadata, required this.parentContextId, required this.sessionKey, required this.sessionName, required this.source, this.warnings});
 
   final RaviJson agentId;
   final List<RaviJson> capabilities;
@@ -5501,6 +5501,7 @@ class ContextIssueReturn {
   final RaviJson sessionKey;
   final RaviJson sessionName;
   final RaviJson source;
+  final List<String>? warnings;
 
   factory ContextIssueReturn.fromJson(Map<String, Object?> json) {
     return ContextIssueReturn(
@@ -5519,6 +5520,7 @@ class ContextIssueReturn {
       sessionKey: RaviJson.from(json["sessionKey"]),
       sessionName: RaviJson.from(json["sessionName"]),
       source: RaviJson.from(json["source"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 

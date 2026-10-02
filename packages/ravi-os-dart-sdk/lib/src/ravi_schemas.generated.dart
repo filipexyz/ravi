@@ -26120,6 +26120,12 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
