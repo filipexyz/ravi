@@ -182,6 +182,7 @@ export const contextIssueReturnSchema = z
     source: contextSourceReturnSchema.nullable(),
     metadata: jsonObjectSchema.nullable(),
     env: z.record(z.string(), z.string()),
+    warnings: z.array(z.string()).optional(),
   })
   .strict();
 
