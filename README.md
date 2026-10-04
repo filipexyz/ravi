@@ -372,6 +372,7 @@ Focused checks:
 ```bash
 bun run test:cli-commands
 bun run test:sdk
+bun run test:swift-sdk  # needs a Swift toolchain
 bun run lint
 bun run check:docs
 ```
