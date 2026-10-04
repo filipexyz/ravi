@@ -1,6 +1,27 @@
 const MAX_TURN_FAILURE_RESPONSE = 320;
 const INTERNAL_RUNTIME_FAILURE_MESSAGE =
   "The agent could not complete this request because of an internal runtime error. Please try again.";
+const RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE =
+  "The agent could not start because no model credential is available for it. Please contact the operator.";
+const PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
+
+// Managed credential pool rejections (runtime-request-builder) name internal
+// credential labels and policy reasons. Operators keep the full text in logs
+// and traces; chat only learns that no credential was usable.
+const RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS = [
+  /\bNo managed runtime credential could be resolved\b/i,
+  /\bRejected credentials:/i,
+];
+
+// Provider account, quota and availability failures (Claude SDK error frames
+// surfaced by claude-provider as `Claude provider error (<code>)`) describe the
+// operator's subscription, billing or organization state, not the user's request.
+const PROVIDER_ACCOUNT_FAILURE_PATTERNS = [
+  /^Claude provider error \((?:rate_limit|authentication_failed|oauth_org_not_allowed|account_on_hold|billing_error|overloaded|server_error|http_(?:401|402|403|429|5\d\d))\)/i,
+  /\bout of extra usage\b/i,
+  /\b(?:authentication_failed|oauth_org_not_allowed|account_on_hold|billing_error)\b/i,
+  /\b(?:invalid|expired|revoked)\s+(?:api[ _-]?key|oauth token|credentials?)\b/i,
+];
 
 const INTERNAL_ERROR_PATTERNS = [
   /\b(?:ENOENT|EACCES|EPERM|ENOTDIR|EISDIR|EMFILE|ENFILE|scandir|ERR_[A-Z0-9_]+)\b/i,
@@ -39,8 +60,16 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     .find(Boolean);
   const detail = (firstLine ?? raw.trim()).replace(/^(?:Error:\s*)+/i, "").trim();
 
+  if (RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS.some((pattern) => pattern.test(detail))) {
+    return RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE;
+  }
+
   if (!detail || INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(detail))) {
     return INTERNAL_RUNTIME_FAILURE_MESSAGE;
+  }
+
+  if (PROVIDER_ACCOUNT_FAILURE_PATTERNS.some((pattern) => pattern.test(detail))) {
+    return PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
   }
 
   return detail.length > MAX_TURN_FAILURE_RESPONSE

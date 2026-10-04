@@ -72,6 +72,45 @@ describe("public runtime failures", () => {
     );
   });
 
+  it.each([
+    "No managed runtime credential could be resolved for provider claude model opus. Rejected credentials: acme-claude-credential: agent_not_allowed.",
+    "Error: No managed runtime credential could be resolved for provider codex. Rejected credentials: ops-codex: status:disabled; backup-codex: cooldown.",
+    "No managed runtime credential could be resolved for provider claude.",
+  ])("hides managed credential resolution detail: %s", (raw) => {
+    const formatted = formatUserFacingTurnFailure(raw);
+
+    expect(formatted).toBe(
+      "Error: The agent could not start because no model credential is available for it. Please contact the operator.",
+    );
+    expect(formatted).not.toContain("acme-claude-credential");
+    expect(formatted).not.toContain("agent_not_allowed");
+    expect(formatted).not.toContain("status:disabled");
+    expect(formatted).not.toContain("Rejected credentials");
+  });
+
+  it.each([
+    "Claude provider error (rate_limit): You're out of extra usage · resets Aug 24 at 6am (America/Sao_Paulo)",
+    "Claude provider error (authentication_failed): Invalid API key · Fix external API key",
+    "Claude provider error (oauth_org_not_allowed)",
+    "Claude provider error (account_on_hold): Your account is on hold",
+    "Claude provider error (billing_error): Credit balance is too low",
+    "Claude provider error (overloaded): API Error: 529 Overloaded",
+    "Claude provider error (http_429): You're out of extra usage",
+    "Claude provider error (http_401): OAuth token has expired",
+    "You're out of extra usage · resets Aug 24 at 6am",
+    "Invalid API key · Please run /login",
+  ])("hides provider account and quota detail: %s", (raw) => {
+    expect(formatUserFacingTurnFailure(raw)).toBe(
+      "Error: The agent is temporarily unavailable. Please try again later.",
+    );
+  });
+
+  it("keeps non-account Claude provider errors visible", () => {
+    expect(formatUserFacingTurnFailure("Claude provider error (model_not_found): Unknown model claude-x")).toBe(
+      "Error: Claude provider error (model_not_found): Unknown model claude-x",
+    );
+  });
+
   it("never forwards raw bun:sqlite errors (SQLITE_NOMEM) to chat", () => {
     const sqliteError = Object.assign(new Error("out of memory"), {
       name: "SQLiteError",

@@ -534,8 +534,17 @@ async function recordRuntimeCredentialTurnFailure(input: {
     upstreamProvider: credential.upstreamProvider,
     model: input.model,
     credentialId: credential.credentialId,
-    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
-    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    // Claude SDK frames carry the HTTP status as `api_error_status` (result) or
+    // `error_status` (api_retry) and the provider code as a string `error`.
+    httpStatus: firstNumber(
+      input.rawEvent?.status,
+      input.rawEvent?.statusCode,
+      input.rawEvent?.api_error_status,
+      input.rawEvent?.error_status,
+      rawError?.status,
+      rawError?.statusCode,
+    ),
+    providerCode: firstString(input.rawEvent?.code, input.rawEvent?.error, rawError?.code),
     providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
     message: input.error,
     ...(headers ? { headers } : {}),

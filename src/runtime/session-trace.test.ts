@@ -5539,6 +5539,55 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it.each([
+    {
+      name: "assistant error code",
+      credentialId: "rcred_claude_sdk_code",
+      error: "Claude provider error (authentication_failed): Invalid API key · Fix external API key",
+      rawEvent: { type: "assistant", error: "authentication_failed" },
+      reason: "runtime_credential_auth_invalid",
+    },
+    {
+      name: "result api_error_status",
+      credentialId: "rcred_claude_sdk_status",
+      error: "Claude provider error (http_429): Request limit reached",
+      rawEvent: { type: "result", subtype: "success", is_error: true, api_error_status: 429 },
+      reason: "runtime_credential_rate_limited",
+    },
+  ])("routes Claude SDK $name failures into credential failover", async ({ credentialId, error, rawEvent, reason }) => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry this Claude turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt(credentialId),
+    });
+    seedAdapterTrace(streaming, `turn-${credentialId}`);
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "turn.failed", error, recoverable: false, rawEvent }]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason }]);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "retry this Claude turn",
+    ]);
+  });
+
   it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
     saveMessage(SESSION_NAME, "user", "abre a issue 123 e investiga", "thread-old", {
       agentId: AGENT_ID,
