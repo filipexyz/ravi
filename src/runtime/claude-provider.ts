@@ -786,13 +786,16 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
         continue;
       }
 
-      // `subtype: "success"` with `is_error` (or an HTTP error status) means the
-      // turn ended on an API error and `result` carries the error text.
-      const apiErrorStatus =
-        typeof message.api_error_status === "number" && Number.isFinite(message.api_error_status)
-          ? message.api_error_status
-          : undefined;
-      if (message.is_error === true || (apiErrorStatus !== undefined && apiErrorStatus >= 400)) {
+      // `subtype: "success"` with `is_error` means the turn ended on an API error
+      // and `result` carries the error text. `is_error` is the only terminal
+      // signal: a successful result can still carry the `api_error_status` of a
+      // request the SDK retried and recovered from, so the status only labels
+      // and classifies a failure that `is_error` already reported.
+      if (message.is_error === true) {
+        const apiErrorStatus =
+          typeof message.api_error_status === "number" && Number.isFinite(message.api_error_status)
+            ? message.api_error_status
+            : undefined;
         yield {
           type: "turn.failed",
           error: formatClaudeProviderFailure({

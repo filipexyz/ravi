@@ -4,6 +4,8 @@ const INTERNAL_RUNTIME_FAILURE_MESSAGE =
 const RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE =
   "The agent could not start because no model credential is available for it. Please contact the operator.";
 const PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
+const PROVIDER_MODEL_UNAVAILABLE_MESSAGE =
+  "The agent's model is not available for its credential or region. Please contact the operator.";
 
 // Managed credential pool rejections (runtime-request-builder) name internal
 // credential labels and policy reasons. Operators keep the full text in logs
@@ -22,6 +24,12 @@ const PROVIDER_ACCOUNT_FAILURE_PATTERNS = [
   /\b(?:authentication_failed|oauth_org_not_allowed|account_on_hold|billing_error)\b/i,
   /\b(?:invalid|expired|revoked)\s+(?:api[ _-]?key|oauth token|credentials?)\b/i,
 ];
+
+// A 403 that names the model or region is request-scoped (credential-classifier
+// `inferPermissionScope`), so credential failover will not fix it and "try again
+// later" would be misleading. The operator has to change the model or credential.
+const PROVIDER_REQUEST_SCOPED_DENIAL_PATTERN = /^Claude provider error \(http_403\)/i;
+const PROVIDER_REQUEST_SCOPED_DENIAL_DETAIL_PATTERN = /\b(?:models?|regions?)\b/i;
 
 const INTERNAL_ERROR_PATTERNS = [
   /\b(?:ENOENT|EACCES|EPERM|ENOTDIR|EISDIR|EMFILE|ENFILE|scandir|ERR_[A-Z0-9_]+)\b/i,
@@ -66,6 +74,13 @@ export function publicRuntimeFailureDetail(error: unknown): string {
 
   if (!detail || INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(detail))) {
     return INTERNAL_RUNTIME_FAILURE_MESSAGE;
+  }
+
+  if (
+    PROVIDER_REQUEST_SCOPED_DENIAL_PATTERN.test(detail) &&
+    PROVIDER_REQUEST_SCOPED_DENIAL_DETAIL_PATTERN.test(detail)
+  ) {
+    return PROVIDER_MODEL_UNAVAILABLE_MESSAGE;
   }
 
   if (PROVIDER_ACCOUNT_FAILURE_PATTERNS.some((pattern) => pattern.test(detail))) {

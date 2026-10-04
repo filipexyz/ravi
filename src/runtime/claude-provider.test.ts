@@ -462,6 +462,29 @@ describe("createClaudeRuntimeProvider", () => {
     ]);
   });
 
+  it("completes a recovered success result that still carries a stale api_error_status", async () => {
+    // The SDK retried a 429 and recovered: the turn succeeded, so `is_error` is
+    // false even though the last API error status is still reported.
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        api_error_status: 429,
+        result: "final answer",
+        session_id: "claude-session-recovered",
+        usage: zeroUsage,
+      },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "claude-session-recovered" }),
+    ]);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {

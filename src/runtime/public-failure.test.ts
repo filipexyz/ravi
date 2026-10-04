@@ -97,12 +97,26 @@ describe("public runtime failures", () => {
     "Claude provider error (overloaded): API Error: 529 Overloaded",
     "Claude provider error (http_429): You're out of extra usage",
     "Claude provider error (http_401): OAuth token has expired",
+    "Claude provider error (http_403): Your organization does not have access to Claude",
+    "Claude provider error (http_403): Request not allowed",
     "You're out of extra usage · resets Aug 24 at 6am",
     "Invalid API key · Please run /login",
   ])("hides provider account and quota detail: %s", (raw) => {
     expect(formatUserFacingTurnFailure(raw)).toBe(
       "Error: The agent is temporarily unavailable. Please try again later.",
     );
+  });
+
+  it.each([
+    "Claude provider error (http_403): Your credential does not have access to model claude-opus-x",
+    "Claude provider error (http_403): This model is not available in your region",
+    "Claude provider error (http_403): Requests from this region are not permitted",
+  ])("gives an actionable message for model- or region-scoped 403 denials: %s", (raw) => {
+    const formatted = formatUserFacingTurnFailure(raw);
+    expect(formatted).toBe(
+      "Error: The agent's model is not available for its credential or region. Please contact the operator.",
+    );
+    expect(formatted).not.toContain("claude-opus-x");
   });
 
   it("keeps non-account Claude provider errors visible", () => {
