@@ -247,18 +247,14 @@ function canWithBashContext(
     }
     return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
   }
+  // Every other issued context (root or derived child such as `cli-runtime`
+  // or `app-runtime`) is bounded by its own capabilities. Falling back to the
+  // agent's materialized grants would let a narrowed child of a superadmin
+  // agent exceed what it was issued.
   if (hasContextCapabilities(ctx)) {
-    if (canWithCapabilityContext(ctx, permission, objectType, objectId)) {
-      return true;
-    }
-    if (!isDelegatedBashContext(ctx) && ctx.kind === "agent-runtime" && ctx.agentId) {
-      return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
-    }
-    if (!isDelegatedBashContext(ctx) && isMaterializedAgentSuperadmin(ctx)) {
-      return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
-    }
-    return false;
+    return canWithCapabilityContext(ctx, permission, objectType, objectId);
   }
+  // No issued context at all (nothing to narrow): use the agent's own grants.
   if (ctx.agentId) {
     return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
   }
@@ -290,11 +286,6 @@ function hasTurnCapabilityNarrowing(ctx: Pick<BashPermissionContext, "metadata">
   const count = ctx.metadata?.turnCapabilityCount;
   if (typeof count === "number" && count > 0) return true;
   return Array.isArray(ctx.metadata?.turnCapabilities) && ctx.metadata.turnCapabilities.length > 0;
-}
-
-function isMaterializedAgentSuperadmin(ctx: Pick<BashPermissionContext, "agentId">): boolean {
-  if (!ctx.agentId) return false;
-  return canWithCapabilities(materializeSubjectCapabilities("agent", ctx.agentId), "admin", "system", "*");
 }
 
 function canWithMaterializedAgentCapabilities(

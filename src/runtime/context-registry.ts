@@ -6,7 +6,6 @@ import {
   dbGetContextByKeyReadOnly,
   dbListContexts,
   dbTouchContext,
-  dbUpdateContextRuntimeState,
   dbRevokeContextCascade,
   type ContextCapability,
   type ContextRecord,
@@ -53,12 +52,6 @@ export interface CreateRuntimeContextInput {
   contextKey?: string;
 }
 
-export interface GetOrCreateAgentRuntimeContextInput
-  extends Omit<CreateRuntimeContextInput, "kind" | "agentId" | "sessionKey"> {
-  agentId: string;
-  sessionKey: string;
-}
-
 export interface IssueRuntimeContextInput {
   parent: ContextRecord;
   cliName: string;
@@ -100,56 +93,6 @@ export function createRuntimeContext(input: CreateRuntimeContextInput): ContextR
     createdAt: now,
     expiresAt: input.expiresAt ?? (input.ttlMs === 0 ? undefined : now + (input.ttlMs ?? DEFAULT_CONTEXT_TTL_MS)),
   });
-}
-
-export function getOrCreateAgentRuntimeContext(input: GetOrCreateAgentRuntimeContextInput): ContextRecord {
-  const now = Date.now();
-  const reusable = findLiveAgentRuntimeContext({
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-    now,
-  });
-
-  if (reusable) {
-    return dbUpdateContextRuntimeState(
-      reusable.contextId,
-      {
-        sessionName: input.sessionName,
-        source: input.source,
-        metadata: input.metadata,
-      },
-      now,
-    );
-  }
-
-  return createRuntimeContext({
-    ...input,
-    kind: "agent-runtime",
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-  });
-}
-
-export function findLiveAgentRuntimeContext(input: {
-  agentId: string;
-  sessionKey: string;
-  now?: number;
-}): ContextRecord | null {
-  const now = input.now ?? Date.now();
-  const contexts = dbListContexts({
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-    kind: "agent-runtime",
-    includeInactive: false,
-  }).filter((ctx) => isContextLive(ctx, now));
-
-  contexts.sort((a, b) => {
-    const aUsed = a.lastUsedAt ?? a.createdAt;
-    const bUsed = b.lastUsedAt ?? b.createdAt;
-    return bUsed - aUsed || b.createdAt - a.createdAt;
-  });
-
-  return contexts[0] ?? null;
 }
 
 /**
@@ -467,10 +410,6 @@ export function listLiveAdminContexts(): ContextRecord[] {
       (cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*",
     );
   });
-}
-
-export function hasLiveAdminContext(): boolean {
-  return listLiveAdminContexts().length > 0;
 }
 
 function dedupeCapabilities(capabilities: ContextCapability[]): ContextCapability[] {

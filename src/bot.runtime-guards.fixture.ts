@@ -582,25 +582,6 @@ mock.module("./runtime/runtime-context-store.js", () => ({
     metadata: input.metadata,
     createdAt: Date.now(),
   }),
-  getOrCreateAgentRuntimeContext: (input: {
-    agentId?: string;
-    sessionKey?: string;
-    sessionName?: string;
-    source?: { channel: string; accountId: string; chatId: string; threadId?: string };
-    capabilities?: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
-    metadata?: Record<string, unknown>;
-  }) => ({
-    contextId: "ctx_test_runtime",
-    contextKey: "rctx_test_runtime",
-    kind: "agent-runtime",
-    agentId: input.agentId,
-    sessionKey: input.sessionKey,
-    sessionName: input.sessionName,
-    source: input.source,
-    capabilities: input.capabilities ?? [],
-    metadata: input.metadata,
-    createdAt: Date.now(),
-  }),
   revokeAgentRuntimeContextsForSession: () => [],
   revokeRuntimeContext: () => true,
   snapshotAgentCapabilities: () => snapshotAgentCapabilitiesImpl(),
