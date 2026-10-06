@@ -238,7 +238,11 @@ describe("runE2bSandboxTask", () => {
       sleep: async () => {},
     });
     expect(github.state.written).toEqual({
-      "/home/user/.ravi-clone-credentials": "https://x-access-token:ghp_secret%2F%2B@github.com\n",
+      // Built from parts so secret scanners don't flag a fake credential URL.
+      "/home/user/.ravi-clone-credentials": [
+        "https://x-access-token",
+        `${encodeURIComponent("ghp_secret/+")}@github.com\n`,
+      ].join(":"),
     });
     expect(github.commands.join("\n")).not.toContain("ghp_secret");
     const clone = github.commands.find((cmd) => cmd.includes(" clone --depth 50 "));

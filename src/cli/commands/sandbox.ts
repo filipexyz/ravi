@@ -97,17 +97,15 @@ function printTelemetry(summary: E2bTelemetrySummary): void {
   if (summary.errors.length) console.log(`          missing: ${summary.errors.join("; ")}`);
 }
 
-/** Credential values to mask in saved E2B logs; best effort, from the same env `run` reads. */
+/**
+ * Credential values to mask in saved E2B logs, read from the same env names `run` uses.
+ * Credentials an older run used and this env no longer has are covered by the
+ * generic patterns in redactTelemetry (URL credentials, GitHub/Anthropic/E2B token shapes).
+ */
 function knownSecrets(apiKey: string): string[] {
-  const secrets = [apiKey];
-  try {
-    const credentials = resolveSandboxCredentials();
-    secrets.push(...Object.values(credentials.agentEnv));
-    if (credentials.githubToken) secrets.push(credentials.githubToken);
-  } catch {
-    // No Claude credentials here; the E2B key is still masked.
-  }
-  return secrets;
+  const names = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "GITHUB_TOKEN"];
+  const values = names.flatMap((name) => [process.env[name], process.env[`RAVI_${name}`]]);
+  return [apiKey, ...values.map((value) => value?.trim() ?? "").filter(Boolean)];
 }
 
 @Group({
@@ -255,7 +253,8 @@ export class SandboxCommands {
     @Option({ flags: "--json", description: "Print the summary as JSON" })
     asJson?: boolean,
   ) {
-    if (!sandboxId?.trim()) fail("sandboxId is required.");
+    // E2B ids are short alphanumerics; anything else would also escape ~/.ravi/sandbox-runs/.
+    if (!/^[A-Za-z0-9_-]+$/.test(sandboxId ?? "")) fail(`Invalid sandbox id: ${sandboxId}`);
     let apiKey: string;
     try {
       apiKey = resolveE2bApiKey();

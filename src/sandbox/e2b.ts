@@ -281,8 +281,15 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   const step = (message: string) => {
     const line = `[${((now() - startedAt) / 1000).toFixed(1)}s] ${message}`;
     options.onStep?.(line);
-    if (runLog) appendFileSync(runLog, `${redactSecrets(line, secrets)}\n`);
-    else pendingRunLog.push(line);
+    if (!runLog) {
+      pendingRunLog.push(line);
+      return;
+    }
+    try {
+      appendFileSync(runLog, `${redactSecrets(line, secrets)}\n`);
+    } catch {
+      // A failed diagnostic write must never stand between the run and the sandbox's cleanup.
+    }
   };
   const template = options.template ?? DEFAULT_E2B_TEMPLATE;
   const title = options.title ?? "Sandbox task";
@@ -300,16 +307,19 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   step(`Sandbox ${sandbox.sandboxId} is up`);
 
   const outputDir = options.outputDir ?? join(getRaviStateDir(), "sandbox-runs", sandbox.sandboxId);
+  const files: string[] = [];
   try {
     mkdirSync(outputDir, { recursive: true });
+    writeFileSync(
+      join(outputDir, "run.log"),
+      pendingRunLog.map((line) => `${redactSecrets(line, secrets)}\n`).join(""),
+    );
   } catch (err) {
     // Don't leave a billable, credential-holding sandbox running until its timeout.
     await sandbox.kill().catch(() => {});
     throw err;
   }
-  const files: string[] = [];
   runLog = join(outputDir, "run.log");
-  writeFileSync(runLog, pendingRunLog.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
   files.push("run.log");
 
   // Ctrl-C or SIGTERM must not leave a billable, credential-holding sandbox running.
@@ -355,8 +365,12 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     const lines = (partialLine + chunk).split("\n");
     partialLine = lines.pop() ?? "";
     if (lines.length === 0) return;
-    appendFileSync(daemonLogPath, lines.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
-    for (const line of lines) options.onDaemonLog?.(redactSecrets(line, secrets));
+    try {
+      appendFileSync(daemonLogPath, lines.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
+      for (const line of lines) options.onDaemonLog?.(redactSecrets(line, secrets));
+    } catch {
+      // The full log is read again at the end; losing the live copy is not fatal.
+    }
   };
 
   const collectOutputs = async (taskId: string | null) => {

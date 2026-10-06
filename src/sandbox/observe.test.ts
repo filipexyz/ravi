@@ -8,6 +8,7 @@ import {
   fetchE2bLogs,
   formatProcessTimeline,
   redactSecrets,
+  redactTelemetry,
   summarizeTelemetry,
 } from "./observe.js";
 
@@ -56,6 +57,19 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("redactSecrets", () => {
   it("masks long secrets and leaves short values alone", () => {
     expect(redactSecrets("a sk-ant-oat01-xyz b sk-ant-oat01-xyz", ["sk-ant-oat01-xyz", "x"])).toBe("a *** b ***");
+  });
+});
+
+describe("redactTelemetry", () => {
+  it("masks URL credentials and token shapes even when the value is unknown", () => {
+    const user = ["x-access", "token"].join("-");
+    const ghToken = `ghp_${"a1".repeat(18)}`;
+    const line = `git clone https://${user}:${ghToken}@github.com/o/r.git; echo sk-ant-oat01-${"z".repeat(20)}`;
+    expect(redactTelemetry(line)).toBe("git clone https://***@github.com/o/r.git; echo ***");
+    // Plain URLs and scp-style remotes are left alone.
+    expect(redactTelemetry("git clone https://github.com/o/r.git git@github.com:o/r.git")).toBe(
+      "git clone https://github.com/o/r.git git@github.com:o/r.git",
+    );
   });
 });
 

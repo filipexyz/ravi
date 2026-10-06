@@ -82,6 +82,24 @@ export function redactSecrets(text: string, secrets: readonly string[] = []): st
   return out;
 }
 
+// E2B's logs hold every command line, so a credential from an older run (or one
+// that is no longer in this environment) can sit there. These shapes are masked
+// whatever the known values are. Only E2B telemetry gets this: the patch and
+// transcripts must stay byte-exact.
+const CREDENTIAL_PATTERNS: Array<[RegExp, string]> = [
+  [/(\w+:\/\/)[^\s/:@"'\\]+:[^\s/@"'\\]+@/g, "$1***@"],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "***"],
+  [/\bsk-ant-[A-Za-z0-9_-]{10,}/g, "***"],
+  [/\be2b_[A-Za-z0-9]{20,}/g, "***"],
+];
+
+/** redactSecrets plus generic masking of URL credentials and known token shapes. */
+export function redactTelemetry(text: string, secrets: readonly string[] = []): string {
+  let out = redactSecrets(text, secrets);
+  for (const [pattern, replacement] of CREDENTIAL_PATTERNS) out = out.replace(pattern, replacement);
+  return out;
+}
+
 function e2bApiUrl(override?: string): string {
   if (override) return override;
   if (process.env.E2B_API_URL?.trim()) return process.env.E2B_API_URL.trim();
@@ -268,7 +286,7 @@ export async function collectE2bTelemetry(
   const files: string[] = [];
   const errors: string[] = [];
   const write = (name: string, content: string) => {
-    writeFileSync(join(dir, name), redactSecrets(content, options.secrets));
+    writeFileSync(join(dir, name), redactTelemetry(content, options.secrets));
     files.push(`e2b/${name}`);
   };
   const reason = (error: unknown) => (error instanceof Error ? error.message : String(error));
