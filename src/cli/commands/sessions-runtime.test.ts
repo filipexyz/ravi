@@ -53,6 +53,15 @@ mock.module("../../permissions/scope.js", () => ({
 
 const { SessionRuntimeCommands } = await import("./sessions-runtime.js");
 const { ContractError } = await import("../agent-contract.js");
+const {
+  runtimeThreadForkReturnSchema,
+  runtimeThreadListReturnSchema,
+  runtimeThreadReadReturnSchema,
+  runtimeThreadRollbackReturnSchema,
+  runtimeTurnFollowUpReturnSchema,
+  runtimeTurnInterruptReturnSchema,
+  runtimeTurnSteerReturnSchema,
+} = await import("./operational-return-schemas.js");
 type SessionRuntimeCommandsInstance = InstanceType<typeof SessionRuntimeCommands>;
 
 async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; output: string }> {
@@ -218,12 +227,13 @@ describe("SessionRuntimeCommands", () => {
   it.each([
     [
       "rollback",
-      (commands: SessionRuntimeCommandsInstance) => commands.rollback("dev-main", "1", undefined, true, true),
+      (commands: SessionRuntimeCommandsInstance): Promise<unknown> =>
+        commands.rollback("dev-main", "1", undefined, true, true),
       "thread.rollback",
     ],
     [
       "fork",
-      (commands: SessionRuntimeCommandsInstance) =>
+      (commands: SessionRuntimeCommandsInstance): Promise<unknown> =>
         commands.fork("dev-main", undefined, undefined, undefined, true, true),
       "thread.fork",
     ],
@@ -299,5 +309,195 @@ describe("SessionRuntimeCommands", () => {
 
     expect(requestReplyCalls).toHaveLength(1);
     expect(requestReplyCalls[0]?.data).toMatchObject({ request: { operation: "turn.interrupt" } });
+  });
+});
+
+describe("SessionRuntimeCommands return contracts", () => {
+  beforeEach(() => {
+    requestReplyCalls = [];
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev-main",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    scopeEnforced = false;
+    canAccess = true;
+    canModify = true;
+  });
+
+  function reply(result: Record<string, unknown>) {
+    requestReplyResult = { result };
+  }
+
+  const codexState = {
+    provider: "codex",
+    threadId: "thread_1",
+    turnId: "turn_1",
+    activeTurn: true,
+    supportedOperations: ["thread.list", "thread.read", "turn.steer"],
+  };
+
+  it("normalizes a native Codex thread list into the strict list contract", async () => {
+    reply({
+      ok: true,
+      operation: "thread.list",
+      data: {
+        data: [
+          {
+            id: "thread_1",
+            name: "Main thread",
+            preview: "hello",
+            status: { type: "idle" },
+            cwd: "/tmp/dev",
+            path: "/tmp/dev/.codex/thread_1.jsonl",
+            createdAt: 1700000000,
+            updatedAt: 1700000100,
+            modelProvider: "openai",
+            gitInfo: { branch: "dev" },
+          },
+          { title: "missing id is dropped" },
+        ],
+        nextCursor: "cursor_2",
+      },
+      state: codexState,
+    });
+
+    const { result } = await captureLogs(() =>
+      new SessionRuntimeCommands().list("dev-main", undefined, undefined, undefined, undefined, undefined, true),
+    );
+
+    expect(runtimeThreadListReturnSchema.parse(result)).toEqual({
+      ok: true,
+      operation: "thread.list",
+      provider: "codex",
+      state: { ...codexState },
+      error: null,
+      threads: [
+        {
+          threadId: "thread_1",
+          title: "Main thread",
+          preview: "hello",
+          status: "idle",
+          cwd: "/tmp/dev",
+          path: "/tmp/dev/.codex/thread_1.jsonl",
+          createdAt: 1700000000,
+          updatedAt: 1700000100,
+        },
+      ],
+      nextCursor: "cursor_2",
+    });
+  });
+
+  it("normalizes thread read turns and keeps human output free of native payloads", async () => {
+    reply({
+      ok: true,
+      operation: "thread.read",
+      data: {
+        thread: {
+          id: "thread_1",
+          title: "Control thread",
+          turns: [{ id: "turn_1", status: "completed", items: [{ secret: "native item" }] }],
+        },
+      },
+      state: codexState,
+    });
+
+    const { result, output } = await captureLogs(() =>
+      new SessionRuntimeCommands().read("dev-main", "thread_1", undefined, false),
+    );
+
+    const parsed = runtimeThreadReadReturnSchema.parse(result);
+    expect(parsed.thread?.threadId).toBe("thread_1");
+    expect(parsed.turns).toEqual([{ turnId: "turn_1", status: "completed", startedAt: null, completedAt: null }]);
+    expect(output).toContain('"turnId": "turn_1"');
+    expect(output).not.toContain("native item");
+  });
+
+  it("normalizes steer, follow-up, interrupt, rollback and fork acknowledgements", async () => {
+    const commands = new SessionRuntimeCommands();
+
+    reply({
+      ok: true,
+      operation: "turn.steer",
+      data: { response: { type: "response", command: "steer", success: true, queued: true } },
+      state: { provider: "pi", threadId: "pi_session", activeTurn: false },
+    });
+    const steer = await captureLogs(() => commands.steer("dev-main", "detail", undefined, undefined, undefined, true));
+    expect(runtimeTurnSteerReturnSchema.parse(steer.result)).toMatchObject({
+      operation: "turn.steer",
+      accepted: true,
+      queued: true,
+      threadId: "pi_session",
+      turnId: null,
+    });
+
+    reply({
+      ok: false,
+      operation: "turn.follow_up",
+      error: "Runtime control 'turn.follow_up' is disabled",
+      state: { provider: "pi", activeTurn: true },
+    });
+    const followUp = await captureLogs(() =>
+      commands.followUp("dev-main", "later", undefined, undefined, undefined, true, true),
+    );
+    expect(runtimeTurnFollowUpReturnSchema.parse(followUp.result)).toMatchObject({
+      ok: false,
+      operation: "turn.follow_up",
+      accepted: false,
+      error: "Runtime control 'turn.follow_up' is disabled",
+    });
+
+    reply({ ok: true, operation: "turn.interrupt", state: { provider: "grok", threadId: "grok_1", activeTurn: true } });
+    const interrupt = await captureLogs(() => commands.interrupt("dev-main", undefined, undefined, true));
+    expect(runtimeTurnInterruptReturnSchema.parse(interrupt.result)).toMatchObject({
+      interrupted: true,
+      pending: false,
+      threadId: "grok_1",
+    });
+
+    reply({
+      ok: true,
+      operation: "thread.rollback",
+      data: { thread: { id: "thread_1" }, rolledBackTurns: 2 },
+      state: codexState,
+    });
+    const rollback = await captureLogs(() => commands.rollback("dev-main", "2", undefined, true, true));
+    expect(runtimeThreadRollbackReturnSchema.parse(rollback.result)).toMatchObject({
+      thread: { threadId: "thread_1" },
+      rolledBackTurns: 2,
+    });
+
+    // A count outside the safe-integer range is not trusted.
+    reply({
+      ok: true,
+      operation: "thread.rollback",
+      data: { thread: { id: "thread_1" }, rolledBackTurns: 2 ** 53 },
+      state: codexState,
+    });
+    const unsafeRollback = await captureLogs(() => commands.rollback("dev-main", "2", undefined, true, true));
+    expect(runtimeThreadRollbackReturnSchema.parse(unsafeRollback.result).rolledBackTurns).toBeNull();
+
+    reply({
+      ok: true,
+      operation: "thread.fork",
+      data: { thread: { id: "thread_forked", cwd: "/tmp/fork" }, model: "gpt" },
+      state: codexState,
+    });
+    const fork = await captureLogs(() => commands.fork("dev-main", "thread_1", undefined, undefined, true, true));
+    expect(runtimeThreadForkReturnSchema.parse(fork.result)).toMatchObject({
+      sourceThreadId: "thread_1",
+      forkedThreadId: "thread_forked",
+      thread: { threadId: "thread_forked", cwd: "/tmp/fork" },
+    });
+  });
+
+  it("rejects blank steering text before publishing a runtime control request", async () => {
+    await expect(
+      new SessionRuntimeCommands().steer("dev-main", "   ", undefined, undefined, undefined, true),
+    ).rejects.toThrow("Expected non-empty steering text.");
+    expect(requestReplyCalls).toHaveLength(0);
   });
 });

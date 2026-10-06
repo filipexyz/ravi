@@ -404,6 +404,7 @@ function recordCliCommandAccessDenial(
         : {
             canonicalCapability: grantGuidance.canonicalCapability,
             candidateCapabilities: grantGuidance.candidateCapabilities,
+            resourceScope: grantGuidance.resourceScope,
             recommendedPath: grantGuidance.preferredPath.message,
             allowCommand: grantGuidance.preferredPath.allowCommand,
             suggestedTags: grantGuidance.preferredPath.suggestedTags,
@@ -417,11 +418,17 @@ function buildCommandAccessGuidance(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
   subject?: { type: string; id: string },
 ) {
+  const [checkedResource] = commandAccessConcreteResourceCandidates(input);
   return buildAuthorizationGuidance({
     capability: commandAccessCapability(input),
     candidates: commandAccessCandidates(input),
     subject,
     scope: "recurring",
+    resourceScope: checkedResource
+      ? { kind: "resource", checkedResource: `${checkedResource.objectType}:${checkedResource.objectId}` }
+      : input.access.requireConcreteResource
+        ? { kind: "missing_resource", resourceType: input.access.resource }
+        : { kind: "global" },
     reason: `Needs ${formatCommand(input)} command access.`,
     includeProviderOwnedTags: true,
   });

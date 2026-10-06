@@ -64580,21 +64580,131 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeFollowUpReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "accepted": {
+        "type": "boolean"
+      },
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "turn.follow_up",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "queued": {
+        "type": "boolean"
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "threadId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turnId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "accepted",
+      "queued",
+      "threadId",
+      "turnId"
     ],
     "type": "object"
   }
@@ -64634,21 +64744,220 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeForkReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "forkedThreadId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "thread.fork",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sourceThreadId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "thread": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "preview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "threadId",
+              "title",
+              "preview",
+              "status",
+              "cwd",
+              "path",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "sourceThreadId",
+      "forkedThreadId",
+      "thread"
     ],
     "type": "object"
   }
@@ -64680,21 +64989,131 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeInterruptReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "interrupted": {
+        "type": "boolean"
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "turn.interrupt",
         "type": "string"
+      },
+      "pending": {
+        "type": "boolean"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "threadId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turnId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "interrupted",
+      "pending",
+      "threadId",
+      "turnId"
     ],
     "type": "object"
   }
@@ -64738,21 +65157,205 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "nextCursor": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "thread.list",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "threads": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "preview": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "threadId",
+            "title",
+            "preview",
+            "status",
+            "cwd",
+            "path",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "threads",
+      "nextCursor"
     ],
     "type": "object"
   }
@@ -64784,21 +65387,247 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeReadReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "thread.read",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "thread": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "preview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "threadId",
+              "title",
+              "preview",
+              "status",
+              "cwd",
+              "path",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "completedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "turnId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "turnId",
+            "status",
+            "startedAt",
+            "completedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "thread",
+      "turns"
     ],
     "type": "object"
   }
@@ -64834,21 +65663,211 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeRollbackReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "thread.rollback",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rolledBackTurns": {
+        "anyOf": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "thread": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "preview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "threadId",
+              "title",
+              "preview",
+              "status",
+              "cwd",
+              "path",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "thread",
+      "rolledBackTurns"
     ],
     "type": "object"
   }
@@ -64889,21 +65908,131 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeSteerReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "accepted": {
+        "type": "boolean"
+      },
       "error": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "ok": {
         "type": "boolean"
       },
       "operation": {
+        "const": "turn.steer",
         "type": "string"
+      },
+      "provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "queued": {
+        "type": "boolean"
+      },
+      "state": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "activeTurn": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "supportedOperations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "threadId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "turnId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "threadId",
+              "turnId",
+              "activeTurn",
+              "supportedOperations"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "threadId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turnId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "provider",
+      "state",
+      "error",
+      "operation",
+      "accepted",
+      "queued",
+      "threadId",
+      "turnId"
     ],
     "type": "object"
   }

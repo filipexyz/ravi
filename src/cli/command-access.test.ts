@@ -10,7 +10,8 @@ import {
   enforceCliCommandAuthorization,
   redactCommandAccessInput,
 } from "./command-access.js";
-import type { CommandAccessOptions } from "./decorators.js";
+import { getCommandAccessMetadata, type CommandAccessOptions } from "./decorators.js";
+import { SessionCommands } from "./commands/sessions.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
 import {
@@ -18,7 +19,8 @@ import {
   createIsolatedRaviState,
   RAVI_RUNTIME_CONTEXT_ENV_KEYS,
 } from "../test/ravi-state.js";
-import { dbSetSetting, type ContextRecord } from "../router/router-db.js";
+import { dbCreateAgent, dbSetSetting, dbUpdateAgent, type ContextRecord } from "../router/router-db.js";
+import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import {
   EXTERNAL_AUTHORITY_ASSERTION_SETTING,
   EXTERNAL_AUTHORITY_PUBKEY_SETTING,
@@ -579,6 +581,7 @@ describe("CLI command access enforcement", () => {
       expect(result.allowed).toBe(false);
       expect(result.attempted.map((decision) => decision.objectId)).toEqual([listId]);
       expect(result.errorMessage).toContain(`Missing capability: read:chats.lists:${listId}`);
+      expect(result.errorMessage).toContain(`Scope: resource check on chats.lists:${listId}`);
     }
 
     const concrete = context([{ permission: "read", objectType: "chats.lists", objectId: listId }]);
@@ -618,6 +621,8 @@ describe("CLI command access enforcement", () => {
 
     expect(result.allowed).toBe(false);
     expect(result.attempted).toEqual([]);
+    expect(result.errorMessage).toContain("Scope: this command needs a concrete chats.lists id");
+    expect(result.errorMessage).not.toContain("Scope: global capability check");
   });
 
   it("falls back to legacy command-specific execute capabilities", () => {
@@ -712,6 +717,59 @@ describe("CLI command access enforcement", () => {
     expect(result.errorMessage).toContain("full-access is break-glass");
   });
 
+  it("lets a full-access agent answer another session through the semantic sessions answer gate", () => {
+    const access = getCommandAccessMetadata(SessionCommands).get("answer");
+    if (!access) throw new Error("Missing @CommandAccess metadata for sessions answer");
+    expect(access).toMatchObject({ kind: "mutate", resource: "sessions", action: "answer" });
+    expect(access.resourceId).toBeUndefined();
+
+    dbCreateAgent({ id: "answerer", cwd: "/tmp/answerer" });
+    dbUpdateAgent("answerer", { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const record: ContextRecord = {
+      ...context(materializeSubjectCapabilities("agent", "answerer")),
+      agentId: "answerer",
+    };
+
+    const result = runWithContext({ agentId: "answerer", context: record }, () =>
+      enforceCliCommandAuthorization({
+        group: "sessions",
+        command: "answer",
+        access,
+        input: { target: "other-session", message: "done" },
+        source: "gateway",
+        scope: "open",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision).toMatchObject({ permission: "mutate", objectType: "sessions", objectId: "answer" });
+  });
+
+  it("tells a denied sessions answer caller the check was global, not about the target session", () => {
+    const access = getCommandAccessMetadata(SessionCommands).get("answer");
+    if (!access) throw new Error("Missing @CommandAccess metadata for sessions answer");
+
+    const record = context([{ permission: "read", objectType: "sessions", objectId: "answer" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAuthorization({
+        group: "sessions",
+        command: "answer",
+        access,
+        input: { target: "asker-session", message: "done" },
+        source: "gateway",
+        scope: "open",
+      }),
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("Missing capability: mutate:sessions:answer");
+    expect(result.errorMessage).toContain(
+      "Scope: global capability check; no target resource (session, chat, agent) was checked",
+    );
+    expect(result.errorMessage).not.toContain("asker-session");
+    expect(result.attempted.every((decision) => decision.objectId !== "asker-session")).toBe(true);
+  });
+
   it("lists every pages @CommandAccess candidate and a concrete allow command", () => {
     dbCreateTagDefinition({
       slug: "permission-pages-publisher",
@@ -784,6 +842,7 @@ describe("CLI command access enforcement", () => {
           blockType: "cli_command_access_missing_grant",
           command: "[REDACTED:content length=11]",
           denialId: expect.any(Number),
+          guidance: expect.objectContaining({ resourceScope: { kind: "global" } }),
           context: expect.objectContaining({
             contextId: "ctx_command_access_test",
             authorityMode: "delegated",

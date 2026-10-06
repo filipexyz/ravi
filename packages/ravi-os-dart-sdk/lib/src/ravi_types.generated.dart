@@ -18200,19 +18200,29 @@ class SessionsRuntimeFollowUpOptions {
 }
 
 class SessionsRuntimeFollowUpReturn {
-  const SessionsRuntimeFollowUpReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeFollowUpReturn({required this.accepted, required this.error, required this.ok, required this.operation, required this.provider, required this.queued, required this.state, required this.threadId, required this.turnId});
 
-  final RaviJson? data;
-  final String? error;
+  final bool accepted;
+  final RaviJson error;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final bool queued;
+  final RaviJson state;
+  final RaviJson threadId;
+  final RaviJson turnId;
 
   factory SessionsRuntimeFollowUpReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeFollowUpReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      accepted: raviJsonAsBool(json["accepted"]),
+      error: RaviJson.from(json["error"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      queued: raviJsonAsBool(json["queued"]),
+      state: RaviJson.from(json["state"]),
+      threadId: RaviJson.from(json["threadId"]),
+      turnId: RaviJson.from(json["turnId"]),
     );
   }
 
@@ -18244,19 +18254,27 @@ class SessionsRuntimeForkOptions {
 }
 
 class SessionsRuntimeForkReturn {
-  const SessionsRuntimeForkReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeForkReturn({required this.error, required this.forkedThreadId, required this.ok, required this.operation, required this.provider, required this.sourceThreadId, required this.state, required this.thread});
 
-  final RaviJson? data;
-  final String? error;
+  final RaviJson error;
+  final RaviJson forkedThreadId;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final RaviJson sourceThreadId;
+  final RaviJson state;
+  final RaviJson thread;
 
   factory SessionsRuntimeForkReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeForkReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      error: RaviJson.from(json["error"]),
+      forkedThreadId: RaviJson.from(json["forkedThreadId"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      sourceThreadId: RaviJson.from(json["sourceThreadId"]),
+      state: RaviJson.from(json["state"]),
+      thread: RaviJson.from(json["thread"]),
     );
   }
 
@@ -18284,19 +18302,29 @@ class SessionsRuntimeInterruptOptions {
 }
 
 class SessionsRuntimeInterruptReturn {
-  const SessionsRuntimeInterruptReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeInterruptReturn({required this.error, required this.interrupted, required this.ok, required this.operation, required this.pending, required this.provider, required this.state, required this.threadId, required this.turnId});
 
-  final RaviJson? data;
-  final String? error;
+  final RaviJson error;
+  final bool interrupted;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final bool pending;
+  final RaviJson provider;
+  final RaviJson state;
+  final RaviJson threadId;
+  final RaviJson turnId;
 
   factory SessionsRuntimeInterruptReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeInterruptReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      error: RaviJson.from(json["error"]),
+      interrupted: raviJsonAsBool(json["interrupted"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      pending: raviJsonAsBool(json["pending"]),
+      provider: RaviJson.from(json["provider"]),
+      state: RaviJson.from(json["state"]),
+      threadId: RaviJson.from(json["threadId"]),
+      turnId: RaviJson.from(json["turnId"]),
     );
   }
 
@@ -18336,19 +18364,25 @@ class SessionsRuntimeListOptions {
 }
 
 class SessionsRuntimeListReturn {
-  const SessionsRuntimeListReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeListReturn({required this.error, required this.nextCursor, required this.ok, required this.operation, required this.provider, required this.state, required this.threads});
 
-  final RaviJson? data;
-  final String? error;
+  final RaviJson error;
+  final RaviJson nextCursor;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final RaviJson state;
+  final List<RaviJson> threads;
 
   factory SessionsRuntimeListReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeListReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      error: RaviJson.from(json["error"]),
+      nextCursor: RaviJson.from(json["nextCursor"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      state: RaviJson.from(json["state"]),
+      threads: raviJsonAsList(json["threads"], RaviJson.from),
     );
   }
 
@@ -18372,19 +18406,25 @@ class SessionsRuntimeReadOptions {
 }
 
 class SessionsRuntimeReadReturn {
-  const SessionsRuntimeReadReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeReadReturn({required this.error, required this.ok, required this.operation, required this.provider, required this.state, required this.thread, required this.turns});
 
-  final RaviJson? data;
-  final String? error;
+  final RaviJson error;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final RaviJson state;
+  final RaviJson thread;
+  final List<RaviJson> turns;
 
   factory SessionsRuntimeReadReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeReadReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      error: RaviJson.from(json["error"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      state: RaviJson.from(json["state"]),
+      thread: RaviJson.from(json["thread"]),
+      turns: raviJsonAsList(json["turns"], RaviJson.from),
     );
   }
 
@@ -18412,19 +18452,25 @@ class SessionsRuntimeRollbackOptions {
 }
 
 class SessionsRuntimeRollbackReturn {
-  const SessionsRuntimeRollbackReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeRollbackReturn({required this.error, required this.ok, required this.operation, required this.provider, required this.rolledBackTurns, required this.state, required this.thread});
 
-  final RaviJson? data;
-  final String? error;
+  final RaviJson error;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final RaviJson rolledBackTurns;
+  final RaviJson state;
+  final RaviJson thread;
 
   factory SessionsRuntimeRollbackReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeRollbackReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      error: RaviJson.from(json["error"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      rolledBackTurns: RaviJson.from(json["rolledBackTurns"]),
+      state: RaviJson.from(json["state"]),
+      thread: RaviJson.from(json["thread"]),
     );
   }
 
@@ -18456,19 +18502,29 @@ class SessionsRuntimeSteerOptions {
 }
 
 class SessionsRuntimeSteerReturn {
-  const SessionsRuntimeSteerReturn({this.data, this.error, required this.ok, this.operation});
+  const SessionsRuntimeSteerReturn({required this.accepted, required this.error, required this.ok, required this.operation, required this.provider, required this.queued, required this.state, required this.threadId, required this.turnId});
 
-  final RaviJson? data;
-  final String? error;
+  final bool accepted;
+  final RaviJson error;
   final bool ok;
-  final String? operation;
+  final String operation;
+  final RaviJson provider;
+  final bool queued;
+  final RaviJson state;
+  final RaviJson threadId;
+  final RaviJson turnId;
 
   factory SessionsRuntimeSteerReturn.fromJson(Map<String, Object?> json) {
     return SessionsRuntimeSteerReturn(
-      data: json["data"] == null ? null : RaviJson.from(json["data"]),
-      error: json["error"] == null ? null : raviJsonAsString(json["error"]),
+      accepted: raviJsonAsBool(json["accepted"]),
+      error: RaviJson.from(json["error"]),
       ok: raviJsonAsBool(json["ok"]),
-      operation: json["operation"] == null ? null : raviJsonAsString(json["operation"]),
+      operation: raviJsonAsString(json["operation"]),
+      provider: RaviJson.from(json["provider"]),
+      queued: raviJsonAsBool(json["queued"]),
+      state: RaviJson.from(json["state"]),
+      threadId: RaviJson.from(json["threadId"]),
+      turnId: RaviJson.from(json["turnId"]),
     );
   }
 

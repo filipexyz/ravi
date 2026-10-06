@@ -381,14 +381,110 @@ export const contextCredentialsSetDefaultReturnSchema = z
   })
   .strict();
 
-export const runtimeControlReturnSchema = z
+/** Normalized runtime state reported with every `sessions runtime` control result. */
+export const runtimeControlStateReturnSchema = z
   .object({
-    ok: z.boolean(),
-    operation: z.string().optional(),
-    data: z.unknown().optional(),
-    error: z.string().optional(),
+    provider: z.string(),
+    threadId: z.string().nullable(),
+    turnId: z.string().nullable(),
+    activeTurn: z.boolean().nullable(),
+    supportedOperations: z.array(z.string()),
   })
-  .passthrough();
+  .strict();
+
+/** Provider-neutral summary of a native runtime thread (Codex thread, Pi session...). */
+export const runtimeThreadSummaryReturnSchema = z
+  .object({
+    threadId: z.string(),
+    title: z.string().nullable(),
+    preview: z.string().nullable(),
+    status: z.string().nullable(),
+    cwd: z.string().nullable(),
+    path: z.string().nullable(),
+    createdAt: z.number().nullable(),
+    updatedAt: z.number().nullable(),
+  })
+  .strict();
+
+export const runtimeTurnSummaryReturnSchema = z
+  .object({
+    turnId: z.string(),
+    status: z.string().nullable(),
+    startedAt: z.number().nullable(),
+    completedAt: z.number().nullable(),
+  })
+  .strict();
+
+const runtimeControlEnvelopeShape = {
+  ok: z.boolean(),
+  provider: z.string().nullable(),
+  state: runtimeControlStateReturnSchema.nullable(),
+  error: z.string().nullable(),
+};
+
+export const runtimeThreadListReturnSchema = z
+  .object({
+    ...runtimeControlEnvelopeShape,
+    operation: z.literal("thread.list"),
+    threads: z.array(runtimeThreadSummaryReturnSchema),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
+export const runtimeThreadReadReturnSchema = z
+  .object({
+    ...runtimeControlEnvelopeShape,
+    operation: z.literal("thread.read"),
+    thread: runtimeThreadSummaryReturnSchema.nullable(),
+    turns: z.array(runtimeTurnSummaryReturnSchema),
+  })
+  .strict();
+
+function runtimeTurnInputAckReturnSchema<TOperation extends "turn.steer" | "turn.follow_up">(operation: TOperation) {
+  return z
+    .object({
+      ...runtimeControlEnvelopeShape,
+      operation: z.literal(operation),
+      accepted: z.boolean(),
+      queued: z.boolean(),
+      threadId: z.string().nullable(),
+      turnId: z.string().nullable(),
+    })
+    .strict();
+}
+
+export const runtimeTurnSteerReturnSchema = runtimeTurnInputAckReturnSchema("turn.steer");
+export const runtimeTurnFollowUpReturnSchema = runtimeTurnInputAckReturnSchema("turn.follow_up");
+
+export const runtimeTurnInterruptReturnSchema = z
+  .object({
+    ...runtimeControlEnvelopeShape,
+    operation: z.literal("turn.interrupt"),
+    interrupted: z.boolean(),
+    pending: z.boolean(),
+    threadId: z.string().nullable(),
+    turnId: z.string().nullable(),
+  })
+  .strict();
+
+export const runtimeThreadRollbackReturnSchema = z
+  .object({
+    ...runtimeControlEnvelopeShape,
+    operation: z.literal("thread.rollback"),
+    thread: runtimeThreadSummaryReturnSchema.nullable(),
+    rolledBackTurns: z.number().int().nullable(),
+  })
+  .strict();
+
+export const runtimeThreadForkReturnSchema = z
+  .object({
+    ...runtimeControlEnvelopeShape,
+    operation: z.literal("thread.fork"),
+    sourceThreadId: z.string().nullable(),
+    forkedThreadId: z.string().nullable(),
+    thread: runtimeThreadSummaryReturnSchema.nullable(),
+  })
+  .strict();
 
 export const crmProfileReturnSchema = z
   .object({

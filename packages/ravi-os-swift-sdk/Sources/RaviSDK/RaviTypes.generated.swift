@@ -21229,23 +21229,38 @@ public struct SessionsRuntimeFollowUpOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeFollowUpReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var accepted: Bool
+  public var error: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var queued: Bool
+  public var state: RaviJSON
+  public var threadId: RaviJSON
+  public var turnId: RaviJSON
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(accepted: Bool, error: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, queued: Bool, state: RaviJSON, threadId: RaviJSON, turnId: RaviJSON) {
+    self.accepted = accepted
     self.error = error
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.queued = queued
+    self.state = state
+    self.threadId = threadId
+    self.turnId = turnId
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
+    case accepted = "accepted"
     case error = "error"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case queued = "queued"
+    case state = "state"
+    case threadId = "threadId"
+    case turnId = "turnId"
   }
 }
 
@@ -21280,23 +21295,35 @@ public struct SessionsRuntimeForkOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeForkReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var error: RaviJSON
+  public var forkedThreadId: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var sourceThreadId: RaviJSON
+  public var state: RaviJSON
+  public var thread: RaviJSON
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(error: RaviJSON, forkedThreadId: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, sourceThreadId: RaviJSON, state: RaviJSON, thread: RaviJSON) {
     self.error = error
+    self.forkedThreadId = forkedThreadId
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.sourceThreadId = sourceThreadId
+    self.state = state
+    self.thread = thread
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
     case error = "error"
+    case forkedThreadId = "forkedThreadId"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case sourceThreadId = "sourceThreadId"
+    case state = "state"
+    case thread = "thread"
   }
 }
 
@@ -21325,23 +21352,38 @@ public struct SessionsRuntimeInterruptOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeInterruptReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var error: RaviJSON
+  public var interrupted: Bool
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var pending: Bool
+  public var provider: RaviJSON
+  public var state: RaviJSON
+  public var threadId: RaviJSON
+  public var turnId: RaviJSON
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(error: RaviJSON, interrupted: Bool, ok: Bool, operation: String, pending: Bool, provider: RaviJSON, state: RaviJSON, threadId: RaviJSON, turnId: RaviJSON) {
     self.error = error
+    self.interrupted = interrupted
     self.ok = ok
     self.operation = operation
+    self.pending = pending
+    self.provider = provider
+    self.state = state
+    self.threadId = threadId
+    self.turnId = turnId
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
     case error = "error"
+    case interrupted = "interrupted"
     case ok = "ok"
     case operation = "operation"
+    case pending = "pending"
+    case provider = "provider"
+    case state = "state"
+    case threadId = "threadId"
+    case turnId = "turnId"
   }
 }
 
@@ -21388,23 +21430,32 @@ public struct SessionsRuntimeListOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeListReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var error: RaviJSON
+  public var nextCursor: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var state: RaviJSON
+  public var threads: [RaviJSON]
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(error: RaviJSON, nextCursor: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, state: RaviJSON, threads: [RaviJSON]) {
     self.error = error
+    self.nextCursor = nextCursor
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.state = state
+    self.threads = threads
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
     case error = "error"
+    case nextCursor = "nextCursor"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case state = "state"
+    case threads = "threads"
   }
 }
 
@@ -21427,23 +21478,32 @@ public struct SessionsRuntimeReadOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeReadReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var error: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var state: RaviJSON
+  public var thread: RaviJSON
+  public var turns: [RaviJSON]
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(error: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, state: RaviJSON, thread: RaviJSON, turns: [RaviJSON]) {
     self.error = error
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.state = state
+    self.thread = thread
+    self.turns = turns
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
     case error = "error"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case state = "state"
+    case thread = "thread"
+    case turns = "turns"
   }
 }
 
@@ -21472,23 +21532,32 @@ public struct SessionsRuntimeRollbackOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeRollbackReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var error: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var rolledBackTurns: RaviJSON
+  public var state: RaviJSON
+  public var thread: RaviJSON
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(error: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, rolledBackTurns: RaviJSON, state: RaviJSON, thread: RaviJSON) {
     self.error = error
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.rolledBackTurns = rolledBackTurns
+    self.state = state
+    self.thread = thread
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
     case error = "error"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case rolledBackTurns = "rolledBackTurns"
+    case state = "state"
+    case thread = "thread"
   }
 }
 
@@ -21523,23 +21592,38 @@ public struct SessionsRuntimeSteerOptions: Codable, Sendable {
 }
 
 public struct SessionsRuntimeSteerReturn: Codable, Sendable {
-  public var data: RaviJSON?
-  public var error: String?
+  public var accepted: Bool
+  public var error: RaviJSON
   public var ok: Bool
-  public var operation: String?
+  public var operation: String
+  public var provider: RaviJSON
+  public var queued: Bool
+  public var state: RaviJSON
+  public var threadId: RaviJSON
+  public var turnId: RaviJSON
 
-  public init(data: RaviJSON? = nil, error: String? = nil, ok: Bool, operation: String? = nil) {
-    self.data = data
+  public init(accepted: Bool, error: RaviJSON, ok: Bool, operation: String, provider: RaviJSON, queued: Bool, state: RaviJSON, threadId: RaviJSON, turnId: RaviJSON) {
+    self.accepted = accepted
     self.error = error
     self.ok = ok
     self.operation = operation
+    self.provider = provider
+    self.queued = queued
+    self.state = state
+    self.threadId = threadId
+    self.turnId = turnId
   }
 
   enum CodingKeys: String, CodingKey {
-    case data = "data"
+    case accepted = "accepted"
     case error = "error"
     case ok = "ok"
     case operation = "operation"
+    case provider = "provider"
+    case queued = "queued"
+    case state = "state"
+    case threadId = "threadId"
+    case turnId = "turnId"
   }
 }
 

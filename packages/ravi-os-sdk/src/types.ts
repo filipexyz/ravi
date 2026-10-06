@@ -13024,11 +13024,21 @@ export type SessionsRuntimeFollowUpInput = {
 
 /** Return shape for `sessions.runtime.follow-up`. */
 export type SessionsRuntimeFollowUpReturn = {
-  data?: unknown;
-  error?: string;
+  accepted: boolean;
+  error: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "turn.follow_up";
+  provider: string | null;
+  queued: boolean;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  threadId: string | null;
+  turnId: string | null;
 };
 
 /** Input shape for `sessions.runtime.fork`. */
@@ -13042,11 +13052,29 @@ export type SessionsRuntimeForkInput = {
 
 /** Return shape for `sessions.runtime.fork`. */
 export type SessionsRuntimeForkReturn = {
-  data?: unknown;
-  error?: string;
+  error: string | null;
+  forkedThreadId: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "thread.fork";
+  provider: string | null;
+  sourceThreadId: string | null;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  thread: ({
+    createdAt: number | null;
+    cwd: string | null;
+    path: string | null;
+    preview: string | null;
+    status: string | null;
+    threadId: string;
+    title: string | null;
+    updatedAt: number | null;
+  }) | null;
 };
 
 /** Input shape for `sessions.runtime.interrupt`. */
@@ -13058,11 +13086,21 @@ export type SessionsRuntimeInterruptInput = {
 
 /** Return shape for `sessions.runtime.interrupt`. */
 export type SessionsRuntimeInterruptReturn = {
-  data?: unknown;
-  error?: string;
+  error: string | null;
+  interrupted: boolean;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "turn.interrupt";
+  pending: boolean;
+  provider: string | null;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  threadId: string | null;
+  turnId: string | null;
 };
 
 /** Input shape for `sessions.runtime.list`. */
@@ -13077,11 +13115,28 @@ export type SessionsRuntimeListInput = {
 
 /** Return shape for `sessions.runtime.list`. */
 export type SessionsRuntimeListReturn = {
-  data?: unknown;
-  error?: string;
+  error: string | null;
+  nextCursor: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "thread.list";
+  provider: string | null;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  threads: Array<{
+    createdAt: number | null;
+    cwd: string | null;
+    path: string | null;
+    preview: string | null;
+    status: string | null;
+    threadId: string;
+    title: string | null;
+    updatedAt: number | null;
+  }>;
 };
 
 /** Input shape for `sessions.runtime.read`. */
@@ -13093,11 +13148,33 @@ export type SessionsRuntimeReadInput = {
 
 /** Return shape for `sessions.runtime.read`. */
 export type SessionsRuntimeReadReturn = {
-  data?: unknown;
-  error?: string;
+  error: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "thread.read";
+  provider: string | null;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  thread: ({
+    createdAt: number | null;
+    cwd: string | null;
+    path: string | null;
+    preview: string | null;
+    status: string | null;
+    threadId: string;
+    title: string | null;
+    updatedAt: number | null;
+  }) | null;
+  turns: Array<{
+    completedAt: number | null;
+    startedAt: number | null;
+    status: string | null;
+    turnId: string;
+  }>;
 };
 
 /** Input shape for `sessions.runtime.rollback`. */
@@ -13110,11 +13187,28 @@ export type SessionsRuntimeRollbackInput = {
 
 /** Return shape for `sessions.runtime.rollback`. */
 export type SessionsRuntimeRollbackReturn = {
-  data?: unknown;
-  error?: string;
+  error: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "thread.rollback";
+  provider: string | null;
+  rolledBackTurns: number | null;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  thread: ({
+    createdAt: number | null;
+    cwd: string | null;
+    path: string | null;
+    preview: string | null;
+    status: string | null;
+    threadId: string;
+    title: string | null;
+    updatedAt: number | null;
+  }) | null;
 };
 
 /** Input shape for `sessions.runtime.steer`. */
@@ -13128,11 +13222,21 @@ export type SessionsRuntimeSteerInput = {
 
 /** Return shape for `sessions.runtime.steer`. */
 export type SessionsRuntimeSteerReturn = {
-  data?: unknown;
-  error?: string;
+  accepted: boolean;
+  error: string | null;
   ok: boolean;
-  operation?: string;
-  [k: string]: unknown;
+  operation: "turn.steer";
+  provider: string | null;
+  queued: boolean;
+  state: ({
+    activeTurn: boolean | null;
+    provider: string;
+    supportedOperations: string[];
+    threadId: string | null;
+    turnId: string | null;
+  }) | null;
+  threadId: string | null;
+  turnId: string | null;
 };
 
 /** Input shape for `sessions.send`. */
