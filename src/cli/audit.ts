@@ -45,7 +45,8 @@ export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<
   const tool = options.tool ?? `${options.group}_${options.name}`;
   const payload = buildCliAuditPayload(options, tool);
 
-  await nats.emit(`ravi._cli.cli.${options.group}.${options.name}`, payload).catch(() => {});
+  // Best effort: without a daemon there is no one to receive it, so don't print a NATS error.
+  await nats.emit(`ravi._cli.cli.${options.group}.${options.name}`, payload, { quietConnect: true }).catch(() => {});
 
   if (options.closeLazyConnection && !isExplicitConnect()) {
     await nats.close().catch(() => {});

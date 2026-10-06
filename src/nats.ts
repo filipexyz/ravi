@@ -16,7 +16,7 @@ const sc = StringCodec();
 const DEFAULT_URL = process.env.NATS_URL || "nats://127.0.0.1:4222";
 
 let nc: NatsConnection | null = null;
-let connecting: Promise<void> | null = null;
+let connecting: { promise: Promise<void>; failureLogged: boolean } | null = null;
 let explicitConnect = false;
 
 /**
@@ -25,7 +25,10 @@ let explicitConnect = false;
  * With retry enabled (default for daemon), retries up to 30 times with 2s intervals
  * to handle PM2 parallel startup where NATS might not be ready yet.
  */
-export async function connectNats(url = DEFAULT_URL, opts?: { explicit?: boolean; retry?: boolean }): Promise<void> {
+export async function connectNats(
+  url = DEFAULT_URL,
+  opts?: { explicit?: boolean; retry?: boolean; quiet?: boolean },
+): Promise<void> {
   const maxRetries = opts?.retry !== false && opts?.explicit ? 30 : 1;
   const retryInterval = 2000;
 
@@ -52,11 +55,10 @@ export async function connectNats(url = DEFAULT_URL, opts?: { explicit?: boolean
       return;
     } catch (err) {
       if (attempt === maxRetries) {
-        // Lazy CLI connects are best-effort (audit events, optional emits): the
-        // caller decides whether a missing daemon matters, so don't print an
-        // error for a command that otherwise succeeded.
-        const level = opts?.explicit ? "error" : "debug";
-        log[level]("Failed to connect to NATS after all retries", { url, attempts: maxRetries });
+        log[opts?.quiet ? "debug" : "error"]("Failed to connect to NATS after all retries", {
+          url,
+          attempts: maxRetries,
+        });
         throw err;
       }
       log.info("NATS not ready, retrying...", { url, attempt, maxRetries });
@@ -73,15 +75,33 @@ export function isExplicitConnect(): boolean {
 /**
  * Lazy connect — called automatically on first emit/subscribe.
  * Allows CLI commands to work without explicit connectNats().
+ *
+ * `quiet` is for best-effort callers (the CLI audit event) that ignore a
+ * missing daemon: their failure logs at debug instead of printing an error
+ * after a command that succeeded. Other callers still get the error line, once
+ * per attempt, even when they join an attempt a quiet caller started.
  */
-export async function ensureConnected(): Promise<NatsConnection> {
+export async function ensureConnected(opts?: { quiet?: boolean }): Promise<NatsConnection> {
   if (nc) return nc;
   if (!connecting) {
-    connecting = connectNats(DEFAULT_URL).finally(() => {
-      connecting = null;
+    const quiet = opts?.quiet === true;
+    // A loud attempt logs its own failure inside connectNats.
+    const next = { failureLogged: !quiet, promise: connectNats(DEFAULT_URL, { quiet }) };
+    next.promise = next.promise.finally(() => {
+      if (connecting === next) connecting = null;
     });
+    connecting = next;
   }
-  await connecting;
+  const attempt = connecting;
+  try {
+    await attempt.promise;
+  } catch (err) {
+    if (!opts?.quiet && !attempt.failureLogged) {
+      attempt.failureLogged = true;
+      log.error("Failed to connect to NATS after all retries", { url: DEFAULT_URL, attempts: 1 });
+    }
+    throw err;
+  }
   return nc!;
 }
 
@@ -98,8 +118,12 @@ export function getNats(): NatsConnection {
  * Publish JSON data to a topic.
  * Drop-in replacement for nats.emit()
  */
-export async function publish(topic: string, data: Record<string, unknown>): Promise<void> {
-  const conn = await ensureConnected();
+export async function publish(
+  topic: string,
+  data: Record<string, unknown>,
+  opts?: { quietConnect?: boolean },
+): Promise<void> {
+  const conn = await ensureConnected({ quiet: opts?.quietConnect });
 
   // Trace session-response emissions (helps debug ghost chat replies).
   // Approval/system topics such as `ravi.approval.response` are not chat emits

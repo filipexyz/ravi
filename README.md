@@ -170,7 +170,7 @@ ravi artifacts restore <artifact-id> --version 1
 
 `ravi sandbox run` boots a disposable E2B microVM, clones a repository, runs one task with a worker agent, and saves the result locally as `changes.patch`. Nothing is pushed.
 
-Credentials come from the environment. `E2B_API_KEY` is required to create, build, and tear down the sandbox. `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` is also required, passed into the sandbox so the worker agent can authenticate with Claude (the `RAVI_`-prefixed names also work, for hosts that hide the originals). `GITHUB_TOKEN` is optional and only used to clone private repositories over `https://github.com/...`.
+Credentials come from the environment. `E2B_API_KEY` is required to create, build, and tear down the sandbox. `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` is also required, passed into the sandbox so the worker agent can authenticate with Claude (the `RAVI_`-prefixed names also work, for hosts that hide the originals). `GITHUB_TOKEN` is optional: it is sent only with `https://github.com/...` clones and is usually needed only for private repositories.
 
 ```bash
 ravi sandbox template build
