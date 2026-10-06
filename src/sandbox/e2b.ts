@@ -105,6 +105,36 @@ export function githubCloneAuth(repo: string, token?: string): { username: strin
   return null;
 }
 
+/**
+ * What to clone and the credential line git reads from the credential file, if any.
+ * Credentials embedded in an http(s) URL move to that file too, so they never reach
+ * a command line, which E2B logs. Otherwise GITHUB_TOKEN applies (github.com only).
+ */
+export function resolveCloneSource(
+  repo: string,
+  githubToken?: string,
+): { url: string; credentialLine: string | null; urlPassword: string | null } {
+  try {
+    const parsed = new URL(repo);
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && (parsed.username || parsed.password)) {
+      // username/password come back percent-encoded, which is what git's store file expects.
+      const credentialLine = `${parsed.protocol}//${parsed.username}:${parsed.password}@${parsed.host}\n`;
+      const urlPassword = parsed.password ? decodeURIComponent(parsed.password) : null;
+      parsed.username = "";
+      parsed.password = "";
+      return { url: parsed.toString(), credentialLine, urlPassword };
+    }
+  } catch {
+    // Not a URL (e.g. scp-style git@host:path): nothing to move.
+  }
+  const auth = githubCloneAuth(repo, githubToken);
+  return {
+    url: repo,
+    credentialLine: auth ? `https://${auth.username}:${encodeURIComponent(auth.password)}@github.com\n` : null,
+    urlPassword: null,
+  };
+}
+
 /** Turn an E2B CommandExitError into an error that says which command failed and why. */
 export function describeCommandError(cmd: string, err: unknown): Error {
   if (err && typeof err === "object" && "exitCode" in err) {
@@ -468,17 +498,15 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     );
     step("NATS already listening (restored from snapshot)");
 
-    step(`Cloning ${options.repo}`);
     const githubToken = options.credentials.githubToken;
-    const auth = githubCloneAuth(options.repo, githubToken);
+    const source = resolveCloneSource(options.repo, githubToken);
+    if (source.urlPassword) secrets.push(source.urlPassword);
+    step(`Cloning ${source.url}`);
     const branchArgs = options.branch ? `--branch ${shellQuote(options.branch)} --single-branch ` : "";
-    const cloneArgs = `clone --depth 50 ${branchArgs}${shellQuote(options.repo)} ${REPO_DIR}`;
+    const cloneArgs = `clone --depth 50 ${branchArgs}${shellQuote(source.url)} ${REPO_DIR}`;
     let cloneCmd = `git ${cloneArgs}`;
-    if (auth) {
-      await sandbox.files.write(
-        GIT_CREDENTIALS_FILE,
-        `https://${auth.username}:${encodeURIComponent(auth.password)}@github.com\n`,
-      );
+    if (source.credentialLine) {
+      await sandbox.files.write(GIT_CREDENTIALS_FILE, source.credentialLine);
       // `git -c` applies to this clone only; the file is removed whatever the outcome.
       cloneCmd =
         `git -c credential.helper=${shellQuote(`store --file=${GIT_CREDENTIALS_FILE}`)} ${cloneArgs}; ` +
@@ -487,9 +515,8 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     try {
       await run(`GIT_TERMINAL_PROMPT=0 ${cloneCmd}`, CLONE_TIMEOUT_MS);
     } catch (err) {
-      if (auth) await run(`rm -f ${GIT_CREDENTIALS_FILE}`).catch(() => {});
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(githubToken ? message.replaceAll(githubToken, "***") : message);
+      if (source.credentialLine) await run(`rm -f ${GIT_CREDENTIALS_FILE}`).catch(() => {});
+      throw new Error(redactSecrets(err instanceof Error ? err.message : String(err), secrets));
     }
     // Ravi writes .claude/settings.json into the agent cwd; keep it out of the
     // patch unless the repo already tracks that file.

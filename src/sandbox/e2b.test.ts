@@ -6,6 +6,7 @@ import {
   SandboxConfigError,
   describeCommandError,
   githubCloneAuth,
+  resolveCloneSource,
   resolveSandboxCredentials,
   runE2bSandboxTask,
   safeFileName,
@@ -248,6 +249,30 @@ describe("runE2bSandboxTask", () => {
     const clone = github.commands.find((cmd) => cmd.includes(" clone --depth 50 "));
     expect(clone).toContain("credential.helper='store --file=/home/user/.ravi-clone-credentials'");
     expect(clone).toEndWith("rc=$?; rm -f /home/user/.ravi-clone-credentials; exit $rc");
+
+    // Credentials inside the repo URL move to the credential file as well.
+    const embedded = fakeSandbox();
+    const userinfo = ["someone", "url-secret-123"].join(":");
+    const result = await runE2bSandboxTask({
+      repo: `https://${userinfo}@git.example.com/o/r.git`,
+      instructions: "x",
+      credentials,
+      outputDir: tempDir(),
+      createSandbox: embedded.create,
+      collectTelemetry: noTelemetry,
+      sleep: async () => {},
+    });
+    expect(result.status).toBe("done");
+    expect(embedded.state.written).toEqual({
+      "/home/user/.ravi-clone-credentials": `https://${userinfo}@git.example.com\n`,
+    });
+    expect(embedded.commands.join("\n")).not.toContain("url-secret-123");
+    expect(embedded.commands.some((cmd) => cmd.includes("'https://git.example.com/o/r.git'"))).toBe(true);
+    expect(resolveCloneSource("ssh://git@github.com/o/r.git", "t")).toEqual({
+      url: "ssh://git@github.com/o/r.git",
+      credentialLine: null,
+      urlPassword: null,
+    });
 
     expect(githubCloneAuth("https://github.com/o/r.git", "t")).toEqual({ username: "x-access-token", password: "t" });
     expect(githubCloneAuth("http://github.com/o/r.git", "t")).toBeNull();
