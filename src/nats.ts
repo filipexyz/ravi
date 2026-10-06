@@ -52,7 +52,11 @@ export async function connectNats(url = DEFAULT_URL, opts?: { explicit?: boolean
       return;
     } catch (err) {
       if (attempt === maxRetries) {
-        log.error("Failed to connect to NATS after all retries", { url, attempts: maxRetries });
+        // Lazy CLI connects are best-effort (audit events, optional emits): the
+        // caller decides whether a missing daemon matters, so don't print an
+        // error for a command that otherwise succeeded.
+        const level = opts?.explicit ? "error" : "debug";
+        log[level]("Failed to connect to NATS after all retries", { url, attempts: maxRetries });
         throw err;
       }
       log.info("NATS not ready, retrying...", { url, attempt, maxRetries });
