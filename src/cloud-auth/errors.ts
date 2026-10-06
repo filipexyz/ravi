@@ -18,6 +18,9 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CLOUD_PUBLISH_NOT_IMPLEMENTED",
   "CONTACT_REQUIRED",
   "ACTOR_BINDING_CONFLICT",
+  "NOT_FOUND",
+  "CONFLICT",
+  "VERSION_CONFLICT",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];
@@ -62,6 +65,9 @@ export class CloudAuthError extends Error {
   /** Overrides the code's default retryability. Omitted when the code decides. */
   readonly retryable?: boolean;
   readonly issues?: PublicValidationIssue[];
+  /** Structured `error.details` from the Console CLI envelope. Never serialized by `toJSON`. */
+  readonly details?: Record<string, unknown>;
+  readonly requestId?: string;
   readonly exitCode: number;
 
   constructor(
@@ -74,6 +80,8 @@ export class CloudAuthError extends Error {
       issues?: PublicValidationIssue[];
       retryAfterMs?: number;
       retryable?: boolean;
+      details?: Record<string, unknown>;
+      requestId?: string;
     } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
@@ -83,6 +91,8 @@ export class CloudAuthError extends Error {
     this.retryAfterMs = normalizeRetryAfterMs(options.retryAfterMs);
     this.retryable = options.retryable;
     this.issues = options.issues;
+    this.details = options.details;
+    this.requestId = options.requestId;
     this.exitCode = options.exitCode ?? defaultExitCode(code);
   }
 
@@ -100,13 +110,21 @@ export function isCloudAuthError(error: unknown): error is CloudAuthError {
   return error instanceof CloudAuthError;
 }
 
-export function normalizeCloudAuthErrorCode(value: unknown, fallback: CloudAuthErrorCode): CloudAuthErrorCode {
+/**
+ * `linkAliases: false` keeps Console codes such as `CONFLICT` as-is. Only
+ * `/api/cli/link` responses use the link aliases.
+ */
+export function normalizeCloudAuthErrorCode(
+  value: unknown,
+  fallback: CloudAuthErrorCode,
+  options: { linkAliases?: boolean } = {},
+): CloudAuthErrorCode {
   if (typeof value !== "string") return fallback;
   const normalized = value
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9_]/g, "_");
-  const mapped = CONSOLE_LINK_ERROR_ALIASES[normalized] ?? normalized;
+  const mapped = options.linkAliases === false ? normalized : (CONSOLE_LINK_ERROR_ALIASES[normalized] ?? normalized);
   return KNOWN_CODES.has(mapped) ? (mapped as CloudAuthErrorCode) : fallback;
 }
 

@@ -60,6 +60,12 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "A resolved contact is required in the current turn or session.";
     case "ACTOR_BINDING_CONFLICT":
       return "This contact is already linked to a different Console user.";
+    case "NOT_FOUND":
+      return "Console resource was not found.";
+    case "CONFLICT":
+      return "Console rejected the request because it conflicts with the current state.";
+    case "VERSION_CONFLICT":
+      return "Console resource changed since it was read.";
   }
 }
 
@@ -105,6 +111,12 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "run `ravi link` from a turn or session with a resolved contact; do not pass a contact flag";
     case "ACTOR_BINDING_CONFLICT":
       return "run `ravi unlink` on the existing binding, or login as the already-linked Console user";
+    case "NOT_FOUND":
+      return "check the id or slug against the parent listing, then retry";
+    case "CONFLICT":
+      return "re-read the resource, resolve the conflict, then retry";
+    case "VERSION_CONFLICT":
+      return "re-read the resource and retry with its current version";
   }
 }
 

@@ -1,7 +1,12 @@
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { projectPublicIssues } from "../cli/redaction.js";
 import { fetchWithTimeout } from "../utils/paths.js";
-import { CloudAuthError, classifyConsoleNetworkError, normalizeCloudAuthErrorCode } from "./errors.js";
+import {
+  CloudAuthError,
+  type CloudAuthErrorCode,
+  classifyConsoleNetworkError,
+  normalizeCloudAuthErrorCode,
+} from "./errors.js";
 import { parseActorBinding } from "./actor-bindings.js";
 import type {
   ActorBinding,
@@ -201,7 +206,7 @@ export class ConsoleApiClient {
 
     const payload = await readJsonBody(response);
     if (!response.ok) {
-      throw mapConsoleError(response.status, payload, response.headers);
+      throw mapConsoleError(response.status, payload, response.headers, path);
     }
     return (payload ?? {}) as T;
   }
@@ -506,19 +511,34 @@ function parseOptionalActorBinding(payload: unknown): ActorBinding | null {
   }
 }
 
-function mapConsoleError(status: number, payload: unknown, headers?: Headers): CloudAuthError {
+function mapConsoleError(status: number, payload: unknown, headers: Headers | undefined, path: string): CloudAuthError {
   const data = objectValue(payload);
   const nested = objectValue(data?.error);
   const rawCode = data?.code ?? nested?.code ?? data?.error;
-  const fallback = statusToErrorCode(status);
-  const code = normalizeCloudAuthErrorCode(rawCode, fallback);
+  // A bare 409 means "still pending" only on the login/refresh flow.
+  const fallback = statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
+  const code = normalizeCloudAuthErrorCode(rawCode, fallback, { linkAliases: isConsoleLinkPath(path) });
   const message =
     stringValue(data?.message) ??
     stringValue(nested?.message) ??
     stringValue(data?.error_description) ??
     defaultErrorMessage(code);
   const issues = projectPublicIssues(data?.issues ?? nested?.issues);
-  return new CloudAuthError(code, message, cloudAuthErrorOptions(status, headers, data, issues));
+  const details = objectValue(nested?.details) ?? undefined;
+  const requestId = stringValue(nested?.requestId) ?? stringValue(data?.requestId) ?? undefined;
+  return new CloudAuthError(code, message, {
+    ...cloudAuthErrorOptions(status, headers, data, issues),
+    ...(details ? { details } : {}),
+    ...(requestId ? { requestId } : {}),
+  });
+}
+
+function isConsoleAuthPath(path: string): boolean {
+  return path === "/api/cli/auth" || path.startsWith("/api/cli/auth/") || path.startsWith("/api/cli/auth?");
+}
+
+function isConsoleLinkPath(path: string): boolean {
+  return path === "/api/cli/link" || path.startsWith("/api/cli/link/") || path.startsWith("/api/cli/link?");
 }
 
 function mapOAuthDeviceError(status: number, payload: unknown, headers?: Headers): CloudAuthError {
@@ -598,10 +618,11 @@ function secondsToRetryMs(seconds: number): number | undefined {
   return Math.round(seconds * 1000);
 }
 
-function statusToErrorCode(status: number) {
+function statusToErrorCode(status: number, options: { authFlow?: boolean } = {}): CloudAuthErrorCode {
   if (status === 401) return "AUTH_REQUIRED";
   if (status === 403) return "ORG_ACCESS_DENIED";
-  if (status === 408 || status === 409 || status === 425) return "AUTH_PENDING";
+  if (status === 409) return options.authFlow === false ? "CONFLICT" : "AUTH_PENDING";
+  if (status === 408 || status === 425) return "AUTH_PENDING";
   if (status === 429) return "RATE_LIMITED";
   if (status >= 500) return "SERVER_UNAVAILABLE";
   return "PAYLOAD_INVALID";
