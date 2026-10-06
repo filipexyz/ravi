@@ -536,7 +536,7 @@ function channelBackendMetadata(turnId: string): NonNullable<RuntimeLaunchPrompt
 describe("RuntimeSessionDispatcher runtime recovery", () => {
   afterEach(() => mock.restore());
 
-  it("suppresses the channel response and alerts the operator after repeated event-loop closures", async () => {
+  it("sends only a generic notice to the channel and alerts the operator after repeated event-loop closures", async () => {
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const channelResponses: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
@@ -582,7 +582,15 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
     await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
 
     expect(starts).toBe(2);
-    expect(channelResponses).toEqual([]);
+    expect(channelResponses).toEqual([
+      {
+        topic: "ravi.session.recovery-loop.response",
+        data: expect.objectContaining({
+          response: "Error: The agent could not respond right now. Send another message to try again.",
+          target: expect.objectContaining({ channel: "slack", chatId: "C123" }),
+        }),
+      },
+    ]);
     expect(dispatcher.stashedMessages.has("recovery-loop")).toBe(true);
     expect(alerts).toEqual([
       expect.objectContaining({
@@ -605,6 +613,35 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         userResponseSuppressed: true,
       },
     });
+  });
+
+  it("sends no channel notice when recovery is exhausted for a non-chat source", async () => {
+    const channelResponses: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      if (topic.endsWith(".response")) channelResponses.push({ topic, data });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("recovery-loop", [
+      createQueuedRuntimeUserMessage({ prompt: "retry me", _agentId: "main" }),
+    ]);
+    dispatcher.startStreamingSession = mock(async () => {});
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    for (let i = 0; i < 3; i++) {
+      await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+    }
+
+    expect(channelResponses).toEqual([]);
   });
 
   it("allows one automatic restart for an inactive provider turn", async () => {

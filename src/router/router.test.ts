@@ -199,6 +199,8 @@ describe("router context queries", () => {
     expect(triggerColumns).toContain("shell_timeout_ms");
     expect(triggerColumns).toContain("shell_env_file");
     expect(triggerColumns).toContain("on_error");
+    expect(triggerColumns).toContain("filter_reject_count");
+    expect(triggerColumns).toContain("last_filter_reject_at");
     expect(reactionColumns).toEqual(
       new Set([
         "idempotency_key_hash",

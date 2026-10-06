@@ -4,7 +4,7 @@ import { resolveTriggerActivation } from "./activation.js";
 import { compileFilter } from "./filter.js";
 import { isTriggerOriginatedEvent, planTriggerTopicRefresh, shouldRetryTriggerTopic } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
-import { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } from "./triggers-db.js";
+import { dbCreateTrigger, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTrigger } from "./triggers-db.js";
 
 let stateDir: string | null = null;
 
@@ -178,5 +178,39 @@ describe("triggers native automation support", () => {
     });
     expect(shouldRetryTriggerTopic("topic.remove", true, new Set(), new Map())).toBe(false);
     expect(isTriggerOriginatedEvent("custom.topic", { _turnProvenance: { origin: "trigger" } })).toBe(true);
+  });
+
+  it("records filter rejects only for the current topic and filter, and resets them on edit", () => {
+    const trigger = dbCreateTrigger({
+      name: "reject-counter",
+      topic: "message.received.whatsapp-baileys.inst-1",
+      message: "go",
+      session: "isolated",
+      cooldownMs: 0,
+      filter: `data.payload.chatUuid == "chat-1"`,
+    });
+    const current = { topic: trigger.topic, filter: trigger.filter };
+
+    dbRecordTriggerFilterRejects(trigger.id, { ...current, count: 2, lastRejectAt: 100 });
+    dbRecordTriggerFilterRejects(trigger.id, { ...current, count: 1, lastRejectAt: 200 });
+    expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBe(3);
+    expect(dbGetTrigger(trigger.id)?.lastFilterRejectAt).toBe(200);
+
+    dbRecordTriggerFilterRejects(trigger.id, { ...current, filter: 'data.other == "x"', count: 5, lastRejectAt: 300 });
+    expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBe(3);
+
+    dbUpdateTrigger(trigger.id, { filter: `data.payload.chatId == "123@s.whatsapp.net"` });
+    expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBeUndefined();
+    expect(dbGetTrigger(trigger.id)?.lastFilterRejectAt).toBeUndefined();
+
+    dbUpdateTrigger(trigger.id, { name: "renamed" });
+    dbRecordTriggerFilterRejects(trigger.id, {
+      topic: trigger.topic,
+      filter: `data.payload.chatId == "123@s.whatsapp.net"`,
+      count: 1,
+      lastRejectAt: 400,
+    });
+    dbUpdateTrigger(trigger.id, { name: "renamed again" });
+    expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBe(1);
   });
 });

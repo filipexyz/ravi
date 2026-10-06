@@ -30,8 +30,10 @@ import { classifyVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   buildRuntimeContextRecoveryPrompt,
-  classifyRuntimeContextWindowFailure,
+  classifyRuntimeSessionRecoveryFailure,
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+  RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+  type RuntimeSessionRecoveryFailure,
 } from "./context-window-recovery.js";
 import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import {
@@ -179,6 +181,47 @@ const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
 const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
 
 const userFacingRuntimeLimitSuppressions = new Map<string, number>();
+
+interface RuntimeSessionRecoveryPlan {
+  reason: string;
+  traceEventType: string;
+  liveSummary: string;
+  logMessage: string;
+}
+
+function resolveRuntimeSessionRecoveryPlan(failure: RuntimeSessionRecoveryFailure): RuntimeSessionRecoveryPlan {
+  if (failure.kind === "provider_session_missing") {
+    return {
+      reason: RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+      traceEventType: "session.provider_session_missing",
+      liveSummary: "recreating provider session",
+      logMessage: "Recovering runtime after missing provider session",
+    };
+  }
+  return {
+    reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+    traceEventType: "session.context_window_exhausted",
+    liveSummary: "recovering context",
+    logMessage: "Recovering runtime after context window exhaustion",
+  };
+}
+
+/**
+ * Whether the session carried a stored provider session id into this run.
+ * Session ids are only written back on `turn.completed`, so during a failed
+ * turn this reflects what the provider was asked to resume. Missing-session
+ * recovery clears it, so a fresh start that reports the same error is not
+ * retried again.
+ */
+function hasStoredProviderSessionId(session: SessionEntry): boolean {
+  const paramsSessionId = session.runtimeSessionParams?.sessionId;
+  return Boolean(
+    session.runtimeSessionDisplayId ||
+      session.providerSessionId ||
+      session.sdkSessionId ||
+      (typeof paramsSessionId === "string" && paramsSessionId.trim()),
+  );
+}
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -534,8 +577,17 @@ async function recordRuntimeCredentialTurnFailure(input: {
     upstreamProvider: credential.upstreamProvider,
     model: input.model,
     credentialId: credential.credentialId,
-    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
-    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    // Claude SDK frames carry the HTTP status as `api_error_status` (result) or
+    // `error_status` (api_retry) and the provider code as a string `error`.
+    httpStatus: firstNumber(
+      input.rawEvent?.status,
+      input.rawEvent?.statusCode,
+      input.rawEvent?.api_error_status,
+      input.rawEvent?.error_status,
+      rawError?.status,
+      rawError?.statusCode,
+    ),
+    providerCode: firstString(input.rawEvent?.code, input.rawEvent?.error, rawError?.code),
     providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
     message: input.error,
     ...(headers ? { headers } : {}),
@@ -3877,12 +3929,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
-        const contextWindowFailure = classifyRuntimeContextWindowFailure({
+        const sessionRecoveryFailure = classifyRuntimeSessionRecoveryFailure({
           runtimeProvider: runtimeSession.provider,
           error: event.error,
           rawEvent: event.rawEvent,
         });
-        if (contextWindowFailure && currentTurnReplaySafety.replayable) {
+        const sessionRecoveryHasStateToClear =
+          sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
+        if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
+          const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
@@ -3890,6 +3945,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             runtimeProvider: runtimeSession.provider,
             model,
             error: event.error,
+            recoveryKind: sessionRecoveryFailure.kind,
             history,
           });
           const resetApplied = resetSession(session.sessionKey);
@@ -3899,7 +3955,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeSessionDisplayId = undefined;
           session.runtimeSessionParams = undefined;
           revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+            reason: recoveryPlan.reason,
           });
           const recoveredMessage = createQueuedRuntimeUserMessage({
             prompt: recovery.prompt,
@@ -3911,15 +3967,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             _runtimeProviderId: runtimeSession.provider,
           });
           stashedMessages.set(sessionName, [recoveredMessage]);
-          restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+          restartStashedReason = recoveryPlan.reason;
 
-          log.warn("Recovering runtime after context window exhaustion", {
+          log.warn(recoveryPlan.logMessage, {
             runId,
             sessionName,
             provider: runtimeSession.provider,
             model,
-            matched: contextWindowFailure.matched,
-            confidence: contextWindowFailure.confidence,
+            kind: sessionRecoveryFailure.kind,
+            matched: sessionRecoveryFailure.matched,
+            confidence: sessionRecoveryFailure.confidence,
             resetApplied,
             historyMessages: history.length,
             recoveryPromptChars: recovery.chars,
@@ -3927,13 +3984,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           recordTerminalTraceOnce({
             status: "failed",
             eventType: "turn.failed",
-            abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+            abortReason: recoveryPlan.reason,
             error: truncateLogDetail(event.error),
             payloadJson: {
               recoverable: event.recoverable ?? true,
               autoRecovered: true,
-              matched: contextWindowFailure.matched,
-              confidence: contextWindowFailure.confidence,
+              recoveryKind: sessionRecoveryFailure.kind,
+              matched: sessionRecoveryFailure.matched,
+              confidence: sessionRecoveryFailure.confidence,
               failureDetails: formatRuntimeFailureDetails(event) ?? null,
               rawEvent: rawEventSummary ?? null,
               metadata: event.metadata ?? null,
@@ -3943,15 +4001,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             turnId: streaming.currentTraceTurnId,
             provider: runtimeSession.provider,
             model,
-            eventType: "session.context_window_exhausted",
+            eventType: recoveryPlan.traceEventType,
             eventGroup: "session",
             status: "recovering",
             source: streaming.currentSource,
             payloadJson: {
-              reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+              reason: recoveryPlan.reason,
+              recoveryKind: sessionRecoveryFailure.kind,
               resetApplied,
-              matched: contextWindowFailure.matched,
-              confidence: contextWindowFailure.confidence,
+              matched: sessionRecoveryFailure.matched,
+              confidence: sessionRecoveryFailure.confidence,
               historyMessages: history.length,
               recoveryPromptChars: recovery.chars,
               recoveryMessageCount: recovery.messageCount,
@@ -3961,7 +4020,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
-            summary: "recovering context",
+            summary: recoveryPlan.liveSummary,
             agentId: agent.id,
             runId,
             provider: runtimeSession.provider,
@@ -3971,7 +4030,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.currentTurnToolStarted = false;
           resetTurnToolContinuationLedger(turnToolContinuation);
           streaming.currentTurnInputMutated = false;
-          streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+          streaming.internalAbortReason = recoveryPlan.reason;
           streaming.interrupted = true;
           clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
           signalTurnComplete();
@@ -3980,10 +4039,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.currentChannelBackend = undefined;
           break;
         }
-        if (contextWindowFailure) {
-          log.warn("Skipping context-window auto-recovery because the current turn is not replay-safe", {
+        if (sessionRecoveryFailure && !sessionRecoveryHasStateToClear) {
+          log.warn("Skipping missing provider session recovery because no stored session id was resumed", {
             runId,
             sessionName,
+            provider: runtimeSession.provider,
+            matched: sessionRecoveryFailure.matched,
+          });
+        } else if (sessionRecoveryFailure) {
+          log.warn("Skipping runtime session auto-recovery because the current turn is not replay-safe", {
+            runId,
+            sessionName,
+            kind: sessionRecoveryFailure.kind,
             startedTool: currentTurnHadToolStarted,
             materializedOutput: currentTurnHadMaterializedOutput,
             durableBinding: currentTurnReplaySafety.durableBinding,

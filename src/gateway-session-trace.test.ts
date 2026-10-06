@@ -1343,6 +1343,36 @@ describe("Gateway session trace instrumentation", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
+  it.each(["dispatch.restart_suppressed", "dispatch.dropped"])(
+    "stops presence when the dispatcher abandons the turn (%s)",
+    async (type) => {
+      const { sessionName } = seedSession();
+      const sendTyping = mock(async () => {});
+      const renewActiveTarget = mock(async () => true);
+      const target = makeResponse().target!;
+      let activeTarget: typeof target | undefined = target;
+      const clearActiveTarget = mock(async () => {
+        activeTarget = undefined;
+      });
+      const gateway = makeGateway(
+        mock(async () => ({ messageId: "outbound-1" })),
+        {
+          sendTyping,
+          getActiveTarget: () => activeTarget,
+          renewActiveTarget,
+          clearActiveTarget,
+        },
+      );
+
+      await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+      renewActiveTarget.mockClear();
+      await handleRuntimePresence(gateway, sessionName, { type, _source: target });
+
+      expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+      expect(renewActiveTarget).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not renew presence from raw provider events", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});

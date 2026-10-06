@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { listen, spawn } from "bun";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,83 +51,194 @@ afterEach(async () => {
   }
 });
 
+interface FakeChannelsRuntime {
+  bundlePath: string;
+  pm2LogPath: string;
+  env: Record<string, string>;
+}
+
+function createFakeChannelsRuntime(prefix: string, channelsEntry: Record<string, unknown>): FakeChannelsRuntime {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(root);
+  const runtimeRoot = join(root, "runtime");
+  const bundlePath = join(runtimeRoot, "dist", "bundle", "index.js");
+  const fakeBinDir = join(root, "bin");
+  const fakePm2Path = join(fakeBinDir, "pm2");
+  const pm2LogPath = join(root, "pm2.log");
+
+  mkdirSync(join(bundlePath, ".."), { recursive: true });
+  mkdirSync(fakeBinDir, { recursive: true });
+  writeFileSync(join(runtimeRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "test" }), "utf8");
+  writeFileSync(bundlePath, "", "utf8");
+  writeFileSync(pm2LogPath, "", "utf8");
+  writeFileSync(
+    fakePm2Path,
+    [
+      "#!/bin/sh",
+      'printf "%s\\n" "$*" >> "$CHANNELS_TEST_PM2_LOG"',
+      'if [ "$1" = "jlist" ]; then',
+      `  printf '%s\\n' '${JSON.stringify([
+        {
+          name: "ravi",
+          pm_id: 1,
+          pid: 1234,
+          pm2_env: {
+            status: "online",
+            pm_exec_path: bundlePath,
+            pm_cwd: runtimeRoot,
+            args: ["daemon", "run"],
+            env: {},
+          },
+          monit: { cpu: 0, memory: 0 },
+        },
+        { name: "ravi-channels", pm_id: 2, monit: { cpu: 0, memory: 0 }, ...channelsEntry },
+      ])}'`,
+      "fi",
+      "exit 0",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakePm2Path, 0o755);
+
+  return {
+    bundlePath,
+    pm2LogPath,
+    env: {
+      ...withoutRaviRuntimeContextEnv(process.env),
+      HOME: join(root, "home"),
+      PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
+      RAVI_STATE_DIR: join(root, "state"),
+      RAVI_CREDENTIALS_PATH: join(root, "missing-credentials.json"),
+      RAVI_BUNDLE: bundlePath,
+      RAVI_DAEMON_CWD: runtimeRoot,
+      RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+      CHANNELS_TEST_PM2_LOG: pm2LogPath,
+    } as Record<string, string>,
+  };
+}
+
+async function runChannelsCli(args: string[], env: Record<string, string>) {
+  const proc = spawn(["bun", "src/cli/index.ts", "channels", ...args], {
+    cwd: process.cwd(),
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, status] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { stdout, stderr, status };
+}
+
+const ONLINE_CHANNELS_ENTRY = {
+  pid: 5661,
+  pm2_env: {
+    status: "online",
+    pm_exec_path: "/usr/bin/bun",
+    pm_cwd: "/old",
+    args: ["/old/index.js", "channels", "run"],
+    env: {},
+  },
+};
+
+/**
+ * Minimal NATS server that accepts connections and subscriptions but never
+ * answers requests, so the channel runner health probe times out exactly like
+ * a PM2-online runner whose process stopped serving.
+ */
+function startSilentNatsServer() {
+  return listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open(socket) {
+        socket.write(
+          `INFO ${JSON.stringify({ server_id: "test", version: "2.10.0", proto: 1, max_payload: 1048576 })}\r\n`,
+        );
+      },
+      data(socket, data) {
+        for (const line of data.toString().split("\r\n")) {
+          if (line.startsWith("PING")) socket.write("PONG\r\n");
+        }
+      },
+    },
+  });
+}
+
 describe("channels runner lifecycle", () => {
   it("recreates a stopped PM2 entry from the current bundle and persists it", () => {
-    const root = mkdtempSync(join(tmpdir(), "ravi-channels-restart-"));
-    tempDirs.push(root);
-    const runtimeRoot = join(root, "runtime");
-    const bundlePath = join(runtimeRoot, "dist", "bundle", "index.js");
-    const fakeBinDir = join(root, "bin");
-    const fakePm2Path = join(fakeBinDir, "pm2");
-    const pm2LogPath = join(root, "pm2.log");
-
-    mkdirSync(join(bundlePath, ".."), { recursive: true });
-    mkdirSync(fakeBinDir, { recursive: true });
-    writeFileSync(join(runtimeRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "test" }), "utf8");
-    writeFileSync(bundlePath, "", "utf8");
-    writeFileSync(
-      fakePm2Path,
-      [
-        "#!/bin/sh",
-        'printf "%s\\n" "$*" >> "$CHANNELS_TEST_PM2_LOG"',
-        'if [ "$1" = "jlist" ]; then',
-        `  printf '%s\\n' '${JSON.stringify([
-          {
-            name: "ravi",
-            pm_id: 1,
-            pid: 1234,
-            pm2_env: {
-              status: "online",
-              pm_exec_path: bundlePath,
-              pm_cwd: runtimeRoot,
-              args: ["daemon", "run"],
-              env: {},
-            },
-            monit: { cpu: 0, memory: 0 },
-          },
-          {
-            name: "ravi-channels",
-            pm_id: 2,
-            pid: 0,
-            pm2_env: {
-              status: "stopped",
-              pm_exec_path: "/old/bun",
-              pm_cwd: "/old",
-              args: ["/old/index.js", "channels", "run"],
-              env: {},
-            },
-            monit: { cpu: 0, memory: 0 },
-          },
-        ])}'`,
-        "fi",
-        "exit 0",
-      ].join("\n"),
-      "utf8",
-    );
-    chmodSync(fakePm2Path, 0o755);
+    const runtime = createFakeChannelsRuntime("ravi-channels-restart-", {
+      pid: 0,
+      pm2_env: {
+        status: "stopped",
+        pm_exec_path: "/old/bun",
+        pm_cwd: "/old",
+        args: ["/old/index.js", "channels", "run"],
+        env: {},
+      },
+    });
 
     const result = spawnSync("bun", ["src/cli/index.ts", "channels", "restart", "--json"], {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: {
-        ...withoutRaviRuntimeContextEnv(process.env),
-        HOME: join(root, "home"),
-        PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
-        RAVI_STATE_DIR: join(root, "state"),
-        RAVI_CREDENTIALS_PATH: join(root, "missing-credentials.json"),
-        RAVI_BUNDLE: bundlePath,
-        RAVI_DAEMON_CWD: runtimeRoot,
-        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
-        CHANNELS_TEST_PM2_LOG: pm2LogPath,
-      },
+      env: runtime.env,
     });
-    const pm2Log = readFileSync(pm2LogPath, "utf8");
+    const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(pm2Log).toContain("delete ravi-channels");
-    expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(bundlePath)} channels run`);
+    expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(runtime.bundlePath)} channels run`);
     expect(pm2Log).toContain("save --force");
+  }, 20_000);
+
+  it("bounces a PM2-online runner whose health probe times out instead of reporting already_running", async () => {
+    const runtime = createFakeChannelsRuntime("ravi-channels-start-stale-", ONLINE_CHANNELS_ENTRY);
+    const server = startSilentNatsServer();
+    // The CLI closes its lazy NATS connection on the audit path; with audit
+    // suppressed the probe connection would keep the process alive.
+    const { RAVI_SUPPRESS_AUDIT_EVENTS: _suppressAudit, ...env } = runtime.env;
+    try {
+      const result = await runChannelsCli(["start", "--json"], {
+        ...env,
+        NATS_URL: `nats://127.0.0.1:${server.port}`,
+      });
+      const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
+
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        action: "start",
+        changed: true,
+        reason: "stale_timeout",
+        previousPid: 5661,
+        pm2Status: 0,
+      });
+      expect(pm2Log).toContain("delete ravi-channels");
+      expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(runtime.bundlePath)} channels run`);
+      expect(pm2Log).toContain("save --force");
+    } finally {
+      server.stop(true);
+    }
+  }, 20_000);
+
+  it("refuses to report a PM2-online runner as running when NATS cannot confirm its health", async () => {
+    const runtime = createFakeChannelsRuntime("ravi-channels-start-unconfirmed-", ONLINE_CHANNELS_ENTRY);
+    const closed = listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    const closedPort = closed.port;
+    closed.stop(true);
+
+    const result = await runChannelsCli(["start", "--json"], {
+      ...runtime.env,
+      NATS_URL: `nats://127.0.0.1:${closedPort}`,
+    });
+    const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("health could not be confirmed (nats_unavailable)");
+    expect(pm2Log).not.toContain("delete ravi-channels");
+    expect(pm2Log).not.toContain("start bun");
   }, 20_000);
 });
 

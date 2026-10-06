@@ -79,6 +79,14 @@ Critérios suportados:
 - `file.contains`
 - `file.changed`
 
+`response.contains` olha o texto do agente no turno do eval, lido do transcrito.
+`transcript.contains` olha só o que o transcrito ganhou depois do prompt desta rodada:
+o próprio prompt e rodadas anteriores na mesma sessão não contam.
+
+O prompt sai como turno de CLI: a resposta não é enviada ao chat da sessão.
+Se a sessão ainda estiver num turno (por exemplo, um eval anterior que estourou o tempo),
+o runner espera o turno do próprio prompt.
+
 ## CLI
 
 ```bash

@@ -988,7 +988,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     result: Promise<CodexCliTurnResult>;
     resolveResult: (result: CodexCliTurnResult) => void;
     stderrOffset: number;
-    lastUsage?: CodexCliUsage;
+    // Sum of every model call's usage in the current physical turn. A turn
+    // with tool calls makes several model calls, each reported separately.
+    turnUsage?: CodexCliUsage;
+    // Last cumulative thread total seen, to skip repeated usage notifications
+    // that report no new model call.
+    lastUsageTotal?: CodexCliUsage;
     turnId?: string;
     threadId?: string;
     approveRuntimeRequest?: RuntimeApprovalHandler;
@@ -1830,7 +1835,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "thread/tokenUsage/updated": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
-          turn.lastUsage = extractAppServerUsage(params.tokenUsage);
+          accumulateAppServerUsage(turn, params.tokenUsage);
         }
         break;
       }
@@ -1857,10 +1862,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         const status = typeof completedTurn?.status === "string" ? completedTurn.status : "completed";
         if (status === "completed") {
           const usage: CodexCliUsage = {
-            input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.lastUsage?.input_tokens),
-            output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.lastUsage?.output_tokens),
+            input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+            output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
             cached_input_tokens:
-              toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.lastUsage?.cached_input_tokens),
+              toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
           };
           const terminal: CodexCliEvent = {
             type: "turn.completed",
@@ -1880,7 +1885,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             turn.goalContinuation = terminal;
             if (turnId) turn.completedNativeTurnIds.add(turnId);
             turn.chainUsage = usage;
-            turn.lastUsage = undefined;
+            turn.turnUsage = undefined;
             turn.turnId = undefined;
             turn.turnStartedEmitted = false;
             pendingDynamicToolResults.clear();
@@ -2746,10 +2751,14 @@ function extractPromptText(message: RuntimePromptMessage): string | null {
 
 function mapCliUsage(usage: unknown): RuntimeUsage {
   const value = (usage ?? {}) as CodexCliUsage;
+  const inputTokens = toNumber(value.input_tokens);
+  const cacheReadTokens = toNumber(value.cached_input_tokens);
   return {
-    inputTokens: toNumber(value.input_tokens),
+    // Codex reports cached input as a subset of input_tokens. RuntimeUsage
+    // keeps them disjoint (Claude semantics), so only uncached input counts here.
+    inputTokens: Math.max(0, inputTokens - cacheReadTokens),
     outputTokens: toNumber(value.output_tokens),
-    cacheReadTokens: toNumber(value.cached_input_tokens),
+    cacheReadTokens,
     cacheCreationTokens: 0,
   };
 }
@@ -3628,17 +3637,51 @@ function firstArray(...values: unknown[]): unknown[] | undefined {
   return undefined;
 }
 
-function extractAppServerUsage(tokenUsage: unknown): CodexCliUsage | undefined {
+function extractAppServerUsage(tokenUsage: unknown, key: "last" | "total"): CodexCliUsage | undefined {
   const record = asRecord(tokenUsage);
-  const last = asRecord(record?.last);
-  if (!last) {
+  const breakdown = asRecord(record?.[key]);
+  if (!breakdown) {
     return undefined;
   }
 
   return {
-    input_tokens: last.inputTokens,
-    cached_input_tokens: last.cachedInputTokens,
-    output_tokens: last.outputTokens,
+    input_tokens: breakdown.inputTokens,
+    cached_input_tokens: breakdown.cachedInputTokens,
+    output_tokens: breakdown.outputTokens,
+  };
+}
+
+function sameCodexUsage(a: CodexCliUsage, b: CodexCliUsage): boolean {
+  return (
+    toNumber(a.input_tokens) === toNumber(b.input_tokens) &&
+    toNumber(a.cached_input_tokens) === toNumber(b.cached_input_tokens) &&
+    toNumber(a.output_tokens) === toNumber(b.output_tokens)
+  );
+}
+
+// `thread/tokenUsage/updated` reports `last` (the latest model call) and
+// `total` (cumulative for the thread). Add each new call's `last` to the turn;
+// a notification whose `total` did not move reports no new call.
+function accumulateAppServerUsage(
+  turn: { turnUsage?: CodexCliUsage; lastUsageTotal?: CodexCliUsage },
+  tokenUsage: unknown,
+): void {
+  const last = extractAppServerUsage(tokenUsage, "last");
+  const total = extractAppServerUsage(tokenUsage, "total");
+  if (total) {
+    const repeated = turn.lastUsageTotal !== undefined && sameCodexUsage(turn.lastUsageTotal, total);
+    turn.lastUsageTotal = total;
+    if (repeated) {
+      return;
+    }
+  }
+  if (!last) {
+    return;
+  }
+  turn.turnUsage = {
+    input_tokens: toNumber(turn.turnUsage?.input_tokens) + toNumber(last.input_tokens),
+    cached_input_tokens: toNumber(turn.turnUsage?.cached_input_tokens) + toNumber(last.cached_input_tokens),
+    output_tokens: toNumber(turn.turnUsage?.output_tokens) + toNumber(last.output_tokens),
   };
 }
 

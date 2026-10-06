@@ -70,6 +70,7 @@ import {
   watchForLeadershipVacancy,
   releaseLeadership,
 } from "./leader/index.js";
+import { scheduleChannelRunnerLivenessReport } from "./channels/runner-liveness.js";
 
 const log = logger.child("daemon");
 
@@ -398,6 +399,15 @@ export async function startDaemon() {
 
   await gateway.start();
   log.info("Gateway started");
+  // Report-only: a ravi-only restart can leave `ravi-channels` PM2-online with
+  // a dead Slack Socket Mode loop. Surface it instead of staying silent.
+  scheduleChannelRunnerLivenessReport({
+    isStopping: () => shuttingDown,
+    report: (decision) => {
+      log.error("Channel runner is PM2-online but its health is not confirmed; run `ravi channels start`", decision);
+    },
+    onError: (error) => log.warn("Channel runner liveness check failed", { error }),
+  });
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).

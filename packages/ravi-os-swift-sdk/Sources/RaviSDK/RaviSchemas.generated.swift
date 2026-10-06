@@ -16692,6 +16692,11 @@ public enum RaviSchemas {
           }
         ]
       },
+      "previousPid": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
       "reason": {
         "type": "string"
       },
@@ -17387,6 +17392,11 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "previousPid": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
       },
       "reason": {
         "type": "string"
@@ -18259,6 +18269,11 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "previousPid": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
       },
       "reason": {
         "type": "string"

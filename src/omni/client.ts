@@ -83,6 +83,7 @@ type RequestOptions = {
   method?: string;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+  timeoutMs?: number;
 };
 
 type RequestAttempt = RequestOptions & {
@@ -123,8 +124,18 @@ function parseApiError(payload: unknown, status: number): OmniApiError {
   return new OmniApiError(`API error (${status})`, { status });
 }
 
-export function createOmniClient(config: { baseUrl: string; apiKey: string; cliVersion?: string }) {
+/** Bounds every Omni API call so a response that never completes cannot freeze the caller. */
+export const DEFAULT_OMNI_REQUEST_TIMEOUT_MS = 15_000;
+/** Media and sticker sends upload to the channel before Omni answers, so they get more room. */
+export const OMNI_MEDIA_REQUEST_TIMEOUT_MS = 120_000;
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
+export function createOmniClient(config: { baseUrl: string; apiKey: string; cliVersion?: string; timeoutMs?: number }) {
   const baseUrl = config.baseUrl.replace(/\/$/, "");
+  const defaultTimeoutMs = config.timeoutMs ?? DEFAULT_OMNI_REQUEST_TIMEOUT_MS;
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiEnvelope<T>> {
     const headers = new Headers();
@@ -133,12 +144,31 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
     if (config.cliVersion) headers.set("x-omni-cli-version", config.cliVersion);
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
 
-    const response = await fetch(buildUrl(baseUrl, path, options.query), {
-      method: options.method ?? "GET",
-      headers,
-      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-    });
-    const payload = (await response.json().catch(() => ({}))) as ApiEnvelope<T>;
+    const method = options.method ?? "GET";
+    const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+    const signal = AbortSignal.timeout(timeoutMs);
+    let response: Response;
+    let payload: ApiEnvelope<T>;
+    try {
+      response = await fetch(buildUrl(baseUrl, path, options.query), {
+        method,
+        headers,
+        signal,
+        ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      });
+      payload = (await response.json().catch((error: unknown) => {
+        // The body read shares the signal; a stalled body must still surface as a timeout.
+        if (signal.aborted) throw error;
+        return {};
+      })) as ApiEnvelope<T>;
+    } catch (error) {
+      if (signal.aborted || isAbortError(error)) {
+        throw new OmniApiError(`Omni API request timed out after ${timeoutMs}ms: ${method} ${path}`, {
+          code: "TIMEOUT",
+        });
+      }
+      throw error;
+    }
     if (!response.ok) throw parseApiError(payload, response.status);
     return payload;
   }
@@ -446,6 +476,7 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
       async sendMedia(body: JsonObject): Promise<{ messageId?: string; status?: string }> {
         const payload = await request<{ messageId?: string; status?: string }>("/messages/send/media", {
           method: "POST",
+          timeoutMs: OMNI_MEDIA_REQUEST_TIMEOUT_MS,
           body,
         });
         return payload.data ?? {};
@@ -453,6 +484,7 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
       async sendSticker(body: JsonObject): Promise<{ messageId?: string; status?: string }> {
         const payload = await request<{ messageId?: string; status?: string }>("/messages/send/sticker", {
           method: "POST",
+          timeoutMs: OMNI_MEDIA_REQUEST_TIMEOUT_MS,
           body,
         });
         return payload.data ?? {};

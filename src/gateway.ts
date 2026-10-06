@@ -972,6 +972,10 @@ export class Gateway {
       type === "turn.completed" ||
       type === "turn.failed" ||
       type === "session.timeout" ||
+      // The dispatcher gave up on this turn (recovery exhausted or start
+      // dropped); no further runtime event will arrive to end it.
+      type === "dispatch.restart_suppressed" ||
+      type === "dispatch.dropped" ||
       (!type &&
         (nativeEvent === "turn.complete" ||
           nativeEvent === "turn.completed" ||

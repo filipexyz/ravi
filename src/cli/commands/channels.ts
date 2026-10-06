@@ -12,6 +12,7 @@ import {
   type ChannelRunnerHealthSnapshot,
 } from "../../channels/health.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
+import { inspectManagedChannelRunner } from "../../channels/runner-liveness.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
@@ -146,6 +147,7 @@ const channelsMutationReturnSchema = z
     runnerEnv: runnerEnvReturnSchema.optional(),
     status: channelsStatusReturnSchema.optional(),
     reason: z.string().optional(),
+    previousPid: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -270,6 +272,26 @@ function persistPm2ProcessList(): number {
 }
 
 export { buildRunnerPm2Env };
+
+/** PM2 delete (when an entry exists) + start from `target` + save. */
+function recreateChannelRunner(
+  target: DaemonRuntimeTarget,
+  runnerEnv: Record<string, string>,
+  asJson?: boolean,
+): { status: number; saveStatus: number | null } {
+  if (getPm2Process(CHANNELS_PM2_PROCESS_NAME)) {
+    const stopped = asJson
+      ? runPm2Quiet(["delete", CHANNELS_PM2_PROCESS_NAME])
+      : runPm2(["delete", CHANNELS_PM2_PROCESS_NAME]);
+    if (stopped.status !== 0) fail("Failed to stop channel runner before restart");
+  }
+
+  const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
+  const { status } = asJson
+    ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
+    : runPm2(args, runnerEnv, { cwd: target.cwd });
+  return { status, saveStatus: status === 0 ? persistPm2ProcessList() : null };
+}
 
 function publicRunnerEnv(envOverrides: Record<string, string>): Record<string, unknown> {
   return {
@@ -638,13 +660,17 @@ export class ChannelsCommands {
   @Command({ name: "start", description: "Start the channel runner via PM2" })
   @CommandAccess({ kind: "mutate", resource: "channels", action: "start", risk: "high" })
   @Returns(channelsMutationReturnSchema)
-  start(
+  async start(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
 
-    if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
+    // PM2 "online" alone is not liveness: a runner whose Slack Socket Mode
+    // loop died keeps its PM2 entry. Probe the PID-scoped health subject and
+    // bounce a stale runner instead of reporting it as already running.
+    const decision = await inspectManagedChannelRunner();
+    if (decision.action === "already_running") {
       const payload = {
         action: "start" as const,
         changed: false,
@@ -655,10 +681,43 @@ export class ChannelsCommands {
       else console.log("Channel runner is already running");
       return payload;
     }
+    if (decision.action === "unconfirmed") {
+      fail(
+        [
+          `Channel runner PM2 process is online (PID ${decision.pid}) but its health could not be confirmed (${decision.reason}).`,
+          "Refusing to report it as running. Check `ravi daemon status`, then `ravi channels status`, or force it with `ravi channels restart`.",
+        ].join("\n"),
+      );
+    }
 
     const target = requireRuntimeTarget(build);
-    const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
     const runnerEnv = buildRunnerPm2Env();
+
+    if (decision.action === "bounce") {
+      const reason = `stale_${decision.reason}`;
+      const { status, saveStatus } = recreateChannelRunner(target, runnerEnv, asJson);
+      const payload = {
+        action: "start" as const,
+        changed: status === 0 && saveStatus === 0,
+        pm2Status: status,
+        reason,
+        ...(decision.pid !== null ? { previousPid: decision.pid } : {}),
+        target,
+        runnerEnv: publicRunnerEnv(runnerEnv),
+        status: buildChannelsStatusJson(),
+      };
+      if (asJson) printJson(payload);
+      if (status !== 0) fail("Failed to restart stale channel runner");
+      if (saveStatus !== 0) fail("Stale channel runner restarted, but failed to save the PM2 process list");
+      if (!asJson) {
+        console.log(
+          `Channel runner was online but not responding (${decision.reason}${decision.pid !== null ? `, PID ${decision.pid}` : ""}); restarted via PM2`,
+        );
+      }
+      return payload;
+    }
+
+    const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
     const { status } = asJson
       ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
       : runPm2(args, runnerEnv, { cwd: target.cwd });
@@ -729,18 +788,7 @@ export class ChannelsCommands {
     const runnerEnv = buildRunnerPm2Env();
     const target = requireRuntimeTarget(build);
 
-    if (getPm2Process(CHANNELS_PM2_PROCESS_NAME)) {
-      const stopped = asJson
-        ? runPm2Quiet(["delete", CHANNELS_PM2_PROCESS_NAME])
-        : runPm2(["delete", CHANNELS_PM2_PROCESS_NAME]);
-      if (stopped.status !== 0) fail("Failed to stop channel runner before restart");
-    }
-
-    const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
-    const { status } = asJson
-      ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
-      : runPm2(args, runnerEnv, { cwd: target.cwd });
-    const saveStatus = status === 0 ? persistPm2ProcessList() : null;
+    const { status, saveStatus } = recreateChannelRunner(target, runnerEnv, asJson);
     const payload = {
       action: "restart" as const,
       changed: status === 0 && saveStatus === 0,

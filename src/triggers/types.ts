@@ -53,6 +53,9 @@ export interface Trigger {
   // State
   lastFiredAt?: number;
   fireCount: number;
+  /** Events on the topic that the filter rejected since the filter/topic last changed. */
+  filterRejectCount?: number;
+  lastFilterRejectAt?: number;
 
   createdAt: number;
   updatedAt: number;

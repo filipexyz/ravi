@@ -31,6 +31,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
     "src/channels/slack/socket-mode.test.ts",
+    // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
+    "src/channels/runner-liveness.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -102,6 +104,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Dispatcher abort semantics: an explicit abort cancels the running tool
     // instead of parking behind the tool barrier; only tool-result delivery defers.
     "src/runtime/session-dispatcher.test.ts",
+    // Dispatch/launch prompt intake failure (no agent): durable trace, turn end, chat notice, held prompts.
+    "src/runtime/intake-failure.test.ts",
     // O observer de intenção é chamado de host-services.ts, e o comportamento que
     // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
     // O call site em si ainda não tem teste de integração — está declarado como

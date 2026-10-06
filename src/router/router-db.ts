@@ -3048,6 +3048,8 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
+  ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;

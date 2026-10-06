@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { buildRuntimeContextRecoveryPrompt, classifyRuntimeContextWindowFailure } from "./context-window-recovery.js";
+import {
+  buildRuntimeContextRecoveryPrompt,
+  classifyRuntimeContextWindowFailure,
+  classifyRuntimeProviderSessionMissingFailure,
+  classifyRuntimeSessionRecoveryFailure,
+} from "./context-window-recovery.js";
 import type { Message } from "../db.js";
 
 describe("runtime context window recovery", () => {
@@ -16,6 +21,42 @@ describe("runtime context window recovery", () => {
       confidence: "high",
       matched: "codex_context_window",
     });
+  });
+
+  it("detects a missing Claude conversation from the provider error", () => {
+    const failure = classifyRuntimeSessionRecoveryFailure({
+      runtimeProvider: "claude",
+      error: "No conversation found with session ID: b8714bf7-9907-4306-9f7c-1af04d0cd0b4",
+    });
+
+    expect(failure).toEqual({
+      kind: "provider_session_missing",
+      confidence: "high",
+      matched: "conversation_not_found",
+    });
+  });
+
+  it("detects a missing conversation reported only in the raw provider event", () => {
+    expect(
+      classifyRuntimeProviderSessionMissingFailure({
+        runtimeProvider: "claude",
+        error: "Claude turn failed",
+        rawEvent: {
+          type: "result",
+          subtype: "error_during_execution",
+          errors: ["No conversation found with session ID: x"],
+        },
+      }),
+    ).toMatchObject({ kind: "provider_session_missing" });
+  });
+
+  it("does not classify unrelated failures as a missing conversation", () => {
+    expect(
+      classifyRuntimeProviderSessionMissingFailure({ runtimeProvider: "claude", error: "rate limited" }),
+    ).toBeNull();
+    expect(
+      classifyRuntimeSessionRecoveryFailure({ runtimeProvider: "claude", error: "Prompt is too long" }),
+    ).toMatchObject({ kind: "context_window_exhausted" });
   });
 
   it("builds a compact non-json prompt from local history", () => {
@@ -53,6 +94,22 @@ describe("runtime context window recovery", () => {
     expect(prompt.prompt).toContain("Olá");
     expect(prompt.prompt).not.toContain("primeiro?Olá");
     expect(prompt.prompt.match(/Assistant /g)?.length).toBeGreaterThan(1);
+  });
+
+  it("explains a missing provider conversation without leaking the failed session id", () => {
+    const prompt = buildRuntimeContextRecoveryPrompt({
+      sessionName: "main",
+      runtimeProvider: "claude",
+      model: "claude-sonnet",
+      recoveryKind: "provider_session_missing",
+      error: "No conversation found with session ID: missing-session-id",
+      history: [message(1, "user", "continua de onde parou")],
+    });
+
+    expect(prompt.prompt).toContain("could not find the previous conversation");
+    expect(prompt.prompt).toContain("continua de onde parou");
+    expect(prompt.prompt).not.toContain("exhausted its context window");
+    expect(prompt.prompt).not.toContain("missing-session-id");
   });
 
   it("bounds recovered history by prompt size", () => {

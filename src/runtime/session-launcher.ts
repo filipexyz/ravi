@@ -43,6 +43,7 @@ import { updateRuntimeLiveState } from "./live-state.js";
 import { isClaudeModelAlias, resolvePreferredRuntimeModel } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -83,6 +84,54 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
   }
 }
 
+function intakeNoticeTargetKey(prompt: RuntimeLaunchPrompt): string | undefined {
+  const source = prompt.source;
+  if (!source) return undefined;
+  return [source.channel, source.accountId, source.chatId, source.threadId ?? ""].join(":");
+}
+
+/**
+ * Terminalize every prompt this start was holding: the launch prompt plus any
+ * prompts stashed while it waited for a pool slot or cold start. The stash is
+ * cleared so those prompts are neither silently orphaned nor re-injected into
+ * a later, unrelated start. A resume start's prompt is synthesized from the
+ * stash, so only the stashed originals are reported in that case.
+ */
+function reportLaunchIntakeFailure(options: StartRuntimeSessionOptions): void {
+  const held = options.stashedMessages.get(options.sessionName) ?? [];
+  options.stashedMessages.delete(options.sessionName);
+
+  const prompts: RuntimeLaunchPrompt[] = [];
+  if (!(options.prompt._resumeStashedMessages === true && held.length > 0)) {
+    prompts.push(options.prompt);
+  }
+  for (const message of held) {
+    prompts.push(message.launchPrompt ?? { prompt: message.message.content });
+  }
+
+  const notifiedTargets = new Set<string>();
+  for (const prompt of prompts) {
+    // Every held prompt gets its own durable trace; each chat gets one notice.
+    const targetKey = intakeNoticeTargetKey(prompt);
+    const notifyUser = targetKey === undefined || !notifiedTargets.has(targetKey);
+    if (targetKey !== undefined) notifiedTargets.add(targetKey);
+    const agentId = prompt._agentId ?? options.prompt._agentId;
+    reportRuntimePromptIntakeFailure({
+      sessionName: options.sessionName,
+      prompt,
+      reason: "no_agent",
+      stage: "launch",
+      instanceId: options.instanceId,
+      safeEmit: options.safeEmit,
+      notifyUser,
+      details: {
+        ...(agentId ? { agentId } : {}),
+        ...(prompts.length > 1 ? { heldPrompts: prompts.length } : {}),
+      },
+    });
+  }
+}
+
 export async function startRuntimeSession(options: StartRuntimeSessionOptions): Promise<void> {
   const {
     sessionName,
@@ -101,7 +150,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
   const sessionIdentity = resolveRuntimeSessionIdentity({ sessionName, prompt });
-  if (!sessionIdentity) return;
+  if (!sessionIdentity) {
+    // The agent disappeared between dispatch and launch. Permanent, so record
+    // and acknowledge instead of throwing into a JetStream redelivery loop.
+    reportLaunchIntakeFailure(options);
+    return;
+  }
   let modelBrokerPlanClaim: ClaimedRuntimeModelBrokerPlan | undefined;
   if (prompt._modelBrokerTurnId) {
     const selection = resolveRequiredRuntimeModelBrokerSelection(
@@ -145,6 +199,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     throw error;
   }
   if (!resolvedSession) {
+    reportLaunchIntakeFailure(options);
     return;
   }
 

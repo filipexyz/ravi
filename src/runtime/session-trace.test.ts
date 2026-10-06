@@ -28,7 +28,10 @@ import {
 } from "./credential-store.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
-import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
+import {
+  RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+  RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+} from "./context-window-recovery.js";
 import {
   canReleaseRuntimeDeliveryBarrier,
   createQueuedRuntimeUserMessage,
@@ -4922,12 +4925,12 @@ describe("runtime session trace instrumentation", () => {
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
   });
 
-  it("records exhausted recovery without publishing a user-facing response", async () => {
+  it("records exhausted recovery and publishes only a generic user-facing notice", async () => {
     const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
     const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
-    const responseTopics: string[] = [];
-    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string) => {
-      if (topic.endsWith(".response")) responseTopics.push(topic);
+    const responses: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: Record<string, unknown>) => {
+      if (topic.endsWith(".response")) responses.push({ topic, data });
     });
     const dispatcher = new RuntimeSessionDispatcher({
       instanceId: "trace-test",
@@ -4971,7 +4974,10 @@ describe("runtime session trace instrumentation", () => {
       (event) => event.eventType === "dispatch.restart_suppressed",
     );
     expect(starts).toBe(2);
-    expect(responseTopics).toEqual([]);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]?.data.response).toBe(
+      "Error: The agent could not respond right now. Send another message to try again.",
+    );
     expect(dispatcher.stashedMessages.has(SESSION_KEY)).toBe(true);
     expect(alerts).toHaveLength(1);
     expect(runtimeEvents).toHaveLength(1);
@@ -5536,6 +5542,55 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it.each([
+    {
+      name: "assistant error code",
+      credentialId: "rcred_claude_sdk_code",
+      error: "Claude provider error (authentication_failed): Invalid API key · Fix external API key",
+      rawEvent: { type: "assistant", error: "authentication_failed" },
+      reason: "runtime_credential_auth_invalid",
+    },
+    {
+      name: "result api_error_status",
+      credentialId: "rcred_claude_sdk_status",
+      error: "Claude provider error (http_429): Request limit reached",
+      rawEvent: { type: "result", subtype: "success", is_error: true, api_error_status: 429 },
+      reason: "runtime_credential_rate_limited",
+    },
+  ])("routes Claude SDK $name failures into credential failover", async ({ credentialId, error, rawEvent, reason }) => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry this Claude turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt(credentialId),
+    });
+    seedAdapterTrace(streaming, `turn-${credentialId}`);
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "turn.failed", error, recoverable: false, rawEvent }]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason }]);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "retry this Claude turn",
+    ]);
+  });
+
   it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
     saveMessage(SESSION_NAME, "user", "abre a issue 123 e investiga", "thread-old", {
       agentId: AGENT_ID,
@@ -5619,6 +5674,149 @@ describe("runtime session trace instrumentation", () => {
     expect(eventTypes).toContain("turn.failed");
     expect(eventTypes).toContain("session.context_window_exhausted");
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
+  });
+
+  it("recreates a missing provider session from durable local history", async () => {
+    const missingSessionId = "b8714bf7-9907-4306-9f7c-1af04d0cd0b4";
+    saveMessage(SESSION_NAME, "user", "investiga a falha de deploy", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-old",
+    });
+    saveMessage(SESSION_NAME, "assistant", "Vou conferir os logs.", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "continua de onde parou", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-latest",
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: missingSessionId,
+      runtimeSessionDisplayId: missingSessionId,
+      runtimeSessionParams: { sessionId: missingSessionId },
+    });
+
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = missingSessionId;
+    session.sdkSessionId = missingSessionId;
+    session.runtimeSessionDisplayId = missingSessionId;
+    session.runtimeSessionParams = { sessionId: missingSessionId };
+
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continua de onde parou",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-provider-session-missing");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: `No conversation found with session ID: ${missingSessionId}`,
+          recoverable: true,
+        },
+      ]),
+      {
+        session,
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([
+      { sessionName: SESSION_NAME, reason: RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON },
+    ]);
+
+    const stashed = stashedMessages.get(SESSION_NAME);
+    expect(stashed).toHaveLength(1);
+    expect(stashed?.[0]?.message.content).toContain("could not find the previous conversation");
+    expect(stashed?.[0]?.message.content).toContain("continua de onde parou");
+    expect(stashed?.[0]?.message.content).not.toContain(missingSessionId);
+
+    expect(session.providerSessionId).toBeUndefined();
+    expect(session.runtimeSessionParams).toBeUndefined();
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.providerSessionId).toBeUndefined();
+    expect(persisted?.runtimeProvider).toBeUndefined();
+    expect(persisted?.runtimeSessionParams).toBeUndefined();
+
+    const events = listSessionEvents(SESSION_KEY);
+    const eventTypes = events.map((event) => event.eventType);
+    expect(eventTypes).toContain("session.provider_session_missing");
+    expect(eventTypes).not.toContain("session.context_window_exhausted");
+    expect(getSessionTurn("turn-provider-session-missing")).toMatchObject({
+      status: "failed",
+      abortReason: RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+    });
+  });
+
+  it("does not retry a missing provider session error when no stored session id was resumed", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continua de onde parou",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-provider-session-missing-without-resume");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "No conversation found with session ID: already-cleared",
+          recoverable: true,
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(emitted.map((event) => event.data.type)).toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain(
+      "session.provider_session_missing",
+    );
   });
 
   it("does not auto-replay retryable credential failures after a tool started", async () => {

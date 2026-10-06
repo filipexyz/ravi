@@ -523,6 +523,18 @@ describe("OmniConsumer channel context", () => {
       expect(sender.sendTyping).toHaveBeenCalled();
     });
 
+    it("dispatches the prompt even when the typing presence call never answers", async () => {
+      const { consumer, sender } = createConsumer();
+      // A stalled Omni presence request must not freeze the inbound handler.
+      sender.sendTyping.mockImplementation(() => new Promise<void>(() => {}));
+
+      await receiveText(consumer, "oi", "hung-typing");
+
+      expect(sender.sendTyping).toHaveBeenCalled();
+      expect(promptCalls).toHaveLength(1);
+      expect(promptCalls[0][1].prompt).toEndWith("Luis Filipe: oi");
+    });
+
     it("publishes !! messages as normal user messages that skip the turn and typing", async () => {
       const { consumer, sender } = createConsumer();
 

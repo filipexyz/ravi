@@ -309,6 +309,182 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
+  const runSingleTurn = async () => {
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+    return collectEvents(session.events);
+  };
+
+  const zeroUsage = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  };
+
+  it("fails the turn on Claude assistant error frames instead of delivering them as replies", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        error: "rate_limit",
+        session_id: "claude-session-rate-limit",
+        message: {
+          content: [{ type: "text", text: "You're out of extra usage · resets Aug 24 at 6am (America/Sao_Paulo)" }],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "claude-session-rate-limit",
+        usage: zeroUsage,
+      },
+    ];
+
+    const events = await runSingleTurn();
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(findEventsByType(events, "assistant.message")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      error: "Claude provider error (rate_limit): You're out of extra usage · resets Aug 24 at 6am (America/Sao_Paulo)",
+      recoverable: true,
+      rawEvent: { type: "assistant", error: "rate_limit" },
+    });
+  });
+
+  it.each([
+    ["authentication_failed", "Invalid API key · Fix external API key"],
+    ["oauth_org_not_allowed", "Your organization does not allow this OAuth client"],
+    ["billing_error", "Credit balance is too low"],
+  ])("marks Claude %s assistant errors as non-recoverable failures", async (code, text) => {
+    nextMessages = [
+      { type: "assistant", error: code, message: { content: [{ type: "text", text }] } },
+      { type: "result", subtype: "success", is_error: false, usage: zeroUsage },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "assistant.message")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({ error: `Claude provider error (${code}): ${text}`, recoverable: false }),
+    ]);
+  });
+
+  it("keeps Claude login stubs verbatim so the host login-stub path owns them", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        error: "authentication_failed",
+        message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] },
+      },
+      { type: "result", subtype: "success", is_error: false, usage: zeroUsage },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({ error: "Not logged in · Please run /login", recoverable: false }),
+    ]);
+  });
+
+  it("does not fail the turn on max_output_tokens assistant frames", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        error: "max_output_tokens",
+        message: { content: [{ type: "text", text: "partial answer" }] },
+      },
+      { type: "result", subtype: "success", is_error: false, session_id: "claude-session-max", usage: zeroUsage },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "assistant.message")).toEqual([
+      expect.objectContaining({ text: "partial answer" }),
+    ]);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+  });
+
+  it.each([
+    [429, true],
+    [529, true],
+    [401, false],
+  ])("treats a success result with is_error and api_error_status %d as a failed turn", async (status, recoverable) => {
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        api_error_status: status,
+        result: "You're out of extra usage",
+        session_id: "claude-session-error-success",
+        usage: zeroUsage,
+      },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({
+        error: `Claude provider error (http_${status}): You're out of extra usage`,
+        recoverable,
+        rawEvent: expect.objectContaining({ api_error_status: status }),
+      }),
+    ]);
+  });
+
+  it("treats an is_error success result without a status as a failed turn", async () => {
+    nextMessages = [
+      { type: "result", subtype: "success", is_error: true, result: "API Error: Connection error.", usage: zeroUsage },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({ error: "Claude turn failed: API Error: Connection error.", recoverable: true }),
+    ]);
+  });
+
+  it("completes a recovered success result that still carries a stale api_error_status", async () => {
+    // The SDK retried a 429 and recovered: the turn succeeded, so `is_error` is
+    // false even though the last API error status is still reported.
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        api_error_status: 429,
+        result: "final answer",
+        session_id: "claude-session-recovered",
+        usage: zeroUsage,
+      },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "claude-session-recovered" }),
+    ]);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {

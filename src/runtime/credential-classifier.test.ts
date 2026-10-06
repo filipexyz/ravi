@@ -87,6 +87,57 @@ describe("runtime credential classifier", () => {
     expect(signal.retryableByCredential).toBe(false);
   });
 
+  it("classifies Claude SDK assistant error codes", () => {
+    const classify = (providerCode: string, message?: string) =>
+      classifyRuntimeCredentialFailure({
+        runtimeProvider: "claude",
+        upstreamProvider: "anthropic",
+        providerCode,
+        ...(message ? { message } : {}),
+        source: "sdk-error",
+      });
+
+    expect(
+      classify("rate_limit", "Claude provider error (rate_limit): You're out of extra usage · resets later"),
+    ).toMatchObject({ kind: "rate_limited", confidence: "high", retryableByCredential: true });
+    expect(classify("authentication_failed")).toMatchObject({
+      kind: "auth_invalid",
+      scope: "credential",
+      retryableByCredential: true,
+    });
+    expect(classify("oauth_org_not_allowed")).toMatchObject({
+      kind: "permission_denied",
+      scope: "organization",
+      retryableByCredential: true,
+    });
+    expect(classify("account_on_hold")).toMatchObject({
+      kind: "billing_blocked",
+      scope: "account",
+      retryableByCredential: true,
+    });
+    expect(classify("overloaded")).toMatchObject({
+      kind: "provider_overloaded",
+      scope: "provider",
+      retryableByCredential: false,
+    });
+  });
+
+  it("classifies Claude result frames by api_error_status and usage text", () => {
+    expect(
+      classifyRuntimeCredentialFailure({
+        runtimeProvider: "claude",
+        httpStatus: 429,
+        message: "Claude provider error (http_429): You're out of extra usage",
+      }),
+    ).toMatchObject({ kind: "rate_limited", retryableByCredential: true });
+    expect(
+      classifyRuntimeCredentialFailure({
+        runtimeProvider: "claude",
+        message: "You're out of extra usage · resets Aug 24 at 6am",
+      }),
+    ).toMatchObject({ kind: "rate_limited", retryableByCredential: true });
+  });
+
   it("classifies Codex context window exhaustion as a request context limit", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

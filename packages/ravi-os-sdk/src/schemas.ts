@@ -16560,6 +16560,11 @@ export const ChannelsRestartReturnSchema = {
         }
       ]
     },
+    "previousPid": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
     "reason": {
       "type": "string"
     },
@@ -17249,6 +17254,11 @@ export const ChannelsStartReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "previousPid": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
     },
     "reason": {
       "type": "string"
@@ -18117,6 +18127,11 @@ export const ChannelsStopReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "previousPid": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
     },
     "reason": {
       "type": "string"

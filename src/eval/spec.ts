@@ -3,6 +3,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 
 export const EVAL_SPEC_VERSION = 1 as const;
+export const EVAL_MAX_TIMEOUT_MS = 10 * 60_000;
 
 const EvalSessionSpecSchema = z
   .object({
@@ -31,12 +32,7 @@ const EvalArtifactsSpecSchema = z
 
 const EvalRunnerSpecSchema = z
   .object({
-    timeoutMs: z
-      .number()
-      .int()
-      .positive()
-      .max(10 * 60_000)
-      .default(120_000),
+    timeoutMs: z.number().int().positive().max(EVAL_MAX_TIMEOUT_MS).default(120_000),
   })
   .strict()
   .default({

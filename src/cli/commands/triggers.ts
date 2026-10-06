@@ -120,6 +120,7 @@ function serializeTrigger(trigger: Trigger) {
   return {
     ...trigger,
     executionType: trigger.executionType ?? "agent",
+    filterRejectCount: trigger.filterRejectCount ?? 0,
     effectiveAgentId: trigger.agentId ?? getDefaultAgentId(),
     cooldownDescription: formatDurationMs(trigger.cooldownMs),
     shellTimeoutDescription:
@@ -419,6 +420,17 @@ export class TriggersCommands {
       console.log(`  Fire count:      ${trigger.fireCount}`);
       if (trigger.lastFiredAt) {
         console.log(`  Last fired:      ${new Date(trigger.lastFiredAt).toLocaleString()}`);
+      }
+      if (trigger.filter) {
+        console.log(`  Filter rejects:  ${trigger.filterRejectCount ?? 0}`);
+        if (trigger.lastFilterRejectAt) {
+          console.log(`  Last reject:     ${new Date(trigger.lastFilterRejectAt).toLocaleString()}`);
+        }
+        if (trigger.fireCount === 0 && (trigger.filterRejectCount ?? 0) > 0) {
+          console.log(
+            `  Hint:            events arrive on this topic but the filter rejects all of them; check the field paths against a real event (daemon log shows its top-level keys)`,
+          );
+        }
       }
       console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
 

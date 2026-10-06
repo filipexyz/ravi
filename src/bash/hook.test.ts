@@ -237,14 +237,14 @@ describe("createBashPermissionHook", () => {
       expect(getDenyReason(result)).toContain("command substitution");
     });
 
-    it("allows bootstrap safe executables with stale agent-runtime capabilities", () => {
+    it("does not widen stale agent-runtime capabilities with the agent's materialized grants", () => {
       const decision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
         kind: "agent-runtime",
         capabilities: [],
       });
 
-      expect(decision.allowed).toBe(true);
+      expect(decision.allowed).toBe(false);
     });
 
     it("keeps executable grants bounded to the issued context", () => {
@@ -554,5 +554,77 @@ describe("turn-runtime executor ceiling", () => {
 
     dbUpdateAgent(agentId, { defaults: {} });
     expect(evaluateBashPermission("ssh host uptime", overlayTurn).allowed).toBe(false);
+  });
+});
+
+describe("non-delegated child contexts of a superadmin agent", () => {
+  const agentId = "boss";
+  const childCaps: ContextCapability[] = [{ permission: "execute", objectType: "executable", objectId: "git" }];
+
+  function childContext(
+    kind: string,
+    capabilities: ContextCapability[] = childCaps,
+  ): Parameters<typeof evaluateBashPermission>[1] {
+    return { agentId, kind, sessionName: "boss-own", capabilities };
+  }
+
+  beforeEach(() => {
+    dbCreateAgent({ id: agentId, cwd: "/tmp/boss" });
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+  });
+
+  for (const kind of ["cli-runtime", "app-runtime"]) {
+    it(`bounds a narrowed ${kind} child by its own capabilities`, () => {
+      const ctx = childContext(kind);
+      expect(evaluateBashPermission("git status", ctx).allowed).toBe(true);
+
+      const ssh = evaluateBashPermission("ssh host uptime", ctx);
+      expect(ssh.allowed).toBe(false);
+      expect(ssh.denialType).toBe("executable");
+
+      const session = evaluateBashPermission("ravi sessions send main 'hello'", childContext(kind, []));
+      expect(session.allowed).toBe(false);
+      expect(session.denialType).toBe("session_scope");
+
+      const spoof = evaluateBashPermission("RAVI_AGENT_ID=main git status", ctx);
+      expect(spoof.allowed).toBe(false);
+      expect(spoof.denialType).toBe("env_spoofing");
+    });
+  }
+
+  it("denies SDK tools the narrowed child was not granted", async () => {
+    const context = makeToolContext(agentId, childCaps, "cli-runtime");
+    expect(isDenied(await callToolHook("Bash", agentId, context))).toBe(true);
+
+    const granted = makeToolContext(
+      agentId,
+      [...childCaps, { permission: "use", objectType: "tool", objectId: "Bash" }],
+      "cli-runtime",
+    );
+    expect(isDenied(await callToolHook("Bash", agentId, granted))).toBe(false);
+  });
+
+  it("keeps the live executor ceiling for delegated turns of the same agent", async () => {
+    const metadata = { authorityMode: "agent-identity", actorResolution: "resolved" };
+    const turn: Parameters<typeof evaluateBashPermission>[1] = {
+      agentId,
+      kind: "turn-runtime",
+      capabilities: childCaps,
+      metadata,
+    };
+    expect(evaluateBashPermission("ssh host uptime", turn).allowed).toBe(true);
+
+    const toolContext: ToolContext = {
+      agentId,
+      context: { ...makeToolContext(agentId, childCaps, "turn-runtime").context!, metadata },
+    };
+    expect(isDenied(await callToolHook("Bash", agentId, toolContext))).toBe(false);
+  });
+
+  it("still treats a context that holds admin:system:* as superadmin", () => {
+    const ctx = childContext("cli-runtime", [{ permission: "admin", objectType: "system", objectId: "*" }]);
+    expect(evaluateBashPermission("ssh host uptime", ctx).allowed).toBe(true);
+    expect(evaluateBashPermission("ravi sessions send main 'hello'", ctx).allowed).toBe(true);
+    expect(evaluateBashPermission("RAVI_AGENT_ID=main git status", ctx).allowed).toBe(true);
   });
 });

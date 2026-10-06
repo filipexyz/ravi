@@ -4,6 +4,7 @@ import {
   type Options,
   type PermissionResult,
   type Query,
+  type SDKAssistantMessageError,
 } from "@anthropic-ai/claude-agent-sdk";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -29,6 +30,7 @@ import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { logger } from "../utils/logger.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
+import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
   CLAUDE_INHERITED_AUTH_ENV_KEYS,
   RAVI_CLAUDE_MANAGED_AUTH_ENV,
@@ -631,6 +633,61 @@ function resolveExecutableFromPath(command: string, env: Record<string, string |
   return undefined;
 }
 
+// Transient Claude SDK failures. Account, auth and request failures are not
+// recoverable by retrying the same credential; credential failover is decided
+// separately by the host's credential classifier.
+const RECOVERABLE_CLAUDE_ASSISTANT_ERRORS = new Set<SDKAssistantMessageError>([
+  "rate_limit",
+  "overloaded",
+  "server_error",
+  "unknown",
+]);
+
+// `max_output_tokens` is handled by Claude Code's own continuation recovery and
+// is not a provider failure of the turn.
+const NON_TERMINAL_CLAUDE_ASSISTANT_ERRORS = new Set<string>(["max_output_tokens"]);
+
+function readClaudeAssistantError(message: any): string | undefined {
+  const code = typeof message.error === "string" ? message.error.trim() : "";
+  return code && !NON_TERMINAL_CLAUDE_ASSISTANT_ERRORS.has(code) ? code : undefined;
+}
+
+function extractClaudeAssistantText(message: any): string {
+  const blocks = Array.isArray(message.message?.content) ? message.message.content : [];
+  return blocks
+    .filter((block: any) => block?.type === "text" && typeof block.text === "string")
+    .map((block: any) => block.text.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatClaudeProviderFailure(input: { code?: unknown; details?: unknown; errors?: unknown }): string {
+  const code = typeof input.code === "string" && input.code.trim() ? input.code.trim() : undefined;
+  const errors = Array.isArray(input.errors)
+    ? input.errors.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const details =
+    errors.length > 0
+      ? errors.join("; ")
+      : typeof input.details === "string" && input.details.trim()
+        ? input.details.trim()
+        : undefined;
+  // Keep login stubs verbatim so the host's strict login-stub path still owns them.
+  if (details && isRuntimeProviderLoginStub(details, { provider: "claude" })) {
+    return details;
+  }
+  const prefix = code ? `Claude provider error (${code})` : "Claude turn failed";
+  return details ? `${prefix}: ${details}` : prefix;
+}
+
+function isRecoverableClaudeAssistantError(code: string): boolean {
+  return RECOVERABLE_CLAUDE_ASSISTANT_ERRORS.has(code as SDKAssistantMessageError);
+}
+
+function isRecoverableClaudeApiStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
 async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
@@ -654,6 +711,24 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
     }
 
     if (message.type === "assistant") {
+      const assistantError = readClaudeAssistantError(message);
+      if (assistantError) {
+        // The SDK reports provider failures (rate limit, usage/billing, auth,
+        // org policy, overload) as an assistant frame whose text is the
+        // provider notice, usually followed by a zero-usage `result/success`.
+        // Fail the turn instead of delivering that notice as the agent's reply,
+        // and stop normalizing so the trailing result cannot complete the turn.
+        yield {
+          type: "turn.failed",
+          error: formatClaudeProviderFailure({
+            code: assistantError,
+            details: extractClaudeAssistantText(message),
+          }),
+          recoverable: isRecoverableClaudeAssistantError(assistantError),
+          rawEvent,
+        };
+        return;
+      }
       const blocks = Array.isArray(message.message?.content) ? message.message.content : [];
       const textBlocks: string[] = [];
 
@@ -706,6 +781,29 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
               ? message.errors.join("; ")
               : "Claude turn failed",
           recoverable: true,
+          rawEvent,
+        };
+        continue;
+      }
+
+      // `subtype: "success"` with `is_error` means the turn ended on an API error
+      // and `result` carries the error text. `is_error` is the only terminal
+      // signal: a successful result can still carry the `api_error_status` of a
+      // request the SDK retried and recovered from, so the status only labels
+      // and classifies a failure that `is_error` already reported.
+      if (message.is_error === true) {
+        const apiErrorStatus =
+          typeof message.api_error_status === "number" && Number.isFinite(message.api_error_status)
+            ? message.api_error_status
+            : undefined;
+        yield {
+          type: "turn.failed",
+          error: formatClaudeProviderFailure({
+            code: apiErrorStatus !== undefined ? `http_${apiErrorStatus}` : undefined,
+            details: message.result,
+            errors: message.errors,
+          }),
+          recoverable: apiErrorStatus !== undefined ? isRecoverableClaudeApiStatus(apiErrorStatus) : true,
           rawEvent,
         };
         continue;

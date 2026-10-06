@@ -12,8 +12,8 @@ import {
 import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
-  getOrCreateAgentRuntimeContext,
   issueRuntimeContext,
+  LEGACY_AGENT_RUNTIME_CONTEXT_KIND,
   listLiveAdminContexts,
   resolveRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -81,87 +81,11 @@ describe("runtime context registry", () => {
     });
   });
 
-  it("reuses one live agent-runtime context per agent/session and keeps the original capability snapshot", () => {
-    const sessionKey = "agent:test-context-agent:main";
-    createTestSession(sessionKey);
-
-    const first = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-main",
-      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
-      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.4" },
-      source: { channel: "whatsapp", accountId: "main", chatId: "chat-1" },
-    });
-
-    const second = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-main-renamed",
-      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
-      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.5" },
-      source: { channel: "whatsapp", accountId: "main", chatId: "chat-2" },
-    });
-
-    expect(second.contextId).toBe(first.contextId);
-    expect(second.contextKey).toBe(first.contextKey);
-    expect(second.sessionName).toBe("test-main-renamed");
-    expect(second.source).toEqual({ channel: "whatsapp", accountId: "main", chatId: "chat-2" });
-    expect(second.metadata).toEqual({ runtimeProvider: "codex", runtimeModel: "gpt-5.5" });
-    expect(second.lastUsedAt).toBeGreaterThanOrEqual(first.createdAt);
-    expect(second.capabilities).toContainEqual({
-      permission: "use",
-      objectType: "tool",
-      objectId: "*",
-      source: "runtime-bootstrap:agent",
-    });
-    expect(second.capabilities.some((capability) => capability.permission === "admin")).toBe(false);
-  });
-
-  it("creates a fresh agent-runtime context when the previous one is revoked or expired", () => {
-    const sessionKey = "agent:test-context-agent:revoked";
-    createTestSession(sessionKey);
-    createTestSession("agent:test-context-agent:expired");
-    const first = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-revoked",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    revokeRuntimeContext(first.contextId);
-
-    const afterRevoke = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey,
-      sessionName: "test-revoked",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    expect(afterRevoke.contextId).not.toBe(first.contextId);
-
-    const expired = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey: "agent:test-context-agent:expired",
-      sessionName: "test-expired",
-      capabilities: [],
-      expiresAt: Date.now() - 1,
-    });
-
-    const afterExpiry = getOrCreateAgentRuntimeContext({
-      agentId: TEST_AGENT_ID,
-      sessionKey: "agent:test-context-agent:expired",
-      sessionName: "test-expired",
-      capabilities: [],
-      ttlMs: 60_000,
-    });
-    expect(afterExpiry.contextId).not.toBe(expired.contextId);
-  });
-
   it("revokes live agent-runtime contexts for a session", () => {
     const sessionKey = "agent:test-context-agent:reset";
     createTestSession(sessionKey);
-    const first = getOrCreateAgentRuntimeContext({
+    const first = createRuntimeContext({
+      kind: LEGACY_AGENT_RUNTIME_CONTEXT_KIND,
       agentId: TEST_AGENT_ID,
       sessionKey,
       sessionName: "test-reset",

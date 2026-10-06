@@ -69,6 +69,7 @@ import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { FATAL_TOOL_FAILURE_REASON } from "./fatal-tool-failure.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { isUserFacingPromptSource, reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
@@ -114,6 +115,8 @@ const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>>
   [PROVIDER_TRANSPORT_FAILURE_REASON]: MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS,
   [FATAL_TOOL_FAILURE_REASON]: MAX_FATAL_TOOL_FAILURE_RESTARTS,
 };
+const RUNTIME_RECOVERY_EXHAUSTED_USER_MESSAGE =
+  "The agent could not respond right now. Send another message to try again.";
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -842,7 +845,7 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
-      log.error("No agent found for prompt", { sessionName, agentId });
+      this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
 
@@ -951,7 +954,7 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
-      log.error("No agent found for prompt", { sessionName, agentId });
+      this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
     prompt = this.consumeHeldSkipTurnMessages(sessionName, prompt);
@@ -1524,6 +1527,20 @@ export class RuntimeSessionDispatcher {
     await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
   }
 
+  // A missing agent is permanent: acknowledge the prompt (no throw, so JetStream
+  // does not redeliver it) but leave a durable trace and tell the chat user.
+  private reportPromptIntakeFailure(sessionName: string, prompt: RuntimeLaunchPrompt, agentId: string): void {
+    reportRuntimePromptIntakeFailure({
+      sessionName,
+      prompt,
+      reason: "no_agent",
+      stage: "dispatch",
+      instanceId: this.options.instanceId,
+      safeEmit: this.options.safeEmit,
+      details: { agentId },
+    });
+  }
+
   private prepareDaemonRestartResumePrompt(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
@@ -1963,9 +1980,24 @@ export class RuntimeSessionDispatcher {
         });
 
       // This is an infrastructure failure, not an agent response. Keep the
-      // stashed turn available for an explicit retry, but never publish the
-      // technical failure onto the session's user-facing response subject.
-      log.error("Runtime recovery exhausted; suppressed channel response", {
+      // stashed turn available for an explicit retry and never publish the
+      // technical failure onto the session's user-facing response subject;
+      // a chat user only gets a generic notice so the turn doesn't look hung.
+      if (prompt.source && isUserFacingPromptSource(prompt.source)) {
+        await nats
+          .emit(`ravi.session.${sessionName}.response`, {
+            response: formatUserFacingTurnFailure(RUNTIME_RECOVERY_EXHAUSTED_USER_MESSAGE),
+            target: prompt.source,
+            _emitId: Math.random().toString(36).slice(2, 8),
+            _instanceId: this.options.instanceId,
+            _pid: process.pid,
+            _v: 2,
+          })
+          .catch((error) => {
+            log.warn("Failed to emit exhausted runtime recovery notice", { sessionName, reason, error });
+          });
+      }
+      log.error("Runtime recovery exhausted; stopped automatic restarts", {
         sessionName,
         sessionKey: traceIdentity.sessionKey,
         agentId: traceIdentity.agentId ?? prompt._agentId,
@@ -2375,7 +2407,7 @@ export class RuntimeSessionDispatcher {
     const prompt = pendingStart.prompt;
     const lane = this.resolveStartLane(sessionName, prompt, pendingStart.lane);
     const source = prompt.source;
-    const userFacing = lane === "interactive" || isUserFacingPendingStartSource(source);
+    const userFacing = lane === "interactive" || isUserFacingPromptSource(source);
     pendingStart.cancelled = true;
     this.clearPendingStartTimeout(pendingStart);
     const index = this.pendingStarts.indexOf(pendingStart);
@@ -3533,9 +3565,4 @@ function describeSessionState(session: RuntimeHostStreamingSession): Record<stri
     tool: session.currentToolName ?? null,
     idleMs: session.lastActivity ? Date.now() - session.lastActivity : null,
   };
-}
-
-function isUserFacingPendingStartSource(source: RuntimeLaunchPrompt["source"] | undefined): boolean {
-  const channel = source?.channel?.trim().toLowerCase();
-  return channel === "whatsapp" || channel === "slack" || channel === "telegram" || channel === "discord";
 }

@@ -241,6 +241,48 @@ describe("TriggerRunner invalid filters fail closed", () => {
   });
 });
 
+describe("TriggerRunner filter reject diagnostics", () => {
+  it("counts rejected events per trigger and leaves matching siblings untouched", async () => {
+    const topic = "message.received.whatsapp-baileys.inst-1";
+    const wrongPath = createTrigger({ name: "wrong-path", topic, filter: `data.payload.chatUuid == "chat-1"` });
+    const rightPath = createTrigger({
+      name: "right-path",
+      topic,
+      filter: `data.payload.chatId == "123@s.whatsapp.net"`,
+    });
+
+    await startRunner();
+    emit(topic, { id: "evt-1", type: "message.received", payload: { chatId: "123@s.whatsapp.net" }, metadata: {} });
+    emit(topic, { id: "evt-2", type: "message.received", payload: { chatId: "123@s.whatsapp.net" }, metadata: {} });
+    await waitFor(() => publishCalls.length >= 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(dbGetTrigger(wrongPath.id)?.filterRejectCount).toBeUndefined();
+    await runner?.stop();
+
+    const rejected = dbGetTrigger(wrongPath.id);
+    expect(rejected?.fireCount).toBe(0);
+    expect(rejected?.filterRejectCount).toBe(2);
+    expect(rejected?.lastFilterRejectAt).toBeGreaterThan(0);
+    expect(dbGetTrigger(rightPath.id)?.filterRejectCount).toBeUndefined();
+  });
+
+  it("resets the counters when the filter changes and ignores a late flush for the old filter", async () => {
+    const topic = "ravi.test.reject-reset";
+    const trigger = createTrigger({ name: "reset", topic, filter: `data.kind == "match"` });
+
+    await startRunner();
+    emit(topic, { kind: "other", eventId: "evt-a" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Edited before the runner flushes: the stale batch must not land on the new filter.
+    dbUpdateTrigger(trigger.id, { filter: `data.kind == "other"` });
+    await runner?.stop();
+    expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBeUndefined();
+    expect(dbGetTrigger(trigger.id)?.lastFilterRejectAt).toBeUndefined();
+  });
+});
+
 describe("page comment wake", () => {
   it("wakes the bound creator and does not open a session for a deleted agent", async () => {
     const { ensurePageCommentTrigger, pageCommentFilter } = await import("../../pages/comment-follow.js");
