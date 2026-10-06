@@ -3660,16 +3660,21 @@ typedef ChatsListsAddReturn = Map<String, RaviJson>;
 ChatsListsAddReturn chatsListsAddReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class ChatsListsCreateOptions {
-  const ChatsListsCreateOptions({this.description, this.mode, this.owner, this.visibility});
+  const ChatsListsCreateOptions({this.description, this.metadata, this.mode, this.owner, this.selector, this.visibility});
 
   final String? description;
+  final String? metadata;
   final String? mode;
   final String? owner;
+  final String? selector;
   final String? visibility;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (description != null) {
       into["description"] = RaviJson.from(description);
+    }
+    if (metadata != null) {
+      into["metadata"] = RaviJson.from(metadata);
     }
     if (mode != null) {
       into["mode"] = RaviJson.from(mode);
@@ -3677,15 +3682,34 @@ class ChatsListsCreateOptions {
     if (owner != null) {
       into["owner"] = RaviJson.from(owner);
     }
+    if (selector != null) {
+      into["selector"] = RaviJson.from(selector);
+    }
     if (visibility != null) {
       into["visibility"] = RaviJson.from(visibility);
     }
   }
 }
 
-typedef ChatsListsCreateReturn = Map<String, RaviJson>;
+class ChatsListsCreateReturn {
+  const ChatsListsCreateReturn({required this.list, this.selectorValidation});
 
-ChatsListsCreateReturn chatsListsCreateReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+  final RaviJson list;
+  final RaviJson? selectorValidation;
+
+  factory ChatsListsCreateReturn.fromJson(Map<String, Object?> json) {
+    return ChatsListsCreateReturn(
+      list: RaviJson.from(json["list"]),
+      selectorValidation: json["selectorValidation"] == null ? null : RaviJson.from(json["selectorValidation"]),
+    );
+  }
+
+  static ChatsListsCreateReturn fromJsonValue(Object? json) {
+    return ChatsListsCreateReturn.fromJson(raviJsonObject(json, "ChatsListsCreateReturn"));
+  }
+}
+
+ChatsListsCreateReturn chatsListsCreateReturnFromJson(Object? json) => ChatsListsCreateReturn.fromJsonValue(json);
 
 class ChatsListsDeltaOptions {
   const ChatsListsDeltaOptions({this.channel, this.includeRaw, this.instance, this.limit, this.markRead, this.owner, this.reader});
@@ -3922,6 +3946,64 @@ class ChatsListsRemoveOptions {
 typedef ChatsListsRemoveReturn = Map<String, RaviJson>;
 
 ChatsListsRemoveReturn chatsListsRemoveReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class ChatsListsSetOptions {
+  const ChatsListsSetOptions({this.description, this.metadata, this.mode, this.name, this.owner, this.selector, this.visibility});
+
+  final String? description;
+  final String? metadata;
+  final String? mode;
+  final String? name;
+  final String? owner;
+  final String? selector;
+  final String? visibility;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
+    if (metadata != null) {
+      into["metadata"] = RaviJson.from(metadata);
+    }
+    if (mode != null) {
+      into["mode"] = RaviJson.from(mode);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (selector != null) {
+      into["selector"] = RaviJson.from(selector);
+    }
+    if (visibility != null) {
+      into["visibility"] = RaviJson.from(visibility);
+    }
+  }
+}
+
+class ChatsListsSetReturn {
+  const ChatsListsSetReturn({required this.list, this.selectorValidation, required this.updated});
+
+  final RaviJson list;
+  final RaviJson? selectorValidation;
+  final List<String> updated;
+
+  factory ChatsListsSetReturn.fromJson(Map<String, Object?> json) {
+    return ChatsListsSetReturn(
+      list: RaviJson.from(json["list"]),
+      selectorValidation: json["selectorValidation"] == null ? null : RaviJson.from(json["selectorValidation"]),
+      updated: raviJsonAsList(json["updated"], raviJsonAsString),
+    );
+  }
+
+  static ChatsListsSetReturn fromJsonValue(Object? json) {
+    return ChatsListsSetReturn.fromJson(raviJsonObject(json, "ChatsListsSetReturn"));
+  }
+}
+
+ChatsListsSetReturn chatsListsSetReturnFromJson(Object? json) => ChatsListsSetReturn.fromJsonValue(json);
 
 class ChatsListsShowOptions {
   const ChatsListsShowOptions({this.owner});

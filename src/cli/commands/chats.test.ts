@@ -4,6 +4,7 @@ import { recomputeChatReadingListMembers, validateChatReadingListSelector } from
 import {
   dbCreateChatReadingList,
   dbGetChatMessage,
+  dbGetChatReadingList,
   dbListChatIdsByContactIds,
   dbListChatReadingListMembers,
   dbUpsertChat,
@@ -19,6 +20,8 @@ import {
   ChatMessageCommands,
   ChatReadingListCommands,
   ChatsCommands,
+  chatReadingListCreateReturnSchema,
+  chatReadingListSetReturnSchema,
   chatsEnsureReturnSchema,
   chatsListReturnSchema,
   chatsMessageCreateReturnSchema,
@@ -995,5 +998,223 @@ describe("chats agent-first contract", () => {
     for (const item of memberRows) {
       expect(Object.keys(item).sort()).toEqual(["chat", "unreadMessageCount"]);
     }
+  });
+});
+
+describe("chats lists create/set write path", () => {
+  const SAFE_SELECTOR = {
+    scope: "contact",
+    match: "all",
+    conditions: [
+      { kind: "has-tag", tag: "cobranca:em-aberto" },
+      { kind: "not-has-tag", tag: "sinal:optout" },
+    ],
+  };
+  const UNSAFE_SELECTOR = {
+    scope: "contact",
+    match: "any",
+    conditions: [
+      { kind: "has-tag", tag: "cobranca:em-aberto" },
+      { kind: "not-has-tag", tag: "sinal:optout" },
+    ],
+  };
+
+  function catchError(run: () => unknown): unknown {
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return error;
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+  }
+
+  function errorCode(run: () => unknown): string | undefined {
+    const error = catchError(run);
+    expect(error).toBeInstanceOf(ContractError);
+    return (error as InstanceType<typeof ContractError>).envelope().error.code;
+  }
+
+  it("persists --selector and --metadata on create and returns a strict payload", () => {
+    const lists = new ChatReadingListCommands();
+    const payload = captureJson(() =>
+      lists.create(
+        "sde-cobranca",
+        "system:ravi",
+        undefined,
+        undefined,
+        "dynamic",
+        true,
+        JSON.stringify(SAFE_SELECTOR),
+        JSON.stringify({ pipeline: "cobranca" }),
+      ),
+    );
+    expect(chatReadingListCreateReturnSchema.safeParse(payload).success).toBe(true);
+    const list = payload.list as Record<string, unknown>;
+    expect(list).not.toHaveProperty("selector");
+    expect(list).not.toHaveProperty("metadata");
+    expect((payload.selectorValidation as Record<string, unknown>).canApply).toBe(true);
+
+    const stored = dbGetChatReadingList({ id: list.id as string });
+    expect(stored?.selector).toEqual(SAFE_SELECTOR);
+    expect(stored?.metadata).toEqual({ pipeline: "cobranca" });
+
+    const preview = captureJson(() => lists.preview(list.id as string, undefined, true));
+    expect(((preview.preview as Record<string, unknown>).validation as Record<string, unknown>).canApply).toBe(true);
+  });
+
+  it("rejects an unsafe or malformed selector on create without writing", () => {
+    const lists = new ChatReadingListCommands();
+    const unsafe = catchError(() =>
+      lists.create("unsafe", "system:ravi", undefined, undefined, "dynamic", true, JSON.stringify(UNSAFE_SELECTOR)),
+    );
+    expect(unsafe).toBeInstanceOf(ContractError);
+    const contractError = unsafe as InstanceType<typeof ContractError>;
+    const envelope = contractError.envelope();
+    expect(envelope.error.code).toBe("INVALID_READING_LIST_SELECTOR");
+    expect(contractError.exitCode).toBe(2);
+    expect(JSON.stringify(envelope)).toContain("unsafe_any_with_negative");
+    expect(JSON.stringify(envelope)).not.toContain("sinal:optout");
+
+    expect(
+      errorCode(() => lists.create("bad-json", "system:ravi", undefined, undefined, "dynamic", true, "[1,2]")),
+    ).toBe("INVALID_JSON");
+    expect(
+      errorCode(() =>
+        lists.create("bad-meta", "system:ravi", undefined, undefined, undefined, true, undefined, "not-json"),
+      ),
+    ).toBe("INVALID_JSON");
+
+    expect(
+      errorCode(() =>
+        lists.create("static-sel", "system:ravi", undefined, undefined, undefined, true, JSON.stringify(SAFE_SELECTOR)),
+      ),
+    ).toBe("SELECTOR_REQUIRES_DYNAMIC_MODE");
+
+    expect(getDb().prepare("SELECT COUNT(*) AS total FROM chat_reading_lists").get()).toEqual({ total: 0 });
+  });
+
+  it("updates fields by canonical id and fixes an unsafe selector through set", () => {
+    const list = dbCreateChatReadingList({
+      name: "sde-cobranca",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: UNSAFE_SELECTOR,
+      metadata: { pipeline: "old" },
+    });
+    const lists = new ChatReadingListCommands();
+    expect(() => lists.recompute(list.id, undefined, true)).toThrow(/unsafe_any_with_negative/);
+
+    const payload = captureJson(() =>
+      lists.set(
+        list.id,
+        "system:ravi",
+        "sde-cobranca-v2",
+        "Billing follow-ups",
+        "team",
+        "hybrid",
+        JSON.stringify(SAFE_SELECTOR),
+        JSON.stringify({ pipeline: "cobranca" }),
+        true,
+      ),
+    );
+    expect(chatReadingListSetReturnSchema.safeParse(payload).success).toBe(true);
+    expect(payload.updated).toEqual(["name", "description", "visibility", "mode", "selector", "metadata"]);
+    const publicList = payload.list as Record<string, unknown>;
+    expect(publicList).toMatchObject({
+      id: list.id,
+      name: "sde-cobranca-v2",
+      description: "Billing follow-ups",
+      visibility: "team",
+      mode: "hybrid",
+    });
+    expect(publicList.selector).toBeUndefined();
+    expect(publicList.metadata).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain("cobranca:em-aberto");
+
+    const stored = dbGetChatReadingList({ id: list.id });
+    expect(stored?.selector).toEqual(SAFE_SELECTOR);
+    expect(stored?.metadata).toEqual({ pipeline: "cobranca" });
+    expect(captureJson(() => lists.recompute(list.id, undefined, true)).recompute).toBeDefined();
+
+    const cleared = captureJson(() =>
+      lists.set(list.id, undefined, undefined, "", undefined, undefined, undefined, "{}", true),
+    );
+    expect(cleared.updated).toEqual(["description", "metadata"]);
+    const afterClear = dbGetChatReadingList({ id: list.id });
+    expect(afterClear?.description).toBeUndefined();
+    expect(afterClear?.metadata).toBeUndefined();
+    expect(afterClear?.selector).toEqual(SAFE_SELECTOR);
+  });
+
+  it("rejects unsafe selectors, bad enums, empty patches and name refs on set without writing", () => {
+    const list = dbCreateChatReadingList({
+      name: "guarded",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: SAFE_SELECTOR,
+    });
+    const lists = new ChatReadingListCommands();
+    const none = undefined;
+
+    expect(
+      errorCode(() => lists.set(list.id, none, none, none, none, none, JSON.stringify(UNSAFE_SELECTOR), none, true)),
+    ).toBe("INVALID_READING_LIST_SELECTOR");
+    expect(
+      errorCode(() => lists.set(list.id, none, none, none, none, "static", JSON.stringify(SAFE_SELECTOR), none, true)),
+    ).toBe("SELECTOR_REQUIRES_DYNAMIC_MODE");
+    // Switching to static would strand the stored selector.
+    expect(errorCode(() => lists.set(list.id, none, none, none, none, "static", none, none, true))).toBe(
+      "SELECTOR_REQUIRES_DYNAMIC_MODE",
+    );
+    expect(errorCode(() => lists.set(list.id, none, none, none, none, "weird", none, none, true))).toBe(
+      "INVALID_ARGUMENT",
+    );
+    expect(errorCode(() => lists.set(list.id, none, none, none, "public", none, none, none, true))).toBe(
+      "INVALID_ARGUMENT",
+    );
+    expect(errorCode(() => lists.set(list.id, none, none, none, none, none, none, none, true))).toBe(
+      "NOTHING_TO_UPDATE",
+    );
+    expect(errorCode(() => lists.set(list.id, "system:other", "renamed", none, none, none, none, none, true))).toBe(
+      "READING_LIST_NOT_FOUND",
+    );
+    expect(() =>
+      runWithContext({}, () => lists.set("guarded", none, "renamed", none, none, none, none, none, true)),
+    ).toThrow(/canonical crl_/);
+    expect(dbGetChatReadingList({ id: list.id })).toMatchObject({
+      name: "guarded",
+      mode: "dynamic",
+      selector: SAFE_SELECTOR,
+    });
+
+    // Clearing the selector in the same patch allows the switch to static.
+    captureJson(() => lists.set(list.id, none, none, none, none, "static", "{}", none, true));
+    const switched = dbGetChatReadingList({ id: list.id });
+    expect(switched?.mode).toBe("static");
+    expect(switched?.selector).toBeUndefined();
+  });
+
+  it("declares set as a concrete-resource mutation on chats.lists", () => {
+    const access = getCommandAccessMetadata(ChatReadingListCommands);
+    expect(access.get("set")).toMatchObject({
+      kind: "mutate",
+      resource: "chats.lists",
+      action: "set",
+      resourceId: "listId",
+      requireConcreteResource: true,
+      resourceIdPattern: "^crl_[0-9a-f]{24}$",
+      input: ["listId", "owner"],
+    });
+    const [listArg] = getArgsMetadata(ChatReadingListCommands.prototype, "set");
+    expect(listArg?.schema?.safeParse("guarded").success).toBe(false);
   });
 });

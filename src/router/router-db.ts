@@ -8026,6 +8026,17 @@ export function dbCreateChatReadingList(input: {
   if (!name) throw new Error("Reading list name is required");
   const { ownerType, ownerId } = normalizeReadingListOwner(input);
   const id = semanticId("crl", [ownerType, ownerId, name]);
+  const existing = getDb().prepare("SELECT name, archived_at FROM chat_reading_lists WHERE id = ?").get(id) as Pick<
+    ChatReadingListRow,
+    "name" | "archived_at"
+  > | null;
+  if (existing && existing.archived_at === null && existing.name !== name) {
+    // The id is derived from the original name; a renamed list must not be
+    // silently renamed back by a later create with its old name.
+    throw new Error(
+      `Reading list ${id} was originally named "${name}" and has been renamed to "${existing.name}"; use ravi chats lists set ${id} to change it`,
+    );
+  }
   const now = Date.now();
   getDb()
     .prepare(
@@ -8061,6 +8072,89 @@ export function dbCreateChatReadingList(input: {
     );
   const row = getDb().prepare("SELECT * FROM chat_reading_lists WHERE id = ?").get(id) as ChatReadingListRow;
   return rowToChatReadingList(row);
+}
+
+export interface ChatReadingListPatch {
+  name?: string;
+  /** `null` clears the description. */
+  description?: string | null;
+  visibility?: string;
+  mode?: string;
+  /** Replaces the whole selector object; `null` or `{}` clears it. */
+  selector?: Record<string, unknown> | null;
+  /** Replaces the whole metadata object; `null` or `{}` clears it. */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Patch one active reading list by its canonical id. Unlike
+ * dbCreateChatReadingList this never upserts by name: the id is the only key.
+ * Selector validation is the caller's responsibility (see
+ * validateChatReadingListSelector in src/chats/reading-lists.ts).
+ */
+export function dbUpdateChatReadingList(id: string, patch: ChatReadingListPatch): ChatReadingListRecord {
+  const database = getDb();
+  const row = database.prepare("SELECT * FROM chat_reading_lists WHERE id = ?").get(id) as ChatReadingListRow | null;
+  if (!row) throw new Error(`Reading list not found: ${id}`);
+  if (row.archived_at !== null) throw new Error(`Reading list is archived: ${id}`);
+
+  const sets: string[] = [];
+  const params: Array<string | number | null> = [];
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new Error("Reading list name is required");
+    if (name !== row.name) {
+      const conflict = database
+        .prepare(
+          "SELECT id FROM chat_reading_lists WHERE owner_type = ? AND owner_id = ? AND name = ? AND archived_at IS NULL AND id != ?",
+        )
+        .get(row.owner_type, row.owner_id, name, id) as { id: string } | null;
+      if (conflict) {
+        throw new Error(`Another active reading list with this owner already uses that name: ${conflict.id}`);
+      }
+    }
+    sets.push("name = ?");
+    params.push(name);
+  }
+  if (patch.description !== undefined) {
+    sets.push("description = ?");
+    params.push(patch.description?.trim() ? patch.description : null);
+  }
+  if (patch.visibility !== undefined) {
+    const visibility = patch.visibility.trim();
+    if (!visibility) throw new Error("Reading list visibility is required");
+    sets.push("visibility = ?");
+    params.push(visibility);
+  }
+  if (patch.mode !== undefined) {
+    const mode = patch.mode.trim();
+    if (!mode) throw new Error("Reading list mode is required");
+    sets.push("mode = ?");
+    params.push(mode);
+  }
+  if (patch.selector !== undefined) {
+    sets.push("selector_json = ?");
+    params.push(cleanJsonRecord(patch.selector));
+  }
+  if (patch.metadata !== undefined) {
+    sets.push("metadata_json = ?");
+    params.push(cleanJsonRecord(patch.metadata));
+  }
+  if (sets.length === 0) throw new Error("Nothing to update");
+
+  sets.push("updated_at = ?");
+  params.push(Date.now());
+  try {
+    database.prepare(`UPDATE chat_reading_lists SET ${sets.join(", ")} WHERE id = ?`).run(...params, id);
+  } catch (error) {
+    // A concurrent rename can pass the pre-check above; report it like the pre-check does.
+    if (patch.name !== undefined && error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      throw new Error("Another active reading list with this owner already uses that name");
+    }
+    throw error;
+  }
+  const updated = database.prepare("SELECT * FROM chat_reading_lists WHERE id = ?").get(id) as ChatReadingListRow;
+  return rowToChatReadingList(updated);
 }
 
 export function dbListChatReadingLists(

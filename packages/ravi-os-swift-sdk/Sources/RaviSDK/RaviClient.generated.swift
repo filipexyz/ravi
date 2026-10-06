@@ -1034,6 +1034,13 @@ public struct ChatsListsNamespace: Sendable {
     return try await transport.call(groupSegments: ["chats","lists"], command: "remove", body: requestBody, as: ChatsListsRemoveReturn.self)
   }
 
+  public func set(_ listId: String, _ options: ChatsListsSetOptions = .init()) async throws -> ChatsListsSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["listId"] = try RaviJSON.fromEncodable(listId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["chats","lists"], command: "set", body: requestBody, as: ChatsListsSetReturn.self)
+  }
+
   public func show(_ listId: String, _ options: ChatsListsShowOptions = .init()) async throws -> ChatsListsShowReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["listId"] = try RaviJSON.fromEncodable(listId)

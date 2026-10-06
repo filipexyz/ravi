@@ -1814,7 +1814,8 @@ export interface LinkCrmAccountContactInput extends CrmMutationOptions {
 export interface CrmPipeline {
   id: string;
   name: string;
-  entityType: CrmEntityType;
+  /** Free-form domain slug (see CRM_PIPELINE_RECOMMENDED_ENTITY_TYPES). */
+  entityType: string;
   isDefault: boolean;
   status: CrmPipelineStatus;
   metadata: Record<string, unknown>;
@@ -2542,7 +2543,7 @@ interface CrmAccountContactRow {
 interface CrmPipelineRow {
   id: string;
   name: string;
-  entity_type: CrmEntityType;
+  entity_type: string;
   is_default: number;
   status: CrmPipelineStatus;
   metadata_json: string;
@@ -3267,6 +3268,35 @@ function normalizeContactEventActorType(actorType?: ContactEventActorType | null
 function normalizeCrmEventType(eventType: string): string {
   const normalized = eventType.trim();
   if (!normalized) throw new Error("CRM event type is required");
+  return normalized;
+}
+
+/**
+ * Recommended values for `crm_pipelines.entity_type`. The column is free text:
+ * any slug matching {@link CRM_PIPELINE_ENTITY_TYPE_PATTERN} is accepted.
+ */
+export const CRM_PIPELINE_RECOMMENDED_ENTITY_TYPES = [
+  "opportunity",
+  "account",
+  "contact",
+  "task",
+  "lead",
+  "case",
+] as const;
+const CRM_PIPELINE_ENTITY_TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
+
+/**
+ * Pipeline entity types are domain slugs (e.g. `lead`, `pendencia-financeira`),
+ * not CRM event entity types: the column has no CHECK constraint and only the
+ * per-entity-type default pipeline depends on it.
+ */
+export function normalizeCrmPipelineEntityType(entityType: string): string {
+  const normalized = entityType.trim().toLowerCase();
+  if (!CRM_PIPELINE_ENTITY_TYPE_PATTERN.test(normalized)) {
+    throw new Error(
+      `Invalid CRM pipeline entity type: ${JSON.stringify(entityType)} (use a slug of lowercase letters, digits, "-" or "_", starting with a letter, max 64 chars; recommended: ${CRM_PIPELINE_RECOMMENDED_ENTITY_TYPES.join(", ")})`,
+    );
+  }
   return normalized;
 }
 
@@ -5249,7 +5279,7 @@ export function listCrmPipelines(
   const params: SQLQueryBindings[] = [];
   if (options.entityType) {
     where.push("entity_type = ?");
-    params.push(normalizeCrmEntityType(options.entityType));
+    params.push(normalizeCrmPipelineEntityType(options.entityType));
   }
   if (!options.includeArchived) {
     where.push("status != 'archived'");
@@ -5338,7 +5368,7 @@ export function createCrmPipeline(input: CreateCrmPipelineInput): CrmPipeline {
     return rowToCrmPipeline(row);
   }
   const pipelineId = `crm_pipeline_${generateId()}`;
-  const entityType = input.entityType ? normalizeCrmEntityType(input.entityType) : "opportunity";
+  const entityType = input.entityType ? normalizeCrmPipelineEntityType(input.entityType) : "opportunity";
   const pipelineName = normalizeRequiredText(input.name, "CRM pipeline name");
   let pipeline: CrmPipeline | null = null;
   executeWrite(
@@ -5377,7 +5407,7 @@ export function updateCrmPipeline(input: UpdateCrmPipelineInput): CrmPipeline {
   const nextName =
     input.name === undefined ? previous.name : normalizeRequiredText(input.name ?? "", "CRM pipeline name");
   const nextEntityType =
-    input.entityType === undefined ? previous.entity_type : normalizeCrmEntityType(input.entityType ?? "");
+    input.entityType === undefined ? previous.entity_type : normalizeCrmPipelineEntityType(input.entityType ?? "");
   const nextStatus =
     input.status === undefined
       ? previous.status

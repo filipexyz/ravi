@@ -57,6 +57,7 @@ import {
   setContactMetadata,
   snoozeCrmTask,
   unlinkContactIdentity,
+  updateCrmPipeline,
   updateCrmPipelineStage,
   updateCrmPipelineStageTopic,
   updateCrmContactProfile,
@@ -461,6 +462,40 @@ describe("contacts identity graph schema", () => {
         "crm.pipeline_stage.archived",
       ]),
     );
+  });
+
+  it("accepts free-form pipeline entity type slugs and scopes defaults per slug", () => {
+    const custom = createCrmPipeline({
+      name: "Pendencias",
+      entityType: " Pendencia-Financeira ",
+      isDefault: true,
+      source: "test",
+    });
+    expect(custom.entityType).toBe("pendencia-financeira");
+    expect(custom.isDefault).toBe(true);
+
+    const lead = createCrmPipeline({ name: "Leads", entityType: "lead_inbound", isDefault: true, source: "test" });
+    expect(lead.entityType).toBe("lead_inbound");
+    expect(getCrmPipeline(custom.id)?.pipeline.isDefault).toBe(true);
+    expect(getCrmPipeline("crm_pipeline_default")?.pipeline.isDefault).toBe(true);
+
+    const legacy = createCrmPipeline({ name: "Legacy Opportunity", entityType: "opportunity", source: "test" });
+    expect(legacy.entityType).toBe("opportunity");
+
+    expect(listCrmPipelines({ entityType: "pendencia-financeira" }).map((item) => item.id)).toEqual([custom.id]);
+
+    const updated = updateCrmPipeline({ pipelineRef: lead.id, entityType: "case", source: "test" });
+    expect(updated.entityType).toBe("case");
+
+    for (const invalid of ["", "Foo Bar", "1lead", "lead!", "a".repeat(65), "lead.case"]) {
+      expect(() => createCrmPipeline({ name: "Bad", entityType: invalid || " ", source: "test" })).toThrow(
+        /Invalid CRM pipeline entity type/,
+      );
+    }
+    expect(() => updateCrmPipeline({ pipelineRef: lead.id, entityType: "Foo Bar", source: "test" })).toThrow(
+      /Invalid CRM pipeline entity type/,
+    );
+    expect(() => listCrmPipelines({ entityType: "Foo Bar" })).toThrow(/Invalid CRM pipeline entity type/);
   });
 
   it("rejects archiving pipeline stages while open opportunities still reference them", () => {

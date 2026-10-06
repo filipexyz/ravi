@@ -266,6 +266,13 @@ function assertValidPipelineMetadata(metadata: Record<string, unknown>, context:
 }
 
 const PIPELINE_CREATE_HELP_AFTER = `
+ENTITY TYPE
+  --entity-type <slug>        Any domain slug: lowercase letters, digits, "-" or "_",
+                              starting with a letter, max 64 chars (default: opportunity).
+                              Recommended: opportunity, account, contact, task, lead, case.
+                              Custom slugs (e.g. cobranca, pendencia-financeira) are accepted;
+                              --default is scoped per entity type.
+
 The structured flags below map onto pipeline.metadata canonical schema fields.
 All groups optional — pipelines without these fields keep working identically
 to legacy. Validate via: ravi crm pipeline validate <id>
@@ -346,6 +353,8 @@ Two modes:
   1) Single-field mode (legacy, unchanged)
        ravi crm pipeline set <pipeline> <field> <value>
        Where <field> = name | entity-type | default | status | metadata
+       (entity-type takes any slug; recommended: opportunity, account,
+       contact, task, lead, case)
        (metadata replaces the whole JSON blob)
 
   2) Structured-flags mode (new — incremental metadata patching)
@@ -1079,7 +1088,7 @@ export class CrmPipelineCommands {
   @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
-    @Option({ flags: "--entity-type <type>", description: "Filter by CRM entity type" }) entityType?: string,
+    @Option({ flags: "--entity-type <slug>", description: "Filter by pipeline entity type slug" }) entityType?: string,
     @Option({ flags: "--include-archived", description: "Include archived pipelines" }) includeArchived?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1326,7 +1335,11 @@ export class CrmPipelineCommands {
   @Returns(changedEntityReturnSchema)
   create(
     @Arg("name", { description: "Pipeline name" }) name: string,
-    @Option({ flags: "--entity-type <type>", description: "CRM entity type (default: opportunity)" })
+    @Option({
+      flags: "--entity-type <slug>",
+      description:
+        "Pipeline entity type slug (default: opportunity; recommended: opportunity, account, contact, task, lead, case)",
+    })
     entityType?: string,
     @Option({ flags: "--default", description: "Mark as default pipeline for the entity type" }) isDefault?: boolean,
     @Option({

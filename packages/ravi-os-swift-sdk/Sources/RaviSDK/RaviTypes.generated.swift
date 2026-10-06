@@ -4362,21 +4362,27 @@ public typealias ChatsListsAddReturn = [String: RaviJSON]
 
 public struct ChatsListsCreateOptions: Codable, Sendable {
   public var description: String?
+  public var metadata: String?
   public var mode: String?
   public var owner: String?
+  public var selector: String?
   public var visibility: String?
 
-  public init(description: String? = nil, mode: String? = nil, owner: String? = nil, visibility: String? = nil) {
+  public init(description: String? = nil, metadata: String? = nil, mode: String? = nil, owner: String? = nil, selector: String? = nil, visibility: String? = nil) {
     self.description = description
+    self.metadata = metadata
     self.mode = mode
     self.owner = owner
+    self.selector = selector
     self.visibility = visibility
   }
 
   enum CodingKeys: String, CodingKey {
     case description = "description"
+    case metadata = "metadata"
     case mode = "mode"
     case owner = "owner"
+    case selector = "selector"
     case visibility = "visibility"
   }
 
@@ -4384,11 +4390,17 @@ public struct ChatsListsCreateOptions: Codable, Sendable {
     if let value = self.description {
       body["description"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.metadata {
+      body["metadata"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.mode {
       body["mode"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.owner {
       body["owner"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.selector {
+      body["selector"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.visibility {
       body["visibility"] = try RaviJSON.fromEncodable(value)
@@ -4396,7 +4408,20 @@ public struct ChatsListsCreateOptions: Codable, Sendable {
   }
 }
 
-public typealias ChatsListsCreateReturn = [String: RaviJSON]
+public struct ChatsListsCreateReturn: Codable, Sendable {
+  public var list: RaviJSON
+  public var selectorValidation: RaviJSON?
+
+  public init(list: RaviJSON, selectorValidation: RaviJSON? = nil) {
+    self.list = list
+    self.selectorValidation = selectorValidation
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case list = "list"
+    case selectorValidation = "selectorValidation"
+  }
+}
 
 public struct ChatsListsDeltaOptions: Codable, Sendable {
   public var channel: String?
@@ -4701,6 +4726,78 @@ public struct ChatsListsRemoveOptions: Codable, Sendable {
 }
 
 public typealias ChatsListsRemoveReturn = [String: RaviJSON]
+
+public struct ChatsListsSetOptions: Codable, Sendable {
+  public var description: String?
+  public var metadata: String?
+  public var mode: String?
+  public var name: String?
+  public var owner: String?
+  public var selector: String?
+  public var visibility: String?
+
+  public init(description: String? = nil, metadata: String? = nil, mode: String? = nil, name: String? = nil, owner: String? = nil, selector: String? = nil, visibility: String? = nil) {
+    self.description = description
+    self.metadata = metadata
+    self.mode = mode
+    self.name = name
+    self.owner = owner
+    self.selector = selector
+    self.visibility = visibility
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case description = "description"
+    case metadata = "metadata"
+    case mode = "mode"
+    case name = "name"
+    case owner = "owner"
+    case selector = "selector"
+    case visibility = "visibility"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.metadata {
+      body["metadata"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.mode {
+      body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.owner {
+      body["owner"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.selector {
+      body["selector"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visibility {
+      body["visibility"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct ChatsListsSetReturn: Codable, Sendable {
+  public var list: RaviJSON
+  public var selectorValidation: RaviJSON?
+  public var updated: [String]
+
+  public init(list: RaviJSON, selectorValidation: RaviJSON? = nil, updated: [String]) {
+    self.list = list
+    self.selectorValidation = selectorValidation
+    self.updated = updated
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case list = "list"
+    case selectorValidation = "selectorValidation"
+    case updated = "updated"
+  }
+}
 
 public struct ChatsListsShowOptions: Codable, Sendable {
   public var owner: String?

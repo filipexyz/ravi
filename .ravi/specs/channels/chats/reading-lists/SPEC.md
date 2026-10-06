@@ -252,7 +252,8 @@ CRM enrichment MUST NOT depend on the human review cursor. CRM jobs should use t
 Suggested CLI shape:
 
 ```bash
-ravi chats lists create <name> [--owner <type:id>] [--json]
+ravi chats lists create <name> [--owner <type:id>] [--mode <mode>] [--selector <json>] [--metadata <json>] [--json]
+ravi chats lists set <crl-list-id> [--owner <type:id>] [--name <name>] [--description <text>] [--visibility <v>] [--mode <mode>] [--selector <json>] [--metadata <json>] [--json]
 ravi chats lists add <list> <chat> [--owner <type:id>] [--reason <text>] [--json]
 ravi chats lists remove <list> <chat> [--owner <type:id>] [--json]
 ravi chats lists show <list> [--owner <type:id>] [--json]
@@ -261,6 +262,8 @@ ravi chats lists members <list> [--owner <type:id>] [--json]
 ravi chats lists delta <list> <chat> [--owner <type:id>] [--reader <type:id>] [--json]
 ravi chats lists mark-read <list> <chat> --message <message-id> [--owner <type:id>] [--reader <type:id>] [--json]
 ```
+
+`create --selector` and `set --selector` MUST run the same selector validation gate as preview/recompute before writing; a selector with `canApply=false` MUST be rejected without changing the list, and the error MUST expose only stable issue codes/paths. `set` MUST require the canonical `crl_...` id and a concrete grant to that reading-list resource, never upserts by name, replaces `--selector`/`--metadata` objects wholesale (`{}` clears), and its public DTO MUST omit raw selector and metadata like `show`/`preview`. Changing a selector MUST NOT recompute membership; callers preview and recompute explicitly.
 
 `remove` is a local soft-deactivate operation: it takes effect immediately, does not accept `--execute`, and retains the membership record for audit/recovery.
 

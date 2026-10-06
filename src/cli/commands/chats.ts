@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
-import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -10,10 +10,12 @@ import {
   inspectChatReadingList,
   previewChatReadingListMembers,
   recomputeChatReadingListMembers,
+  validateChatReadingListSelector,
   type ChatReadingListInspectionResult,
   type ChatReadingListMembershipDiff,
   type ChatReadingListPreviewResult,
   type ChatReadingListRecomputeResult,
+  type ChatReadingListSelectorValidation,
 } from "../../chats/reading-lists.js";
 import {
   dbAddChatToReadingList,
@@ -33,10 +35,12 @@ import {
   dbListChats,
   dbMarkChatReadingCursor,
   dbRemoveChatFromReadingList,
+  dbUpdateChatReadingList,
   type ChatListItem,
   type ChatRecord,
   type ChatReadingDelta,
   type ChatReadingListMemberItem,
+  type ChatReadingListPatch,
   type ChatReadingListRecord,
   type ChatMessageWithSortKey,
 } from "../../router/router-db.js";
@@ -76,6 +80,10 @@ const chatReadingListPublicReturnSchema = chatReadingListReturnSchema.omit({
   selector: true,
   metadata: true,
 });
+
+const READING_LIST_MODES = ["static", "dynamic", "hybrid"] as const;
+const READING_LIST_VISIBILITIES = ["private", "team", "system"] as const;
+const READING_LIST_SET_FIELDS = ["name", "description", "visibility", "mode", "selector", "metadata"] as const;
 
 const READING_LIST_ID_PATTERN_SOURCE = "^crl_[0-9a-f]{24}$";
 const CHAT_ID_PATTERN_SOURCE = "^chat_[0-9a-f]{24}$";
@@ -140,6 +148,21 @@ const chatReadingListMembershipDiffSchema = z.object({
   preserved: z.number(),
   eligible: z.number(),
 });
+
+export const chatReadingListCreateReturnSchema = z
+  .object({
+    list: chatReadingListPublicReturnSchema.strict(),
+    selectorValidation: chatReadingListSelectorValidationSchema.strict().optional(),
+  })
+  .strict();
+
+export const chatReadingListSetReturnSchema = z
+  .object({
+    list: chatReadingListPublicReturnSchema.strict(),
+    updated: z.array(z.enum(READING_LIST_SET_FIELDS)),
+    selectorValidation: chatReadingListSelectorValidationSchema.strict().optional(),
+  })
+  .strict();
 
 const chatReadingListShowReturnSchema = z.object({
   list: chatReadingListPublicReturnSchema,
@@ -310,6 +333,90 @@ function publicRecompute(recompute: ChatReadingListRecomputeResult) {
   };
 }
 
+function parseJsonObjectOption(value: string, flag: string, op: string, asJson?: boolean): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    contractFail(op, "INVALID_JSON", `${flag} must be a valid JSON object`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `Pass ${flag} as a JSON object, e.g. ${flag} '{"key":"value"}'` },
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    contractFail(op, "INVALID_JSON", `${flag} must be a JSON object`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `Pass ${flag} as a JSON object, e.g. ${flag} '{"key":"value"}'` },
+    });
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Validate a selector with the same gate preview/recompute use, before it is
+ * persisted. Only stable issue codes/paths are reported, never selector values.
+ */
+function assertSelectorModeApplies(mode: string | null | undefined, op: string, asJson?: boolean): void {
+  const effective = (mode ?? "").trim().toLowerCase() || "static";
+  if (effective === "dynamic" || effective === "hybrid") return;
+  contractFail(op, "SELECTOR_REQUIRES_DYNAMIC_MODE", "A selector only applies to dynamic or hybrid reading lists", {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      mode: effective,
+      suggestedAction: "Pass --mode dynamic (or hybrid) with --selector, or clear the selector with --selector '{}'",
+    },
+  });
+}
+
+function assertWritableSelector(
+  selector: Record<string, unknown>,
+  op: string,
+  asJson?: boolean,
+): ChatReadingListSelectorValidation {
+  const validation = validateChatReadingListSelector(selector);
+  if (!validation.canApply) {
+    const codes = validation.issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => (issue.path ? `${issue.code}@${issue.path}` : issue.code));
+    contractFail(op, "INVALID_READING_LIST_SELECTOR", `Reading-list selector rejected: ${codes.join(", ")}`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction:
+          "Fix the selector (see issues) and retry; match:any cannot be combined with not-has-tag conditions",
+        issues: validation.issues.map((issue) => ({
+          code: issue.code,
+          severity: issue.severity,
+          message: issue.message,
+          ...(issue.path ? { path: issue.path } : {}),
+        })),
+      },
+    });
+  }
+  return validation;
+}
+
+function assertEnumOption<T extends string>(
+  value: string,
+  allowed: readonly T[],
+  flag: string,
+  op: string,
+  asJson?: boolean,
+): T {
+  const normalized = value.trim().toLowerCase();
+  if (!(allowed as readonly string[]).includes(normalized)) {
+    contractFail(op, "INVALID_ARGUMENT", `${flag} must be one of: ${allowed.join(", ")}`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `Retry with ${flag} ${allowed[0]}` },
+    });
+  }
+  return normalized as T;
+}
+
 function parseScopedRef(
   value: string | undefined,
   fallback: { type: string; id: string },
@@ -431,7 +538,7 @@ function resolveReadingListById(
   const parsed = readingListIdArgSchema.safeParse(listId.trim());
   if (!parsed.success) {
     fail(
-      "Reading-list show, preview, and recompute require the canonical crl_<24 hex> id from `ravi chats lists list`.",
+      "Reading-list show, preview, recompute, and set require the canonical crl_<24 hex> id from `ravi chats lists list`.",
     );
   }
   const parsedOwner = owner ? parseScopedRef(owner, defaultOwner()) : undefined;
@@ -1068,7 +1175,8 @@ OUTPUT
   JSON includes dryRun=true, validation, current membership counts, and a nullable count-only diff. Chat ids are omitted to avoid cross-resource disclosure. This command is read-only.
 
 ON ERROR
-  canApply=false -> inspect validation.issues, correct the selector through an approved write path, then preview again.
+  canApply=false -> inspect validation.issues, correct the selector with
+  ravi chats lists set <list-id> --selector '<json>' --json, then preview again.
 
 FONTES
   .ravi/specs/channels/chats/reading-lists/SPEC.md
@@ -1115,7 +1223,24 @@ FONTES
   }
 
   @Scope("admin")
-  @Command({ name: "create", description: "Create or restore a chat reading list" })
+  @Command({
+    name: "create",
+    description: "Create or restore a chat reading list",
+    helpAfter: `
+RULES HARD
+  --selector is validated with the same gate as preview/recompute before it is written;
+  unsafe selectors (e.g. match:any + not-has-tag) are rejected and nothing is written.
+  Re-running create with the same owner+name restores/updates that list; omitted
+  --description/--selector/--metadata keep their stored values.
+
+EXAMPLES
+  ravi chats lists create sde-cobranca --mode dynamic \\
+    --selector '{"scope":"contact","match":"all","conditions":[{"kind":"has-tag","tag":"cobranca:em-aberto"}]}' \\
+    --metadata '{"pipeline":"cobranca"}' --json
+
+  Change an existing list later with: ravi chats lists set <list-id> ...
+`,
+  })
   @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "create", risk: "medium" })
   create(
     @Arg("name", { description: "Reading list name" }) name: string,
@@ -1126,7 +1251,21 @@ FONTES
     visibility?: string,
     @Option({ flags: "--mode <mode>", description: "static|dynamic|hybrid (default: static)" }) mode?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--selector <json>",
+      description: "Dynamic membership selector JSON object (validated like preview; for dynamic/hybrid lists)",
+    })
+    selectorJson?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object stored on the list" })
+    metadataJson?: string,
   ) {
+    const op = "chats lists create";
+    const selector =
+      selectorJson === undefined ? undefined : parseJsonObjectOption(selectorJson, "--selector", op, asJson);
+    const metadata =
+      metadataJson === undefined ? undefined : parseJsonObjectOption(metadataJson, "--metadata", op, asJson);
+    if (selector) assertSelectorModeApplies(mode, op, asJson);
+    const selectorValidation = selector ? assertWritableSelector(selector, op, asJson) : undefined;
     const parsedOwner = parseScopedRef(owner, defaultOwner());
     const list = dbCreateChatReadingList({
       name,
@@ -1135,13 +1274,138 @@ FONTES
       ownerId: parsedOwner.id,
       visibility,
       mode,
+      selector,
+      metadata,
     });
-    const payload = { list };
+    const publicList = publicReadingList(list);
+    const payload = selectorValidation ? { list: publicList, selectorValidation } : { list: publicList };
     if (asJson) {
       printJson(payload);
       return payload;
     }
     console.log(`Created reading list: ${list.name} (${list.id})`);
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({
+    name: "set",
+    description: "Update name, description, visibility, mode, selector, or metadata of one reading list",
+    helpAfter: `
+USE
+  Change an existing list in place by its canonical id. Only the flags you pass change.
+  This is the write path for fixing a selector that preview/recompute reported as unsafe.
+
+RULES HARD
+  --selector and --metadata replace the whole stored object; pass '{}' to clear.
+  --selector is validated with the same gate as preview/recompute; unsafe selectors
+  (e.g. match:any + not-has-tag) are rejected and nothing is written.
+  Membership is not recomputed: run preview, then recompute, after changing a selector.
+
+EXAMPLES
+  ravi chats lists set crl_86244e77d183316cb5034a6a --mode dynamic \\
+    --selector '{"scope":"contact","match":"all","conditions":[{"kind":"has-tag","tag":"cobranca:em-aberto"},{"kind":"not-has-tag","tag":"sinal:optout"}]}' --json
+  ravi chats lists set crl_86244e77d183316cb5034a6a --metadata '{"pipeline":"cobranca"}' --json
+  ravi chats lists set crl_86244e77d183316cb5034a6a --name sde-cobranca-v2 --description "" --json
+
+OUTPUT
+  Returns safe list metadata (selector and metadata omitted), the updated field names,
+  and the selector validation when --selector was passed.
+
+ON ERROR
+  Non-canonical ref -> obtain the crl_... id with ravi chats lists list and retry.
+  INVALID_READING_LIST_SELECTOR -> fix the issues listed in error.issues and retry.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "chats.lists",
+    action: "set",
+    risk: "medium",
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
+  })
+  set(
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
+    @Option({ flags: "--name <name>", description: "New list name (unique per owner)" }) name?: string,
+    @Option({ flags: "--description <text>", description: "New description (empty string clears it)" })
+    description?: string,
+    @Option({ flags: "--visibility <visibility>", description: "private|team|system" }) visibility?: string,
+    @Option({ flags: "--mode <mode>", description: "static|dynamic|hybrid" }) mode?: string,
+    @Option({
+      flags: "--selector <json>",
+      description: "Replace the selector JSON object (validated like preview; '{}' clears)",
+    })
+    selectorJson?: string,
+    @Option({ flags: "--metadata <json>", description: "Replace the metadata JSON object ('{}' clears)" })
+    metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "chats lists set";
+    const patch: ChatReadingListPatch = {};
+    if (name !== undefined) patch.name = name;
+    if (description !== undefined) patch.description = description.trim() ? description : null;
+    if (visibility !== undefined) {
+      patch.visibility = assertEnumOption(visibility, READING_LIST_VISIBILITIES, "--visibility", op, asJson);
+    }
+    if (mode !== undefined) patch.mode = assertEnumOption(mode, READING_LIST_MODES, "--mode", op, asJson);
+    let selectorValidation: ChatReadingListSelectorValidation | undefined;
+    if (selectorJson !== undefined) {
+      const selector = parseJsonObjectOption(selectorJson, "--selector", op, asJson);
+      if (Object.keys(selector).length > 0) selectorValidation = assertWritableSelector(selector, op, asJson);
+      patch.selector = Object.keys(selector).length > 0 ? selector : null;
+    }
+    if (metadataJson !== undefined) {
+      const metadata = parseJsonObjectOption(metadataJson, "--metadata", op, asJson);
+      patch.metadata = Object.keys(metadata).length > 0 ? metadata : null;
+    }
+    const updatedFields = READING_LIST_SET_FIELDS.filter((field) => patch[field] !== undefined);
+    if (updatedFields.length === 0) {
+      contractFail(op, "NOTHING_TO_UPDATE", "Pass at least one field to change", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Retry with --name, --description, --visibility, --mode, --selector, or --metadata",
+        },
+      });
+    }
+    const list = resolveReadingListById(listId, owner, { op, asJson });
+    // Check the selector that remains after the patch, but only when the patch touches
+    // mode or selector, so renaming a legacy static list with a stored selector still works.
+    if (patch.selector !== undefined || patch.mode !== undefined) {
+      const selectorAfter = patch.selector !== undefined ? patch.selector : list.selector;
+      if (selectorAfter && Object.keys(selectorAfter).length > 0) {
+        assertSelectorModeApplies(patch.mode ?? list.mode, op, asJson);
+      }
+    }
+    let updated: ChatReadingListRecord;
+    try {
+      updated = dbUpdateChatReadingList(list.id, patch);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    const payload = {
+      list: publicReadingList(updated),
+      updated: updatedFields,
+      ...(selectorValidation ? { selectorValidation } : {}),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Updated reading list ${updated.id}: ${updatedFields.join(", ")}`);
+    if (selectorValidation) {
+      console.log("Selector is safe. Run `ravi chats lists preview` then `recompute` to apply membership.");
+    }
     return payload;
   }
 
@@ -1267,7 +1531,8 @@ EXAMPLES
   ravi chats lists recompute <list-id> --owner <type:id> --json
 
 ON ERROR
-  Unsafe reading-list selector -> run the preview command, inspect validation.issues, and correct the selector through an approved write path.
+  Unsafe reading-list selector -> run the preview command, inspect validation.issues, and correct the selector with
+  ravi chats lists set <list-id> --selector '<json>' --json.
 
 FONTES
   .ravi/specs/channels/chats/reading-lists/SPEC.md
@@ -1413,7 +1678,7 @@ declareCommandReturns(ChatMessageCommands, {
 
 declareCommandReturns(ChatReadingListCommands, {
   add: commandEnvelopeReturnSchema,
-  create: commandEnvelopeReturnSchema,
+  create: chatReadingListCreateReturnSchema,
   delta: commandEnvelopeReturnSchema,
   list: commandEnvelopeReturnSchema,
   markRead: commandEnvelopeReturnSchema,
@@ -1421,5 +1686,6 @@ declareCommandReturns(ChatReadingListCommands, {
   preview: chatReadingListPreviewReturnSchema,
   recompute: chatReadingListRecomputeReturnSchema,
   remove: commandEnvelopeReturnSchema,
+  set: chatReadingListSetReturnSchema,
   show: chatReadingListShowReturnSchema,
 });

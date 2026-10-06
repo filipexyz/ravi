@@ -39,7 +39,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "audio.generate",
   "chats.backfill-provider-timestamps",
   "chats.lists.add",
-  "chats.lists.create",
   "chats.lists.delta",
   "chats.lists.list",
   "chats.lists.mark-read",

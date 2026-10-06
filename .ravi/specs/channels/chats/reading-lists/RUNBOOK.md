@@ -53,4 +53,10 @@ If a chat appears read in the wrong workflow:
 
 3. Confirm the runtime principal has a concrete read grant for that exact list id; group-level command access alone is intentionally insufficient.
 4. Continue only when `preview.validation.canApply=true` and `preview.diff` is non-null.
-5. If `validation.issues` contains `unsafe_any_with_negative`, correct the selector through an approved write path and preview again. Do not recompute the unsafe list.
+5. If `validation.issues` contains `unsafe_any_with_negative`, correct the selector and preview again. Do not recompute the unsafe list:
+
+   ```bash
+   ravi chats lists set <crl-list-id> --owner <type:id> --selector '<json>' --json
+   ```
+
+   `set` runs the same selector validation gate before writing and rejects unsafe selectors with `INVALID_READING_LIST_SELECTOR` without changing the list.

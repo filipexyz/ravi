@@ -9,6 +9,7 @@
 - No reading-list API should bypass chat/contact/CRM permissions.
 - No dynamic membership write should bypass the selector validation used by preview.
 - No selector should combine `match:any` with `not-has-tag` and remain applyable.
+- No selector write (`chats lists create --selector`, `chats lists set --selector`) should persist a selector that preview would report as `canApply=false`.
 
 Suggested scan:
 

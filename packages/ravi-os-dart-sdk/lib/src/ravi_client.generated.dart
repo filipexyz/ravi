@@ -1229,6 +1229,18 @@ class ChatsListsNamespace {
     );
   }
 
+  Future<ChatsListsSetReturn> set_(String listId, [ChatsListsSetOptions options = const ChatsListsSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["listId"] = RaviJson.from(listId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["chats", "lists"],
+      command: "set",
+      body: requestBody,
+      decode: chatsListsSetReturnFromJson,
+    );
+  }
+
   Future<ChatsListsShowReturn> show(String listId, [ChatsListsShowOptions options = const ChatsListsShowOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["listId"] = RaviJson.from(listId);

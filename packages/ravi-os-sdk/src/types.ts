@@ -3531,14 +3531,48 @@ export type ChatsListsAddReturn = Record<string, unknown>;
 /** Input shape for `chats.lists.create`. */
 export type ChatsListsCreateInput = {
   description?: string;
+  metadata?: string;
   mode?: string;
   name: string;
   owner?: string;
+  selector?: string;
   visibility?: string;
 };
 
 /** Return shape for `chats.lists.create`. */
-export type ChatsListsCreateReturn = Record<string, unknown>;
+export type ChatsListsCreateReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  selectorValidation?: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.lists.delta`. */
 export type ChatsListsDeltaInput = {
@@ -3718,6 +3752,54 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.set`. */
+export type ChatsListsSetInput = {
+  description?: string;
+  listId: string;
+  metadata?: string;
+  mode?: string;
+  name?: string;
+  owner?: string;
+  selector?: string;
+  visibility?: string;
+};
+
+/** Return shape for `chats.lists.set`. */
+export type ChatsListsSetReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  selectorValidation?: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+  updated: Array<"name" | "description" | "visibility" | "mode" | "selector" | "metadata">;
+};
 
 /** Input shape for `chats.lists.show`. */
 export type ChatsListsShowInput = {

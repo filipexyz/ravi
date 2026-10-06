@@ -31,6 +31,7 @@ import {
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbUpsertChatMessage,
+  dbUpdateChatReadingList,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
   closeRouterDb,
@@ -1101,6 +1102,49 @@ describe("identity chat schema", () => {
     expect(() => dbFindChatReadingList({ ref: "shared-queue" })).toThrow(/ambiguous/);
     expect(dbFindChatReadingList({ ref: "shared-queue", ownerType: "agent", ownerId: "a" })?.id).toBe(first.id);
     expect(dbFindChatReadingList({ ref: second.id })?.id).toBe(second.id);
+  });
+
+  it("patches a reading list by canonical id without upserting by name", () => {
+    const list = dbCreateChatReadingList({
+      name: "dynamic-queue",
+      ownerType: "agent",
+      ownerId: "crm",
+      description: "old",
+      metadata: { team: "sales" },
+    });
+    dbCreateChatReadingList({ name: "taken", ownerType: "agent", ownerId: "crm" });
+
+    const updated = dbUpdateChatReadingList(list.id, {
+      name: "renamed-queue",
+      description: "new",
+      mode: "dynamic",
+      selector: { scope: "chat", match: "all", conditions: [{ type: "has-tag", tag: "lead" }] },
+      metadata: { team: "support" },
+    });
+    expect(updated).toMatchObject({
+      id: list.id,
+      name: "renamed-queue",
+      description: "new",
+      mode: "dynamic",
+      selector: { scope: "chat", match: "all", conditions: [{ type: "has-tag", tag: "lead" }] },
+      metadata: { team: "support" },
+      ownerType: "agent",
+      ownerId: "crm",
+    });
+
+    const cleared = dbUpdateChatReadingList(list.id, { description: null, metadata: null });
+    expect(cleared.description).toBeUndefined();
+    expect(cleared.metadata).toBeUndefined();
+    expect(cleared.selector).toEqual(updated.selector);
+
+    expect(() => dbUpdateChatReadingList(list.id, { name: "taken" })).toThrow(/already uses that name/);
+    expect(() => dbUpdateChatReadingList(list.id, {})).toThrow(/Nothing to update/);
+    expect(() => dbUpdateChatReadingList("crl_000000000000000000000000", { name: "x" })).toThrow(/not found/);
+    // The id is derived from the original name: re-creating that name must not silently undo the rename.
+    expect(() => dbCreateChatReadingList({ name: "dynamic-queue", ownerType: "agent", ownerId: "crm" })).toThrow(
+      /renamed/,
+    );
+    expect(dbFindChatReadingList({ ref: list.id })?.name).toBe("renamed-queue");
   });
 
   it("merges session participant rows when platform identity becomes resolved", () => {

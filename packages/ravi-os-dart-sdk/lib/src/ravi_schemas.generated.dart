@@ -19564,6 +19564,10 @@ class RaviSchemas {
       "description": "List description",
       "type": "string"
     },
+    "metadata": {
+      "description": "Metadata JSON object stored on the list",
+      "type": "string"
+    },
     "mode": {
       "description": "static|dynamic|hybrid (default: static)",
       "type": "string"
@@ -19574,6 +19578,10 @@ class RaviSchemas {
     },
     "owner": {
       "description": "Owner scope (default: current agent or system:ravi)",
+      "type": "string"
+    },
+    "selector": {
+      "description": "Dynamic membership selector JSON object (validated like preview; for dynamic/hybrid lists)",
       "type": "string"
     },
     "visibility": {
@@ -19590,8 +19598,154 @@ class RaviSchemas {
 
   static const chatsListsCreateReturnSchema = r'''
 {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "selectorValidation": {
+      "additionalProperties": false,
+      "properties": {
+        "canApply": {
+          "type": "boolean"
+        },
+        "conditions": {
+          "additionalProperties": false,
+          "properties": {
+            "negative": {
+              "type": "number"
+            },
+            "positive": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "supported",
+            "positive",
+            "negative"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "match": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "type": "string"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "high"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "contact",
+            "chat"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "canApply",
+        "riskLevel",
+        "scope",
+        "match",
+        "conditions",
+        "issues"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list"
+  ],
   "type": "object"
 }
 ''';
@@ -20281,6 +20435,220 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const chatsListsSetInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "New description (empty string clears it)",
+      "type": "string"
+    },
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Replace the metadata JSON object ('{}' clears)",
+      "type": "string"
+    },
+    "mode": {
+      "description": "static|dynamic|hybrid",
+      "type": "string"
+    },
+    "name": {
+      "description": "New list name (unique per owner)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    },
+    "selector": {
+      "description": "Replace the selector JSON object (validated like preview; '{}' clears)",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "private|team|system",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const chatsListsSetReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "selectorValidation": {
+      "additionalProperties": false,
+      "properties": {
+        "canApply": {
+          "type": "boolean"
+        },
+        "conditions": {
+          "additionalProperties": false,
+          "properties": {
+            "negative": {
+              "type": "number"
+            },
+            "positive": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "supported",
+            "positive",
+            "negative"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "match": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "type": "string"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "high"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "contact",
+            "chat"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "canApply",
+        "riskLevel",
+        "scope",
+        "match",
+        "conditions",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "updated": {
+      "items": {
+        "enum": [
+          "name",
+          "description",
+          "visibility",
+          "mode",
+          "selector",
+          "metadata"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "list",
+    "updated"
+  ],
   "type": "object"
 }
 ''';
@@ -30745,7 +31113,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "entityType": {
-      "description": "CRM entity type (default: opportunity)",
+      "description": "Pipeline entity type slug (default: opportunity; recommended: opportunity, account, contact, task, lead, case)",
       "type": "string"
     },
     "hitlRequiredWhen": {
@@ -30855,7 +31223,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "entityType": {
-      "description": "Filter by CRM entity type",
+      "description": "Filter by pipeline entity type slug",
       "type": "string"
     },
     "fields": {
