@@ -1793,6 +1793,2011 @@ export type AudioVoicesReturn = {
   }>;
 };
 
+/** Input shape for `bases.aggregate`. */
+export type BasesAggregateInput = {
+  agg?: string[];
+  base: string;
+  console?: string;
+  filter?: string;
+  groupBy?: string[];
+  project?: string;
+};
+
+/** Return shape for `bases.aggregate`. */
+export type BasesAggregateReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  groups: Array<{
+    keys: Record<string, string | number | boolean | null>;
+    values: Record<string, number | string | null>;
+  }>;
+  projectRef: string;
+  success: true;
+  suppressedGroups: number;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+};
+
+/** Input shape for `bases.archive`. */
+export type BasesArchiveInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.archive`. */
+export type BasesArchiveReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.charts.archive`. */
+export type BasesChartsArchiveInput = {
+  base: string;
+  chart: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.charts.archive`. */
+export type BasesChartsArchiveReturn = {
+  baseRef: string;
+  chart: {
+    baseId: string;
+    createdAt?: string;
+    description: string | null;
+    id: string;
+    name: string;
+    position?: number;
+    spec: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version: number;
+    viewId: string;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.charts.create`. */
+export type BasesChartsCreateInput = {
+  base: string;
+  console?: string;
+  name?: string;
+  project?: string;
+  spec?: string;
+  view?: string;
+};
+
+/** Return shape for `bases.charts.create`. */
+export type BasesChartsCreateReturn = {
+  baseRef: string;
+  chart: {
+    baseId: string;
+    createdAt?: string;
+    description: string | null;
+    id: string;
+    name: string;
+    position?: number;
+    spec: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version: number;
+    viewId: string;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.charts.data`. */
+export type BasesChartsDataInput = {
+  base: string;
+  chart: string;
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.charts.data`. */
+export type BasesChartsDataReturn = {
+  baseRef: string;
+  chart: {
+    baseId: string;
+    createdAt?: string;
+    description: string | null;
+    id: string;
+    name: string;
+    position?: number;
+    spec: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version: number;
+    viewId: string;
+  };
+  consoleUrl: string;
+  data: Array<Record<string, string | number | boolean | null>>;
+  fields: Record<string, {
+    config: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    key: string;
+    name: string;
+    required: boolean;
+    type: string;
+  }>;
+  projectRef: string;
+  success: true;
+  suppressedGroups: number;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+};
+
+/** Input shape for `bases.charts.list`. */
+export type BasesChartsListInput = {
+  base: string;
+  console?: string;
+  fields?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.charts.list`. */
+export type BasesChartsListReturn = {
+  baseRef: string;
+  charts: Array<{
+    baseId?: string;
+    createdAt?: string;
+    description?: string | null;
+    id?: string;
+    name?: string;
+    position?: number;
+    spec?: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version?: number;
+    viewId?: string;
+  }>;
+  consoleUrl: string;
+  items: Array<{
+    baseId?: string;
+    createdAt?: string;
+    description?: string | null;
+    id?: string;
+    name?: string;
+    position?: number;
+    spec?: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version?: number;
+    viewId?: string;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `bases.charts.show`. */
+export type BasesChartsShowInput = {
+  base: string;
+  chart: string;
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.charts.show`. */
+export type BasesChartsShowReturn = {
+  baseRef: string;
+  chart: {
+    baseId: string;
+    createdAt?: string;
+    description: string | null;
+    id: string;
+    name: string;
+    position?: number;
+    spec: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version: number;
+    viewId: string;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.charts.update`. */
+export type BasesChartsUpdateInput = {
+  base: string;
+  chart: string;
+  console?: string;
+  expectedVersion?: string;
+  name?: string;
+  project?: string;
+  spec?: string;
+};
+
+/** Return shape for `bases.charts.update`. */
+export type BasesChartsUpdateReturn = {
+  baseRef: string;
+  chart: {
+    baseId: string;
+    createdAt?: string;
+    description: string | null;
+    id: string;
+    name: string;
+    position?: number;
+    spec: Record<string, unknown>;
+    status?: string;
+    updatedAt?: string;
+    version: number;
+    viewId: string;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.create`. */
+export type BasesCreateInput = {
+  console?: string;
+  description?: string;
+  icon?: string;
+  name: string;
+  project?: string;
+  schema?: string;
+  slug?: string;
+  timezone?: string;
+};
+
+/** Return shape for `bases.create`. */
+export type BasesCreateReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    charts: Array<{
+      baseId: string;
+      createdAt?: string;
+      description: string | null;
+      id: string;
+      name: string;
+      position?: number;
+      spec: Record<string, unknown>;
+      status?: string;
+      updatedAt?: string;
+      version: number;
+      viewId: string;
+    }>;
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    members: Array<{
+      avatarUrl: string | null;
+      displayName: string | null;
+      id: string;
+    }>;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    properties: Array<{
+      config: {
+        currency?: string;
+        format?: string;
+        includeTime?: boolean;
+        options?: Array<{
+          archived?: boolean;
+          color: string;
+          group?: string;
+          id: string;
+          name: string;
+        }>;
+        precision?: number;
+      };
+      deletedAt: string | null;
+      description: string | null;
+      id: string;
+      key: string;
+      name: string;
+      position: number;
+      required: boolean;
+      type: string;
+    }>;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+    views: Array<({
+      access: Record<string, unknown>;
+      baseId: string;
+      capabilities: {
+        aggregateOnly: boolean;
+        archive: boolean;
+        create: boolean;
+        manage: boolean;
+        read: boolean;
+        writeColumns: string[];
+      };
+      columns: string[];
+      createdAt: string;
+      description: string | null;
+      id: string;
+      invalidReason: string | null;
+      layout: Record<string, unknown>;
+      name: string;
+      position: number;
+      query: {
+        filter: unknown | null;
+        sort: Array<{
+          dir: string;
+          prop: string;
+        }>;
+      };
+      status: string;
+      updatedAt: string;
+      valid: boolean;
+      version: number;
+    }) | ({
+      baseId: string;
+      capabilities: {
+        aggregateOnly: boolean;
+        archive: boolean;
+        create: boolean;
+        manage: boolean;
+        read: boolean;
+        writeColumns: string[];
+      };
+      columns: Array<{
+        config: {
+          currency?: string;
+          format?: string;
+          includeTime?: boolean;
+          options?: Array<{
+            archived?: boolean;
+            color: string;
+            group?: string;
+            id: string;
+            name: string;
+          }>;
+          precision?: number;
+        };
+        key: string;
+        name: string;
+        required: boolean;
+        type: string;
+      }>;
+      description: string | null;
+      id: string;
+      layout: Record<string, unknown>;
+      name: string;
+      valid: boolean;
+      version: number;
+    })>;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.list`. */
+export type BasesListInput = {
+  console?: string;
+  fields?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.list`. */
+export type BasesListReturn = {
+  bases: Array<{
+    capabilities?: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt?: string;
+    description?: string | null;
+    icon?: string | null;
+    id?: string;
+    name?: string;
+    organizationId?: string;
+    projectId?: string;
+    rowCount?: number | null;
+    schemaVersion?: number;
+    slug?: string;
+    status?: string;
+    timezone?: string;
+    updatedAt?: string;
+    version?: number;
+  }>;
+  consoleUrl: string;
+  items: Array<{
+    capabilities?: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt?: string;
+    description?: string | null;
+    icon?: string | null;
+    id?: string;
+    name?: string;
+    organizationId?: string;
+    projectId?: string;
+    rowCount?: number | null;
+    schemaVersion?: number;
+    slug?: string;
+    status?: string;
+    timezone?: string;
+    updatedAt?: string;
+    version?: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `bases.props.add`. */
+export type BasesPropsAddInput = {
+  base: string;
+  config?: string;
+  console?: string;
+  description?: string;
+  expectedSchemaVersion?: string;
+  key?: string;
+  name: string;
+  options?: string;
+  position?: string;
+  project?: string;
+  required?: boolean;
+  type?: string;
+};
+
+/** Return shape for `bases.props.add`. */
+export type BasesPropsAddReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  property: {
+    config: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt: string | null;
+    description: string | null;
+    id: string;
+    key: string;
+    name: string;
+    position: number;
+    required: boolean;
+    type: string;
+  };
+  report: ({
+    activeRows: number;
+    cleared: number;
+    converted: number;
+    dependents: {
+      charts: Array<{
+        id: string;
+        name: string;
+      }>;
+      views: Array<{
+        id: string;
+        name: string;
+      }>;
+    };
+    dryRun: boolean;
+    missing: number;
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `bases.props.delete`. */
+export type BasesPropsDeleteInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedSchemaVersion?: string;
+  project?: string;
+  prop: string;
+};
+
+/** Return shape for `bases.props.delete`. */
+export type BasesPropsDeleteReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  property: {
+    config: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt: string | null;
+    description: string | null;
+    id: string;
+    key: string;
+    name: string;
+    position: number;
+    required: boolean;
+    type: string;
+  };
+  report: ({
+    activeRows: number;
+    cleared: number;
+    converted: number;
+    dependents: {
+      charts: Array<{
+        id: string;
+        name: string;
+      }>;
+      views: Array<{
+        id: string;
+        name: string;
+      }>;
+    };
+    dryRun: boolean;
+    missing: number;
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `bases.props.list`. */
+export type BasesPropsListInput = {
+  base: string;
+  console?: string;
+  fields?: string;
+  includeDeleted?: boolean;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.props.list`. */
+export type BasesPropsListReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  items: Array<{
+    config?: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt?: string | null;
+    description?: string | null;
+    id?: string;
+    key?: string;
+    name?: string;
+    position?: number;
+    required?: boolean;
+    type?: string;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  properties: Array<{
+    config?: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt?: string | null;
+    description?: string | null;
+    id?: string;
+    key?: string;
+    name?: string;
+    position?: number;
+    required?: boolean;
+    type?: string;
+  }>;
+  schemaVersion: number;
+  success: true;
+  total: number;
+};
+
+/** Input shape for `bases.props.restore`. */
+export type BasesPropsRestoreInput = {
+  base: string;
+  console?: string;
+  expectedSchemaVersion?: string;
+  project?: string;
+  prop: string;
+};
+
+/** Return shape for `bases.props.restore`. */
+export type BasesPropsRestoreReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  property: {
+    config: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt: string | null;
+    description: string | null;
+    id: string;
+    key: string;
+    name: string;
+    position: number;
+    required: boolean;
+    type: string;
+  };
+  report: ({
+    activeRows: number;
+    cleared: number;
+    converted: number;
+    dependents: {
+      charts: Array<{
+        id: string;
+        name: string;
+      }>;
+      views: Array<{
+        id: string;
+        name: string;
+      }>;
+    };
+    dryRun: boolean;
+    missing: number;
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `bases.props.update`. */
+export type BasesPropsUpdateInput = {
+  base: string;
+  config?: string;
+  console?: string;
+  description?: string;
+  execute?: boolean;
+  expectedSchemaVersion?: string;
+  key?: string;
+  name?: string;
+  options?: string;
+  position?: string;
+  project?: string;
+  prop: string;
+  required?: string;
+  type?: string;
+};
+
+/** Return shape for `bases.props.update`. */
+export type BasesPropsUpdateReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  property: {
+    config: {
+      currency?: string;
+      format?: string;
+      includeTime?: boolean;
+      options?: Array<{
+        archived?: boolean;
+        color: string;
+        group?: string;
+        id: string;
+        name: string;
+      }>;
+      precision?: number;
+    };
+    deletedAt: string | null;
+    description: string | null;
+    id: string;
+    key: string;
+    name: string;
+    position: number;
+    required: boolean;
+    type: string;
+  };
+  report: ({
+    activeRows: number;
+    cleared: number;
+    converted: number;
+    dependents: {
+      charts: Array<{
+        id: string;
+        name: string;
+      }>;
+      views: Array<{
+        id: string;
+        name: string;
+      }>;
+    };
+    dryRun: boolean;
+    missing: number;
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `bases.restore`. */
+export type BasesRestoreInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.restore`. */
+export type BasesRestoreReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.rows.add`. */
+export type BasesRowsAddInput = {
+  base: string;
+  body?: string;
+  bodyFile?: string;
+  console?: string;
+  idempotencyKey?: string;
+  project?: string;
+  set?: string[];
+  values?: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.add`. */
+export type BasesRowsAddReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.archive`. */
+export type BasesRowsArchiveInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  lastWriteWins?: boolean;
+  project?: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.archive`. */
+export type BasesRowsArchiveReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.export`. */
+export type BasesRowsExportInput = {
+  base: string;
+  console?: string;
+  filter?: string;
+  format?: string;
+  includeBody?: boolean;
+  maxRows?: string;
+  out?: string;
+  project?: string;
+  sort?: string[];
+  view?: string;
+};
+
+/** Return shape for `bases.rows.export`. */
+export type BasesRowsExportReturn = {
+  baseRef: string;
+  columns: string[];
+  consoleUrl: string;
+  content: string | null;
+  format: string;
+  outFile: string | null;
+  projectRef: string;
+  rowCount: number;
+  success: true;
+  truncated: boolean;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.get`. */
+export type BasesRowsGetInput = {
+  base: string;
+  console?: string;
+  includeArchived?: boolean;
+  project?: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.get`. */
+export type BasesRowsGetReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.history`. */
+export type BasesRowsHistoryInput = {
+  base: string;
+  console?: string;
+  cursor?: string;
+  limit?: string;
+  project?: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.history`. */
+export type BasesRowsHistoryReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  entries: Array<{
+    action: string;
+    actorId: string | null;
+    actorType: string;
+    after: Record<string, unknown>;
+    before: Record<string, unknown>;
+    bodyChanged: boolean;
+    changedKeys: string[];
+    createdAt: string;
+    id: string;
+    lastWriteWins: boolean;
+    rowId: string;
+    sequence: number;
+    surface: string;
+    version: number;
+    viewId: string | null;
+  }>;
+  nextCursor: string | null;
+  pagination: {
+    count: number;
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextCursor: string | null;
+  };
+  projectRef: string;
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.import`. */
+export type BasesRowsImportInput = {
+  base: string;
+  batch?: string;
+  console?: string;
+  execute?: boolean;
+  file: string;
+  map?: string[];
+  project?: string;
+};
+
+/** Return shape for `bases.rows.import`. */
+export type BasesRowsImportReturn = {
+  baseRef: string;
+  batchCount: number;
+  batches: Array<{
+    firstRowId: string | null;
+    idempotencyKey: string;
+    idempotentReplay: boolean;
+    index: number;
+    lastRowId: string | null;
+    rowCount: number;
+  }>;
+  columns: Array<{
+    column: string;
+    key: string | null;
+    reason?: string;
+    skipped: boolean;
+    type: string | null;
+  }>;
+  consoleUrl: string;
+  created: number;
+  emptyRowsSkipped: number;
+  file: string;
+  projectRef: string;
+  rowCount: number;
+  success: true;
+};
+
+/** Input shape for `bases.rows.purge`. */
+export type BasesRowsPurgeInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  project?: string;
+  row: string;
+};
+
+/** Return shape for `bases.rows.purge`. */
+export type BasesRowsPurgeReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  purged: boolean;
+  rowId: string;
+  success: true;
+};
+
+/** Input shape for `bases.rows.query`. */
+export type BasesRowsQueryInput = {
+  all?: boolean;
+  base: string;
+  console?: string;
+  cursor?: string;
+  filter?: string;
+  format?: string;
+  includeArchived?: boolean;
+  includeBody?: boolean;
+  limit?: string;
+  maxRows?: string;
+  project?: string;
+  sort?: string[];
+  view?: string;
+};
+
+/** Return shape for `bases.rows.query`. */
+export type BasesRowsQueryReturn = {
+  baseRef: string;
+  columns: string[];
+  consoleUrl: string;
+  nextCursor: string | null;
+  pagination: {
+    count: number;
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextCursor: string | null;
+  };
+  projectRef: string;
+  rows: Array<{
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  }>;
+  success: true;
+  truncated: boolean;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.restore`. */
+export type BasesRowsRestoreInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  lastWriteWins?: boolean;
+  project?: string;
+  row: string;
+};
+
+/** Return shape for `bases.rows.restore`. */
+export type BasesRowsRestoreReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.update`. */
+export type BasesRowsUpdateInput = {
+  base: string;
+  body?: string;
+  bodyFile?: string;
+  console?: string;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  lastWriteWins?: boolean;
+  project?: string;
+  row: string;
+  set?: string[];
+  values?: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.update`. */
+export type BasesRowsUpdateReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.show`. */
+export type BasesShowInput = {
+  base: string;
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.show`. */
+export type BasesShowReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    charts: Array<{
+      baseId: string;
+      createdAt?: string;
+      description: string | null;
+      id: string;
+      name: string;
+      position?: number;
+      spec: Record<string, unknown>;
+      status?: string;
+      updatedAt?: string;
+      version: number;
+      viewId: string;
+    }>;
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    members: Array<{
+      avatarUrl: string | null;
+      displayName: string | null;
+      id: string;
+    }>;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    properties: Array<{
+      config: {
+        currency?: string;
+        format?: string;
+        includeTime?: boolean;
+        options?: Array<{
+          archived?: boolean;
+          color: string;
+          group?: string;
+          id: string;
+          name: string;
+        }>;
+        precision?: number;
+      };
+      deletedAt: string | null;
+      description: string | null;
+      id: string;
+      key: string;
+      name: string;
+      position: number;
+      required: boolean;
+      type: string;
+    }>;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+    views: Array<({
+      access: Record<string, unknown>;
+      baseId: string;
+      capabilities: {
+        aggregateOnly: boolean;
+        archive: boolean;
+        create: boolean;
+        manage: boolean;
+        read: boolean;
+        writeColumns: string[];
+      };
+      columns: string[];
+      createdAt: string;
+      description: string | null;
+      id: string;
+      invalidReason: string | null;
+      layout: Record<string, unknown>;
+      name: string;
+      position: number;
+      query: {
+        filter: unknown | null;
+        sort: Array<{
+          dir: string;
+          prop: string;
+        }>;
+      };
+      status: string;
+      updatedAt: string;
+      valid: boolean;
+      version: number;
+    }) | ({
+      baseId: string;
+      capabilities: {
+        aggregateOnly: boolean;
+        archive: boolean;
+        create: boolean;
+        manage: boolean;
+        read: boolean;
+        writeColumns: string[];
+      };
+      columns: Array<{
+        config: {
+          currency?: string;
+          format?: string;
+          includeTime?: boolean;
+          options?: Array<{
+            archived?: boolean;
+            color: string;
+            group?: string;
+            id: string;
+            name: string;
+          }>;
+          precision?: number;
+        };
+        key: string;
+        name: string;
+        required: boolean;
+        type: string;
+      }>;
+      description: string | null;
+      id: string;
+      layout: Record<string, unknown>;
+      name: string;
+      valid: boolean;
+      version: number;
+    })>;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.subscribe`. */
+export type BasesSubscribeInput = {
+  base: string;
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.subscribe`. */
+export type BasesSubscribeReturn = {
+  consoleUrl: string;
+  delivery: {
+    category: string;
+    natsSubject: string;
+  };
+  projectRef: string;
+  subscription: {
+    baseId: string;
+    createdAt: string;
+    id: string;
+    installationName: string | null;
+    localInstallationId: string;
+    revokedAt: string | null;
+    status: string;
+    userId: string;
+  };
+  success: true;
+};
+
+/** Input shape for `bases.subscriptions`. */
+export type BasesSubscriptionsInput = {
+  base: string;
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.subscriptions`. */
+export type BasesSubscriptionsReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  subscriptions: Array<{
+    baseId: string;
+    createdAt: string;
+    id: string;
+    installationName: string | null;
+    localInstallationId: string;
+    revokedAt: string | null;
+    status: string;
+    userId: string;
+  }>;
+  success: true;
+};
+
+/** Input shape for `bases.unsubscribe`. */
+export type BasesUnsubscribeInput = {
+  base: string;
+  console?: string;
+  project?: string;
+  subscription: string;
+};
+
+/** Return shape for `bases.unsubscribe`. */
+export type BasesUnsubscribeReturn = {
+  consoleUrl: string;
+  projectRef: string;
+  subscription: {
+    baseId: string;
+    createdAt: string;
+    id: string;
+    installationName: string | null;
+    localInstallationId: string;
+    revokedAt: string | null;
+    status: string;
+    userId: string;
+  };
+  success: true;
+};
+
+/** Input shape for `bases.update`. */
+export type BasesUpdateInput = {
+  base: string;
+  console?: string;
+  description?: string;
+  expectedVersion?: string;
+  icon?: string;
+  name?: string;
+  project?: string;
+  slug?: string;
+  timezone?: string;
+};
+
+/** Return shape for `bases.update`. */
+export type BasesUpdateReturn = {
+  base: {
+    capabilities: {
+      manage: boolean;
+      readDirect: boolean;
+      writeDirect: boolean;
+    };
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    name: string;
+    organizationId: string;
+    projectId: string;
+    rowCount: number | null;
+    schemaVersion: number;
+    slug: string;
+    status: string;
+    timezone: string;
+    updatedAt: string;
+    version: number;
+  };
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+};
+
+/** Input shape for `bases.views.archive`. */
+export type BasesViewsArchiveInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  project?: string;
+  view: string;
+};
+
+/** Return shape for `bases.views.archive`. */
+export type BasesViewsArchiveReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
+/** Input shape for `bases.views.create`. */
+export type BasesViewsCreateInput = {
+  base: string;
+  console?: string;
+  name?: string;
+  project?: string;
+  spec?: string;
+};
+
+/** Return shape for `bases.views.create`. */
+export type BasesViewsCreateReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
+/** Input shape for `bases.views.list`. */
+export type BasesViewsListInput = {
+  base: string;
+  console?: string;
+  fields?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `bases.views.list`. */
+export type BasesViewsListReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  items: Array<({
+    access?: Record<string, unknown>;
+    baseId?: string;
+    capabilities?: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns?: string[];
+    createdAt?: string;
+    description?: string | null;
+    id?: string;
+    invalidReason?: string | null;
+    layout?: Record<string, unknown>;
+    name?: string;
+    position?: number;
+    query?: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status?: string;
+    updatedAt?: string;
+    valid?: boolean;
+    version?: number;
+  }) | ({
+    baseId?: string;
+    capabilities?: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns?: Array<{
+      config: {
+        currency?: string;
+        format?: string;
+        includeTime?: boolean;
+        options?: Array<{
+          archived?: boolean;
+          color: string;
+          group?: string;
+          id: string;
+          name: string;
+        }>;
+        precision?: number;
+      };
+      key: string;
+      name: string;
+      required: boolean;
+      type: string;
+    }>;
+    description?: string | null;
+    id?: string;
+    layout?: Record<string, unknown>;
+    name?: string;
+    valid?: boolean;
+    version?: number;
+  })>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+  views: Array<({
+    access?: Record<string, unknown>;
+    baseId?: string;
+    capabilities?: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns?: string[];
+    createdAt?: string;
+    description?: string | null;
+    id?: string;
+    invalidReason?: string | null;
+    layout?: Record<string, unknown>;
+    name?: string;
+    position?: number;
+    query?: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status?: string;
+    updatedAt?: string;
+    valid?: boolean;
+    version?: number;
+  }) | ({
+    baseId?: string;
+    capabilities?: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns?: Array<{
+      config: {
+        currency?: string;
+        format?: string;
+        includeTime?: boolean;
+        options?: Array<{
+          archived?: boolean;
+          color: string;
+          group?: string;
+          id: string;
+          name: string;
+        }>;
+        precision?: number;
+      };
+      key: string;
+      name: string;
+      required: boolean;
+      type: string;
+    }>;
+    description?: string | null;
+    id?: string;
+    layout?: Record<string, unknown>;
+    name?: string;
+    valid?: boolean;
+    version?: number;
+  })>;
+};
+
+/** Input shape for `bases.views.query`. */
+export type BasesViewsQueryInput = {
+  all?: boolean;
+  base: string;
+  console?: string;
+  cursor?: string;
+  filter?: string;
+  format?: string;
+  includeBody?: boolean;
+  limit?: string;
+  maxRows?: string;
+  project?: string;
+  sort?: string[];
+  view: string;
+};
+
+/** Return shape for `bases.views.query`. */
+export type BasesViewsQueryReturn = {
+  baseRef: string;
+  columns: string[];
+  consoleUrl: string;
+  nextCursor: string | null;
+  pagination: {
+    count: number;
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextCursor: string | null;
+  };
+  projectRef: string;
+  rows: Array<{
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  }>;
+  success: true;
+  truncated: boolean;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.views.show`. */
+export type BasesViewsShowInput = {
+  base: string;
+  console?: string;
+  project?: string;
+  view: string;
+};
+
+/** Return shape for `bases.views.show`. */
+export type BasesViewsShowReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+  view: {
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: Array<{
+      config: {
+        currency?: string;
+        format?: string;
+        includeTime?: boolean;
+        options?: Array<{
+          archived?: boolean;
+          color: string;
+          group?: string;
+          id: string;
+          name: string;
+        }>;
+        precision?: number;
+      };
+      key: string;
+      name: string;
+      required: boolean;
+      type: string;
+    }>;
+    description: string | null;
+    id: string;
+    layout: Record<string, unknown>;
+    name: string;
+    valid: boolean;
+    version: number;
+    view?: {
+      access: Record<string, unknown>;
+      baseId: string;
+      capabilities: {
+        aggregateOnly: boolean;
+        archive: boolean;
+        create: boolean;
+        manage: boolean;
+        read: boolean;
+        writeColumns: string[];
+      };
+      columns: string[];
+      createdAt: string;
+      description: string | null;
+      id: string;
+      invalidReason: string | null;
+      layout: Record<string, unknown>;
+      name: string;
+      position: number;
+      query: {
+        filter: unknown | null;
+        sort: Array<{
+          dir: string;
+          prop: string;
+        }>;
+      };
+      status: string;
+      updatedAt: string;
+      valid: boolean;
+      version: number;
+    };
+  };
+};
+
+/** Input shape for `bases.views.update`. */
+export type BasesViewsUpdateInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  name?: string;
+  project?: string;
+  spec?: string;
+  view: string;
+};
+
+/** Return shape for `bases.views.update`. */
+export type BasesViewsUpdateReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
 /** Input shape for `bridges.create`. */
 export type BridgesCreateInput = {
   allow?: string;

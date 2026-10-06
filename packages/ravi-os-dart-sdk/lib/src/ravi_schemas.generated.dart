@@ -9008,6 +9008,10208 @@ class RaviSchemas {
 }
 ''';
 
+  static const basesAggregateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agg": {
+      "description": "Measures: count, count::n, sum:amount, avg:amount:avg_deal (default: count)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "filter": {
+      "description": "Query AST filter, inline JSON or @file",
+      "type": "string"
+    },
+    "groupBy": {
+      "description": "Group by up to 2 keys; dates need a unit: day|week|month|quarter|year",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesAggregateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "groups": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "keys",
+          "values"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "suppressedGroups": {
+      "type": "number"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "groups",
+    "suppressedGroups",
+    "users"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesArchiveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually archive; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Base version you read (default: current)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesArchiveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsArchiveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "chart": {
+      "description": "Chart id",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually archive; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Chart version you read (default: current)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsArchiveReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "spec": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "viewId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "viewId",
+        "name",
+        "description",
+        "spec",
+        "version"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsCreateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "name": {
+      "description": "Chart name (overrides spec.name)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "spec": {
+      "description": "Chart: {viewId, name, spec:{mark, encoding}}, or just {mark, encoding} with --view and --name",
+      "type": "string"
+    },
+    "view": {
+      "description": "View the chart reads (overrides spec.viewId)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsCreateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "spec": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "viewId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "viewId",
+        "name",
+        "description",
+        "spec",
+        "version"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsDataInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "chart": {
+      "description": "Chart id",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsDataReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "spec": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "viewId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "viewId",
+        "name",
+        "description",
+        "spec",
+        "version"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "data": {
+      "items": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "fields": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "currency": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              },
+              "includeTime": {
+                "type": "boolean"
+              },
+              "options": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "color": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "precision": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "type",
+          "config",
+          "required"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "suppressedGroups": {
+      "type": "number"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "chart",
+    "fields",
+    "data",
+    "suppressedGroups",
+    "users",
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of items to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsListReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "charts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "baseId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "spec": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "viewId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "baseId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "spec": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "viewId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "total",
+    "pagination",
+    "charts",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "chart": {
+      "description": "Chart id",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsShowReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "spec": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "viewId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "viewId",
+        "name",
+        "description",
+        "spec",
+        "version"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "chart": {
+      "description": "Chart id",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Chart version you read (default: current)",
+      "type": "string"
+    },
+    "name": {
+      "description": "New name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "spec": {
+      "description": "Fields to change: name, viewId, spec, description",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesChartsUpdateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "spec": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "viewId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "viewId",
+        "name",
+        "description",
+        "spec",
+        "version"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "chart"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesCreateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Base description",
+      "type": "string"
+    },
+    "icon": {
+      "description": "Base icon (emoji or short name)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Base display name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "schema": {
+      "description": "Initial properties: a JSON array of property definitions, or {properties:[...]}",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Base slug (default: derived from the name)",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "IANA timezone for dates and $today (default: UTC)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesCreateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "charts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "spec": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "baseId",
+              "viewId",
+              "name",
+              "description",
+              "spec",
+              "version"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "avatarUrl"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "properties": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "properties": {
+                  "currency": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "includeTime": {
+                    "type": "boolean"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "archived": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "type": "string"
+                        },
+                        "group": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "color"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "precision": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "name",
+              "description",
+              "type",
+              "config",
+              "position",
+              "required",
+              "deletedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "views": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "access": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "baseId": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregateOnly": {
+                        "type": "boolean"
+                      },
+                      "archive": {
+                        "type": "boolean"
+                      },
+                      "create": {
+                        "type": "boolean"
+                      },
+                      "manage": {
+                        "type": "boolean"
+                      },
+                      "read": {
+                        "type": "boolean"
+                      },
+                      "writeColumns": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "read",
+                      "aggregateOnly",
+                      "writeColumns",
+                      "create",
+                      "archive",
+                      "manage"
+                    ],
+                    "type": "object"
+                  },
+                  "columns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "invalidReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "layout": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "position": {
+                    "type": "number"
+                  },
+                  "query": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "filter": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sort": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "dir": {
+                              "type": "string"
+                            },
+                            "prop": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "prop",
+                            "dir"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "filter",
+                      "sort"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "baseId",
+                  "name",
+                  "description",
+                  "columns",
+                  "query",
+                  "layout",
+                  "access",
+                  "position",
+                  "version",
+                  "status",
+                  "valid",
+                  "invalidReason",
+                  "createdAt",
+                  "updatedAt",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseId": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregateOnly": {
+                        "type": "boolean"
+                      },
+                      "archive": {
+                        "type": "boolean"
+                      },
+                      "create": {
+                        "type": "boolean"
+                      },
+                      "manage": {
+                        "type": "boolean"
+                      },
+                      "read": {
+                        "type": "boolean"
+                      },
+                      "writeColumns": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "read",
+                      "aggregateOnly",
+                      "writeColumns",
+                      "create",
+                      "archive",
+                      "manage"
+                    ],
+                    "type": "object"
+                  },
+                  "columns": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "config": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "currency": {
+                              "type": "string"
+                            },
+                            "format": {
+                              "type": "string"
+                            },
+                            "includeTime": {
+                              "type": "boolean"
+                            },
+                            "options": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "archived": {
+                                    "type": "boolean"
+                                  },
+                                  "color": {
+                                    "type": "string"
+                                  },
+                                  "group": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "color"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "precision": {
+                              "type": "number"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "name",
+                        "type",
+                        "config",
+                        "required"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "layout": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "baseId",
+                  "name",
+                  "description",
+                  "layout",
+                  "version",
+                  "columns",
+                  "capabilities",
+                  "valid"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities",
+        "properties",
+        "views",
+        "charts",
+        "members"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived bases (managers)",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of items to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const basesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "bases": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": false,
+            "properties": {
+              "manage": {
+                "type": "boolean"
+              },
+              "readDirect": {
+                "type": "boolean"
+              },
+              "writeDirect": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "manage",
+              "readDirect",
+              "writeDirect"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "rowCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "type": "number"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": false,
+            "properties": {
+              "manage": {
+                "type": "boolean"
+              },
+              "readDirect": {
+                "type": "boolean"
+              },
+              "writeDirect": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "manage",
+              "readDirect",
+              "writeDirect"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "rowCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "type": "number"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "pagination",
+    "bases",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsAddInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "config": {
+      "description": "Property config JSON (options, format, includeTime...)",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Property description",
+      "type": "string"
+    },
+    "expectedSchemaVersion": {
+      "description": "Schema version you read (default: read the current one first)",
+      "type": "string"
+    },
+    "key": {
+      "description": "API key, ^[a-z][a-z0-9_]{0,62}$ (default: derived from the name)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Property display name",
+      "type": "string"
+    },
+    "options": {
+      "description": "Select/status options, comma-separated; status groups as Name:todo|in_progress|done",
+      "type": "string"
+    },
+    "position": {
+      "description": "Column position",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "required": {
+      "description": "Require a value on create and on updates that touch it",
+      "type": "boolean"
+    },
+    "type": {
+      "description": "text|number|checkbox|date|select|multi_select|status|url|email|phone|person|ref (default: text)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "name"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsAddReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "includeTime": {
+              "type": "boolean"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "precision": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "type",
+        "config",
+        "position",
+        "required",
+        "deletedAt"
+      ],
+      "type": "object"
+    },
+    "report": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "activeRows": {
+              "type": "number"
+            },
+            "cleared": {
+              "type": "number"
+            },
+            "converted": {
+              "type": "number"
+            },
+            "dependents": {
+              "additionalProperties": false,
+              "properties": {
+                "charts": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "views": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "views",
+                "charts"
+              ],
+              "type": "object"
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dryRun",
+            "activeRows",
+            "converted",
+            "cleared",
+            "missing",
+            "dependents"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base",
+    "property",
+    "report"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsDeleteInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually delete; without it the Console only reports dependent views and charts (exit 3)",
+      "type": "boolean"
+    },
+    "expectedSchemaVersion": {
+      "description": "Schema version you read (default: read the current one first)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsDeleteReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "includeTime": {
+              "type": "boolean"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "precision": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "type",
+        "config",
+        "position",
+        "required",
+        "deletedAt"
+      ],
+      "type": "object"
+    },
+    "report": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "activeRows": {
+              "type": "number"
+            },
+            "cleared": {
+              "type": "number"
+            },
+            "converted": {
+              "type": "number"
+            },
+            "dependents": {
+              "additionalProperties": false,
+              "properties": {
+                "charts": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "views": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "views",
+                "charts"
+              ],
+              "type": "object"
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dryRun",
+            "activeRows",
+            "converted",
+            "cleared",
+            "missing",
+            "dependents"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base",
+    "property",
+    "report"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
+    "includeDeleted": {
+      "description": "Include soft-deleted properties",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of items to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "currency": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              },
+              "includeTime": {
+                "type": "boolean"
+              },
+              "options": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "color": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "precision": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "properties": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "currency": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              },
+              "includeTime": {
+                "type": "boolean"
+              },
+              "options": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "color": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "precision": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schemaVersion": {
+      "type": "number"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "schemaVersion",
+    "total",
+    "pagination",
+    "properties",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsRestoreInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedSchemaVersion": {
+      "description": "Schema version you read (default: read the current one first)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsRestoreReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "includeTime": {
+              "type": "boolean"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "precision": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "type",
+        "config",
+        "position",
+        "required",
+        "deletedAt"
+      ],
+      "type": "object"
+    },
+    "report": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "activeRows": {
+              "type": "number"
+            },
+            "cleared": {
+              "type": "number"
+            },
+            "converted": {
+              "type": "number"
+            },
+            "dependents": {
+              "additionalProperties": false,
+              "properties": {
+                "charts": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "views": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "views",
+                "charts"
+              ],
+              "type": "object"
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dryRun",
+            "activeRows",
+            "converted",
+            "cleared",
+            "missing",
+            "dependents"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base",
+    "property",
+    "report"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "config": {
+      "description": "New config JSON (options keep ids when you pass them)",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "New description",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm a type or includeTime migration; without it the Console only reports (exit 3)",
+      "type": "boolean"
+    },
+    "expectedSchemaVersion": {
+      "description": "Schema version you read (default: read the current one first)",
+      "type": "string"
+    },
+    "key": {
+      "description": "New API key",
+      "type": "string"
+    },
+    "name": {
+      "description": "New name",
+      "type": "string"
+    },
+    "options": {
+      "description": "Replace select/status options by name (see props add)",
+      "type": "string"
+    },
+    "position": {
+      "description": "Column position",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "required": {
+      "description": "Require a value",
+      "type": "string"
+    },
+    "type": {
+      "description": "New type (a migration: dry-run report unless --execute)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesPropsUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "includeTime": {
+              "type": "boolean"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "precision": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "type",
+        "config",
+        "position",
+        "required",
+        "deletedAt"
+      ],
+      "type": "object"
+    },
+    "report": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "activeRows": {
+              "type": "number"
+            },
+            "cleared": {
+              "type": "number"
+            },
+            "converted": {
+              "type": "number"
+            },
+            "dependents": {
+              "additionalProperties": false,
+              "properties": {
+                "charts": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "views": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "views",
+                "charts"
+              ],
+              "type": "object"
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "dryRun",
+            "activeRows",
+            "converted",
+            "cleared",
+            "missing",
+            "dependents"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base",
+    "property",
+    "report"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRestoreInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually restore; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Base version you read (default: current)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRestoreReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsAddInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "body": {
+      "description": "Row body (markdown)",
+      "type": "string"
+    },
+    "bodyFile": {
+      "description": "Read the row body from a file",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "set": {
+      "description": "Set one value: key=text or key:=<json>. Repeatable; overrides --values",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "values": {
+      "description": "Row values as a JSON object keyed by property key, inline or @file",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsAddReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "idempotencyKey"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsArchiveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Version you read; the write fails with VERSION_CONFLICT if it changed",
+      "type": "string"
+    },
+    "lastWriteWins": {
+      "description": "Overwrite concurrent changes instead of passing --expected-version (recorded in the ledger)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsArchiveReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsExportInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "filter": {
+      "description": "Query AST filter, inline JSON or @file",
+      "type": "string"
+    },
+    "format": {
+      "description": "csv|json (default csv)",
+      "type": "string"
+    },
+    "includeBody": {
+      "description": "Include the row body when readable",
+      "type": "boolean"
+    },
+    "maxRows": {
+      "description": "Stop after this many rows (default and max 100000)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Write to this file instead of stdout",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsExportReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "columns": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "content": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "format": {
+      "type": "string"
+    },
+    "outFile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "rowCount": {
+      "type": "number"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "format",
+    "rowCount",
+    "columns",
+    "truncated",
+    "outFile",
+    "content"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsGetInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Read an archived row (direct readers only)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsGetReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsHistoryInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Opaque cursor from a previous page",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Entries per page, 1-200 (default 50)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsHistoryReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "after": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "before": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "bodyChanged": {
+            "type": "boolean"
+          },
+          "changedKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastWriteWins": {
+            "type": "boolean"
+          },
+          "rowId": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "number"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "viewId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sequence",
+          "rowId",
+          "version",
+          "action",
+          "changedKeys",
+          "before",
+          "after",
+          "bodyChanged",
+          "actorType",
+          "actorId",
+          "surface",
+          "viewId",
+          "lastWriteWins",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "count",
+        "hasMore",
+        "nextCursor",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "entries",
+    "users",
+    "nextCursor",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsImportInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "batch": {
+      "description": "Rows per request, 1-500 (default 500)",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually create the rows; default is a dry-run preview of the mapping (exit 3)",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "CSV file with a header row",
+      "type": "string"
+    },
+    "map": {
+      "description": "Map a CSV column to a property key (\"Deal Name=name\"); \"column=-\" skips it. Repeatable",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "file"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsImportReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "batchCount": {
+      "type": "number"
+    },
+    "batches": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "firstRowId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "idempotentReplay": {
+            "type": "boolean"
+          },
+          "index": {
+            "type": "number"
+          },
+          "lastRowId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rowCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "index",
+          "rowCount",
+          "idempotencyKey",
+          "idempotentReplay",
+          "firstRowId",
+          "lastRowId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "columns": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "column",
+          "key",
+          "type",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "created": {
+      "type": "number"
+    },
+    "emptyRowsSkipped": {
+      "type": "number"
+    },
+    "file": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "rowCount": {
+      "type": "number"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "file",
+    "rowCount",
+    "created",
+    "emptyRowsSkipped",
+    "batchCount",
+    "batches",
+    "columns"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsPurgeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually purge the row and its ledger; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsPurgeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "purged": {
+      "type": "boolean"
+    },
+    "rowId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "purged",
+    "rowId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsQueryInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Follow cursors until the end or --max-rows",
+      "type": "boolean"
+    },
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Opaque cursor from a previous page",
+      "type": "string"
+    },
+    "filter": {
+      "description": "Query AST filter, inline JSON or @file",
+      "type": "string"
+    },
+    "format": {
+      "description": "Human output: table|csv|json (default table)",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived rows (direct readers only)",
+      "type": "boolean"
+    },
+    "includeBody": {
+      "description": "Include the row body when readable",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Rows per page, 1-500 (default 100)",
+      "type": "string"
+    },
+    "maxRows": {
+      "description": "Stop following cursors after this many rows (default 10000, max 100000)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsQueryReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "columns": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "count",
+        "hasMore",
+        "nextCursor",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rowId": {
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rowId",
+          "version",
+          "values"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "columns",
+    "rows",
+    "users",
+    "nextCursor",
+    "truncated",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsRestoreInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Version you read; the write fails with VERSION_CONFLICT if it changed",
+      "type": "string"
+    },
+    "lastWriteWins": {
+      "description": "Overwrite concurrent changes instead of passing --expected-version (recorded in the ledger)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsRestoreReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "body": {
+      "description": "Row body (markdown)",
+      "type": "string"
+    },
+    "bodyFile": {
+      "description": "Read the row body from a file",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Version you read; the write fails with VERSION_CONFLICT if it changed",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "lastWriteWins": {
+      "description": "Overwrite concurrent changes instead of passing --expected-version (recorded in the ledger)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "set": {
+      "description": "Set one value: key=text or key:=<json>. Repeatable; overrides --values",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "values": {
+      "description": "Row values as a JSON object keyed by property key, inline or @file",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "row"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesRowsUpdateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "idempotencyKey"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesShowReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "charts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "spec": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "baseId",
+              "viewId",
+              "name",
+              "description",
+              "spec",
+              "version"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "avatarUrl"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "properties": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "properties": {
+                  "currency": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "includeTime": {
+                    "type": "boolean"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "archived": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "type": "string"
+                        },
+                        "group": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "color"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "precision": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "deletedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "name",
+              "description",
+              "type",
+              "config",
+              "position",
+              "required",
+              "deletedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "views": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "access": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "baseId": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregateOnly": {
+                        "type": "boolean"
+                      },
+                      "archive": {
+                        "type": "boolean"
+                      },
+                      "create": {
+                        "type": "boolean"
+                      },
+                      "manage": {
+                        "type": "boolean"
+                      },
+                      "read": {
+                        "type": "boolean"
+                      },
+                      "writeColumns": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "read",
+                      "aggregateOnly",
+                      "writeColumns",
+                      "create",
+                      "archive",
+                      "manage"
+                    ],
+                    "type": "object"
+                  },
+                  "columns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "invalidReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "layout": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "position": {
+                    "type": "number"
+                  },
+                  "query": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "filter": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sort": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "dir": {
+                              "type": "string"
+                            },
+                            "prop": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "prop",
+                            "dir"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "filter",
+                      "sort"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "baseId",
+                  "name",
+                  "description",
+                  "columns",
+                  "query",
+                  "layout",
+                  "access",
+                  "position",
+                  "version",
+                  "status",
+                  "valid",
+                  "invalidReason",
+                  "createdAt",
+                  "updatedAt",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseId": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregateOnly": {
+                        "type": "boolean"
+                      },
+                      "archive": {
+                        "type": "boolean"
+                      },
+                      "create": {
+                        "type": "boolean"
+                      },
+                      "manage": {
+                        "type": "boolean"
+                      },
+                      "read": {
+                        "type": "boolean"
+                      },
+                      "writeColumns": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "read",
+                      "aggregateOnly",
+                      "writeColumns",
+                      "create",
+                      "archive",
+                      "manage"
+                    ],
+                    "type": "object"
+                  },
+                  "columns": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "config": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "currency": {
+                              "type": "string"
+                            },
+                            "format": {
+                              "type": "string"
+                            },
+                            "includeTime": {
+                              "type": "boolean"
+                            },
+                            "options": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "archived": {
+                                    "type": "boolean"
+                                  },
+                                  "color": {
+                                    "type": "string"
+                                  },
+                                  "group": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "color"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "precision": {
+                              "type": "number"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "name",
+                        "type",
+                        "config",
+                        "required"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "layout": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "baseId",
+                  "name",
+                  "description",
+                  "layout",
+                  "version",
+                  "columns",
+                  "capabilities",
+                  "valid"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities",
+        "properties",
+        "views",
+        "charts",
+        "members"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesSubscribeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesSubscribeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "delivery": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "natsSubject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "natsSubject",
+        "category"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "subscription": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "installationName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localInstallationId": {
+          "type": "string"
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "localInstallationId",
+        "installationName",
+        "userId",
+        "status",
+        "createdAt",
+        "revokedAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "subscription",
+    "delivery"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesSubscriptionsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesSubscriptionsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "subscriptions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "baseId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installationName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "localInstallationId": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "localInstallationId",
+          "installationName",
+          "userId",
+          "status",
+          "createdAt",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "subscriptions"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesUnsubscribeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "subscription": {
+      "description": "Subscription id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "subscription"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesUnsubscribeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "subscription": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "installationName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localInstallationId": {
+          "type": "string"
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "localInstallationId",
+        "installationName",
+        "userId",
+        "status",
+        "createdAt",
+        "revokedAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "subscription"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "New description",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Base version you read (default: current)",
+      "type": "string"
+    },
+    "icon": {
+      "description": "New icon",
+      "type": "string"
+    },
+    "name": {
+      "description": "New name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "slug": {
+      "description": "New slug",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "New IANA timezone",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "manage": {
+              "type": "boolean"
+            },
+            "readDirect": {
+              "type": "boolean"
+            },
+            "writeDirect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "manage",
+            "readDirect",
+            "writeDirect"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "rowCount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "organizationId",
+        "projectId",
+        "slug",
+        "name",
+        "description",
+        "icon",
+        "timezone",
+        "schemaVersion",
+        "version",
+        "status",
+        "rowCount",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsArchiveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually archive; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "View version you read (default: current)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsArchiveReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsCreateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "name": {
+      "description": "View name (overrides spec.name)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "spec": {
+      "description": "View spec: {name, columns, query:{filter,sort}, layout, access}",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsCreateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum items to return (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of items to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsListReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "access": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "baseId": {
+                "type": "string"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aggregateOnly": {
+                    "type": "boolean"
+                  },
+                  "archive": {
+                    "type": "boolean"
+                  },
+                  "create": {
+                    "type": "boolean"
+                  },
+                  "manage": {
+                    "type": "boolean"
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "writeColumns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "read",
+                  "aggregateOnly",
+                  "writeColumns",
+                  "create",
+                  "archive",
+                  "manage"
+                ],
+                "type": "object"
+              },
+              "columns": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "invalidReason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "query": {
+                "additionalProperties": false,
+                "properties": {
+                  "filter": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sort": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dir": {
+                          "type": "string"
+                        },
+                        "prop": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "prop",
+                        "dir"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "filter",
+                  "sort"
+                ],
+                "type": "object"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aggregateOnly": {
+                    "type": "boolean"
+                  },
+                  "archive": {
+                    "type": "boolean"
+                  },
+                  "create": {
+                    "type": "boolean"
+                  },
+                  "manage": {
+                    "type": "boolean"
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "writeColumns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "read",
+                  "aggregateOnly",
+                  "writeColumns",
+                  "create",
+                  "archive",
+                  "manage"
+                ],
+                "type": "object"
+              },
+              "columns": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "currency": {
+                          "type": "string"
+                        },
+                        "format": {
+                          "type": "string"
+                        },
+                        "includeTime": {
+                          "type": "boolean"
+                        },
+                        "options": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "archived": {
+                                "type": "boolean"
+                              },
+                              "color": {
+                                "type": "string"
+                              },
+                              "group": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "color"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "precision": {
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name",
+                    "type",
+                    "config",
+                    "required"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "layout": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    },
+    "views": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "access": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "baseId": {
+                "type": "string"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aggregateOnly": {
+                    "type": "boolean"
+                  },
+                  "archive": {
+                    "type": "boolean"
+                  },
+                  "create": {
+                    "type": "boolean"
+                  },
+                  "manage": {
+                    "type": "boolean"
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "writeColumns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "read",
+                  "aggregateOnly",
+                  "writeColumns",
+                  "create",
+                  "archive",
+                  "manage"
+                ],
+                "type": "object"
+              },
+              "columns": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "invalidReason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "position": {
+                "type": "number"
+              },
+              "query": {
+                "additionalProperties": false,
+                "properties": {
+                  "filter": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sort": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dir": {
+                          "type": "string"
+                        },
+                        "prop": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "prop",
+                        "dir"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "filter",
+                  "sort"
+                ],
+                "type": "object"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aggregateOnly": {
+                    "type": "boolean"
+                  },
+                  "archive": {
+                    "type": "boolean"
+                  },
+                  "create": {
+                    "type": "boolean"
+                  },
+                  "manage": {
+                    "type": "boolean"
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "writeColumns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "read",
+                  "aggregateOnly",
+                  "writeColumns",
+                  "create",
+                  "archive",
+                  "manage"
+                ],
+                "type": "object"
+              },
+              "columns": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "currency": {
+                          "type": "string"
+                        },
+                        "format": {
+                          "type": "string"
+                        },
+                        "includeTime": {
+                          "type": "boolean"
+                        },
+                        "options": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "archived": {
+                                "type": "boolean"
+                              },
+                              "color": {
+                                "type": "string"
+                              },
+                              "group": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "color"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "precision": {
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name",
+                    "type",
+                    "config",
+                    "required"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "layout": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "total",
+    "pagination",
+    "views",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsQueryInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Follow cursors until the end or --max-rows",
+      "type": "boolean"
+    },
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Opaque cursor from a previous page",
+      "type": "string"
+    },
+    "filter": {
+      "description": "Query AST filter, inline JSON or @file",
+      "type": "string"
+    },
+    "format": {
+      "description": "Human output: table|csv|json (default table)",
+      "type": "string"
+    },
+    "includeBody": {
+      "description": "Include the row body when readable",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Rows per page, 1-500 (default 100)",
+      "type": "string"
+    },
+    "maxRows": {
+      "description": "Stop following cursors after this many rows (default 10000, max 100000)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsQueryReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "columns": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "count",
+        "hasMore",
+        "nextCursor",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rowId": {
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rowId",
+          "version",
+          "values"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "columns",
+    "rows",
+    "users",
+    "nextCursor",
+    "truncated",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsShowReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "properties": {
+                  "currency": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "includeTime": {
+                    "type": "boolean"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "archived": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "type": "string"
+                        },
+                        "group": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "color"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "precision": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "name",
+              "type",
+              "config",
+              "required"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        },
+        "view": {
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "baseId": {
+              "type": "string"
+            },
+            "capabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "aggregateOnly": {
+                  "type": "boolean"
+                },
+                "archive": {
+                  "type": "boolean"
+                },
+                "create": {
+                  "type": "boolean"
+                },
+                "manage": {
+                  "type": "boolean"
+                },
+                "read": {
+                  "type": "boolean"
+                },
+                "writeColumns": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "read",
+                "aggregateOnly",
+                "writeColumns",
+                "create",
+                "archive",
+                "manage"
+              ],
+              "type": "object"
+            },
+            "columns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "invalidReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "layout": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "position": {
+              "type": "number"
+            },
+            "query": {
+              "additionalProperties": false,
+              "properties": {
+                "filter": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sort": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "dir": {
+                        "type": "string"
+                      },
+                      "prop": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "prop",
+                      "dir"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "filter",
+                "sort"
+              ],
+              "type": "object"
+            },
+            "status": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "baseId",
+            "name",
+            "description",
+            "columns",
+            "query",
+            "layout",
+            "access",
+            "position",
+            "version",
+            "status",
+            "valid",
+            "invalidReason",
+            "createdAt",
+            "updatedAt",
+            "capabilities"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "layout",
+        "version",
+        "columns",
+        "capabilities",
+        "valid"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "View version you read (default: current)",
+      "type": "string"
+    },
+    "name": {
+      "description": "New name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "spec": {
+      "description": "Fields to change: name, columns, query, layout, access",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsUpdateReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view"
+  ],
+  "type": "object"
+}
+''';
+
   static const bridgesCreateInputSchema = r'''
 {
   "additionalProperties": false,

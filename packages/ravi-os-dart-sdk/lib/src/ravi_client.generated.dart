@@ -16,6 +16,7 @@ class RaviClient {
   AppsNamespace get apps => AppsNamespace(_transport);
   ArtifactsNamespace get artifacts => ArtifactsNamespace(_transport);
   AudioNamespace get audio => AudioNamespace(_transport);
+  BasesNamespace get bases => BasesNamespace(_transport);
   BridgesNamespace get bridges => BridgesNamespace(_transport);
   BugNamespace get bug => BugNamespace(_transport);
   CalendarsNamespace get calendars => CalendarsNamespace(_transport);
@@ -652,6 +653,507 @@ class AudioNamespace {
       command: "voices",
       body: requestBody,
       decode: audioVoicesReturnFromJson,
+    );
+  }
+}
+
+class BasesNamespace {
+  const BasesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  BasesChartsNamespace get charts => BasesChartsNamespace(_transport);
+
+  BasesPropsNamespace get props => BasesPropsNamespace(_transport);
+
+  BasesRowsNamespace get rows => BasesRowsNamespace(_transport);
+
+  BasesViewsNamespace get views => BasesViewsNamespace(_transport);
+
+  Future<BasesAggregateReturn> aggregate(String base, [BasesAggregateOptions options = const BasesAggregateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "aggregate",
+      body: requestBody,
+      decode: basesAggregateReturnFromJson,
+    );
+  }
+
+  Future<BasesArchiveReturn> archive(String base, [BasesArchiveOptions options = const BasesArchiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "archive",
+      body: requestBody,
+      decode: basesArchiveReturnFromJson,
+    );
+  }
+
+  Future<BasesCreateReturn> create(String name, [BasesCreateOptions options = const BasesCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "create",
+      body: requestBody,
+      decode: basesCreateReturnFromJson,
+    );
+  }
+
+  Future<BasesListReturn> list([BasesListOptions options = const BasesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "list",
+      body: requestBody,
+      decode: basesListReturnFromJson,
+    );
+  }
+
+  Future<BasesRestoreReturn> restore(String base, [BasesRestoreOptions options = const BasesRestoreOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "restore",
+      body: requestBody,
+      decode: basesRestoreReturnFromJson,
+    );
+  }
+
+  Future<BasesShowReturn> show(String base, [BasesShowOptions options = const BasesShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "show",
+      body: requestBody,
+      decode: basesShowReturnFromJson,
+    );
+  }
+
+  Future<BasesSubscribeReturn> subscribe(String base, [BasesSubscribeOptions options = const BasesSubscribeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "subscribe",
+      body: requestBody,
+      decode: basesSubscribeReturnFromJson,
+    );
+  }
+
+  Future<BasesSubscriptionsReturn> subscriptions(String base, [BasesSubscriptionsOptions options = const BasesSubscriptionsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "subscriptions",
+      body: requestBody,
+      decode: basesSubscriptionsReturnFromJson,
+    );
+  }
+
+  Future<BasesUnsubscribeReturn> unsubscribe(String base, String subscription, [BasesUnsubscribeOptions options = const BasesUnsubscribeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["subscription"] = RaviJson.from(subscription);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "unsubscribe",
+      body: requestBody,
+      decode: basesUnsubscribeReturnFromJson,
+    );
+  }
+
+  Future<BasesUpdateReturn> update(String base, [BasesUpdateOptions options = const BasesUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases"],
+      command: "update",
+      body: requestBody,
+      decode: basesUpdateReturnFromJson,
+    );
+  }
+}
+
+class BasesChartsNamespace {
+  const BasesChartsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<BasesChartsArchiveReturn> archive(String base, String chart, [BasesChartsArchiveOptions options = const BasesChartsArchiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["chart"] = RaviJson.from(chart);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "archive",
+      body: requestBody,
+      decode: basesChartsArchiveReturnFromJson,
+    );
+  }
+
+  Future<BasesChartsCreateReturn> create(String base, [BasesChartsCreateOptions options = const BasesChartsCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "create",
+      body: requestBody,
+      decode: basesChartsCreateReturnFromJson,
+    );
+  }
+
+  Future<BasesChartsDataReturn> data(String base, String chart, [BasesChartsDataOptions options = const BasesChartsDataOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["chart"] = RaviJson.from(chart);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "data",
+      body: requestBody,
+      decode: basesChartsDataReturnFromJson,
+    );
+  }
+
+  Future<BasesChartsListReturn> list(String base, [BasesChartsListOptions options = const BasesChartsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "list",
+      body: requestBody,
+      decode: basesChartsListReturnFromJson,
+    );
+  }
+
+  Future<BasesChartsShowReturn> show(String base, String chart, [BasesChartsShowOptions options = const BasesChartsShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["chart"] = RaviJson.from(chart);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "show",
+      body: requestBody,
+      decode: basesChartsShowReturnFromJson,
+    );
+  }
+
+  Future<BasesChartsUpdateReturn> update(String base, String chart, [BasesChartsUpdateOptions options = const BasesChartsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["chart"] = RaviJson.from(chart);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "charts"],
+      command: "update",
+      body: requestBody,
+      decode: basesChartsUpdateReturnFromJson,
+    );
+  }
+}
+
+class BasesPropsNamespace {
+  const BasesPropsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<BasesPropsAddReturn> add(String base, String name, [BasesPropsAddOptions options = const BasesPropsAddOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "props"],
+      command: "add",
+      body: requestBody,
+      decode: basesPropsAddReturnFromJson,
+    );
+  }
+
+  Future<BasesPropsDeleteReturn> delete(String base, String prop, [BasesPropsDeleteOptions options = const BasesPropsDeleteOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "props"],
+      command: "delete",
+      body: requestBody,
+      decode: basesPropsDeleteReturnFromJson,
+    );
+  }
+
+  Future<BasesPropsListReturn> list(String base, [BasesPropsListOptions options = const BasesPropsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "props"],
+      command: "list",
+      body: requestBody,
+      decode: basesPropsListReturnFromJson,
+    );
+  }
+
+  Future<BasesPropsRestoreReturn> restore(String base, String prop, [BasesPropsRestoreOptions options = const BasesPropsRestoreOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "props"],
+      command: "restore",
+      body: requestBody,
+      decode: basesPropsRestoreReturnFromJson,
+    );
+  }
+
+  Future<BasesPropsUpdateReturn> update(String base, String prop, [BasesPropsUpdateOptions options = const BasesPropsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "props"],
+      command: "update",
+      body: requestBody,
+      decode: basesPropsUpdateReturnFromJson,
+    );
+  }
+}
+
+class BasesRowsNamespace {
+  const BasesRowsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<BasesRowsAddReturn> add(String base, [BasesRowsAddOptions options = const BasesRowsAddOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "add",
+      body: requestBody,
+      decode: basesRowsAddReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsArchiveReturn> archive(String base, String row, [BasesRowsArchiveOptions options = const BasesRowsArchiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "archive",
+      body: requestBody,
+      decode: basesRowsArchiveReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsExportReturn> export_(String base, [BasesRowsExportOptions options = const BasesRowsExportOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "export",
+      body: requestBody,
+      decode: basesRowsExportReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsGetReturn> get_(String base, String row, [BasesRowsGetOptions options = const BasesRowsGetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "get",
+      body: requestBody,
+      decode: basesRowsGetReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsHistoryReturn> history(String base, String row, [BasesRowsHistoryOptions options = const BasesRowsHistoryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "history",
+      body: requestBody,
+      decode: basesRowsHistoryReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsImportReturn> import_(String base, String file, [BasesRowsImportOptions options = const BasesRowsImportOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["file"] = RaviJson.from(file);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "import",
+      body: requestBody,
+      decode: basesRowsImportReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsPurgeReturn> purge(String base, String row, [BasesRowsPurgeOptions options = const BasesRowsPurgeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "purge",
+      body: requestBody,
+      decode: basesRowsPurgeReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsQueryReturn> query(String base, [BasesRowsQueryOptions options = const BasesRowsQueryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "query",
+      body: requestBody,
+      decode: basesRowsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRestoreReturn> restore(String base, String row, [BasesRowsRestoreOptions options = const BasesRowsRestoreOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "restore",
+      body: requestBody,
+      decode: basesRowsRestoreReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsUpdateReturn> update(String base, String row, [BasesRowsUpdateOptions options = const BasesRowsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "update",
+      body: requestBody,
+      decode: basesRowsUpdateReturnFromJson,
+    );
+  }
+}
+
+class BasesViewsNamespace {
+  const BasesViewsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<BasesViewsArchiveReturn> archive(String base, String view, [BasesViewsArchiveOptions options = const BasesViewsArchiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "archive",
+      body: requestBody,
+      decode: basesViewsArchiveReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsCreateReturn> create(String base, [BasesViewsCreateOptions options = const BasesViewsCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "create",
+      body: requestBody,
+      decode: basesViewsCreateReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsListReturn> list(String base, [BasesViewsListOptions options = const BasesViewsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "list",
+      body: requestBody,
+      decode: basesViewsListReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsQueryReturn> query(String base, String view, [BasesViewsQueryOptions options = const BasesViewsQueryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "query",
+      body: requestBody,
+      decode: basesViewsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsShowReturn> show(String base, String view, [BasesViewsShowOptions options = const BasesViewsShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "show",
+      body: requestBody,
+      decode: basesViewsShowReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsUpdateReturn> update(String base, String view, [BasesViewsUpdateOptions options = const BasesViewsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "update",
+      body: requestBody,
+      decode: basesViewsUpdateReturnFromJson,
     );
   }
 }
