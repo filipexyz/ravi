@@ -299,9 +299,7 @@ export function getDeliverableRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
 ): RuntimeUserMessage[] {
-  // A prompt handed over during a provider-started turn would be answered by
-  // that turn's terminal; hold the queue until the provider is idle again.
-  if (session.pendingMessages.length === 0 || session.providerStartedTurn) {
+  if (session.pendingMessages.length === 0) {
     return [];
   }
 
@@ -433,17 +431,10 @@ export function wakeRuntimeSessionIfDeliverable(
   streamingSessions: Map<string, RuntimeHostStreamingSession>,
 ): void {
   const session = streamingSessions.get(sessionName);
-  if (session) {
-    wakeRuntimeMessageGeneratorIfDeliverable(sessionName, session);
-  }
-}
-
-export function wakeRuntimeMessageGeneratorIfDeliverable(
-  sessionName: string,
-  session: RuntimeHostStreamingSession,
-): void {
-  if (!session.pushMessage) {
-    session.pendingWake = true;
+  if (!session || !session.pushMessage) {
+    if (session) {
+      session.pendingWake = true;
+    }
     return;
   }
   if (!hasDeliverableRuntimeMessages(sessionName, session)) {

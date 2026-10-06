@@ -20,7 +20,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { loadRouterConfig, expandHome } from "../router/index.js";
 import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
-import { NO_RUNTIME_SESSION_ID_REASON, runtimeProviderHasTranscript } from "../transcripts.js";
+import { runtimeProviderHasTranscript } from "../transcripts.js";
 import type { SessionEntry } from "../router/types.js";
 import { gradeEvalRun, type EvalExecutionResult, type EvalGrade } from "./grader.js";
 import {
@@ -78,8 +78,6 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
   const currentSession = () => resolveSession(sessionName) ?? session;
   const readRunTranscript = (): EvalTranscriptRead => readEvalSessionTranscript(currentSession());
   const agentProvider = loadRouterConfig().agents[session.agentId]?.provider;
-  const startedWithoutRuntimeSessionId =
-    !beforeTranscript.exists && beforeTranscript.reason === NO_RUNTIME_SESSION_ID_REASON;
 
   const execution = await runPromptAndWait({
     sessionName,
@@ -95,11 +93,12 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
       if (!read.exists) {
         // A fresh session gets its runtime session ID only after the daemon has
         // already emitted turn.complete, so its transcript shows up a moment later
-        // (first the ID, then the file the ID points at).
-        const pending =
-          (startedWithoutRuntimeSessionId || read.reason === NO_RUNTIME_SESSION_ID_REASON) &&
-          runtimeProviderHasTranscript(currentSession().runtimeProvider ?? agentProvider);
-        return { readable: false, pending };
+        // (first the ID, then the file the ID points at). Until the deadline, a
+        // missing file only means "not written yet" for providers that keep one.
+        return {
+          readable: false,
+          pending: runtimeProviderHasTranscript(currentSession().runtimeProvider ?? agentProvider),
+        };
       }
       const run = buildEvalTranscriptRun(read.messages, runScope);
       return {
@@ -170,8 +169,8 @@ function resolveOrCreateEvalSession(task: LoadedEvalTaskSpec): SessionEntry {
 }
 
 /**
- * `pending`: no transcript yet, but one is expected (a fresh session whose
- * runtime session ID is not persisted yet), so keep waiting before history.
+ * `pending`: no transcript yet, but the provider keeps one (a fresh session's
+ * file shows up after its turn.complete), so keep waiting before history.
  */
 export type OwnTurnText = { readable: false; pending?: boolean } | { readable: true; text: string | null };
 

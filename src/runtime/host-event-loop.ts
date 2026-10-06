@@ -61,7 +61,7 @@ import {
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
-import { createQueuedRuntimeUserMessage, wakeRuntimeMessageGeneratorIfDeliverable } from "./delivery-queue.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { classifyFatalToolFailure, FATAL_TOOL_FAILURE_REASON, type FatalToolFailure } from "./fatal-tool-failure.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
@@ -2636,44 +2636,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
-  /**
-   * Claude Code starts a turn on its own when one of its background tasks
-   * finishes. Ravi handed that turn no prompt, so it has no crash-recovery
-   * attempt, reply target or waiter, and projecting it used to fail the whole
-   * session (losing any prompt queued behind it). Drop the turn's events until
-   * its own terminal, then let the queue resume.
-   */
-  const skipProviderStartedTurnEvent = (event: RuntimeEvent): boolean => {
-    if (!streaming.providerStartedTurn) {
-      const startsProviderTurn =
-        !streaming.turnActive &&
-        !streaming.currentCrashRecoveryAttemptId &&
-        (event.type === "text.delta" || event.type === "assistant.message" || event.type === "tool.started");
-      if (!startsProviderTurn) return false;
-      streaming.providerStartedTurn = true;
-      log.warn("Ignoring a turn the provider started without a Ravi prompt", {
-        runId,
-        sessionName,
-        provider: runtimeSession.provider,
-        firstEvent: event.type,
-        queued: streaming.pendingMessages.length,
-      });
-    }
-    if (event.type === "turn.complete" || event.type === "turn.failed" || event.type === "turn.interrupted") {
-      streaming.providerStartedTurn = false;
-      // Its raw envelopes never crossed a Ravi fence; never externalize them.
-      pendingProviderRawEvents.length = 0;
-      log.info("Provider-started turn ended; resuming the queue", {
-        runId,
-        sessionName,
-        terminal: event.type,
-        queued: streaming.pendingMessages.length,
-      });
-      wakeRuntimeMessageGeneratorIfDeliverable(sessionName, streaming);
-    }
-    return true;
-  };
-
   try {
     while (!streaming.done) {
       const next = await readNextRuntimeEvent();
@@ -2683,9 +2645,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       let event = next.value;
       if (streaming.done) {
         break;
-      }
-      if (skipProviderStartedTurnEvent(event)) {
-        continue;
       }
       if (event.type === "turn.complete") {
         const blockedComplete = resolveHostTurnCompleteAfterTools({
