@@ -12,6 +12,7 @@ import {
   recordRuntimeCredentialLimitPressure,
   recordRuntimeCredentialSuccess,
   serializeRuntimeCredential,
+  updateRuntimeCredential,
 } from "./credential-store.js";
 import type { RuntimeCredentialInput } from "./credential-types.js";
 
@@ -246,5 +247,74 @@ describe("runtime credential store and pool", () => {
     expect(transition.health.lastFailureKind).toBeUndefined();
     expect(transition.health.lastFailureConfidence).toBeUndefined();
     expect(transition.health.consecutiveFailures).toBe(0);
+  });
+
+  it("updates allowlists, label, priority and notes in place without touching bindings", () => {
+    const created = createRuntimeCredential({
+      ...credentialInput("rcred_update", "OpenAI scoped", 1),
+      agentAllowlist: ["dev"],
+      modelAllowlist: ["gpt-5"],
+      notes: "initial",
+    });
+    const request = { runtimeProvider: "codex", upstreamProvider: "openai", model: "gpt-5", agentId: "ops" };
+    expect(selectRuntimeCredential(request).rejected).toEqual([
+      { credentialId: "rcred_update", label: "OpenAI scoped", reason: "agent_not_allowed" },
+    ]);
+
+    const widened = updateRuntimeCredential("rcred_update", {
+      label: "OpenAI shared",
+      agentAllowlist: ["ops", "dev", "ops"],
+      modelDenylist: ["gpt-4"],
+      priority: 9,
+      notes: "  widened  ",
+    });
+    expect(widened).toMatchObject({
+      label: "OpenAI shared",
+      agentAllowlist: ["dev", "ops"],
+      modelAllowlist: ["gpt-5"],
+      modelDenylist: ["gpt-4"],
+      priority: 9,
+      notes: "widened",
+      fingerprint: created.fingerprint,
+      sessionCompatibilityKey: created.sessionCompatibilityKey,
+      status: created.status,
+    });
+    expect(widened.bindings).toEqual(created.bindings);
+    expect(widened.updatedAt).toBeGreaterThanOrEqual(created.updatedAt);
+    expect(selectRuntimeCredential(request).credential?.id).toBe("rcred_update");
+
+    const narrowed = updateRuntimeCredential("rcred_update", { agentAllowlist: ["dev"] });
+    expect(narrowed.agentAllowlist).toEqual(["dev"]);
+    expect(narrowed.label).toBe("OpenAI shared");
+    expect(selectRuntimeCredential(request).credential).toBeNull();
+
+    const cleared = updateRuntimeCredential("rcred_update", {
+      agentAllowlist: null,
+      modelAllowlist: [],
+      modelDenylist: null,
+      notes: null,
+    });
+    expect(cleared).toMatchObject({ agentAllowlist: [], modelAllowlist: [], modelDenylist: [], priority: 9 });
+    expect(cleared.notes).toBeUndefined();
+    const row = getDb()
+      .prepare("SELECT agent_allowlist_json, model_allowlist_json FROM runtime_credentials WHERE id = ?")
+      .get("rcred_update") as { agent_allowlist_json: string | null; model_allowlist_json: string | null };
+    expect(row).toEqual({ agent_allowlist_json: null, model_allowlist_json: null });
+    expect(selectRuntimeCredential({ ...request, model: "gpt-4" }).credential?.id).toBe("rcred_update");
+  });
+
+  it("rejects unknown ids, empty patches and invalid values on update", () => {
+    createRuntimeCredential(credentialInput("rcred_update_errors", "OpenAI", 0));
+    expect(() => updateRuntimeCredential("rcred_missing", { priority: 1 })).toThrow(
+      "Runtime credential not found: rcred_missing",
+    );
+    expect(() => updateRuntimeCredential("rcred_update_errors", {})).toThrow("No runtime credential fields to update");
+    expect(() => updateRuntimeCredential("rcred_update_errors", { label: "  " })).toThrow(
+      "Credential label is required",
+    );
+    expect(() => updateRuntimeCredential("rcred_update_errors", { priority: 1.5 })).toThrow(
+      "Credential priority must be an integer",
+    );
+    expect(getRuntimeCredential("rcred_update_errors")).toMatchObject({ label: "OpenAI", priority: 0 });
   });
 });

@@ -527,6 +527,7 @@ Minimum commands:
 - `ravi runtime credentials add`
 - `ravi runtime credentials disable`
 - `ravi runtime credentials enable`
+- `ravi runtime credentials update` (label, allowlists, model denylist, priority, notes; never secret bindings)
 - `ravi runtime credentials remove`
 - `ravi runtime credentials status`
 - `ravi runtime credentials test`

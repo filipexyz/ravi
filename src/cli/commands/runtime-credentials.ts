@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -10,6 +10,7 @@ import {
   runtimeCredentialSelectReturnSchema,
   runtimeCredentialsListReturnSchema,
   runtimeCredentialStatusReturnSchema,
+  runtimeCredentialUpdateReturnSchema,
 } from "./operational-return-schemas.js";
 import {
   createRuntimeCredential,
@@ -22,6 +23,7 @@ import {
   resetRuntimeCredentialHealth,
   serializeRuntimeCredential,
   setRuntimeCredentialEnabled,
+  updateRuntimeCredential,
 } from "../../runtime/credential-store.js";
 import { selectRuntimeCredential } from "../../runtime/credential-pool.js";
 import { findRuntimeCredentialSecretShapeMismatch } from "../../runtime/credential-secret-shape.js";
@@ -35,6 +37,7 @@ import type {
   RuntimeCredentialRecord,
   RuntimeCredentialSecretBinding,
   RuntimeCredentialStatus,
+  RuntimeCredentialUpdatePatch,
 } from "../../runtime/credential-types.js";
 
 function printJson(payload: unknown): void {
@@ -152,6 +155,72 @@ function buildCredentialInput(options: {
     notes: options.notes?.trim() || (options.readOnly ? "read-only external credential source" : undefined),
     bindings,
   };
+}
+
+/** Sentinel accepted by `update` list/notes flags to clear the stored value. */
+const CLEAR_SENTINEL = "clear";
+
+/**
+ * `update` list flags: omitted → unchanged; `clear` or an empty value → clear
+ * (stored as "no restriction"); otherwise a comma-separated replacement list.
+ */
+function parseListPatch(value: string | undefined): string[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim().toLowerCase() === CLEAR_SENTINEL) return null;
+  const items = splitCsv(value);
+  return items.length ? items : null;
+}
+
+function failCredentialUsage(op: string, message: string, asJson: boolean | undefined): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction:
+        "Pass at least one of --label, --agents, --models, --model-denylist, --task-profiles, --priority, --notes (use 'clear' to empty a list or notes).",
+    },
+  });
+}
+
+function buildCredentialUpdatePatch(
+  op: string,
+  options: {
+    label?: string;
+    agents?: string;
+    models?: string;
+    modelDenylist?: string;
+    taskProfiles?: string;
+    priority?: string;
+    notes?: string;
+  },
+  asJson: boolean | undefined,
+): RuntimeCredentialUpdatePatch {
+  const patch: RuntimeCredentialUpdatePatch = {};
+  if (options.label !== undefined) {
+    if (!options.label.trim()) failCredentialUsage(op, "--label cannot be empty.", asJson);
+    patch.label = options.label.trim();
+  }
+  const agentAllowlist = parseListPatch(options.agents);
+  if (agentAllowlist !== undefined) patch.agentAllowlist = agentAllowlist;
+  const modelAllowlist = parseListPatch(options.models);
+  if (modelAllowlist !== undefined) patch.modelAllowlist = modelAllowlist;
+  const modelDenylist = parseListPatch(options.modelDenylist);
+  if (modelDenylist !== undefined) patch.modelDenylist = modelDenylist;
+  const taskProfileAllowlist = parseListPatch(options.taskProfiles);
+  if (taskProfileAllowlist !== undefined) patch.taskProfileAllowlist = taskProfileAllowlist;
+  if (options.priority !== undefined) {
+    const priority = Number(options.priority.trim());
+    if (!options.priority.trim() || !Number.isInteger(priority)) {
+      failCredentialUsage(op, "--priority must be an integer.", asJson);
+    }
+    patch.priority = priority;
+  }
+  if (options.notes !== undefined) {
+    const notes = options.notes.trim();
+    patch.notes = !notes || notes.toLowerCase() === CLEAR_SENTINEL ? null : notes;
+  }
+  if (Object.keys(patch).length === 0) failCredentialUsage(op, "Nothing to update.", asJson);
+  return patch;
 }
 
 // ============================================================
@@ -448,6 +517,56 @@ export class RuntimeCredentialsCommands {
     );
     const payload = { credential: serializeRuntimeCredential(credential, { includeBindings: true }) };
     printPayload(payload, asJson, () => console.log(`Enabled runtime credential ${credential.id}`));
+    return payload;
+  }
+
+  @Command({
+    name: "update",
+    description: "Change a credential's label, allowlists, priority or notes (secret bindings are never touched)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "runtime.credentials", action: "update", risk: "medium" })
+  @Returns(runtimeCredentialUpdateReturnSchema)
+  update(
+    @Arg("id", { description: "Credential id" }) id: string,
+    @Option({ flags: "--label <label>", description: "New human label that does not contain secrets" })
+    label?: string,
+    @Option({ flags: "--agents <list>", description: "Replace the agent allowlist (comma-separated, or 'clear')" })
+    agents?: string,
+    @Option({ flags: "--models <list>", description: "Replace the model allowlist (comma-separated, or 'clear')" })
+    models?: string,
+    @Option({
+      flags: "--model-denylist <list>",
+      description: "Replace the model denylist (comma-separated, or 'clear')",
+    })
+    modelDenylist?: string,
+    @Option({
+      flags: "--task-profiles <list>",
+      description: "Replace the task profile allowlist (comma-separated, or 'clear')",
+    })
+    taskProfiles?: string,
+    @Option({ flags: "--priority <n>", description: "Selection priority (higher first)" }) priority?: string,
+    @Option({ flags: "--notes <text>", description: "Operator notes without secrets, or 'clear'" }) notes?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const op = "runtime credentials update";
+    const patch = buildCredentialUpdatePatch(
+      op,
+      { label, agents, models, modelDenylist, taskProfiles, priority, notes },
+      asJson,
+    );
+    const credential = runCredentialOp(op, id, asJson, () => updateRuntimeCredential(id, patch));
+    const payload = {
+      credential: serializeRuntimeCredential(credential, { includeBindings: true }),
+      updatedFields: Object.keys(patch) as Array<keyof RuntimeCredentialUpdatePatch>,
+    };
+    printPayload(payload, asJson, () => {
+      console.log(`Updated runtime credential ${credential.id} (${credential.label})`);
+      const show = (list: string[]) => (list.length ? list.join(",") : "(any)");
+      console.log(
+        `  agents=${show(credential.agentAllowlist)} models=${show(credential.modelAllowlist)} model-denylist=${credential.modelDenylist.join(",") || "-"} task-profiles=${show(credential.taskProfileAllowlist)}`,
+      );
+      console.log(`  priority=${credential.priority} notes=${credential.notes ?? "-"}`);
+    });
     return payload;
   }
 

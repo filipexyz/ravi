@@ -113,6 +113,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/gh-watch.test.ts",
     // Decisão de promoção de comando longo para job, aplicada por host-services.
     "src/jobs/promotion.test.ts",
+    // Runtime credential store: create/update/health writes and pool selection.
+    "src/runtime/credential-store.test.ts",
   ],
   "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
   "src/watch/": [

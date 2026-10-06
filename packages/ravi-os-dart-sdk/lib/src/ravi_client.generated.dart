@@ -5769,6 +5769,18 @@ class RuntimeCredentialsNamespace {
       decode: runtimeCredentialsStatusReturnFromJson,
     );
   }
+
+  Future<RuntimeCredentialsUpdateReturn> update(String id, [RuntimeCredentialsUpdateOptions options = const RuntimeCredentialsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "credentials"],
+      command: "update",
+      body: requestBody,
+      decode: runtimeCredentialsUpdateReturnFromJson,
+    );
+  }
 }
 
 class RuntimeEnvNamespace {

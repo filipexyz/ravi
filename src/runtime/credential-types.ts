@@ -93,6 +93,21 @@ export interface RuntimeCredentialInput {
   >;
 }
 
+/**
+ * Partial edit of a credential's operator-owned metadata. Omitted fields stay
+ * as they are; `null` or `[]` clears an allowlist ("no restriction") and
+ * `null` clears notes. Secret bindings are deliberately not part of the patch.
+ */
+export interface RuntimeCredentialUpdatePatch {
+  label?: string;
+  modelAllowlist?: string[] | null;
+  modelDenylist?: string[] | null;
+  agentAllowlist?: string[] | null;
+  taskProfileAllowlist?: string[] | null;
+  priority?: number;
+  notes?: string | null;
+}
+
 export interface RuntimeCredentialHealth {
   credentialId: string;
   lastSuccessAt?: number;

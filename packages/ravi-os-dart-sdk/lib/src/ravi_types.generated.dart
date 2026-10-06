@@ -16087,6 +16087,62 @@ class RuntimeCredentialsStatusReturn {
 
 RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RuntimeCredentialsStatusReturn.fromJsonValue(json);
 
+class RuntimeCredentialsUpdateOptions {
+  const RuntimeCredentialsUpdateOptions({this.agents, this.label, this.modelDenylist, this.models, this.notes, this.priority, this.taskProfiles});
+
+  final String? agents;
+  final String? label;
+  final String? modelDenylist;
+  final String? models;
+  final String? notes;
+  final String? priority;
+  final String? taskProfiles;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agents != null) {
+      into["agents"] = RaviJson.from(agents);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (modelDenylist != null) {
+      into["modelDenylist"] = RaviJson.from(modelDenylist);
+    }
+    if (models != null) {
+      into["models"] = RaviJson.from(models);
+    }
+    if (notes != null) {
+      into["notes"] = RaviJson.from(notes);
+    }
+    if (priority != null) {
+      into["priority"] = RaviJson.from(priority);
+    }
+    if (taskProfiles != null) {
+      into["taskProfiles"] = RaviJson.from(taskProfiles);
+    }
+  }
+}
+
+class RuntimeCredentialsUpdateReturn {
+  const RuntimeCredentialsUpdateReturn({required this.credential, required this.updatedFields});
+
+  final RaviJson credential;
+  final List<String> updatedFields;
+
+  factory RuntimeCredentialsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeCredentialsUpdateReturn(
+      credential: RaviJson.from(json["credential"]),
+      updatedFields: raviJsonAsList(json["updatedFields"], raviJsonAsString),
+    );
+  }
+
+  static RuntimeCredentialsUpdateReturn fromJsonValue(Object? json) {
+    return RuntimeCredentialsUpdateReturn.fromJson(raviJsonObject(json, "RuntimeCredentialsUpdateReturn"));
+  }
+}
+
+RuntimeCredentialsUpdateReturn runtimeCredentialsUpdateReturnFromJson(Object? json) => RuntimeCredentialsUpdateReturn.fromJsonValue(json);
+
 class RuntimeEnvGetReturn {
   const RuntimeEnvGetReturn({required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
 

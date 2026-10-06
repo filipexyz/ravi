@@ -4135,6 +4135,13 @@ public struct RuntimeCredentialsNamespace: Sendable {
     }
     return try await transport.call(groupSegments: ["runtime","credentials"], command: "status", body: requestBody, as: RuntimeCredentialsStatusReturn.self)
   }
+
+  public func update(_ id: String, _ options: RuntimeCredentialsUpdateOptions = .init()) async throws -> RuntimeCredentialsUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","credentials"], command: "update", body: requestBody, as: RuntimeCredentialsUpdateReturn.self)
+  }
 }
 
 public struct RuntimeEnvNamespace: Sendable {

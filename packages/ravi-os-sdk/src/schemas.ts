@@ -57145,6 +57145,354 @@ export const RuntimeCredentialsStatusReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.credentials.update`. */
+export const RuntimeCredentialsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Replace the agent allowlist (comma-separated, or 'clear')",
+      "type": "string"
+    },
+    "id": {
+      "description": "Credential id",
+      "type": "string"
+    },
+    "label": {
+      "description": "New human label that does not contain secrets",
+      "type": "string"
+    },
+    "modelDenylist": {
+      "description": "Replace the model denylist (comma-separated, or 'clear')",
+      "type": "string"
+    },
+    "models": {
+      "description": "Replace the model allowlist (comma-separated, or 'clear')",
+      "type": "string"
+    },
+    "notes": {
+      "description": "Operator notes without secrets, or 'clear'",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Selection priority (higher first)",
+      "type": "string"
+    },
+    "taskProfiles": {
+      "description": "Replace the task profile allowlist (comma-separated, or 'clear')",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.credentials.update`. */
+export const RuntimeCredentialsUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authMethod": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authProfileRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "remoteForward": {
+                "type": "boolean"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
+              },
+              "sourceHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceKind": {
+                "type": "string"
+              },
+              "targetKind": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "sourceKind",
+              "targetKind",
+              "targetName",
+              "secretRef",
+              "sourceHint",
+              "sensitive",
+              "remoteForward"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorMessageRedacted": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastErrorReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modelDenylist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "remoteForwardEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resetAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProvider": {
+          "type": "string"
+        },
+        "sensitiveEnvKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionCompatibilityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "cooldown",
+            "exhausted",
+            "invalid",
+            "needs_reauth",
+            "disabled",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "strategyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskProfileAllowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "upstreamProvider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "runtimeProvider",
+        "upstreamProvider",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "weight",
+        "enabled",
+        "status",
+        "authMethod",
+        "sourceKind",
+        "strategyHint",
+        "sessionCompatibilityKey",
+        "authProfileRef",
+        "fingerprint",
+        "sensitiveEnvKeys",
+        "remoteForwardEnvKeys",
+        "lastErrorCode",
+        "lastErrorReason",
+        "lastErrorMessageRedacted",
+        "resetAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
+        "bindings"
+      ],
+      "type": "object"
+    },
+    "updatedFields": {
+      "items": {
+        "enum": [
+          "label",
+          "modelAllowlist",
+          "modelDenylist",
+          "agentAllowlist",
+          "taskProfileAllowlist",
+          "priority",
+          "notes"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "credential",
+    "updatedFields"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.env.get`. */
 export const RuntimeEnvGetInputSchema = {
   "additionalProperties": false,

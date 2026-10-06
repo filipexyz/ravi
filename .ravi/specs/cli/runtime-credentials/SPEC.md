@@ -38,7 +38,7 @@ new brake was introduced; every mutation is declared below.
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found) ·
    `2` usage error · `3` blocked by policy.
-3. `status <id>`, `enable`, `disable`, `reset-health` and `refresh <id>` on an
+3. `status <id>`, `enable`, `disable`, `update`, `reset-health` and `refresh <id>` on an
    unknown credential MUST exit 1 with `CREDENTIAL_NOT_FOUND` and up to 3
    `suggestions` built from credential ids and labels — even though the
    underlying store throws plain `Error`s for the same case.
@@ -52,6 +52,13 @@ new brake was introduced; every mutation is declared below.
    ever added (it is already referenced by
    `.ravi/specs/runtime/providers/credential-fallback/SPEC.md`), it MUST ship
    with the `--execute` write brake from day one.
+7. `update <id>` edits only operator-owned metadata (label, agent/model/task
+   profile allowlists, model denylist, priority, notes). It MUST NOT touch
+   secret bindings, the auth source, the fingerprint or the session
+   compatibility key. Omitted flags leave a field unchanged; the value `clear`
+   (or an empty value) empties a list or notes, which for allowlists means "no
+   restriction". With no field flag it MUST fail with `USAGE_ERROR` (exit 2)
+   before any write. Its return schema is strict: `{credential, updatedFields}`.
 
 ## Write classification (brake decision per op)
 
@@ -60,6 +67,7 @@ new brake was introduced; every mutation is declared below.
 | add | creates a managed pool entry (reversible via disable) | not braked (declared) |
 | import | references an existing provider-native profile (reversible via disable) | not braked (declared) |
 | enable / disable | reversible pair | not braked (declared) |
+| update | metadata edit (label, allowlists, priority, notes); reversible by another update, never touches secrets | not braked (declared) |
 | reset-health | recoverable health-state maintenance | not braked (declared) |
 | refresh | health maintenance / provider hook recovery | not braked (declared) |
 | remove | DOES NOT EXIST on the current surface | future op MUST be born braked |
@@ -69,8 +77,9 @@ new brake was introduced; every mutation is declared below.
 
 | case | code | exit |
 |---|---|---|
-| credential not found (status / enable / disable / reset-health / refresh) | `CREDENTIAL_NOT_FOUND` + id/label suggestions | 1 |
+| credential not found (status / enable / disable / update / reset-health / refresh) | `CREDENTIAL_NOT_FOUND` + id/label suggestions | 1 |
 | invalid flag/arg (once the domain is registered in the usage-contract list) | `USAGE_ERROR` + acceptedFlags | 2 |
+| `update` with no field flag, an empty `--label` or a non-integer `--priority` | `USAGE_ERROR` | 2 |
 
 ## Internal consumers
 

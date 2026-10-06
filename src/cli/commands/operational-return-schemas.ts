@@ -1693,6 +1693,70 @@ export const runtimeCredentialEnvelopeReturnSchema = z
   })
   .passthrough();
 
+const runtimeCredentialBindingReturnSchema = z
+  .object({
+    id: z.string(),
+    sourceKind: z.string(),
+    targetKind: z.string(),
+    targetName: z.string(),
+    secretRef: z.string(),
+    sourceHint: z.string().nullable(),
+    sensitive: z.boolean(),
+    remoteForward: z.boolean(),
+  })
+  .strict();
+
+/** Redacted credential as `serializeRuntimeCredential(record, { includeBindings: true })` emits it. */
+const runtimeCredentialRecordReturnSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    runtimeProvider: z.string(),
+    upstreamProvider: z.string().nullable(),
+    modelAllowlist: z.array(z.string()),
+    modelDenylist: z.array(z.string()),
+    agentAllowlist: z.array(z.string()),
+    taskProfileAllowlist: z.array(z.string()),
+    priority: z.number(),
+    weight: z.number().nullable(),
+    enabled: z.boolean(),
+    status: z.enum(["healthy", "cooldown", "exhausted", "invalid", "needs_reauth", "disabled", "unknown"]),
+    authMethod: z.string().nullable(),
+    sourceKind: z.string().nullable(),
+    strategyHint: z.string().nullable(),
+    sessionCompatibilityKey: z.string().nullable(),
+    authProfileRef: z.string().nullable(),
+    fingerprint: z.string(),
+    sensitiveEnvKeys: z.array(z.string()),
+    remoteForwardEnvKeys: z.array(z.string()),
+    lastErrorCode: z.string().nullable(),
+    lastErrorReason: z.string().nullable(),
+    lastErrorMessageRedacted: z.string().nullable(),
+    resetAt: z.number().nullable(),
+    notes: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    bindings: z.array(runtimeCredentialBindingReturnSchema),
+  })
+  .strict();
+
+export const runtimeCredentialUpdateReturnSchema = z
+  .object({
+    credential: runtimeCredentialRecordReturnSchema,
+    updatedFields: z.array(
+      z.enum([
+        "label",
+        "modelAllowlist",
+        "modelDenylist",
+        "agentAllowlist",
+        "taskProfileAllowlist",
+        "priority",
+        "notes",
+      ]),
+    ),
+  })
+  .strict();
+
 export const runtimeCredentialStatusReturnSchema = z
   .object({
     credential: looseObjectSchema,

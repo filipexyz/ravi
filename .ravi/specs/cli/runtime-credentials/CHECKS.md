@@ -5,7 +5,7 @@
 - `runtime credentials status <unknown-id> --json` MUST exit 1 with the
   `CREDENTIAL_NOT_FOUND` envelope and up to three `suggestions` built from
   real credential ids and labels.
-- `runtime credentials enable|disable|reset-health <unknown-id> --json` MUST
+- `runtime credentials enable|disable|update|reset-health <unknown-id> --json` MUST
   exit 1 with `CREDENTIAL_NOT_FOUND` even though the store raises a plain
   `Error` for that case.
 - `runtime credentials refresh <unknown-id> --json` MUST exit 1 with
@@ -16,8 +16,12 @@
 - `runtime credentials list --fields a,b,c --json` MUST return credential
   items containing only the requested fields.
 - The declared unbraked mutations (`add`, `import`, `enable`, `disable`,
-  `reset-health`, `refresh`) MUST keep immediate-write behavior; any future
+  `update`, `reset-health`, `refresh`) MUST keep immediate-write behavior; any future
   `remove` op MUST ship with the `--execute` write brake from its first
   release.
+- `runtime credentials update <id>` MUST change only the fields passed
+  (`clear` empties a list or notes) and MUST leave secret bindings, fingerprint
+  and session compatibility key unchanged; with no field flag it MUST exit 2
+  with `USAGE_ERROR` and write nothing.
 - The test suite `bun test src/cli/commands/runtime-credentials.test.ts`
   SHOULD pass after any change to this contract surface.

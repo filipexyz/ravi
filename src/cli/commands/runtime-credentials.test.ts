@@ -17,6 +17,7 @@ mock.module("../context.js", () => ({
 
 const { RuntimeCredentialsCommands } = await import("./runtime-credentials.js");
 const { ContractError } = await import("../agent-contract.js");
+const { runtimeCredentialUpdateReturnSchema } = await import("./operational-return-schemas.js");
 
 let stateDir: string | null = null;
 let previousStateDir: string | undefined;
@@ -326,6 +327,120 @@ describe("runtime credentials agent-first contract", () => {
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.exitCode).toBe(1);
     expect(contractError.envelope().op).toBe("runtime credentials refresh");
+    expect(contractError.envelope().error.code).toBe("CREDENTIAL_NOT_FOUND");
+  });
+
+  it("updates allowlists and label in place, clears with 'clear', and keeps bindings", () => {
+    const commands = new RuntimeCredentialsCommands();
+    const credentialId = addCredential(commands);
+    const before = captureConsole(() => commands.status(credentialId, true));
+    const beforeCredential = (JSON.parse(before.output) as { credential: { fingerprint: string; bindings: unknown[] } })
+      .credential;
+
+    const updated = captureConsole(() =>
+      commands.update(credentialId, "OpenAI shared", "dev,ops", "gpt-5", "gpt-4", "coding", "5", "rotated", true),
+    );
+    expect(updated.output).not.toContain("RAVI_TEST_OPENAI_KEY");
+    const payload = runtimeCredentialUpdateReturnSchema.parse(JSON.parse(updated.output));
+    expect(payload.updatedFields).toEqual([
+      "label",
+      "agentAllowlist",
+      "modelAllowlist",
+      "modelDenylist",
+      "taskProfileAllowlist",
+      "priority",
+      "notes",
+    ]);
+    expect(payload.credential).toMatchObject({
+      id: credentialId,
+      label: "OpenAI shared",
+      agentAllowlist: ["dev", "ops"],
+      modelAllowlist: ["gpt-5"],
+      modelDenylist: ["gpt-4"],
+      taskProfileAllowlist: ["coding"],
+      priority: 5,
+      notes: "rotated",
+      fingerprint: beforeCredential.fingerprint,
+    });
+    expect(payload.credential.bindings).toEqual(beforeCredential.bindings as typeof payload.credential.bindings);
+
+    const selected = captureConsole(() => commands.select("codex", "openai", "gpt-5", "ops", "coding", true));
+    expect((JSON.parse(selected.output) as { selected: { id: string } | null }).selected?.id).toBe(credentialId);
+
+    const cleared = captureConsole(() =>
+      commands.update(credentialId, undefined, "clear", "", undefined, undefined, undefined, "clear", true),
+    );
+    const clearedPayload = runtimeCredentialUpdateReturnSchema.parse(JSON.parse(cleared.output));
+    expect(clearedPayload.updatedFields).toEqual(["agentAllowlist", "modelAllowlist", "notes"]);
+    expect(clearedPayload.credential).toMatchObject({
+      label: "OpenAI shared",
+      agentAllowlist: [],
+      modelAllowlist: [],
+      modelDenylist: ["gpt-4"],
+      taskProfileAllowlist: ["coding"],
+      priority: 5,
+      notes: null,
+    });
+  });
+
+  it("rejects an update with no fields or a bad priority as USAGE_ERROR (exit 2) before writing", () => {
+    const commands = new RuntimeCredentialsCommands();
+    const credentialId = addCredential(commands);
+
+    const invalidUpdates: Array<() => unknown> = [
+      () =>
+        commands.update(
+          credentialId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      () =>
+        commands.update(credentialId, undefined, undefined, undefined, undefined, undefined, "high", undefined, true),
+      () => commands.update(credentialId, "  ", undefined, undefined, undefined, undefined, undefined, undefined, true),
+    ];
+    for (const invalidUpdate of invalidUpdates) {
+      let thrown: unknown;
+      captureConsole(() => {
+        try {
+          invalidUpdate();
+        } catch (error) {
+          thrown = error;
+        }
+      });
+      expect(thrown).toBeInstanceOf(ContractError);
+      const contractError = thrown as InstanceType<typeof ContractError>;
+      expect(contractError.exitCode).toBe(2);
+      expect(contractError.envelope().op).toBe("runtime credentials update");
+      expect(contractError.envelope().error.code).toBe("USAGE_ERROR");
+    }
+
+    const status = captureConsole(() => commands.status(credentialId, true));
+    expect((JSON.parse(status.output) as { credential: { label: string } }).credential.label).toBe("OpenAI primary");
+  });
+
+  it("maps update of an unknown credential to CREDENTIAL_NOT_FOUND (exit 1)", () => {
+    const commands = new RuntimeCredentialsCommands();
+    addCredential(commands);
+
+    let thrown: unknown;
+    captureConsole(() => {
+      try {
+        commands.update("rc_missing", undefined, "dev", undefined, undefined, undefined, undefined, undefined, true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.envelope().op).toBe("runtime credentials update");
     expect(contractError.envelope().error.code).toBe("CREDENTIAL_NOT_FOUND");
   });
 

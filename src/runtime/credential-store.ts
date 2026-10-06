@@ -12,6 +12,7 @@ import type {
   RuntimeCredentialRecord,
   RuntimeCredentialSecretBinding,
   RuntimeCredentialStatus,
+  RuntimeCredentialUpdatePatch,
 } from "./credential-types.js";
 
 interface RuntimeCredentialRow {
@@ -421,6 +422,74 @@ export function setRuntimeCredentialEnabled(id: string, enabled: boolean): Runti
       if (shapeMismatch) applyRuntimeCredentialShapeInvalid(db, id, shapeMismatch.message, now);
     },
     { label: "runtime-credential-enabled" },
+  );
+  return getRuntimeCredential(id) ?? failMissingCredential(id);
+}
+
+/**
+ * Edit the operator-owned metadata of an existing credential in place.
+ *
+ * Only the fields present in the patch change. Allowlists accept `null` or `[]`
+ * to clear them (stored as NULL, which means "no restriction"). Secret
+ * bindings, auth source, fingerprint and session compatibility key are never
+ * touched, so a relabel or allowlist change does not rotate the credential.
+ */
+export function updateRuntimeCredential(id: string, patch: RuntimeCredentialUpdatePatch): RuntimeCredentialRecord {
+  ensureRuntimeCredentialTables();
+  const assignments: string[] = [];
+  const values: SQLQueryBindings[] = [];
+  if (patch.label !== undefined) {
+    const label = patch.label.trim();
+    if (!label) throw new Error("Credential label is required");
+    assignments.push("label = ?");
+    values.push(label);
+  }
+  const lists: Array<
+    [
+      keyof Pick<
+        RuntimeCredentialUpdatePatch,
+        "modelAllowlist" | "modelDenylist" | "agentAllowlist" | "taskProfileAllowlist"
+      >,
+      string,
+    ]
+  > = [
+    ["modelAllowlist", "model_allowlist_json"],
+    ["modelDenylist", "model_denylist_json"],
+    ["agentAllowlist", "agent_allowlist_json"],
+    ["taskProfileAllowlist", "task_profile_allowlist_json"],
+  ];
+  for (const [field, column] of lists) {
+    const value = patch[field];
+    if (value === undefined) continue;
+    assignments.push(`${column} = ?`);
+    values.push(stringifyList(value ?? []));
+  }
+  if (patch.priority !== undefined) {
+    if (!Number.isInteger(patch.priority)) throw new Error("Credential priority must be an integer");
+    assignments.push("priority = ?");
+    values.push(patch.priority);
+  }
+  if (patch.notes !== undefined) {
+    assignments.push("notes = ?");
+    values.push(normalizeOptional(patch.notes));
+  }
+  if (!assignments.length) throw new Error("No runtime credential fields to update");
+
+  const now = Date.now();
+  executeWrite(
+    getDb(),
+    (db) => {
+      const existing = db.prepare("SELECT id FROM runtime_credentials WHERE id = ?").get(id) as
+        | { id: string }
+        | undefined;
+      if (!existing) throw new Error(`Runtime credential not found: ${id}`);
+      db.prepare(`UPDATE runtime_credentials SET ${assignments.join(", ")}, updated_at = ? WHERE id = ?`).run(
+        ...values,
+        now,
+        id,
+      );
+    },
+    { label: "runtime-credential-update" },
   );
   return getRuntimeCredential(id) ?? failMissingCredential(id);
 }

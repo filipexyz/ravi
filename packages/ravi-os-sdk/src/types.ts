@@ -11501,6 +11501,62 @@ export type RuntimeCredentialsStatusReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `runtime.credentials.update`. */
+export type RuntimeCredentialsUpdateInput = {
+  agents?: string;
+  id: string;
+  label?: string;
+  modelDenylist?: string;
+  models?: string;
+  notes?: string;
+  priority?: string;
+  taskProfiles?: string;
+};
+
+/** Return shape for `runtime.credentials.update`. */
+export type RuntimeCredentialsUpdateReturn = {
+  credential: {
+    agentAllowlist: string[];
+    authMethod: string | null;
+    authProfileRef: string | null;
+    bindings: Array<{
+      id: string;
+      remoteForward: boolean;
+      secretRef: string;
+      sensitive: boolean;
+      sourceHint: string | null;
+      sourceKind: string;
+      targetKind: string;
+      targetName: string;
+    }>;
+    createdAt: number;
+    enabled: boolean;
+    fingerprint: string;
+    id: string;
+    label: string;
+    lastErrorCode: string | null;
+    lastErrorMessageRedacted: string | null;
+    lastErrorReason: string | null;
+    modelAllowlist: string[];
+    modelDenylist: string[];
+    notes: string | null;
+    priority: number;
+    remoteForwardEnvKeys: string[];
+    resetAt: number | null;
+    runtimeProvider: string;
+    sensitiveEnvKeys: string[];
+    sessionCompatibilityKey: string | null;
+    sourceKind: string | null;
+    status: "healthy" | "cooldown" | "exhausted" | "invalid" | "needs_reauth" | "disabled" | "unknown";
+    strategyHint: string | null;
+    taskProfileAllowlist: string[];
+    updatedAt: number;
+    upstreamProvider: string | null;
+    weight: number | null;
+  };
+  updatedFields: Array<"label" | "modelAllowlist" | "modelDenylist" | "agentAllowlist" | "taskProfileAllowlist" | "priority" | "notes">;
+};
+
 /** Input shape for `runtime.env.get`. */
 export type RuntimeEnvGetInput = {
   key: string;

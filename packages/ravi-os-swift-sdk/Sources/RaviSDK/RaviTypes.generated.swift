@@ -18805,6 +18805,75 @@ public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   }
 }
 
+public struct RuntimeCredentialsUpdateOptions: Codable, Sendable {
+  public var agents: String?
+  public var label: String?
+  public var modelDenylist: String?
+  public var models: String?
+  public var notes: String?
+  public var priority: String?
+  public var taskProfiles: String?
+
+  public init(agents: String? = nil, label: String? = nil, modelDenylist: String? = nil, models: String? = nil, notes: String? = nil, priority: String? = nil, taskProfiles: String? = nil) {
+    self.agents = agents
+    self.label = label
+    self.modelDenylist = modelDenylist
+    self.models = models
+    self.notes = notes
+    self.priority = priority
+    self.taskProfiles = taskProfiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case label = "label"
+    case modelDenylist = "modelDenylist"
+    case models = "models"
+    case notes = "notes"
+    case priority = "priority"
+    case taskProfiles = "taskProfiles"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agents {
+      body["agents"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.modelDenylist {
+      body["modelDenylist"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.models {
+      body["models"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.notes {
+      body["notes"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.priority {
+      body["priority"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.taskProfiles {
+      body["taskProfiles"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeCredentialsUpdateReturn: Codable, Sendable {
+  public var credential: RaviJSON
+  public var updatedFields: [String]
+
+  public init(credential: RaviJSON, updatedFields: [String]) {
+    self.credential = credential
+    self.updatedFields = updatedFields
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case credential = "credential"
+    case updatedFields = "updatedFields"
+  }
+}
+
 public struct RuntimeEnvGetReturn: Codable, Sendable {
   public var key: String
   public var origin: String
