@@ -28,4 +28,20 @@ describe("readTurnResponse", () => {
     );
     expect(text).toBe("");
   });
+
+  it("keeps waiting for a fresh session's transcript instead of using history", async () => {
+    // The daemon emits turn.complete before it persists a new session's
+    // runtime session ID, so the transcript appears only a moment later.
+    const reads: OwnTurnText[] = [
+      { readable: false, pending: true },
+      { readable: false, pending: true },
+      { readable: true, text: null },
+      { readable: true, text: "FRESH_OK" },
+    ];
+    const text = await readTurnResponse(
+      { sessionName: "eval-fresh", historyCursor: 0, readOwnTurnText: () => reads.shift() ?? reads[0]! },
+      2_000,
+    );
+    expect(text).toBe("FRESH_OK");
+  });
 });

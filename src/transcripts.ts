@@ -16,10 +16,18 @@ export interface TranscriptLocatorResult {
   reason?: string;
 }
 
+/** A session that has not finished its first turn yet has no runtime session ID. */
+export const NO_RUNTIME_SESSION_ID_REASON = "No runtime session ID is available.";
+
+/** Providers whose transcripts `locateRuntimeTranscript` can read (unset means Claude). */
+export function runtimeProviderHasTranscript(provider: RuntimeProviderId | undefined): boolean {
+  return !provider || provider === "claude" || provider === "codex";
+}
+
 export function locateRuntimeTranscript(input: TranscriptLocatorInput): TranscriptLocatorResult {
   const providerSessionId = input.providerSessionId ?? input.sdkSessionId;
   if (!providerSessionId) {
-    return { reason: "No runtime session ID is available." };
+    return { reason: NO_RUNTIME_SESSION_ID_REASON };
   }
 
   if (input.remote) {
