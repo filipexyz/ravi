@@ -250,7 +250,7 @@ function buildScopeDenialDiagnosis(
     detail: `Scope denied for ${grant}: ${agentPrincipal} lacks the required grant.`,
     missingPrincipals: [agentPrincipal],
     missingPrincipalDetails: [{ branch: "agent", principal: agentPrincipal }],
-    recommendedGrantSubjects: [agentPrincipal],
+    recommendedGrantSubjects: isActionableGrantSubject(agentPrincipal) ? [agentPrincipal] : [],
   };
 }
 

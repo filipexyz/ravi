@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listPermissionDenials } from "./denials.js";
+import { flushPermissionAuditEvents, listPermissionDenials, setPermissionAuditPublisherForTest } from "./denials.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -945,6 +945,26 @@ describe("Scope Isolation", () => {
       runWithContext(agentlessCtx([cap("execute", "group", "sessions")]) as ToolContext, () => {
         expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(true);
       });
+    });
+
+    it("never recommends the unknown agent as a grant subject", async () => {
+      const events: Record<string, unknown>[] = [];
+      const suppressed = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      setPermissionAuditPublisherForTest(async (_topic, data) => {
+        events.push(data);
+      });
+      try {
+        runWithContext(agentlessCtx([]) as ToolContext, () => {
+          expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+        });
+        await flushPermissionAuditEvents();
+      } finally {
+        setPermissionAuditPublisherForTest();
+        if (suppressed !== undefined) process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppressed;
+      }
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ blockType: "agent_scope_missing_grant", recommendedGrantSubjects: [] });
     });
   });
 });

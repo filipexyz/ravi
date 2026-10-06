@@ -201,12 +201,15 @@ export async function setPageAppGatewayTarget(
 ): Promise<PageAppGatewayTargetSetResult> {
   const project = requireText(options.project, "project");
   const site = requireText(options.site, "site");
+  // Validated here too, so callers other than the CLI get the same local rules.
+  const audience = normalizeTargetAudience(options.audience);
+  const installationId = normalizeTargetInstallationId(options.installationId);
   const body = {
-    audience: options.audience,
-    ...(options.installationId ? { installationId: options.installationId } : {}),
-    appId: options.appId,
-    operations: options.operations,
-    origins: options.origins,
+    audience,
+    ...(installationId ? { installationId } : {}),
+    appId: normalizeTargetAppId(options.appId),
+    operations: normalizeTargetOperations(options.operations),
+    origins: normalizeTargetOrigins(options.origins),
   };
   if (Buffer.byteLength(JSON.stringify(body), "utf8") > MAX_SET_BODY_BYTES) {
     throw new CloudAuthError("PAYLOAD_INVALID", "The target is too large to register (8192 bytes at most).");
@@ -221,7 +224,7 @@ export async function setPageAppGatewayTarget(
   const record = objectValue(payload);
   return {
     action: "set",
-    audience: options.audience,
+    audience,
     consoleUrl: auth.consoleUrl,
     projectRef: safeRef(record?.projectRef) ?? project,
     siteRef: safeRef(record?.siteRef) ?? site,
@@ -236,13 +239,14 @@ export async function removePageAppGatewayTarget(
 ): Promise<PageAppGatewayTargetRemoveResult> {
   const project = requireText(options.project, "project");
   const site = requireText(options.site, "site");
+  const audience = normalizeTargetAudience(options.audience);
   const auth = await createAuthenticatedPagesContext(options, deps);
-  const path = `${pageAppGatewayTargetsPath(project, site)}?aud=${encodeURIComponent(options.audience)}`;
+  const path = `${pageAppGatewayTargetsPath(project, site)}?aud=${encodeURIComponent(audience)}`;
   const payload = await auth.client.requestJson<unknown>("DELETE", path, undefined, auth.accessToken);
   const record = objectValue(payload);
   return {
     action: "remove",
-    audience: options.audience,
+    audience,
     consoleUrl: auth.consoleUrl,
     id: safeString(record?.id),
     projectRef: safeRef(record?.projectRef) ?? project,

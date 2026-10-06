@@ -31,7 +31,7 @@
 ## Validation
 
 ```bash
-bun test --timeout 20000 src/app-gateway/ src/apps/gateway-declaration.test.ts src/apps/permissions.test.ts src/mailbox/access.test.ts src/calendar/access.test.ts
+bun test --timeout 20000 src/app-gateway/ src/apps/gateway-declaration.test.ts src/apps/gateway-command.test.ts src/apps/permissions.test.ts src/mailbox/access.test.ts src/calendar/access.test.ts
 bun test src/apps/router.test.ts src/permissions/scope.test.ts src/cli/commands/pages.test.ts src/cli/commands/settings.test.ts src/cli/commands/agents.test.ts
 make quality
 ```
