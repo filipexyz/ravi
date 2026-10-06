@@ -49,15 +49,17 @@ export function gradeEvalRun(
       }
 
       case "transcript.contains": {
-        const haystack = after.transcript?.combinedText ?? "";
+        // Only what this run added after its prompt: the prompt itself and
+        // earlier runs on the same session must not satisfy the criterion.
+        const haystack = after.transcript?.run?.combinedText ?? "";
         const pass = haystack.includes(criterion.needle);
         return {
           id: criterion.id,
           type: criterion.type,
           pass,
           details: pass
-            ? `Transcript contains "${criterion.needle}".`
-            : `Transcript does not contain "${criterion.needle}".`,
+            ? `This run's transcript contains "${criterion.needle}".`
+            : `This run's transcript does not contain "${criterion.needle}".`,
         };
       }
 

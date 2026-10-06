@@ -256,8 +256,22 @@ async function* runClaudeTurns(
     runtime.setActiveQuery(queryResult);
 
     const terminalTracker = createRuntimeTerminalEventTracker();
+    let droppedSelfStartedTurn = false;
     try {
       for await (const event of normalizeClaudeEvents(queryResult)) {
+        if (terminalTracker.terminalEmitted) {
+          // Claude Code keeps the query open while its own background tasks run
+          // and starts a turn by itself when one finishes. Ravi handed that turn
+          // no prompt, so it has no reply target or waiter; drop it. The next
+          // Ravi prompt starts once this query ends.
+          if (!droppedSelfStartedTurn) {
+            droppedSelfStartedTurn = true;
+            claudeLog.warn("Dropping a turn Claude Code started without a Ravi prompt", {
+              firstEvent: event.type,
+            });
+          }
+          continue;
+        }
         if (!terminalTracker.accept(event)) {
           continue;
         }

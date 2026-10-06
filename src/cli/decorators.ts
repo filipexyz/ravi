@@ -72,6 +72,12 @@ export interface CommandOptions {
    * groupings, or operational impact notes that go beyond the one-line description.
    */
   helpAfter?: string;
+  /**
+   * How long a CLI that dispatches through the remote gateway waits for this
+   * command's response. Defaults to the gateway client's 30 s; set it for
+   * commands that legitimately run longer (e.g. `eval run`).
+   */
+  remoteTimeoutMs?: number;
 }
 
 export interface ArgOptions {

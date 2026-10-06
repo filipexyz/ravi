@@ -258,6 +258,7 @@ function registerCommand(
         command: cmdMeta.name,
         groupSegments: groupName.split("_"),
         input,
+        timeoutMs: cmdMeta.remoteTimeoutMs,
       });
       return;
     }
@@ -394,6 +395,7 @@ interface DispatchRemoteCommandInput {
   command: string;
   groupSegments: string[];
   input: Record<string, unknown>;
+  timeoutMs?: number;
 }
 
 async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise<void> {
@@ -422,6 +424,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       config: input.config,
       contextKey,
       cwd: process.cwd(),
+      timeoutMs: input.timeoutMs,
     });
   } catch {
     const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {

@@ -16,6 +16,11 @@ export interface TranscriptLocatorResult {
   reason?: string;
 }
 
+/** Providers whose transcripts `locateRuntimeTranscript` can read (unset means Claude). */
+export function runtimeProviderHasTranscript(provider: RuntimeProviderId | undefined): boolean {
+  return !provider || provider === "claude" || provider === "codex";
+}
+
 export function locateRuntimeTranscript(input: TranscriptLocatorInput): TranscriptLocatorResult {
   const providerSessionId = input.providerSessionId ?? input.sdkSessionId;
   if (!providerSessionId) {

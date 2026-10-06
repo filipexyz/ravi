@@ -71,7 +71,23 @@ describe("gradeEvalRun", () => {
         { role: "user", text: "hello", time: "t1" },
         { role: "assistant", text: "EVAL_OK", time: "t2" },
       ],
+      run: { promptIndex: 0, messageCount: 1, combinedText: "EVAL_OK", assistantText: "EVAL_OK" },
     },
+  };
+
+  const diff = {
+    files: [
+      {
+        path: "/tmp/eval/artifact.txt",
+        absolutePath: "/tmp/eval/artifact.txt",
+        beforeKind: "file" as const,
+        afterKind: "file" as const,
+        changed: true,
+        reason: "content_changed" as const,
+      },
+    ],
+    transcriptChanged: true,
+    transcriptMessageDelta: 1,
   };
 
   it("passes all binary criteria when response, transcript and diff match", () => {
@@ -104,5 +120,21 @@ describe("gradeEvalRun", () => {
     expect(grade.passed).toBe(3);
     expect(grade.total).toBe(3);
     expect(grade.score).toBe(1);
+  });
+
+  it("does not let the prompt or earlier turns satisfy transcript.contains", () => {
+    const echoed: EvalSnapshot = {
+      ...after,
+      transcript: {
+        ...after.transcript!,
+        // The whole transcript has EVAL_OK (prompt + an earlier run), this run does not.
+        combinedText: "reply with EVAL_OK\nEVAL_OK\nreply with EVAL_OK\nnope",
+        run: { promptIndex: 2, messageCount: 1, combinedText: "nope", assistantText: "nope" },
+      },
+    };
+    const grade = gradeEvalRun(task, { state: "complete", responseText: "nope", durationMs: 1 }, before, echoed, diff);
+    const transcript = grade.criteria.find((criterion) => criterion.id === "r3");
+    expect(transcript?.pass).toBe(false);
+    expect(grade.criteria.find((criterion) => criterion.id === "r1")?.pass).toBe(false);
   });
 });

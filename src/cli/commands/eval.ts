@@ -5,9 +5,10 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { resolveCallerPath } from "../caller-cwd.js";
 import { fail } from "../context.js";
 import { looseObjectSchema } from "../return-schemas.js";
-import { loadEvalTaskSpec } from "../../eval/spec.js";
+import { EVAL_MAX_TIMEOUT_MS, loadEvalTaskSpec } from "../../eval/spec.js";
 import { runEvalTask } from "../../eval/runner.js";
 
 const evalRunReturnSchema = z
@@ -26,7 +27,13 @@ const evalRunReturnSchema = z
   scope: "admin",
 })
 export class EvalCommands {
-  @Command({ name: "run", description: "Run an eval task spec and persist artifacts" })
+  @Command({
+    name: "run",
+    description: "Run an eval task spec and persist artifacts",
+    // A run waits for a whole agent turn (runner.timeoutMs, up to 10 min);
+    // the default 30 s gateway wait would cut it off when called from a session.
+    remoteTimeoutMs: EVAL_MAX_TIMEOUT_MS + 60_000,
+  })
   @CommandAccess({ kind: "mutate", resource: "eval", action: "run", risk: "high" })
   @Returns(evalRunReturnSchema)
   async run(
@@ -35,8 +42,9 @@ export class EvalCommands {
     @Option({ flags: "--json", description: "Print final run summary as JSON" }) asJson?: boolean,
   ) {
     try {
-      const task = loadEvalTaskSpec(specPath);
-      const result = await runEvalTask(task, output);
+      // Through the gateway this runs in the daemon; resolve paths against the caller's cwd.
+      const task = loadEvalTaskSpec(resolveCallerPath(specPath));
+      const result = await runEvalTask(task, output ? resolveCallerPath(output) : undefined);
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
