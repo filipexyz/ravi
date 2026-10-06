@@ -140,6 +140,12 @@ export interface RuntimeHostStreamingSession {
   internalAbortReason?: string;
   /** Whether a provider turn is currently active until a terminal event arrives */
   turnActive: boolean;
+  /**
+   * The provider is running a turn Ravi never handed it a prompt for (Claude
+   * Code does this when one of its background tasks finishes). Its events are
+   * dropped and queued prompts wait until its own terminal arrives.
+   */
+  providerStartedTurn?: boolean;
   /** Signal from result handler to unblock generator after turn completes */
   onTurnComplete: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" - session needs reset */
