@@ -14,6 +14,7 @@
 import { runWithContext } from "../cli/context.js";
 import { listCachedActorBindings } from "../cloud-auth/actor-bindings.js";
 import type { ActorBinding } from "../cloud-auth/types.js";
+import { gatewayCommandProblem } from "../apps/gateway-command.js";
 import { checkGatewayArgs, normalizeGatewayDeclaration } from "../apps/gateway-declaration.js";
 import { parseRaviAppCapability } from "../apps/command.js";
 import { runAppOperation } from "../apps/router.js";
@@ -295,7 +296,15 @@ function readGatewayOperation(app: RaviAppManifestRecord, operationId: string) {
   if (declaration.mutating !== false) return null;
   if (declaration.interface !== "builtin" && declaration.interface !== "cli") return null;
   if (app.permissions.provider?.operation === operationId) return null;
-  return normalizeGatewayDeclaration(declaration.gateway);
+  const gateway = normalizeGatewayDeclaration(declaration.gateway);
+  if (!gateway) return null;
+  // Manifest validation refuses these too; checked again here so a command the
+  // viewer could steer never runs.
+  if (declaration.interface === "cli") {
+    if (typeof declaration.command !== "string") return null;
+    if (gatewayCommandProblem(declaration.command, gateway)) return null;
+  }
+  return gateway;
 }
 
 /** Step 11: only an optional `args` array of bounded strings without NUL. */

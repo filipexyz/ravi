@@ -19,7 +19,7 @@ afterEach(() => {
   }
 });
 
-function makeRepoWithGateway(gateway: unknown): void {
+function makeRepoWithGateway(gateway: unknown, command = "bun slides.mjs list {args} --json"): void {
   const root = mkdtempSync(join(tmpdir(), "ravi-app-gateway-decl-"));
   tempRoots.push(root);
   process.env.RAVI_STATE_DIR = join(root, ".state");
@@ -39,7 +39,7 @@ function makeRepoWithGateway(gateway: unknown): void {
       operations: {
         "slides.list": {
           interface: "cli",
-          command: "bun slides.mjs list {args} --json",
+          command,
           mutating: false,
           gateway,
         },
@@ -69,6 +69,23 @@ describe("app gateway declaration", () => {
     expect(errors).toContain('entry "-l" must match');
     expect(errors).toContain("must be disjoint");
     expect(errors).toContain("positional must be an integer from 0 to 8");
+  });
+
+  it("refuses commands that let the viewer choose what runs in ravi apps check", () => {
+    makeRepoWithGateway(LIST_DECLARATION, "ravi {args}");
+    let app = getAppManifest("slides");
+    expect(app.valid).toBe(false);
+    expect(app.errors.join("\n")).toContain(
+      "operations.slides.list.command cannot be exposed through the Pages app gateway: the words before {args} must start with one full Ravi CLI command",
+    );
+
+    makeRepoWithGateway(LIST_DECLARATION, "bun slides.mjs {args} list");
+    app = getAppManifest("slides");
+    expect(app.valid).toBe(false);
+    expect(app.errors.join("\n")).toContain('"list" comes after {args}');
+
+    makeRepoWithGateway({ args: "none" }, "ravi {args}");
+    expect(getAppManifest("slides").errors).toEqual([]);
   });
 
   it("validates shape, limits, and the none form", () => {

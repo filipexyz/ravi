@@ -170,4 +170,12 @@ Do lado desta instalação nada roda sem opt-in local:
 }
 ```
 
-`"gateway": { "args": "none" }` aceita só args vazio. `--execute` e `--` nunca podem ser declarados. Qualquer outro arg começando com `-` é recusado. Sem Permission Provider no app, todo viewer que pode cunhar a asserção daquele `aud` vê a saída: exponha só o que todos eles podem ver, ou use `require_link` / Permission Provider.
+O comando precisa escolher o que roda antes dos args do viewer, porque um posicional é texto livre. `ravi apps check` recusa, e o executor não roda, uma operação com args que tenha:
+
+- `ravi` sem um comando completo do registry do CLI antes de `{args}` (`ravi {args}`, `ravi contacts {args}`; `ravi doctor` e `ravi whoami` não estão no registry), um comando que despacha (`ravi apps run`, `ravi jobs run`, `ravi commands run`, `ravi tools invoke`), um comando que o registry marca `mutate` (`ravi tasks create`), ou um comando que também tem subcomandos sem uma palavra fixa depois (`ravi crm account {args}`: use `ravi crm account show {args}`);
+- um executor de programas como executável (`env`, `xargs`, `sudo`, `timeout`, `npx`, `bunx`, `ssh`, `open`...);
+- nenhuma palavra fixa antes de `{args}` (`git {args}`, `bash -c {args}`, `node -e {args}`), ou `run`, `exec`, `x`, `dlx` ou `eval` logo antes (`npm run {args}`);
+- uma palavra fixa depois de `{args}` (`tool cli.js {args} list`): depois de `{args}` só opções fixas, como `--json`;
+- com `positional` acima de 0, uma opção logo antes dos args (`tool list --format {args}`).
+
+Para programas que não são o `ravi`, a instalação não conhece a gramática: aponte o comando para o subcomando final. `"gateway": { "args": "none" }` aceita só args vazio. `--execute` e `--` nunca podem ser declarados. Qualquer outro arg começando com `-` é recusado. Sem Permission Provider no app, todo viewer que pode cunhar a asserção daquele `aud` vê a saída: exponha só o que todos eles podem ver, ou use `require_link` / Permission Provider.

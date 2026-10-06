@@ -18,6 +18,7 @@ applies_to:
   - src/cli/commands/settings.ts
   - src/cli/commands/agents.ts
   - src/apps/gateway-declaration.ts
+  - src/apps/gateway-command.ts
   - src/apps/service.ts
   - src/apps/router.ts
   - src/apps/permissions.ts
@@ -116,24 +117,30 @@ There is no user command for the relay ticket. Only the daemon's relay runner ca
 
 27. An operation is exposed only when it is a key of the manifest's `operations`, declares `"mutating": false` explicitly, carries a valid `gateway` declaration, uses interface `builtin` or `cli`, and is not the permission-provider operation.
 28. `gateway.args` is `"none"` or `{ options?, flags?, positional? }`: up to 16 long options that each take one value, up to 16 long flags, disjoint, names matching `^--[a-z0-9][a-z0-9-]*$`, never `--execute` or `--`; `positional` 0 to 8 (default 0). `ravi apps check` MUST refuse an invalid declaration and MUST warn when `gateway` is set without `"mutating": false`.
-29. The executor MUST read `body.args` left to right against the declaration. Undeclared options, short options, `--name=value`, `--`, a repeated option or flag, a missing value, a value that starts with `-`, and positionals above the limit MUST be `payload_invalid` with nothing spawned. Accepted args MUST pass unchanged and in order.
+29. When `gateway.args` is not `"none"`, a `cli` operation's command MUST fix what runs before the viewer args start, because positional values are free text. `ravi apps check` MUST refuse, and the executor MUST treat as not exposed, a command where:
+    - the executable is `ravi`, and the tokens after it, up to the first option or `{args}`, do not start with one full CLI registry command (group path, then command; group and command aliases count; root commands registered by hand in `src/cli/index.ts`, such as `doctor` or `whoami`, never match); or that command is a dispatcher (`apps run`, `apps import-cli`, `jobs run`, `commands run`, `tools invoke`, `tools test`); or the registry marks it `mutate`; or it also has subcommands (`crm account` and `crm account create`) and no fixed word follows its name;
+    - the executable is any other program, and it is a program runner (`env`, `xargs`, `sudo`, `nohup`, `timeout`, `npx`, `bunx`, `ssh`, `open`, and the rest of `GATEWAY_PROGRAM_RUNNERS`); or no word (a token not starting with `-`) follows it before `{args}`; or the last such word is `run`, `exec`, `x`, `dlx`, or `eval`; or a word follows `{args}`;
+    - for any executable, `positional` is above 0 and the token right before the viewer args is an option.
+
+    The installation knows only the Ravi CLI grammar, so for other programs the app author MUST still point the command at its final subcommand.
+30. The executor MUST read `body.args` left to right against the declaration. Undeclared options, short options, `--name=value`, `--`, a repeated option or flag, a missing value, a value that starts with `-`, and positionals above the limit MUST be `payload_invalid` with nothing spawned. Accepted args MUST pass unchanged and in order.
 
 ### App Router
 
-30. `runAppOperation` MUST accept `exactOperation`. With it, the operation MUST be an exact manifest key; aliases, virtual builtins (`help`, `show`, `check`), and joining leading args into a longer id MUST be off.
-31. `runAppOperation` MUST accept `timeoutMs`, `maxOutputBytes`, and `signal`. For the `cli` interface the child MUST run in its own process group, and on timeout, abort, or stdout or stderr above `maxOutputBytes` the router MUST kill the whole group (SIGTERM, then SIGKILL after 2 s) and return `APP_OPERATION_TIMEOUT` or `APP_OUTPUT_TOO_LARGE`. Callers that pass none of these MUST keep today's behavior.
-32. The executor MUST call it with `json: true`, `execute: false`, `exactOperation: true`, `timeoutMs: 28000`, `maxOutputBytes: 1179648`, the invoke's abort signal, and the daemon environment without `RAVI_CONTEXT_KEY`.
+31. `runAppOperation` MUST accept `exactOperation`. With it, the operation MUST be an exact manifest key; aliases, virtual builtins (`help`, `show`, `check`), and joining leading args into a longer id MUST be off.
+32. `runAppOperation` MUST accept `timeoutMs`, `maxOutputBytes`, and `signal`. For the `cli` interface the child MUST run in its own process group, and on timeout, abort, or stdout or stderr above `maxOutputBytes` the router MUST kill the whole group (SIGTERM, then SIGKILL after 2 s) and return `APP_OPERATION_TIMEOUT` or `APP_OUTPUT_TOO_LARGE`. Callers that pass none of these MUST keep today's behavior.
+33. The executor MUST call it with `json: true`, `execute: false`, `exactOperation: true`, `timeoutMs: 28000`, `maxOutputBytes: 1179648`, the invoke's abort signal, and the daemon environment without `RAVI_CONTEXT_KEY`.
 
 ### Local authority
 
-33. Each invoke MUST run under a parent runtime context of kind `pages-app-gateway` with no `agentId`, capabilities `use:app:<appId>` plus the manifest `context.allow`, TTL 35 s, and metadata `actorPrincipal`, `surfacePrincipal`, `raviUserId`, `raviOrgId`, `siteId`, `projectId`, `audience`, `appGatewayTargetId`, `requestId`, `source: "pages-app-gateway"`. It MUST NOT set `consoleUserId`, `consoleOrgId`, or `authorityMode`. The context MUST be revoked in `finally`, after the child exits.
-34. `actorPrincipal` MUST be `contact:<contactId>` only when exactly one unexpired cached actor binding matches the viewer, org, and (when non-empty) installation; otherwise `ravi_user:<raviUserId>`. Ravi Link MUST be read only from the local cache during an invoke. `surfacePrincipal` MUST be `pages_site:<siteId>`.
-35. A caller MUST take the local-operator fallback only when it has neither an `agentId` nor a runtime context record (`isLocalOperatorScope`). With a context record present, `canAccessApp`, the `src/permissions/scope.ts` checks (including `isScopeEnforced` and `filterAccessibleSessions`), `src/mailbox/access.ts`, and `src/calendar/access.ts` MUST authorize from the record's capabilities only. This covers the app child, any `ravi` command it runs, SDK-gateway calls with its `rctx_*` key, and orphaned contexts whose agent was deleted.
-36. `pages-app-gateway` is an in-process audit label, not an agent. It MUST NOT become a permission subject or fill a context record's `agentId`, and `ravi agents create` MUST refuse it.
+34. Each invoke MUST run under a parent runtime context of kind `pages-app-gateway` with no `agentId`, capabilities `use:app:<appId>` plus the manifest `context.allow`, TTL 35 s, and metadata `actorPrincipal`, `surfacePrincipal`, `raviUserId`, `raviOrgId`, `siteId`, `projectId`, `audience`, `appGatewayTargetId`, `requestId`, `source: "pages-app-gateway"`. It MUST NOT set `consoleUserId`, `consoleOrgId`, or `authorityMode`. The context MUST be revoked in `finally`, after the child exits.
+35. `actorPrincipal` MUST be `contact:<contactId>` only when exactly one unexpired cached actor binding matches the viewer, org, and (when non-empty) installation; otherwise `ravi_user:<raviUserId>`. Ravi Link MUST be read only from the local cache during an invoke. `surfacePrincipal` MUST be `pages_site:<siteId>`.
+36. A caller MUST take the local-operator fallback only when it has neither an `agentId` nor a runtime context record (`isLocalOperatorScope`). With a context record present, `canAccessApp`, the `src/permissions/scope.ts` checks (including `isScopeEnforced` and `filterAccessibleSessions`), `src/mailbox/access.ts`, and `src/calendar/access.ts` MUST authorize from the record's capabilities only. This covers the app child, any `ravi` command it runs, SDK-gateway calls with its `rctx_*` key, and orphaned contexts whose agent was deleted.
+37. `pages-app-gateway` is an in-process audit label, not an agent. It MUST NOT become a permission subject or fill a context record's `agentId`, and `ravi agents create` MUST refuse it.
 
 ### Logging
 
-37. The executor MUST log one line per invoke with `requestId`, `appId`, `operation`, `siteId` (once known), outcome code, and duration. The runner and the executor MUST NOT log the ticket, assertion, grant, `args`, `body`, result, or `rctx_*` keys.
+38. The executor MUST log one line per invoke with `requestId`, `appId`, `operation`, `siteId` (once known), outcome code, and duration. The runner and the executor MUST NOT log the ticket, assertion, grant, `args`, `body`, result, or `rctx_*` keys.
 
 ## Write classification
 
@@ -158,7 +165,7 @@ There is no user command for the relay ticket. Only the daemon's relay runner ca
 
 ## Validation
 
-- `bun test --timeout 20000 src/app-gateway/ src/apps/gateway-declaration.test.ts src/apps/permissions.test.ts src/mailbox/access.test.ts src/calendar/access.test.ts`
+- `bun test --timeout 20000 src/app-gateway/ src/apps/gateway-declaration.test.ts src/apps/gateway-command.test.ts src/apps/permissions.test.ts src/mailbox/access.test.ts src/calendar/access.test.ts`
 - `bun test src/apps/router.test.ts src/permissions/scope.test.ts src/cli/commands/pages.test.ts src/cli/commands/settings.test.ts src/cli/commands/agents.test.ts`
 - `make quality`
 
@@ -169,3 +176,5 @@ There is no user command for the relay ticket. Only the daemon's relay runner ca
 - Binding grants to the locally generated `credentials.installationId` instead of the ticket's Console installation id refuses every invoke.
 - Caching `apps.gateway.allowed_operations` keeps an operation exposed after the operator removed it.
 - Trusting `"mutating": false` without a `gateway` declaration lets a viewer pass `--execute` or select another subcommand through argv.
+- Checking only arg names lets one declared operation become a door to any command: with `ravi {args}`, `bash -c {args}`, or `npm run {args}`, a positional value picks what runs.
+- Matching `ravi crm account` as a full command lets a viewer positional `create` run `ravi crm account create`: Commander reads the first operand after a command that also has subcommands as a subcommand name.

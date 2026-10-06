@@ -348,6 +348,9 @@ merely because a manifest was generated.
   shape and argv rules are `pages/app-gateway`. Validation MUST refuse an
   invalid declaration and MUST warn when `gateway` is set without an explicit
   `"mutating": false`. An operation without `gateway` is never exposed there.
+  When viewer args are allowed, validation MUST also refuse a `cli` command
+  that lets those args choose what runs, or a `ravi` command the CLI registry
+  marks `mutate` (`pages/app-gateway`).
 - Discovery MUST validate operation metadata without executing operations.
 
 ## Permission Rules

@@ -522,6 +522,30 @@ describe("Pages app gateway executor", () => {
         {},
         "app_gateway_operation_forbidden",
       ],
+      [
+        {
+          "slides.list": {
+            interface: "cli",
+            command: "ravi {args}",
+            mutating: false,
+            gateway: { args: { positional: 2 } },
+          },
+        },
+        {},
+        "app_gateway_operation_forbidden",
+      ],
+      [
+        {
+          "slides.list": {
+            interface: "cli",
+            command: "slides {args} list",
+            mutating: false,
+            gateway: { args: { positional: 1 } },
+          },
+        },
+        {},
+        "app_gateway_operation_forbidden",
+      ],
       [{}, { providerOperation: "slides.list" }, "app_gateway_operation_forbidden"],
       [{}, { valid: false }, "app_gateway_operation_failed"],
     ];

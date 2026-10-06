@@ -5,7 +5,8 @@ import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
-import { validateGatewayDeclaration } from "./gateway-declaration.js";
+import { gatewayCommandProblem } from "./gateway-command.js";
+import { normalizeGatewayDeclaration, validateGatewayDeclaration } from "./gateway-declaration.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -513,7 +514,25 @@ function validateOperations(
     if (operation.gateway !== undefined && operation.mutating !== false) {
       warnings.push(`${path}.gateway is ignored unless the operation declares "mutating": false.`);
     }
+    validateGatewayCommand(operation, path, errors);
   }
+}
+
+// An exposed cli operation must fix what runs before the viewer args start
+// (`pages/app-gateway`). Invalid commands and declarations are reported by
+// their own checks.
+function validateGatewayCommand(operation: Record<string, unknown>, path: string, errors: string[]): void {
+  if (operation.gateway === undefined || operation.mutating !== false || operation.interface !== "cli") return;
+  if (typeof operation.command !== "string") return;
+  const declaration = normalizeGatewayDeclaration(operation.gateway);
+  if (!declaration) return;
+  try {
+    parseRaviAppCommand(operation.command);
+  } catch {
+    return;
+  }
+  const problem = gatewayCommandProblem(operation.command, declaration);
+  if (problem) errors.push(`${path}.command cannot be exposed through the Pages app gateway: ${problem}.`);
 }
 
 function validateOperationAuthorization(value: unknown, path: string, errors: string[]): void {
