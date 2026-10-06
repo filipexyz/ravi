@@ -9,13 +9,20 @@
  * runE2bSandboxTask: create sandbox -> clone the repo -> start the Ravi daemon
  * with this task's credentials -> create a Claude-backed worker agent whose cwd
  * is the clone -> create and dispatch the task -> poll until done/failed/blocked
- * -> save TASK.md, task.json, the git patch and the daemon log locally -> kill
- * the sandbox (or pause it when keep is set).
+ * -> save TASK.md, task.json, the git patch, the daemon log, Ravi's session
+ * traces and the Claude transcripts locally -> kill the sandbox (or pause it when
+ * keep is set) -> save what E2B recorded about it (logs, events, metrics).
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
+import {
+  type CollectE2bTelemetryOptions,
+  type E2bTelemetrySummary,
+  collectE2bTelemetry,
+  redactSecrets,
+} from "./observe.js";
 
 export const DEFAULT_E2B_TEMPLATE = "ravi-runner";
 export const DEFAULT_E2B_TEMPLATE_REF = "dev";
@@ -27,6 +34,8 @@ const NATS_VERSION = "2.11.8";
 const TEMPLATE_RAVI_DIR = "/home/user/ravi";
 const REPO_DIR = "/home/user/work/repo";
 const DAEMON_LOG = "/home/user/.ravi/daemon.log";
+const CLAUDE_PROJECTS_DIR = "/home/user/.claude/projects";
+const MAX_TRANSCRIPTS = 50;
 const TERMINAL_STATUSES = new Set(["done", "failed", "blocked"]);
 const CLAUDE_CREDENTIAL_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
 const CLONE_TIMEOUT_MS = 10 * 60_000;
@@ -181,8 +190,8 @@ export interface SandboxHandle {
   commands: {
     run(
       cmd: string,
-      opts?: { timeoutMs?: number; background?: boolean },
-    ): Promise<{ stdout: string; stderr?: string; exitCode?: number }>;
+      opts?: { timeoutMs?: number; background?: boolean; onStdout?: (data: string) => void },
+    ): Promise<{ stdout?: string; stderr?: string; exitCode?: number; disconnect?: () => Promise<unknown> }>;
   };
   git: {
     clone(
@@ -227,6 +236,12 @@ export interface RunSandboxTaskOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Called after Ctrl-C/SIGTERM cleanup; defaults to process.exit. */
   exit?: (code: number) => void;
+  /** Receives each daemon log line as it is written inside the sandbox. */
+  onDaemonLog?: (line: string) => void;
+  /** Fetches E2B's logs, events and metrics after the sandbox ends; tests pass a fake. */
+  collectTelemetry?: (
+    options: CollectE2bTelemetryOptions,
+  ) => Promise<{ summary: E2bTelemetrySummary; files: string[] } | null>;
 }
 
 export interface RunSandboxTaskResult {
@@ -238,6 +253,13 @@ export interface RunSandboxTaskResult {
   files: string[];
   durationMs: number;
   error: string | null;
+  /** What E2B recorded about the sandbox (null when it could not be fetched). */
+  e2b: E2bTelemetrySummary | null;
+}
+
+/** File name for a session or transcript path, safe on any filesystem. */
+export function safeFileName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+|_+$/g, "") || "unnamed";
 }
 
 async function createE2bSandbox(input: CreateSandboxInput): Promise<SandboxHandle> {
@@ -254,7 +276,20 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const startedAt = now();
-  const step = (message: string) => options.onStep?.(`[${((now() - startedAt) / 1000).toFixed(1)}s] ${message}`);
+  const secrets = [
+    options.credentials.e2bApiKey,
+    ...Object.values(options.credentials.agentEnv),
+    ...(options.credentials.githubToken ? [options.credentials.githubToken] : []),
+  ];
+  // Every step also goes to run.log; lines before the output dir exists are buffered.
+  let runLog: string | null = null;
+  const pendingRunLog: string[] = [];
+  const step = (message: string) => {
+    const line = `[${((now() - startedAt) / 1000).toFixed(1)}s] ${message}`;
+    options.onStep?.(line);
+    if (runLog) appendFileSync(runLog, `${redactSecrets(line, secrets)}\n`);
+    else pendingRunLog.push(line);
+  };
   const template = options.template ?? DEFAULT_E2B_TEMPLATE;
   const title = options.title ?? "Sandbox task";
   const timeoutMs = (options.timeoutMin ?? DEFAULT_SANDBOX_TIMEOUT_MIN) * 60_000;
@@ -279,11 +314,17 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     throw err;
   }
   const files: string[] = [];
+  runLog = join(outputDir, "run.log");
+  writeFileSync(runLog, pendingRunLog.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
+  files.push("run.log");
 
   // Ctrl-C or SIGTERM must not leave a billable, credential-holding sandbox running.
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const onSignal = (signal: NodeJS.Signals) => {
-    step(`${signal} received, ${options.keep ? "pausing" : "killing"} sandbox ${sandbox.sandboxId}`);
+    step(
+      `${signal} received, ${options.keep ? "pausing" : "killing"} sandbox ${sandbox.sandboxId}; ` +
+        `\`ravi sandbox logs ${sandbox.sandboxId}\` fetches what E2B recorded`,
+    );
     const cleanup = options.keep ? sandbox.pause() : sandbox.kill();
     const limit = new Promise((resolve) => setTimeout(resolve, SIGNAL_CLEANUP_TIMEOUT_MS).unref?.());
     void Promise.race([cleanup, limit])
@@ -295,7 +336,7 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
 
   const run = async (cmd: string, cmdTimeoutMs = 120_000) => {
     try {
-      return (await sandbox.commands.run(cmd, { timeoutMs: cmdTimeoutMs })).stdout;
+      return (await sandbox.commands.run(cmd, { timeoutMs: cmdTimeoutMs })).stdout ?? "";
     } catch (err) {
       throw describeCommandError(cmd, err);
     }
@@ -311,19 +352,45 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   // task's changes (committed or not) and not Ravi's AGENTS.md/CLAUDE.md files.
   let baselineTree: string | null = null;
 
+  // The daemon log is copied as it is written, so a sandbox that dies mid-run
+  // still leaves its log behind; the full file replaces the copy at the end.
+  const daemonLogPath = join(outputDir, "daemon.log");
+  let daemonTail: { disconnect?: () => Promise<unknown> } | null = null;
+  let partialLine = "";
+  const onDaemonChunk = (chunk: string) => {
+    const lines = (partialLine + chunk).split("\n");
+    partialLine = lines.pop() ?? "";
+    if (lines.length === 0) return;
+    appendFileSync(daemonLogPath, lines.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
+    for (const line of lines) options.onDaemonLog?.(redactSecrets(line, secrets));
+  };
+
   const collectOutputs = async (taskId: string | null) => {
-    const grab = async (name: string, cmd: string, raw = false) => {
+    const grab = async (name: string, cmd: string, raw = false, keepOnFailure = false) => {
       let content: string;
       try {
         // The patch is written byte for byte; trimming would corrupt it.
-        content = raw ? await run(cmd) : `${await sh(cmd)}\n`;
+        content = raw ? await run(cmd, 300_000) : `${await sh(cmd, 300_000)}\n`;
       } catch (error) {
-        content = `(failed: ${error instanceof Error ? error.message : error})\n`;
+        const message = error instanceof Error ? error.message : String(error);
+        if (keepOnFailure && existsSync(join(outputDir, name))) {
+          appendFileSync(
+            join(outputDir, name),
+            `(log copied live; full read failed: ${redactSecrets(message, secrets)})\n`,
+          );
+          files.push(name);
+          return;
+        }
+        content = `(failed: ${message})\n`;
       }
-      writeFileSync(join(outputDir, name), content);
+      mkdirSync(dirname(join(outputDir, name)), { recursive: true });
+      writeFileSync(join(outputDir, name), redactSecrets(content, secrets));
       files.push(name);
     };
-    await grab("daemon.log", `tail -500 ${DAEMON_LOG}`);
+    // Stop streaming but leave `tail` running: killing it would show up as a failed process in E2B's log.
+    await daemonTail?.disconnect?.().catch(() => {});
+    daemonTail = null;
+    await grab("daemon.log", `cat ${DAEMON_LOG}`, true, true);
     await grab(
       "changes.patch",
       `cur=$( ${worktreeTreeCmd} ) && cd ${REPO_DIR} && git diff --binary ${baselineTree ?? "HEAD"} "$cur"`,
@@ -333,9 +400,57 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
       await grab("task.json", `ravi tasks show ${taskId} --json`);
       await grab("TASK.md", `cat /home/user/.ravi/tasks/${taskId}/TASK.md`);
     }
+    if (!daemonStarted) return;
+
+    // Ravi's own timeline per session: prompts, turns, tool calls, deliveries, errors.
+    // The task's own work session can be gone from `sessions list` once the task
+    // ends, but its trace stays, so take its name from task.json as well.
+    const sessionNames: string[] = [];
+    try {
+      const taskJson = taskId ? readFileSync(join(outputDir, "task.json"), "utf8") : "";
+      for (const match of taskJson.matchAll(/"sessionName"\s*:\s*"([^"]+)"/g)) sessionNames.push(match[1]);
+    } catch {
+      // No task.json; the session list below still applies.
+    }
+    try {
+      const listed = JSON.parse(await sh("ravi sessions list --json --limit 500")) as {
+        items?: Array<{ name?: string; sessionKey?: string }>;
+        sessions?: Array<{ name?: string; sessionKey?: string }>;
+      };
+      for (const session of listed.items ?? listed.sessions ?? []) {
+        const name = session.name ?? session.sessionKey;
+        if (name) sessionNames.push(name);
+      }
+    } catch (error) {
+      step(`Could not list sessions: ${error instanceof Error ? error.message : error}`);
+    }
+    for (const name of new Set(sessionNames)) {
+      const base = `sessions/${safeFileName(name)}`;
+      await grab(`${base}.trace.txt`, `ravi sessions trace ${shellQuote(name)} --explain`);
+      await grab(`${base}.trace.jsonl`, `ravi sessions trace ${shellQuote(name)} --json`, true);
+    }
+
+    // Claude Code's own transcripts: every message, tool call and tool result.
+    let transcripts: string[] = [];
+    try {
+      transcripts = (await sh(`find ${CLAUDE_PROJECTS_DIR} -name '*.jsonl' -type f 2>/dev/null | sort`))
+        .split("\n")
+        .filter(Boolean);
+    } catch {
+      transcripts = [];
+    }
+    for (const path of transcripts.slice(0, MAX_TRANSCRIPTS)) {
+      const relative = path.slice(CLAUDE_PROJECTS_DIR.length + 1);
+      const name = relative.split("/").map(safeFileName).join("/");
+      await grab(`transcripts/${name}`, `cat ${shellQuote(path)}`, true);
+    }
+    if (transcripts.length > MAX_TRANSCRIPTS) {
+      step(`Saved ${MAX_TRANSCRIPTS} of ${transcripts.length} transcripts`);
+    }
   };
 
   let taskId: string | null = null;
+  let daemonStarted = false;
   let status = "unknown";
   let error: string | null = null;
   try {
@@ -366,6 +481,17 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
 
     step("Starting Ravi daemon");
     await sandbox.commands.run(`ravi daemon run </dev/null > ${DAEMON_LOG} 2>&1`, { background: true, timeoutMs: 0 });
+    daemonStarted = true;
+    try {
+      daemonTail = await sandbox.commands.run(`tail -n +1 -F ${DAEMON_LOG} 2>/dev/null`, {
+        background: true,
+        timeoutMs: 0,
+        onStdout: onDaemonChunk,
+      });
+    } catch (err) {
+      // Only the live copy is lost; the full log is still read at the end.
+      step(`Live daemon log unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
     await sh(
       `for i in $(seq 1 60); do grep -q 'Daemon ready' ${DAEMON_LOG} && exit 0; sleep 1; done; ` +
         `tail -20 ${DAEMON_LOG} >&2; exit 1`,
@@ -444,6 +570,30 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     }
   }
 
+  // E2B keeps these after the sandbox is gone, including why it ended.
+  let e2b: E2bTelemetrySummary | null = null;
+  try {
+    const collected = await (options.collectTelemetry ?? collectE2bTelemetry)({
+      sandboxId: sandbox.sandboxId,
+      apiKey: options.credentials.e2bApiKey,
+      outputDir,
+      secrets,
+      waitForEnd: true,
+    });
+    if (collected) {
+      e2b = collected.summary;
+      files.push(...collected.files);
+      step(
+        `E2B: ${e2b.processes} processes (${e2b.failedProcesses} failed), ` +
+          `peak CPU ${e2b.peakCpuPct ?? "?"}%, peak memory ${e2b.peakMemMB ?? "?"}/${e2b.memTotalMB ?? "?"} MB` +
+          (e2b.killReason ? `, ended by ${e2b.killReason}` : "") +
+          (e2b.errors.length ? ` (missing: ${e2b.errors.join("; ")})` : ""),
+      );
+    }
+  } catch (err) {
+    step(`Could not fetch E2B logs: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return {
     sandboxId: sandbox.sandboxId,
     taskId,
@@ -453,5 +603,6 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     files,
     durationMs: now() - startedAt,
     error,
+    e2b,
   };
 }

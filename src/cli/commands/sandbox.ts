@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
@@ -17,6 +18,23 @@ import {
   resolveSandboxCredentials,
   runE2bSandboxTask,
 } from "../../sandbox/e2b.js";
+import { collectE2bTelemetry, type E2bTelemetrySummary } from "../../sandbox/observe.js";
+import { getRaviStateDir } from "../../utils/paths.js";
+
+const e2bTelemetrySummarySchema = z.object({
+  logLines: z.number(),
+  processes: z.number(),
+  failedProcesses: z.number(),
+  events: z.array(z.string()),
+  killReason: z.string().nullable(),
+  executionMs: z.number().nullable(),
+  metricSamples: z.number(),
+  peakCpuPct: z.number().nullable(),
+  peakMemMB: z.number().nullable(),
+  memTotalMB: z.number().nullable(),
+  peakDiskMB: z.number().nullable(),
+  errors: z.array(z.string()),
+});
 
 const sandboxRunReturnSchema = z.object({
   sandboxId: z.string(),
@@ -27,6 +45,13 @@ const sandboxRunReturnSchema = z.object({
   files: z.array(z.string()),
   durationMs: z.number(),
   error: z.string().nullable(),
+  e2b: e2bTelemetrySummarySchema.nullable(),
+});
+const sandboxLogsReturnSchema = z.object({
+  sandboxId: z.string(),
+  outputDir: z.string(),
+  files: z.array(z.string()),
+  e2b: e2bTelemetrySummarySchema,
 });
 const sandboxTemplateBuildReturnSchema = z.object({
   name: z.string(),
@@ -56,6 +81,33 @@ function readInstructions(task?: string, taskFile?: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function printTelemetry(summary: E2bTelemetrySummary): void {
+  console.log(
+    `E2B:      ${summary.processes} processes (${summary.failedProcesses} failed), ` +
+      `${summary.logLines} log lines, events ${summary.events.join(" > ") || "none"}`,
+  );
+  console.log(
+    `          peak CPU ${summary.peakCpuPct ?? "?"}%, memory ${summary.peakMemMB ?? "?"}/${summary.memTotalMB ?? "?"} MB, ` +
+      `disk ${summary.peakDiskMB ?? "?"} MB` +
+      (summary.killReason ? `, ended by ${summary.killReason}` : "") +
+      (summary.executionMs !== null ? ` after ${(summary.executionMs / 1000).toFixed(1)}s` : ""),
+  );
+  if (summary.errors.length) console.log(`          missing: ${summary.errors.join("; ")}`);
+}
+
+/** Credential values to mask in saved E2B logs; best effort, from the same env `run` reads. */
+function knownSecrets(apiKey: string): string[] {
+  const secrets = [apiKey];
+  try {
+    const credentials = resolveSandboxCredentials();
+    secrets.push(...Object.values(credentials.agentEnv));
+    if (credentials.githubToken) secrets.push(credentials.githubToken);
+  } catch {
+    // No Claude credentials here; the E2B key is still masked.
+  }
+  return secrets;
 }
 
 @Group({
@@ -126,6 +178,11 @@ export class SandboxCommands {
       description: "Where to save outputs (default ~/.ravi/sandbox-runs/<id>)",
     })
     output?: string,
+    @Option({
+      flags: "--follow",
+      description: "Print the sandbox's daemon log live while the task runs",
+    })
+    follow?: boolean,
     @Option({ flags: "--json", description: "Print the run summary as JSON" })
     asJson?: boolean,
   ) {
@@ -154,6 +211,7 @@ export class SandboxCommands {
         outputDir: output,
         credentials,
         onStep: asJson ? undefined : (message) => console.log(message),
+        onDaemonLog: follow && !asJson ? (line) => console.log(`  daemon | ${line}`) : undefined,
       });
     } catch (error) {
       fail(errorMessage(error));
@@ -167,8 +225,58 @@ export class SandboxCommands {
       console.log(`Sandbox:  ${result.sandboxId}${result.kept ? " (paused)" : ""}`);
       console.log(`Outputs:  ${result.outputDir}`);
       if (result.error) console.log(`Error:    ${result.error}`);
+      if (result.e2b) printTelemetry(result.e2b);
     }
     if (result.status !== "done") process.exitCode = 1;
+    return result;
+  }
+
+  @Command({
+    name: "logs",
+    description: "Save what E2B recorded about a sandbox: process log, lifecycle events and CPU/memory metrics",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sandbox",
+    action: "logs",
+    risk: "low",
+  })
+  // Writes into a host directory, like `sandbox run`.
+  @CliOnly()
+  @Returns(sandboxLogsReturnSchema)
+  async logs(
+    @Arg("sandboxId", { description: "E2B sandbox id (kept by E2B for about 7 days after it ends)" })
+    sandboxId: string,
+    @Option({
+      flags: "--output <dir>",
+      description: "Where to save them (default ~/.ravi/sandbox-runs/<id>, under e2b/)",
+    })
+    output?: string,
+    @Option({ flags: "--json", description: "Print the summary as JSON" })
+    asJson?: boolean,
+  ) {
+    if (!sandboxId?.trim()) fail("sandboxId is required.");
+    let apiKey: string;
+    try {
+      apiKey = resolveE2bApiKey();
+    } catch (error) {
+      fail(errorMessage(error));
+    }
+    const outputDir = output ?? join(getRaviStateDir(), "sandbox-runs", sandboxId);
+    let collected;
+    try {
+      collected = await collectE2bTelemetry({ sandboxId, apiKey, outputDir, secrets: knownSecrets(apiKey) });
+    } catch (error) {
+      fail(errorMessage(error));
+    }
+    const result = { sandboxId, outputDir, files: collected.files, e2b: collected.summary };
+    if (asJson) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printTelemetry(collected.summary);
+      console.log(`Saved:    ${collected.files.map((file) => join(outputDir, file)).join("\n          ")}`);
+    }
+    if (collected.summary.errors.length === 3) process.exitCode = 1;
     return result;
   }
 }

@@ -8,6 +8,7 @@ import {
   githubCloneAuth,
   resolveSandboxCredentials,
   runE2bSandboxTask,
+  safeFileName,
   shellQuote,
   type CreateSandboxInput,
   type SandboxHandle,
@@ -25,6 +26,7 @@ afterEach(() => {
 });
 
 interface FakeOptions {
+  daemonLogFails?: boolean;
   statuses?: string[];
   failOn?: RegExp;
   failWith?: unknown;
@@ -41,12 +43,19 @@ function fakeSandbox(options: FakeOptions = {}) {
     paused: false,
     created: null as CreateSandboxInput | null,
     cloned: null as unknown,
+    tailDisconnected: false,
   };
   const handle: SandboxHandle = {
     sandboxId: "sbx-test",
     commands: {
-      async run(cmd) {
+      async run(cmd, opts) {
         commands.push(cmd);
+        if (cmd.startsWith("tail -n +1 -F")) {
+          // Two whole lines and a partial one, split across chunks.
+          opts?.onStdout?.("daemon line 1\ndaemon ");
+          opts?.onStdout?.("line 2 tok-secret-123\npartial");
+          return { disconnect: async () => (state.tailDisconnected = true) };
+        }
         if (options.failOn?.test(cmd)) throw options.failWith ?? new Error(`boom: ${cmd}`);
         if (cmd.startsWith("ravi tasks create")) return { stdout: JSON.stringify({ task: { id: "task-1" } }) };
         if (cmd.startsWith("ravi tasks show")) {
@@ -55,6 +64,7 @@ function fakeSandbox(options: FakeOptions = {}) {
             stdout: JSON.stringify({
               task: {
                 id: "task-1",
+                sessionName: "task-1-work",
                 status,
                 progress: status === "done" ? 100 : 10,
               },
@@ -63,6 +73,18 @@ function fakeSandbox(options: FakeOptions = {}) {
         }
         if (cmd.includes("git diff")) return { stdout: PATCH };
         if (cmd.includes("git write-tree")) return { stdout: "tree-base\n" };
+        if (cmd.startsWith("cat /home/user/.ravi/daemon.log")) {
+          if (options.daemonLogFails) throw new Error("sandbox gone");
+          return { stdout: "full daemon log tok-secret-123\n" };
+        }
+        if (cmd.startsWith("ravi sessions list")) {
+          return { stdout: JSON.stringify({ items: [{ name: "worker-task-1" }, { name: "agent:operator:main" }] }) };
+        }
+        if (cmd.startsWith("ravi sessions trace")) return { stdout: `trace for ${cmd}\n` };
+        if (cmd.startsWith("find /home/user/.claude/projects")) {
+          return { stdout: "/home/user/.claude/projects/-home-user-work-repo/abc.jsonl\n" };
+        }
+        if (cmd.startsWith("cat '/home/user/.claude/projects/")) return { stdout: '{"type":"user"}\n' };
         if (cmd.startsWith("cat ")) return { stdout: "# TASK" };
         return { stdout: "" };
       },
@@ -92,8 +114,11 @@ function fakeSandbox(options: FakeOptions = {}) {
 
 const credentials = {
   e2bApiKey: "e2b_test",
-  agentEnv: { CLAUDE_CODE_OAUTH_TOKEN: "tok" },
+  agentEnv: { CLAUDE_CODE_OAUTH_TOKEN: "tok-secret-123" },
 };
+
+// Never reach the real E2B API from tests.
+const noTelemetry = async () => null;
 
 describe("resolveSandboxCredentials", () => {
   it("accepts RAVI_-prefixed Claude credentials and maps them to the standard names", () => {
@@ -128,6 +153,7 @@ describe("runE2bSandboxTask", () => {
       credentials,
       outputDir,
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
 
@@ -140,7 +166,7 @@ describe("runE2bSandboxTask", () => {
     });
     expect(fake.state.killed).toBe(true);
     expect(fake.state.created?.envs).toMatchObject({
-      CLAUDE_CODE_OAUTH_TOKEN: "tok",
+      CLAUDE_CODE_OAUTH_TOKEN: "tok-secret-123",
     });
     expect(fake.state.cloned).toMatchObject({
       url: "https://github.com/o/r.git",
@@ -148,7 +174,28 @@ describe("runE2bSandboxTask", () => {
     });
     expect(fake.commands.some((cmd) => cmd.includes(`--instructions 'Fix it'\\''s typo'`))).toBe(true);
     expect(fake.commands.some((cmd) => cmd.includes(".git/info/exclude"))).toBe(true);
-    expect(result.files.sort()).toEqual(["TASK.md", "changes.patch", "daemon.log", "task.json"]);
+    expect(result.files.sort()).toEqual([
+      "TASK.md",
+      "changes.patch",
+      "daemon.log",
+      "run.log",
+      "sessions/agent_operator_main.trace.jsonl",
+      "sessions/agent_operator_main.trace.txt",
+      "sessions/task-1-work.trace.jsonl",
+      "sessions/task-1-work.trace.txt",
+      "sessions/worker-task-1.trace.jsonl",
+      "sessions/worker-task-1.trace.txt",
+      "task.json",
+      "transcripts/-home-user-work-repo/abc.jsonl",
+    ]);
+    // The full log replaces the live copy, with credentials masked.
+    expect(readFileSync(join(outputDir, "daemon.log"), "utf8")).toBe("full daemon log ***\n");
+    expect(fake.state.tailDisconnected).toBe(true);
+    expect(readFileSync(join(outputDir, "run.log"), "utf8")).toContain("Creating sandbox from ravi-runner");
+    expect(readFileSync(join(outputDir, "sessions/worker-task-1.trace.txt"), "utf8")).toContain("--explain");
+    expect(readFileSync(join(outputDir, "transcripts/-home-user-work-repo/abc.jsonl"), "utf8")).toBe(
+      '{"type":"user"}\n',
+    );
     // Written byte for byte: trimming would drop the blank context line and the final newline.
     expect(readFileSync(join(outputDir, "changes.patch"), "utf8")).toBe(PATCH);
     // The patch is taken against the tree captured after Ravi scaffolded the worker's cwd.
@@ -171,6 +218,7 @@ describe("runE2bSandboxTask", () => {
       credentials: { ...credentials, githubToken: "ghp_secret" },
       outputDir: tempDir(),
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
     expect(fake.state.cloned).not.toHaveProperty("password");
@@ -196,6 +244,7 @@ describe("runE2bSandboxTask", () => {
       credentials,
       outputDir: tempDir(),
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
     expect(result.status).toBe("error");
@@ -216,6 +265,7 @@ describe("runE2bSandboxTask", () => {
       credentials,
       outputDir: tempDir(),
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       exit: (code) => {
         exits.push(code);
       },
@@ -242,6 +292,7 @@ describe("runE2bSandboxTask", () => {
       outputDir,
       keep: true,
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
 
@@ -264,6 +315,7 @@ describe("runE2bSandboxTask", () => {
       outputDir: tempDir(),
       timeoutMin: 1,
       createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
       now: () => clock,
       sleep: async (ms) => {
         clock += ms;
@@ -289,6 +341,7 @@ describe("runE2bSandboxTask", () => {
       credentials,
       outputDir: tempDir(),
       createSandbox: create,
+      collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
 
@@ -308,9 +361,78 @@ describe("runE2bSandboxTask", () => {
         credentials,
         outputDir: join(blocker, "sub"),
         createSandbox: fake.create,
+        collectTelemetry: noTelemetry,
         sleep: async () => {},
       }),
     ).rejects.toThrow();
     expect(fake.state.killed).toBe(true);
+  });
+});
+
+describe("sandbox observability", () => {
+  it("keeps the live daemon log when the final read fails and streams whole lines", async () => {
+    const fake = fakeSandbox({ daemonLogFails: true });
+    const outputDir = tempDir();
+    const lines: string[] = [];
+    await runE2bSandboxTask({
+      repo: "https://github.com/o/r.git",
+      instructions: "x",
+      credentials,
+      outputDir,
+      createSandbox: fake.create,
+      collectTelemetry: noTelemetry,
+      onDaemonLog: (line) => lines.push(line),
+      sleep: async () => {},
+    });
+    expect(lines).toEqual(["daemon line 1", "daemon line 2 ***"]);
+    const log = readFileSync(join(outputDir, "daemon.log"), "utf8");
+    expect(log).toStartWith("daemon line 1\ndaemon line 2 ***\n");
+    expect(log).toContain("full read failed: ");
+    expect(log).not.toContain("tok-secret-123");
+  });
+
+  it("collects E2B telemetry after the sandbox is killed and returns its summary", async () => {
+    const fake = fakeSandbox();
+    let killedFirst = false;
+    const result = await runE2bSandboxTask({
+      repo: "https://github.com/o/r.git",
+      instructions: "x",
+      credentials,
+      outputDir: tempDir(),
+      createSandbox: fake.create,
+      collectTelemetry: async (input) => {
+        killedFirst = fake.state.killed;
+        expect(input).toMatchObject({ sandboxId: "sbx-test", apiKey: "e2b_test", waitForEnd: true });
+        expect(input.secrets).toContain("tok-secret-123");
+        return {
+          files: ["e2b/summary.json"],
+          summary: {
+            logLines: 3,
+            processes: 1,
+            failedProcesses: 0,
+            events: ["created", "killed"],
+            killReason: "request",
+            executionMs: 1000,
+            metricSamples: 1,
+            peakCpuPct: 5,
+            peakMemMB: 50,
+            memTotalMB: 512,
+            peakDiskMB: 100,
+            errors: [],
+          },
+        };
+      },
+      sleep: async () => {},
+    });
+    expect(killedFirst).toBe(true);
+    expect(result.e2b?.killReason).toBe("request");
+    expect(result.files).toContain("e2b/summary.json");
+  });
+
+  it("makes session names safe file names", () => {
+    expect(safeFileName("agent:main:dm:+5511")).toBe("agent_main_dm_5511");
+    expect(safeFileName("../..")).toBe("unnamed");
+    expect(safeFileName("..")).toBe("unnamed");
+    expect(safeFileName("///")).toBe("unnamed");
   });
 });
