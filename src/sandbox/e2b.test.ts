@@ -42,7 +42,8 @@ function fakeSandbox(options: FakeOptions = {}) {
     kills: 0,
     paused: false,
     created: null as CreateSandboxInput | null,
-    cloned: null as unknown,
+    cloneTimeoutMs: 0 as number | undefined,
+    written: {} as Record<string, string>,
     tailDisconnected: false,
   };
   const handle: SandboxHandle = {
@@ -50,6 +51,7 @@ function fakeSandbox(options: FakeOptions = {}) {
     commands: {
       async run(cmd, opts) {
         commands.push(cmd);
+        if (cmd.includes(" clone --depth 50 ")) state.cloneTimeoutMs = opts?.timeoutMs;
         if (cmd.startsWith("tail -n +1 -F")) {
           // Two whole lines and a partial one, split across chunks.
           opts?.onStdout?.("daemon line 1\ndaemon ");
@@ -89,9 +91,9 @@ function fakeSandbox(options: FakeOptions = {}) {
         return { stdout: "" };
       },
     },
-    git: {
-      async clone(url, opts) {
-        state.cloned = { url, ...opts };
+    files: {
+      async write(path, data) {
+        state.written[path] = data;
       },
     },
     async kill() {
@@ -168,10 +170,9 @@ describe("runE2bSandboxTask", () => {
     expect(fake.state.created?.envs).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: "tok-secret-123",
     });
-    expect(fake.state.cloned).toMatchObject({
-      url: "https://github.com/o/r.git",
-      branch: "dev",
-    });
+    expect(fake.commands).toContain(
+      "GIT_TERMINAL_PROMPT=0 git clone --depth 50 --branch 'dev' --single-branch 'https://github.com/o/r.git' /home/user/work/repo",
+    );
     expect(fake.commands.some((cmd) => cmd.includes(`--instructions 'Fix it'\\''s typo'`))).toBe(true);
     expect(fake.commands.some((cmd) => cmd.includes(".git/info/exclude"))).toBe(true);
     expect(result.files.sort()).toEqual([
@@ -207,7 +208,7 @@ describe("runE2bSandboxTask", () => {
     expect(fake.commands.some((cmd) => cmd.includes("git diff --binary tree-base"))).toBe(true);
     // `$((` would make bash parse the tree command as arithmetic.
     expect(fake.commands.some((cmd) => cmd.includes("$(("))).toBe(false);
-    expect(fake.state.cloned).toMatchObject({ timeoutMs: 600_000 });
+    expect(fake.state.cloneTimeoutMs).toBe(600_000);
   });
 
   it("sends GITHUB_TOKEN only when cloning from github.com over https", async () => {
@@ -221,7 +222,28 @@ describe("runE2bSandboxTask", () => {
       collectTelemetry: noTelemetry,
       sleep: async () => {},
     });
-    expect(fake.state.cloned).not.toHaveProperty("password");
+    expect(fake.state.written).toEqual({});
+    expect(fake.commands.join("\n")).not.toContain("ghp_secret");
+
+    // github.com: the token goes through a credential file, never a command line or env var,
+    // because E2B logs every command's args and envs.
+    const github = fakeSandbox();
+    await runE2bSandboxTask({
+      repo: "https://github.com/o/r.git",
+      instructions: "x",
+      credentials: { ...credentials, githubToken: "ghp_secret/+" },
+      outputDir: tempDir(),
+      createSandbox: github.create,
+      collectTelemetry: noTelemetry,
+      sleep: async () => {},
+    });
+    expect(github.state.written).toEqual({
+      "/home/user/.ravi-clone-credentials": "https://x-access-token:ghp_secret%2F%2B@github.com\n",
+    });
+    expect(github.commands.join("\n")).not.toContain("ghp_secret");
+    const clone = github.commands.find((cmd) => cmd.includes(" clone --depth 50 "));
+    expect(clone).toContain("credential.helper='store --file=/home/user/.ravi-clone-credentials'");
+    expect(clone).toEndWith("rc=$?; rm -f /home/user/.ravi-clone-credentials; exit $rc");
 
     expect(githubCloneAuth("https://github.com/o/r.git", "t")).toEqual({ username: "x-access-token", password: "t" });
     expect(githubCloneAuth("http://github.com/o/r.git", "t")).toBeNull();

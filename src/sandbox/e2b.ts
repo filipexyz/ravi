@@ -39,6 +39,10 @@ const MAX_TRANSCRIPTS = 50;
 const TERMINAL_STATUSES = new Set(["done", "failed", "blocked"]);
 const CLAUDE_CREDENTIAL_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
 const CLONE_TIMEOUT_MS = 10 * 60_000;
+// GITHUB_TOKEN reaches git through this file, never a command line or a per-command
+// env var: E2B logs both (args and envs) and keeps those logs for days. File writes
+// are logged by path only.
+const GIT_CREDENTIALS_FILE = "/home/user/.ravi-clone-credentials";
 const SIGNAL_CLEANUP_TIMEOUT_MS = 15_000;
 
 export class SandboxConfigError extends Error {
@@ -193,18 +197,8 @@ export interface SandboxHandle {
       opts?: { timeoutMs?: number; background?: boolean; onStdout?: (data: string) => void },
     ): Promise<{ stdout?: string; stderr?: string; exitCode?: number; disconnect?: () => Promise<unknown> }>;
   };
-  git: {
-    clone(
-      url: string,
-      opts: {
-        path: string;
-        branch?: string;
-        depth?: number;
-        username?: string;
-        password?: string;
-        timeoutMs?: number;
-      },
-    ): Promise<unknown>;
+  files: {
+    write(path: string, data: string): Promise<unknown>;
   };
   kill(): Promise<unknown>;
   pause(): Promise<unknown>;
@@ -462,18 +456,26 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
 
     step(`Cloning ${options.repo}`);
     const githubToken = options.credentials.githubToken;
+    const auth = githubCloneAuth(options.repo, githubToken);
+    const branchArgs = options.branch ? `--branch ${shellQuote(options.branch)} --single-branch ` : "";
+    const cloneArgs = `clone --depth 50 ${branchArgs}${shellQuote(options.repo)} ${REPO_DIR}`;
+    let cloneCmd = `git ${cloneArgs}`;
+    if (auth) {
+      await sandbox.files.write(
+        GIT_CREDENTIALS_FILE,
+        `https://${auth.username}:${encodeURIComponent(auth.password)}@github.com\n`,
+      );
+      // `git -c` applies to this clone only; the file is removed whatever the outcome.
+      cloneCmd =
+        `git -c credential.helper=${shellQuote(`store --file=${GIT_CREDENTIALS_FILE}`)} ${cloneArgs}; ` +
+        `rc=$?; rm -f ${GIT_CREDENTIALS_FILE}; exit $rc`;
+    }
     try {
-      await sandbox.git.clone(options.repo, {
-        path: REPO_DIR,
-        branch: options.branch,
-        depth: 50,
-        timeoutMs: CLONE_TIMEOUT_MS,
-        ...githubCloneAuth(options.repo, githubToken),
-      });
+      await run(`GIT_TERMINAL_PROMPT=0 ${cloneCmd}`, CLONE_TIMEOUT_MS);
     } catch (err) {
-      const cloneError = describeCommandError(`git clone ${options.repo}`, err);
-      if (githubToken) cloneError.message = cloneError.message.replaceAll(githubToken, "***");
-      throw cloneError;
+      if (auth) await run(`rm -f ${GIT_CREDENTIALS_FILE}`).catch(() => {});
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(githubToken ? message.replaceAll(githubToken, "***") : message);
     }
     // Ravi writes .claude/settings.json into the agent cwd; keep it out of the
     // patch unless the repo already tracks that file.
