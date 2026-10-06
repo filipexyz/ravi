@@ -31,3 +31,14 @@ describe("EvalTaskSpecSchema", () => {
     expect(parsed.session.agentId).toBe("dev");
   });
 });
+
+describe("eval run command", () => {
+  it("waits on the remote gateway longer than the longest eval run", async () => {
+    await import("reflect-metadata");
+    const { getCommandsMetadata } = await import("../cli/decorators.js");
+    const { EvalCommands } = await import("../cli/commands/eval.js");
+    const { EVAL_MAX_TIMEOUT_MS } = await import("./spec.js");
+    const run = getCommandsMetadata(EvalCommands).find((command) => command.name === "run");
+    expect(run?.remoteTimeoutMs).toBeGreaterThan(EVAL_MAX_TIMEOUT_MS);
+  });
+});

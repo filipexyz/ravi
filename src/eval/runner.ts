@@ -1,13 +1,38 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getContext } from "../cli/context.js";
+import {
+  CLI_TRANSCRIPT_PERSIST_TIMEOUT_MS,
+  readThisTurnAssistantText,
+  sanitizeCliAssistantText,
+  snapshotTranscriptCursor,
+} from "../cli/session-cli-surface.js";
+import {
+  SESSION_SEND_TERMINAL_TYPES,
+  createSessionSendWaitState,
+  isSessionSendWaitTerminal,
+  noteSessionSendWaitRuntimeEvent,
+} from "../cli/session-send-wait.js";
+import { getRecentHistory } from "../db.js";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { loadRouterConfig, expandHome } from "../router/index.js";
+import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import type { SessionEntry } from "../router/types.js";
 import { gradeEvalRun, type EvalExecutionResult, type EvalGrade } from "./grader.js";
-import { captureEvalSnapshot, diffEvalSnapshots, type EvalSnapshot, type EvalSnapshotDiff } from "./snapshot.js";
+import {
+  buildEvalTranscriptRun,
+  captureEvalSnapshot,
+  diffEvalSnapshots,
+  findEvalPromptIndex,
+  readEvalSessionTranscript,
+  type EvalSnapshot,
+  type EvalSnapshotDiff,
+  type EvalTranscriptRead,
+  type EvalTranscriptRunScope,
+} from "./snapshot.js";
 import type { LoadedEvalTaskSpec } from "./spec.js";
 
 export interface EvalRunResult {
@@ -33,6 +58,7 @@ type StreamTerminalState =
 
 export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string): Promise<EvalRunResult> {
   const session = resolveOrCreateEvalSession(task);
+  const sessionName = session.name ?? task.spec.session.name;
   const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(task.spec.id)}`;
   const outputRoot = outputDir ?? join(homedir(), ".ravi", "evals", task.spec.id, runId);
 
@@ -41,15 +67,35 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
   const before = captureEvalSnapshot(task, session);
   writeFileSync(join(outputRoot, "before.json"), JSON.stringify(before, null, 2));
 
-  const execution = await runPromptAndWait(
-    session.name ?? task.spec.session.name,
-    task.spec.prompt,
-    task.spec.runner.timeoutMs,
-  );
+  // The before snapshot may skip the transcript (artifacts.transcript=false),
+  // but finding this run's turn always needs the transcript length.
+  const beforeTranscript = readEvalSessionTranscript(session);
+  const runScope: EvalTranscriptRunScope = {
+    prompt: task.spec.prompt,
+    sinceMessageCount: beforeTranscript.exists ? beforeTranscript.messages.length : 0,
+  };
+  const readRunTranscript = (): EvalTranscriptRead => readEvalSessionTranscript(resolveSession(sessionName) ?? session);
+
+  const execution = await runPromptAndWait({
+    sessionName,
+    prompt: task.spec.prompt,
+    timeoutMs: task.spec.runner.timeoutMs,
+    historyCursor: snapshotTranscriptCursor(getRecentHistory(sessionName, 1)),
+    isOwnTurn: () => {
+      const read = readRunTranscript();
+      return read.exists ? findEvalPromptIndex(read.messages, runScope.prompt, runScope.sinceMessageCount) >= 0 : null;
+    },
+    readOwnTurnText: () => {
+      const read = readRunTranscript();
+      if (!read.exists) return null;
+      const run = buildEvalTranscriptRun(read.messages, runScope);
+      return run.promptIndex >= 0 && run.assistantText ? sanitizeCliAssistantText(run.assistantText) : null;
+    },
+  });
   writeFileSync(join(outputRoot, "execution.json"), JSON.stringify(execution, null, 2));
 
   const refreshedSession = resolveSession(session.name ?? session.sessionKey) ?? session;
-  const after = captureEvalSnapshot(task, refreshedSession);
+  const after = captureEvalSnapshot(task, refreshedSession, runScope);
   const diff = diffEvalSnapshots(before, after);
   const grade = gradeEvalRun(task, execution, before, after, diff);
 
@@ -107,14 +153,40 @@ function resolveOrCreateEvalSession(task: LoadedEvalTaskSpec): SessionEntry {
   return created;
 }
 
-async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: number): Promise<EvalExecutionResult> {
+interface RunPromptAndWaitInput {
+  sessionName: string;
+  prompt: string;
+  timeoutMs: number;
+  /** Highest message id in the session history before the prompt was sent. */
+  historyCursor: number;
+  /**
+   * Whether the session transcript shows this run's prompt was consumed;
+   * null when there is no readable transcript to tell turns apart.
+   */
+  isOwnTurn: () => boolean | null;
+  /** Assistant text that followed this run's prompt in the transcript, if readable. */
+  readOwnTurnText: () => string | null;
+}
+
+/**
+ * Send the eval prompt and wait for the turn that consumed it.
+ *
+ * The prompt goes out as a CLI-destination turn (like `ravi sessions send`
+ * from a terminal): the reply stays with the eval instead of being emitted to
+ * the session's chat, so the answer is read back from the transcript, not
+ * from `.response` events. A terminal event only ends the wait once the
+ * transcript shows this run's prompt; a turn that was already running when
+ * the eval started (e.g. a previous run that timed out) ends first and is
+ * ignored. Claude emits no `turn.started`, so the transcript is also what
+ * tells a queued prompt's own terminal apart.
+ */
+async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecutionResult> {
+  const { sessionName, prompt, timeoutMs } = input;
   const startedAt = Date.now();
-  let responseText = "";
   let settled = false;
   let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
 
   const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
-  const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
   const responseStream = nats.subscribe(`ravi.session.${sessionName}.response`);
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -122,7 +194,6 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
   const cleanup = () => {
     if (timeoutId) clearTimeout(timeoutId);
     runtimeStream.return(undefined);
-    claudeStream.return(undefined);
     responseStream.return(undefined);
   };
 
@@ -140,9 +211,16 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
 
     (async () => {
       try {
+        let waitState = createSessionSendWaitState();
         for await (const event of runtimeStream) {
           const data = event.data as Record<string, unknown>;
           const type = data.type;
+          waitState = noteSessionSendWaitRuntimeEvent(waitState, type);
+          if (typeof type !== "string" || !SESSION_SEND_TERMINAL_TYPES.has(type)) continue;
+          // The transcript is the reliable signal. Without one, fall back to the
+          // event heuristics `ravi sessions send --wait` uses.
+          const ownTurn = input.isOwnTurn() ?? isSessionSendWaitTerminal(waitState, type);
+          if (!ownTurn) continue;
           if (type === "turn.complete") {
             settle({ kind: "complete" });
             break;
@@ -160,31 +238,15 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
         // Ignore subscription shutdown.
       }
     })();
-
-    (async () => {
-      try {
-        for await (const event of claudeStream) {
-          if ((event.data as Record<string, unknown>).type === "result") {
-            settle({ kind: "complete" });
-            break;
-          }
-        }
-      } catch {
-        // Ignore subscription shutdown.
-      }
-    })();
   });
 
-  const collectResponse = (async () => {
+  const watchErrors = (async () => {
     try {
       for await (const event of responseStream) {
         const data = event.data as Record<string, unknown>;
         if (typeof data.error === "string" && data.error.trim()) {
           settleCompletion?.({ kind: "failed", error: data.error });
           break;
-        }
-        if (typeof data.response === "string") {
-          responseText += data.response;
         }
       }
     } catch {
@@ -196,11 +258,15 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
     prompt,
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
+    _cliDestination: true,
+    _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
   });
   const completionState = await completion;
   cleanup();
-  await Promise.race([collectResponse, new Promise((resolve) => setTimeout(resolve, 100))]);
+  await Promise.race([watchErrors, new Promise((resolve) => setTimeout(resolve, 100))]);
 
+  const responseText =
+    completionState.kind === "timeout" ? (input.readOwnTurnText() ?? "") : await readTurnResponse(input);
   const durationMs = Date.now() - startedAt;
   if (completionState.kind === "failed" || completionState.kind === "interrupted") {
     return {
@@ -225,6 +291,22 @@ async function runPromptAndWait(sessionName: string, prompt: string, timeoutMs: 
     responseText,
     durationMs,
   };
+}
+
+/**
+ * The provider may flush the final assistant entry just after the terminal
+ * event, so poll briefly. Sessions without a readable transcript fall back to
+ * the assistant rows Ravi stored after the prompt.
+ */
+async function readTurnResponse(input: RunPromptAndWaitInput): Promise<string> {
+  const deadline = Date.now() + CLI_TRANSCRIPT_PERSIST_TIMEOUT_MS;
+  for (;;) {
+    const fromTranscript = input.readOwnTurnText();
+    if (fromTranscript !== null) return fromTranscript;
+    const fromHistory = readThisTurnAssistantText(getRecentHistory(input.sessionName, 50), input.historyCursor);
+    if (Date.now() >= deadline) return fromHistory?.text ?? "";
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 function extractRuntimeError(data: Record<string, unknown>): string | undefined {

@@ -31,7 +31,23 @@ export interface EvalSnapshotTranscriptArtifact {
   messageCount: number;
   combinedText: string;
   messages: EvalSnapshotTranscriptMessage[];
+  /** Transcript entries this eval run added after its own prompt (set on the after snapshot). */
+  run?: EvalSnapshotTranscriptRun;
   reason?: string;
+}
+
+export interface EvalSnapshotTranscriptRun {
+  /** Index of the eval prompt in the transcript, or -1 when it was not found. */
+  promptIndex: number;
+  messageCount: number;
+  combinedText: string;
+  assistantText: string;
+}
+
+export interface EvalTranscriptRunScope {
+  prompt: string;
+  /** Message count of the before snapshot; the eval prompt can only appear at or after it. */
+  sinceMessageCount: number;
 }
 
 export interface EvalSnapshot {
@@ -58,11 +74,15 @@ export interface EvalSnapshotDiff {
 const TEXT_SIZE_LIMIT = 200_000;
 const PREVIEW_LIMIT = 280;
 
-export function captureEvalSnapshot(task: LoadedEvalTaskSpec, session: SessionEntry | null): EvalSnapshot {
+export function captureEvalSnapshot(
+  task: LoadedEvalTaskSpec,
+  session: SessionEntry | null,
+  runScope?: EvalTranscriptRunScope,
+): EvalSnapshot {
   const files = task.spec.artifacts.files.map((artifact) =>
     snapshotFileArtifact(resolveEvalSpecPath(task, artifact.path), artifact.label),
   );
-  const transcript = task.spec.artifacts.transcript ? snapshotTranscriptArtifact(session) : null;
+  const transcript = task.spec.artifacts.transcript ? snapshotTranscriptArtifact(session, runScope) : null;
   return {
     takenAt: new Date().toISOString(),
     files,
@@ -163,46 +183,92 @@ function snapshotFileArtifact(absolutePath: string, label?: string): EvalSnapsho
   };
 }
 
-function snapshotTranscriptArtifact(session: SessionEntry | null): EvalSnapshotTranscriptArtifact {
-  if (!session) {
-    return {
-      enabled: true,
-      exists: false,
-      messageCount: 0,
-      combinedText: "",
-      messages: [],
-      reason: "Session not found.",
-    };
-  }
+export type EvalTranscriptRead =
+  | { exists: true; path: string; messages: EvalSnapshotTranscriptMessage[] }
+  | { exists: false; path?: string; reason: string };
 
+/** Read the session's runtime transcript, normalized to user/assistant text. */
+export function readEvalSessionTranscript(session: SessionEntry | null): EvalTranscriptRead {
+  if (!session) return { exists: false, reason: "Session not found." };
   const located = locateRuntimeTranscript({
     runtimeProvider: session.runtimeProvider,
     providerSessionId: session.providerSessionId,
     sdkSessionId: session.sdkSessionId,
     agentCwd: session.agentCwd,
   });
-
   if (!located.path || !existsSync(located.path)) {
+    return { exists: false, path: located.path, reason: located.reason ?? "Transcript not found." };
+  }
+  return {
+    exists: true,
+    path: located.path,
+    messages: extractNormalizedTranscriptMessages(readFileSync(located.path, "utf8")),
+  };
+}
+
+/**
+ * Index of the eval prompt in the transcript. Only entries at or after
+ * `sinceMessageCount` count, so an earlier run of the same spec on the same
+ * session is never mistaken for this one.
+ */
+export function findEvalPromptIndex(
+  messages: EvalSnapshotTranscriptMessage[],
+  prompt: string,
+  sinceMessageCount: number,
+): number {
+  const needle = prompt.trim();
+  if (!needle) return -1;
+  for (let index = messages.length - 1; index >= Math.max(0, sinceMessageCount); index--) {
+    const message = messages[index];
+    if (message?.role === "user" && message.text.includes(needle)) return index;
+  }
+  return -1;
+}
+
+/** The entries that follow this run's prompt: what the eval actually produced. */
+export function buildEvalTranscriptRun(
+  messages: EvalSnapshotTranscriptMessage[],
+  scope: EvalTranscriptRunScope,
+): EvalSnapshotTranscriptRun {
+  const promptIndex = findEvalPromptIndex(messages, scope.prompt, scope.sinceMessageCount);
+  const runMessages = promptIndex >= 0 ? messages.slice(promptIndex + 1) : [];
+  return {
+    promptIndex,
+    messageCount: runMessages.length,
+    combinedText: runMessages.map((message) => message.text).join("\n"),
+    assistantText: runMessages
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.text)
+      .join("\n\n"),
+  };
+}
+
+function snapshotTranscriptArtifact(
+  session: SessionEntry | null,
+  runScope?: EvalTranscriptRunScope,
+): EvalSnapshotTranscriptArtifact {
+  const read = readEvalSessionTranscript(session);
+  if (!read.exists) {
     return {
       enabled: true,
       exists: false,
-      path: located.path,
+      ...(read.path ? { path: read.path } : {}),
       messageCount: 0,
       combinedText: "",
       messages: [],
-      reason: located.reason ?? "Transcript not found.",
+      reason: read.reason,
     };
   }
 
-  const raw = readFileSync(located.path, "utf8");
-  const messages = extractNormalizedTranscriptMessages(raw);
+  const messages = read.messages;
   return {
     enabled: true,
     exists: true,
-    path: located.path,
+    path: read.path,
     messageCount: messages.length,
     combinedText: messages.map((message) => message.text).join("\n"),
     messages: messages.slice(-40),
+    ...(runScope ? { run: buildEvalTranscriptRun(messages, runScope) } : {}),
   };
 }
 
