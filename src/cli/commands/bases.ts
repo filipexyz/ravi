@@ -1008,9 +1008,9 @@ export class BasesRowsCommands {
             String(entry.version),
             entry.action,
             [...entry.changedKeys, ...(entry.bodyChanged ? ["body"] : [])].join(", "),
-            entry.actorId ? (result.users[entry.actorId]?.displayName ?? entry.actorId) : entry.actorType,
-            entry.surface,
-            entry.createdAt,
+            entry.actorId ? (result.users[entry.actorId]?.displayName ?? entry.actorId) : (entry.actorType ?? "-"),
+            entry.surface ?? "-",
+            entry.createdAt ?? "-",
           ]),
         );
         printNextPage(nextCommand);

@@ -2891,17 +2891,17 @@ export type BasesRowsHistoryReturn = {
   entries: Array<{
     action: string;
     actorId: string | null;
-    actorType: string;
+    actorType: string | null;
     after: Record<string, unknown>;
     before: Record<string, unknown>;
     bodyChanged: boolean;
     changedKeys: string[];
-    createdAt: string;
+    createdAt: string | null;
     id: string;
     lastWriteWins: boolean;
     rowId: string;
     sequence: number;
-    surface: string;
+    surface: string | null;
     version: number;
     viewId: string | null;
   }>;

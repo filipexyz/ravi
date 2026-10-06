@@ -14444,7 +14444,14 @@ class RaviSchemas {
             ]
           },
           "actorType": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "after": {
             "additionalProperties": {
@@ -14474,7 +14481,14 @@ class RaviSchemas {
             "type": "array"
           },
           "createdAt": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -14489,7 +14503,14 @@ class RaviSchemas {
             "type": "number"
           },
           "surface": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "version": {
             "type": "number"

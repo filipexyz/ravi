@@ -14444,7 +14444,14 @@ public enum RaviSchemas {
               ]
             },
             "actorType": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "after": {
               "additionalProperties": {
@@ -14474,7 +14481,14 @@ public enum RaviSchemas {
               "type": "array"
             },
             "createdAt": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "id": {
               "type": "string"
@@ -14489,7 +14503,14 @@ public enum RaviSchemas {
               "type": "number"
             },
             "surface": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "version": {
               "type": "number"

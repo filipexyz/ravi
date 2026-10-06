@@ -126,7 +126,8 @@ ravi bases rows purge pipeline <row-id> --json --execute
   você leu) ou `--last-write-wins` explícito.
 - Toda escrita de linha leva uma chave de idempotência gerada por chamada
   (`idempotencyKey` no JSON de saída). Para repetir com segurança depois de um
-  timeout, repita com `--idempotency-key <a mesma chave>`.
+  timeout, repita com `--idempotency-key <a mesma chave>`. Via `--view`, se a
+  linha saiu da view ou foi arquivada, o replay traz só `rowId` e `version`.
 - Dentro de uma sessão de agent, o CLI anexa `clientHint {agentId, sessionKey, sdk}`
   ao ledger. É metadado, não autorização.
 - `--view <id>` escreve através da view: só as colunas graváveis dela, e a linha

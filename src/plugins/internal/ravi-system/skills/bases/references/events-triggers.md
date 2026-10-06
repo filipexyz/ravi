@@ -33,6 +33,10 @@ ravi bases rows get <baseId> <rowId> --json
 ravi bases rows history <baseId> <rowId> --json   # o que mudou (gerentes; via --view só colunas projetadas)
 ```
 
+Via `--view`, quem não gerencia a base vê `actorType`, `actorId`, `surface` e
+`createdAt` como `null` quando a view não projeta `updated_by` / `updated_time`
+(ou `created_by` / `created_time` na entrada `created`).
+
 ## Triggers
 
 O filtro usa a gramática de predicados dos triggers sobre `data.*`:

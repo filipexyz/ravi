@@ -14322,7 +14322,14 @@ export const BasesRowsHistoryReturnSchema = {
             ]
           },
           "actorType": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "after": {
             "additionalProperties": {
@@ -14352,7 +14359,14 @@ export const BasesRowsHistoryReturnSchema = {
             "type": "array"
           },
           "createdAt": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -14367,7 +14381,14 @@ export const BasesRowsHistoryReturnSchema = {
             "type": "number"
           },
           "surface": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "version": {
             "type": "number"

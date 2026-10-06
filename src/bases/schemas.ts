@@ -182,12 +182,14 @@ export const baseLedgerEntrySchema = z.object({
   before: z.record(z.string(), jsonValueSchema),
   after: z.record(z.string(), jsonValueSchema),
   bodyChanged: z.boolean(),
-  actorType: z.string(),
+  /** Null through a view that does not project the actor columns. */
+  actorType: z.string().nullable(),
   actorId: z.string().nullable(),
-  surface: z.string(),
+  surface: z.string().nullable(),
   viewId: z.string().nullable(),
   lastWriteWins: z.boolean(),
-  createdAt: z.string(),
+  /** Null through a view that does not project the time columns. */
+  createdAt: z.string().nullable(),
 });
 
 export const baseRowHistoryResponseSchema = z.object({

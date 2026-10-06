@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "e6757db5e092fb4b"
+    "version": "32d396f44aead47b"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -16293,7 +16293,14 @@
                             ]
                           },
                           "actorType": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "after": {
                             "additionalProperties": {
@@ -16323,7 +16330,14 @@
                             "type": "array"
                           },
                           "createdAt": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "id": {
                             "type": "string"
@@ -16338,7 +16352,14 @@
                             "type": "number"
                           },
                           "surface": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "version": {
                             "type": "number"
