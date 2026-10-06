@@ -437,7 +437,7 @@ describe("sandbox observability", () => {
     });
     expect(lines).toEqual(["daemon line 1", "daemon line 2 ***"]);
     const log = readFileSync(join(outputDir, "daemon.log"), "utf8");
-    expect(log).toStartWith("daemon line 1\ndaemon line 2 ***\n");
+    expect(log).toStartWith("daemon line 1\ndaemon line 2 ***\npartial\n");
     expect(log).toContain("full read failed: ");
     expect(log).not.toContain("tok-secret-123");
   });

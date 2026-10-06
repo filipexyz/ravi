@@ -395,12 +395,13 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     const lines = (partialLine + chunk).split("\n");
     partialLine = lines.pop() ?? "";
     if (lines.length === 0) return;
+    const redacted = lines.map((line) => redactSecrets(line, secrets));
     try {
-      appendFileSync(daemonLogPath, lines.map((line) => `${redactSecrets(line, secrets)}\n`).join(""));
-      for (const line of lines) options.onDaemonLog?.(redactSecrets(line, secrets));
+      appendFileSync(daemonLogPath, redacted.map((line) => `${line}\n`).join(""));
     } catch {
       // The full log is read again at the end; losing the live copy is not fatal.
     }
+    for (const line of redacted) options.onDaemonLog?.(line);
   };
 
   const collectOutputs = async (taskId: string | null) => {
@@ -412,9 +413,11 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (keepOnFailure && existsSync(join(outputDir, name))) {
+          // Keep the last line the daemon wrote even if it never got its newline.
+          const unfinished = partialLine ? `${redactSecrets(partialLine, secrets)}\n` : "";
           appendFileSync(
             join(outputDir, name),
-            `(log copied live; full read failed: ${redactSecrets(message, secrets)})\n`,
+            `${unfinished}(log copied live; full read failed: ${redactSecrets(message, secrets)})\n`,
           );
           files.push(name);
           return;

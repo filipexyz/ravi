@@ -275,7 +275,8 @@ export class SandboxCommands {
       printTelemetry(collected.summary);
       console.log(`Saved:    ${collected.files.map((file) => join(outputDir, file)).join("\n          ")}`);
     }
-    if (collected.summary.errors.length === 3) process.exitCode = 1;
+    // Any missing part (logs, events or metrics) is a failed fetch for scripts.
+    if (collected.summary.errors.length > 0) process.exitCode = 1;
     return result;
   }
 }
