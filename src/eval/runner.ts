@@ -78,6 +78,8 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
   const currentSession = () => resolveSession(sessionName) ?? session;
   const readRunTranscript = (): EvalTranscriptRead => readEvalSessionTranscript(currentSession());
   const agentProvider = loadRouterConfig().agents[session.agentId]?.provider;
+  const startedWithoutRuntimeSessionId =
+    !beforeTranscript.exists && beforeTranscript.reason === NO_RUNTIME_SESSION_ID_REASON;
 
   const execution = await runPromptAndWait({
     sessionName,
@@ -92,9 +94,10 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
       const read = readRunTranscript();
       if (!read.exists) {
         // A fresh session gets its runtime session ID only after the daemon has
-        // already emitted turn.complete, so its transcript shows up a moment later.
+        // already emitted turn.complete, so its transcript shows up a moment later
+        // (first the ID, then the file the ID points at).
         const pending =
-          read.reason === NO_RUNTIME_SESSION_ID_REASON &&
+          (startedWithoutRuntimeSessionId || read.reason === NO_RUNTIME_SESSION_ID_REASON) &&
           runtimeProviderHasTranscript(currentSession().runtimeProvider ?? agentProvider);
         return { readable: false, pending };
       }
