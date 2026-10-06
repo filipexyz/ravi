@@ -2816,6 +2816,7 @@ export class RaviClient {
         secret?: string[];
         sessionLink?: string[];
         sessionSecret?: string[];
+        sessionSecretStdin?: string;
         structuredOutputRequired?: boolean;
         structuredOutputSchema?: string;
         tag?: string[];

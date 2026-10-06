@@ -7,10 +7,14 @@ export {
   type SecretWriteInput,
 } from "./backends.js";
 export {
+  classifySecretReadError,
+  CREDENTIAL_SECRET_ERROR_CODES,
+  CredentialAuditWriteError,
   execCredentialBroker,
   explainCredentialPolicy,
   publicCredentialConnection,
   resolveCredentialSecret,
+  type CredentialSecretErrorCode,
 } from "./broker.js";
 export {
   closeCredentialsDb,

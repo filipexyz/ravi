@@ -3,13 +3,28 @@
  */
 
 import "reflect-metadata";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { realpathSync, statSync } from "node:fs";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { fail } from "../context.js";
-import { contractFail } from "../agent-contract.js";
-import { SUPPORTED_AUDIO_EXTENSIONS, inferAudioMimeType, transcribeFile } from "../../transcribe/service.js";
+import { fail, hasRuntimeInvocationContext } from "../context.js";
+import { ContractError, contractFail } from "../agent-contract.js";
+import { resolveCallerPath } from "../caller-cwd.js";
+import { MAX_AUDIO_BYTES } from "../../utils/media.js";
+import {
+  MAX_TRANSCRIBE_FILE_BYTES,
+  SUPPORTED_AUDIO_EXTENSIONS,
+  TranscribeFileError,
+  inferAudioMimeType,
+  transcribeFile,
+} from "../../transcribe/service.js";
+
+/**
+ * Size cap for `transcribe file`. Agent/gateway callers get the same 20MB audio
+ * cap as inbound channel audio; a human on the local CLI gets the service ceiling.
+ */
+export function transcribeFileMaxBytes(): number {
+  return hasRuntimeInvocationContext() ? MAX_AUDIO_BYTES : MAX_TRANSCRIBE_FILE_BYTES;
+}
 
 const transcribeFileReturnSchema = z.object({
   success: z.literal(true),
@@ -53,8 +68,26 @@ export class TranscribeCommands {
     if (!mimetype) {
       fail(`Unsupported audio format. Supported: ${SUPPORTED_AUDIO_EXTENSIONS.join(", ")}`);
     }
-    const absPath = resolve(filePath);
-    if (!existsSync(absPath)) {
+    // Gateway/tool dispatch runs inside the daemon: resolve relative paths
+    // against the caller cwd, never the daemon's.
+    const absPath = resolveCallerPath(filePath);
+    let realPath: string;
+    let sizeBytes: number;
+    try {
+      // Follow symlinks so an audio-named link to a non-audio host file cannot
+      // pass the extension check.
+      realPath = realpathSync(absPath);
+      const stats = statSync(realPath);
+      if (!stats.isFile()) {
+        contractFail("transcribe file", "INVALID_FILE", "Audio path must be a regular file.", {
+          asJson,
+          exitCode: 2,
+          details: { suggestedAction: "Pass a regular audio file, not a directory or device" },
+        });
+      }
+      sizeBytes = stats.size;
+    } catch (error) {
+      if (error instanceof ContractError) throw error;
       contractFail("transcribe file", "FILE_NOT_FOUND", "Audio file was not found.", {
         asJson,
         details: {
@@ -62,15 +95,59 @@ export class TranscribeCommands {
         },
       });
     }
+    // Use the resolved file's type: `voice.mp3` may link to `recording.wav`.
+    const resolvedMimeType = inferAudioMimeType(realPath);
+    if (!resolvedMimeType) {
+      contractFail("transcribe file", "INVALID_FILE", "Audio path must resolve to a supported audio file.", {
+        asJson,
+        exitCode: 2,
+        details: { suggestedAction: `Pass a real audio file (${SUPPORTED_AUDIO_EXTENSIONS.join(", ")})` },
+      });
+    }
+    const maxBytes = transcribeFileMaxBytes();
+    if (sizeBytes > maxBytes) {
+      contractFail("transcribe file", "FILE_TOO_LARGE", "Audio file exceeds the transcription size limit.", {
+        asJson,
+        exitCode: 2,
+        details: {
+          sizeBytes,
+          maxBytes,
+          suggestedAction: "Trim or compress the audio below the size limit and retry",
+        },
+      });
+    }
 
     if (!asJson) {
-      console.log(`Transcribing ${absPath} (${mimetype})...`);
+      console.log(`Transcribing ${absPath} (${resolvedMimeType})...`);
     }
 
     let result: Awaited<ReturnType<typeof transcribeFile>>;
     try {
-      result = await transcribeFile({ filePath: absPath, mimeType: mimetype, language: _lang ?? "pt" });
-    } catch {
+      result = await transcribeFile({
+        filePath: realPath,
+        mimeType: resolvedMimeType,
+        language: _lang ?? "pt",
+        maxBytes,
+      });
+    } catch (error) {
+      // The file changed after the checks above (grew, or was swapped): same envelope, not retryable.
+      if (error instanceof TranscribeFileError) {
+        if (error.code === "FILE_TOO_LARGE") {
+          contractFail("transcribe file", "FILE_TOO_LARGE", "Audio file exceeds the transcription size limit.", {
+            asJson,
+            exitCode: 2,
+            details: {
+              ...error.details,
+              suggestedAction: "Trim or compress the audio below the size limit and retry",
+            },
+          });
+        }
+        contractFail("transcribe file", "INVALID_FILE", "Audio path must be a regular file.", {
+          asJson,
+          exitCode: 2,
+          details: { suggestedAction: "Pass a regular audio file, not a directory or device" },
+        });
+      }
       contractFail("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", {
         asJson,
         details: {

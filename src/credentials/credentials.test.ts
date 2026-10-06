@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { serve } from "bun";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deleteSecret, readSecret, redactSecretRef, writeSecret } from "./backends.js";
-import { explainCredentialPolicy, publicCredentialConnection } from "./broker.js";
+import {
+  CREDENTIAL_SECRET_ERROR_CODES,
+  CredentialAuditWriteError,
+  classifySecretReadError,
+  explainCredentialPolicy,
+  publicCredentialConnection,
+  resolveCredentialSecret,
+} from "./broker.js";
 import {
   closeCredentialsDb,
   getCredentialConnection,
@@ -115,6 +123,160 @@ describe("credential broker", () => {
     expect(await readSecret(ref)).toBe("dummy-provider-secret");
     expect(await deleteSecret(ref)).toBe(true);
     expect(vaultData.get("ravi/credentials/slack/rbbt")).toEqual({ marker: "keep" });
+  });
+});
+
+describe("credential broker audit ordering", () => {
+  const token = "test-vault-token";
+  const secretRef = "vault:secret/ravi/credentials/slack/audit#token";
+
+  function seedVaultConnection(options: CredentialStoreOptions): void {
+    const vaultData = new Map<string, Record<string, unknown>>([
+      ["ravi/credentials/slack/audit", { token: "SENTINEL_BROKER_SECRET" }],
+    ]);
+    vaultServer = startVaultKvV2Server(vaultData, token);
+    process.env.VAULT_ADDR = `http://127.0.0.1:${vaultServer.port}`;
+    process.env.VAULT_TOKEN = token;
+    upsertCredentialConnection(
+      { provider: "slack", connection: "audit", backend: "vault", secretRef, scopes: [], status: "active" },
+      options,
+    );
+  }
+
+  function auditRows(options: CredentialStoreOptions): Array<{ result_status: string; error_code: string | null }> {
+    const db = new Database(options.dbPath!, { readonly: true });
+    try {
+      return db.query("SELECT result_status, error_code FROM credential_audit_events ORDER BY rowid").all() as Array<{
+        result_status: string;
+        error_code: string | null;
+      }>;
+    } finally {
+      db.close();
+    }
+  }
+
+  function failAuditInserts(options: CredentialStoreOptions, when: "always" | "resolved"): void {
+    const db = new Database(options.dbPath!);
+    try {
+      const condition = when === "always" ? "" : "WHEN NEW.result_status = 'secret_resolved'";
+      db.exec(
+        `CREATE TRIGGER fail_audit BEFORE INSERT ON credential_audit_events ${condition}
+         BEGIN SELECT RAISE(ABORT, 'audit disk full'); END;`,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  it("records the decision before reading and the result before releasing the secret", async () => {
+    const options = tempOptions();
+    seedVaultConnection(options);
+
+    const resolved = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "audit",
+      action: "auth.check",
+      options,
+    });
+
+    expect(resolved.secret).toBe("SENTINEL_BROKER_SECRET");
+    expect(auditRows(options)).toEqual([
+      { result_status: "secret_requested", error_code: null },
+      { result_status: "secret_resolved", error_code: null },
+    ]);
+  });
+
+  it("fails closed without reading the secret when the decision audit write fails", async () => {
+    const options = tempOptions();
+    upsertCredentialConnection(
+      { provider: "slack", connection: "audit", backend: "vault", secretRef, scopes: [], status: "active" },
+      options,
+    );
+    let vaultRequests = 0;
+    vaultServer = serve({
+      port: 0,
+      fetch: () => {
+        vaultRequests += 1;
+        return Response.json({ data: { data: { token: "SENTINEL_BROKER_SECRET" } } });
+      },
+    });
+    process.env.VAULT_ADDR = `http://127.0.0.1:${vaultServer.port}`;
+    process.env.VAULT_TOKEN = token;
+    failAuditInserts(options, "always");
+
+    const error = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "audit",
+      action: "auth.check",
+      options,
+    }).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(CredentialAuditWriteError);
+    expect(vaultRequests).toBe(0);
+    expect(auditRows(options)).toEqual([]);
+  });
+
+  it("does not release the secret when the result audit write fails", async () => {
+    const options = tempOptions();
+    seedVaultConnection(options);
+    failAuditInserts(options, "resolved");
+
+    const error = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "audit",
+      action: "auth.check",
+      options,
+    }).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(CredentialAuditWriteError);
+    expect(JSON.stringify(error)).not.toContain("SENTINEL_BROKER_SECRET");
+    expect((error as Error).message).not.toContain("SENTINEL_BROKER_SECRET");
+    expect(auditRows(options)).toEqual([{ result_status: "secret_requested", error_code: null }]);
+  });
+
+  it("stores a closed error code instead of the raw read error message", async () => {
+    const options = tempOptions();
+    upsertCredentialConnection(
+      { provider: "slack", connection: "audit", backend: "vault", secretRef, scopes: [], status: "active" },
+      options,
+    );
+    vaultServer = serve({
+      port: 0,
+      fetch: () => Response.json({ errors: ["boom"] }, { status: 500 }),
+    });
+    process.env.VAULT_ADDR = `http://127.0.0.1:${vaultServer.port}`;
+    process.env.VAULT_TOKEN = token;
+
+    await expect(
+      resolveCredentialSecret({ provider: "slack", connection: "audit", action: "auth.check", options }),
+    ).rejects.toThrow("Vault request failed");
+
+    const rows = auditRows(options);
+    expect(rows).toEqual([
+      { result_status: "secret_requested", error_code: null },
+      { result_status: "failed", error_code: "backend_request_failed" },
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("ravi/credentials/slack/audit");
+  });
+
+  it("maps every backend failure to the closed error-code set", () => {
+    const cases: Array<[unknown, string]> = [
+      [new Error("Unsupported secret ref: env:[redacted]"), "unsupported_secret_ref"],
+      [new Error("Invalid keychain secret ref: keychain:x"), "invalid_secret_ref"],
+      [new Error("Invalid vault secret ref: vault:x"), "invalid_secret_ref"],
+      [new Error("Vault secret key not found: vault:a/b#[redacted-key]"), "secret_not_found"],
+      [new Error("security failed: The specified item could not be found in the keychain."), "secret_not_found"],
+      [new Error("VAULT_ADDR and VAULT_TOKEN are required for the vault backend."), "backend_not_configured"],
+      [new Error("Vault request failed (403) for secret/ravi/x"), "backend_request_failed"],
+      [new Error("security failed: user interaction is not allowed"), "backend_request_failed"],
+      [new Error("SENTINEL raw text with token=abc"), "secret_read_failed"],
+      ["not an error", "secret_read_failed"],
+    ];
+    for (const [error, code] of cases) {
+      const classified = classifySecretReadError(error);
+      expect(classified).toBe(code as (typeof CREDENTIAL_SECRET_ERROR_CODES)[number]);
+      expect(CREDENTIAL_SECRET_ERROR_CODES).toContain(classified);
+    }
   });
 });
 

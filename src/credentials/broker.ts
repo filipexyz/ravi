@@ -40,36 +40,81 @@ export async function resolveCredentialSecret(input: {
     connection: connection.connection,
     action: input.action,
   });
+  const audit = (resultStatus: string, errorCode?: CredentialSecretErrorCode) =>
+    recordCredentialAuditEvent(
+      {
+        provider: connection.provider,
+        connection: connection.connection,
+        action: input.action,
+        decision: "allow",
+        approvalRequired: policy.approval.required,
+        approvalStatus: policy.approval.required ? "not_requested" : null,
+        resultStatus,
+        ...(errorCode ? { errorCode } : {}),
+      },
+      input.options,
+    );
+
+  // Decision evidence goes first: if it cannot be written, the secret is never read.
   try {
-    const secret = await readSecret(connection.secretRef);
-    recordCredentialAuditEvent(
-      {
-        provider: connection.provider,
-        connection: connection.connection,
-        action: input.action,
-        decision: "allow",
-        approvalRequired: policy.approval.required,
-        approvalStatus: policy.approval.required ? "not_requested" : null,
-        resultStatus: "secret_resolved",
-      },
-      input.options,
-    );
-    return { connection, secret, policy };
+    audit("secret_requested");
+  } catch {
+    throw new CredentialAuditWriteError();
+  }
+
+  let secret: string;
+  try {
+    secret = await readSecret(connection.secretRef);
   } catch (error) {
-    recordCredentialAuditEvent(
-      {
-        provider: connection.provider,
-        connection: connection.connection,
-        action: input.action,
-        decision: "allow",
-        approvalRequired: policy.approval.required,
-        approvalStatus: policy.approval.required ? "not_requested" : null,
-        resultStatus: "failed",
-        errorCode: error instanceof Error ? error.message.slice(0, 120) : "unknown_error",
-      },
-      input.options,
-    );
+    try {
+      audit("failed", classifySecretReadError(error));
+    } catch {
+      // The read already failed and nothing is released; keep the original error.
+    }
     throw error;
+  }
+
+  // Result evidence goes before release: if it cannot be written, the secret is dropped.
+  try {
+    audit("secret_resolved");
+  } catch {
+    throw new CredentialAuditWriteError();
+  }
+  return { connection, secret, policy };
+}
+
+/**
+ * Closed set of codes stored in `credential_audit_events.error_code`. Raw
+ * exception text never reaches audit evidence: it can carry secret coordinates
+ * or backend output.
+ */
+export const CREDENTIAL_SECRET_ERROR_CODES = [
+  "unsupported_secret_ref",
+  "invalid_secret_ref",
+  "secret_not_found",
+  "backend_not_configured",
+  "backend_request_failed",
+  "secret_read_failed",
+] as const;
+
+export type CredentialSecretErrorCode = (typeof CREDENTIAL_SECRET_ERROR_CODES)[number];
+
+export function classifySecretReadError(error: unknown): CredentialSecretErrorCode {
+  const message = error instanceof Error ? error.message : "";
+  if (/^Unsupported secret ref:/.test(message)) return "unsupported_secret_ref";
+  if (/^Invalid (keychain|vault) secret ref:/.test(message)) return "invalid_secret_ref";
+  if (/^Vault secret key not found:/.test(message) || /could not be found/.test(message)) return "secret_not_found";
+  if (/^VAULT_ADDR and VAULT_TOKEN are required/.test(message)) return "backend_not_configured";
+  if (/^Vault request failed/.test(message) || /^security failed:/.test(message)) return "backend_request_failed";
+  return "secret_read_failed";
+}
+
+export class CredentialAuditWriteError extends Error {
+  readonly code = "credential_audit_write_failed";
+
+  constructor() {
+    super("Credential audit evidence could not be recorded; the secret was not released.");
+    this.name = "CredentialAuditWriteError";
   }
 }
 

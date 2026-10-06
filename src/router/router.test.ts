@@ -27,6 +27,8 @@ import {
   dbUpsertChatMessage,
   dbUpsertInstance,
   closeRouterDb,
+  dbGetSetting,
+  dbSetSetting,
   getDb,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
@@ -532,5 +534,41 @@ describe("canonical message receipts", () => {
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_999,
     });
+  });
+});
+
+describe("settings logging", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-settings-log-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("logs the setting key but never its value", () => {
+    const secret = "SENTINEL_SETTING_VALUE_DO_NOT_LOG";
+    const writes: string[] = [];
+    const originalStderrWrite = process.stderr.write;
+    const originalStdoutWrite = process.stdout.write;
+    const capture = ((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    process.stderr.write = capture;
+    process.stdout.write = capture;
+    try {
+      dbSetSetting("integration.apiToken", secret);
+    } finally {
+      process.stderr.write = originalStderrWrite;
+      process.stdout.write = originalStdoutWrite;
+    }
+
+    expect(dbGetSetting("integration.apiToken")).toBe(secret);
+    const output = writes.join("");
+    expect(output).toContain("Set setting");
+    expect(output).toContain("integration.apiToken");
+    expect(output).not.toContain(secret);
   });
 });

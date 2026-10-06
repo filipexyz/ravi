@@ -8562,7 +8562,7 @@ class DevinSessionsAttachmentsReturn {
 DevinSessionsAttachmentsReturn devinSessionsAttachmentsReturnFromJson(Object? json) => DevinSessionsAttachmentsReturn.fromJsonValue(json);
 
 class DevinSessionsCreateOptions {
-  const DevinSessionsCreateOptions({this.advancedMode, this.asUser, this.attachmentUrl, this.bypassApproval, this.childPlaybook, this.devinId, this.devinMode, this.execute, this.knowledge, this.maxAcu, this.noMaxAcuLimit, this.noResumable, this.platform, this.playbook, this.project, this.prompt, this.promptFile, this.proxRun, this.repo, this.resumable, this.secret, this.sessionLink, this.sessionSecret, this.structuredOutputRequired, this.structuredOutputSchema, this.tag, this.task, this.title});
+  const DevinSessionsCreateOptions({this.advancedMode, this.asUser, this.attachmentUrl, this.bypassApproval, this.childPlaybook, this.devinId, this.devinMode, this.execute, this.knowledge, this.maxAcu, this.noMaxAcuLimit, this.noResumable, this.platform, this.playbook, this.project, this.prompt, this.promptFile, this.proxRun, this.repo, this.resumable, this.secret, this.sessionLink, this.sessionSecret, this.sessionSecretStdin, this.structuredOutputRequired, this.structuredOutputSchema, this.tag, this.task, this.title});
 
   final String? advancedMode;
   final String? asUser;
@@ -8587,6 +8587,7 @@ class DevinSessionsCreateOptions {
   final List<String>? secret;
   final List<String>? sessionLink;
   final List<String>? sessionSecret;
+  final String? sessionSecretStdin;
   final bool? structuredOutputRequired;
   final String? structuredOutputSchema;
   final List<String>? tag;
@@ -8662,6 +8663,9 @@ class DevinSessionsCreateOptions {
     }
     if (sessionSecret != null) {
       into["sessionSecret"] = RaviJson.from(sessionSecret);
+    }
+    if (sessionSecretStdin != null) {
+      into["sessionSecretStdin"] = RaviJson.from(sessionSecretStdin);
     }
     if (structuredOutputRequired != null) {
       into["structuredOutputRequired"] = RaviJson.from(structuredOutputRequired);

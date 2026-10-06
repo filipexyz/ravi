@@ -33717,11 +33717,15 @@ export const DevinSessionsCreateInputSchema = {
       "type": "array"
     },
     "sessionSecret": {
-      "description": "Inline session secrets (key=value); sensitive by default",
+      "description": "Inline session secrets (key=value); sensitive by default. Discouraged on the CLI: argv is visible in ps and shell history; prefer --session-secret-stdin",
       "items": {
         "type": "string"
       },
       "type": "array"
+    },
+    "sessionSecretStdin": {
+      "description": "Read the value of session secret <key> from redirected stdin (CLI only; keeps it out of argv)",
+      "type": "string"
     },
     "structuredOutputRequired": {
       "description": "Require structured output before turn ends",

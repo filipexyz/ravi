@@ -9440,7 +9440,8 @@ export function dbSetSetting(key: string, value: string): void {
   if (key === "defaultAgent") {
     ensureAgentVisibilityMigration(getDb());
   }
-  log.info("Set setting", { key, value });
+  // Settings can hold secrets (tokens, API keys); log the key only.
+  log.info("Set setting", { key });
 }
 
 /**

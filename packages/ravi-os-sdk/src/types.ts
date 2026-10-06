@@ -6733,6 +6733,7 @@ export type DevinSessionsCreateInput = {
   secret?: string[];
   sessionLink?: string[];
   sessionSecret?: string[];
+  sessionSecretStdin?: string;
   structuredOutputRequired?: boolean;
   structuredOutputSchema?: string;
   tag?: string[];

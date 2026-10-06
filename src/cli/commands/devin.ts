@@ -1,9 +1,11 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
+import type { Readable } from "node:stream";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
+import { readNonInteractiveSecret } from "../secret-input.js";
 import {
   declareCommandReturns,
   devinAuthCheckReturnSchema,
@@ -294,13 +296,56 @@ export function resolveResumable(resumable?: boolean, noResumable = false): Reso
   return { value: undefined, source: "omitted" };
 }
 
-function parseSessionSecrets(refs?: string[]): Array<{ key: string; value: string; sensitive?: boolean }> {
+type DevinSessionSecret = { key: string; value: string; sensitive?: boolean };
+
+const SESSION_SECRET_STDIN_MAX_BYTES = 64 * 1024;
+
+function parseSessionSecrets(refs?: string[]): DevinSessionSecret[] {
   if (!refs?.length) return [];
   return parseStringList(refs).map((ref) => {
     const eqIdx = ref.indexOf("=");
     if (eqIdx < 1) fail("Invalid --session-secret format. Expected key=value.");
     return { key: ref.slice(0, eqIdx), value: ref.slice(eqIdx + 1), sensitive: true };
   });
+}
+
+/**
+ * Combine argv session secrets (discouraged: visible in `ps` and shell history)
+ * with the value of `--session-secret-stdin <key>`, read from redirected stdin.
+ * The stdin form is CLI-only: gateway calls run inside the daemon, whose stdin
+ * is not the caller's.
+ */
+export async function resolveSessionSecrets(
+  refs: string[] | undefined,
+  stdinKey: string | undefined,
+  deps: { input?: Readable } = {},
+): Promise<DevinSessionSecret[]> {
+  const secrets = parseSessionSecrets(refs);
+  if (stdinKey === undefined) return secrets;
+  const key = stdinKey.trim();
+  if (!key || key.includes("=")) fail("Invalid --session-secret-stdin key. Expected a bare key name, e.g. API_TOKEN.");
+  if (getContext({ localOnly: true })?.transport === "gateway") {
+    fail(
+      "--session-secret-stdin is only available on the local CLI.",
+      "Gateway callers send session secrets in the redacted sessionSecretRefs body field.",
+    );
+  }
+  let value: string;
+  try {
+    value = await readNonInteractiveSecret(
+      { fromStdin: true, maxBytes: SESSION_SECRET_STDIN_MAX_BYTES },
+      deps.input ? { input: deps.input } : {},
+    );
+  } catch {
+    fail(
+      "Could not read the --session-secret-stdin value. Pipe a non-empty value on redirected stdin.",
+      "Example: printf '%s' \"$TOKEN\" | ravi devin sessions create ... --session-secret-stdin API_TOKEN",
+    );
+  }
+  if (secrets.some((secret) => secret.key === key)) {
+    fail(`Session secret key given twice: ${key}`);
+  }
+  return [...secrets, { key, value, sensitive: true }];
 }
 
 async function syncDevinSession(
@@ -449,9 +494,15 @@ export class DevinSessionCommands {
     secretIds?: string[],
     @Option({
       flags: "--session-secret <ref...>",
-      description: "Inline session secrets (key=value); sensitive by default",
+      description:
+        "Inline session secrets (key=value); sensitive by default. Discouraged on the CLI: argv is visible in ps and shell history; prefer --session-secret-stdin",
     })
     sessionSecretRefs?: string[],
+    @Option({
+      flags: "--session-secret-stdin <key>",
+      description: "Read the value of session secret <key> from redirected stdin (CLI only; keeps it out of argv)",
+    })
+    sessionSecretStdinKey?: string,
     @Option({ flags: "--session-link <id...>", description: "Linked Devin sessions" }) sessionLinks?: string[],
     @Option({ flags: "--playbook <id>", description: "Playbook ID" }) playbookId?: string,
     @Option({ flags: "--child-playbook <id>", description: "Child playbook ID" }) childPlaybookId?: string,
@@ -492,7 +543,7 @@ export class DevinSessionCommands {
     const resolvedRepos = resolveRepos(repos);
     const resolvedCreateAsUser = resolveCreateAsUser(createAsUserId);
     const resolvedResumable = resolveResumable(resumable, noResumable);
-    const sessionSecrets = parseSessionSecrets(sessionSecretRefs);
+    const sessionSecrets = await resolveSessionSecrets(sessionSecretRefs, sessionSecretStdinKey);
 
     const input: CreateDevinSessionInput = {
       prompt: text,

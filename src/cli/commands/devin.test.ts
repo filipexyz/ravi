@@ -6,6 +6,7 @@
  * no sqlite; contract helpers throw ContractError through runWithContext.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { Readable } from "node:stream";
 import { ContractError } from "../agent-contract.js";
 import { redactCommandAccessInput } from "../command-access.js";
 import { runWithContext } from "../context.js";
@@ -192,7 +193,9 @@ mock.module("../../artifacts/store.js", () => ({
   createArtifact: () => ({ id: "artifact-test-1" }),
 }));
 
-const { DevinSessionCommands, determineMaxAcuLimit, resolveResumable } = await import("./devin.js");
+const { DevinSessionCommands, determineMaxAcuLimit, resolveResumable, resolveSessionSecrets } = await import(
+  "./devin.js"
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -233,13 +236,13 @@ async function expectContractError(
   return contractError;
 }
 
-/** Positional args for `create` (29 params); only prompt/--max-acu/--json set. */
+/** Positional args for `create` (30 params); only prompt/--max-acu/--json set. */
 function createArgs(execute?: boolean): Parameters<InstanceType<typeof DevinSessionCommands>["create"]> {
-  const args = new Array(29).fill(undefined);
+  const args = new Array(30).fill(undefined);
   args[0] = "hello world"; // prompt
-  args[19] = "10"; // --max-acu
-  args[27] = true; // --json
-  args[28] = execute; // --execute
+  args[20] = "10"; // --max-acu
+  args[28] = true; // --json
+  args[29] = execute; // --execute
   return args as Parameters<InstanceType<typeof DevinSessionCommands>["create"]>;
 }
 
@@ -365,6 +368,47 @@ describe("devin sessions agent-first contract", () => {
     expect(invalidError).toBeInstanceOf(Error);
     expect((invalidError as Error).message).not.toContain(secret);
     expect(createSessionCalls).toHaveLength(0);
+  });
+
+  it("--session-secret-stdin reads the value from redirected stdin, never argv", async () => {
+    const secret = "SENTINEL_DEVIN_STDIN_SECRET_DO_NOT_LEAK";
+    const secrets = await resolveSessionSecrets(["other=argv-value"], "API_TOKEN", {
+      input: Readable.from([`${secret}\n`]),
+    });
+    expect(secrets).toEqual([
+      { key: "other", value: "argv-value", sensitive: true },
+      { key: "API_TOKEN", value: secret, sensitive: true },
+    ]);
+  });
+
+  it("--session-secret-stdin rejects empty input, bad keys and duplicate keys without echoing values", async () => {
+    const run = (refs: string[] | undefined, key: string, input: string) =>
+      runWithContext({ sessionKey: "devin-test" }, () =>
+        resolveSessionSecrets(refs, key, { input: Readable.from([input]) }),
+      );
+    await expect(run(undefined, "API_TOKEN", "")).rejects.toThrow("Could not read the --session-secret-stdin value");
+    await expect(run(undefined, "API_TOKEN=x", "v")).rejects.toThrow("Invalid --session-secret-stdin key");
+    const duplicate = (await run(["API_TOKEN=SENTINEL_ARGV"], "API_TOKEN", "SENTINEL_STDIN").catch(
+      (error: unknown) => error as Error,
+    )) as Error;
+    expect(duplicate.message).toContain("given twice");
+    expect(duplicate.message).not.toContain("SENTINEL");
+  });
+
+  it("--session-secret-stdin is refused through the gateway, whose stdin is the daemon's", async () => {
+    let read = false;
+    const input = Readable.from(
+      (async function* () {
+        read = true;
+        yield "value";
+      })(),
+    );
+    await expect(
+      runWithContext({ transport: "gateway", sessionKey: "devin-test" }, () =>
+        resolveSessionSecrets(undefined, "API_TOKEN", { input }),
+      ),
+    ).rejects.toThrow("only available on the local CLI");
+    expect(read).toBe(false);
   });
 
   it("create with --execute creates the remote session and caches it locally", async () => {

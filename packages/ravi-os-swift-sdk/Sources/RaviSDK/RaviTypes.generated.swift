@@ -9988,13 +9988,14 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
   public var secret: [String]?
   public var sessionLink: [String]?
   public var sessionSecret: [String]?
+  public var sessionSecretStdin: String?
   public var structuredOutputRequired: Bool?
   public var structuredOutputSchema: String?
   public var tag: [String]?
   public var task: String?
   public var title: String?
 
-  public init(advancedMode: String? = nil, asUser: String? = nil, attachmentUrl: [String]? = nil, bypassApproval: Bool? = nil, childPlaybook: String? = nil, devinId: String? = nil, devinMode: String? = nil, execute: Bool? = nil, knowledge: [String]? = nil, maxAcu: String? = nil, noMaxAcuLimit: Bool? = nil, noResumable: Bool? = nil, platform: String? = nil, playbook: String? = nil, project: String? = nil, prompt: String? = nil, promptFile: String? = nil, proxRun: String? = nil, repo: [String]? = nil, resumable: Bool? = nil, secret: [String]? = nil, sessionLink: [String]? = nil, sessionSecret: [String]? = nil, structuredOutputRequired: Bool? = nil, structuredOutputSchema: String? = nil, tag: [String]? = nil, task: String? = nil, title: String? = nil) {
+  public init(advancedMode: String? = nil, asUser: String? = nil, attachmentUrl: [String]? = nil, bypassApproval: Bool? = nil, childPlaybook: String? = nil, devinId: String? = nil, devinMode: String? = nil, execute: Bool? = nil, knowledge: [String]? = nil, maxAcu: String? = nil, noMaxAcuLimit: Bool? = nil, noResumable: Bool? = nil, platform: String? = nil, playbook: String? = nil, project: String? = nil, prompt: String? = nil, promptFile: String? = nil, proxRun: String? = nil, repo: [String]? = nil, resumable: Bool? = nil, secret: [String]? = nil, sessionLink: [String]? = nil, sessionSecret: [String]? = nil, sessionSecretStdin: String? = nil, structuredOutputRequired: Bool? = nil, structuredOutputSchema: String? = nil, tag: [String]? = nil, task: String? = nil, title: String? = nil) {
     self.advancedMode = advancedMode
     self.asUser = asUser
     self.attachmentUrl = attachmentUrl
@@ -10018,6 +10019,7 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
     self.secret = secret
     self.sessionLink = sessionLink
     self.sessionSecret = sessionSecret
+    self.sessionSecretStdin = sessionSecretStdin
     self.structuredOutputRequired = structuredOutputRequired
     self.structuredOutputSchema = structuredOutputSchema
     self.tag = tag
@@ -10049,6 +10051,7 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
     case secret = "secret"
     case sessionLink = "sessionLink"
     case sessionSecret = "sessionSecret"
+    case sessionSecretStdin = "sessionSecretStdin"
     case structuredOutputRequired = "structuredOutputRequired"
     case structuredOutputSchema = "structuredOutputSchema"
     case tag = "tag"
@@ -10125,6 +10128,9 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
     }
     if let value = self.sessionSecret {
       body["sessionSecret"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sessionSecretStdin {
+      body["sessionSecretStdin"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.structuredOutputRequired {
       body["structuredOutputRequired"] = try RaviJSON.fromEncodable(value)
