@@ -4361,7 +4361,8 @@ export class SessionCommands {
 
   @Command({
     name: "send",
-    description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive.",
+    description:
+      "Send a prompt to a session (fire-and-forget). From inside a session it is delivered as a silent [System] Inform: the target may reply @@SILENT@@ and nothing is posted to its chat. --raw sends it unwrapped, as a normal message. For a reply the target is told to give, use `ravi sessions execute` or `ravi sessions ask`. Use -w to wait for response, -i for interactive.",
   })
   @CommandAccess({
     kind: "mutate",
@@ -4439,7 +4440,7 @@ export class SessionCommands {
     asJson?: boolean,
     @Option({
       flags: "--raw",
-      description: "Send the prompt without [System] Inform wrapping",
+      description: "Send the prompt without [System] Inform wrapping (the target handles it as a normal message)",
     })
     raw?: boolean,
     @Option({

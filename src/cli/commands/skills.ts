@@ -344,7 +344,6 @@ USE
   ✓ revisar o plano antes de buscar Git ou substituir uma skill instalada
 
 NÃO USE
-  ✗ criar skill nova via loop de curadoria → \`ravi skills guard --op create\`
   ✗ dar visibilidade a um agente → isso é grant, não install (\`skills grant\`)
 
 REGRAS HARD (o comando bloqueia)

@@ -63949,7 +63949,7 @@ export const SessionsSendInputSchema = {
       "type": "string"
     },
     "raw": {
-      "description": "Send the prompt without [System] Inform wrapping",
+      "description": "Send the prompt without [System] Inform wrapping (the target handles it as a normal message)",
       "type": "boolean"
     },
     "steer": {

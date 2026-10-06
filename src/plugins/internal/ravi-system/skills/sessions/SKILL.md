@@ -257,7 +257,7 @@ ravi sessions ask <name> "pergunta" [sender]
 # Responder uma pergunta de outra sessão (agent NUNCA silencia)
 ravi sessions answer <name> "resposta" [sender]
 
-# Executar comando (fire-and-forget, agent executa sem responder)
+# Executar comando (fire-and-forget para quem envia; o agent executa e responde com o resultado)
 ravi sessions execute <name> "tarefa"
 
 # Informar algo (fire-and-forget, agent pode silenciar se irrelevante)
@@ -265,6 +265,8 @@ ravi sessions inform <name> "info"
 ```
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
+
+Chamado de dentro de uma sessão, `sessions send` chega como `[System] Inform` silencioso: o agent alvo pode responder `@@SILENT@@` e nada aparece no chat dele. Para o agent alvo responder no chat dele (ex.: grupo), use `ravi sessions execute` ou `ravi sessions ask`; `--raw` só remove o wrapper e entrega como mensagem normal. Em sessões Sentinel o texto do agent não vai para o canal: ele precisa usar uma CLI explícita de envio ao canal.
 
 ### Session Trace
 

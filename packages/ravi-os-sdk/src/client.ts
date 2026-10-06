@@ -6196,7 +6196,7 @@ export class RaviClient {
         });
       }
     },
-    /** Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive. */
+    /** Send a prompt to a session (fire-and-forget). From inside a session it is delivered as a silent [System] Inform: the target may reply @@SILENT@@ and nothing is posted to its chat. --raw sends it unwrapped, as a normal message. For a reply the target is told to give, use `ravi sessions execute` or `ravi sessions ask`. Use -w to wait for response, -i for interactive. */
     send: async (nameOrKey: string, prompt?: string, options?: {
       agent?: string;
       barrier?: string;
