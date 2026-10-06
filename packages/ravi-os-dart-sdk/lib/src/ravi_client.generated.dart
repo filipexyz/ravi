@@ -5645,6 +5645,8 @@ class RuntimeNamespace {
 
   RuntimeEnvNamespace get env => RuntimeEnvNamespace(_transport);
 
+  RuntimeModelsNamespace get models => RuntimeModelsNamespace(_transport);
+
   RuntimePresetsNamespace get presets => RuntimePresetsNamespace(_transport);
 
   RuntimeProvidersNamespace get providers => RuntimeProvidersNamespace(_transport);
@@ -5807,6 +5809,23 @@ class RuntimeEnvNamespace {
       command: "unset",
       body: requestBody,
       decode: runtimeEnvUnsetReturnFromJson,
+    );
+  }
+}
+
+class RuntimeModelsNamespace {
+  const RuntimeModelsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<RuntimeModelsListReturn> list([RuntimeModelsListOptions options = const RuntimeModelsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["runtime", "models"],
+      command: "list",
+      body: requestBody,
+      decode: runtimeModelsListReturnFromJson,
     );
   }
 }

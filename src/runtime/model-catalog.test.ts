@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDefaultModelForProvider, listRuntimeModels, resolvePreferredRuntimeModel } from "./model-catalog.js";
+import {
+  getDefaultModelForProvider,
+  listRuntimeModelCatalog,
+  listRuntimeModels,
+  listRuntimeProviders,
+  resolvePreferredRuntimeModel,
+} from "./model-catalog.js";
+import { resolveModelContextWindow } from "./model-context-window.js";
+import type { PricingCatalogSnapshot } from "../costs/pricing-catalog.js";
 import { resolveAgentModelSelection, resolveEffectiveAgentModel } from "./model-preset-resolver.js";
 import type { RuntimeModelPreset } from "./model-preset-store.js";
 
@@ -113,6 +121,97 @@ describe("model catalog", () => {
     expect(resolvePreferredRuntimeModel("grok", "sonnet")).toBe("grok-4");
     expect(resolvePreferredRuntimeModel("grok", "claude-opus-4-6")).toBe("grok-4");
     expect(resolvePreferredRuntimeModel("grok", "grok-4")).toBe("grok-4");
+  });
+});
+
+function pricingCatalog(entries: PricingCatalogSnapshot["entries"]): PricingCatalogSnapshot {
+  return {
+    source: "test",
+    sourceUrl: "https://example.invalid/prices.json",
+    sourceVersion: null,
+    fetchedAt: 1,
+    stale: false,
+    entries,
+  };
+}
+
+describe("runtime model catalog listing", () => {
+  test("lists every requested provider, including free-form Pi", () => {
+    const catalog = listRuntimeModelCatalog(["claude", "codex", "grok", "pi"], {
+      codexCachePath: join(tmpdir(), "ravi-missing-codex-cache", "models_cache.json"),
+      pricingCatalog: pricingCatalog({ "gpt-5.4": { max_input_tokens: 272_000 } }),
+    });
+
+    expect(catalog.map((provider) => provider.id)).toEqual(["claude", "codex", "grok", "pi"]);
+    const codex = catalog.find((provider) => provider.id === "codex")!;
+    expect(codex.freeText).toBe(false);
+    expect(codex.defaultModel).toBe("gpt-5.4");
+    expect(codex.models[0]).toEqual({
+      id: "gpt-5.4",
+      name: "gpt-5.4",
+      description: "Latest frontier agentic coding model.",
+      contextWindow: 272_000,
+    });
+    // No sourced window for Claude aliases: null, never a guess.
+    expect(catalog.find((provider) => provider.id === "claude")!.models.map((m) => m.contextWindow)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(catalog.find((provider) => provider.id === "pi")).toMatchObject({
+      name: "Pi",
+      freeText: true,
+      defaultModel: null,
+      models: [],
+    });
+  });
+
+  test("reports unknown registered providers as free-form and keeps the TUI picker list fixed", () => {
+    expect(listRuntimeModelCatalog(["custom-provider"], { pricingCatalog: null })).toEqual([
+      {
+        id: "custom-provider",
+        name: "custom-provider",
+        description: "Registered runtime provider without a model catalog.",
+        freeText: true,
+        defaultModel: null,
+        models: [],
+      },
+    ]);
+    expect(listRuntimeProviders().map((provider) => provider.id)).toEqual(["claude", "codex", "grok"]);
+  });
+});
+
+describe("model context window resolver", () => {
+  const catalog = pricingCatalog({
+    "claude-opus-4-7": { max_input_tokens: 200_000 },
+    "gpt-5.4": { max_input_tokens: "272000" },
+    "no-window": { input_cost_per_token: 0.000001 },
+  });
+
+  test("prefers the provider-reported session window over the catalog", () => {
+    expect(
+      resolveModelContextWindow(
+        { model: "gpt-5.4", runtimeSessionParams: { model: { contextWindow: 128_000 } } },
+        { catalog },
+      ),
+    ).toEqual({ tokens: 128_000, source: "runtime-session" });
+  });
+
+  test("reads max_input_tokens from the catalog and leaves unknown models null", () => {
+    expect(resolveModelContextWindow({ model: "gpt-5.4" }, { catalog })).toEqual({
+      tokens: 272_000,
+      source: "pricing-catalog",
+    });
+    expect(resolveModelContextWindow({ model: "openai/gpt-5.4" }, { catalog })?.tokens).toBe(272_000);
+    expect(resolveModelContextWindow({ model: "no-window" }, { catalog })).toBeNull();
+    expect(resolveModelContextWindow({ model: "sonnet" }, { catalog })).toBeNull();
+    expect(resolveModelContextWindow({ model: null }, { catalog })).toBeNull();
+    expect(resolveModelContextWindow({ model: "gpt-5.4" }, { catalog: null })).toBeNull();
+  });
+
+  test("does not apply the base catalog window to [1m] extended-context selectors", () => {
+    expect(resolveModelContextWindow({ model: "claude-opus-4-7" }, { catalog })?.tokens).toBe(200_000);
+    expect(resolveModelContextWindow({ model: "claude-opus-4-7[1m]" }, { catalog })).toBeNull();
   });
 });
 

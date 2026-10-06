@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   calculateCost,
   loadPricingCatalog,
   pricingModelCandidates,
+  readCachedPricingCatalog,
   resetPricingCatalogForTests,
+  resolveModelContextWindowFromCatalog,
   type PricingCatalogSnapshot,
 } from "./pricing-catalog.js";
 
@@ -180,6 +182,46 @@ describe("pricing catalog", () => {
       expect(first?.entries["claude-haiku-4-5"]).toBeUndefined();
       expect(second?.entries["claude-haiku-4-5"]).toBeTruthy();
       expect(second?.entries["claude-opus-4-7"]).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads max_input_tokens as the model context window", () => {
+    const snapshot = catalog({
+      "claude-opus-4-8": { max_input_tokens: 200_000 },
+      "gpt-5.4": { max_input_tokens: 0 },
+    });
+    expect(resolveModelContextWindowFromCatalog("anthropic/claude-opus-4.8", snapshot)).toEqual({
+      model: "claude-opus-4-8",
+      contextWindow: 200_000,
+    });
+    expect(resolveModelContextWindowFromCatalog("gpt-5.4", snapshot)).toBeNull();
+    expect(resolveModelContextWindowFromCatalog("unknown", snapshot)).toBeNull();
+  });
+
+  it("reads the cached catalog synchronously without fetching", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pricing-test-"));
+    const cachePath = join(root, "pricing.json");
+    const env = { RAVI_PRICING_CATALOG_URL: "https://example.test/prices.json" };
+    try {
+      expect(readCachedPricingCatalog({ cachePath, env, now })).toBeNull();
+      writeFileSync(
+        cachePath,
+        JSON.stringify({
+          source: "test",
+          sourceUrl: "https://example.test/prices.json",
+          fetchedAt: now,
+          entries: { "gpt-5.4": { max_input_tokens: 272_000 } },
+        }),
+      );
+      const fresh = readCachedPricingCatalog({ cachePath, env, now: now + 1 });
+      expect(fresh?.stale).toBe(false);
+      expect(fresh?.entries["gpt-5.4"]).toEqual({ max_input_tokens: 272_000 });
+      expect(readCachedPricingCatalog({ cachePath, env, now: now + 1, ttlMs: 0 })?.stale).toBe(true);
+      expect(
+        readCachedPricingCatalog({ cachePath, env: { RAVI_PRICING_CATALOG_URL: "https://other.test/p.json" }, now }),
+      ).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

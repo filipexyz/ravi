@@ -1,5 +1,6 @@
 import type { SessionEntry } from "../router/types.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
+import { resolveModelContextWindow, type ResolveModelContextWindowOptions } from "./model-context-window.js";
 import { piContextCompactionTriggerTokens, piContextWarnThresholdTokens } from "./pi-context-saturation.js";
 import { emptySkillVisibilitySnapshot, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeProviderId, RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -24,7 +25,15 @@ export interface RuntimeSessionVisibilityPayload {
   lastUpdatedAt: number;
 }
 
-export function buildRuntimeSessionVisibilityPayload(session: SessionEntry): RuntimeSessionVisibilityPayload {
+export interface RuntimeSessionVisibilityOptions extends ResolveModelContextWindowOptions {
+  /** Effective model of the session; used to resolve the window when the provider did not report one. */
+  model?: string | null;
+}
+
+export function buildRuntimeSessionVisibilityPayload(
+  session: SessionEntry,
+  options: RuntimeSessionVisibilityOptions = {},
+): RuntimeSessionVisibilityPayload {
   const live = getRuntimeLiveStateForSession(session);
   const stored = readSkillVisibilityFromParams(session.runtimeSessionParams);
   const skillVisibility = selectSkillVisibility(live, stored, session.updatedAt);
@@ -34,7 +43,13 @@ export function buildRuntimeSessionVisibilityPayload(session: SessionEntry): Run
       : typeof session.totalTokens === "number"
         ? session.totalTokens
         : null;
-  const limitTokens = readSessionContextWindow(session);
+  const contextWindow = resolveModelContextWindow(
+    { model: options.model, runtimeSessionParams: session.runtimeSessionParams },
+    options,
+  );
+  const limitTokens = contextWindow?.tokens ?? null;
+  // Compaction thresholds model Pi's gate, so they only apply to a provider-reported window.
+  const compactLimit = contextWindow?.source === "runtime-session" ? contextWindow.tokens : null;
   const remainingTokens = limitTokens !== null && usedTokens !== null ? Math.max(0, limitTokens - usedTokens) : null;
 
   return {
@@ -47,8 +62,8 @@ export function buildRuntimeSessionVisibilityPayload(session: SessionEntry): Run
       remaining: remainingTokens,
     },
     compact: {
-      threshold: limitTokens !== null ? piContextWarnThresholdTokens(limitTokens) : null,
-      willCompactAt: limitTokens !== null ? piContextCompactionTriggerTokens(limitTokens) : null,
+      threshold: compactLimit !== null ? piContextWarnThresholdTokens(compactLimit) : null,
+      willCompactAt: compactLimit !== null ? piContextCompactionTriggerTokens(compactLimit) : null,
       lastCompactedAt: null,
       count: session.compactionCount ?? 0,
     },
@@ -56,22 +71,6 @@ export function buildRuntimeSessionVisibilityPayload(session: SessionEntry): Run
     loadedSkills: skillVisibility.loadedSkills,
     lastUpdatedAt: Math.max(live?.updatedAt ?? 0, skillVisibility.updatedAt, session.updatedAt),
   };
-}
-
-function readSessionContextWindow(session: SessionEntry): number | null {
-  const params = session.runtimeSessionParams;
-  if (!params) return null;
-  const direct = positiveNumber(params.contextWindow);
-  if (direct !== null) return direct;
-  const model = params.model;
-  if (model && typeof model === "object" && !Array.isArray(model)) {
-    return positiveNumber((model as Record<string, unknown>).contextWindow);
-  }
-  return null;
-}
-
-function positiveNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function selectSkillVisibility(

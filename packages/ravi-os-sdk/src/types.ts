@@ -11558,6 +11558,40 @@ export type RuntimeEnvUnsetReturn = {
   value: string | null;
 };
 
+/** Input shape for `runtime.models.list`. */
+export type RuntimeModelsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.models.list`. */
+export type RuntimeModelsListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  providers: Array<{
+    defaultModel: string | null;
+    description: string;
+    freeText: boolean;
+    id: string;
+    models: Array<{
+      contextWindow: number | null;
+      description: string;
+      id: string;
+      name: string;
+    }>;
+    name: string;
+  }>;
+  total: number;
+};
+
 /** Input shape for `runtime.presets.create`. */
 export type RuntimePresetsCreateInput = {
   description?: string;

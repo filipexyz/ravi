@@ -2274,7 +2274,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
     session.runtimeSessionParams = runtimeSessionParams;
     session.contextTokens = usedTokens;
-    updateTokens(session.sessionKey, session.inputTokens ?? 0, session.outputTokens ?? 0, usedTokens);
+    // updateTokens adds input/output to the lifetime totals; a saturation notice
+    // carries no new usage, so only the context reading is refreshed here.
+    updateTokens(session.sessionKey, 0, 0, usedTokens);
     const persistedSessionId =
       session.runtimeSessionDisplayId ??
       session.providerSessionId ??

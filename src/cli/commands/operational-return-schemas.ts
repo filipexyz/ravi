@@ -2965,6 +2965,34 @@ const strictOffsetPaginationReturnSchema = z
   })
   .strict();
 
+export const runtimeModelCatalogListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictOffsetPaginationReturnSchema,
+    providers: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string(),
+          freeText: z.boolean(),
+          defaultModel: z.string().nullable(),
+          models: z.array(
+            z
+              .object({
+                id: z.string(),
+                name: z.string(),
+                description: z.string(),
+                contextWindow: z.number().nullable(),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 const runtimeModelPresetObjectSchema = z
   .object({
     id: z.string(),

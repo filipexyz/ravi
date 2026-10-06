@@ -4055,6 +4055,10 @@ public struct RuntimeNamespace: Sendable {
     RuntimeEnvNamespace(transport: transport)
   }
 
+  public var models: RuntimeModelsNamespace {
+    RuntimeModelsNamespace(transport: transport)
+  }
+
   public var presets: RuntimePresetsNamespace {
     RuntimePresetsNamespace(transport: transport)
   }
@@ -4161,6 +4165,20 @@ public struct RuntimeEnvNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["key"] = try RaviJSON.fromEncodable(key)
     return try await transport.call(groupSegments: ["runtime","env"], command: "unset", body: requestBody, as: RuntimeEnvUnsetReturn.self)
+  }
+}
+
+public struct RuntimeModelsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: RuntimeModelsListOptions = .init()) async throws -> RuntimeModelsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","models"], command: "list", body: requestBody, as: RuntimeModelsListReturn.self)
   }
 }
 

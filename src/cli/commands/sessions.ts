@@ -145,6 +145,7 @@ import {
 } from "../../whatsapp-overlay/model.js";
 import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
+import { resolveModelContextWindow } from "../../runtime/model-context-window.js";
 import { getSessionGoal, type SessionGoal } from "../../runtime/session-goals.js";
 import type { RuntimeControlRequest, RuntimeControlResult } from "../../runtime/types.js";
 import {
@@ -1179,6 +1180,10 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
   const lifetimeTotal = session.totalTokens ?? lifetimeInput + lifetimeOutput;
   const effective = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
   const runtimeOptions = resolveSessionRuntimeOptions(session);
+  const contextWindow = resolveModelContextWindow({
+    model: effective.effectiveModel,
+    runtimeSessionParams: session.runtimeSessionParams,
+  });
   return {
     ...session,
     label: session.name ?? session.sessionKey,
@@ -1192,6 +1197,9 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
     modelError: effective.modelError,
     // Legacy alias. This is a lifetime accumulator, not the live context size.
     tokenTotal: lifetimeTotal,
+    // Context window for `contextTokens` (last turn's effective context); null when unknown.
+    contextLimit: contextWindow?.tokens ?? null,
+    contextLimitSource: contextWindow?.source ?? null,
     lifetimeTokens: {
       input: lifetimeInput,
       output: lifetimeOutput,
@@ -3283,7 +3291,9 @@ export class SessionCommands {
       return;
     }
 
-    const payload = buildRuntimeSessionVisibilityPayload(session);
+    const payload = buildRuntimeSessionVisibilityPayload(session, {
+      model: resolveEffectiveSessionSelection(session, session.modelOverride ?? null).effectiveModel,
+    });
     if (asJson) {
       printJson(payload);
       return payload;

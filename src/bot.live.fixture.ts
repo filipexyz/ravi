@@ -256,6 +256,8 @@ mock.module("./permissions/provider-runtime.js", () => ({
 mock.module("./costs/pricing-catalog.js", () => ({
   calculateCost: () => null,
   prewarmPricingCatalog: () => {},
+  readCachedPricingCatalog: () => null,
+  resolveModelContextWindowFromCatalog: () => null,
 }));
 
 mock.module("./plugins/index.js", () => ({

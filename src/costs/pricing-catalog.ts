@@ -154,6 +154,23 @@ export function resolveModelPricingFromCatalog(
   return null;
 }
 
+/**
+ * LiteLLM `max_input_tokens` for a model, using the same candidate normalization
+ * as pricing. Returns null when the catalog has no positive value for it.
+ */
+export function resolveModelContextWindowFromCatalog(
+  model: string,
+  catalog: PricingCatalogSnapshot,
+): { model: string; contextWindow: number } | null {
+  for (const candidate of pricingModelCandidates(model)) {
+    const entry = catalog.entries[candidate];
+    if (!isRecord(entry)) continue;
+    const contextWindow = numberField(entry.max_input_tokens);
+    if (contextWindow !== null && contextWindow > 0) return { model: candidate, contextWindow };
+  }
+  return null;
+}
+
 export function pricingModelCandidates(model: string): string[] {
   const raw = model.trim();
   if (!raw) return [];
@@ -210,6 +227,30 @@ export async function loadPricingCatalog(options: PricingCatalogOptions = {}): P
   }
 
   return await fetchCatalogOnce({ ...options, now, source, sourceUrl, cachePath, cacheKey });
+}
+
+/**
+ * Synchronous, network-free read of the pricing catalog already held in memory
+ * or on disk. Never fetches; returns null when nothing has been cached yet.
+ */
+export function readCachedPricingCatalog(
+  options: Pick<PricingCatalogOptions, "env" | "cachePath" | "now" | "ttlMs"> = {},
+): PricingCatalogSnapshot | null {
+  const now = options.now ?? Date.now();
+  const ttlMs = options.ttlMs ?? parsePositiveInt(options.env?.RAVI_PRICING_CATALOG_TTL_MS, DEFAULT_CATALOG_TTL_MS);
+  const sourceUrl = options.env?.RAVI_PRICING_CATALOG_URL?.trim() || DEFAULT_PRICING_CATALOG_URL;
+  const source = options.env?.RAVI_PRICING_CATALOG_SOURCE?.trim() || DEFAULT_PRICING_CATALOG_SOURCE;
+  const cachePath = options.cachePath ?? defaultPricingCatalogCachePath(options.env);
+  const cacheKey = pricingCatalogCacheKey(source, sourceUrl, cachePath);
+
+  let snapshot = memoryCatalogs.get(cacheKey) ?? null;
+  if (!snapshot) {
+    const cached = readCatalogCache(cachePath);
+    if (!cached || cached.sourceUrl !== sourceUrl) return null;
+    memoryCatalogs.set(cacheKey, cached);
+    snapshot = cached;
+  }
+  return { ...snapshot, stale: now - snapshot.fetchedAt > ttlMs };
 }
 
 export function prewarmPricingCatalog(options: PricingCatalogOptions = {}): void {

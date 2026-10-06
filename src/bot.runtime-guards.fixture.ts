@@ -529,6 +529,8 @@ mock.module("./hooks/sanitize-bash.js", () => ({
 mock.module("./costs/pricing-catalog.js", () => ({
   calculateCost: (model: string, usage: Parameters<typeof calculateCostImpl>[1]) => calculateCostImpl(model, usage),
   prewarmPricingCatalog: () => {},
+  readCachedPricingCatalog: () => null,
+  resolveModelContextWindowFromCatalog: () => null,
 }));
 
 mock.module("./plugins/index.js", () => ({

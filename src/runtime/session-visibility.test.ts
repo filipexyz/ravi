@@ -121,6 +121,26 @@ describe("buildRuntimeSessionVisibilityPayload", () => {
     expect(payload.compact.willCompactAt).toBe(983_616);
   });
 
+  it("resolves the limit from the model catalog when the provider reported none", () => {
+    const catalog = {
+      source: "test",
+      sourceUrl: "https://example.invalid/catalog.json",
+      sourceVersion: null,
+      fetchedAt: 1,
+      stale: false,
+      entries: { "gpt-5.4": { max_input_tokens: 272_000 } },
+    };
+    const session = makeSession({ contextTokens: 72_000, runtimeProvider: "codex" });
+
+    const payload = buildRuntimeSessionVisibilityPayload(session, { model: "gpt-5.4", catalog });
+
+    expect(payload.tokens).toEqual({ used: 72_000, limit: 272_000, remaining: 200_000 });
+    // Pi's compaction gate does not apply to a catalog window.
+    expect(payload.compact.threshold).toBeNull();
+    expect(payload.compact.willCompactAt).toBeNull();
+    expect(buildRuntimeSessionVisibilityPayload(session, { model: "sonnet", catalog }).tokens.limit).toBeNull();
+  });
+
   it("uses the session update timestamp for an empty visibility snapshot", () => {
     const payload = buildRuntimeSessionVisibilityPayload(
       makeSession({

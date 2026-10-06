@@ -1,12 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { PricingCatalogSnapshot } from "../costs/pricing-catalog.js";
+import { resolveModelContextWindow } from "./model-context-window.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export interface RuntimeProviderOption {
   id: RuntimeProviderId;
   name: string;
   description: string;
+  /** True when the provider takes a free-form model selector instead of a fixed list. */
+  freeText?: boolean;
 }
 
 export interface RuntimeModelOption {
@@ -97,14 +101,70 @@ const PROVIDER_OPTIONS: RuntimeProviderOption[] = [
     name: "Grok",
     description: "xAI Grok ACP runtime.",
   },
+  {
+    id: "pi",
+    name: "Pi",
+    description: "Pi RPC runtime; models are free-form `provider/model` selectors.",
+    freeText: true,
+  },
 ];
 
 export interface RuntimeModelCatalogOptions {
   codexCachePath?: string;
 }
 
+/** Providers with a fixed model list (what the TUI model picker can offer). */
 export function listRuntimeProviders(): RuntimeProviderOption[] {
-  return PROVIDER_OPTIONS;
+  return PROVIDER_OPTIONS.filter((option) => !option.freeText);
+}
+
+export interface RuntimeModelCatalogModel {
+  id: string;
+  name: string;
+  description: string;
+  contextWindow: number | null;
+}
+
+export interface RuntimeModelCatalogProvider {
+  id: RuntimeProviderId;
+  name: string;
+  description: string;
+  freeText: boolean;
+  defaultModel: string | null;
+  models: RuntimeModelCatalogModel[];
+}
+
+export interface RuntimeModelCatalogListOptions extends RuntimeModelCatalogOptions {
+  /** Pricing catalog used for context windows; `null` skips it. Defaults to the locally cached catalog. */
+  pricingCatalog?: PricingCatalogSnapshot | null;
+}
+
+/**
+ * Valid models per provider for the given provider ids (normally every id in the
+ * provider registry). Unknown providers are reported as free-form with no models.
+ */
+export function listRuntimeModelCatalog(
+  providerIds: RuntimeProviderId[],
+  options: RuntimeModelCatalogListOptions = {},
+): RuntimeModelCatalogProvider[] {
+  return providerIds.map((id) => {
+    const option = PROVIDER_OPTIONS.find((entry) => entry.id === id);
+    const models = listRuntimeModels(id, options).map((model) => ({
+      id: model.id,
+      name: model.name,
+      description: model.description,
+      contextWindow:
+        resolveModelContextWindow({ model: model.id }, { catalog: options.pricingCatalog })?.tokens ?? null,
+    }));
+    return {
+      id,
+      name: option?.name ?? id,
+      description: option?.description ?? "Registered runtime provider without a model catalog.",
+      freeText: option ? Boolean(option.freeText) : true,
+      defaultModel: models[0]?.id ?? null,
+      models,
+    };
+  });
 }
 
 export function listRuntimeModels(

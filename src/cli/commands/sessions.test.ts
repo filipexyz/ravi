@@ -1305,6 +1305,35 @@ describe("SessionCommands list --json", () => {
     expect(payload.sessions[0]).not.toHaveProperty("live");
   });
 
+  it("reports the context limit next to contextTokens", () => {
+    listedSessions = [
+      {
+        sessionKey: "agent:main:pi",
+        name: "pi",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        runtimeProvider: "pi",
+        runtimeSessionParams: { contextWindow: 1_000_000 },
+        contextTokens: 870_000,
+        totalTokens: 900_000,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true);
+      }),
+    );
+
+    expect(payload.sessions[0]).toMatchObject({
+      contextTokens: 870_000,
+      contextLimit: 1_000_000,
+      contextLimitSource: "runtime-session",
+    });
+  });
+
   it("includes live runtime state when requested", () => {
     runtimeLiveStates.set("main", {
       activity: "thinking",

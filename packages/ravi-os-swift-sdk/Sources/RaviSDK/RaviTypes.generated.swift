@@ -18940,6 +18940,54 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
   }
 }
 
+public struct RuntimeModelsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var provider: String?
+
+  public init(limit: String? = nil, offset: String? = nil, provider: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.provider = provider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case provider = "provider"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct RuntimeModelsListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
+  public var providers: [RaviJSON]
+  public var total: Double
+
+  public init(pagination: RaviJSON, providers: [RaviJSON], total: Double) {
+    self.pagination = pagination
+    self.providers = providers
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
+    case providers = "providers"
+    case total = "total"
+  }
+}
+
 public struct RuntimePresetsCreateOptions: Codable, Sendable {
   public var description: String?
   public var disabled: Bool?

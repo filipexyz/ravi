@@ -58,6 +58,7 @@ export * from "./react.js";
 export * from "./rules.js";
 export * from "./runtime-credentials.js";
 export * from "./runtime-env.js";
+export * from "./runtime-models.js";
 export * from "./runtime-presets.js";
 export * from "./runtime-providers.js";
 export * from "./sandbox.js";

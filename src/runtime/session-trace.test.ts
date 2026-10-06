@@ -11,6 +11,7 @@ import {
   updateSessionName,
   updateSessionSource,
   updateRuntimeProviderState,
+  updateTokens,
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
@@ -1994,6 +1995,37 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("refreshes only context tokens on Pi saturation notices without re-adding lifetime totals", async () => {
+    updateTokens(SESSION_KEY, 1_000, 200, 900);
+    const stored = getSession(SESSION_KEY)!;
+    expect(stored.inputTokens).toBe(1_000);
+    expect(stored.outputTokens).toBe(200);
+    const saturationEvent = (usedTokens: number): RuntimeEvent => ({
+      type: "status",
+      status: "thinking",
+      rawEvent: {
+        type: "context.saturation",
+        level: "warn",
+        message: `Context at ${usedTokens} tokens`,
+        usedTokens,
+        limitTokens: 1_000_000,
+        reason: "context_saturation",
+      },
+    });
+
+    await runTraceLoop(
+      makeStreamingSession(),
+      makeRuntimeSession([saturationEvent(870_000), saturationEvent(880_000)]),
+      { session: { ...makeSession(), inputTokens: stored.inputTokens, outputTokens: stored.outputTokens } },
+    );
+
+    const after = getSession(SESSION_KEY)!;
+    expect(after.inputTokens).toBe(1_000);
+    expect(after.outputTokens).toBe(200);
+    expect(after.totalTokens).toBe(1_200);
+    expect(after.contextTokens).toBe(880_000);
   });
 
   it("releases queued delivery barriers after a tool completes without exposing callback failures", async () => {

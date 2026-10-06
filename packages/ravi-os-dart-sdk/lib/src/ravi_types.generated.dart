@@ -16207,6 +16207,48 @@ class RuntimeEnvUnsetReturn {
 
 RuntimeEnvUnsetReturn runtimeEnvUnsetReturnFromJson(Object? json) => RuntimeEnvUnsetReturn.fromJsonValue(json);
 
+class RuntimeModelsListOptions {
+  const RuntimeModelsListOptions({this.limit, this.offset, this.provider});
+
+  final String? limit;
+  final String? offset;
+  final String? provider;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+  }
+}
+
+class RuntimeModelsListReturn {
+  const RuntimeModelsListReturn({required this.pagination, required this.providers, required this.total});
+
+  final RaviJson pagination;
+  final List<RaviJson> providers;
+  final double total;
+
+  factory RuntimeModelsListReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeModelsListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      providers: raviJsonAsList(json["providers"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static RuntimeModelsListReturn fromJsonValue(Object? json) {
+    return RuntimeModelsListReturn.fromJson(raviJsonObject(json, "RuntimeModelsListReturn"));
+  }
+}
+
+RuntimeModelsListReturn runtimeModelsListReturnFromJson(Object? json) => RuntimeModelsListReturn.fromJsonValue(json);
+
 class RuntimePresetsCreateOptions {
   const RuntimePresetsCreateOptions({this.description, this.disabled, this.model, this.provider});
 
