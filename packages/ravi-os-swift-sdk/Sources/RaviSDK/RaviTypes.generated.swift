@@ -21882,7 +21882,23 @@ public typealias SessionsSetThinkingReturn = [String: RaviJSON]
 
 public typealias SessionsSetTtlReturn = [String: RaviJSON]
 
-public typealias SessionsSubscriptionsReturn = [String: RaviJSON]
+public struct SessionsSubscriptionsReturn: Codable, Sendable {
+  public var sessionKey: String
+  public var sessionName: RaviJSON
+  public var subscriptions: [RaviJSON]
+
+  public init(sessionKey: String, sessionName: RaviJSON, subscriptions: [RaviJSON]) {
+    self.sessionKey = sessionKey
+    self.sessionName = sessionName
+    self.subscriptions = subscriptions
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case sessionKey = "sessionKey"
+    case sessionName = "sessionName"
+    case subscriptions = "subscriptions"
+  }
+}
 
 public struct SessionsTraceOptions: Codable, Sendable {
   public var correlation: String?

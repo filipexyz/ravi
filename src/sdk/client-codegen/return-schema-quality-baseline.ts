@@ -323,7 +323,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "sessions.set-model",
   "sessions.set-thinking",
   "sessions.set-ttl",
-  "sessions.subscriptions",
   "sessions.trace",
   "sessions.visibility",
   "settings.delete",

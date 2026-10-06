@@ -15,6 +15,7 @@ import {
   declareCommandReturns,
   pagedItemsReturnSchema,
   sessionGoalReturnSchema,
+  sessionSubscriptionsReturnSchema,
   sessionRecapReturnSchema,
 } from "./operational-return-schemas.js";
 import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
@@ -6807,41 +6808,58 @@ export class SessionCommands {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
-    const subs = listSessionSubscriptions(session.sessionKey);
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const subscriptions = listSessionSubscriptions(session.sessionKey).map((subscription) => {
+      const chat = dbGetChat(subscription.chatId);
+      return {
+        chatId: subscription.chatId,
+        role: subscription.role,
+        defaultOutput: Boolean(subscription.outputAttachedAt),
+        outputAttachedAt: subscription.outputAttachedAt ?? null,
+        attachedByType: subscription.attachedByType,
+        attachedById: subscription.attachedById ?? null,
+        attachedReason: subscription.attachedReason ?? null,
+        createdAt: subscription.createdAt,
+        updatedAt: subscription.updatedAt,
+        chat: chat
+          ? {
+              id: chat.id,
+              title: chat.title ?? null,
+              channel: chat.channel,
+              instanceId: chat.instanceId,
+              platformChatId: chat.platformChatId,
+            }
+          : null,
+      };
+    });
+    const payload = {
+      sessionKey: session.sessionKey,
+      sessionName: session.name ?? null,
+      subscriptions,
+    };
     if (asJson) {
-      const enriched = subs.map((s) => {
-        const chat = dbGetChat(s.chatId);
-        return {
-          ...s,
-          chat: chat
-            ? {
-                id: chat.id,
-                title: chat.title,
-                channel: chat.channel,
-                instanceId: chat.instanceId,
-              }
-            : null,
-        };
-      });
-      printJson({
-        sessionKey: session.sessionKey,
-        sessionName: session.name,
-        subscriptions: enriched,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
-    if (subs.length === 0) {
-      console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);
-      return;
+    const label = session.name ?? session.sessionKey;
+    if (subscriptions.length === 0) {
+      console.log(`No subscriptions for session ${label}`);
+      return payload;
     }
-    console.log(`Subscriptions for ${session.name ?? session.sessionKey}:`);
-    for (const sub of subs) {
-      const chat = dbGetChat(sub.chatId);
-      const title = chat?.title ?? "(no title)";
-      const channel = chat?.channel ?? "?";
-      const outputMarker = sub.outputAttachedAt ? " output" : "";
+    console.log(`Subscriptions for ${label}:`);
+    for (const sub of subscriptions) {
+      const title = sub.chat?.title ?? "(no title)";
+      const channel = sub.chat?.channel ?? "?";
+      const outputMarker = sub.defaultOutput ? " output" : "";
       console.log(`  [${sub.role}${outputMarker}] ${sub.chatId} — ${title} (${channel})`);
     }
+    return payload;
   }
 }
 
@@ -6875,7 +6893,7 @@ declareCommandReturns(SessionCommands, {
   setEffort: sessionSetEffortReturnSchema,
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,
-  subscriptions: commandEnvelopeReturnSchema,
+  subscriptions: sessionSubscriptionsReturnSchema,
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });

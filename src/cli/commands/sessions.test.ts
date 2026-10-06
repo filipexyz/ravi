@@ -469,6 +469,7 @@ mock.module("../../tags/service.js", () => ({
 import { getOptionsMetadata } from "../decorators.js";
 
 const { SessionCommands } = await import("./sessions.js");
+const { sessionSubscriptionsReturnSchema } = await import("./operational-return-schemas.js");
 const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
@@ -3617,6 +3618,110 @@ describe("SessionCommands recap", () => {
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
+  });
+});
+
+describe("SessionCommands subscriptions", () => {
+  beforeEach(() => {
+    scopeEnforced = false;
+    canAccess = true;
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: 1,
+        sessionKey: "agent:dev:main",
+        chatId: "chat_subscribed",
+        role: "primary",
+        attachedByType: "user",
+        attachedById: "cli",
+        contextSnapshotAtAttach: { secret: "not exposed" },
+        outputAttachedAt: 10,
+        createdAt: 5,
+        updatedAt: 10,
+      },
+      { id: 2, sessionKey: "agent:other:main", chatId: "chat_other", role: "input", createdAt: 1, updatedAt: 1 },
+    ];
+    chatRecords.set("chat_subscribed", {
+      id: "chat_subscribed",
+      title: "Team chat",
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "120363@g.us",
+    });
+  });
+
+  const expectedPayload = {
+    sessionKey: "agent:dev:main",
+    sessionName: "dev",
+    subscriptions: [
+      {
+        chatId: "chat_subscribed",
+        role: "primary",
+        defaultOutput: true,
+        outputAttachedAt: 10,
+        attachedByType: "user",
+        attachedById: "cli",
+        attachedReason: null,
+        createdAt: 5,
+        updatedAt: 10,
+        chat: {
+          id: "chat_subscribed",
+          title: "Team chat",
+          channel: "whatsapp",
+          instanceId: "main",
+          platformChatId: "120363@g.us",
+        },
+      },
+    ],
+  };
+
+  it("returns the subscriptions payload without --json (gateway path)", () => {
+    let returned: unknown;
+    const output = captureLogs(() => {
+      returned = new SessionCommands().subscriptions("dev");
+    });
+
+    expect(returned).toEqual(expectedPayload);
+    expectReturnShape(sessionSubscriptionsReturnSchema, returned);
+    expect(output).toContain("[primary output] chat_subscribed — Team chat (whatsapp)");
+  });
+
+  it("prints and returns the same schema-valid payload with --json", () => {
+    let returned: unknown;
+    const output = captureLogs(() => {
+      returned = new SessionCommands().subscriptions("dev", true);
+    });
+
+    expectReturnShape(sessionSubscriptionsReturnSchema, returned);
+    expect(JSON.parse(output)).toEqual(expectedPayload);
+    expect(returned).toEqual(expectedPayload);
+  });
+
+  it("returns an empty list when the session has no subscriptions", () => {
+    sessionSubscriptions = [];
+    let returned: unknown;
+    captureLogs(() => {
+      returned = new SessionCommands().subscriptions("dev");
+    });
+
+    expect(returned).toEqual({ sessionKey: "agent:dev:main", sessionName: "dev", subscriptions: [] });
+    expectReturnShape(sessionSubscriptionsReturnSchema, returned);
+  });
+
+  it("rejects an empty object as a return shape", () => {
+    expect(sessionSubscriptionsReturnSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("cloaks a session outside the caller's scope as not found", () => {
+    scopeEnforced = true;
+    canAccess = false;
+
+    expect(() => captureLogs(() => new SessionCommands().subscriptions("dev", true))).toThrow("Session not found: dev");
   });
 });
 

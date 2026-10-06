@@ -2886,6 +2886,39 @@ const sessionGoalSessionSummarySchema = z
   })
   .strict();
 
+/** `sessions subscriptions`: active chats attached to one session (issue #121). */
+export const sessionSubscriptionsReturnSchema = z
+  .object({
+    sessionKey: z.string(),
+    sessionName: z.string().nullable(),
+    subscriptions: z.array(
+      z
+        .object({
+          chatId: z.string(),
+          role: z.enum(["primary", "input", "mirror"]),
+          defaultOutput: z.boolean(),
+          outputAttachedAt: z.number().nullable(),
+          attachedByType: z.enum(["user", "agent", "system"]),
+          attachedById: z.string().nullable(),
+          attachedReason: z.string().nullable(),
+          createdAt: z.number(),
+          updatedAt: z.number(),
+          chat: z
+            .object({
+              id: z.string(),
+              title: z.string().nullable(),
+              channel: z.string(),
+              instanceId: z.string(),
+              platformChatId: z.string(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 export const sessionGoalReturnSchema = z
   .object({
     action: z.string(),

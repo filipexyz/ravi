@@ -13506,7 +13506,28 @@ export type SessionsSubscriptionsInput = {
 };
 
 /** Return shape for `sessions.subscriptions`. */
-export type SessionsSubscriptionsReturn = Record<string, unknown>;
+export type SessionsSubscriptionsReturn = {
+  sessionKey: string;
+  sessionName: string | null;
+  subscriptions: Array<{
+    attachedById: string | null;
+    attachedByType: "user" | "agent" | "system";
+    attachedReason: string | null;
+    chat: ({
+      channel: string;
+      id: string;
+      instanceId: string;
+      platformChatId: string;
+      title: string | null;
+    }) | null;
+    chatId: string;
+    createdAt: number;
+    defaultOutput: boolean;
+    outputAttachedAt: number | null;
+    role: "primary" | "input" | "mirror";
+    updatedAt: number;
+  }>;
+};
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {

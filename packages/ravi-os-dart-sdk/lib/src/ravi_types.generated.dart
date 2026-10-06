@@ -18753,9 +18753,27 @@ typedef SessionsSetTtlReturn = Map<String, RaviJson>;
 
 SessionsSetTtlReturn sessionsSetTtlReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
-typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
+class SessionsSubscriptionsReturn {
+  const SessionsSubscriptionsReturn({required this.sessionKey, required this.sessionName, required this.subscriptions});
 
-SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+  final String sessionKey;
+  final RaviJson sessionName;
+  final List<RaviJson> subscriptions;
+
+  factory SessionsSubscriptionsReturn.fromJson(Map<String, Object?> json) {
+    return SessionsSubscriptionsReturn(
+      sessionKey: raviJsonAsString(json["sessionKey"]),
+      sessionName: RaviJson.from(json["sessionName"]),
+      subscriptions: raviJsonAsList(json["subscriptions"], RaviJson.from),
+    );
+  }
+
+  static SessionsSubscriptionsReturn fromJsonValue(Object? json) {
+    return SessionsSubscriptionsReturn.fromJson(raviJsonObject(json, "SessionsSubscriptionsReturn"));
+  }
+}
+
+SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => SessionsSubscriptionsReturn.fromJsonValue(json);
 
 class SessionsTraceOptions {
   const SessionsTraceOptions({this.correlation, this.explain, this.includeStream, this.limit, this.message, this.only, this.raw, this.run, this.showSystemPrompt, this.showUserPrompt, this.since, this.turn, this.until});

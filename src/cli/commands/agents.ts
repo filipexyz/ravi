@@ -26,7 +26,14 @@ import {
   agentsListReturnSchema,
   declareCommandReturns,
 } from "./operational-return-schemas.js";
-import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  filterVisibleAgents,
+  canViewAgent,
+  canAccessSession,
+  canModifySession,
+  isScopeEnforced,
+} from "../../permissions/scope.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -73,7 +80,7 @@ import {
   type AgentInstructionState,
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
-import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
+import type { AgentConfig, AgentUpdateInput, SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -94,6 +101,30 @@ import {
 import { revokeLiveRuntimeContextsForAgent } from "../../runtime/context-registry.js";
 
 /** Notify gateway that config changed */
+/**
+ * Resolve a session for `agents reset/debug <id> [nameOrKey]`. Returns null
+ * when the session belongs to a different agent or the caller's scope cannot
+ * access/modify it, so callers answer "not found" without leaking existence.
+ */
+function resolveAgentOwnedSession(
+  agentId: string,
+  nameOrKey: string | undefined,
+  access: "access" | "modify",
+): SessionEntry | null {
+  const session = nameOrKey ? resolveSession(nameOrKey) : getMainSession(agentId);
+  if (!session || session.agentId !== agentId) return null;
+  return isSessionInCallerScope(session, access) ? session : null;
+}
+
+/** True when the caller's scope (if enforced) allows `access` on the session by name or key. */
+function isSessionInCallerScope(session: SessionEntry, access: "access" | "modify"): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  const check = access === "modify" ? canModifySession : canAccessSession;
+  const refs = [session.name, session.sessionKey].filter((ref): ref is string => Boolean(ref));
+  return refs.some((ref) => check(scopeCtx, ref));
+}
+
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
 }
@@ -109,8 +140,7 @@ function assertAgentMutationRuntime(allowRuntimeMismatch?: boolean): void {
   const summary = inspectCliRuntimeTarget();
   const mismatch = getCliRuntimeMismatchMessage(summary);
   if (mismatch && !allowRuntimeMismatch) {
-    const suggestedAction =
-      "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
+    const suggestedAction = "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
     fail(`${mismatch}\n${suggestedAction}`, suggestedAction);
   }
 }
@@ -185,6 +215,13 @@ function printJson(payload: unknown): void {
 }
 
 const AGENT_RUNTIME_SYNC_KEYS = new Set(["provider", "model", "modelPreset"]);
+
+// Authority-bearing keys inside `agents set <id> defaults`, mapped to the
+// dedicated command that owns them (and its --execute brake).
+const AGENT_SET_DEFAULTS_GUARDED_KEYS: ReadonlyArray<readonly [string, string]> = [
+  ["runtimePermissions", "ravi agents permissions <id> <profile> --execute"],
+  ["modelBroker", "ravi agents model-broker <id> --broker <id> --profile <ref>"],
+];
 
 function isAgentRuntimeSyncKey(key: string): boolean {
   return AGENT_RUNTIME_SYNC_KEYS.has(key);
@@ -1310,6 +1347,18 @@ SOURCES
       } catch {
         fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
+      // runtimePermissions and modelBroker carry agent authority and have
+      // dedicated commands with their own --execute brake. A raw defaults
+      // write may round-trip them unchanged but must not change or drop them
+      // (dropping a narrow profile would fall back to wider bootstrap authority).
+      const nextDefaults = parsedValue as Record<string, unknown>;
+      for (const [guardedKey, command] of AGENT_SET_DEFAULTS_GUARDED_KEYS) {
+        if (!isDeepStrictEqual(nextDefaults[guardedKey], agent.defaults?.[guardedKey])) {
+          fail(
+            `defaults.${guardedKey} cannot be changed with 'agents set'. Use '${command.replace("<id>", id)}' instead.`,
+          );
+        }
+      }
     }
 
     try {
@@ -2000,13 +2049,9 @@ SOURCES
       return allPayload;
     }
 
-    // Resolve by name, or find main session
-    let session;
-    if (nameOrKey) {
-      session = resolveSession(nameOrKey);
-    } else {
-      session = getMainSession(id);
-    }
+    // Resolve by name, or find main session. A session owned by another agent,
+    // or one the caller's scope cannot modify, is reported as not found.
+    const session = resolveAgentOwnedSession(id, nameOrKey, "modify");
 
     if (session) {
       if (execute !== true) {
@@ -2042,8 +2087,8 @@ SOURCES
       }
       return sessionPayload;
     } else {
-      // Show available sessions as hint
-      const sessions = getSessionsByAgent(id);
+      // Show available sessions as hint, limited to what the caller may modify
+      const sessions = getSessionsByAgent(id).filter((s) => isSessionInCallerScope(s, "modify"));
       const notFoundPayload = {
         action: "reset" as const,
         changed: false,
@@ -2102,15 +2147,10 @@ SOURCES
       failAgentNotFound("agents debug", id, asJson);
     }
 
-    let session;
-    if (nameOrKey) {
-      session = resolveSession(nameOrKey);
-    } else {
-      session = getMainSession(id);
-    }
+    const session = resolveAgentOwnedSession(id, nameOrKey, "access");
 
     if (!session) {
-      const sessions = getSessionsByAgent(id);
+      const sessions = getSessionsByAgent(id).filter((s) => isSessionInCallerScope(s, "access"));
       const notFoundPayload = {
         error: `No session found: ${nameOrKey ?? "(main)"}` as const,
         agentId: id,

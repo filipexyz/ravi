@@ -67121,8 +67121,148 @@ class RaviSchemas {
 
   static const sessionsSubscriptionsReturnSchema = r'''
 {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "subscriptions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attachedById": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachedByType": {
+            "enum": [
+              "user",
+              "agent",
+              "system"
+            ],
+            "type": "string"
+          },
+          "attachedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chat": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "instanceId": {
+                    "type": "string"
+                  },
+                  "platformChatId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "channel",
+                  "instanceId",
+                  "platformChatId"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "defaultOutput": {
+            "type": "boolean"
+          },
+          "outputAttachedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "input",
+              "mirror"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chatId",
+          "role",
+          "defaultOutput",
+          "outputAttachedAt",
+          "attachedByType",
+          "attachedById",
+          "attachedReason",
+          "createdAt",
+          "updatedAt",
+          "chat"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "sessionName",
+    "subscriptions"
+  ],
   "type": "object"
 }
 ''';
