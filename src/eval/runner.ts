@@ -87,9 +87,12 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
     },
     readOwnTurnText: () => {
       const read = readRunTranscript();
-      if (!read.exists) return null;
+      if (!read.exists) return { readable: false };
       const run = buildEvalTranscriptRun(read.messages, runScope);
-      return run.promptIndex >= 0 && run.assistantText ? sanitizeCliAssistantText(run.assistantText) : null;
+      return {
+        readable: true,
+        text: run.promptIndex >= 0 && run.assistantText ? sanitizeCliAssistantText(run.assistantText) : null,
+      };
     },
   });
   writeFileSync(join(outputRoot, "execution.json"), JSON.stringify(execution, null, 2));
@@ -153,7 +156,9 @@ function resolveOrCreateEvalSession(task: LoadedEvalTaskSpec): SessionEntry {
   return created;
 }
 
-interface RunPromptAndWaitInput {
+export type OwnTurnText = { readable: false } | { readable: true; text: string | null };
+
+export interface RunPromptAndWaitInput {
   sessionName: string;
   prompt: string;
   timeoutMs: number;
@@ -164,8 +169,11 @@ interface RunPromptAndWaitInput {
    * null when there is no readable transcript to tell turns apart.
    */
   isOwnTurn: () => boolean | null;
-  /** Assistant text that followed this run's prompt in the transcript, if readable. */
-  readOwnTurnText: () => string | null;
+  /**
+   * Assistant text that followed this run's prompt in the transcript; `text`
+   * is null while the transcript has none (yet).
+   */
+  readOwnTurnText: () => OwnTurnText;
 }
 
 /**
@@ -184,17 +192,14 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
   const { sessionName, prompt, timeoutMs } = input;
   const startedAt = Date.now();
   let settled = false;
-  let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
 
   const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
-  const responseStream = nats.subscribe(`ravi.session.${sessionName}.response`);
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const cleanup = () => {
     if (timeoutId) clearTimeout(timeoutId);
     runtimeStream.return(undefined);
-    responseStream.return(undefined);
   };
 
   const completion = new Promise<StreamTerminalState>((resolve) => {
@@ -203,7 +208,6 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
       settled = true;
       resolve(state);
     };
-    settleCompletion = settle;
 
     timeoutId = setTimeout(() => {
       settle({ kind: "timeout" });
@@ -240,20 +244,6 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
     })();
   });
 
-  const watchErrors = (async () => {
-    try {
-      for await (const event of responseStream) {
-        const data = event.data as Record<string, unknown>;
-        if (typeof data.error === "string" && data.error.trim()) {
-          settleCompletion?.({ kind: "failed", error: data.error });
-          break;
-        }
-      }
-    } catch {
-      // Ignore subscription shutdown.
-    }
-  })();
-
   await publishSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_response",
@@ -263,10 +253,8 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
   });
   const completionState = await completion;
   cleanup();
-  await Promise.race([watchErrors, new Promise((resolve) => setTimeout(resolve, 100))]);
 
-  const responseText =
-    completionState.kind === "timeout" ? (input.readOwnTurnText() ?? "") : await readTurnResponse(input);
+  const responseText = completionState.kind === "timeout" ? readTimedOutTurnText(input) : await readTurnResponse(input);
   const durationMs = Date.now() - startedAt;
   if (completionState.kind === "failed" || completionState.kind === "interrupted") {
     return {
@@ -295,18 +283,31 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
 
 /**
  * The provider may flush the final assistant entry just after the terminal
- * event, so poll briefly. Sessions without a readable transcript fall back to
- * the assistant rows Ravi stored after the prompt.
+ * event, so poll briefly. Ravi's stored history is only a fallback for
+ * sessions without a readable transcript: its rows after the cursor can
+ * include the reply of a turn that was already running when the eval started.
  */
-async function readTurnResponse(input: RunPromptAndWaitInput): Promise<string> {
-  const deadline = Date.now() + CLI_TRANSCRIPT_PERSIST_TIMEOUT_MS;
+export async function readTurnResponse(
+  input: Pick<RunPromptAndWaitInput, "sessionName" | "historyCursor" | "readOwnTurnText">,
+  persistTimeoutMs = CLI_TRANSCRIPT_PERSIST_TIMEOUT_MS,
+): Promise<string> {
+  const deadline = Date.now() + persistTimeoutMs;
   for (;;) {
-    const fromTranscript = input.readOwnTurnText();
-    if (fromTranscript !== null) return fromTranscript;
-    const fromHistory = readThisTurnAssistantText(getRecentHistory(input.sessionName, 50), input.historyCursor);
-    if (Date.now() >= deadline) return fromHistory?.text ?? "";
+    const own = input.readOwnTurnText();
+    if (own.readable && own.text !== null) return own.text;
+    const fromHistory = own.readable
+      ? null
+      : readThisTurnAssistantText(getRecentHistory(input.sessionName, 50), input.historyCursor);
+    if (fromHistory) return fromHistory.text;
+    if (Date.now() >= deadline) return "";
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+/** Whatever the turn said before the timeout; no history fallback, the turn is still running. */
+function readTimedOutTurnText(input: RunPromptAndWaitInput): string {
+  const own = input.readOwnTurnText();
+  return own.readable ? (own.text ?? "") : "";
 }
 
 function extractRuntimeError(data: Record<string, unknown>): string | undefined {
