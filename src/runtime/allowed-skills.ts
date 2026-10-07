@@ -2,6 +2,7 @@ import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/router-db.js";
 import {
+  hasSkillUseCapability,
   isAdminAll,
   selectGroupCaps,
   skillNamesFromSkillCapabilities,
@@ -144,8 +145,14 @@ export function resolveAgentSkills(
   const fromCapabilities = [...new Set([...effectiveDerivedNames, ...skillCapabilityNames])];
 
   const hasSpecificCommandCaps = specificSkillsFromCapabilities(capabilities).length > 0;
+  // Any `use:skill` capability, wildcards included, configures the agent: it
+  // then reads only skills Ravi knows, never disk-only ones by grandfathering.
   const hasConfiguration =
-    adminAll || groupCaps.length > 0 || grants.length > 0 || hasSpecificCommandCaps || skillCapabilityNames.length > 0;
+    adminAll ||
+    groupCaps.length > 0 ||
+    grants.length > 0 ||
+    hasSpecificCommandCaps ||
+    hasSkillUseCapability(capabilities);
   const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames])];
 
   return {

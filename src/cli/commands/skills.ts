@@ -782,11 +782,11 @@ export class SkillsCommands {
       const authorized = isSkillAuthorizedForAgent(runtimeAgentId, skillIdentity, {
         capabilities: getContext()?.context?.capabilities,
         // A source skill is other content under a possibly known name: a
-        // capability for the Ravi skill must not cover it.
+        // grant or capability for the Ravi skill must not cover it.
         ...(source ? { skillPath: skill.path } : {}),
       });
       if (!authorized) {
-        const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId);
+        const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId, source ? { skillPath: skill.path } : {});
         contractFail("skills show", SKILL_NOT_AUTHORIZED, copy.message, {
           asJson,
           details: {

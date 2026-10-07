@@ -41,7 +41,8 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [x] Linha que encadeia `ravi skills grant …` com a leitura negada MUST dizer que a linha foi rejeitada inteira e que o grant deve rodar sozinho. Coberto por `skill-capability-visibility.test.ts` e `skill-visibility.test.ts`.
 - [x] Skill lida sob demanda (state `loaded`) fora da allowlist que o gate autoriza MUST NOT impedir o resume; skill anunciada fora da allowlist continua impedindo. Coberto por `skill-visibility.test.ts`.
 - [x] Turno com capabilities efetivas estreitadas (overlay de chat sem `use:skill:*`) MUST negar a skill para um agente `full-access`, sem cair para as capabilities do agente. Coberto por `skill-capability-visibility.test.ts`.
-- [x] `ravi skills show <nome> --source <dir>` apontando para o diretório de uma skill instalada no Ravi MUST ser autorizado por `use:skill:*` e por `admin:system:*`; conteúdo de mesmo nome de outro diretório (ou com nome de skill do catálogo) MUST NOT ser autorizado por nenhuma das duas nem pela implicação por capability de comando. Coberto por `skill-capability-visibility.test.ts`.
+- [x] `ravi skills show <nome> --source <dir>` apontando para o diretório de uma skill instalada no Ravi MUST ser autorizado por grant, `use:skill:*` e `admin:system:*`; conteúdo de mesmo nome de outro diretório (ou com nome de skill do catálogo) MUST NOT ser autorizado por nenhum deles nem pela implicação por capability de comando, e a negação diz que o conteúdo do `--source` não é a skill do Ravi. Coberto por `skill-capability-visibility.test.ts`.
+- [x] Agente cuja única configuração é `use:skill:*` MUST contar como configurado: lê skills do catálogo e instaladas, e skill só do disco MUST NOT ser autorizada por fallback (Invariant F). Coberto por `skill-capability-visibility.test.ts`.
 
 ## Cenários herdados
 

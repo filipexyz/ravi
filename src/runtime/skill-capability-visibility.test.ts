@@ -6,6 +6,7 @@ import { createRuntimeContext } from "./context-registry.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { dbUpsertSkillGrant, getOrCreateSession } from "../router/index.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import * as providerRuntime from "../permissions/provider-runtime.js";
 import { SkillsCommands } from "../cli/commands/skills.js";
 import * as skillManager from "../skills/manager.js";
 import { discoverSkills, withResolvedSkillSource } from "../skills/manager.js";
@@ -368,6 +369,23 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     createAgent("restricted-wildcard");
     expect(isSkillAuthorizedForAgent("restricted-wildcard", "crm-manager")).toBe(false);
     expect(isSkillAuthorizedForAgent("restricted-wildcard", "crm-manager", { capabilities: wildcard })).toBe(true);
+    // Any use:skill capability, a wildcard included, configures the agent, so
+    // it never falls back to grandfathered reads of disk-only skills.
+    expect(resolveAgentSkills("restricted-wildcard", { capabilitiesOverride: wildcard }).hasConfiguration).toBe(true);
+    expect(
+      resolveAgentSkills("restricted-wildcard", { capabilitiesOverride: [cap("use", "tool", "Bash")] })
+        .hasConfiguration,
+    ).toBe(false);
+    const materialize = providerRuntime.materializeSubjectCapabilities;
+    const wildcardOnly = spyOn(providerRuntime, "materializeSubjectCapabilities").mockImplementation(
+      (subjectType, subjectId) => (subjectId === "wildcard-only" ? wildcard : materialize(subjectType, subjectId)),
+    );
+    try {
+      expect(isSkillAuthorizedForAgent("wildcard-only", "crm-manager")).toBe(true);
+      expect(isSkillAuthorizedForAgent("wildcard-only", "made-up-disk-only-skill")).toBe(false);
+    } finally {
+      wildcardOnly.mockRestore();
+    }
     for (const wrongVerb of [cap("execute", "skill", "*"), cap("read", "skill", "bases")]) {
       createAgent(`wrong-verb-${wrongVerb.permission}`);
       expect(
@@ -417,6 +435,16 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     }
   }
 
+  function showDenialAction(agentId: string, name: string, source?: string): string | undefined {
+    try {
+      showAs(agentId, name, source);
+      return undefined;
+    } catch (error) {
+      if (error instanceof ContractError) return error.envelope().error.suggestedAction;
+      throw error;
+    }
+  }
+
   it("never lets a Ravi skill name cover same-named content from --source", () => {
     createAgent("skill-wildcard", { runtimePermissions: { capabilities: ["use:skill:*"] } });
     // With a grant, a generic execute:group:* dump keeps official skills off the
@@ -424,18 +452,30 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     createAgent("pages-group", { runtimePermissions: { capabilities: ["execute:group:*"] } });
     dbUpsertSkillGrant({ agentId: "pages-group", skillName: "gmail-pack" });
     expect(resolveAgentSkills("pages-group").allowlist).not.toContain("pages");
+    // An explicit grant puts the name itself on the allowlist.
+    createAgent("crm-grant");
+    dbUpsertSkillGrant({ agentId: "crm-grant", skillName: "crm-manager" });
 
-    expect(showOutcome("skill-wildcard", "crm-manager")).toBe("allowed");
+    for (const agentId of ["skill-wildcard", "crm-grant"]) {
+      expect(showOutcome(agentId, "crm-manager")).toBe("allowed");
+    }
     expect(showOutcome("pages-group", "pages")).toBe("allowed");
 
     const lookalikes = join(stateDir!, "lookalike");
     const crm = writeSkill(join(lookalikes, "crm-manager"), "crm-manager");
     const pages = writeSkill(join(lookalikes, "pages"), "pages");
-    expect(showOutcome("skill-wildcard", "crm-manager", crm)).toBe("SKILL_NOT_AUTHORIZED");
+    for (const agentId of ["skill-wildcard", "crm-grant"]) {
+      expect(showOutcome(agentId, "crm-manager", crm)).toBe("SKILL_NOT_AUTHORIZED");
+    }
     expect(showOutcome("pages-group", "pages", pages)).toBe("SKILL_NOT_AUTHORIZED");
+    expect(showDenialAction("crm-grant", "crm-manager", crm)).toBe(
+      "This --source content is not Ravi's own 'crm-manager' skill, and a grant or capability for that name " +
+        "covers only Ravi's copy: read it without --source, or install this source " +
+        "('ravi skills install --source <skill-dir>') and grant it.",
+    );
   });
 
-  it("covers an installed skill read from its own directory under use:skill:* and admin, nothing else", () => {
+  it("covers an installed skill read from its own directory under a grant, use:skill:* and admin, nothing else", () => {
     const name = "installed-origin-check";
     const installedDir = writeSkill(join(stateDir!, "installed", name), name);
     const [installed] = withResolvedSkillSource(installedDir, (resolved) => discoverSkills(resolved));
@@ -447,10 +487,15 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
       const other = writeSkill(join(stateDir!, "other", name), name);
       createAgent("skill-wildcard", { runtimePermissions: { capabilities: ["use:skill:*"] } });
       createAgent("skill-admin", { runtimePermissions: { capabilities: ["admin:system:*"] } });
-      for (const agentId of ["skill-wildcard", "skill-admin"]) {
+      createAgent("skill-grant");
+      dbUpsertSkillGrant({ agentId: "skill-grant", skillName: name });
+      for (const agentId of ["skill-wildcard", "skill-admin", "skill-grant"]) {
         expect(showOutcome(agentId, name, installedDir)).toBe("allowed");
         expect(showOutcome(agentId, name, other)).toBe("SKILL_NOT_AUTHORIZED");
       }
+      // Denied on the installed copy itself, the agent only lacks the grant.
+      createAgent("skill-none");
+      expect(showDenialAction("skill-none", name, installedDir)).toContain("It is already installed in Ravi: grant it");
     } finally {
       installedSpy.mockRestore();
     }

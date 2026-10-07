@@ -83,6 +83,11 @@ function isSkillUseCapability(capability: ContextCapability): boolean {
   return capability.permission === "use" && capability.objectType === SKILL_CAPABILITY_OBJECT_TYPE;
 }
 
+/** Whether any `use:skill:<id>` capability (wildcards included) is present. */
+export function hasSkillUseCapability(capabilities: readonly ContextCapability[]): boolean {
+  return capabilities.some(isSkillUseCapability);
+}
+
 /**
  * A skill Ravi itself knows: a catalog skill shipped with Ravi, or a skill an
  * operator installed (`ravi skills install`). Resolution matches `ravi skills
@@ -111,6 +116,12 @@ function isKnownSkillDirectory(skill: RaviSkill, directory: string): boolean {
     }
   };
   return canonical(directory) === canonical(skill.path);
+}
+
+/** Whether `directory` is the installed copy of the Ravi skill named `skillName`. */
+export function isKnownRaviSkillDirectory(skillName: string, directory: string): boolean {
+  const skill = resolveKnownRaviSkill(skillName);
+  return skill !== null && isKnownSkillDirectory(skill, directory);
 }
 
 /** Capability ids that name `skill`: its name, its directory and plugin-qualified aliases. */

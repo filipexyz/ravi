@@ -1,6 +1,7 @@
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import type { ContextCapability } from "../router/router-db.js";
 import {
+  isKnownRaviSkillDirectory,
   officialSkillImpliedByCapabilities,
   resolveKnownRaviSkill,
   skillCoveredBySkillCapability,
@@ -28,6 +29,8 @@ export interface SkillNotAuthorizedCopyOptions {
    * friends). The gate rejects a line as a whole, so the grant never ran.
    */
   lineAlsoRemediates?: boolean;
+  /** Directory the denied read selected (`--source`), when it selected one. */
+  skillPath?: string;
 }
 
 /**
@@ -35,7 +38,8 @@ export interface SkillNotAuthorizedCopyOptions {
  * `ravi skills show`). The skill is the subject and the agent the object. The
  * remediation depends on where the skill comes from: a skill shipped with Ravi
  * or already installed only needs a grant (or a `use:skill:<name>`
- * capability); a skill that only exists on disk must be installed first.
+ * capability); a skill that only exists on disk must be installed first; and
+ * `--source` content under a Ravi skill's name is not that skill.
  * Visibility of a skill directory on disk never authorizes it.
  */
 export function skillNotAuthorizedCopy(
@@ -50,7 +54,9 @@ export function skillNotAuthorizedCopy(
   const grant = `'ravi skills grant ${agent || "<agent>"} ${target}'`;
   const remediation = !known
     ? `It is not in the Ravi catalog or installed: install it ('ravi skills install --source <skill-dir>'), then grant it (${grant}). Installing and granting need mutate:skills:install and mutate:skills:grant; if this agent cannot run them, ask an operator.`
-    : `${known.source.startsWith("catalog:") ? "It ships with Ravi, so there is nothing to install" : "It is already installed in Ravi"}: grant it (${grant}) or give the agent the 'use:skill:${target}' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.`;
+    : options.skillPath !== undefined && !isKnownRaviSkillDirectory(target, options.skillPath)
+      ? `This --source content is not Ravi's own '${target}' skill, and a grant or capability for that name covers only Ravi's copy: read it without --source, or install this source ('ravi skills install --source <skill-dir>') and grant it.`
+      : `${known.source.startsWith("catalog:") ? "It ships with Ravi, so there is nothing to install" : "It is already installed in Ravi"}: grant it (${grant}) or give the agent the 'use:skill:${target}' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.`;
   const lineNote = options.lineAlsoRemediates
     ? " This shell line also reads the skill, so it was rejected as a whole and the grant did not run: run the grant as its own command first."
     : "";
@@ -84,9 +90,10 @@ export interface SkillAuthorizationOptions {
   capabilities?: readonly ContextCapability[];
   /**
    * Directory of the skill being read, when the caller selected one (e.g.
-   * `ravi skills show --source`). Capability coverage then applies only when
-   * that directory is the Ravi skill the name resolves to, so a capability for
-   * a catalog name never authorizes same-named content from another source.
+   * `ravi skills show --source`). The allowlist and capabilities then apply
+   * only when that directory is the installed Ravi skill the name resolves to,
+   * so neither a grant nor a capability for a name authorizes same-named
+   * content from another source.
    */
   skillPath?: string;
 }
@@ -130,7 +137,12 @@ export function isSkillAuthorizedForAgent(
   if (!agentId?.trim()) return true;
   const resolved = resolveConfiguredAgentSkills(agentId);
   if (!resolved.hasConfiguration) return true;
-  if (isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist)) {
+  // The allowlist names Ravi skills, so it vouches for a selected directory
+  // only when that directory is the installed skill itself.
+  if (
+    isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist) &&
+    (options.skillPath === undefined || isKnownRaviSkillDirectory(skillName, options.skillPath))
+  ) {
     return true;
   }
 
