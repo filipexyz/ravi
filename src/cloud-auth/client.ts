@@ -456,7 +456,8 @@ export async function getMeWithAutoRefresh(input: {
 
 function mapRefreshFailure(error: unknown): CloudAuthError {
   if (error instanceof CloudAuthError) {
-    if (error.code === "PAYLOAD_INVALID") {
+    // A 404 used to arrive as PAYLOAD_INVALID; keep treating it as stale credentials.
+    if (error.code === "PAYLOAD_INVALID" || (error.code === "NOT_FOUND" && error.status === 404)) {
       return new CloudAuthError("CREDENTIALS_INVALID", "Console refresh returned invalid credentials.", {
         status: error.status,
         cause: error,

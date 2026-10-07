@@ -97,7 +97,7 @@ export function rowsToCsv(
     ...columns.map((key) => {
       const raw = key === "body" ? (row.body ?? row.values.body) : row.values[key];
       const textValue = formatCellText(raw, descriptors.get(key), users, "csv");
-      return isFreeText(descriptors.get(key)?.type) ? neutralizeCsvFormula(textValue) : textValue;
+      return isTypedScalar(descriptors.get(key)?.type) ? textValue : neutralizeCsvFormula(textValue);
     }),
   ]);
   return toCsv([header, ...lines]);
@@ -141,17 +141,9 @@ export function renderTable(
   return [line(cells[0] ?? []), widths.map((width) => "-".repeat(width)).join("  "), ...cells.slice(1).map(line)];
 }
 
-function isFreeText(type: string | undefined): boolean {
-  return (
-    type === undefined ||
-    type === "text" ||
-    type === "url" ||
-    type === "email" ||
-    type === "body" ||
-    type === "select" ||
-    type === "status" ||
-    type === "multi_select"
-  );
+/** Numbers and checkboxes are written as typed scalars; every other cell is neutralized. */
+function isTypedScalar(type: string | undefined): boolean {
+  return type === "number" || type === "checkbox";
 }
 
 function systemDescriptors(): Map<string, BasesColumnDescriptor> {

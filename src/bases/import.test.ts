@@ -68,6 +68,38 @@ describe("CSV codec", () => {
   });
 });
 
+describe("CSV export neutralization", () => {
+  it("neutralizes every cell type except numbers and checkboxes", () => {
+    const properties = [
+      prop("phone", "phone"),
+      prop("due", "date"),
+      prop("link", "ref"),
+      prop("n", "number"),
+      prop("ok", "checkbox"),
+    ];
+    const csv = rowsToCsv(
+      ["phone", "due", "link", "n", "ok", "extra"],
+      [
+        {
+          rowId: "row_1",
+          version: 1,
+          values: {
+            phone: "+5511999",
+            due: { start: "-0001" },
+            link: [{ type: "=x", id: "1" }],
+            n: -5,
+            ok: true,
+            extra: "@cmd",
+          },
+        },
+      ],
+      descriptorsFromProperties(properties),
+      {},
+    );
+    expect(parseCsv(csv)[1]).toEqual(["row_1", "1", "'+5511999", "'-0001", "'=x:1", "-5", "true", "'@cmd"]);
+  });
+});
+
 describe("flag parsing", () => {
   it("merges --values with --set text and JSON assignments", () => {
     expect(parseSetAssignments(["title=Acme = Co", "amount:=1200", 'tags:=["a"]', "url=https://x.y/?a=b"])).toEqual({

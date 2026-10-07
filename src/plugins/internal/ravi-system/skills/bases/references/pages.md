@@ -515,7 +515,11 @@ function seriesChart(groups, enc, label, kind, fieldOf) {
       });
       return;
     }
-    const points = cats.map((cat, i) => [P + i * step + step / 2, H - P - scale(num(at(cat, s)))]);
+    // categoria sem grupo nesta série não vira ponto zero: fica fora da linha
+    const points = cats.flatMap((cat, i) => {
+      const g = at(cat, s);
+      return g ? [[P + i * step + step / 2, H - P - scale(num(g))]] : [];
+    });
     const line = points.map(([x, y], i) => `${i ? "L" : "M"}${x},${y}`).join("");
     if (kind === "area" && points.length) {
       root.append(svg("path", { d: `${line}L${points[points.length - 1][0]},${H - P}L${points[0][0]},${H - P}Z`, fill: color, "fill-opacity": 0.2 }));
@@ -690,6 +694,8 @@ function showError(err) {
 // --- valores ------------------------------------------------------------------
 const COLORS = { gray: "#eceff3", brown: "#efe3d7", orange: "#fde7d3", yellow: "#fdf3c7", green: "#dcf3e3", blue: "#dde9fb", purple: "#ebe2fb", pink: "#fbe2ef", red: "#fbdcdc" };
 const SORTABLE = new Set(["text", "url", "email", "phone", "number", "checkbox", "date", "select", "status", "created_time", "updated_time"]);
+// Este exemplo só edita estes tipos. `person` e `ref` aparecem só para leitura; se a view
+// permitir escrevê-los, adicione um editor que mande user ids ou `{ type, id }` (tabela acima).
 const EDITABLE = new Set(["text", "url", "email", "phone", "number", "checkbox", "date", "select", "status", "multi_select"]);
 let view = null;
 let rows = [];
