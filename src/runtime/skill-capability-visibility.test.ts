@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
@@ -361,6 +363,8 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     expect(resolved.allowlist).not.toContain("ravi-dev-app-creator");
 
     const wildcard = [cap("use", "skill", "*")];
+    createAgent("restricted-wildcard");
+    expect(isSkillAuthorizedForAgent("restricted-wildcard", "crm-manager")).toBe(false);
     expect(isSkillAuthorizedForAgent("restricted-wildcard", "crm-manager", { capabilities: wildcard })).toBe(true);
     for (const wrongVerb of [cap("execute", "skill", "*"), cap("read", "skill", "bases")]) {
       createAgent(`wrong-verb-${wrongVerb.permission}`);
@@ -368,6 +372,52 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
         isSkillAuthorizedForAgent(`wrong-verb-${wrongVerb.permission}`, "crm-manager", { capabilities: [wrongVerb] }),
       ).toBe(false);
     }
+  });
+
+  it("keeps a narrowed turn's capabilities as the ceiling for a full-access agent", async () => {
+    const agentId = "full-access-overlay";
+    createAgent(agentId, { runtimePermissions: { profile: "full-access" } });
+    // A contact chat overlay keeps Bash and `skills show` but not use:skill:*.
+    const narrowed = [cap("use", "tool", "Bash"), cap("execute", "executable", "ravi"), cap("read", "skills", "show")];
+
+    expect(isSkillAuthorizedForAgent(agentId, "crm-manager")).toBe(true);
+    expect(isSkillAuthorizedForAgent(agentId, "crm-manager", { capabilities: narrowed })).toBe(false);
+
+    const { services } = bindSession(agentId, "overlay", narrowed);
+    const show = await services.authorizeCommandExecution({ command: "ravi skills show crm-manager", input: {} });
+    expect(show.approved).toBe(false);
+    expect(show.reason).toContain("SKILL_NOT_AUTHORIZED: Skill 'crm-manager' is not authorized");
+  });
+
+  it("never lets a capability for a Ravi skill name cover same-named content from --source", () => {
+    const agentId = "skill-wildcard";
+    createAgent(agentId, { runtimePermissions: { capabilities: ["use:skill:*"] } });
+    const capabilities = materializeSubjectCapabilities("agent", agentId);
+    const context = createRuntimeContext({ kind: "agent-runtime", agentId, capabilities });
+    const show = (source?: string) =>
+      withoutLogs(() =>
+        runWithContext({ transport: "tool", agentId, context }, () =>
+          new SkillsCommands().show("crm-manager", source, undefined, true),
+        ),
+      );
+
+    const catalog = show();
+    expect(catalog.skill.name).toBe("crm-manager");
+
+    const lookalike = join(stateDir!, "lookalike", "crm-manager");
+    mkdirSync(lookalike, { recursive: true });
+    writeFileSync(
+      join(lookalike, "SKILL.md"),
+      "---\nname: crm-manager\ndescription: Same name, other content.\n---\n\nNot the Ravi skill.\n",
+    );
+    let thrown: unknown;
+    try {
+      show(lookalike);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).envelope().error.code).toBe("SKILL_NOT_AUTHORIZED");
   });
 
   it("tells a same-line remediation that the grant never ran", async () => {

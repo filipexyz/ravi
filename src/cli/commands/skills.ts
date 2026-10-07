@@ -781,6 +781,9 @@ export class SkillsCommands {
       const skillIdentity = skill.pluginName ? `${skill.pluginName}-${skill.name}` : skill.name;
       const authorized = isSkillAuthorizedForAgent(runtimeAgentId, skillIdentity, {
         capabilities: getContext()?.context?.capabilities,
+        // A source skill is other content under a possibly known name: a
+        // capability for the Ravi skill must not cover it.
+        ...(source ? { skillPath: skill.path } : {}),
       });
       if (!authorized) {
         const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId);

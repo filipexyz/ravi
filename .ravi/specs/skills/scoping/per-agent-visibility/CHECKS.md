@@ -40,6 +40,8 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [x] `SKILL_NOT_AUTHORIZED` de skill do catálogo MUST NOT sugerir `skills install`; skill fora do Ravi MUST sugerir `install --source` + `grant`. Coberto por `skills.test.ts`, `skill-capability-visibility.test.ts` e `pi-tool-permissions.test.ts`.
 - [x] Linha que encadeia `ravi skills grant …` com a leitura negada MUST dizer que a linha foi rejeitada inteira e que o grant deve rodar sozinho. Coberto por `skill-capability-visibility.test.ts` e `skill-visibility.test.ts`.
 - [x] Skill lida sob demanda (state `loaded`) fora da allowlist que o gate autoriza MUST NOT impedir o resume; skill anunciada fora da allowlist continua impedindo. Coberto por `skill-visibility.test.ts`.
+- [x] Turno com capabilities efetivas estreitadas (overlay de chat sem `use:skill:*`) MUST negar a skill para um agente `full-access`, sem cair para as capabilities do agente. Coberto por `skill-capability-visibility.test.ts`.
+- [x] `ravi skills show <nome> --source <dir>` com conteúdo de mesmo nome de uma skill do Ravi MUST NOT ser coberto por `use:skill:*`. Coberto por `skill-capability-visibility.test.ts`.
 
 ## Cenários herdados
 

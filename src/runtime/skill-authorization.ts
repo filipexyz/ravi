@@ -75,17 +75,30 @@ export function formatSkillNotAuthorizedReason(
 export interface SkillAuthorizationOptions {
   /**
    * Effective identity capabilities for this turn (session/agent_identity).
-   * When omitted, authorization falls back to the agent's materialized
-   * subject capabilities. Visibility still follows these capabilities —
-   * a visible skill never grants effect authority by itself.
+   * When supplied they are the ceiling: a narrowed turn (contact chat overlay,
+   * observation grants) never falls back to the agent's broader capabilities.
+   * When omitted, authorization uses the agent's materialized subject
+   * capabilities. Visibility still follows these capabilities — a visible
+   * skill never grants effect authority by itself.
    */
   capabilities?: readonly ContextCapability[];
+  /**
+   * Directory of the skill being read, when the caller selected one (e.g.
+   * `ravi skills show --source`). Capability coverage then applies only when
+   * that directory is the Ravi skill the name resolves to, so a capability for
+   * a catalog name never authorizes same-named content from another source.
+   */
+  skillPath?: string;
 }
 
-function skillAuthorizedByCapabilities(capabilities: readonly ContextCapability[], skillName: string): boolean {
+function skillAuthorizedByCapabilities(
+  capabilities: readonly ContextCapability[],
+  skillName: string,
+  skillPath: string | undefined,
+): boolean {
   return (
     officialSkillImpliedByCapabilities(capabilities, skillName) ||
-    skillCoveredBySkillCapability(capabilities, skillName)
+    skillCoveredBySkillCapability(capabilities, skillName, { skillPath })
   );
 }
 
@@ -119,10 +132,6 @@ export function isSkillAuthorizedForAgent(
     return true;
   }
 
-  if (options.capabilities && skillAuthorizedByCapabilities(options.capabilities, skillName)) {
-    return true;
-  }
-
-  const agentCapabilities = materializeSubjectCapabilities("agent", agentId);
-  return skillAuthorizedByCapabilities(agentCapabilities, skillName);
+  const capabilities = options.capabilities ?? materializeSubjectCapabilities("agent", agentId);
+  return skillAuthorizedByCapabilities(capabilities, skillName, options.skillPath);
 }
