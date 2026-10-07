@@ -96,8 +96,10 @@ function skillAuthorizedByCapabilities(
   skillName: string,
   skillPath: string | undefined,
 ): boolean {
+  // Command implication is name-only, so it never vouches for a selected
+  // directory; that goes through the path-aware capability check alone.
   return (
-    officialSkillImpliedByCapabilities(capabilities, skillName) ||
+    (skillPath === undefined && officialSkillImpliedByCapabilities(capabilities, skillName)) ||
     skillCoveredBySkillCapability(capabilities, skillName, { skillPath })
   );
 }

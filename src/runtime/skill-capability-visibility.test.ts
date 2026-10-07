@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -7,6 +7,8 @@ import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { dbUpsertSkillGrant, getOrCreateSession } from "../router/index.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { SkillsCommands } from "../cli/commands/skills.js";
+import * as skillManager from "../skills/manager.js";
+import { discoverSkills, withResolvedSkillSource } from "../skills/manager.js";
 import { ContractError } from "../cli/agent-contract.js";
 import { runWithContext } from "../cli/context.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
@@ -389,35 +391,69 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     expect(show.reason).toContain("SKILL_NOT_AUTHORIZED: Skill 'crm-manager' is not authorized");
   });
 
-  it("never lets a capability for a Ravi skill name cover same-named content from --source", () => {
-    const agentId = "skill-wildcard";
-    createAgent(agentId, { runtimePermissions: { capabilities: ["use:skill:*"] } });
+  function writeSkill(dir: string, name: string): string {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: Same name, other content.\n---\n\nBody.\n`);
+    return dir;
+  }
+
+  function showAs(agentId: string, name: string, source?: string): unknown {
     const capabilities = materializeSubjectCapabilities("agent", agentId);
     const context = createRuntimeContext({ kind: "agent-runtime", agentId, capabilities });
-    const show = (source?: string) =>
-      withoutLogs(() =>
-        runWithContext({ transport: "tool", agentId, context }, () =>
-          new SkillsCommands().show("crm-manager", source, undefined, true),
-        ),
-      );
-
-    const catalog = show();
-    expect(catalog.skill.name).toBe("crm-manager");
-
-    const lookalike = join(stateDir!, "lookalike", "crm-manager");
-    mkdirSync(lookalike, { recursive: true });
-    writeFileSync(
-      join(lookalike, "SKILL.md"),
-      "---\nname: crm-manager\ndescription: Same name, other content.\n---\n\nNot the Ravi skill.\n",
+    return withoutLogs(() =>
+      runWithContext({ transport: "tool", agentId, context }, () =>
+        new SkillsCommands().show(name, source, undefined, true),
+      ),
     );
-    let thrown: unknown;
+  }
+
+  function showOutcome(agentId: string, name: string, source?: string): string {
     try {
-      show(lookalike);
+      showAs(agentId, name, source);
+      return "allowed";
     } catch (error) {
-      thrown = error;
+      if (error instanceof ContractError) return error.envelope().error.code;
+      throw error;
     }
-    expect(thrown).toBeInstanceOf(ContractError);
-    expect((thrown as InstanceType<typeof ContractError>).envelope().error.code).toBe("SKILL_NOT_AUTHORIZED");
+  }
+
+  it("never lets a Ravi skill name cover same-named content from --source", () => {
+    createAgent("skill-wildcard", { runtimePermissions: { capabilities: ["use:skill:*"] } });
+    // With a grant, a generic execute:group:* dump keeps official skills off the
+    // allowlist, so pages is reached only through name-based command implication.
+    createAgent("pages-group", { runtimePermissions: { capabilities: ["execute:group:*"] } });
+    dbUpsertSkillGrant({ agentId: "pages-group", skillName: "gmail-pack" });
+    expect(resolveAgentSkills("pages-group").allowlist).not.toContain("pages");
+
+    expect(showOutcome("skill-wildcard", "crm-manager")).toBe("allowed");
+    expect(showOutcome("pages-group", "pages")).toBe("allowed");
+
+    const lookalikes = join(stateDir!, "lookalike");
+    const crm = writeSkill(join(lookalikes, "crm-manager"), "crm-manager");
+    const pages = writeSkill(join(lookalikes, "pages"), "pages");
+    expect(showOutcome("skill-wildcard", "crm-manager", crm)).toBe("SKILL_NOT_AUTHORIZED");
+    expect(showOutcome("pages-group", "pages", pages)).toBe("SKILL_NOT_AUTHORIZED");
+  });
+
+  it("covers an installed skill read from its own directory under use:skill:* and admin, nothing else", () => {
+    const name = "installed-origin-check";
+    const installedDir = writeSkill(join(stateDir!, "installed", name), name);
+    const [installed] = withResolvedSkillSource(installedDir, (resolved) => discoverSkills(resolved));
+    // The installed list lives under the OS home; stand in for it with this one skill.
+    const installedSpy = spyOn(skillManager, "listInstalledSkills").mockImplementation(() => [
+      { ...installed!, source: "plugin:ravi-user-skills", pluginName: "ravi-user-skills" },
+    ]);
+    try {
+      const other = writeSkill(join(stateDir!, "other", name), name);
+      createAgent("skill-wildcard", { runtimePermissions: { capabilities: ["use:skill:*"] } });
+      createAgent("skill-admin", { runtimePermissions: { capabilities: ["admin:system:*"] } });
+      for (const agentId of ["skill-wildcard", "skill-admin"]) {
+        expect(showOutcome(agentId, name, installedDir)).toBe("allowed");
+        expect(showOutcome(agentId, name, other)).toBe("SKILL_NOT_AUTHORIZED");
+      }
+    } finally {
+      installedSpy.mockRestore();
+    }
   });
 
   it("tells a same-line remediation that the grant never ran", async () => {
