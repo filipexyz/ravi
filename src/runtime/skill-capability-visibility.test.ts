@@ -478,7 +478,9 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     expect(showDenialAction("crm-grant", "crm-manager", crm)).toBe(
       "This --source content is not Ravi's own 'crm-manager' skill, and a grant or capability for that name " +
         "covers only Ravi's copy: read it without --source, or install this source " +
-        "('ravi skills install --source <skill-dir>') and grant it.",
+        "('ravi skills install --source <skill-dir>') and grant it ('ravi skills grant crm-grant crm-manager'). " +
+        "Installing and granting need mutate:skills:install and mutate:skills:grant; if this agent cannot run them, " +
+        "ask an operator.",
     );
   });
 

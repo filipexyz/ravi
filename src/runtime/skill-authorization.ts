@@ -55,7 +55,7 @@ export function skillNotAuthorizedCopy(
   const remediation = !known
     ? `It is not in the Ravi catalog or installed: install it ('ravi skills install --source <skill-dir>'), then grant it (${grant}). Installing and granting need mutate:skills:install and mutate:skills:grant; if this agent cannot run them, ask an operator.`
     : options.skillPath !== undefined && !isKnownRaviSkillDirectory(target, options.skillPath)
-      ? `This --source content is not Ravi's own '${target}' skill, and a grant or capability for that name covers only Ravi's copy: read it without --source, or install this source ('ravi skills install --source <skill-dir>') and grant it.`
+      ? `This --source content is not Ravi's own '${target}' skill, and a grant or capability for that name covers only Ravi's copy: read it without --source, or install this source ('ravi skills install --source <skill-dir>') and grant it (${grant}). Installing and granting need mutate:skills:install and mutate:skills:grant; if this agent cannot run them, ask an operator.`
       : `${known.source.startsWith("catalog:") ? "It ships with Ravi, so there is nothing to install" : "It is already installed in Ravi"}: grant it (${grant}) or give the agent the 'use:skill:${target}' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.`;
   const lineNote = options.lineAlsoRemediates
     ? " This shell line also reads the skill, so it was rejected as a whole and the grant did not run: run the grant as its own command first."
