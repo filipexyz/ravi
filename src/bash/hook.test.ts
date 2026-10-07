@@ -195,6 +195,132 @@ describe("createBashPermissionHook", () => {
       expect(isDenied(result)).toBe(true);
     });
 
+    it("blocks output redirection to files for agents that cannot write files", () => {
+      const ravisOnly = {
+        agentId: "crypto-reception",
+        kind: "test-runtime",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      };
+      for (const command of [
+        "ravi crypto status > ~/.ravi/crypto-production.db",
+        "ravi crypto balance --json >> /tmp/x",
+        "ravi crypto status &> out.txt",
+        "ravi crypto status >| ~/.ravi/ravi.db",
+        "ravi crypto status 1>'/tmp/a b'",
+      ]) {
+        const decision = evaluateBashPermission(command, ravisOnly);
+        expect(decision.allowed, command).toBe(false);
+        expect(decision.reason ?? "", command).toContain("cannot redirect output to files");
+      }
+      for (const command of [
+        "ravi crypto status --json 2>/dev/null",
+        "ravi crypto status 2>&1",
+        "ravi crypto status >/dev/stderr",
+        "ravi crypto status 1>/dev/stdout",
+        'ravi crypto trades propose buy TSLAx 5 --rationale "price > 100"',
+      ]) {
+        expect(evaluateBashPermission(command, ravisOnly).allowed, command).toBe(true);
+      }
+      const canWrite = {
+        ...ravisOnly,
+        capabilities: [...ravisOnly.capabilities, { permission: "use", objectType: "tool", objectId: "Write" }],
+      };
+      expect(evaluateBashPermission("ravi crypto status > /tmp/status.txt", canWrite).allowed).toBe(true);
+      const fullAccess = {
+        ...ravisOnly,
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      };
+      expect(evaluateBashPermission("ravi crypto status > /tmp/status.txt", fullAccess).allowed).toBe(true);
+    });
+
+    it("blocks stripping RAVI identity env before running ravi", () => {
+      const ctx = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      };
+      for (const command of [
+        "env -u RAVI_CONTEXT_KEY -u RAVI_AGENT_ID ravi crypto trades approve trd_x --execute",
+        "env -i PATH=/usr/bin ravi crypto settings set execution.mode live",
+        "env - ravi crypto vault list",
+        "/usr/bin/env --ignore-environment ravi crypto trades approve trd_x --execute",
+        "env --unset=RAVI_SESSION_KEY ravi crypto balance",
+        // A full path to env must not slip past the unset rule.
+        "/usr/bin/env -uRAVI_CONTEXT_KEY ravi crypto balance",
+        "/usr/bin/env -u RAVI_CONTEXT_KEY ravi crypto balance",
+        "/usr/bin/env --unset=RAVI_CONTEXT_KEY ravi crypto balance",
+        "'/usr/bin/env' -u RAVI_CONTEXT_KEY ravi crypto balance",
+        "unset RAVI_CONTEXT_KEY; ravi crypto trades approve trd_x --execute",
+        "exec -c ravi crypto trades list",
+        // Quoting hides the name from text matching but not from the shell.
+        "env -i ./bin/r'a'vi crypto trades approve trd_x --execute",
+        'env -i r"av"i crypto trades approve trd_x --execute',
+        "env -i r\\avi crypto trades approve trd_x --execute",
+        "R'A'VI_AGENT_ID= ravi crypto vault list",
+      ]) {
+        const decision = evaluateBashPermission(command, ctx);
+        expect(decision.allowed, command).toBe(false);
+        expect(decision.denialType, command).toBe("env_spoofing");
+      }
+      // Ordinary env usage stays allowed.
+      expect(evaluateBashPermission("env | grep PATH", ctx).denialType).not.toBe("env_spoofing");
+      expect(evaluateBashPermission("env | grep -i ravi", ctx).denialType).not.toBe("env_spoofing");
+      expect(evaluateBashPermission("env -u LANG ravi crypto status", ctx).denialType).not.toBe("env_spoofing");
+      expect(evaluateBashPermission("/usr/bin/env -u LANG ravi crypto status", ctx).denialType).not.toBe(
+        "env_spoofing",
+      );
+      expect(evaluateBashPermission("/usr/bin/env -uLANG ravi crypto status", ctx).denialType).not.toBe("env_spoofing");
+      expect(evaluateBashPermission("env -i PATH=/usr/bin node script.js", ctx).denialType).not.toBe("env_spoofing");
+    });
+
+    it("reads env options instead of pattern-matching them", () => {
+      const ctx = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      };
+      for (const command of [
+        // Bundled flags and GNU abbreviations.
+        "env -vu RAVI_CONTEXT_KEY ravi crypto balance",
+        "/usr/bin/env -vuRAVI_CONTEXT_KEY ravi crypto balance",
+        "env -iu RAVI_CONTEXT_KEY PATH=/usr/bin ravi crypto balance",
+        "env --uns RAVI_CONTEXT_KEY ravi crypto balance",
+        "env --uns=RAVI_CONTEXT_KEY ravi crypto balance",
+        // The name arrives through an expansion.
+        "env -u{R,X}AVI_CONTEXT_KEY ravi crypto balance",
+        "env -u {RAVI_CONTEXT_KEY,} ravi crypto balance",
+        "env -u R{A,}VI_CONTEXT_KEY ravi crypto balance",
+        "X=RAVI_CONTEXT_KEY; env -u $X ravi crypto balance",
+        "X=RAVI_CONTEXT_KEY; env -u ${X} ravi crypto balance",
+        // Shell tricks around the env name.
+        "/usr/bin/ENV -u RAVI_CONTEXT_KEY ravi crypto balance",
+        "env \\\n-u RAVI_CONTEXT_KEY ravi crypto balance",
+        "(env -u RAVI_CONTEXT_KEY ravi crypto balance)",
+        "{ env -i ravi crypto balance; }",
+        "env -i ./bin/RAVI crypto balance",
+        // Blanking the key with a builtin instead of unsetting it.
+        "printf -v RAVI_CONTEXT_KEY ''; ravi crypto balance",
+        "declare +x RAVI_CONTEXT_KEY; ravi crypto balance",
+        "typeset +x RAVI_CONTEXT_KEY; ravi crypto balance",
+        "read RAVI_CONTEXT_KEY </dev/null; ravi crypto balance",
+        "for RAVI_CONTEXT_KEY in ''; do ravi crypto balance; done",
+      ]) {
+        const decision = evaluateBashPermission(command, ctx);
+        expect(decision.allowed, command).toBe(false);
+        expect(decision.denialType, command).toBe("env_spoofing");
+      }
+      for (const command of [
+        "env --unset=LANG ravi crypto status",
+        "env LANG=C ravi crypto status",
+        "ls /usr/bin/env",
+        "which env",
+        "cat .env",
+        "printenv HOME",
+      ]) {
+        expect(evaluateBashPermission(command, ctx).denialType, command).not.toBe("env_spoofing");
+      }
+    });
+
     it("blocks unconditional shells even with execute:executable:*", () => {
       const decision = evaluateBashPermission("bash -c 'echo hi'", {
         agentId: "test",

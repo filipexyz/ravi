@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "aab79eb25d3e689c"
+    "version": "9d1c834d6ba8ff21"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2433,7 +2433,7 @@
                     "type": "string"
                   },
                   "profile": {
-                    "description": "Profile: bootstrap, chat-only (conversation only), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
+                    "description": "Profile: bootstrap, chat-only (conversation only), explicit-only (only the listed capabilities, no bootstrap floor), full-access (Bash execute ceiling + admin), none (reset to bootstrap minimum)",
                     "type": "string"
                   }
                 },
@@ -2531,6 +2531,7 @@
                               "enum": [
                                 "bootstrap",
                                 "chat-only",
+                                "explicit-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -2900,6 +2901,7 @@
                               "enum": [
                                 "bootstrap",
                                 "chat-only",
+                                "explicit-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -2995,6 +2997,7 @@
                               "enum": [
                                 "bootstrap",
                                 "chat-only",
+                                "explicit-only",
                                 "full-access"
                               ],
                               "type": "string"
@@ -3926,6 +3929,7 @@
                               "enum": [
                                 "bootstrap",
                                 "chat-only",
+                                "explicit-only",
                                 "full-access"
                               ],
                               "type": "string"

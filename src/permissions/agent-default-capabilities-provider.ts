@@ -5,7 +5,7 @@ import { canWithCapabilities } from "./capability-snapshot.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
 
 export const AGENT_RUNTIME_PERMISSIONS_DEFAULTS_KEY = "runtimePermissions";
-export const AGENT_RUNTIME_PERMISSION_PROFILES = ["bootstrap", "chat-only", "full-access"] as const;
+export const AGENT_RUNTIME_PERMISSION_PROFILES = ["bootstrap", "chat-only", "explicit-only", "full-access"] as const;
 export const AGENT_RUNTIME_PERMISSION_CLEAR_ALIASES = ["none", "clear", "off"] as const;
 
 export type AgentRuntimePermissionProfile = (typeof AGENT_RUNTIME_PERMISSION_PROFILES)[number];
@@ -16,7 +16,7 @@ export interface AgentRuntimePermissionsConfig {
 }
 
 export function formatAgentRuntimePermissionProfileChoices(): string {
-  return "bootstrap, chat-only, full-access, none";
+  return "bootstrap, chat-only, explicit-only, full-access, none";
 }
 
 export function isChatOnlyRuntimePermissions(config: AgentRuntimePermissionsConfig | null | undefined): boolean {
@@ -27,6 +27,25 @@ export function isChatOnlyAgent(agentId: string | null | undefined): boolean {
   const id = agentId?.trim();
   if (!id) return false;
   return isChatOnlyRuntimePermissions(readAgentRuntimePermissionsConfig(id));
+}
+
+/**
+ * explicit-only: the agent holds exactly its explicit capabilities. Unlike
+ * chat-only it keeps them; unlike bootstrap it gets no birth floor (no tool:*,
+ * no default executables such as bun/cat/xargs). For agents serving people the
+ * operator does not fully trust: a public chat agent granted only
+ * `use:tool:Bash` plus the CLI groups it needs cannot read files or run code.
+ */
+export function isExplicitOnlyRuntimePermissions(config: AgentRuntimePermissionsConfig | null | undefined): boolean {
+  return config?.profile === "explicit-only";
+}
+
+/** True when the runtime-bootstrap birth floor must not be added for this agent. */
+export function suppressesRuntimeBootstrap(agentId: string | null | undefined): boolean {
+  const id = agentId?.trim();
+  if (!id) return false;
+  const config = readAgentRuntimePermissionsConfig(id);
+  return isChatOnlyRuntimePermissions(config) || isExplicitOnlyRuntimePermissions(config);
 }
 
 export function isToolOrExecCapability(capability: Pick<ContextCapability, "permission" | "objectType">): boolean {

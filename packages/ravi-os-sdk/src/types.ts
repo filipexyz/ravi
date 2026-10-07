@@ -403,7 +403,7 @@ export type AgentsPermissionsReturn = {
       permission?: string;
       source?: string;
     })>;
-    profile?: "bootstrap" | "chat-only" | "full-access";
+    profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
   agent?: {
     allowedSessions?: string[];
@@ -466,7 +466,7 @@ export type AgentsPermissionsReturn = {
       permission?: string;
       source?: string;
     })>;
-    profile?: "bootstrap" | "chat-only" | "full-access";
+    profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
   breakGlassCommand?: string;
   changed: boolean;
@@ -486,7 +486,7 @@ export type AgentsPermissionsReturn = {
       permission?: string;
       source?: string;
     })>;
-    profile?: "bootstrap" | "chat-only" | "full-access";
+    profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
 };
 
@@ -634,7 +634,7 @@ export type AgentsShowReturn = {
       permission?: string;
       source?: string;
     })>;
-    profile?: "bootstrap" | "chat-only" | "full-access";
+    profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
 };
 

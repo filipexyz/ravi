@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { parseBashCommand, checkDangerousPatterns, UNCONDITIONAL_BLOCKS } from "./parser.js";
+import {
+  parseBashCommand,
+  checkDangerousPatterns,
+  findOutputRedirectTargets,
+  stripShellQuoting,
+  UNCONDITIONAL_BLOCKS,
+} from "./parser.js";
 
 // ============================================================================
 // checkDangerousPatterns
@@ -180,5 +186,40 @@ describe("UNCONDITIONAL_BLOCKS", () => {
     expect(UNCONDITIONAL_BLOCKS.has("ls")).toBe(false);
     expect(UNCONDITIONAL_BLOCKS.has("git")).toBe(false);
     expect(UNCONDITIONAL_BLOCKS.has("ravi")).toBe(false);
+  });
+});
+
+describe("stripShellQuoting", () => {
+  it("joins quoted and escaped fragments the way the shell does", () => {
+    expect(stripShellQuoting("env -i ./bin/r'a'vi crypto balance")).toBe("env -i ./bin/ravi crypto balance");
+    expect(stripShellQuoting('env -i r"av"i x')).toBe("env -i ravi x");
+    expect(stripShellQuoting("env -i r\\avi x")).toBe("env -i ravi x");
+    expect(stripShellQuoting("R'A'VI_AGENT_ID=x ravi")).toBe("RAVI_AGENT_ID=x ravi");
+  });
+
+  it("leaves unquoted commands unchanged", () => {
+    expect(stripShellQuoting("ravi crypto status --json")).toBe("ravi crypto status --json");
+  });
+});
+
+describe("findOutputRedirectTargets", () => {
+  it("lists every file an output redirection writes", () => {
+    expect(findOutputRedirectTargets("ravi crypto status > ~/.ravi/crypto.db")).toEqual(["~/.ravi/crypto.db"]);
+    expect(findOutputRedirectTargets("ravi x >> /tmp/a 2>&1")).toEqual(["/tmp/a"]);
+    expect(findOutputRedirectTargets("ravi x &> out.txt")).toEqual(["out.txt"]);
+    expect(findOutputRedirectTargets("ravi x >|f")).toEqual(["f"]);
+    expect(findOutputRedirectTargets('ravi x 1>"/a b"')).toEqual(["/a b"]);
+    expect(findOutputRedirectTargets("echo a>b")).toEqual(["b"]);
+  });
+
+  it("ignores descriptor duplication and quoted arrows", () => {
+    expect(findOutputRedirectTargets("ravi x 2>&1")).toEqual([]);
+    expect(findOutputRedirectTargets("ravi x >&2")).toEqual([]);
+    expect(findOutputRedirectTargets('ravi sessions send dev "a > b"')).toEqual([]);
+    expect(findOutputRedirectTargets("ravi x 'a > b'")).toEqual([]);
+  });
+
+  it("reports /dev/null like any other target so callers decide", () => {
+    expect(findOutputRedirectTargets("ravi x 2>/dev/null")).toEqual(["/dev/null"]);
   });
 });

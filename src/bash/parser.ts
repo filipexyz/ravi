@@ -333,3 +333,52 @@ export function parseBashCommand(command: string): ParsedCommand {
     };
   }
 }
+
+/**
+ * Targets of output redirections (`>`, `>>`, `>|`, `&>`, `N>`) outside quotes.
+ * Duplications to another descriptor (`2>&1`, `>&2`) are not file writes and
+ * are skipped. A redirection whose target cannot be read is reported as "?".
+ */
+export function findOutputRedirectTargets(command: string): string[] {
+  const targets: string[] = [];
+  let quote: "'" | '"' | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    if (quote) {
+      if (char === "\\" && quote === '"') i++;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "\\") {
+      i++;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char !== ">") continue;
+    let j = i + 1;
+    if (command[j] === ">" || command[j] === "|") j++;
+    if (command[j] === "&") {
+      // `>&N` duplicates a descriptor; `>&file` is a bash-ism for "both streams to file".
+      const dup = /^&\s*(\d+|-)(?![^\s;&|<>])/.exec(command.slice(j));
+      if (dup) {
+        i = j + dup[0].length - 1;
+        continue;
+      }
+      j++;
+    }
+    while (command[j] === " " || command[j] === "\t") j++;
+    const rest = command.slice(j);
+    const target = /^(?:"[^"]*"|'[^']*'|[^\s;&|<>])+/.exec(rest)?.[0];
+    targets.push(target ? target.replace(/["']/g, "") : "?");
+    i = j + (target?.length ?? 0) - 1;
+  }
+  return targets;
+}
+
+/** Remove shell quoting (`r'a'vi` → `ravi`) so text checks see what the shell will run. */
+export function stripShellQuoting(command: string): string {
+  return command.replace(/\\(.)/g, "$1").replace(/["']/g, "");
+}

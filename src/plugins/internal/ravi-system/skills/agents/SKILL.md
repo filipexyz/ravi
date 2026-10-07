@@ -242,6 +242,9 @@ ravi permissions materialize --subject-type agent --subject-id <id> --json
 # Reception agent: só conversa, sem tools/shell/grupos CLI
 ravi agents permissions <id> chat-only
 
+# Agente público com escopo: só o que for listado (sem tool:*, sem bun/cat/xargs do bootstrap)
+ravi agents permissions <id> explicit-only --capabilities use:tool:Bash,use:tool:Skill,read:crypto:*,mutate:crypto:deposit --execute
+
 # Resetar overlay para o piso bootstrap (~27 caps). Não é zero-authority.
 ravi agents permissions <id> none
 
@@ -249,7 +252,7 @@ ravi agents permissions <id> none
 ravi agents permissions <id> bootstrap --capabilities execute:executable:omni --execute
 ```
 
-`none` / `clear` / `off` apagam o overlay e voltam ao piso `runtime-bootstrap:agent`. Isso não zera autoridade. `chat-only` persiste `{ profile: "chat-only" }` e materializa teto vazio (sem `use:tool:*`, sem grupos/executáveis de bootstrap). Nascimento de agent continua bootstrap; não use chat-only como default de daemon/main/automação.
+`none` / `clear` / `off` apagam o overlay e voltam ao piso `runtime-bootstrap:agent`. Isso não zera autoridade. `chat-only` persiste `{ profile: "chat-only" }` e materializa teto vazio (sem `use:tool:*`, sem grupos/executáveis de bootstrap). Nascimento de agent continua bootstrap; não use chat-only como default de daemon/main/automação. `explicit-only` persiste o profile e materializa exatamente as capabilities explícitas: o agente roda `ravi` via Bash (se tiver `use:tool:Bash`) mas não lê arquivos, não roda interpretadores e não redireciona saída para arquivos. Sair de `explicit-only` devolve o piso bootstrap e exige `--execute`. Agentes Codex precisam também de `read:context:codex-bash-hook`.
 
 Expandir autoridade sem `--execute` é dry-run (exit 3): o `plan` mostra `before`/`after` e nada é gravado. Leitura, no-op e redução não precisam de `--execute`.
 

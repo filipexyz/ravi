@@ -1970,7 +1970,7 @@ const runtimeCapabilityReturnSchema = z.object({
 
 const agentRuntimePermissionsConfigReturnSchema = z
   .object({
-    profile: z.enum(["bootstrap", "chat-only", "full-access"]).optional(),
+    profile: z.enum(["bootstrap", "chat-only", "explicit-only", "full-access"]).optional(),
     capabilities: z.array(z.union([z.string(), runtimeCapabilityReturnSchema])).optional(),
   })
   .nullable();
