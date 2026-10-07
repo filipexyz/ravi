@@ -60,6 +60,11 @@ export interface ResolvedAgentSkills {
   hasConfiguration: boolean;
   /** Nomes canônicos de skill visíveis (baseline ∪ derivadas ∪ grants). */
   allowlist: string[];
+  /**
+   * Allowlist names that only concrete `use:skill:<id>` capabilities put there.
+   * A turn that supplies its own capabilities re-checks them against the turn.
+   */
+  fromSkillCapabilitiesOnly: string[];
   provenance: {
     baseline: string[];
     fromCapabilities: string[];
@@ -105,6 +110,7 @@ export function resolveAgentSkills(
     return {
       hasConfiguration: false,
       allowlist: [],
+      fromSkillCapabilitiesOnly: [],
       provenance: { baseline: [], fromCapabilities: [], fromGrants: [] },
     };
   }
@@ -154,10 +160,12 @@ export function resolveAgentSkills(
     hasSpecificCommandCaps ||
     hasSkillUseCapability(capabilities);
   const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames])];
+  const otherNames = new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames]);
 
   return {
     hasConfiguration,
     allowlist,
+    fromSkillCapabilitiesOnly: [...new Set(skillCapabilityNames)].filter((name) => !otherNames.has(name)),
     provenance: {
       baseline: baselineNames,
       fromCapabilities,

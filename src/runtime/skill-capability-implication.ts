@@ -118,10 +118,23 @@ function isKnownSkillDirectory(skill: RaviSkill, directory: string): boolean {
   return canonical(directory) === canonical(skill.path);
 }
 
+/**
+ * The installed Ravi skill named `skillName` that lives in `directory`. Checked
+ * against every installed skill, so an installed skill that shares its name
+ * with a catalog skill still matches its own directory.
+ */
+function resolveKnownRaviSkillAt(skillName: string, directory: string): RaviSkill | null {
+  if (!skillName.trim()) return null;
+  return (
+    listInstalledSkills({ includeCodex: false }).find(
+      (skill) => findSkillByName([skill], skillName) !== null && isKnownSkillDirectory(skill, directory),
+    ) ?? null
+  );
+}
+
 /** Whether `directory` is the installed copy of the Ravi skill named `skillName`. */
 export function isKnownRaviSkillDirectory(skillName: string, directory: string): boolean {
-  const skill = resolveKnownRaviSkill(skillName);
-  return skill !== null && isKnownSkillDirectory(skill, directory);
+  return resolveKnownRaviSkillAt(skillName, directory) !== null;
 }
 
 /** Capability ids that name `skill`: its name, its directory and plugin-qualified aliases. */
@@ -149,8 +162,8 @@ function normalizeSkillCapabilityId(objectId: string): string {
  *
  * Only skills Ravi knows are covered (catalog or installed). A skill that only
  * exists on disk must be installed before any capability or grant reaches it.
- * With `skillPath` (the directory actually being read), coverage also requires
- * that directory to be the known skill, never same-named content elsewhere.
+ * With `skillPath` (the directory actually being read), coverage applies only
+ * to the installed skill in that directory, never same-named content elsewhere.
  */
 export function skillCoveredBySkillCapability(
   capabilities: readonly ContextCapability[],
@@ -161,9 +174,11 @@ export function skillCoveredBySkillCapability(
   const adminAll = isAdminAll(capabilities);
   if (!adminAll && skillCapabilities.length === 0) return false;
 
-  const skill = resolveKnownRaviSkill(skillName);
+  const skill =
+    options.skillPath === undefined
+      ? resolveKnownRaviSkill(skillName)
+      : resolveKnownRaviSkillAt(skillName, options.skillPath);
   if (!skill) return false;
-  if (options.skillPath !== undefined && !isKnownSkillDirectory(skill, options.skillPath)) return false;
   if (adminAll) return true;
 
   const normalized = skillCapabilities.map((capability) => ({

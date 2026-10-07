@@ -83,6 +83,10 @@ export interface SkillAuthorizationOptions {
    * Effective identity capabilities for this turn (session/agent_identity).
    * When supplied they are the ceiling: a narrowed turn (contact chat overlay,
    * observation grants) never falls back to the agent's broader capabilities.
+   * The agent's allowlist still applies (baseline, grants, official skills of
+   * its commands), so a skill a tool requires stays deliverable when the turn
+   * may use that tool; names only its `use:skill:<id>` capabilities add answer
+   * to the turn.
    * When omitted, authorization uses the agent's materialized subject
    * capabilities. Visibility still follows these capabilities — a visible
    * skill never grants effect authority by itself.
@@ -137,10 +141,15 @@ export function isSkillAuthorizedForAgent(
   if (!agentId?.trim()) return true;
   const resolved = resolveConfiguredAgentSkills(agentId);
   if (!resolved.hasConfiguration) return true;
+  // Names only the agent's `use:skill:<id>` capabilities put on the allowlist
+  // answer to supplied turn capabilities, checked below like any capability.
+  const allowlist = options.capabilities
+    ? resolved.allowlist.filter((name) => !resolved.fromSkillCapabilitiesOnly.includes(name))
+    : resolved.allowlist;
   // The allowlist names Ravi skills, so it vouches for a selected directory
   // only when that directory is the installed skill itself.
   if (
-    isSkillNameAuthorizedOnAllowlist(skillName, resolved.allowlist) &&
+    isSkillNameAuthorizedOnAllowlist(skillName, allowlist) &&
     (options.skillPath === undefined || isKnownRaviSkillDirectory(skillName, options.skillPath))
   ) {
     return true;

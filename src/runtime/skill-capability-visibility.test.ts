@@ -402,6 +402,13 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
 
     expect(isSkillAuthorizedForAgent(agentId, "crm-manager")).toBe(true);
     expect(isSkillAuthorizedForAgent(agentId, "crm-manager", { capabilities: narrowed })).toBe(false);
+    // A concrete use:skill:<id> puts the name on the agent's allowlist; the turn still decides.
+    createAgent("concrete-skill-cap", { runtimePermissions: { capabilities: ["use:skill:crm-manager"] } });
+    expect(resolveAgentSkills("concrete-skill-cap").allowlist).toContain("crm-manager");
+    expect(isSkillAuthorizedForAgent("concrete-skill-cap", "crm-manager")).toBe(true);
+    expect(isSkillAuthorizedForAgent("concrete-skill-cap", "crm-manager", { capabilities: narrowed })).toBe(false);
+    dbUpsertSkillGrant({ agentId: "concrete-skill-cap", skillName: "crm-manager" });
+    expect(isSkillAuthorizedForAgent("concrete-skill-cap", "crm-manager", { capabilities: narrowed })).toBe(true);
 
     const { services } = bindSession(agentId, "overlay", narrowed);
     const show = await services.authorizeCommandExecution({ command: "ravi skills show crm-manager", input: {} });
@@ -496,6 +503,27 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
       // Denied on the installed copy itself, the agent only lacks the grant.
       createAgent("skill-none");
       expect(showDenialAction("skill-none", name, installedDir)).toContain("It is already installed in Ravi: grant it");
+    } finally {
+      installedSpy.mockRestore();
+    }
+  });
+
+  it("matches an installed skill that shares a catalog skill's name to its own directory", () => {
+    const name = "crm-manager";
+    const installedDir = writeSkill(join(stateDir!, "installed", name), name);
+    const [installed] = withResolvedSkillSource(installedDir, (resolved) => discoverSkills(resolved));
+    const installedSpy = spyOn(skillManager, "listInstalledSkills").mockImplementation(() => [
+      { ...installed!, source: "plugin:ravi-user-skills", pluginName: "ravi-user-skills" },
+    ]);
+    try {
+      const other = writeSkill(join(stateDir!, "other", name), name);
+      createAgent("skill-wildcard", { runtimePermissions: { capabilities: ["use:skill:*"] } });
+      createAgent("skill-grant");
+      dbUpsertSkillGrant({ agentId: "skill-grant", skillName: name });
+      for (const agentId of ["skill-wildcard", "skill-grant"]) {
+        expect(showOutcome(agentId, name, installedDir)).toBe("allowed");
+        expect(showOutcome(agentId, name, other)).toBe("SKILL_NOT_AUTHORIZED");
+      }
     } finally {
       installedSpy.mockRestore();
     }
