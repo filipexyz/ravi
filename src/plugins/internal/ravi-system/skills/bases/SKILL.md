@@ -1,28 +1,49 @@
 ---
 name: bases
 description: |
-  Bases: bancos de dados tipados do projeto no Ravi Console (tipo Notion), via `ravi bases`. Use quando precisar:
+  Bases: bancos de dados tipados do projeto (tipo Notion), só backend, via `ravi bases`. Toda tela sobre os dados é uma Ravi Page gerada. Use quando precisar:
   - Criar uma base a partir de um pedido em linguagem natural (CRM, calendário, OKRs, bugs, vagas)
+  - Montar uma tela sobre dados: tabela, board/kanban, formulário, lista, galeria, calendário, dashboard, gráfico, portal
   - Adicionar, renomear, mudar tipo ou remover propriedades (colunas)
   - Consultar, criar, atualizar, arquivar ou apagar linhas; ver histórico de uma linha
   - Escrever filtros com o Query AST, ordenar, paginar e agregar
-  - Criar views como contratos de acesso ("cada vendedor só vê os próprios deals") e formulários
+  - Criar views como contratos de acesso ("cada vendedor só vê os próprios deals")
   - Criar gráficos (subset de Vega-Lite) e ler os dados agregados
-  - Ligar uma base a uma Ravi Page (connectors ravi.bases.*)
+  - Gerar e publicar a Ravi Page que lê e escreve pela view (connectors ravi.bases.*)
   - Reagir a mudanças de linha com triggers (inbox bridge, categoria "bases")
   - Importar CSV ou exportar CSV/JSON
-  base, bases, database, tabela, planilha, CRM, pipeline, kanban, formulário, view, gráfico, linhas
+  base, bases, database, tabela, planilha, CRM, pipeline, kanban, formulário, dashboard, portal, tela, view, gráfico, linhas
   Não use para o CRM local do Ravi (`ravi crm`) nem para hospedar HTML sem dados (skill pages).
 ---
 
 # Ravi Bases
 
+Bases é só backend. Não existe tela de Bases no Console. Bases, propriedades,
+views e gráficos são criados por agents pelo CLI; toda tela (tabela, board,
+formulário, dashboard, gráfico, portal) é uma Ravi Page que você gera.
+
+Quando pedirem uma tela sobre dados:
+
+1. modele o acesso como **view**: colunas que a tela mostra, filtro
+   obrigatório (`$viewer.*` para "cada um vê o seu"), quem lê e escreve
+   (princípio `page_viewer` do site) e o que pode mudar. Ao conceder
+   `page_viewer`, diga à pessoa qual host (todas as rotas) passa a ler, e a
+   escrever quais colunas, em qual view;
+2. crie os **gráficos**, se houver;
+3. gere a **página** e publique com `ravi pages ship --uses` listando os
+   `ravi.bases.*` que ela chama mais os das outras páginas de dados do mesmo
+   host (o allowlist é do host inteiro: cada ship o substitui);
+4. **verifique** e mande a URL.
+
+Guia completo, com cliente JS, padrões por layout e uma página de exemplo:
+`references/pages.md`. Nunca mande alguém "abrir a base no Console".
+
 Uma base é uma tabela tipada que pertence a um projeto do Console. Tem
 propriedades (colunas com tipo), linhas (valores + corpo markdown), views
 (consulta + projeção + regras de acesso) e gráficos (encoding sobre uma view).
 O Console é dono de autorização, políticas de view, compilação de filtros e
-validação. O CLI só transporta: ele nunca avalia filtro ou acesso. Se o Console
-recusa, a resposta do Console vale.
+validação. O CLI e a página só transportam: nunca avaliam filtro ou acesso.
+Se o Console recusa, a resposta do Console vale.
 
 Sempre rode com `--json` quando for decidir programaticamente, e passe
 `--project <ref>` quando houver mais de um projeto (`ravi cloud scope show`
@@ -150,19 +171,22 @@ ravi bases aggregate pipeline --group-by stage --group-by close_date:month --agg
 
 ## Mapa das referências
 
+- `references/pages.md` — a UI: gerar e publicar a Ravi Page sobre uma view (fluxo, connectors, cliente JS, erros, valores, padrões por layout, segurança, exemplo).
+- `references/views-access-forms.md` — views como contrato de acesso, princípios (`page_viewer` para telas), escrita via view, formulários.
+- `references/charts.md` — subset de Vega-Lite, marks, canais, dados agregados, gráfico na página.
 - `references/query-ast.md` — Query AST: nós, operadores por tipo, variáveis, limites, exemplos.
-- `references/views-access-forms.md` — views como contrato de acesso, princípios, escrita via view, formulários.
-- `references/charts.md` — subset de Vega-Lite, marks, canais, dados agregados.
-- `references/pages.md` — Ravi Pages lendo e escrevendo bases (`uses`, exec same-origin, `human_viewer`).
 - `references/events-triggers.md` — eventos de linha no inbox bridge e triggers.
 - `references/import-export.md` — importar CSV em lotes idempotentes, exportar CSV/JSON.
-- `references/recipes.md` — CRM, calendário de conteúdo, OKRs, triagem de bugs, contratação.
+- `references/recipes.md` — CRM, calendário de conteúdo, OKRs, triagem de bugs, contratação, cada uma com as páginas.
 
 ## Regras
 
-- Não invente ids de opção, usuário, view ou gráfico: leia com `bases show`,
-  `props list`, `views list` ou `charts list`.
-- Não tente reproduzir no cliente o filtro de uma view para "conferir" acesso.
-  Pergunte ao Console (`views show` mostra suas capabilities).
+- Não existe UI de Bases no Console. Tela é Ravi Page gerada (`references/pages.md`).
+- Não invente ids de opção, usuário, view, gráfico ou site: leia com `bases show`,
+  `props list`, `views list`, `charts list` ou `pages list`.
+- Não tente reproduzir no cliente (CLI ou página) o filtro de uma view para
+  "conferir" acesso. Pergunte ao Console (`views show` e o `describe` da página
+  mostram as capabilities).
+- Não embuta valores de linha no HTML publicado: a página busca pela view, na hora.
 - Não coloque valores de linha em logs, nomes de trigger ou mensagens de commit.
 - Não use `--last-write-wins` por padrão: só quando o pedido for sobrescrever.

@@ -33,3 +33,14 @@
   return-schema coverage tests.
 - `publishInboxNatsEvents` MUST publish a `category: "bases"` item only on
   `ravi.console.inbox.item`, unchanged.
+- No `bases` help text, plan `effect`, `suggestedAction`, or message may point
+  to a Console UI for Bases; `bases charts archive` and `bases views archive`
+  plans MUST name the generated Pages that stop working
+  (`grep -n "Console" src/cli/commands/bases.ts` shows only project, scope,
+  URL, and server-side wording).
+- The `bases` skill MUST name only the seven `ravi.bases.*` ids listed in
+  SPEC "Generated Pages". Every page example MUST ship with `--uses` covering
+  the ids it calls, and the skill MUST say that `--uses` is the union of the
+  ids called by every page on the same host.
+- The skill MUST tell the agent, when it grants `page_viewer`, to tell the
+  person which host (all routes) gains read or write access to which view.

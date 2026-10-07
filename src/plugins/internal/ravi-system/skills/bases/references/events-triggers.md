@@ -25,8 +25,9 @@ ravi inbox status                               # o poller precisa estar ativo
 | `sensitivity` / `severity` | `metadata` / `info` |
 | `dedupeKey` | único por linha, versão, verbo e instalação |
 
-`surface` é `console`, `cli`, `page` ou `system`. O payload nunca traz valores
-nem chaves de propriedade: o agent lê a linha com a própria autorização.
+`surface` é `console` (API de sessão do Console; não há tela de Bases), `cli`,
+`page` (Ravi Page gerada, via `ravi.bases.*`) ou `system`. O payload nunca traz
+valores nem chaves de propriedade: o agent lê a linha com a própria autorização.
 
 ```bash
 ravi bases rows get <baseId> <rowId> --json

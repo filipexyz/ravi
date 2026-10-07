@@ -1,9 +1,13 @@
 # Gráficos
 
 Um gráfico é uma view mais um encoding. O spec é um subconjunto de Vega-Lite.
-A agregação roda no Console pelo Query AST; o cliente só recebe grupos
+A agregação roda no servidor pelo Query AST; o cliente só recebe grupos
 agregados. O gráfico herda o acesso de leitura da view, inclusive princípios
 em modo `aggregate`.
+
+Não há tela de gráficos no Console. O agent cria o gráfico pelo CLI e o
+desenha numa Ravi Page gerada, com os dados de `ravi.bases.charts.data`
+(`pages.md`, seção Gráficos e dashboards).
 
 ```bash
 ravi bases charts list pipeline --json
@@ -65,15 +69,37 @@ Para um total "só dos ganhos", o filtro vai na view do gráfico, não no spec.
 
 ## Dados
 
-`charts data` devolve `{ chart, fields, data, suppressedGroups, users }`:
+`charts data` no CLI devolve `{ chart, fields, data, suppressedGroups, users }`.
+O connector `ravi.bases.charts.data` (input `{ chartId }`) devolve o mesmo com
+`groups` no lugar de `data`: `{ chart, groups, fields, suppressedGroups, users }`.
 
-- `data`: uma entrada por grupo, com chaves de canal (`x`, `y`, `color`, `theta`,
-  `text`). Dimensões trazem id de opção, user id, número, booleano, início do
-  bucket (`YYYY-MM-DD`) ou `null`; medidas trazem número (ou ISO em min/max de data).
-- `fields`: descritores das colunas usadas (nome, tipo, opções) para traduzir ids
-  em rótulos. `users` traduz user ids.
+- `chart`: `{ id, baseId, viewId, name, description, spec, version }`.
+- `data` / `groups`: uma entrada por grupo, com chaves de canal (`x`, `y`,
+  `color`, `theta`, `text`). Dimensões trazem id de opção, user id, número,
+  booleano, início do bucket (`YYYY-MM-DD`) ou `null`; medidas trazem número
+  (ou ISO em min/max de data). Os grupos vêm ordenados pelo valor cru das
+  dimensões (vazio por último); o `sort` do spec e a ordem das opções não são
+  aplicados no servidor: aplique no cliente.
+- `fields`: descritores das colunas usadas, por chave (nome, tipo, opções) para
+  traduzir ids em rótulos. `users` traduz user ids.
 - `suppressedGroups`: grupos com menos de 5 linhas escondidos para quem lê em
   modo `aggregate`.
 
-Numa Ravi Page, use o connector `ravi.bases.charts.data` e desenhe com a
-biblioteca que quiser (Vega-Lite via CDN aceita o mesmo spec com `data.values`).
+## Na Ravi Page
+
+1. View do gráfico com `page_viewer` do site em `access.read` (com
+   `"mode": "aggregate"` quando quem vê não pode ver linhas).
+2. `ravi bases charts create ...` e guarde o `id`.
+3. A página chama `ravi.bases.charts.data` com o `chartId` constante e desenha
+   em SVG puro com o renderizador de `pages.md` (barras empilhadas, linha,
+   área, pizza/donut, número único; os outros marks viram tabela).
+4. Ship com `--uses ravi.bases.charts.data` (mais `ravi.bases.views.describe`
+   se a página ler o `layout.chartId` de uma view `chart`).
+
+Use SVG próprio por padrão. Biblioteca de gráfico via CDN é opcional; a
+página continua sem token e sem dados embutidos. O spec salvo não serve direto
+ao Vega-Lite: os `groups` já vêm agregados e têm chave por canal (`x`, `y`,
+`color`, ...), não por coluna. Para usar o Vega-Lite, troque o `field` de cada
+canal pelo nome do canal (`"field": "x"`), tire `aggregate` (os grupos já são
+o resultado) e `timeUnit` (os buckets já começam na unidade), e passe
+`data.values` = `groups` com ids trocados por rótulos.

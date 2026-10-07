@@ -25,6 +25,8 @@ applies_to:
   - src/cloud-auth/client.ts
   - src/cloud-auth/errors.ts
   - src/cli/cloud-error-contract.ts
+  - src/plugins/internal/ravi-system/skills/bases/SKILL.md
+  - src/plugins/internal/ravi-system/skills/bases/references/pages.md
 owners:
   - ravi-dev
 status: active
@@ -40,6 +42,13 @@ properties, rows, views, charts, and row-event subscriptions. The OSS side is
 transport and plumbing. It sends requests, renders responses, and maps errors.
 The Console owns authorization, view policy, filter compilation, validation,
 and aggregation.
+
+Bases is backend only. There is no Console UI for Bases. Agents create bases,
+properties, views, and charts through this CLI. Every screen over a base
+(table, board, form, dashboard, chart, portal) is a Ravi Page the agent
+generates and ships with `ravi pages ship --uses <ids>`; the page reads and
+writes only through a view, via the `ravi.bases.*` Pages connector actions
+(see "Generated Pages"). The `bases` skill documents that workflow.
 
 ## Invariants
 
@@ -98,6 +107,15 @@ and aggregation.
     Row events then arrive through the existing inbox bridge on
     `ravi.console.inbox.item` with `category: "bases"`. The OSS runner MUST
     forward the item unchanged and MUST NOT add a NATS subject for Bases.
+16. CLI output (help text, plan `effect`, `suggestedAction`, messages) and the
+    `bases` skill MUST NOT send people to a Console UI for Bases. Destructive
+    plans name the generated Pages and charts that stop working.
+17. The skill MUST tell agents to ship generated pages with `--uses` listing
+    the union of the `ravi.bases.*` ids called by every page on the same host
+    (the allowlist is the host's active release, so each ship replaces it for
+    every route), and MUST NOT tell pages to embed row data, tokens, or
+    Console API calls. When an agent adds a `page_viewer` principal, the skill
+    MUST tell it to say which host gains which access to which view.
 
 ## Write classification
 
@@ -105,8 +123,8 @@ and aggregation.
 |---|---|---|
 | `bases archive`, `bases restore` | base becomes read-only/hidden or writable again | local dry-run + `--execute` |
 | `bases rows purge` | hard delete of a row and its ledger, irreversible | local dry-run + `--execute` |
-| `bases views archive` | charts, forms, and Pages using the view stop working | local dry-run + `--execute` |
-| `bases charts archive` | Console and Pages stop rendering the chart | local dry-run + `--execute` |
+| `bases views archive` | charts and generated Pages (forms included) using the view stop working | local dry-run + `--execute` |
+| `bases charts archive` | generated Pages that render the chart stop working | local dry-run + `--execute` |
 | `bases props update` (type or includeTime change) | data migration | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases props delete` | soft delete with dependents | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases rows import` | bulk create | local plan after schema read; `--execute` |
@@ -122,6 +140,36 @@ and aggregation.
 
 `list` commands use offset pagination (`--limit`, `--offset`, `--fields`);
 row queries and history use cursor pagination (`--limit`, `--cursor`).
+
+## Generated Pages
+
+The UI path is a generated Ravi Page. The OSS side only documents the public
+connector contract; admission, view policy, and redaction stay in the Console
+(`.ravi/specs/console/pages/connectors/SPEC.md` in the Console repo). All
+actions are revision 1, take strict input, and act through a view that grants
+`{kind: "page_viewer", siteId}` for the page's site:
+
+| id | input | output |
+|---|---|---|
+| `ravi.bases.views.describe` | `{viewId}` | `{id, baseId, name, description, layout, version, columns, capabilities, valid}` |
+| `ravi.bases.views.query` | `{viewId, filter?, sort?, limit?, cursor?}` | `{columns, rows, nextCursor, users}` |
+| `ravi.bases.views.rows.get` | `{viewId, rowId}` | `{rowId, version, values, body?, users}` |
+| `ravi.bases.views.rows.create` | `{viewId, values, body?, idempotencyKey}` | `{rowId, version}` |
+| `ravi.bases.views.rows.update` | `{viewId, rowId, values, body?, expectedVersion, idempotencyKey}` | row `{rowId, version, values, body?}` |
+| `ravi.bases.views.rows.archive` | `{viewId, rowId, expectedVersion}` | `{rowId, version}` |
+| `ravi.bases.charts.data` | `{chartId}` | `{chart, groups, fields, suppressedGroups, users}` |
+
+- The page calls same-origin `POST /_ravi/connectors/exec` with `{id, input}`
+  and gets `{ok: true, id, revision, output}` or `{error}`. `validation_failed`
+  may carry `fieldErrors`; `version_conflict` may carry `current`. A viewer
+  the view admits only to write gets `{rowId, version, values: {}}` from
+  `rows.update` and in `current`.
+- `ravi.bases.*` is never implicitly allowlisted: an id missing from `--uses`
+  fails with `connector_not_allowlisted`.
+- `charts.data` returns the groups as `groups`; the CLI `bases charts data`
+  returns the same groups as `data`.
+- Pages callers never manage a base. `project_role` and `user` principals do
+  not admit on Pages; `page_viewer` admits only on Pages.
 
 ## Official error cases
 
@@ -152,3 +200,9 @@ row queries and history use cursor pagination (`--limit`, `--cursor`).
 - Re-running an import with a different `--batch` reuses keys with other
   bodies; the Console answers `CONFLICT` (`idempotency_conflict`) instead of
   creating duplicates.
+- A generated page shows `not_found` while `views query` works from the CLI:
+  the view does not grant `page_viewer` for that site (CLI callers are admitted
+  by `project_role`/`user`, pages only by `page_viewer`).
+- The Pages `uses` allowlist is read from the host's active release, so a
+  later ship of another route on the same host without the union of ids
+  drops ids for every page on that host (`connector_not_allowlisted`).

@@ -1607,7 +1607,7 @@ export class BasesChartsCommands {
             base,
             chart,
             expectedVersion: version ?? "current",
-            effect: "Console and Pages stop rendering this chart",
+            effect: "generated Pages that render this chart stop working",
           },
           { asJson },
         );
