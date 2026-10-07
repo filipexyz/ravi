@@ -10,6 +10,7 @@ import { runWithContext } from "../cli/context.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import { authorizePiToolCall } from "./pi-tool-permissions.js";
 import type { ContextCapability } from "../router/router-db.js";
 
@@ -186,8 +187,10 @@ describe("capability-aware official skill visibility", () => {
     expect(show.approved).toBe(false);
     expect(show.reason).toBe(
       "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-permissions-manager' is not authorized for agent 'restricted'. " +
-        "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
-        "('ravi skills grant restricted ravi-system-permissions-manager').",
+        "It ships with Ravi, so there is nothing to install: grant it " +
+        "('ravi skills grant restricted permissions-manager') or give the agent the " +
+        "'use:skill:permissions-manager' capability. Granting needs mutate:skills:grant; " +
+        "if this agent cannot run it, ask an operator.",
     );
 
     const commands = new SkillsCommands();
@@ -226,8 +229,10 @@ describe("capability-aware official skill visibility", () => {
       allowed: false,
       reason:
         "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-permissions-manager' is not authorized for agent 'restricted'. " +
-        "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
-        "('ravi skills grant restricted ravi-system-permissions-manager').",
+        "It ships with Ravi, so there is nothing to install: grant it " +
+        "('ravi skills grant restricted permissions-manager') or give the agent the " +
+        "'use:skill:permissions-manager' capability. Granting needs mutate:skills:grant; " +
+        "if this agent cannot run it, ask an operator.",
     });
   });
 
@@ -279,5 +284,113 @@ describe("capability-aware official skill visibility", () => {
         },
       ),
     ).resolves.toEqual({ allowed: true });
+  });
+});
+
+describe("full-access and use:skill capabilities reach every skill Ravi knows", () => {
+  function bindSession(agentId: string, sessionName: string, capabilities: ContextCapability[]) {
+    getOrCreateSession(`agent:${agentId}:main`, agentId, stateDir!, { name: sessionName, runtimeProvider: "codex" });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId,
+      sessionKey: `agent:${agentId}:main`,
+      sessionName,
+      capabilities,
+    });
+    const services = createRuntimeHostServices({ context, agentId, sessionName, toolContext: {} });
+    return { context, services };
+  }
+
+  it("lets a full-access agent read bases and catalog skills no command gate maps", () => {
+    const agentId = "full-access-main";
+    createAgent(agentId, { runtimePermissions: { profile: "full-access" } });
+
+    const materialized = materializeSubjectCapabilities("agent", agentId);
+    expect(canWithCapabilities(materialized, "use", "skill", "*")).toBe(true);
+    for (const skill of ["bases", "ravi-system-bases", "ravi-system:bases", "crm-manager", "app-creator"]) {
+      expect(isSkillAuthorizedForAgent(agentId, skill)).toBe(true);
+    }
+    // Skills that only exist on disk still need `skills install` first.
+    expect(isSkillAuthorizedForAgent(agentId, "made-up-disk-only-skill")).toBe(false);
+
+    const shown = withoutLogs(() =>
+      runWithContext(
+        {
+          transport: "tool",
+          agentId,
+          context: createRuntimeContext({ kind: "agent-runtime", agentId, capabilities: materialized }),
+        },
+        () => new SkillsCommands().show("bases", undefined, undefined, true),
+      ),
+    );
+    expect(shown.skill.name).toBe("bases");
+  });
+
+  it("delivers the bases skill on the first `ravi bases` call, then lets the retry through", async () => {
+    const agentId = "full-access-main";
+    createAgent(agentId, { runtimePermissions: { profile: "full-access" } });
+    const { services } = bindSession(agentId, "bases-gate", materializeSubjectCapabilities("agent", agentId));
+
+    const show = await services.authorizeCommandExecution({ command: "ravi skills show bases --json", input: {} });
+    expect(String(show.reason ?? "")).not.toContain("SKILL_NOT_AUTHORIZED");
+
+    const first = await services.authorizeCommandExecution({ command: "ravi bases list --json", input: {} });
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-bases.");
+    const retry = await services.authorizeCommandExecution({ command: "ravi bases list --json", input: {} });
+    expect(retry.approved).toBe(true);
+  });
+
+  it("honors use:skill capabilities with the tool/group matcher and announces only concrete ones", () => {
+    const agentId = "skill-caps";
+    createAgent(agentId, {
+      runtimePermissions: { capabilities: ["use:skill:ravi-system:bases", "use:skill:ravi-dev-*"] },
+    });
+
+    expect(isSkillAuthorizedForAgent(agentId, "bases")).toBe(true);
+    expect(isSkillAuthorizedForAgent(agentId, "ravi-system-bases")).toBe(true);
+    expect(isSkillAuthorizedForAgent(agentId, "app-creator")).toBe(true);
+    expect(isSkillAuthorizedForAgent(agentId, "ravi-dev-cli-creator")).toBe(true);
+    expect(isSkillAuthorizedForAgent(agentId, "crm-manager")).toBe(false);
+
+    const resolved = resolveAgentSkills(agentId);
+    expect(resolved.provenance.fromCapabilities).toContain("bases");
+    expect(resolved.allowlist).toContain("bases");
+    // Globs authorize reads but never widen the advertised catalog.
+    expect(resolved.allowlist).not.toContain("app-creator");
+    expect(resolved.allowlist).not.toContain("ravi-dev-app-creator");
+
+    const wildcard = [cap("use", "skill", "*")];
+    expect(isSkillAuthorizedForAgent("restricted-wildcard", "crm-manager", { capabilities: wildcard })).toBe(true);
+    for (const wrongVerb of [cap("execute", "skill", "*"), cap("read", "skill", "bases")]) {
+      createAgent(`wrong-verb-${wrongVerb.permission}`);
+      expect(
+        isSkillAuthorizedForAgent(`wrong-verb-${wrongVerb.permission}`, "crm-manager", { capabilities: [wrongVerb] }),
+      ).toBe(false);
+    }
+  });
+
+  it("tells a same-line remediation that the grant never ran", async () => {
+    const agentId = "restricted";
+    createAgent(agentId);
+    const { services } = bindSession(agentId, "same-line", [cap("use", "tool", "Bash")]);
+
+    const chained = await services.authorizeCommandExecution({
+      command: "ravi skills grant restricted crm-manager && ravi skills show crm-manager",
+      input: {},
+    });
+    expect(chained.approved).toBe(false);
+    expect(chained.reason).toBe(
+      "SKILL_NOT_AUTHORIZED: Skill 'crm-manager' is not authorized for agent 'restricted'. " +
+        "It ships with Ravi, so there is nothing to install: grant it " +
+        "('ravi skills grant restricted crm-manager') or give the agent the 'use:skill:crm-manager' capability. " +
+        "Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator. " +
+        "This shell line also reads the skill, so it was rejected as a whole and the grant did not run: " +
+        "run the grant as its own command first.",
+    );
+
+    const alone = await services.authorizeCommandExecution({ command: "ravi skills show crm-manager", input: {} });
+    expect(alone.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(alone.reason).not.toContain("rejected as a whole");
   });
 });

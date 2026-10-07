@@ -473,13 +473,13 @@ describe("Pi tool permission bridge", () => {
         formatPiPermissionUiDecisionValue({
           allowed: false,
           reason:
-            "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
+            "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> image') or give the agent the 'use:skill:image' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
         }),
       ),
     ).toEqual({
       allowed: false,
       reason:
-        "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> image').",
+        "SKILL_NOT_AUTHORIZED: Skill 'image' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> image') or give the agent the 'use:skill:image' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
     });
     expect(parsePiPermissionUiDecisionValue(false)).toEqual({
       allowed: false,
@@ -642,13 +642,13 @@ describe("Pi tool permission bridge", () => {
     ).resolves.toEqual({
       allowed: false,
       reason:
-        "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').",
+        "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> whatsapp-manager') or give the agent the 'use:skill:whatsapp-manager' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
     });
 
     await expect(authorizePiToolCall("Skill", { skill: "ravi-system-image" }, handlers)).resolves.toEqual({
       allowed: false,
       reason:
-        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> image') or give the agent the 'use:skill:image' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
     });
 
     await expect(
@@ -692,7 +692,7 @@ describe("Pi tool permission bridge", () => {
     ).resolves.toEqual({
       allowed: false,
       reason:
-        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> ravi-system-image').",
+        "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> image') or give the agent the 'use:skill:image' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
     });
 
     await expect(
@@ -715,7 +715,7 @@ describe("Pi tool permission bridge", () => {
       allowedSkills: ["ravi-dev-app-creator"],
     };
     const denied =
-      "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it ('ravi skills grant <agent> whatsapp-manager').";
+      "SKILL_NOT_AUTHORIZED: Skill 'whatsapp-manager' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> whatsapp-manager') or give the agent the 'use:skill:whatsapp-manager' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.";
 
     for (const command of [
       "head -20 /tmp/plugins/ravi-system/skills/whatsapp-manager/SKILL.md; cat /workspace/src/plugins/internal/ravi-dev/skills/app-creator/SKILL.md",

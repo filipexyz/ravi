@@ -2,6 +2,10 @@
 
 ## Checks
 
+- The first `ravi bases …` call in an agent session MUST return
+  `RAVI_SKILL_REQUIRED` naming `ravi-system-bases` and deliver the skill; the
+  retry MUST pass. `bases_rows_query` MUST resolve the same gate.
+- A `full-access` agent MUST be able to run `ravi skills show bases`.
 - `bases rows purge`, `bases archive`, `bases restore`, `bases views archive`,
   and `bases charts archive` without `--execute` MUST exit 3 with
   `WRITE_REQUIRES_EXECUTE` and a `plan`, and MUST NOT call the Console.

@@ -4,12 +4,14 @@ import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/rou
 import {
   isAdminAll,
   selectGroupCaps,
+  skillNamesFromSkillCapabilities,
   specificSkillsFromCapabilities,
   capabilityMatchesGroupRule,
 } from "./skill-capability-implication.js";
 
 export {
   officialSkillImpliedByCapabilities,
+  skillCoveredBySkillCapability,
   specificSkillsFromCapabilities,
 } from "./skill-capability-implication.js";
 
@@ -20,7 +22,11 @@ export {
  *
  * Produces a per-agent allowlist from the operational baseline plus:
  *   1. explicit grants (`ravi skills grant`);
- *   2. system skills derived from command capabilities.
+ *   2. system skills derived from command capabilities;
+ *   3. skills named by concrete `use:skill:<id>` capabilities (like grants).
+ *
+ * `use:skill:*`, globs and `admin:system:*` authorize reading any skill Ravi
+ * knows (see `skill-authorization`) but never widen this catalog.
  *
  * Grants stay authoritative against a generic `execute:group:*` dump.
  * `admin:system:*` and specific `read|mutate:<resource>:<action>` /
@@ -133,16 +139,21 @@ export function resolveAgentSkills(
         : specificSkillsFromCapabilities(capabilities).flatMap(expandSkillNames)
       : derivedNames;
 
+  // Concrete `use:skill:<id>` capabilities name one skill each, like a grant.
+  const skillCapabilityNames = skillNamesFromSkillCapabilities(capabilities).flatMap(expandSkillNames);
+  const fromCapabilities = [...new Set([...effectiveDerivedNames, ...skillCapabilityNames])];
+
   const hasSpecificCommandCaps = specificSkillsFromCapabilities(capabilities).length > 0;
-  const hasConfiguration = adminAll || groupCaps.length > 0 || grants.length > 0 || hasSpecificCommandCaps;
-  const allowlist = [...new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames])];
+  const hasConfiguration =
+    adminAll || groupCaps.length > 0 || grants.length > 0 || hasSpecificCommandCaps || skillCapabilityNames.length > 0;
+  const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames])];
 
   return {
     hasConfiguration,
     allowlist,
     provenance: {
       baseline: baselineNames,
-      fromCapabilities: effectiveDerivedNames,
+      fromCapabilities,
       fromGrants: grantNames,
     },
   };

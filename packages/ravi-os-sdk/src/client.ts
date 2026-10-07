@@ -6971,7 +6971,7 @@ export class RaviClient {
   };
 
   readonly skills = {
-    /** Grant a custom skill to an agent (per-agent visibility). System skills follow permissions. */
+    /** Grant a catalog or installed skill to an agent (per-agent visibility). Catalog skills need no install; use:skill:<name> capabilities work too. */
     grant: async (agent: string, skill: string, options?: {
       note?: string;
     }): Promise<SkillsGrantReturn> => {

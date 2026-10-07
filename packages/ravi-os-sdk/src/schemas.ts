@@ -89228,6 +89228,9 @@ export const ToolsInvokeReturnSchema = {
             "skillGate": {
               "additionalProperties": false,
               "properties": {
+                "ruleId": {
+                  "type": "string"
+                },
                 "skill": {
                   "type": "string"
                 },
@@ -89768,6 +89771,9 @@ export const ToolsTestReturnSchema = {
             "skillGate": {
               "additionalProperties": false,
               "properties": {
+                "ruleId": {
+                  "type": "string"
+                },
                 "skill": {
                   "type": "string"
                 },

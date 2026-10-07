@@ -18285,6 +18285,7 @@ export type ToolsInvokeReturn = {
       options: Array<Record<string, unknown>>;
       scope?: string;
       skillGate?: {
+        ruleId?: string;
         skill: string;
         source: string;
       };
@@ -18410,6 +18411,7 @@ export type ToolsTestReturn = {
       options: Array<Record<string, unknown>>;
       scope?: string;
       skillGate?: {
+        ruleId?: string;
         skill: string;
         source: string;
       };

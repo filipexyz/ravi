@@ -77,6 +77,8 @@ ravi skills inspect <agent>
 
 `skills grant` on a skill that is not installed fails with `SKILL_NOT_FOUND` and points to `ravi skills install --source <skill-dir>`.
 
+Skills that ship with Ravi (the catalog, for example `bases`) need no install: grant them directly, or give the agent a `use:skill:<skill>` capability. `use:skill:*` (which the `full-access` profile materializes) and `admin:system:*` let an agent read any catalog or installed skill on demand, without adding it to the catalog the agent sees in its prompt. The `SKILL_NOT_AUTHORIZED` message names the right remedy for the skill's origin. Run a grant as its own command: a shell line that also reads the denied skill is rejected as a whole, so a grant on that line never runs.
+
 Installed operator skills live in:
 
 ```text

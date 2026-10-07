@@ -416,10 +416,16 @@ const SKILLS_GRANT_HELP_AFTER = `
 MUTA (idempotente/upsert) — dá visibilidade de UMA skill a UM agente (per-agent
 visibility). A allowlist do agente = baseline ∪ derivadas-de-capability ∪ grants.
 Efeito é AO VIVO: \`resolveAgentSkills\` lê o grant do DB por chamada — sem restart.
+Alternativa por permissão: capability \`use:skill:<nome>\` (ou \`use:skill:*\`, que o
+profile full-access já materializa) libera a leitura de qualquer skill do catálogo
+ou instalada.
 
 USE
   ✓ liberar uma skill específica pra um agente específico
   ✓ cobrir gap: skill de plugin que a derivação por-capability não pega (ex: cli-creator)
+  ✓ skill do catálogo do Ravi (ex: bases): grant direto, sem \`skills install\`
+  ✓ rodar SOZINHO na linha: linha de shell que também lê a skill negada é rejeitada
+    inteira, e o grant não roda
 
 NÃO USE
   ✗ abrir várias skills / vários agentes → \`ravi skills grant-batch\` (lote)
@@ -991,7 +997,8 @@ export class SkillsCommands {
 
   @Command({
     name: "grant",
-    description: "Grant a custom skill to an agent (per-agent visibility). System skills follow permissions.",
+    description:
+      "Grant a catalog or installed skill to an agent (per-agent visibility). Catalog skills need no install; use:skill:<name> capabilities work too.",
     helpAfter: SKILLS_GRANT_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "skills", action: "grant", risk: "medium" })

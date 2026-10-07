@@ -90556,6 +90556,9 @@ class RaviSchemas {
             "skillGate": {
               "additionalProperties": false,
               "properties": {
+                "ruleId": {
+                  "type": "string"
+                },
                 "skill": {
                   "type": "string"
                 },
@@ -91108,6 +91111,9 @@ class RaviSchemas {
             "skillGate": {
               "additionalProperties": false,
               "properties": {
+                "ruleId": {
+                  "type": "string"
+                },
                 "skill": {
                   "type": "string"
                 },

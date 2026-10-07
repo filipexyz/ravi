@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   buildSkillVisibilitySnapshot,
+  commandLineRunsSkillRemediation,
   diffLoadedSkills,
   extractRequestedSkillsFromCommandLine,
   extractRequestedSkillsFromToolCall,
@@ -158,6 +159,58 @@ describe("skill visibility policy", () => {
 
     expect(isStoredSkillVisibilityCompatible(params, ["allowed"])).toBe(false);
     expect(isStoredSkillVisibilityCompatible(params, ["allowed", "revoked"])).toBe(true);
+  });
+
+  it("resumes after an on-demand read the gate still authorizes, but not after a catalog change", () => {
+    const loadedOffCatalog = {
+      skillVisibility: buildSkillVisibilitySnapshot([
+        {
+          id: "ravi-system-sessions",
+          provider: "codex",
+          state: "advertised",
+          confidence: "declared",
+          lastSeenAt: 1,
+        },
+        {
+          id: "ravi-system-crm-manager",
+          provider: "codex",
+          state: "loaded",
+          confidence: "observed",
+          loadedAt: 1,
+          lastSeenAt: 1,
+        },
+      ]),
+    };
+    const allowlist = ["ravi-system-sessions"];
+    const authorized = (skillId: string) => skillId === "ravi-system-crm-manager";
+
+    // Without the gate the read would cost the session its continuity.
+    expect(isStoredSkillVisibilityCompatible(loadedOffCatalog, allowlist, [])).toBe(false);
+    expect(isStoredSkillVisibilityCompatible(loadedOffCatalog, allowlist, [], authorized)).toBe(true);
+    expect(isStoredSkillVisibilityCompatible(loadedOffCatalog, allowlist, [], () => false)).toBe(false);
+
+    // An advertised skill that left the allowlist still forces a fresh session.
+    const advertisedOffCatalog = {
+      skillVisibility: buildSkillVisibilitySnapshot([
+        {
+          id: "ravi-system-crm-manager",
+          provider: "codex",
+          state: "advertised",
+          confidence: "declared",
+          lastSeenAt: 1,
+        },
+      ]),
+    };
+    expect(isStoredSkillVisibilityCompatible(advertisedOffCatalog, allowlist, [], authorized)).toBe(false);
+  });
+
+  it("detects skill remediation commands on a shell line", () => {
+    expect(commandLineRunsSkillRemediation("ravi skills grant main bases && ravi skills show bases")).toBe(true);
+    expect(commandLineRunsSkillRemediation("./bin/ravi skills install --source ./skills/x; cat x/SKILL.md")).toBe(true);
+    expect(commandLineRunsSkillRemediation("ravi agents permissions main --capabilities use:skill:bases")).toBe(true);
+    expect(commandLineRunsSkillRemediation("ravi permissions allow docs --to agent:main")).toBe(true);
+    expect(commandLineRunsSkillRemediation("ravi skills show bases")).toBe(false);
+    expect(commandLineRunsSkillRemediation("echo grant; cat skills/bases/SKILL.md")).toBe(false);
   });
 
   it("treats plugin-qualified catalog ids as the granted bare skill and fails closed otherwise", () => {

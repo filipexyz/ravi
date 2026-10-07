@@ -11,8 +11,9 @@ capability: profiles
 ## Regression Tests
 
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
-  "full-access"` and assert `admin system:*`, `execute executable:*`, and
-  `use tool:*` appear with `agent-default-capabilities` provenance.
+  "full-access"` and assert `admin system:*`, `execute executable:*`,
+  `use tool:*`, and `use skill:*` appear with `agent-default-capabilities`
+  provenance.
 - Persist `chat-only` as `{ profile: "chat-only" }` (never `null`). Materialize
   of that agent and its `agent_identity` MUST have no `use:tool:*` and no
   bootstrap execute groups/executables. `permissions <id> none` MUST still

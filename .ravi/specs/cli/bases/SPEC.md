@@ -25,6 +25,7 @@ applies_to:
   - src/cloud-auth/client.ts
   - src/cloud-auth/errors.ts
   - src/cli/cloud-error-contract.ts
+  - src/cli/skill-gates.ts
   - src/plugins/internal/ravi-system/skills/bases/SKILL.md
   - src/plugins/internal/ravi-system/skills/bases/references/pages.md
 owners:
@@ -116,6 +117,11 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     every route), and MUST NOT tell pages to embed row data, tokens, or
     Console API calls. When an agent adds a `page_viewer` principal, the skill
     MUST tell it to say which host gains which access to which view.
+18. The default skill gate `bases` (`/^bases(?:[._]|$)/` → `ravi-system-bases`)
+    MUST load the skill for `ravi bases …` and every `bases.*` subgroup and
+    tool. Any identity that can run a `bases` command (`admin:system:*`,
+    `execute:group:bases`, `read|mutate:bases[.<sub>]:<action>`) MUST also be
+    able to read the skill.
 
 ## Write classification
 

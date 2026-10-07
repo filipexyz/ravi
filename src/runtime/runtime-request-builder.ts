@@ -45,6 +45,7 @@ import {
   refreshRuntimeRequestContextForTurn,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
+import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
@@ -541,7 +542,12 @@ async function buildRuntimeStartRequestInternal(
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
       : undefined;
-  const canResumeSkillSession = isStoredSkillVisibilityCompatible(storedRuntimeSessionParams, allowedSkills);
+  const canResumeSkillSession = isStoredSkillVisibilityCompatible(
+    storedRuntimeSessionParams,
+    allowedSkills,
+    undefined,
+    (skillId) => isSkillAuthorizedForAgent(agent.id, skillId, { capabilities: runtimeContext.capabilities }),
+  );
   const canResumeCredentialSession =
     canResumeStoredSession &&
     canResumeSkillSession &&

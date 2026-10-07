@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "32d396f44aead47b"
+    "version": "aab79eb25d3e689c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -96097,7 +96097,7 @@
           }
         },
         "security": [],
-        "summary": "Grant a custom skill to an agent (per-agent visibility). System skills follow permissions.",
+        "summary": "Grant a catalog or installed skill to an agent (per-agent visibility). Catalog skills need no install; use:skill:<name> capabilities work too.",
         "tags": [
           "skills"
         ]
@@ -110253,6 +110253,9 @@
                             "skillGate": {
                               "additionalProperties": false,
                               "properties": {
+                                "ruleId": {
+                                  "type": "string"
+                                },
                                 "skill": {
                                   "type": "string"
                                 },
@@ -110937,6 +110940,9 @@
                             "skillGate": {
                               "additionalProperties": false,
                               "properties": {
+                                "ruleId": {
+                                  "type": "string"
+                                },
                                 "skill": {
                                   "type": "string"
                                 },

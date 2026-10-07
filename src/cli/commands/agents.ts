@@ -109,8 +109,7 @@ function assertAgentMutationRuntime(allowRuntimeMismatch?: boolean): void {
   const summary = inspectCliRuntimeTarget();
   const mismatch = getCliRuntimeMismatchMessage(summary);
   if (mismatch && !allowRuntimeMismatch) {
-    const suggestedAction =
-      "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
+    const suggestedAction = "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
     fail(`${mismatch}\n${suggestedAction}`, suggestedAction);
   }
 }
@@ -1504,7 +1503,7 @@ SOURCES
       printAgentRuntimeDefaultsGuidance(id);
       if (after?.profile === "full-access") {
         console.log(
-          "  Break-glass: materializes admin system:*, execute executable:*, and use tool:* for the agent and its own automation turns",
+          "  Break-glass: materializes admin system:*, execute executable:*, use tool:*, and use skill:* for the agent and its own automation turns",
         );
         console.log(
           "  This unlocks the Ravi Bash execute ceiling on the next tool check. Provider-native hooks and unconditional dangerous-pattern blocks still apply.",

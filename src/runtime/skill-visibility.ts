@@ -270,10 +270,19 @@ export function filterSkillNamesByAllowlist(
 
 const PLUGIN_ALIAS_PRIORITY = 10;
 
+/**
+ * Whether a stored provider session may resume under the current allowlist.
+ * Every stored skill must still be on the allowlist, except skills the session
+ * loaded on demand that the gate still authorizes (`isLoadedSkillAuthorized`):
+ * the gate reads wider than the advertised catalog (implied official skills,
+ * `use:skill:*`, `admin:system:*`), and reading one must not cost the session
+ * its continuity.
+ */
 export function isStoredSkillVisibilityCompatible(
   params: Record<string, unknown> | null | undefined,
   allowedSkills: readonly string[] | undefined,
   knownSkills?: readonly SkillAliasIdentity[],
+  isLoadedSkillAuthorized?: (skillId: string) => boolean,
 ): boolean {
   if (!allowedSkills) return true;
   if (!isRecord(params?.skillVisibility)) return false;
@@ -282,7 +291,11 @@ export function isStoredSkillVisibilityCompatible(
   const unresolved = snapshot.skills.filter((skill) => !skillNameMatchesAllowlist(skill.id, allowedSkills));
   if (unresolved.length === 0) return true;
   const identities = knownSkills ?? loadPluginSkillIdentities();
-  return unresolved.every((skill) => pluginQualifiedSkillGranted(skill.id, allowedSkills, identities));
+  return unresolved.every(
+    (skill) =>
+      pluginQualifiedSkillGranted(skill.id, allowedSkills, identities) ||
+      (skill.state === "loaded" && isLoadedSkillAuthorized?.(skill.id) === true),
+  );
 }
 
 function loadPluginSkillIdentities(): SkillAliasIdentity[] {
@@ -843,6 +856,25 @@ export function extractRequestedSkillsFromCommandLine(command: string): string[]
     }
   }
   return [...skills];
+}
+
+const RAVI_SKILL_REMEDIATION_COMMAND =
+  /(?:^|[\s;&|(`"'])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+(?:skills\s+(?:grant|grant-batch|install)|agents\s+permissions|permissions\s+allow)\b/;
+
+/**
+ * Whether a shell line also runs a skill remediation (`ravi skills grant|install`,
+ * `ravi agents permissions`, `ravi permissions allow`). The skill gate still
+ * rejects such a line as a whole when it also reads an unauthorized skill; the
+ * denial says so, because the grant on that line never ran.
+ */
+export function commandLineRunsSkillRemediation(command: string): boolean {
+  return RAVI_SKILL_REMEDIATION_COMMAND.test(command);
+}
+
+/** {@link commandLineRunsSkillRemediation} for a tool call carrying a shell command. */
+export function toolCallRunsSkillRemediation(toolInput: Record<string, unknown> | undefined): boolean {
+  const command = extractCommandFromToolInput(toolInput);
+  return command ? commandLineRunsSkillRemediation(command) : false;
 }
 
 export function extractSkillNameFromFilesystemPath(value: string): string | null {

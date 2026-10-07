@@ -23,18 +23,29 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 
 ## Revisão v5 — bug `2b7fcc09` (anúncio × gate × install)
 
-- [x] `SKILL_NOT_AUTHORIZED` nomeia skill e agente (`Skill 'x' is not authorized for agent 'y'.`) nos três pontos (Pi extension, host Bash/tool, `ravi skills show`) e aponta `skills install --source` + `skills grant`. Coberto por `skill-capability-visibility.test.ts` e `skills.test.ts`.
+- [x] `SKILL_NOT_AUTHORIZED` nomeia skill e agente (`Skill 'x' is not authorized for agent 'y'.`) nos três pontos (Pi extension, host Bash/tool, `ravi skills show`) e aponta `skills install --source` + `skills grant` (desde a v7, `install` só para skill fora do Ravi). Coberto por `skill-capability-visibility.test.ts` e `skills.test.ts`.
 - [x] Pi com allowlist sobe com `--no-skills`: `~/.agents/skills/<x>` não aparece mais no `available_skills` nativo; sem allowlist o flag não é passado. Coberto por `pi-provider.test.ts` + controle ao vivo com Pi 0.73.1 (`get_commands`: `["skill:find-skills"]` → `[]`).
 - [x] Loop fechado: skill só em `~/.agents/skills/find-skills` → `grant` falha `SKILL_NOT_FOUND` apontando `install --source` → `ravi skills install --source ~/.agents/skills/find-skills` (sem nome) → `grant` → Read autorizado; `other-skill` do mesmo diretório segue negada. Coberto por `skills.test.ts`.
 - [x] Nenhuma entrada de `~/.agents/skills` é concedida automaticamente.
 - [x] Linha com skill concedida + não concedida (`head <negada>/SKILL.md; cat <concedida>/SKILL.md`) é negada nomeando a não concedida, no host e no Pi. Antes a linha passava porque só a primeira referência resolvida era checada. Coberto por `skills.test.ts`, `pi-tool-permissions.test.ts` e `skill-visibility.test.ts`.
 - [x] `ravi skills install --source ~/.agents/skills/<x>/SKILL.md` não dispara `SKILL_NOT_AUTHORIZED`; `cat ~/.agents/skills/<x>/SKILL.md` continua negado.
 
+## Revisão v7 — full-access sem acesso à skill `bases` (2026-10-07)
+
+- [x] Agente `full-access` MUST ler `bases` (`bases`, `ravi-system-bases`, `ravi-system:bases`) e skills do catálogo sem regra de gate (ex.: `crm-manager`, `app-creator`) via `ravi skills show`, host Bash/tool e Pi. Coberto por `skill-capability-visibility.test.ts`.
+- [x] O profile `full-access` MUST materializar `use:skill:*`. Coberto por `provider-runtime.test.ts`.
+- [x] Skill que só existe no disco MUST continuar negada mesmo para `admin:system:*`. Coberto por `skill-capability-visibility.test.ts` e `skills.test.ts`.
+- [x] `use:skill:<id>` concreto MUST autorizar a skill por qualquer alias (`ravi-system:bases` ↔ `bases`) e entrar na allowlist como grant; glob (`use:skill:ravi-dev-*`) e `use:skill:*` MUST autorizar a leitura sem ampliar a allowlist; `execute:skill:*` e `read:skill:*` MUST NOT autorizar. Coberto por `skill-capability-visibility.test.ts`.
+- [x] A primeira chamada `ravi bases …` MUST devolver `RAVI_SKILL_REQUIRED` com `ravi-system-bases`, e o retry MUST passar. Coberto por `skill-capability-visibility.test.ts` e `registry-snapshot.test.ts`.
+- [x] `SKILL_NOT_AUTHORIZED` de skill do catálogo MUST NOT sugerir `skills install`; skill fora do Ravi MUST sugerir `install --source` + `grant`. Coberto por `skills.test.ts`, `skill-capability-visibility.test.ts` e `pi-tool-permissions.test.ts`.
+- [x] Linha que encadeia `ravi skills grant …` com a leitura negada MUST dizer que a linha foi rejeitada inteira e que o grant deve rodar sozinho. Coberto por `skill-capability-visibility.test.ts` e `skill-visibility.test.ts`.
+- [x] Skill lida sob demanda (state `loaded`) fora da allowlist que o gate autoriza MUST NOT impedir o resume; skill anunciada fora da allowlist continua impedindo. Coberto por `skill-visibility.test.ts`.
+
 ## Cenários herdados
 
 ### Núcleo v3 (derivação + agnóstico)
 
-- [ ] **C-D (derivação da permissão — o coração):** agente com permissão só de `execute:group:cron` + `execute:group:tasks` vê no índice SÓ as skills de sistema `cron` + `tasks` (+ baseline) — não as outras 25. Verificar via a allowlist resolvida / `Options.skills`. **Sem grant manual.**
+- [ ] **C-D (derivação da permissão — o coração):** agente com permissão só de `execute:group:cron` + `execute:group:tasks` vê no índice SÓ as skills de sistema `cron` + `tasks` (+ baseline) — não as outras 28. Verificar via a allowlist resolvida / `Options.skills`. **Sem grant manual.**
 - [ ] **C-D2 (segue a permissão, vivo):** dar `execute:group:crm` ao agente → no PRÓXIMO turno ele vê `ravi-system-crm`. Revogar → some no próximo turno. Sem restart, sem grant.
 - [ ] **C-N (agnóstico):** `resolveAgentSkills(agentId)` retorna a mesma lista independente do provider configurado. Só o enforcement difere. (Testável isolando a função.)
 
@@ -48,7 +59,7 @@ Cenários de aceite verificáveis. Cada um MUST passar antes de GA.
 - [ ] **C-B (baseline):** agente novo do zero vê o baseline (agents/sessions/tasks/permissions/skills/specs) imediatamente, sem grant, e opera o runtime.
 - [ ] **C-F (no-break):** ligar a feature com config ausente → todo agente continua vendo todas as skills (comportamento atual). Ninguém perde skill no rollout.
 - [ ] **C-local (skills da própria pasta do agente — o F1):** agente com allowlist ATIVA (ex.: `main`, que tem `admin:system:*`) NÃO perde as skills locais de `<cwd>/.claude/skills/` (swarm-orchestrator, devils-advocate, managing-vault…). Motivo: `Options.skills`, quando setado, filtra TODA skill descoberta — plugins E locais. O núcleo `resolveAgentSkills` é agnóstico e não conhece essas fontes de filesystem, então o adapter (claude) UNE as locais à allowlist antes do filtro nativo (`withLocalSkillsPreserved`). Sem esse union, o agente nasceria cego pro próprio arsenal. Regressão coberta por `src/runtime/claude-local-skills.test.ts`.
-- [ ] **C-G (gate respeita allowlist):** agente cuja allowlist NÃO inclui `ravi-system-whatsapp-manager` dispara o gate `whatsapp` → o gate NÃO entrega o corpo (não resolve do catálogo global). Repetir para os 27 default gates.
+- [ ] **C-G (gate respeita allowlist):** agente cuja allowlist NÃO inclui `ravi-system-whatsapp-manager` dispara o gate `whatsapp` → o gate NÃO entrega o corpo (não resolve do catálogo global). Repetir para os 30 default gates.
 - [ ] **C-L (colisão):** agente com skill local `foo` + compartilhada `foo` → a local ganha; a compartilhada some do índice desse agente.
 
 ### Edge / higiene

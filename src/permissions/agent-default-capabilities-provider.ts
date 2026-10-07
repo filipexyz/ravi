@@ -19,9 +19,7 @@ export function formatAgentRuntimePermissionProfileChoices(): string {
   return "bootstrap, chat-only, full-access, none";
 }
 
-export function isChatOnlyRuntimePermissions(
-  config: AgentRuntimePermissionsConfig | null | undefined,
-): boolean {
+export function isChatOnlyRuntimePermissions(config: AgentRuntimePermissionsConfig | null | undefined): boolean {
   return config?.profile === "chat-only";
 }
 
@@ -36,8 +34,7 @@ export function isToolOrExecCapability(capability: Pick<ContextCapability, "perm
     return true;
   }
   return (
-    capability.permission === "execute" &&
-    (capability.objectType === "group" || capability.objectType === "executable")
+    capability.permission === "execute" && (capability.objectType === "group" || capability.objectType === "executable")
   );
 }
 
@@ -215,7 +212,8 @@ function profileCapabilities(profile: AgentRuntimePermissionProfile | undefined,
   if (profile !== "full-access") return [];
   // Break-glass: admin remains the snapshot short-circuit, but Bash PreToolUse
   // and turn inspection also need an explicit execute/use ceiling so operators
-  // can see `execute:executable:*` on materialized agent and turn contexts.
+  // can see `execute:executable:*` (and `use:skill:*`: every skill Ravi knows)
+  // on materialized agent and turn contexts.
   return [
     {
       permission: "admin",
@@ -238,6 +236,12 @@ function profileCapabilities(profile: AgentRuntimePermissionProfile | undefined,
     {
       permission: "use",
       objectType: "toolgroup",
+      objectId: "*",
+      source,
+    },
+    {
+      permission: "use",
+      objectType: "skill",
       objectId: "*",
       source,
     },

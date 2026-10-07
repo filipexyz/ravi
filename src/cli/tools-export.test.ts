@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { AppsCommands } from "./commands/apps.js";
+import { BasesCommands } from "./commands/bases.js";
+import { toolInvokeReturnSchema } from "./commands/operational-return-schemas.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { fail, runWithContext } from "./context.js";
@@ -171,6 +173,19 @@ describe("tools export negated options", () => {
 });
 
 describe("tools export surface", () => {
+  it("keeps a gated tool's skillGate (with ruleId) inside the tools invoke return contract", () => {
+    const tool = extractTools([BasesCommands]).find((candidate) => candidate.name === "bases_list");
+    expect(tool?.metadata.skillGate).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    const payload = {
+      mode: "executed",
+      executed: true,
+      tool: { name: tool!.name, description: tool!.description, metadata: tool!.metadata },
+      args: {},
+      result: { isError: false, content: [{ type: "text", text: "ok" }] },
+    };
+    expect(toolInvokeReturnSchema.safeParse(payload).success).toBe(true);
+  });
+
   it("never exports commands marked @CliOnly", () => {
     expect(extractTools([CliOnlyToolCommands]).map((tool) => tool.name)).toEqual(["terminal_status"]);
   });

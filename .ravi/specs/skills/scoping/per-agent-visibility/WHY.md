@@ -38,7 +38,7 @@ Resultado: **grant manual sobra só para skills PERSONALIZADAS** (sem comando as
 ## Por que é barato (verificado no código)
 
 - Filtro nativo: `Options.skills` (`sdk.d.ts:3213-3216`), não setado hoje → ~10 LOC pra ligar.
-- Derivação reusa dados existentes: `DEFAULT_RAVI_GROUP_SKILL_RULES` (27 regras, `skill-gates.ts`) × permissões materializadas. Sem tabela nova.
+- Derivação reusa dados existentes: `DEFAULT_RAVI_GROUP_SKILL_RULES` (30 regras, `skill-gates.ts`) × permissões materializadas. Sem tabela nova.
 - Latência: o prompt **encolhe** (menos skills injetadas) → tende a ser mais rápido e mais barato, não mais lento.
 
 ## Herança da revisão adversarial (v2) — o que continua valendo
@@ -50,6 +50,18 @@ Dos 5 bloqueadores da v2, continuam como invariants na v3:
 - **Não-sandbox** (Invariant S) — filtro de índice, não segurança.
 
 Os pontos "mapa manual para tudo" e "claude-only" foram **superados** pela decisão v3 (derivação da permissão + núcleo agnóstico).
+
+## Revisão v7 (2026-10-07) — full-access sem a skill `bases`
+
+Um agente `full-access` (`admin:system:*`) não conseguia ler a skill `bases`, recém-entregue pela #625. A derivação da v3 só reconhecia skill oficial com linha em `DEFAULT_RAVI_GROUP_SKILL_RULES`, e `bases` não tinha linha; 12 skills de `ravi-system` e 5 de `ravi-dev` ficavam nesse buraco. Capabilities `use:skill:*` eram aceitas e materializadas, mas nada as lia. E a mensagem mandava `skills install` para uma skill que já vem no catálogo.
+
+Decisões:
+
+- `bases` ganha a regra que faltava (mesmo padrão de `pages`).
+- O gate lê `use:skill:<id>` com o matcher das demais capabilities, e `admin:system:*` cobre tudo que o Ravi conhece. O `full-access` passa a mostrar `use:skill:*` explicitamente, como já mostra `execute:executable:*`. Assim uma skill nova sem regra nunca mais tranca um agente break-glass.
+- Ler é mais largo que anunciar: wildcard e admin não ampliam o catálogo, para não reabrir a poluição de índice que a feature resolveu. Só `use:skill:<id>` concreto entra na allowlist, como grant.
+- Skill só no disco continua exigindo `install --source` → `grant`.
+- A mensagem passa a depender da origem da skill e diz quando a linha negada continha o próprio grant.
 
 ## Decisões de produto ainda abertas (RM)
 

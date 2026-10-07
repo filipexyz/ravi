@@ -2754,6 +2754,7 @@ const toolSkillGateSchema = z
   .object({
     skill: z.string(),
     source: z.string(),
+    ruleId: z.string().optional(),
   })
   .strict();
 
