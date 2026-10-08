@@ -273,6 +273,22 @@ Console still owns auth/audit/decryption, and the remote delivery item stays
 metadata-only. Existing Console wire contracts MAY still call it an inbox item,
 but OSS Ravi MUST NOT implement mail selection or redaction policy.
 
+Bases row events are the second local exception. When a delivered
+`bases.row.created`, `bases.row.updated`, `bases.row.restored`, or
+`bases.row.archived` item carries `projectId`, `baseId`, and `rowId`, the local
+bridge MUST read that row once through the Bases CLI API
+(`GET /api/cli/projects/<projectId>/bases/<baseId>/rows/<rowId>`, with
+`includeArchived=1` for `archived`) using the installation's own credentials,
+before local persistence and publish. On success the NATS JSON MUST include
+`payload.row = { rowId, version, values, archivedAt }` (never the row `body`)
+and `payload.rowEnrichment = { status: "ok" }`. When the read fails the item is
+still published with its metadata-only payload plus
+`payload.rowEnrichment = { status: "failed", code }`. `bases.rows.bulk_changed`
+is not enriched. `payload.row` is the row as read at delivery time, which may
+be newer than `payload.version`. Console authorization decides what the read
+returns; the remote item stays ids-only, and OSS Ravi MUST NOT add selection or
+redaction policy. Like mail, the local mirror stores these values for replay.
+
 When `mail/local-mailbox` is implemented, mail enrichment through this delivery
 bridge MUST be treated as a compatibility ingestion path or provider event hint.
 The durable agent-facing source of truth for email state MUST be the local
