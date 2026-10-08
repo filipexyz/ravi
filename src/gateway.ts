@@ -69,6 +69,50 @@ const NATIVE_OUTBOUND_CHANNELS = new Set(["slack"]);
 const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
 
 /**
+ * A response that does not reach a chat must say so in the log. Only the
+ * delivered path logs `Sending response`/`Response delivered`; every other
+ * outcome used to be visible only in the delivery trace, so a dropped reply
+ * looked like a missing log line (2a728cd4).
+ */
+/**
+ * Omni instance for an outbound target. A target can carry an empty
+ * `accountId` (a source-less trigger turn on a session whose last account
+ * was never recorded) while its canonical chat still names the instance;
+ * use that instead of dropping the reply as `missing_instance` (2a728cd4).
+ */
+export function resolveTargetInstanceId(target: { accountId?: string; instanceId?: string }): string | undefined {
+  if (!target.accountId?.trim() && target.instanceId?.trim()) {
+    return configStore.resolveInstanceId(target.instanceId.trim());
+  }
+  return configStore.resolveInstanceId(target.accountId ?? "");
+}
+
+// Outcomes that are intended, or already logged where they happen.
+const QUIET_DELIVERY_REASONS = new Set(["silent", "silent_response", "duplicate_media", "send_error"]);
+
+export function logUndeliveredResponse(delivery: Record<string, unknown>): void {
+  const target = delivery.target as { channel?: string } | undefined;
+  const fields = {
+    sessionName: delivery.sessionName,
+    emitId: delivery.emitId,
+    reason: delivery.reason,
+    ...(target?.channel ? { channel: target.channel } : {}),
+    ...(typeof delivery.jobId === "string" ? { jobId: delivery.jobId } : {}),
+    ...(typeof delivery.error === "string" ? { error: delivery.error } : {}),
+  };
+  if (delivery.status === "queued") {
+    log.info("Response queued for native outbound", fields);
+    return;
+  }
+  if (typeof delivery.reason === "string" && QUIET_DELIVERY_REASONS.has(delivery.reason)) return;
+  if (delivery.status === "dropped") {
+    log.warn("Response dropped", fields);
+  } else if (delivery.status === "failed") {
+    log.warn("Response delivery failed", fields);
+  }
+}
+
+/**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
  *
  * Handles ravi-internal formats:
@@ -1021,6 +1065,7 @@ export class Gateway {
       timestamp: Date.now(),
       ...data,
     };
+    logUndeliveredResponse(delivery);
 
     try {
       recordDeliveryTrace({ sessionName, response, delivery });
@@ -1172,7 +1217,7 @@ export class Gateway {
       return;
     }
 
-    const instanceId = configStore.resolveInstanceId(target.accountId);
+    const instanceId = resolveTargetInstanceId(target);
     if (!instanceId) {
       await emitDelivery({ status: "dropped", reason: "missing_instance", target });
       return;
@@ -1300,7 +1345,7 @@ export class Gateway {
         return;
       }
 
-      const instanceId = configStore.resolveInstanceId(target.accountId);
+      const instanceId = resolveTargetInstanceId(target);
       if (!instanceId) {
         await emitDelivery({ status: "dropped", reason: "missing_instance", target });
         return;
