@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listPermissionDenials } from "./denials.js";
+import { flushPermissionAuditEvents, listPermissionDenials, setPermissionAuditPublisherForTest } from "./denials.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -14,6 +14,9 @@ import {
   canAccessResource,
   recordResourceAccessDenial,
   enforceScopeCheck,
+  canViewAgent,
+  filterVisibleAgents,
+  isLocalOperatorScope,
   type ScopeContext,
 } from "./scope.js";
 
@@ -884,6 +887,84 @@ describe("Scope Isolation", () => {
         objectType: "agent",
         objectId: "main",
       });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Context record without an agent (Pages app gateway, orphaned context)
+  // --------------------------------------------------------------------------
+
+  describe("context record without an agent", () => {
+    function agentlessCtx(capabilities: ContextCapability[]): ScopeContext {
+      return {
+        context: {
+          contextId: "ctx_gateway",
+          contextKey: "rctx_gateway",
+          kind: "pages-app-gateway",
+          capabilities,
+          metadata: {},
+          createdAt: 0,
+        },
+      };
+    }
+
+    it("only the caller with neither agent nor context record is the local operator", () => {
+      expect(isLocalOperatorScope({})).toBe(true);
+      expect(isLocalOperatorScope(undefined)).toBe(true);
+      expect(isLocalOperatorScope({ agentId: "dev" })).toBe(false);
+      expect(isLocalOperatorScope(agentlessCtx([]))).toBe(false);
+    });
+
+    it("authorizes from the record's capabilities only", () => {
+      const ctx = agentlessCtx([cap("access", "session", "allowed-session")]);
+      const sessions: MinimalSession[] = [
+        { name: "allowed-session", sessionKey: "agent:main:allowed" },
+        { name: "other-session", sessionKey: "agent:main:other" },
+      ];
+
+      expect(isScopeEnforced(ctx)).toBe(true);
+      expect(canAccessSession(ctx, "allowed-session")).toBe(true);
+      expect(canAccessSession(ctx, "other-session")).toBe(false);
+      expect(canModifySession(ctx, "allowed-session")).toBe(false);
+      expect(
+        filterAccessibleSessions(ctx, sessions as Parameters<typeof filterAccessibleSessions>[1]).map((s) => s.name),
+      ).toEqual(["allowed-session"]);
+      expect(canViewAgent(ctx, "main")).toBe(false);
+      expect(filterVisibleAgents(ctx, [{ id: "main" }, { id: "dev" }])).toEqual([]);
+      expect(canAccessContact(ctx, { id: "contact-1", tags: [] })).toBe(false);
+      expect(canWriteContacts(ctx)).toBe(false);
+      expect(canAccessResource(ctx, "main", "read")).toBe(false);
+      expect(canAccessResource(ctx, undefined, "read")).toBe(false);
+    });
+
+    it("refuses open-scope command groups without a grant on the record", () => {
+      runWithContext(agentlessCtx([]) as ToolContext, () => {
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+        expect(enforceScopeCheck("superadmin", "permissions", "grant").allowed).toBe(false);
+      });
+      runWithContext(agentlessCtx([cap("execute", "group", "sessions")]) as ToolContext, () => {
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(true);
+      });
+    });
+
+    it("never recommends the unknown agent as a grant subject", async () => {
+      const events: Record<string, unknown>[] = [];
+      const suppressed = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      setPermissionAuditPublisherForTest(async (_topic, data) => {
+        events.push(data);
+      });
+      try {
+        runWithContext(agentlessCtx([]) as ToolContext, () => {
+          expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+        });
+        await flushPermissionAuditEvents();
+      } finally {
+        setPermissionAuditPublisherForTest();
+        if (suppressed !== undefined) process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppressed;
+      }
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ blockType: "agent_scope_missing_grant", recommendedGrantSubjects: [] });
     });
   });
 });

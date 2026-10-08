@@ -27,6 +27,7 @@ import {
   declareCommandReturns,
 } from "./operational-return-schemas.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
+import { PAGES_APP_GATEWAY_AGENT_LABEL } from "../../app-gateway/constants.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -590,6 +591,17 @@ function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never
   });
 }
 
+/**
+ * Ids the runtime uses as in-process audit labels. Creating an agent with one
+ * of them would let that agent's own-agent checks match a label that carries
+ * no authority (`pages-app-gateway` labels Pages app gateway invokes).
+ */
+const RESERVED_AGENT_IDS = new Set([PAGES_APP_GATEWAY_AGENT_LABEL]);
+
+function isReservedAgentId(id: string): boolean {
+  return RESERVED_AGENT_IDS.has(id.trim().toLowerCase());
+}
+
 @Group({
   name: "agents",
   description: "Agent management",
@@ -785,6 +797,9 @@ export class AgentsCommands {
     })
     modelPreset?: string,
   ) {
+    if (isReservedAgentId(id)) {
+      fail(`Agent id "${id.trim()}" is reserved and cannot be created.`);
+    }
     const normalizedProvider = provider?.trim() || undefined;
     const normalizedModel = model?.trim() || undefined;
     const normalizedModelPreset = modelPreset?.trim() || undefined;

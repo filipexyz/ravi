@@ -17391,6 +17391,249 @@ public struct ObserversShowReturn: Codable, Sendable {
   }
 }
 
+public struct PagesAppsTargetsListOptions: Codable, Sendable {
+  public var console: String?
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+  public var site: String?
+
+  public init(console: String? = nil, limit: String? = nil, offset: String? = nil, project: String? = nil, site: String? = nil) {
+    self.console = console
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+    self.site = site
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+    case site = "site"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.site {
+      body["site"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesAppsTargetsListReturn: Codable, Sendable {
+  public var consoleUrl: String
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var siteRef: String
+  public var success: Bool
+  public var targets: [RaviJSON]
+  public var total: Double
+
+  public init(consoleUrl: String, pagination: RaviJSON, projectRef: String, siteRef: String, success: Bool, targets: [RaviJSON], total: Double) {
+    self.consoleUrl = consoleUrl
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.siteRef = siteRef
+    self.success = success
+    self.targets = targets
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case consoleUrl = "consoleUrl"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case siteRef = "siteRef"
+    case success = "success"
+    case targets = "targets"
+    case total = "total"
+  }
+}
+
+public struct PagesAppsTargetsRemoveOptions: Codable, Sendable {
+  public var aud: String?
+  public var console: String?
+  public var execute: Bool?
+  public var project: String?
+  public var site: String?
+
+  public init(aud: String? = nil, console: String? = nil, execute: Bool? = nil, project: String? = nil, site: String? = nil) {
+    self.aud = aud
+    self.console = console
+    self.execute = execute
+    self.project = project
+    self.site = site
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case aud = "aud"
+    case console = "console"
+    case execute = "execute"
+    case project = "project"
+    case site = "site"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.aud {
+      body["aud"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.site {
+      body["site"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesAppsTargetsRemoveReturn: Codable, Sendable {
+  public var action: String
+  public var audience: String
+  public var consoleUrl: String
+  public var id: RaviJSON
+  public var projectRef: String
+  public var siteRef: String
+  public var status: String
+  public var success: Bool
+
+  public init(action: String, audience: String, consoleUrl: String, id: RaviJSON, projectRef: String, siteRef: String, status: String, success: Bool) {
+    self.action = action
+    self.audience = audience
+    self.consoleUrl = consoleUrl
+    self.id = id
+    self.projectRef = projectRef
+    self.siteRef = siteRef
+    self.status = status
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case audience = "audience"
+    case consoleUrl = "consoleUrl"
+    case id = "id"
+    case projectRef = "projectRef"
+    case siteRef = "siteRef"
+    case status = "status"
+    case success = "success"
+  }
+}
+
+public struct PagesAppsTargetsSetOptions: Codable, Sendable {
+  public var app: String?
+  public var aud: String?
+  public var console: String?
+  public var execute: Bool?
+  public var installation: String?
+  public var op: [String]?
+  public var origin: [String]?
+  public var project: String?
+  public var site: String?
+
+  public init(app: String? = nil, aud: String? = nil, console: String? = nil, execute: Bool? = nil, installation: String? = nil, op: [String]? = nil, origin: [String]? = nil, project: String? = nil, site: String? = nil) {
+    self.app = app
+    self.aud = aud
+    self.console = console
+    self.execute = execute
+    self.installation = installation
+    self.op = op
+    self.origin = origin
+    self.project = project
+    self.site = site
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case app = "app"
+    case aud = "aud"
+    case console = "console"
+    case execute = "execute"
+    case installation = "installation"
+    case op = "op"
+    case origin = "origin"
+    case project = "project"
+    case site = "site"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.app {
+      body["app"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.aud {
+      body["aud"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.installation {
+      body["installation"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.op {
+      body["op"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.origin {
+      body["origin"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.site {
+      body["site"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesAppsTargetsSetReturn: Codable, Sendable {
+  public var action: String
+  public var audience: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var siteRef: String
+  public var success: Bool
+  public var target: RaviJSON
+
+  public init(action: String, audience: String, consoleUrl: String, projectRef: String, siteRef: String, success: Bool, target: RaviJSON) {
+    self.action = action
+    self.audience = audience
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.siteRef = siteRef
+    self.success = success
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case audience = "audience"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case siteRef = "siteRef"
+    case success = "success"
+    case target = "target"
+  }
+}
+
 public struct PagesAssertionAudiencesListOptions: Codable, Sendable {
   public var console: String?
   public var limit: String?

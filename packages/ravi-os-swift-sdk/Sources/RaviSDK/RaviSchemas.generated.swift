@@ -60700,6 +60700,612 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PagesAppsTargetsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum targets to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of targets to skip (default: 0)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAppsTargetsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "targets": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "appId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "audience": {
+              "type": "string"
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grantExpiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "installationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "operations": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "organizationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "origins": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "siteId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "audience",
+            "appId",
+            "operations",
+            "origins",
+            "installationId",
+            "organizationId",
+            "projectId",
+            "siteId",
+            "status",
+            "revision",
+            "grantExpiresAt",
+            "createdAt",
+            "updatedAt",
+            "revokedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "consoleUrl",
+      "pagination",
+      "projectRef",
+      "siteRef",
+      "success",
+      "targets",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAppsTargetsRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "aud": {
+        "description": "Audience of the target to revoke",
+        "type": "string"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Revoke the target; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAppsTargetsRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "remove",
+        "type": "string"
+      },
+      "audience": {
+        "type": "string"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action",
+      "audience",
+      "consoleUrl",
+      "id",
+      "projectRef",
+      "siteRef",
+      "status",
+      "success"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAppsTargetsSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "app": {
+        "description": "Ravi app id served by the target installation",
+        "type": "string"
+      },
+      "aud": {
+        "description": "Viewer-assertion audience reserved for the app gateway",
+        "type": "string"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Register the target; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "installation": {
+        "description": "Console installation id that serves the target (default: this installation)",
+        "type": "string"
+      },
+      "op": {
+        "description": "Exact manifest operation id (for example slides.list). Repeat for 1 to 16",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "origin": {
+        "description": "HTTPS origin of this Pages site (default host or active custom hostname). Repeat for 1 to 8",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages host slug, site id, or hostname. Console accepts all three as siteRef",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAppsTargetsSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "set",
+        "type": "string"
+      },
+      "audience": {
+        "type": "string"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "target": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "appId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "audience": {
+                "type": "string"
+              },
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "grantExpiresAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installationId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "operations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "organizationId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "origins": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "projectId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revokedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "siteId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "audience",
+              "appId",
+              "operations",
+              "origins",
+              "installationId",
+              "organizationId",
+              "projectId",
+              "siteId",
+              "status",
+              "revision",
+              "grantExpiresAt",
+              "createdAt",
+              "updatedAt",
+              "revokedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "audience",
+      "consoleUrl",
+      "projectRef",
+      "siteRef",
+      "success",
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PagesAssertionAudiencesListInputSchema = #"""
   {
     "additionalProperties": false,

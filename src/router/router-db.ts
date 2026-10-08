@@ -2459,6 +2459,17 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_console_inbox_poll_locks_expiry
       ON console_inbox_poll_locks(expires_at);
 
+    -- Pages app gateway: one relay socket per (Console URL, installation)
+    -- across daemons sharing this state directory. Same shape as the inbox lease.
+    CREATE TABLE IF NOT EXISTS console_executor_relay_locks (
+      lock_key    TEXT PRIMARY KEY,
+      owner_id    TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_executor_relay_locks_expiry
+      ON console_executor_relay_locks(expires_at);
+
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
     -- for remote bridge delivery and cursor-based remote intake.

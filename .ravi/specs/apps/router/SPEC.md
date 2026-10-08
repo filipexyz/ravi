@@ -164,6 +164,13 @@ ravi apps run <app-id> [operation] [args...] --execute --json
   App Router and resolve the same operation as the CLI alias.
 - Dynamic app routes MUST NOT be added to the static SDK decorator registry by
   default. SDK clients MAY use the generic App Router API.
+- `runAppOperation` MAY take `exactOperation`, `timeoutMs`, `maxOutputBytes`,
+  and `signal`. With `exactOperation` the operation MUST be an exact manifest
+  key: aliases, virtual builtins, and joined leading args are off. With the
+  limits, a `cli` child MUST run in its own process group, which the router
+  MUST kill on timeout, abort, or oversized output. Callers that pass none of
+  them MUST keep the behavior above. The Pages app gateway executor is the
+  caller (`pages/app-gateway`).
 
 ## Command Contract
 

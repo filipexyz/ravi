@@ -5196,6 +5196,8 @@ class PagesNamespace {
 
   final RaviTransport _transport;
 
+  PagesAppsNamespace get apps => PagesAppsNamespace(_transport);
+
   PagesAssertionNamespace get assertion => PagesAssertionNamespace(_transport);
 
   PagesPasswordNamespace get password => PagesPasswordNamespace(_transport);
@@ -5299,6 +5301,53 @@ class PagesNamespace {
       command: "visibility",
       body: requestBody,
       decode: pagesVisibilityReturnFromJson,
+    );
+  }
+}
+
+class PagesAppsNamespace {
+  const PagesAppsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  PagesAppsTargetsNamespace get targets => PagesAppsTargetsNamespace(_transport);
+}
+
+class PagesAppsTargetsNamespace {
+  const PagesAppsTargetsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<PagesAppsTargetsListReturn> list([PagesAppsTargetsListOptions options = const PagesAppsTargetsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages", "apps", "targets"],
+      command: "list",
+      body: requestBody,
+      decode: pagesAppsTargetsListReturnFromJson,
+    );
+  }
+
+  Future<PagesAppsTargetsRemoveReturn> remove([PagesAppsTargetsRemoveOptions options = const PagesAppsTargetsRemoveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages", "apps", "targets"],
+      command: "remove",
+      body: requestBody,
+      decode: pagesAppsTargetsRemoveReturnFromJson,
+    );
+  }
+
+  Future<PagesAppsTargetsSetReturn> set_([PagesAppsTargetsSetOptions options = const PagesAppsTargetsSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages", "apps", "targets"],
+      command: "set",
+      body: requestBody,
+      decode: pagesAppsTargetsSetReturnFromJson,
     );
   }
 }

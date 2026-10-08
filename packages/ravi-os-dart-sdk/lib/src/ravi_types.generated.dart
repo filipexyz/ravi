@@ -14859,6 +14859,198 @@ class ObserversShowReturn {
 
 ObserversShowReturn observersShowReturnFromJson(Object? json) => ObserversShowReturn.fromJsonValue(json);
 
+class PagesAppsTargetsListOptions {
+  const PagesAppsTargetsListOptions({this.console, this.limit, this.offset, this.project, this.site});
+
+  final String? console;
+  final String? limit;
+  final String? offset;
+  final String? project;
+  final String? site;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+  }
+}
+
+class PagesAppsTargetsListReturn {
+  const PagesAppsTargetsListReturn({required this.consoleUrl, required this.pagination, required this.projectRef, required this.siteRef, required this.success, required this.targets, required this.total});
+
+  final String consoleUrl;
+  final RaviJson pagination;
+  final String projectRef;
+  final String siteRef;
+  final bool success;
+  final List<RaviJson> targets;
+  final double total;
+
+  factory PagesAppsTargetsListReturn.fromJson(Map<String, Object?> json) {
+    return PagesAppsTargetsListReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      siteRef: raviJsonAsString(json["siteRef"]),
+      success: raviJsonAsBool(json["success"]),
+      targets: raviJsonAsList(json["targets"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static PagesAppsTargetsListReturn fromJsonValue(Object? json) {
+    return PagesAppsTargetsListReturn.fromJson(raviJsonObject(json, "PagesAppsTargetsListReturn"));
+  }
+}
+
+PagesAppsTargetsListReturn pagesAppsTargetsListReturnFromJson(Object? json) => PagesAppsTargetsListReturn.fromJsonValue(json);
+
+class PagesAppsTargetsRemoveOptions {
+  const PagesAppsTargetsRemoveOptions({this.aud, this.console, this.execute, this.project, this.site});
+
+  final String? aud;
+  final String? console;
+  final bool? execute;
+  final String? project;
+  final String? site;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (aud != null) {
+      into["aud"] = RaviJson.from(aud);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+  }
+}
+
+class PagesAppsTargetsRemoveReturn {
+  const PagesAppsTargetsRemoveReturn({required this.action, required this.audience, required this.consoleUrl, required this.id, required this.projectRef, required this.siteRef, required this.status, required this.success});
+
+  final String action;
+  final String audience;
+  final String consoleUrl;
+  final RaviJson id;
+  final String projectRef;
+  final String siteRef;
+  final String status;
+  final bool success;
+
+  factory PagesAppsTargetsRemoveReturn.fromJson(Map<String, Object?> json) {
+    return PagesAppsTargetsRemoveReturn(
+      action: raviJsonAsString(json["action"]),
+      audience: raviJsonAsString(json["audience"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      id: RaviJson.from(json["id"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      siteRef: raviJsonAsString(json["siteRef"]),
+      status: raviJsonAsString(json["status"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static PagesAppsTargetsRemoveReturn fromJsonValue(Object? json) {
+    return PagesAppsTargetsRemoveReturn.fromJson(raviJsonObject(json, "PagesAppsTargetsRemoveReturn"));
+  }
+}
+
+PagesAppsTargetsRemoveReturn pagesAppsTargetsRemoveReturnFromJson(Object? json) => PagesAppsTargetsRemoveReturn.fromJsonValue(json);
+
+class PagesAppsTargetsSetOptions {
+  const PagesAppsTargetsSetOptions({this.app, this.aud, this.console, this.execute, this.installation, this.op, this.origin, this.project, this.site});
+
+  final String? app;
+  final String? aud;
+  final String? console;
+  final bool? execute;
+  final String? installation;
+  final List<String>? op;
+  final List<String>? origin;
+  final String? project;
+  final String? site;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (app != null) {
+      into["app"] = RaviJson.from(app);
+    }
+    if (aud != null) {
+      into["aud"] = RaviJson.from(aud);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (installation != null) {
+      into["installation"] = RaviJson.from(installation);
+    }
+    if (op != null) {
+      into["op"] = RaviJson.from(op);
+    }
+    if (origin != null) {
+      into["origin"] = RaviJson.from(origin);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+  }
+}
+
+class PagesAppsTargetsSetReturn {
+  const PagesAppsTargetsSetReturn({required this.action, required this.audience, required this.consoleUrl, required this.projectRef, required this.siteRef, required this.success, required this.target});
+
+  final String action;
+  final String audience;
+  final String consoleUrl;
+  final String projectRef;
+  final String siteRef;
+  final bool success;
+  final RaviJson target;
+
+  factory PagesAppsTargetsSetReturn.fromJson(Map<String, Object?> json) {
+    return PagesAppsTargetsSetReturn(
+      action: raviJsonAsString(json["action"]),
+      audience: raviJsonAsString(json["audience"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      siteRef: raviJsonAsString(json["siteRef"]),
+      success: raviJsonAsBool(json["success"]),
+      target: RaviJson.from(json["target"]),
+    );
+  }
+
+  static PagesAppsTargetsSetReturn fromJsonValue(Object? json) {
+    return PagesAppsTargetsSetReturn.fromJson(raviJsonObject(json, "PagesAppsTargetsSetReturn"));
+  }
+}
+
+PagesAppsTargetsSetReturn pagesAppsTargetsSetReturnFromJson(Object? json) => PagesAppsTargetsSetReturn.fromJsonValue(json);
+
 class PagesAssertionAudiencesListOptions {
   const PagesAssertionAudiencesListOptions({this.console, this.limit, this.offset, this.project, this.site});
 

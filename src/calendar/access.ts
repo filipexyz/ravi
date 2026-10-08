@@ -5,8 +5,9 @@ import {
   localOperatorCan,
   type PermissionProvider,
 } from "../permissions/provider-runtime.js";
+import { authorizationAgentId, authorizationContext } from "../permissions/authorization-agent.js";
 import { parseAuthorityPrincipal } from "../permissions/delegation.js";
-import { getScopeContext, type ScopeContext } from "../permissions/scope.js";
+import { getScopeContext, isLocalOperatorScope, type ScopeContext } from "../permissions/scope.js";
 import { listCalendarMembers } from "./db.js";
 import type { CalendarCalendar, CalendarMemberRelation } from "./types.js";
 
@@ -28,7 +29,7 @@ export function canUseCalendar(
   permission: CalendarPermission,
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId" | "visibility" | "ownerType" | "ownerId">,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(permission, "calendar", calendar.id);
   if (calendarScopeSubjects(ctx).some((subject) => calendarSubjectOwnsCalendar(subject, calendar))) return true;
   if (
     calendar.visibility === "public" &&
@@ -46,7 +47,7 @@ export function canUseCalendar(
 }
 
 export function canUseAnyCalendar(ctx: CalendarScopeContext, permission: CalendarPermission): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar", "*");
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(permission, "calendar", "*");
   return scopeCan(ctx, permission, "calendar", "*");
 }
 
@@ -55,7 +56,7 @@ export function canUseCalendarProvider(
   permission: CalendarProviderPermission,
   provider: string,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar-provider", provider);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(permission, "calendar-provider", provider);
   return (
     scopeCan(ctx, permission, "calendar-provider", provider) || scopeCan(ctx, permission, "calendar-provider", "*")
   );
@@ -90,8 +91,9 @@ export function calendarScopeSubjects(ctx: CalendarScopeContext): CalendarSubjec
     subjects.push({ type: "contact", id: legacyEnvContactId });
   }
 
-  if (ctx.agentId) {
-    subjects.push({ type: "agent", id: ctx.agentId });
+  const agentId = authorizationAgentId(ctx.agentId);
+  if (agentId) {
+    subjects.push({ type: "agent", id: agentId });
   }
 
   return dedupeCalendarSubjects(subjects);
@@ -115,16 +117,11 @@ function hasDetailCalendarAccess(
 }
 
 function scopeCan(ctx: CalendarScopeContext, permission: string, objectType: string, objectId: string): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(permission, objectType, objectId);
   if (ctx.context) {
-    return canWithCapabilityContext(
-      { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },
-      permission,
-      objectType,
-      objectId,
-    );
+    return canWithCapabilityContext(authorizationContext(ctx.context, ctx.agentId), permission, objectType, objectId);
   }
-  return agentCan(ctx.agentId, permission, objectType, objectId);
+  return agentCan(authorizationAgentId(ctx.agentId), permission, objectType, objectId);
 }
 
 function canWithCalendarMembershipProvider(
@@ -133,7 +130,7 @@ function canWithCalendarMembershipProvider(
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId">,
 ): boolean {
   const subjects = calendarScopeSubjects(ctx);
-  if (subjects.length === 0 && !ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
+  if (subjects.length === 0 && isLocalOperatorScope(ctx)) return localOperatorCan(permission, "calendar", calendar.id);
   return subjects.some(
     (subject) =>
       authorizePermission(

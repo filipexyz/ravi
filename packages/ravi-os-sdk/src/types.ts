@@ -11746,6 +11746,111 @@ export type ObserversShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `pages.apps.targets.list`. */
+export type PagesAppsTargetsListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+  site?: string;
+};
+
+/** Return shape for `pages.apps.targets.list`. */
+export type PagesAppsTargetsListReturn = {
+  consoleUrl: string;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  siteRef: string;
+  success: true;
+  targets: Array<{
+    appId: string | null;
+    audience: string;
+    createdAt: string | null;
+    grantExpiresAt: string | null;
+    id: string | null;
+    installationId: string | null;
+    operations: string[];
+    organizationId: string | null;
+    origins: string[];
+    projectId: string | null;
+    revision: number | null;
+    revokedAt: string | null;
+    siteId: string | null;
+    status: string | null;
+    updatedAt: string | null;
+  }>;
+  total: number;
+};
+
+/** Input shape for `pages.apps.targets.remove`. */
+export type PagesAppsTargetsRemoveInput = {
+  aud?: string;
+  console?: string;
+  execute?: boolean;
+  project?: string;
+  site?: string;
+};
+
+/** Return shape for `pages.apps.targets.remove`. */
+export type PagesAppsTargetsRemoveReturn = {
+  action: "remove";
+  audience: string;
+  consoleUrl: string;
+  id: string | null;
+  projectRef: string;
+  siteRef: string;
+  status: string;
+  success: true;
+};
+
+/** Input shape for `pages.apps.targets.set`. */
+export type PagesAppsTargetsSetInput = {
+  app?: string;
+  aud?: string;
+  console?: string;
+  execute?: boolean;
+  installation?: string;
+  op?: string[];
+  origin?: string[];
+  project?: string;
+  site?: string;
+};
+
+/** Return shape for `pages.apps.targets.set`. */
+export type PagesAppsTargetsSetReturn = {
+  action: "set";
+  audience: string;
+  consoleUrl: string;
+  projectRef: string;
+  siteRef: string;
+  success: true;
+  target: ({
+    appId: string | null;
+    audience: string;
+    createdAt: string | null;
+    grantExpiresAt: string | null;
+    id: string | null;
+    installationId: string | null;
+    operations: string[];
+    organizationId: string | null;
+    origins: string[];
+    projectId: string | null;
+    revision: number | null;
+    revokedAt: string | null;
+    siteId: string | null;
+    status: string | null;
+    updatedAt: string | null;
+  }) | null;
+};
+
 /** Input shape for `pages.assertion.audiences.list`. */
 export type PagesAssertionAudiencesListInput = {
   console?: string;

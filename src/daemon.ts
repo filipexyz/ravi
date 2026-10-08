@@ -51,6 +51,7 @@ import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
+import { startAppGatewayRelayRunner, stopAppGatewayRelayRunner } from "./app-gateway/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -251,6 +252,7 @@ async function shutdown(signal: string, exitCode = 0) {
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
     await stopSyncRunner();
+    await stopAppGatewayRelayRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -460,6 +462,11 @@ export async function startDaemon() {
 
   await startSyncRunner();
   log.info("Sync runner started");
+
+  // Opt-in (RAVI_APP_GATEWAY_ENABLED=1), per-daemon; the SQLite relay lease keeps one socket per installation.
+  if (await startAppGatewayRelayRunner()) {
+    log.info("Pages app gateway relay runner started");
+  }
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

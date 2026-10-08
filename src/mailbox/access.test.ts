@@ -73,4 +73,28 @@ describe("mailbox Permission Provider Runtime access", () => {
       expect(canUseMailProvider(getMailScopeContext(), "manage", "ravi-mail")).toBe(false);
     });
   });
+
+  it("never gives a context record without an agent local-operator authority", () => {
+    const account = createMailAccount({ provider: "ravi-mail" });
+    const mailbox = createMailMailbox({ accountId: account.id, address: "ops@ravi.bot", isDefault: true });
+    const gatewayContext = (capabilities: ContextCapability[]): { context: ContextRecord } => ({
+      context: {
+        contextId: "ctx_mailbox_gateway",
+        contextKey: "ctx_key_mailbox_gateway",
+        kind: "pages-app-gateway",
+        capabilities,
+        metadata: {},
+        createdAt: 0,
+      },
+    });
+
+    runWithContext(gatewayContext([]), () => {
+      expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(false);
+      expect(canUseMailProvider(getMailScopeContext(), "sync", "ravi-mail")).toBe(false);
+    });
+    runWithContext(gatewayContext([cap("read", "mailbox", mailbox.id)]), () => {
+      expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(true);
+      expect(canUseMailMailbox(getMailScopeContext(), "send", mailbox)).toBe(false);
+    });
+  });
 });
