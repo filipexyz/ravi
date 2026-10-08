@@ -98,7 +98,8 @@ The `ravi inbox` CLI group follows the agent-first contract defined by
    increment the replay count. Ref resolution and the ambiguity check happen
    BEFORE the brake, so not-found exits 1, never 3.
 6. `inbox list` and `inbox items` MUST accept `--fields a,b,c` for compact
-   output.
+   output, and both MUST return `{ total, items }` with `total` the numeric
+   count of returned items, matching their declared return schema.
 7. Unbraked writes are declared: `done`/`archive`/`snooze` (reversible local
    status transitions), `enable`/`disable` (reversible toggle pair) and
    `poll` (the routine delivery tick the daemon already runs on a timer;

@@ -11,6 +11,7 @@ import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata } from "../decorators.js";
 import { InboxCommands } from "./inbox.js";
+import { inboxItemsReturnSchema } from "./operational-return-schemas.js";
 
 let stateDir: string | null = null;
 
@@ -256,6 +257,35 @@ describe("inbox agent-first contract", () => {
     for (const item of payload.items as unknown as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["id", "status"]);
     }
+  });
+
+  it("list --json matches its declared return schema (numeric total)", async () => {
+    upsertLocalInboxItem({
+      sourceDomain: "mail",
+      sourceType: "mail_message",
+      sourceId: "msg_1",
+      dedupeKey: "mail:msg_1",
+      title: "Fatura de julho",
+    });
+    const command = new InboxCommands();
+
+    const payload = await runWithContext({}, () =>
+      command.list(undefined, undefined, undefined, undefined, undefined, true),
+    );
+
+    expect(payload.total).toBe(1);
+    expect(inboxItemsReturnSchema.safeParse(payload).success).toBe(true);
+  });
+
+  it("list --json on an empty inbox still returns a numeric total", async () => {
+    const command = new InboxCommands();
+
+    const payload = await runWithContext({}, () =>
+      command.list(undefined, undefined, undefined, undefined, undefined, true),
+    );
+
+    expect(payload).toEqual({ total: 0, items: [] });
+    expect(inboxItemsReturnSchema.safeParse(payload).success).toBe(true);
   });
 
   it("items --fields narrows each mirror item to the requested fields", async () => {
