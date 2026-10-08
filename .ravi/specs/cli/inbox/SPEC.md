@@ -283,7 +283,9 @@ before local persistence and publish. On success the NATS JSON MUST include
 `payload.row = { rowId, version, values, archivedAt }` (never the row `body`)
 and `payload.rowEnrichment = { status: "ok" }`. When the read fails the item is
 still published with its metadata-only payload plus
-`payload.rowEnrichment = { status: "failed", code }`. `bases.rows.bulk_changed`
+`payload.rowEnrichment = { status: "failed", code }`. When `payload.projectId`
+and the item's `project.id` are both present and differ, the bridge MUST NOT
+read the row and records `code: "row_ref_mismatch"`. `bases.rows.bulk_changed`
 is not enriched. `payload.row` is the row as read at delivery time, which may
 be newer than `payload.version`. Console authorization decides what the read
 returns; the remote item stays ids-only, and OSS Ravi MUST NOT add selection or

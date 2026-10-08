@@ -36,11 +36,17 @@ export async function enrichBasesRowPayload(
 ): Promise<InboxNatsPayload> {
   if (!isBasesRowInboxEvent(natsPayload.eventType)) return natsPayload;
   const payload = natsPayload.payload ?? {};
-  const projectId = text(payload.projectId) ?? natsPayload.project?.id ?? null;
+  const envelopeProjectId = text(natsPayload.project?.id);
+  const payloadProjectId = text(payload.projectId);
+  const projectId = payloadProjectId ?? envelopeProjectId;
   const baseId = text(payload.baseId);
   const rowId = text(payload.rowId);
   if (!projectId || !baseId || !rowId) {
     return withRowEnrichment(natsPayload, { status: "failed", code: "row_ref_missing" });
+  }
+  // Only dereference rows of the project the item was delivered for.
+  if (payloadProjectId && envelopeProjectId && payloadProjectId !== envelopeProjectId) {
+    return withRowEnrichment(natsPayload, { status: "failed", code: "row_ref_mismatch" });
   }
 
   try {

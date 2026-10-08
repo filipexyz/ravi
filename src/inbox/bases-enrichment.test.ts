@@ -61,6 +61,18 @@ describe("bases row inbox payload enrichment", () => {
     });
     expect(result.payload?.rowEnrichment).toEqual({ status: "failed", code: "row_ref_missing" });
   });
+
+  it("does not read a row of a project other than the item's", async () => {
+    const base = makePayload();
+    const result = await enrichBasesRowPayload(
+      makePayload({ payload: { ...base.payload, projectId: "proj_other" } }),
+      async () => {
+        throw new Error("must not read");
+      },
+    );
+    expect(result.payload?.row).toBeUndefined();
+    expect(result.payload?.rowEnrichment).toEqual({ status: "failed", code: "row_ref_mismatch" });
+  });
 });
 
 function makePayload(overrides: Partial<InboxNatsPayload> = {}): InboxNatsPayload {
