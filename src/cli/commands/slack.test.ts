@@ -39,6 +39,7 @@ let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: 
 let filesListResult: Record<string, unknown> = { ok: true, files: [] };
 let credentialsAvailable = true;
 let credentialConnectionConfigured = true;
+let devSlackChannelConfigured = true;
 let clientConstructionCount = 0;
 
 function recordClientCall<T extends Record<string, unknown>>(method: string, args: unknown, result: T): T {
@@ -87,12 +88,16 @@ mock.module("../../config-store.js", () => ({
           name: "ravi-slack",
           ...(credentialConnectionConfigured ? { credentialConnection: "ravi-slack-secret" } : {}),
         },
-        dev: {
-          enabled: true,
-          provider: "slack",
-          name: "ravi-slack-dev",
-          credentialConnection: "ravi-slack-dev-secret",
-        },
+        ...(devSlackChannelConfigured
+          ? {
+              dev: {
+                enabled: true,
+                provider: "slack",
+                name: "ravi-slack-dev",
+                credentialConnection: "ravi-slack-dev-secret",
+              },
+            }
+          : {}),
         zap: { enabled: true, provider: "whatsapp", name: "zap" },
       },
     }),
@@ -426,6 +431,7 @@ beforeEach(() => {
   filesListResult = { ok: true, files: [] };
   credentialsAvailable = true;
   credentialConnectionConfigured = true;
+  devSlackChannelConfigured = true;
   schemaInitializingArtifactCalls.length = 0;
 });
 
@@ -1240,6 +1246,25 @@ describe("slack agent-first contract", () => {
     );
 
     expect(error.details.suggestions).toContain("ravi-slack");
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("messages-send without a Ravi channel uses the only Slack channel config", async () => {
+    devSlackChannelConfigured = false;
+    const commands = new SlackCommands();
+    await silenced(() => commands.messagesSend("C0PRIVATE1", "olá", undefined, undefined, undefined, true, true));
+
+    expect(credentialResolutionCalls).toEqual([{ action: "chat.postMessage", channel: "ravi-slack" }]);
+    expect(callsTo("postMessage")[0]?.args).toMatchObject({ channel: "C0PRIVATE1", text: "olá" });
+  });
+
+  it("messages-send without a Ravi channel still fails when several Slack configs exist", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.messagesSend("C0PRIVATE1", "olá", undefined, undefined, undefined, true, true),
+      "CHANNEL_NOT_FOUND",
+      1,
+    );
     expect(clientCalls).toHaveLength(0);
   });
 

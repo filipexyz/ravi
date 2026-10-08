@@ -218,12 +218,16 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 function resolveSlackChannelConfig(channelName?: string): ChannelConfig | undefined {
   const channels = configStore.getConfig().channels ?? {};
   const context = getContext();
+  const enabledSlack = Object.values(channels).filter(
+    (channel) => channel.enabled !== false && channel.provider === "slack",
+  );
   const resolvedName =
     channelName?.trim() || (context?.source?.channel === "slack" ? context.source.accountId?.trim() : undefined);
-  if (!resolvedName) return undefined;
-  return Object.values(channels).find(
-    (channel) => channel.enabled !== false && channel.provider === "slack" && channel.name === resolvedName,
-  );
+  // Over the SDK gateway `--channel` shares its body key with the positional
+  // conversation id, so it never arrives; a host with one Slack channel config
+  // has nothing to choose, so use it instead of failing.
+  if (!resolvedName) return enabledSlack.length === 1 ? enabledSlack[0] : undefined;
+  return enabledSlack.find((channel) => channel.name === resolvedName);
 }
 
 /** Enabled Slack channel-config names from the LOCAL config store (cheap source for suggestions). */
@@ -251,7 +255,7 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
       "CHANNEL_NOT_FOUND",
       requested
         ? `Slack channel config not found: ${requested}`
-        : "Slack channel not resolved. Pass --channel <name> or run from a Slack-sourced context.",
+        : "Slack channel not resolved. Pass --channel <name> (local CLI) or run from a Slack-sourced context.",
       {
         asJson: contract.asJson,
         details: {
