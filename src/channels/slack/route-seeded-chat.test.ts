@@ -54,8 +54,9 @@ describe("resolveRouteSeededSlackChat", () => {
     expect(seed?.instanceId).toBe("11111111-2222-3333-4444-555555555555");
   });
 
-  it("does not seed without an exact route for that channel", () => {
+  it("does not seed without an exact group route for that channel", () => {
     expect(resolveRouteSeededSlackChat(config([route("group:*", "workspace-a")]), "C0PRIVATE1")).toBeNull();
+    expect(resolveRouteSeededSlackChat(config([route("C0PRIVATE1", "workspace-a")]), "C0PRIVATE1")).toBeNull();
     expect(resolveRouteSeededSlackChat(config([]), "C0PRIVATE1")).toBeNull();
   });
 
@@ -69,6 +70,30 @@ describe("resolveRouteSeededSlackChat", () => {
     ).toBeNull();
     expect(resolveRouteSeededSlackChat(config([route("D0DIRECT01", "workspace-a")]), "D0DIRECT01")).toBeNull();
     expect(resolveRouteSeededSlackChat(config([route("group:C0PRIVATE1", "workspace-a")]), "chat_123")).toBeNull();
+  });
+
+  it("does not seed through a disabled legacy Slack instance", () => {
+    const instance: InstanceConfig = {
+      name: "legacy-slack",
+      channel: "slack",
+      enabled: false,
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "pending",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const seed = resolveRouteSeededSlackChat(
+      config([route("group:C0PRIVATE1", "legacy-slack")], { "legacy-slack": instance }),
+      "C0PRIVATE1",
+    );
+    expect(seed).toBeNull();
+    expect(
+      resolveRouteSeededSlackChat(
+        config([route("group:C0PRIVATE1", "legacy-slack")], { "legacy-slack": { ...instance, enabled: true } }),
+        "C0PRIVATE1",
+      ),
+    ).not.toBeNull();
   });
 
   it("refuses when routes on two Slack accounts name the same channel id", () => {

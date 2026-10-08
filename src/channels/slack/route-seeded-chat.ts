@@ -30,7 +30,7 @@ export function resolveRouteSeededSlackChat(config: SeedConfig, ref: string): Ro
   const instanceIds = new Set<string>();
   for (const route of config.routes) {
     const pattern = route.pattern.trim().toUpperCase();
-    if (pattern !== `GROUP:${platformChatId}` && pattern !== platformChatId) continue;
+    if (pattern !== `GROUP:${platformChatId}`) continue;
     if (route.channel && route.channel !== "slack") continue;
     if (!isSlackAccount(config, route.accountId)) continue;
     instanceIds.add(resolveSlackInstanceAliases(config, route.accountId).canonical);
@@ -43,5 +43,6 @@ export function resolveRouteSeededSlackChat(config: SeedConfig, ref: string): Ro
 function isSlackAccount(config: SeedConfig, accountId: string): boolean {
   const channel = config.channels?.[accountId];
   if (channel) return channel.enabled !== false && channel.provider === "slack";
-  return config.instances?.[accountId]?.channel === "slack";
+  const instance = config.instances?.[accountId];
+  return instance?.channel === "slack" && instance.enabled !== false;
 }
