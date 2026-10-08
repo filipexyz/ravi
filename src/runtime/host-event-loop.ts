@@ -2457,7 +2457,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       textLen: responseText.length,
       mediaCount: mediaParts.length,
       targetSource: resolvedSource,
-      ...(resolvedTarget ? { targetChannel: resolvedTarget.channel } : {}),
       channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
