@@ -282,6 +282,10 @@ export class TriggerRunner {
       try {
         for await (const event of stream) {
           if (!this.running) break;
+          // A refresh that removed this topic calls stream.return(), but an
+          // async generator queues that behind the pending next(), so one more
+          // event still lands here. Drop it instead of firing stale triggers.
+          if (this.topicSubs.get(topic) !== subscription) break;
 
           // Skip events from trigger sessions (prevents self-fire loops)
           // Trigger sessions use pattern: ravi.agent:{id}:trigger:{triggerId}.*
