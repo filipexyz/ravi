@@ -26,6 +26,17 @@ describe("trigger session targets", () => {
   it("caps the session name at 64 characters", () => {
     const longId = "x".repeat(400);
     const event = { topic: "t", data: { id: longId } };
-    expect(resolveSessionTargetName("i-{{data.id}}", event)).toBe(`i-${"x".repeat(62)}`);
+    const name = resolveSessionTargetName("i-{{data.id}}", event);
+    expect(name).toHaveLength(64);
+    expect(name).toMatch(/^i-x+-[0-9a-f]{8}$/);
+  });
+
+  it("keeps long names that share their first 64 characters apart", () => {
+    const prefix = "x".repeat(80);
+    const a = resolveSessionTargetName("{{data.id}}", { topic: "t", data: { id: `${prefix}a` } });
+    const b = resolveSessionTargetName("{{data.id}}", { topic: "t", data: { id: `${prefix}b` } });
+    expect(a).not.toBe(b);
+    expect(a).toHaveLength(64);
+    expect(b).toHaveLength(64);
   });
 });

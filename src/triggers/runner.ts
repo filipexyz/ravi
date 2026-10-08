@@ -36,6 +36,7 @@ import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunRe
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
 const EVENT_DEDUPE_MAX = 2_000;
+const SESSION_NAME_MAX = 64;
 
 /** Tracks a topic subscription stream for teardown */
 type TopicSub = ReturnType<typeof nats.subscribe>;
@@ -1026,7 +1027,8 @@ function keyedCooldownId(trigger: Trigger, sessionName: string): string {
 /**
  * The session name a trigger targets for one event: its `session` template
  * resolved against the event and normalized to a session name (lowercase,
- * alphanumerics and hyphens, max 64), or null when a placeholder did not
+ * alphanumerics and hyphens, max 64; longer names end in a hash of the
+ * whole name), or null when a placeholder did not
  * resolve to a non-empty value (missing, null, empty) or nothing is left.
  * `fillUnresolved` replaces those placeholders instead (`ravi triggers test`).
  */
@@ -1044,8 +1046,10 @@ export function resolveSessionTargetName(
   const name = resolved
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
-  return name || null;
+    .replace(/^-+|-+$/g, "");
+  if (name.length <= SESSION_NAME_MAX) return name || null;
+  // Keep long names that share a prefix apart: a hash of the whole name
+  // replaces the tail.
+  const hash = createHash("sha256").update(name).digest("hex").slice(0, 8);
+  return `${name.slice(0, SESSION_NAME_MAX - hash.length - 1).replace(/-+$/, "")}-${hash}`;
 }
