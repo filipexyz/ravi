@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "d53a6565ad960cbc"
+    "version": "19e85dcd57655554"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -111197,7 +111197,7 @@
                     "type": "string"
                   },
                   "session": {
-                    "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session",
+                    "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session, or the agent main session outside one",
                     "type": "string"
                   },
                   "shell": {

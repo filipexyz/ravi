@@ -89978,7 +89978,7 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "session": {
-      "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session",
+      "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session, or the agent main session outside one",
       "type": "string"
     },
     "shell": {
