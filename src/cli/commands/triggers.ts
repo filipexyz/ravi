@@ -834,10 +834,10 @@ export class TriggersCommands {
         case "session": {
           const error = sessionTargetError(value);
           if (error) fail(error);
-          updated = dbUpdateTrigger(id, {
-            session: value.trim(),
-          });
-          logHuman(`✓ Session set: ${id} -> ${value}`);
+          const session = value.trim();
+          updated = dbUpdateTrigger(id, { session });
+          normalizedValue = session;
+          logHuman(`✓ Session set: ${id} -> ${session}`);
           break;
         }
 
