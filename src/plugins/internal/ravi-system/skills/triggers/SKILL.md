@@ -63,7 +63,7 @@ ravi triggers add "Ticket Slack" --topic "ravi.inbound.interaction" --filter 'da
 Opções:
 - `--agent <id>` - Agent que processa (default: agent padrão)
 - `--cooldown <duration>` - Intervalo mínimo entre disparos (ex: 5s, 1m, 30s)
-- `--session <main|isolated>` - Sessão (default: isolated)
+- `--session <main|isolated|key:<template>>` - Sessão (default: isolated). `key:<template>` cria/reusa uma sessão persistente por valor resolvido do template (mesma sintaxe `{{data.<path>}}` das mensagens; item de array por índice), ex.: `key:issue-{{data.payload.row.values.topic_id.0}}`. Evento cujo template não resolve é pulado (log warn), sem fallback para main ou sessão compartilhada
 - `--message <prompt>` - Prompt/template manual; opcional quando o tópico do catálogo tem `messageTemplate`
 - `--shell <cmd>` / `--exec <cmd>` - Executa comando shell diretamente, sem acordar agent
 - `--timeout <duration>` - Timeout de shell trigger, ex: `30`, `1m`, `5m`

@@ -42,6 +42,7 @@ import {
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { validateFilter } from "../../triggers/filter.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
+import { sessionTargetError, type SessionTarget } from "../../triggers/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -468,7 +469,8 @@ export class TriggersCommands {
     cooldown?: string,
     @Option({
       flags: "--session <type>",
-      description: "Session: main or isolated (default: isolated)",
+      description:
+        "Session: main, isolated (default), or key:<template> for one persistent session per resolved key (e.g. key:issue-{{data.payload.row.values.topic_id}})",
     })
     session?: string,
     @Option({
@@ -540,12 +542,11 @@ export class TriggersCommands {
     }
 
     // Validate session
-    let sessionTarget: "main" | "isolated" = "isolated";
+    let sessionTarget: SessionTarget = "isolated";
     if (session) {
-      if (session !== "main" && session !== "isolated") {
-        fail(`Invalid session: ${session}. Valid: main, isolated`);
-      }
-      sessionTarget = session;
+      const error = sessionTargetError(session);
+      if (error) fail(error);
+      sessionTarget = session as SessionTarget;
     }
 
     // Resolve agent: explicit flag > caller agent (from session context)
@@ -831,12 +832,10 @@ export class TriggersCommands {
         }
 
         case "session": {
-          const validValues = ["main", "isolated"];
-          if (!validValues.includes(value)) {
-            fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
-          }
+          const error = sessionTargetError(value);
+          if (error) fail(error);
           updated = dbUpdateTrigger(id, {
-            session: value as "main" | "isolated",
+            session: value as SessionTarget,
           });
           logHuman(`✓ Session set: ${id} -> ${value}`);
           break;

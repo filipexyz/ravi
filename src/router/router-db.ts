@@ -2978,7 +2978,7 @@ function getDb(): Database {
       agent_id TEXT,
       topic TEXT NOT NULL,
       message TEXT NOT NULL,
-      session TEXT DEFAULT 'isolated' CHECK(session IN ('main','isolated')),
+      session TEXT DEFAULT 'isolated' CHECK(session IN ('main','isolated') OR session LIKE 'key:_%'),
       enabled INTEGER DEFAULT 1,
       cooldown_ms INTEGER DEFAULT 5000,
       last_fired_at INTEGER,
@@ -3039,6 +3039,7 @@ function getDb(): Database {
   }
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
+  migrateTriggerSessionCheck(db);
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -11116,4 +11117,55 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
     actor: r.actor,
     ts: r.ts,
   }));
+}
+
+const LEGACY_TRIGGER_SESSION_CHECK = "CHECK(session IN ('main','isolated'))";
+const TRIGGER_SESSION_CHECK = "CHECK(session IN ('main','isolated') OR session LIKE 'key:_%')";
+
+/**
+ * Older databases constrain `triggers.session` to main|isolated. SQLite cannot
+ * alter a CHECK, so rebuild the table from its stored definition (which keeps
+ * every column added by later migrations) with the relaxed constraint that
+ * accepts `key:<template>` keyed sessions.
+ */
+export function migrateTriggerSessionCheck(database: Database): void {
+  // Same lock-before-inspect rule as ensureChannelOutboundReceiptSchema: a
+  // daemon and CLI can initialize the database concurrently.
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const tableRow = database
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'triggers'")
+      .get() as { sql: string | null } | undefined;
+    const sql = tableRow?.sql ?? "";
+    if (!sql.includes(LEGACY_TRIGGER_SESSION_CHECK)) {
+      database.exec("COMMIT");
+      return;
+    }
+    const rebuiltSql = sql
+      .replace(LEGACY_TRIGGER_SESSION_CHECK, TRIGGER_SESSION_CHECK)
+      .replace(/^CREATE TABLE\s+("?)triggers\1/, "CREATE TABLE triggers_session_migration");
+    if (rebuiltSql === sql || !rebuiltSql.startsWith("CREATE TABLE triggers_session_migration")) {
+      throw new Error("Unexpected triggers table definition; cannot migrate session CHECK");
+    }
+    // DROP TABLE removes the table's indexes; recreate them as they were.
+    const indexSqls = (
+      database
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'triggers' AND sql IS NOT NULL")
+        .all() as Array<{ sql: string }>
+    ).map((row) => row.sql);
+    database.exec(rebuiltSql);
+    database.exec("INSERT INTO triggers_session_migration SELECT * FROM triggers");
+    database.exec("DROP TABLE triggers");
+    database.exec("ALTER TABLE triggers_session_migration RENAME TO triggers");
+    for (const indexSql of indexSqls) database.exec(indexSql);
+    database.exec("COMMIT");
+    log.info("Migrated triggers.session CHECK to accept key:<template> sessions");
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // SQLite may already have rolled the transaction back.
+    }
+    throw error;
+  }
 }

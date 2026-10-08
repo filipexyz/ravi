@@ -5,7 +5,29 @@
  * and proactively fire agent prompts when events occur.
  */
 
-export type SessionTarget = "main" | "isolated";
+/**
+ * `main`, `isolated` (one session per trigger), or `key:<template>`: one
+ * persistent session per resolved key, e.g. `key:forum-{{data.payload.row.values.topic_id}}`.
+ */
+export type SessionTarget = "main" | "isolated" | `key:${string}`;
+
+export const KEYED_SESSION_PREFIX = "key:";
+
+/** Validates a `--session` value; returns an error message or null. */
+export function sessionTargetError(value: string): string | null {
+  if (value === "main" || value === "isolated") return null;
+  if (!value.startsWith(KEYED_SESSION_PREFIX)) {
+    return `Invalid session: ${value}. Valid: main, isolated, key:<template>`;
+  }
+  if (!value.slice(KEYED_SESSION_PREFIX.length).trim()) {
+    return "Invalid session: key:<template> needs a template, e.g. key:issue-{{data.payload.rowId}}";
+  }
+  return null;
+}
+
+export function isKeyedSessionTarget(value: SessionTarget): value is `key:${string}` {
+  return value.startsWith(KEYED_SESSION_PREFIX);
+}
 export type TriggerExecutionType = "agent" | "shell";
 export type TriggerMessageSource = "manual" | "catalog";
 

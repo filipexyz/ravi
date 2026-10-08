@@ -295,7 +295,7 @@ ravi triggers set <id> name "New Name"
 ravi triggers set <id> message "Nova instrução"
 ravi triggers set <id> topic "ravi.*.cli.contacts.*"
 ravi triggers set <id> agent jarvis
-ravi triggers set <id> session main          # main or isolated
+ravi triggers set <id> session main          # main, isolated, or key:<template>
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
 
 # Test trigger (fires with fake event data)
@@ -322,7 +322,7 @@ ravi triggers rm <id> --execute
 - `--message <text>` - Prompt to send when event fires (required)
 - `--agent <id>` - Target agent (default: default agent)
 - `--cooldown <duration>` - Minimum time between fires (default: 5s)
-- `--session <type>` - `main` or `isolated` (default: isolated)
+- `--session <type>` - `main`, `isolated` (default), or `key:<template>` (one persistent session per resolved key)
 
 **Prompt Format (injected into agent):**
 ```
@@ -339,6 +339,7 @@ Um contato foi alterado. Notifica o grupo do Slack e atualiza o CRM.
 
 **Session Keys:**
 - `isolated` (default): `agent:{agentId}:trigger:{triggerId}`
+- `key:<template>`: `agent:{agentId}:trigger:{triggerId}:key:{hash}`, one persistent session per value the template resolves to (same `{{topic}}` / `{{data.<path>}}` syntax as messages; array items by index, e.g. `key:issue-{{data.payload.row.values.topic_id.0}}`). Every event with the same key lands in the same session. An event whose key does not resolve is skipped and logged, never routed to a shared or main session.
 - `main`: `agent:{agentId}:main`
 
 **Anti-Loop Protection:**
