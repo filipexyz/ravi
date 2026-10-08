@@ -27,7 +27,7 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
 import type { CompiledFilter } from "./filter.js";
-import { isKeyedSessionTarget, KEYED_SESSION_PREFIX, type Trigger } from "./types.js";
+import { isLegacySessionTarget, type Trigger } from "./types.js";
 import { resolveTemplate } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { buildTriggerPrompt } from "./prompt.js";
@@ -123,7 +123,7 @@ export class TriggerRunner {
   private desiredTopics = new Set<string>();
   private running = false;
   private recentEventFires = new Map<string, number>();
-  /** Last fire per `key:<template>` session key, for per-key cooldowns. */
+  /** Last fire per resolved session of named-session triggers (per-session cooldown). */
   private keyedLastFiredAt = new Map<string, number>();
   private recentEventFireOps = 0;
   private pendingFilterRejects = new Map<string, PendingFilterRejects>();
@@ -315,11 +315,11 @@ export class TriggerRunner {
 
           for (const prepared of subscription.triggers) {
             const trigger = prepared.trigger;
-            // Keyed sessions cool down per key: one busy key must not swallow
-            // events that belong to another key's session.
-            const keyedCooldownKey = isKeyedSessionTarget(trigger.session)
-              ? keyedCooldownId(trigger, resolveKeyedSessionKey(trigger.session, event))
-              : null;
+            // Named-session triggers cool down per resolved session: one busy
+            // session must not swallow events that belong to another.
+            const keyedCooldownKey = isLegacySessionTarget(trigger.session)
+              ? null
+              : keyedCooldownId(trigger, resolveSessionTargetName(trigger.session, event));
             const lastFiredAt = keyedCooldownKey ? this.keyedLastFiredAt.get(keyedCooldownKey) : trigger.lastFiredAt;
             // Cooldown check
             if (lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
@@ -451,30 +451,13 @@ export class TriggerRunner {
           source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
         }
       }
-    } else {
-      let dbKey = `agent:${agentId}:trigger:${trigger.id}`;
-      let nameSuffix = `trigger-${trigger.name}`;
-      if (isKeyedSessionTarget(trigger.session)) {
-        const sessionKey = isTestEvent(event) ? "test" : resolveKeyedSessionKey(trigger.session, event);
-        if (!sessionKey) {
-          // Never fall back to a shared session: an unresolved key would mix
-          // events that belong to different keys.
-          log.warn("Skipping trigger fire; keyed session template did not resolve", {
-            triggerId: trigger.id,
-            triggerName: trigger.name,
-            topic: event.topic,
-            session: trigger.session,
-          });
-          return;
-        }
-        dbKey = `${dbKey}:key:${createHash("sha256").update(sessionKey).digest("hex").slice(0, 24)}`;
-        nameSuffix = sessionKey;
-      }
+    } else if (trigger.session === "isolated") {
+      const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
       const existing = resolveSession(dbKey);
       if (existing?.name) {
         sessionName = existing.name;
       } else {
-        const baseName = generateSessionName(agentId, { suffix: nameSuffix });
+        const baseName = generateSessionName(agentId, { suffix: `trigger-${trigger.name}` });
         sessionName = ensureUniqueName(baseName);
         const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
@@ -486,6 +469,46 @@ export class TriggerRunner {
           sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
+      }
+    } else {
+      const targetName = isTestEvent(event)
+        ? resolveSessionTargetName(trigger.session, event, { fillUnresolved: "test" })
+        : resolveSessionTargetName(trigger.session, event);
+      if (!targetName) {
+        // Never fall back to a shared session: an unresolved name would mix
+        // events that belong to different sessions.
+        log.warn("Skipping trigger fire; session name template did not resolve", {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          topic: event.topic,
+          session: trigger.session,
+        });
+        return;
+      }
+      // An existing session with that name is the target as is (the agent
+      // that owns it runs the turn); otherwise create it for this trigger.
+      const dbKey = `agent:${agentId}:trigger:${trigger.id}:key:${createHash("sha256").update(targetName).digest("hex").slice(0, 24)}`;
+      // The raw value first, so a session key or a name outside the
+      // normalized form still finds its session.
+      const rawTarget = resolveTemplate(trigger.session, event).trim();
+      const existing = resolveSession(rawTarget) ?? resolveSession(targetName) ?? resolveSession(dbKey);
+      if (existing?.name) {
+        sessionName = existing.name;
+      } else {
+        sessionName = ensureUniqueName(targetName);
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        if (!session.name) updateSessionName(session.sessionKey, sessionName);
+      }
+
+      if (trigger.replySession) {
+        source =
+          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          deriveSourceFromSessionKey(trigger.replySession) ??
+          undefined;
+      } else if (!trigger.replySource) {
+        // Like main-session triggers (2a728cd4): reply where the target
+        // session last talked, unless a creator-time recipient is pinned.
+        source = sourceFromSessionEntry(existing, trigger.accountId);
       }
     }
 
@@ -963,21 +986,33 @@ function isTestEvent(event: { data: unknown }): boolean {
   return !!event.data && typeof event.data === "object" && (event.data as { _test?: unknown })._test === true;
 }
 
-/** Per-key cooldown id; an unresolved key gets its own bucket (it is skipped anyway). */
+/** Per-session cooldown id; an unresolved name gets its own bucket (it is skipped anyway). */
 function keyedCooldownId(trigger: Trigger, sessionKey: string | null): string {
   return `${trigger.id}\u0000${sessionKey ?? ""}`;
 }
 
 /**
- * The key of a `key:<template>` session for one event, or null when a
- * placeholder did not resolve or the key is empty.
+ * The session name a trigger targets for one event: its `session` template
+ * resolved against the event and normalized to a session name (lowercase,
+ * alphanumerics and hyphens, max 64), or null when a placeholder did not
+ * resolve or nothing is left. `fillUnresolved` replaces unresolved
+ * placeholders instead (used for `ravi triggers test`).
  */
-export function resolveKeyedSessionKey(
-  session: `key:${string}`,
+export function resolveSessionTargetName(
+  session: string,
   event: { topic: string; data: unknown },
+  opts: { fillUnresolved?: string } = {},
 ): string | null {
-  const template = session.slice(KEYED_SESSION_PREFIX.length);
-  const resolved = resolveTemplate(template, event, { truncate: false }).trim();
-  if (!resolved || /\{\{[^}]+\}\}/.test(resolved)) return null;
-  return resolved;
+  let resolved = resolveTemplate(session, event);
+  if (/\{\{[^}]+\}\}/.test(resolved)) {
+    if (opts.fillUnresolved === undefined) return null;
+    resolved = resolved.replace(/\{\{[^}]+\}\}/g, opts.fillUnresolved);
+  }
+  const name = resolved
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "");
+  return name || null;
 }

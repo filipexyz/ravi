@@ -91321,7 +91321,7 @@ class RaviSchemas {
       "type": "string"
     },
     "session": {
-      "description": "Session: main, isolated (default), or key:<template> for one persistent session per resolved key (e.g. key:issue-{{data.payload.row.values.topic_id}})",
+      "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value. Created when missing. Default: the current session",
       "type": "string"
     },
     "shell": {

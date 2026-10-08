@@ -6,27 +6,27 @@
  */
 
 /**
- * `main`, `isolated` (one session per trigger), or `key:<template>`: one
- * persistent session per resolved key, e.g. `key:forum-{{data.payload.row.values.topic_id}}`.
+ * Session the trigger runs in: a session name, optionally a template resolved
+ * against each event with the message syntax (`{{topic}}`, `{{data.<path>}}`),
+ * e.g. `issue-{{data.payload.row.values.topic_id.0}}` for one session per
+ * issue. An existing session with that name is reused; otherwise it is created.
+ *
+ * `main` and `isolated` are legacy values still stored by older triggers and
+ * internal producers (watches, Pages comment follows): `main` is the agent's
+ * main session, `isolated` one session per trigger.
  */
-export type SessionTarget = "main" | "isolated" | `key:${string}`;
+export type SessionTarget = string;
 
-export const KEYED_SESSION_PREFIX = "key:";
+export const LEGACY_SESSION_TARGETS = new Set(["main", "isolated"]);
+
+export function isLegacySessionTarget(value: SessionTarget): value is "main" | "isolated" {
+  return LEGACY_SESSION_TARGETS.has(value);
+}
 
 /** Validates a `--session` value; returns an error message or null. */
 export function sessionTargetError(value: string): string | null {
-  if (value === "main" || value === "isolated") return null;
-  if (!value.startsWith(KEYED_SESSION_PREFIX)) {
-    return `Invalid session: ${value}. Valid: main, isolated, key:<template>`;
-  }
-  if (!value.slice(KEYED_SESSION_PREFIX.length).trim()) {
-    return "Invalid session: key:<template> needs a template, e.g. key:issue-{{data.payload.rowId}}";
-  }
+  if (!value.trim()) return "Invalid session: give a session name, e.g. issue-{{data.payload.rowId}}";
   return null;
-}
-
-export function isKeyedSessionTarget(value: SessionTarget): value is `key:${string}` {
-  return value.startsWith(KEYED_SESSION_PREFIX);
 }
 export type TriggerExecutionType = "agent" | "shell";
 export type TriggerMessageSource = "manual" | "catalog";

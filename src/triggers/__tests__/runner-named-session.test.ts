@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent } from "../../router/router-db.js";
-import { listSessions } from "../../router/sessions.js";
+import { getOrCreateSession, listSessions, updateSessionSource } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import type { SessionTarget } from "../types.js";
 
@@ -123,7 +123,7 @@ async function startRunner(): Promise<InstanceType<typeof TriggerRunner>> {
 }
 
 beforeEach(async () => {
-  stateDir = await createIsolatedRaviState("ravi-trigger-runner-keyed-test-");
+  stateDir = await createIsolatedRaviState("ravi-trigger-runner-named-test-");
   dbCreateAgent({ id: "trigger-test-agent", cwd: "/tmp/trigger-test-agent-real" });
   markerDir = mkdtempSync(join(tmpdir(), "ravi-trigger-shell-marker-"));
   channels.clear();
@@ -142,7 +142,7 @@ afterEach(async () => {
   stateDir = null;
 });
 
-describe("TriggerRunner keyed sessions", () => {
+describe("TriggerRunner named sessions", () => {
   const topic = "ravi.console.inbox.item";
   const commentEvent = (rowId: string, topicId: string | null) => ({
     eventType: "bases.row.created",
@@ -153,7 +153,7 @@ describe("TriggerRunner keyed sessions", () => {
     const trigger = createTrigger({
       name: "forum",
       topic,
-      session: "key:issue-{{data.payload.row.values.topic_id.0}}",
+      session: "issue-{{data.payload.row.values.topic_id.0}}",
     });
     await startRunner();
 
@@ -165,8 +165,8 @@ describe("TriggerRunner keyed sessions", () => {
     const [first, second, third] = publishCalls.map((call) => call.sessionName);
     expect(first).toBe(third!);
     expect(first).not.toBe(second!);
-    expect(first).toContain("issue-topic-a");
-    expect(second).toContain("issue-topic-b");
+    expect(first).toBe("issue-topic-a");
+    expect(second).toBe("issue-topic-b");
     const keyed = listSessions().filter((session) =>
       session.sessionKey.startsWith(`agent:trigger-test-agent:trigger:${trigger.id}:key:`),
     );
@@ -177,7 +177,7 @@ describe("TriggerRunner keyed sessions", () => {
     const trigger = createTrigger({
       name: "forum-skip",
       topic,
-      session: "key:issue-{{data.payload.row.values.topic_id.0}}",
+      session: "issue-{{data.payload.row.values.topic_id.0}}",
     });
     await startRunner();
 
@@ -195,7 +195,7 @@ describe("TriggerRunner keyed sessions", () => {
     createTrigger({
       name: "forum-cooldown",
       topic,
-      session: "key:issue-{{data.payload.row.values.topic_id.0}}",
+      session: "issue-{{data.payload.row.values.topic_id.0}}",
       cooldownMs: 60_000,
     });
     await startRunner();
@@ -210,5 +210,28 @@ describe("TriggerRunner keyed sessions", () => {
       expect.stringContaining("issue-topic-a"),
       expect.stringContaining("issue-topic-b"),
     ]);
+  });
+
+  it("reuses an existing session by name and replies where it last talked", async () => {
+    getOrCreateSession("agent:trigger-test-agent:dm:5511", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "support-desk",
+    });
+    updateSessionSource("agent:trigger-test-agent:dm:5511", {
+      channel: "whatsapp",
+      accountId: "acc-1",
+      chatId: "5511@s.whatsapp.net",
+    });
+    createTrigger({ name: "fixed", topic, session: "support-desk" });
+    await startRunner();
+
+    emit(topic, commentEvent("c1", "topic-a"));
+    await waitFor(() => publishCalls.length >= 1);
+
+    expect(publishCalls[0]!.sessionName).toBe("support-desk");
+    expect(publishCalls[0]!.payload.source).toEqual({
+      channel: "whatsapp",
+      accountId: "acc-1",
+      chatId: "5511@s.whatsapp.net",
+    });
   });
 });

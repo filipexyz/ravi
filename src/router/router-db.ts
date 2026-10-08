@@ -2978,7 +2978,7 @@ function getDb(): Database {
       agent_id TEXT,
       topic TEXT NOT NULL,
       message TEXT NOT NULL,
-      session TEXT DEFAULT 'isolated' CHECK(session IN ('main','isolated') OR session LIKE 'key:_%'),
+      session TEXT DEFAULT 'isolated',
       enabled INTEGER DEFAULT 1,
       cooldown_ms INTEGER DEFAULT 5000,
       last_fired_at INTEGER,
@@ -11119,14 +11119,13 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   }));
 }
 
-const LEGACY_TRIGGER_SESSION_CHECK = "CHECK(session IN ('main','isolated'))";
-const TRIGGER_SESSION_CHECK = "CHECK(session IN ('main','isolated') OR session LIKE 'key:_%')";
+const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;
 
 /**
- * Older databases constrain `triggers.session` to main|isolated. SQLite cannot
- * alter a CHECK, so rebuild the table from its stored definition (which keeps
- * every column added by later migrations) with the relaxed constraint that
- * accepts `key:<template>` keyed sessions.
+ * Older databases constrain `triggers.session` to main|isolated, but a trigger
+ * session is now any session name (or name template). SQLite cannot drop a
+ * CHECK, so rebuild the table from its stored definition (which keeps every
+ * column added by later migrations) without it.
  */
 export function migrateTriggerSessionCheck(database: Database): void {
   // Same lock-before-inspect rule as ensureChannelOutboundReceiptSchema: a
@@ -11137,14 +11136,14 @@ export function migrateTriggerSessionCheck(database: Database): void {
       .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'triggers'")
       .get() as { sql: string | null } | undefined;
     const sql = tableRow?.sql ?? "";
-    if (!sql.includes(LEGACY_TRIGGER_SESSION_CHECK)) {
+    if (!LEGACY_TRIGGER_SESSION_CHECK.test(sql)) {
       database.exec("COMMIT");
       return;
     }
     const rebuiltSql = sql
-      .replace(LEGACY_TRIGGER_SESSION_CHECK, TRIGGER_SESSION_CHECK)
+      .replace(LEGACY_TRIGGER_SESSION_CHECK, "")
       .replace(/^CREATE TABLE\s+("?)triggers\1/, "CREATE TABLE triggers_session_migration");
-    if (rebuiltSql === sql || !rebuiltSql.startsWith("CREATE TABLE triggers_session_migration")) {
+    if (!rebuiltSql.startsWith("CREATE TABLE triggers_session_migration")) {
       throw new Error("Unexpected triggers table definition; cannot migrate session CHECK");
     }
     // DROP TABLE removes the table's indexes; recreate them as they were.
@@ -11159,7 +11158,7 @@ export function migrateTriggerSessionCheck(database: Database): void {
     database.exec("ALTER TABLE triggers_session_migration RENAME TO triggers");
     for (const indexSql of indexSqls) database.exec(indexSql);
     database.exec("COMMIT");
-    log.info("Migrated triggers.session CHECK to accept key:<template> sessions");
+    log.info("Dropped the triggers.session main|isolated CHECK; sessions are now names");
   } catch (error) {
     try {
       database.exec("ROLLBACK");

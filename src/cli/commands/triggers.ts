@@ -468,9 +468,9 @@ export class TriggersCommands {
     })
     cooldown?: string,
     @Option({
-      flags: "--session <type>",
+      flags: "--session <name>",
       description:
-        "Session: main, isolated (default), or key:<template> for one persistent session per resolved key (e.g. key:issue-{{data.payload.row.values.topic_id}})",
+        "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value. Created when missing. Default: the current session",
     })
     session?: string,
     @Option({
@@ -541,16 +541,16 @@ export class TriggersCommands {
       }
     }
 
-    // Validate session
-    let sessionTarget: SessionTarget = "isolated";
-    if (session) {
-      const error = sessionTargetError(session);
-      if (error) fail(error);
-      sessionTarget = session as SessionTarget;
-    }
-
     // Resolve agent: explicit flag > caller agent (from session context)
     const ctx = getContext();
+
+    // Session: explicit name/template, else the caller's current session.
+    // Outside a session there is no current one; the agent main session is it.
+    if (session !== undefined) {
+      const error = sessionTargetError(session);
+      if (error) fail(error);
+    }
+    const sessionTarget: SessionTarget = session?.trim() || ctx?.sessionName || ctx?.sessionKey || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
 
     // Resolve account in this order:
@@ -835,7 +835,7 @@ export class TriggersCommands {
           const error = sessionTargetError(value);
           if (error) fail(error);
           updated = dbUpdateTrigger(id, {
-            session: value as SessionTarget,
+            session: value.trim(),
           });
           logHuman(`✓ Session set: ${id} -> ${value}`);
           break;

@@ -35,10 +35,10 @@ function resolvePath(obj: unknown, path: string): unknown {
 /**
  * Coerce a value to a display string, truncating if needed.
  */
-function toDisplayString(value: unknown, truncate: boolean): string {
+function toDisplayString(value: unknown): string {
   if (value === undefined || value === null) return "";
   const str = typeof value === "string" ? value : JSON.stringify(value);
-  if (truncate && str.length > MAX_VALUE_LENGTH) {
+  if (str.length > MAX_VALUE_LENGTH) {
     return str.slice(0, MAX_VALUE_LENGTH) + "...";
   }
   return str;
@@ -51,14 +51,9 @@ function toDisplayString(value: unknown, truncate: boolean): string {
  *   { topic: string, data: unknown }
  *
  * Variables: {{topic}}, {{data.<path>}}
- * Unresolved variables are left unchanged. `truncate: false` keeps long
- * values whole (session keys must not collide on a shared prefix).
+ * Unresolved variables are left unchanged.
  */
-export function resolveTemplate(
-  message: string,
-  context: { topic: string; data: unknown },
-  opts: { truncate?: boolean } = {},
-): string {
+export function resolveTemplate(message: string, context: { topic: string; data: unknown }): string {
   return message.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
     const trimmed = key.trim();
 
@@ -70,7 +65,7 @@ export function resolveTemplate(
       const path = trimmed.slice(5); // strip "data."
       const value = resolvePath(context.data, path);
       if (value === undefined) return match; // leave unresolved
-      return toDisplayString(value, opts.truncate !== false);
+      return toDisplayString(value);
     }
 
     return match; // unknown variable, leave as-is
