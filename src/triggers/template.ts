@@ -71,3 +71,23 @@ export function resolveTemplate(message: string, context: { topic: string; data:
     return match; // unknown variable, leave as-is
   });
 }
+
+/**
+ * Resolve a template where every placeholder must yield a non-empty value
+ * (used for session names). Returns null when any `{{...}}` is unknown,
+ * missing, null or empty, so callers can skip instead of collapsing distinct
+ * events into one name like `issue-`.
+ */
+export function resolveTemplateStrict(template: string, context: { topic: string; data: unknown }): string | null {
+  let complete = true;
+  const resolved = template.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
+    const trimmed = key.trim();
+    let value: unknown;
+    if (trimmed === "topic") value = context.topic;
+    else if (trimmed.startsWith("data.")) value = resolvePath(context.data, trimmed.slice(5));
+    const display = toDisplayString(value);
+    if (!display) complete = false;
+    return display;
+  });
+  return complete ? resolved : null;
+}

@@ -28,7 +28,7 @@ import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
 import type { CompiledFilter } from "./filter.js";
 import { isLegacySessionTarget, type Trigger } from "./types.js";
-import { resolveTemplate } from "./template.js";
+import { resolveTemplate, resolveTemplateStrict } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { buildTriggerPrompt } from "./prompt.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
@@ -409,7 +409,11 @@ export class TriggerRunner {
   /**
    * Fire a trigger with event data.
    */
-  private async fireTrigger(trigger: Trigger, event: { topic: string; data: unknown }): Promise<void> {
+  private async fireTrigger(
+    trigger: Trigger,
+    event: { topic: string; data: unknown },
+    opts: { test?: boolean } = {},
+  ): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     if (!agent) {
@@ -471,7 +475,7 @@ export class TriggerRunner {
           undefined;
       }
     } else {
-      const targetName = isTestEvent(event)
+      const targetName = opts.test
         ? resolveSessionTargetName(trigger.session, event, { fillUnresolved: "test" })
         : resolveSessionTargetName(trigger.session, event);
       if (!targetName) {
@@ -887,14 +891,18 @@ export class TriggerRunner {
           continue;
         }
 
-        await this.fireTrigger(trigger, {
-          topic: trigger.topic,
-          data: {
-            _test: true,
-            message: "Test event fired via CLI",
-            timestamp: new Date().toISOString(),
+        await this.fireTrigger(
+          trigger,
+          {
+            topic: trigger.topic,
+            data: {
+              _test: true,
+              message: "Test event fired via CLI",
+              timestamp: new Date().toISOString(),
+            },
           },
-        });
+          { test: true },
+        );
       }
     } catch (err) {
       log.error("Test subscription error", { error: err });
@@ -982,10 +990,6 @@ function sortForStableStringify(value: unknown): unknown {
   return sorted;
 }
 
-function isTestEvent(event: { data: unknown }): boolean {
-  return !!event.data && typeof event.data === "object" && (event.data as { _test?: unknown })._test === true;
-}
-
 /** Per-session cooldown id; an unresolved name gets its own bucket (it is skipped anyway). */
 function keyedCooldownId(trigger: Trigger, sessionKey: string | null): string {
   return `${trigger.id}\u0000${sessionKey ?? ""}`;
@@ -995,18 +999,19 @@ function keyedCooldownId(trigger: Trigger, sessionKey: string | null): string {
  * The session name a trigger targets for one event: its `session` template
  * resolved against the event and normalized to a session name (lowercase,
  * alphanumerics and hyphens, max 64), or null when a placeholder did not
- * resolve or nothing is left. `fillUnresolved` replaces unresolved
- * placeholders instead (used for `ravi triggers test`).
+ * resolve to a non-empty value (missing, null, empty) or nothing is left.
+ * `fillUnresolved` replaces those placeholders instead (`ravi triggers test`).
  */
 export function resolveSessionTargetName(
   session: string,
   event: { topic: string; data: unknown },
   opts: { fillUnresolved?: string } = {},
 ): string | null {
-  let resolved = resolveTemplate(session, event);
-  if (/\{\{[^}]+\}\}/.test(resolved)) {
+  let resolved = resolveTemplateStrict(session, event);
+  if (resolved === null) {
     if (opts.fillUnresolved === undefined) return null;
-    resolved = resolved.replace(/\{\{[^}]+\}\}/g, opts.fillUnresolved);
+    const fill = opts.fillUnresolved;
+    resolved = session.replace(/\{\{([^}]+)\}\}/g, (match) => resolveTemplateStrict(match, event) ?? fill);
   }
   const name = resolved
     .toLowerCase()

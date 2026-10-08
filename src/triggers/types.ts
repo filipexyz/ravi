@@ -26,6 +26,12 @@ export function isLegacySessionTarget(value: SessionTarget): value is "main" | "
 /** Validates a `--session` value; returns an error message or null. */
 export function sessionTargetError(value: string): string | null {
   if (!value.trim()) return "Invalid session: give a session name, e.g. issue-{{data.payload.rowId}}";
+  // A stray `{{` or `}}` would be kept as literal text, sending every event
+  // to the same session; only well-formed `{{...}}` placeholders are allowed.
+  const literal = value.replace(/\{\{[^{}]+\}\}/g, "");
+  if (literal.includes("{") || literal.includes("}")) {
+    return `Invalid session: ${value} has an unmatched {{ or }}; placeholders look like {{data.<path>}}`;
+  }
   return null;
 }
 export type TriggerExecutionType = "agent" | "shell";
