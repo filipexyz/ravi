@@ -136,7 +136,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/tool-safety.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
-  "src/triggers/": ["src/triggers/triggers.test.ts"],
+  "src/triggers/": [
+    "src/triggers/triggers.test.ts",
+    // Runner lifecycle against a mocked NATS stream: filters, refresh, and
+    // deleted triggers that must not fire on a removed topic.
+    "src/triggers/__tests__/runner-filter.test.ts",
+    "src/triggers/__tests__/runner-delete.test.ts",
+  ],
   "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
   "src/apps/": ["src/apps/router.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
