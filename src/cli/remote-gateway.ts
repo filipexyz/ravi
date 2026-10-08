@@ -403,6 +403,12 @@ interface CompleteContractErrorBody {
   error: { code: string; message: string; retryable: boolean; [key: string]: unknown };
 }
 
+const REMOTE_DRY_RUN_MESSAGE = "Dry-run: nothing was written. Re-run with --execute to perform the write.";
+
+function isRemoteWriteBrake(body: CompleteContractErrorBody): boolean {
+  return body.outcome === "blocked" && body.error.code === "WRITE_REQUIRES_EXECUTE";
+}
+
 function remoteContractFailureMessage(
   op: string,
   outcome: CompleteContractErrorBody["outcome"],
@@ -412,6 +418,8 @@ function remoteContractFailureMessage(
 ): string {
   if (outcome === "denied") return "Remote gateway denied the command.";
   if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  // The write brake is a dry-run, not a policy denial: say how to proceed with local copy.
+  if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE") return REMOTE_DRY_RUN_MESSAGE;
   if (outcome === "blocked") return "Remote command was blocked by policy.";
   if (issues?.[0]) return remoteValidationFailureMessage(issues, sourceMessage);
   if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
@@ -448,6 +456,8 @@ function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["o
   if (outcome === "denied") return "Request the required remote permission before retrying the command";
   if (outcome === "usage_error" && code === "PAYLOAD_INVALID") return "Correct the command input and retry";
   if (outcome === "usage_error") return `Inspect '${op} --help' and retry with valid input`;
+  if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE")
+    return `Re-run '${op}' adding --execute to perform the write`;
   if (outcome === "blocked") return "Review the remote policy block before retrying the command";
   return "Inspect redacted remote logs and retry when the underlying cause is resolved";
 }
@@ -472,7 +482,7 @@ function projectRemoteContractDetails(
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
-  } else if (typeof remote.suggestedAction === "string") {
+  } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   }
   const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);
