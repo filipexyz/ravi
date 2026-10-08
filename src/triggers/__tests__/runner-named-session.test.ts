@@ -251,4 +251,17 @@ describe("TriggerRunner named sessions", () => {
 
     expect(publishCalls.map((call) => call.sessionName)).toEqual(["issue-topic-a"]);
   });
+  it("reuses an unnamed session targeted by its key", async () => {
+    getOrCreateSession("agent:trigger-test-agent:dm:5533", "trigger-test-agent", "/tmp/trigger-test-agent-real");
+    createTrigger({ name: "by-key", topic, session: "agent:trigger-test-agent:dm:5533" });
+    await startRunner();
+
+    emit(topic, commentEvent("c1", "topic-a"));
+    await waitFor(() => publishCalls.length >= 1);
+
+    const named = listSessions().find((session) => session.sessionKey === "agent:trigger-test-agent:dm:5533");
+    expect(named?.name).toBeTruthy();
+    expect(publishCalls[0]!.sessionName).toBe(named!.name!);
+    expect(listSessions().filter((session) => session.sessionKey.includes(":trigger:"))).toHaveLength(0);
+  });
 });

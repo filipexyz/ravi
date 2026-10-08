@@ -525,8 +525,11 @@ export class TriggerRunner {
         });
         return;
       }
-      if (existing?.name) {
-        sessionName = existing.name;
+      if (existing) {
+        // An unnamed session (e.g. the creator's, inherited by key) is reused
+        // and given a name, never replaced by a new one.
+        sessionName = existing.name ?? ensureUniqueName(targetName);
+        if (!existing.name) updateSessionName(existing.sessionKey, sessionName);
       } else {
         sessionName = ensureUniqueName(targetName);
         const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
