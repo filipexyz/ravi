@@ -4,6 +4,7 @@ import {
   isTriggerOriginatedEvent,
   planTriggerTopicRefresh,
   shouldRetryTriggerTopic,
+  sourceFromSessionEntry,
 } from "../runner.js";
 
 describe("trigger runner subscription refresh", () => {
@@ -75,5 +76,24 @@ describe("trigger runner event dedupe", () => {
 
     expect(first).toBe(second);
     expect(first).toStartWith("trg_custom\0custom.topic\0payload:");
+  });
+});
+
+describe("trigger reply source", () => {
+  it("replies where the session last talked", () => {
+    expect(
+      sourceFromSessionEntry({ lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" }),
+    ).toEqual({ channel: "whatsapp", accountId: "main-account", chatId: "chat-a" });
+  });
+
+  it("lets the trigger's explicit account win", () => {
+    expect(
+      sourceFromSessionEntry({ lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" }, "other"),
+    ).toEqual({ channel: "whatsapp", accountId: "other", chatId: "chat-a" });
+  });
+
+  it("has no source when the session never talked to a chat", () => {
+    expect(sourceFromSessionEntry({ lastChannel: "whatsapp" })).toBeUndefined();
+    expect(sourceFromSessionEntry(null)).toBeUndefined();
   });
 });

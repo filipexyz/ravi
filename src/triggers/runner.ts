@@ -79,6 +79,22 @@ export function planTriggerTopicRefresh(
   };
 }
 
+/**
+ * Outbound source for a trigger turn, taken from where a session last talked.
+ * `undefined` when the session has never had a chat to reply to.
+ */
+export function sourceFromSessionEntry(
+  session: { lastChannel?: string; lastAccountId?: string; lastTo?: string } | null | undefined,
+  accountId?: string,
+): { channel: string; accountId: string; chatId: string } | undefined {
+  if (!session?.lastChannel || !session.lastTo) return undefined;
+  return {
+    channel: session.lastChannel,
+    accountId: accountId ?? session.lastAccountId ?? "",
+    chatId: session.lastTo,
+  };
+}
+
 export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean {
   if (topic.includes(":trigger:")) return true;
   if (!data || typeof data !== "object") return false;
@@ -393,20 +409,19 @@ export class TriggerRunner {
         const resolved = resolveSession(trigger.replySession);
         if (resolved?.name) {
           sessionName = resolved.name;
-          if (resolved.lastChannel && resolved.lastTo) {
-            source = {
-              channel: resolved.lastChannel,
-              accountId: trigger.accountId ?? resolved.lastAccountId ?? "",
-              chatId: resolved.lastTo,
-            };
-          }
+          source = sourceFromSessionEntry(resolved, trigger.accountId);
         } else {
           // Fallback: derive source from session key and use main session
           source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
           sessionName = this.resolveMainSessionName(agentId, agentCwd);
         }
       } else {
+        // No reply override: the turn runs in the agent main session, so it
+        // replies where that session last talked — the same routing an
+        // explicit `--reply-session <main>` gives. Without it the turn was
+        // source-less and its reply could be dropped by the gateway (2a728cd4).
         sessionName = this.resolveMainSessionName(agentId, agentCwd);
+        source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
       }
     } else {
       const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
@@ -422,16 +437,10 @@ export class TriggerRunner {
 
       // Derive source from replySession for isolated sessions too
       if (trigger.replySession) {
-        const replyResolved = resolveSession(trigger.replySession);
-        if (replyResolved?.lastChannel && replyResolved.lastTo) {
-          source = {
-            channel: replyResolved.lastChannel,
-            accountId: trigger.accountId ?? replyResolved.lastAccountId ?? "",
-            chatId: replyResolved.lastTo,
-          };
-        } else {
-          source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
-        }
+        source =
+          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          deriveSourceFromSessionKey(trigger.replySession) ??
+          undefined;
       }
     }
 

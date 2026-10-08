@@ -69,6 +69,37 @@ const NATIVE_OUTBOUND_CHANNELS = new Set(["slack"]);
 const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
 
 /**
+ * A response that does not reach a chat must say so in the log. Only the
+ * delivered path logs `Sending response`/`Response delivered`; every other
+ * outcome used to be visible only in the delivery trace, so a dropped reply
+ * looked like a missing log line (2a728cd4).
+ */
+// Outcomes that are intended, or already logged where they happen.
+const QUIET_DELIVERY_REASONS = new Set(["silent", "silent_response", "duplicate_media", "send_error"]);
+
+export function logUndeliveredResponse(delivery: Record<string, unknown>): void {
+  const target = delivery.target as { channel?: string } | undefined;
+  const fields = {
+    sessionName: delivery.sessionName,
+    emitId: delivery.emitId,
+    reason: delivery.reason,
+    ...(target?.channel ? { channel: target.channel } : {}),
+    ...(typeof delivery.jobId === "string" ? { jobId: delivery.jobId } : {}),
+    ...(typeof delivery.error === "string" ? { error: delivery.error } : {}),
+  };
+  if (delivery.status === "queued") {
+    log.info("Response queued for native outbound", fields);
+    return;
+  }
+  if (typeof delivery.reason === "string" && QUIET_DELIVERY_REASONS.has(delivery.reason)) return;
+  if (delivery.status === "dropped") {
+    log.warn("Response dropped", fields);
+  } else if (delivery.status === "failed") {
+    log.warn("Response delivery failed", fields);
+  }
+}
+
+/**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
  *
  * Handles ravi-internal formats:
@@ -1021,6 +1052,7 @@ export class Gateway {
       timestamp: Date.now(),
       ...data,
     };
+    logUndeliveredResponse(delivery);
 
     try {
       recordDeliveryTrace({ sessionName, response, delivery });
