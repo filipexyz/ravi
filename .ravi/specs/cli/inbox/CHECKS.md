@@ -16,6 +16,8 @@
   (exit 1, no NOT_FOUND code) requiring the local numeric row id.
 - `inbox list --fields a,b,c --json` and `inbox items --fields a,b,c --json`
   MUST return items containing only the requested fields.
+- `inbox list --json` MUST include a numeric `total` (also on an empty inbox);
+  missing it fails the declared return schema with `RETURN_SHAPE_ERROR`.
 - Unbraked writes (`done`, `archive`, `snooze`, `enable`, `disable`, `poll`)
   MUST keep immediate-write behavior as declared in the SPEC.
 - `bun test src/cli/commands/inbox.test.ts` SHOULD pass after any change to
