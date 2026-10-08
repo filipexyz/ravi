@@ -702,15 +702,36 @@ function isRecoverableClaudeApiStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
+/**
+ * Minimum gap between `provider.activity` signals. The host inactivity
+ * watchdogs work in minutes, so one signal every few seconds is enough to keep
+ * them fed without flooding the event loop with per-token events.
+ */
+export const CLAUDE_STREAM_ACTIVITY_INTERVAL_MS = 5_000;
+
+export async function* normalizeClaudeEvents(
+  queryResult: Query,
+  now: () => number = Date.now,
+): AsyncGenerator<RuntimeEvent> {
+  let lastYieldAt = Number.NEGATIVE_INFINITY;
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
       const evt = message.event;
       if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
+        lastYieldAt = now();
         yield { type: "text.delta", text: evt.delta.text };
+      } else if (now() - lastYieldAt >= CLAUDE_STREAM_ACTIVITY_INTERVAL_MS) {
+        // Thinking and streamed tool input (a long Write, for example) have no
+        // runtime event of their own. Without a signal the host sees minutes of
+        // silence while the model is still generating and its inactivity
+        // watchdog interrupts a live turn. Signal liveness only, never content.
+        lastYieldAt = now();
+        yield { type: "provider.activity" };
       }
       continue;
     }
+
+    lastYieldAt = now();
 
     const rawEvent = message as Record<string, unknown>;
     yield { type: "provider.raw", rawEvent };

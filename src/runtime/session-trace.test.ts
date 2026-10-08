@@ -3644,6 +3644,51 @@ describe("runtime session trace instrumentation", () => {
     }
   });
 
+  it("keeps a long generation alive after a tool while the provider signals activity", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-then-long-generation");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSessionThenHang([]);
+    runtimeSession.events = (async function* (): AsyncGenerator<RuntimeEvent> {
+      yield { type: "tool.started", toolUse: { id: "tool-read", name: "Read", input: {} } };
+      yield { type: "tool.completed", toolUseId: "tool-read", toolName: "Read", content: "skill" };
+      // The model thinks / streams a large tool input for longer than the
+      // after-tool window, with only liveness signals and no canonical event.
+      // Short gaps leave a wide margin under the 1s watch; the total still
+      // runs past it, so the test only passes if each signal re-arms the watch.
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        yield { type: "provider.activity" };
+      }
+      yield { type: "assistant.message", text: "Arquivo escrito." };
+      yield {
+        type: "turn.complete",
+        providerSessionId: "provider-long-generation",
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })();
+
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(false);
+    expect(emitted.some((event) => event.data.type === "provider.activity")).toBe(false);
+    expect(getSessionTurn("turn-tool-then-long-generation")?.status).toBe("complete");
+  });
+
   it("recovers a mid-turn utterance plus tool hang by interrupting and continuing", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
