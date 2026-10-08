@@ -281,7 +281,7 @@ ravi triggers add "Contact Audit" \
   --topic "ravi.*.cli.contacts.*" \
   --message "Um contato foi modificado. Registre a mudança no log de auditoria." \
   --agent main \
-  --session isolated
+  --session contact-audit
 
 # Show trigger details
 ravi triggers show <id>
@@ -295,7 +295,7 @@ ravi triggers set <id> name "New Name"
 ravi triggers set <id> message "Nova instrução"
 ravi triggers set <id> topic "ravi.*.cli.contacts.*"
 ravi triggers set <id> agent jarvis
-ravi triggers set <id> session main          # main or isolated
+ravi triggers set <id> session issue-{{data.id}}  # session name or name template
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
 
 # Test trigger (fires with fake event data)
@@ -322,7 +322,7 @@ ravi triggers rm <id> --execute
 - `--message <text>` - Prompt to send when event fires (required)
 - `--agent <id>` - Target agent (default: default agent)
 - `--cooldown <duration>` - Minimum time between fires (default: 5s)
-- `--session <type>` - `main` or `isolated` (default: isolated)
+- `--session <name>` - Session to run in, by name; may be a template (see below). Default: the current session (the agent main session outside one)
 
 **Prompt Format (injected into agent):**
 ```
@@ -337,9 +337,10 @@ Data: {
 Um contato foi alterado. Notifica o grupo do Slack e atualiza o CRM.
 ```
 
-**Session Keys:**
-- `isolated` (default): `agent:{agentId}:trigger:{triggerId}`
-- `main`: `agent:{agentId}:main`
+**Sessions:**
+- `--session` is a session name. An existing session with that name is reused (the turn replies where it last talked, unless `--reply-session` says otherwise); a missing one is created as `agent:{agentId}:trigger:{triggerId}:key:{hash}`.
+- The name may be a template with the message syntax (`{{topic}}`, `{{data.<path>}}`, array items by index), resolved per event and normalized to a session name: `--session issue-{{data.payload.row.values.topic_id.0}}` keeps one persistent session per issue. An event whose name does not resolve is skipped and logged, never routed to a shared or main session. Cooldown counts per resolved session.
+- Legacy stored values still work: `main` (agent main session) and `isolated` (`agent:{agentId}:trigger:{triggerId}`).
 
 **Anti-Loop Protection:**
 1. Internal session topics: `ravi.session.*` can be configured, but the runner skips those subscriptions to prevent loops

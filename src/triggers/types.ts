@@ -5,7 +5,35 @@
  * and proactively fire agent prompts when events occur.
  */
 
-export type SessionTarget = "main" | "isolated";
+/**
+ * Session the trigger runs in: a session name, optionally a template resolved
+ * against each event with the message syntax (`{{topic}}`, `{{data.<path>}}`),
+ * e.g. `issue-{{data.payload.row.values.topic_id.0}}` for one session per
+ * issue. An existing session with that name is reused; otherwise it is created.
+ *
+ * `main` and `isolated` are legacy values still stored by older triggers and
+ * internal producers (watches, Pages comment follows): `main` is the agent's
+ * main session, `isolated` one session per trigger.
+ */
+export type SessionTarget = string;
+
+export const LEGACY_SESSION_TARGETS = new Set(["main", "isolated"]);
+
+export function isLegacySessionTarget(value: SessionTarget): value is "main" | "isolated" {
+  return LEGACY_SESSION_TARGETS.has(value);
+}
+
+/** Validates a `--session` value; returns an error message or null. */
+export function sessionTargetError(value: string): string | null {
+  if (!value.trim()) return "Invalid session: give a session name, e.g. issue-{{data.payload.rowId}}";
+  // A stray `{{` or `}}` would be kept as literal text, sending every event
+  // to the same session; only well-formed `{{...}}` placeholders are allowed.
+  const literal = value.replace(/\{\{[^{}]+\}\}/g, "");
+  if (literal.includes("{") || literal.includes("}")) {
+    return `Invalid session: ${value} has an unmatched {{ or }}; placeholders look like {{data.<path>}}`;
+  }
+  return null;
+}
 export type TriggerExecutionType = "agent" | "shell";
 export type TriggerMessageSource = "manual" | "catalog";
 
@@ -85,4 +113,9 @@ export interface TriggerInput {
   cooldownMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
+}
+
+/** True when the session value has a {{...}} placeholder resolved per event. */
+export function isSessionNameTemplate(value: SessionTarget): boolean {
+  return /\{\{[^{}]+\}\}/.test(value);
 }
