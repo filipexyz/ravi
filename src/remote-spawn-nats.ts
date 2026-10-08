@@ -11,6 +11,13 @@
  *   ravi.worker.{workerId}.{spawnId}.out  — stdout (worker → local)
  *   ravi.worker.{workerId}.{spawnId}.exit — exit event (worker → local)
  *   ravi.worker.{workerId}.{spawnId}.kill — kill signal (local → worker)
+ *
+ * Credentials: NATS here has no auth/TLS by default, so anything published is
+ * readable by any client that can reach the server. The spawn payload therefore
+ * carries NO credential values by default — the worker must hold its own
+ * CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY. Setting
+ * RAVI_REMOTE_WORKER_FORWARD_CREDENTIALS=1 restores the legacy behaviour of
+ * forwarding them in the spawn payload (cleartext), with a warning per spawn.
  */
 
 import { EventEmitter } from "node:events";
@@ -27,8 +34,17 @@ const sc = StringCodec();
 /** Inactivity timeout: if no stdout received for 60s, treat process as dead. */
 const INACTIVITY_TIMEOUT_MS = 60_000;
 
-/** Auth env vars forwarded to the remote worker. */
+/** Auth env vars forwarded to the remote worker, only when explicitly opted in. */
 const FORWARDED_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+
+/** Opt-in flag (read at spawn time) to forward credentials over NATS in cleartext. */
+export const FORWARD_CREDENTIALS_ENV = "RAVI_REMOTE_WORKER_FORWARD_CREDENTIALS";
+
+export interface NatsRemoteSpawnDeps {
+  getNats?: () => NatsConnection;
+  /** Environment consulted for the opt-in flag; defaults to process.env at spawn time. */
+  processEnv?: () => NodeJS.ProcessEnv;
+}
 
 /**
  * Filter SDK args for remote execution.
@@ -340,20 +356,47 @@ export class NatsSpawnedProcess extends EventEmitter implements SpawnedProcess {
  *
  * @param workerId - Worker identifier (e.g., a VM ID or hostname)
  */
-export function createNatsRemoteSpawn(workerId: string): (options: SpawnOptions) => SpawnedProcess {
+export function createNatsRemoteSpawn(
+  workerId: string,
+  deps: NatsRemoteSpawnDeps = {},
+): (options: SpawnOptions) => SpawnedProcess {
+  const resolveNats = deps.getNats ?? getNats;
+  const resolveProcessEnv = deps.processEnv ?? (() => process.env);
+
   return (options: SpawnOptions): SpawnedProcess => {
     const { args, cwd, env, signal } = options;
 
-    const nc = getNats();
+    const nc = resolveNats();
     const spawnId = randomUUID();
 
     const filteredArgs = filterArgs(args);
 
-    // Forward only auth tokens — strip undefined values
+    // Credentials are NOT forwarded unless explicitly opted in: the spawn
+    // payload travels over NATS, which is plaintext and unauthenticated by default.
     const forwardedEnv: Record<string, string> = {};
-    for (const key of FORWARDED_ENV_KEYS) {
-      const val = env[key];
-      if (val !== undefined) forwardedEnv[key] = val;
+    if (resolveProcessEnv()[FORWARD_CREDENTIALS_ENV] === "1") {
+      for (const key of FORWARDED_ENV_KEYS) {
+        const val = env[key];
+        if (val !== undefined) forwardedEnv[key] = val;
+      }
+      if (Object.keys(forwardedEnv).length > 0) {
+        log.warn("Forwarding credentials to remote worker over NATS in cleartext", {
+          workerId,
+          spawnId,
+          keys: Object.keys(forwardedEnv),
+          optIn: FORWARD_CREDENTIALS_ENV,
+        });
+      }
+    } else {
+      const withheld = FORWARDED_ENV_KEYS.filter((key) => env[key] !== undefined);
+      if (withheld.length > 0) {
+        log.warn("Not forwarding credentials to remote worker; the worker must hold its own", {
+          workerId,
+          spawnId,
+          keys: withheld,
+          optIn: FORWARD_CREDENTIALS_ENV,
+        });
+      }
     }
 
     log.info("Spawning NATS remote Claude process", {

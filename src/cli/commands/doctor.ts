@@ -71,6 +71,14 @@ import { dbListCronJobs } from "../../cron/cron-db.js";
 import { resolveCronTarget, type CronTargetState } from "../../cron/target-resolver.js";
 import { resolveSession } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
+import {
+  isRiskyNatsExposure,
+  natsExposureLogData,
+  probeNatsExposure,
+  resolveNatsUrl,
+  type NatsExposureReport,
+} from "../../security/nats-exposure.js";
+import { inspectStateDirPermissions } from "../../security/state-dir-permissions.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 export type DoctorCheckStatus = "pass" | "fail" | "skip";
@@ -246,10 +254,14 @@ type DoctorDeps = {
   tempDir: () => string;
   statDisk: (path: string) => DiskUsageStat | null;
   probeDir: (path: string) => DiskProbeResult;
+  probeNatsExposure: () => Promise<NatsExposureReport>;
+  inspectStateDirPermissions: typeof inspectStateDirPermissions;
 };
 
 export interface InspectDoctorOptions {
   domain?: string | null;
+  /** Async NATS probe result; inspectDoctor is synchronous, so runDoctor probes first. */
+  natsExposure?: NatsExposureReport | null;
 }
 
 export interface RunDoctorOptions extends InspectDoctorOptions {
@@ -305,6 +317,8 @@ const DEFAULT_DEPS: DoctorDeps = {
   tempDir: () => tmpdir(),
   statDisk: defaultStatDisk,
   probeDir: defaultProbeDir,
+  probeNatsExposure: () => probeNatsExposure(resolveNatsUrl()),
+  inspectStateDirPermissions,
 };
 
 function defaultStatDisk(path: string): DiskUsageStat | null {
@@ -450,6 +464,8 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
   addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
+  addCheck(checks, () => buildStateDirPermissionsCheck(stateDir, deps));
+  addCheck(checks, () => buildNatsExposureCheck(options.natsExposure ?? null));
   addCheck(checks, () => buildDiskSpaceCheck(stateDir, deps));
   addCheck(checks, () => buildRaviDbCheck(raviDbPath, deps));
   addCheck(checks, () => buildInsightsDbCheck(insightsDbPath, deps));
@@ -588,8 +604,13 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   });
 }
 
-export function runDoctor(options: RunDoctorOptions = {}, overrides: Partial<DoctorDeps> = {}): DoctorReport {
-  const report = inspectDoctor(overrides, { domain: options.domain });
+export async function runDoctor(
+  options: RunDoctorOptions = {},
+  overrides: Partial<DoctorDeps> = {},
+): Promise<DoctorReport> {
+  const deps = { ...DEFAULT_DEPS, ...overrides };
+  const natsExposure = await probeDoctorNatsExposure(deps, options.domain);
+  const report = inspectDoctor(overrides, { domain: options.domain, natsExposure });
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -600,6 +621,19 @@ export function runDoctor(options: RunDoctorOptions = {}, overrides: Partial<Doc
     process.exitCode = doctorExitCode(report, options.strict === true);
   }
   return report;
+}
+
+async function probeDoctorNatsExposure(
+  deps: DoctorDeps,
+  domain: string | null | undefined,
+): Promise<NatsExposureReport | null> {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "runtime") return null;
+  try {
+    return await deps.probeNatsExposure();
+  } catch {
+    return null;
+  }
 }
 
 function addCheck(checks: LegacyDoctorCheck[], build: () => LegacyDoctorCheck): void {
@@ -1070,6 +1104,94 @@ function buildStateDirCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorChe
     details: [stateDir],
     fixHint: "initialize ~/.ravi before relying on the local runtime substrate",
     data: { path: stateDir },
+  };
+}
+
+function buildStateDirPermissionsCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorCheck {
+  const inspection = deps.inspectStateDirPermissions(stateDir);
+  const base = {
+    id: "substrate.state-dir-permissions",
+    title: "Ravi state dir permissions",
+  };
+  const data = {
+    path: stateDir,
+    mode: inspection.modeOctal,
+    ownedByCurrentUser: inspection.ownedByCurrentUser,
+    isSymlink: inspection.isSymlink,
+    groupOrOtherAccess: inspection.groupOrOtherAccess,
+  };
+  const details = [`path: ${stateDir}`, `mode: ${inspection.modeOctal ?? "unknown"}`];
+  if (inspection.isSymlink) details.push("state dir is a symlink (mode shown for its target)");
+  if (inspection.ownedByCurrentUser === false) details.push("state dir is owned by another user");
+
+  if (!inspection.supported) {
+    return { ...base, status: "skip", summary: "POSIX permissions are not inspected on this platform", data };
+  }
+  if (!inspection.exists || inspection.error) {
+    return {
+      ...base,
+      status: "skip",
+      summary: inspection.error
+        ? `could not inspect state dir permissions: ${inspection.error}`
+        : "state directory is missing; permissions not inspected",
+      details,
+      data,
+    };
+  }
+  if (inspection.groupOrOtherAccess) {
+    return {
+      ...base,
+      status: "fail",
+      severity: "warn",
+      summary: `state directory is accessible by group/other (${inspection.modeOctal}); credentials and databases may be readable by other local users`,
+      details,
+      fixHint: `chmod 700 ${stateDir} (the daemon tightens it at boot when you own it)`,
+      data,
+    };
+  }
+  return { ...base, status: "ok", summary: `state directory is private (${inspection.modeOctal})`, details, data };
+}
+
+function buildNatsExposureCheck(report: NatsExposureReport | null): LegacyDoctorCheck {
+  const base = {
+    id: "runtime.nats_exposure",
+    domain: "runtime",
+    title: "NATS network exposure",
+  };
+  if (!report) {
+    return { ...base, status: "skip", summary: "NATS exposure was not probed" };
+  }
+
+  const data = { ...natsExposureLogData(report), message: report.message };
+  const details = [
+    `status: ${report.status}`,
+    `nats url: ${report.natsUrl}`,
+    `reachable: ${report.reachableAddresses.length > 0 ? report.reachableAddresses.join(", ") : "none"}`,
+    `host firewall: ${report.firewall}`,
+    ...report.remediation.map((step) => `remediation: ${step}`),
+  ];
+
+  if (isRiskyNatsExposure(report.status)) {
+    return {
+      ...base,
+      status: "fail",
+      severity: "warn",
+      summary: report.message,
+      details,
+      fixHint: report.remediation.join("; "),
+      data,
+    };
+  }
+  if (report.status === "unknown") {
+    return { ...base, status: "skip", summary: report.message, details, data };
+  }
+  return {
+    ...base,
+    status: "ok",
+    summary: report.message,
+    details,
+    ...(report.remediation.length > 0 ? { fixHint: report.remediation.join("; ") } : {}),
+    data,
   };
 }
 

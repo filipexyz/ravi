@@ -70,6 +70,17 @@ import {
   releaseLeadership,
 } from "./leader/index.js";
 import { scheduleChannelRunnerLivenessReport } from "./channels/runner-liveness.js";
+import {
+  decideNatsExposureBootAction,
+  isPrivateNatsRequired,
+  natsExposureLogData,
+  probeNatsExposure,
+  redactNatsUrl,
+  REQUIRE_PRIVATE_NATS_ENV,
+  type NatsExposureReport,
+} from "./security/nats-exposure.js";
+import { tightenStateDirPermissions } from "./security/state-dir-permissions.js";
+import { getRaviStateDir } from "./utils/paths.js";
 
 const log = logger.child("daemon");
 
@@ -318,13 +329,53 @@ function restartAfterFatalRuntimeError(error: Error): void {
   void shutdown("fatal runtime ownership error", 1);
 }
 
+/** Best-effort: keep the state dir (credentials, DBs) private to the owner. */
+function tightenStateDirAtBoot(): void {
+  const result = tightenStateDirPermissions(getRaviStateDir());
+  if (result.action === "tightened") {
+    log.info("Tightened state dir permissions", result);
+  } else if (result.action === "error") {
+    log.warn("Could not tighten state dir permissions", result);
+  }
+}
+
+/**
+ * Warn when NATS is reachable from the network or remote in plaintext. The
+ * probe runs in the background unless RAVI_REQUIRE_PRIVATE_NATS=1, in which
+ * case boot waits for it and refuses to continue on a risky result.
+ */
+async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
+  const requirePrivate = isPrivateNatsRequired();
+  const evaluate = (report: NatsExposureReport) => {
+    const action = decideNatsExposureBootAction(report, { requirePrivate });
+    if (action === "warn") log.warn(`NATS exposure: ${report.message}`, natsExposureLogData(report));
+    return action;
+  };
+
+  if (!requirePrivate) {
+    void probeNatsExposure(natsUrl)
+      .then(evaluate)
+      .catch((err) => log.debug("NATS exposure probe failed", { err }));
+    return;
+  }
+
+  const report = await probeNatsExposure(natsUrl);
+  if (evaluate(report) === "refuse") {
+    log.error(`Refusing to start: ${REQUIRE_PRIVATE_NATS_ENV}=1 and ${report.message}`, natsExposureLogData(report));
+    await closeNats();
+    throw new Error(`Refusing to start: ${REQUIRE_PRIVATE_NATS_ENV}=1 and NATS is ${report.status}`);
+  }
+}
+
 export async function startDaemon() {
   maybeNeuterDaemonStdin();
+  tightenStateDirAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
-  log.info("Connecting to NATS...", { natsUrl });
+  log.info("Connecting to NATS...", { natsUrl: redactNatsUrl(natsUrl) });
   await connectNats(natsUrl, { explicit: true });
+  await checkNatsExposureAtBoot(natsUrl);
   setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
 
   const config = loadConfig();
