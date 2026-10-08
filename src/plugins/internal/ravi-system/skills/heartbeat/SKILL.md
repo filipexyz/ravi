@@ -10,6 +10,9 @@ description: |
 
 # Heartbeat Manager
 
+> Verbos: RELATAR (vigiar uma base). Compõe com: bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Heartbeat são check-ins periódicos que um agent faz. O agent lê o arquivo HEARTBEAT.md do seu workspace e executa as instruções.
 
 ## Como Funciona

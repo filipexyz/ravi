@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "H04",
+  "title": "H04 · 'feito' na thread do Slack conclui o pedido",
+  "prompt": "Toda vez que alguém responder 'feito' na thread do Slack de um pedido, marca como concluído na lista.",
+  "session": {
+    "name": "eval-H04-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "P2-ficha",
+      "type": "response.contains",
+      "needle": "FICHA",
+      "description": "A resposta mostra a ficha de solucoes (proxy de P2; só existe nos braços com solucoes). O juiz aceita plano equivalente."
+    },
+    {
+      "id": "R1-pessoas",
+      "type": "response.contains",
+      "needle": "Pessoas:",
+      "description": "A ficha abre classificando as pessoas (linha 'Pessoas: membros=… | de fora=…'; proxy de R1)."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

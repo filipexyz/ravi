@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "H11",
+  "title": "H11 · custo diário por agente numa tela",
+  "prompt": "Quero ver quanto cada agente do Ravi custa por dia, numa tela pro time.",
+  "session": {
+    "name": "eval-H11-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "P2-ficha",
+      "type": "response.contains",
+      "needle": "FICHA",
+      "description": "A resposta mostra a ficha de solucoes (proxy de P2; só existe nos braços com solucoes). O juiz aceita plano equivalente."
+    },
+    {
+      "id": "R1-pessoas",
+      "type": "response.contains",
+      "needle": "Pessoas:",
+      "description": "A ficha abre classificando as pessoas (linha 'Pessoas: membros=… | de fora=…'; proxy de R1)."
+    },
+    {
+      "id": "desenho-shell",
+      "type": "response.contains",
+      "needle": "--shell",
+      "description": "Fonte de máquina entra por cron --shell, sem agente no caminho (proxy do desenho)."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

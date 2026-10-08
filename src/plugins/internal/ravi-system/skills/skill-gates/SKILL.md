@@ -108,6 +108,38 @@ Matchers disponíveis:
 - `--command-prefix <prefix>`: prefixo de comando shell.
 - `--command-regex <regex>`: regex contra comando shell bruto.
 
+## Gates Por Intenção (Opcional)
+
+Configuração por instalação, não default em código. Três regras custom
+entregam a skill `solucoes` (catálogo `ravi-system-solucoes`) no primeiro passo
+de uma solução com dado vivo:
+
+```bash
+ravi skill-gates set intent-pagina-dados ravi-system-solucoes \
+  --command-regex 'ravi\s+pages\s+ship\b.*ravi\.bases\.'
+ravi skill-gates set intent-trigger-linha ravi-system-solucoes \
+  --command-regex 'ravi\s+triggers\s+add\b.*ravi\.console\.inbox\.item'
+ravi skill-gates set intent-subscribe ravi-system-solucoes \
+  --command-regex 'ravi\s+bases\s+subscribe\b'
+```
+
+- `intent-pagina-dados`: `pages ship` com um id `ravi.bases.*` na linha (página de dados).
+- `intent-trigger-linha`: `triggers add` no tópico `ravi.console.inbox.item` (trigger acordado por linha de base).
+- `intent-subscribe`: `bases subscribe`, o primeiro passo de um trigger por linha.
+
+Limites:
+
+- Só fazem sentido com `solucoes` autorizada para o agente. Ela está no baseline de todo agente configurado; sem ela, a chamada falha com `RAVI_SKILL_GATE_CONFIG_ERROR` em vez de entregar a skill (`ravi skills grant <agente> solucoes`).
+- Olham só o texto de um comando shell (Bash). Chamada por tool, ou por `ravi tools invoke`, não casa com o regex. O regex vê a linha inteira, então um `ravi.bases.` em outro comando da mesma linha também casa; o custo é só entregar `solucoes` uma vez.
+- Uma linha leva um gate só. Na linha que casa, o gate pede `solucoes` no lugar da skill do grupo, e o retry da mesma linha roda sem a skill do grupo (`pages`, `bases` ou `triggers`), que só chega numa chamada do grupo que não case. Por isso `solucoes` manda carregar a skill do grupo antes do comando; quem configura estes gates conta com isso.
+
+Desfazer:
+
+```bash
+ravi skill-gates disable intent-pagina-dados        # pausa; volta com enable
+ravi skill-gates rm intent-pagina-dados --execute   # apaga (sem --execute, exit 3 com o plano)
+```
+
 ## Comportamento no Runtime
 
 O runtime consulta a tabela `skill_gate_rules` a cada resolução de gate e combina com os defaults em código. Ordem prática:

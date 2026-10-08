@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "T2",
+  "title": "T2 · painel por vendedor e total por etapa",
+  "prompt": "Monta um painel pros vendedores onde cada um vê só os seus negócios e o gerente vê o total por etapa.",
+  "session": {
+    "name": "eval-T2-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "P2-ficha",
+      "type": "response.contains",
+      "needle": "FICHA",
+      "description": "A resposta mostra a ficha de solucoes (proxy de P2; só existe nos braços com solucoes). O juiz aceita plano equivalente."
+    },
+    {
+      "id": "R1-pessoas",
+      "type": "response.contains",
+      "needle": "Pessoas:",
+      "description": "A ficha abre classificando as pessoas (linha 'Pessoas: membros=… | de fora=…'; proxy de R1)."
+    },
+    {
+      "id": "R4-viewer",
+      "type": "response.contains",
+      "needle": "$viewer",
+      "description": "'Cada um vê o seu' vira filtro $viewer na view (proxy de R4)."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

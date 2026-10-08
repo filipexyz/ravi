@@ -6,9 +6,11 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
+  type Dirent,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
@@ -418,6 +420,89 @@ export function findSkillByName(skills: RaviSkill[], name: string): RaviSkill | 
     skills.find((skill) => basename(skill.path).toLowerCase() === wanted) ??
     null
   );
+}
+
+const MAX_SKILL_FILE_COUNT = 500;
+const MAX_SKILL_FILE_DEPTH = 8;
+const MAX_SKILL_FILE_BYTES = 1024 * 1024;
+
+/**
+ * Relative paths of a skill's files, `SKILL.md` first and the rest sorted.
+ * Catalog skills carry their files in memory; disk skills are listed without
+ * following symlinks and without dot entries or oversized files.
+ */
+export function listSkillFilePaths(skill: RaviSkill): string[] {
+  const paths = skill.files ? skill.files.map((file) => file.path) : listSkillDirectoryFiles(skill.path);
+  const rest = paths.filter((path) => path !== SKILL_FILE).sort((a, b) => a.localeCompare(b));
+  return [SKILL_FILE, ...rest];
+}
+
+/**
+ * A requested skill file path in canonical `a/b.md` form, or null when it is
+ * absolute or climbs out of the skill directory.
+ */
+export function normalizeSkillFilePath(input: string): string | null {
+  const value = input.trim().replace(/\\/g, "/");
+  if (!value || value.includes("\0") || value.startsWith("/") || /^[a-zA-Z]:/.test(value)) return null;
+  const segments = value.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.length === 0 || segments.includes("..")) return null;
+  return segments.join("/");
+}
+
+/**
+ * One file of a skill by its relative path, or null when the path is not one
+ * of {@link listSkillFilePaths}. Disk reads also refuse a target whose real
+ * path leaves the skill directory.
+ */
+export function readSkillFile(skill: RaviSkill, requestedPath: string): RaviSkillFile | null {
+  const path = normalizeSkillFilePath(requestedPath);
+  if (!path) return null;
+  if (path === SKILL_FILE) return { path, content: skill.content };
+  if (skill.files) return skill.files.find((file) => file.path === path) ?? null;
+  if (!listSkillDirectoryFiles(skill.path).includes(path)) return null;
+  try {
+    const root = realpathSync(skill.path);
+    const target = realpathSync(join(skill.path, path));
+    if (!isPathSafe(root, target)) return null;
+    return { path, content: readFileSync(target, "utf8") };
+  } catch {
+    return null;
+  }
+}
+
+function listSkillDirectoryFiles(skillDir: string): string[] {
+  const files: string[] = [];
+  const walk = (dir: string, prefix: string, depth: number): void => {
+    if (depth > MAX_SKILL_FILE_DEPTH) return;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (files.length >= MAX_SKILL_FILE_COUNT) return;
+      if (entry.name.startsWith(".") || isExcludedEntry(entry.name, entry.isDirectory())) continue;
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const fullPath = join(dir, entry.name);
+      // Dirent never reports a symlink as a file or directory, so links are skipped.
+      if (entry.isDirectory()) {
+        walk(fullPath, relativePath, depth + 1);
+      } else if (entry.isFile() && fileSizeWithin(fullPath, MAX_SKILL_FILE_BYTES)) {
+        files.push(relativePath);
+      }
+    }
+  };
+  walk(skillDir, "", 0);
+  return files;
+}
+
+function fileSizeWithin(path: string, maxBytes: number): boolean {
+  try {
+    return statSync(path).size <= maxBytes;
+  } catch {
+    return false;
+  }
 }
 
 function managedSkillAlias(skill: Pick<RaviSkill, "name" | "pluginName">): string | null {

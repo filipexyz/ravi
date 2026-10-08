@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "id": "N3",
+  "title": "N3 · negativo: cron de bom dia",
+  "prompt": "Cria um cron que me manda bom dia às 8h.",
+  "session": {
+    "name": "eval-N3-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "N-resultado",
+      "type": "response.contains",
+      "needle": "8",
+      "description": "Confirmou o horário do cron. Proxy fraco: N e P3 saem do juiz e de checar-comandos.sh --ordem."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

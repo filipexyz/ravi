@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -21,7 +21,12 @@ import {
   loadedSkillMatchesGate,
   runtimeSkillGateForCommand,
   runtimeSkillGateForTool,
+  solutionsGateFooter,
 } from "./skill-gate.js";
+import * as skillAuthorization from "./skill-authorization.js";
+import { SKILLS_SHOW_CAPABILITY_CANDIDATES } from "./skill-capability-implication.js";
+import { listCliCommandAccessCandidates } from "../cli/command-access.js";
+import { listCatalogSkills, listSkillFilePaths } from "../skills/manager.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import {
   buildSkillVisibilitySnapshot,
@@ -587,5 +592,155 @@ describe("runtime host skill-gate enforcement", () => {
     });
 
     expect(decision.approved).toBe(false);
+  });
+});
+
+const SOLUTIONS_LINE =
+  "Building something with more than one piece (screen, intake, approval, automation)? Read first: ravi skills show solucoes";
+
+describe("soft gate solucoes footer", () => {
+  const SKILLS_SHOW = [{ permission: "execute", objectType: "group", objectId: "skills" }];
+
+  function gateContext(
+    sessionName: string,
+    loadedSkills: string[] = [],
+    capabilities: { permission: string; objectType: string; objectId: string }[] = SKILLS_SHOW,
+  ) {
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: sessionName,
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+      ...(loadedSkills.length > 0
+        ? {
+            runtimeSessionParams: {
+              skillVisibility: buildSkillVisibilitySnapshot(
+                loadedSkills.map((id) => ({
+                  id,
+                  provider: "codex" as const,
+                  state: "loaded" as const,
+                  confidence: "observed" as const,
+                  loadedAt: 1,
+                  lastSeenAt: 1,
+                })),
+                1,
+              ),
+            },
+          }
+        : {}),
+    });
+    return createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName,
+      capabilities,
+    });
+  }
+
+  function deliver(skill: string, context: ReturnType<typeof gateContext>): string {
+    dbUpsertSkillGrant({ agentId: "main", skillName: skill });
+    const decision = evaluateSkillGate({ gate: { skill, source: "inferred" }, context, toolName: "Bash" });
+    expect(decision.code).toBe("RAVI_SKILL_REQUIRED");
+    return decision.reason ?? "";
+  }
+
+  it("points a bases delivery at solucoes and lists the bases references after the skill", () => {
+    const reason = deliver("ravi-system-bases", gateContext("footer-bases"));
+    const bases = listCatalogSkills().find((skill) => skill.name === "bases")!;
+    const references = listSkillFilePaths(bases)
+      .filter((path) => path.startsWith("references/"))
+      .map((path) => path.slice("references/".length));
+    expect(references).toContain("views-access-forms.md");
+
+    const footer = [
+      SOLUTIONS_LINE,
+      "References (open only what you need): ravi skills show bases --file references/<file>",
+      `  ${references.join(" · ")}`,
+    ].join("\n");
+    expect(reason.endsWith(`${bases.content.trimEnd()}\n\n${footer}`)).toBe(true);
+  });
+
+  it("lists nested pages references relative to references/", () => {
+    const reason = deliver("ravi-system-pages", gateContext("footer-pages"));
+    const [solutions, references, list] = reason.split("\n").slice(-3);
+    expect(solutions).toBe(SOLUTIONS_LINE);
+    expect(references).toBe("References (open only what you need): ravi skills show pages --file references/<file>");
+    expect(list).toStartWith("  ");
+    expect(list).toContain("esqueletos/board.html.txt");
+    expect(list).not.toContain("references/");
+  });
+
+  it("adds only the solucoes line for triggers and cron, which ship no references", () => {
+    for (const [skill, sessionName] of [
+      ["ravi-system-trigger-manager", "footer-triggers"],
+      ["ravi-system-cron-manager", "footer-cron"],
+    ] as const) {
+      const reason = deliver(skill, gateContext(sessionName));
+      expect(reason.endsWith(`\n\n${SOLUTIONS_LINE}`)).toBe(true);
+      expect(reason).not.toContain("References (open only what you need)");
+    }
+  });
+
+  it("leaves other gated skills without the footer", () => {
+    const reason = deliver("ravi-system-image", gateContext("footer-image"));
+    const image = listCatalogSkills().find((skill) => skill.name === "image")!;
+    expect(reason.endsWith(`\n\n${image.content}`)).toBe(true);
+    expect(reason).not.toContain(SOLUTIONS_LINE);
+  });
+
+  it("drops the footer once solucoes is loaded in the session", () => {
+    const reason = deliver("ravi-system-bases", gateContext("footer-loaded", ["solucoes"]));
+    const bases = listCatalogSkills().find((skill) => skill.name === "bases")!;
+    expect(reason.endsWith(`\n\n${bases.content}`)).toBe(true);
+    expect(reason).not.toContain(SOLUTIONS_LINE);
+  });
+
+  it("drops the footer when solucoes is not authorized for the agent", () => {
+    const bases = listCatalogSkills().find((skill) => skill.name === "bases")!;
+    const input = { agentId: "main", capabilities: SKILLS_SHOW, loadedSkills: [] };
+    const authorize = spyOn(skillAuthorization, "isSkillAuthorizedForAgent").mockImplementation(
+      (_agentId, skillName) => skillName !== "ravi-system-solucoes",
+    );
+    try {
+      expect(solutionsGateFooter("ravi-system-bases", bases, input)).toBeNull();
+      expect(authorize).toHaveBeenCalledWith("main", "ravi-system-solucoes", { capabilities: SKILLS_SHOW });
+    } finally {
+      authorize.mockRestore();
+    }
+    expect(solutionsGateFooter("ravi-system-bases", bases, input)).toStartWith(SOLUTIONS_LINE);
+  });
+
+  it("drops the footer when the context cannot run ravi skills show", () => {
+    const bases = listCatalogSkills().find((skill) => skill.name === "bases")!;
+    const basesRowsOnly = [{ permission: "execute", objectType: "group", objectId: "bases_rows" }];
+    expect(
+      solutionsGateFooter("ravi-system-bases", bases, {
+        agentId: "main",
+        capabilities: basesRowsOnly,
+        loadedSkills: [],
+      }),
+    ).toBeNull();
+    expect(
+      solutionsGateFooter("ravi-system-bases", bases, { agentId: "main", capabilities: [], loadedSkills: [] }),
+    ).toBeNull();
+    const reason = deliver("ravi-system-bases", gateContext("footer-no-skills-show", [], basesRowsOnly));
+    expect(reason).not.toContain(SOLUTIONS_LINE);
+  });
+
+  it("checks skills show with the same candidates the CLI authorizes it with", () => {
+    const candidates = listCliCommandAccessCandidates({
+      group: "skills",
+      command: "show",
+      access: { kind: "read", resource: "skills", action: "show", risk: "low" },
+      source: "tool",
+    });
+    expect([...SKILLS_SHOW_CAPABILITY_CANDIDATES]).toEqual(candidates);
+  });
+
+  it("drops the footer for a sentinel agent", () => {
+    dbUpdateAgent("main", { mode: "sentinel" });
+    const reason = deliver("ravi-system-bases", gateContext("footer-sentinel"));
+    expect(reason).not.toContain(SOLUTIONS_LINE);
   });
 });

@@ -58,7 +58,9 @@ export function parseFlags(flags: string): ParsedOptionFlags {
   }
 
   const inner = valuePart.slice(1, -1);
-  const isVariadic = inner.endsWith("...");
+  // Commander only makes an option variadic when a word character precedes
+  // "..." (`<id...>`); `<key:dir,...>` reaches the command as one string.
+  const isVariadic = /\w\.\.\.$/.test(inner);
   const isRequired = valuePart.startsWith("<");
 
   let kind: OptionFlagKind;

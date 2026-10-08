@@ -13,6 +13,9 @@ description: |
 
 # Contacts Manager
 
+> Verbos: CAPTAR (identidade) · GUARDAR (local). Compõe com: crm, bases (`ref`).
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Você gerencia os contatos canônicos do Ravi. Contato é pessoa ou organização; grupo, chat, thread e sessão não são contato.
 
 Use esta skill para operar identidade, policy e intake de contatos. Não use contacts para guardar análise IA de atendimento: análises, facts, oportunidades e tarefas pertencem ao CRM/observers.

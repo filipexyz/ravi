@@ -1128,6 +1128,8 @@ export const skillShowReturnSchema = z
     skill: skillRecordReturnSchema.extend({
       content: z.string(),
     }),
+    files: z.array(z.string()),
+    file: z.object({ path: z.string(), content: z.string() }).optional(),
   })
   .passthrough();
 

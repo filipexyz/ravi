@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "id": "N4",
+  "title": "N4 · negativo: tornar uma rota privada",
+  "prompt": "Muda a rota /relatorio para privada.",
+  "session": {
+    "name": "eval-N4-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "N-resultado",
+      "type": "response.contains",
+      "needle": "priva",
+      "description": "Confirmou a rota como privada (privada, privado ou private). Proxy fraco: N e P3 saem do juiz e de checar-comandos.sh --ordem."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

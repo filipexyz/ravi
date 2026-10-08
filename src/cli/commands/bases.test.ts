@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
+import type { ContextRecord } from "../../router/router-db.js";
+import type { BasesCommandDeps } from "./bases.js";
 
 // hasContext() true makes contract helpers throw ContractError instead of exiting.
 const actualContext = await import("../context.js");
@@ -21,6 +23,9 @@ const { BasesCommands, BasesPropsCommands, BasesRowsCommands, BasesViewsCommands
 );
 const { ContractError } = await import("../agent-contract.js");
 const { getReturnsMetadata } = await import("../decorators.js");
+const { parseGroupByOption, parseSortOption } = await import("../../bases/input.js");
+const { buildRegistry } = await import("../registry-snapshot.js");
+const { dispatch } = await import("../../sdk/gateway/dispatcher.js");
 
 afterAll(() => mock.restore());
 
@@ -251,6 +256,107 @@ describe("ravi bases rows writes", () => {
     const envelope = JSON.parse(output);
     expect(envelope.error.missingScopes).toEqual(["console.bases.read", "console.bases.write"]);
     expect(envelope.error.suggestedAction).toContain("ravi login");
+  });
+});
+
+describe("ravi bases rows idempotency warning", () => {
+  const agentHint = () => ({ agentId: "main", sessionKey: "agent:main:trigger:t1", sdk: "ravi-cli" });
+  const noAgent = () => null;
+  const writeDeps = (calls: Call[], clientHint: BasesTestDeps["clientHint"]): BasesTestDeps => ({
+    ...makeDeps(calls, () => ({ row: row(2), users: {}, idempotentReplay: false })),
+    clientHint,
+  });
+  const add = (deps: BasesTestDeps, idempotencyKey: string | undefined, asJson: boolean) =>
+    new BasesRowsCommands(deps).add(
+      "crm",
+      undefined,
+      undefined,
+      ["stage=won"],
+      undefined,
+      undefined,
+      idempotencyKey,
+      "sales",
+      undefined,
+      asJson,
+    );
+  const update = (deps: BasesTestDeps, idempotencyKey: string | undefined, asJson: boolean) =>
+    new BasesRowsCommands(deps).update(
+      "crm",
+      "row_1",
+      undefined,
+      undefined,
+      ["stage=won"],
+      undefined,
+      undefined,
+      "1",
+      undefined,
+      idempotencyKey,
+      "sales",
+      undefined,
+      asJson,
+    );
+
+  it("still writes from an agent session without --idempotency-key, and warns in JSON", async () => {
+    for (const [method, run] of [
+      ["add", add],
+      ["update", update],
+    ] as const) {
+      const calls: Call[] = [];
+      const { output, result } = await captureConsole(() => run(writeDeps(calls, agentHint), undefined, true));
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.headers["Idempotency-Key"]).toBe("ravi-cli:test-key-0001");
+      const warnings = (result as { warnings?: string[] }).warnings;
+      expect(warnings).toHaveLength(1);
+      expect(warnings?.[0]).toContain("a retry would get a new generated key");
+      expect(warnings?.[0]).toContain("--idempotency-key <stable key>, e.g. <base>:<row>:<step>");
+      expect(JSON.parse(output).warnings).toEqual(warnings);
+      expectReturnsMatch(BasesRowsCommands, method, result);
+    }
+  });
+
+  it("prints one warning line in human output", async () => {
+    const { output } = await captureConsole(() => add(writeDeps([], agentHint), undefined, false));
+    const lines = output.split("\n");
+
+    expect(lines[0]).toBe("✓ Row created: row_1 v2");
+    expect(lines.filter((line) => line.startsWith("warning: "))).toHaveLength(1);
+    expect(lines[1]).toStartWith("warning: written without --idempotency-key");
+  });
+
+  it("does not warn with --idempotency-key or outside an agent session", async () => {
+    for (const run of [add, update]) {
+      const withKey = await captureConsole(() => run(writeDeps([], agentHint), "crm:msg-42:intake", true));
+      expect(withKey.result).toMatchObject({ idempotencyKey: "crm:msg-42:intake" });
+      expect(withKey.result).not.toHaveProperty("warnings");
+
+      const outside = await captureConsole(() => run(writeDeps([], noAgent), undefined, false));
+      expect(outside.result).not.toHaveProperty("warnings");
+      expect(outside.output).not.toContain("warning:");
+    }
+  });
+
+  it("detects the agent session from the gateway context when no hint is injected", async () => {
+    const calls: Call[] = [];
+    const deps: BasesTestDeps = makeDeps(calls, () => ({ row: row(2), users: {}, idempotentReplay: false }));
+    delete deps.clientHint;
+
+    const unkeyed = await dispatchThroughGateway(BasesRowsCommands, "add", deps, {
+      base: "crm",
+      set: ["stage=won"],
+      project: "sales",
+    });
+    const keyed = await dispatchThroughGateway(BasesRowsCommands, "add", deps, {
+      base: "crm",
+      set: ["stage=won"],
+      idempotencyKey: "crm:msg-42:intake",
+      project: "sales",
+    });
+
+    expect(unkeyed).toMatchObject({ status: 200, body: { success: true, warnings: [expect.any(String)] } });
+    expect(keyed.status).toBe(200);
+    expect(keyed.body).not.toHaveProperty("warnings");
+    expect(calls[0]?.body).toMatchObject({ clientHint: { agentId: "bases-agent", sdk: "ravi-sdk-gateway" } });
   });
 });
 
@@ -506,11 +612,132 @@ describe("ravi bases subscriptions and listings", () => {
   });
 });
 
+describe("ravi bases through the daemon gateway", () => {
+  it("declares --sort and --group-by as one comma-separated string, the value commander forwards", () => {
+    const registry = buildRegistry([BasesCommands, BasesRowsCommands, BasesViewsCommands]);
+    const options = registry.commands.flatMap((command) =>
+      command.options
+        .filter((option) => option.name === "sort" || option.name === "groupBy")
+        .map((option) => ({ command: command.fullName, option })),
+    );
+
+    expect(options.map(({ command, option }) => `${command} ${option.name}`).sort()).toEqual([
+      "bases.aggregate groupBy",
+      "bases.rows.export sort",
+      "bases.rows.query sort",
+      "bases.views.query sort",
+    ]);
+    for (const { option } of options) {
+      expect(option.parsed.kind).toBe("required-value");
+      expect(option.schema.safeParse("created_time:month,status").success).toBe(true);
+    }
+  });
+
+  it("parses --sort and --group-by from one comma-separated string or a string array", () => {
+    const sort = [
+      { prop: "amount", dir: "desc" as const },
+      { prop: "created_time", dir: "asc" as const },
+    ];
+    expect(parseSortOption("amount:desc, created_time")).toEqual(sort);
+    expect(parseSortOption(["amount:desc", "created_time"])).toEqual(sort);
+    expect(parseSortOption(["amount:desc,created_time"])).toEqual(sort);
+    expect(parseSortOption("")).toBeUndefined();
+    expect(() => parseSortOption(["a", "b,c", "d"])).toThrow("at most 3");
+
+    const groupBy = [{ prop: "created_time", timeUnit: "month" }, { prop: "status" }];
+    expect(parseGroupByOption("created_time:month,status")).toEqual(groupBy);
+    expect(parseGroupByOption(["created_time:month", "status"])).toEqual(groupBy);
+    expect(() => parseGroupByOption("a,b,c")).toThrow("at most 2");
+  });
+
+  it("runs rows query --sort and aggregate --group-by end to end through the gateway dispatcher", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, (call) => {
+      if (call.method === "GET") return baseDetail();
+      if (call.path.endsWith("/aggregate")) return { groups: [], suppressedGroups: 0, users: {} };
+      return { columns: [], rows: [], nextCursor: null, users: {} };
+    });
+
+    const query = await dispatchThroughGateway(BasesRowsCommands, "query", deps, {
+      base: "crm",
+      sort: "amount:desc,created_time",
+      project: "sales",
+    });
+    const aggregate = await dispatchThroughGateway(BasesCommands, "aggregate", deps, {
+      base: "crm",
+      groupBy: "created_time:month,status",
+      agg: ["count", "sum:amount:total"],
+      project: "sales",
+    });
+
+    expect(query).toMatchObject({ status: 200, body: { success: true, baseRef: "crm" } });
+    expect(aggregate).toMatchObject({ status: 200, body: { success: true, groups: [] } });
+    expect(calls.filter((call) => call.method === "POST").map((call) => [call.path, call.body])).toEqual([
+      [
+        `${ROOT}/crm/rows/query`,
+        {
+          sort: [
+            { prop: "amount", dir: "desc" },
+            { prop: "created_time", dir: "asc" },
+          ],
+        },
+      ],
+      [
+        `${ROOT}/crm/rows/aggregate`,
+        {
+          groupBy: [{ prop: "created_time", timeUnit: "month" }, { prop: "status" }],
+          aggregate: [
+            { op: "count", as: "count" },
+            { op: "sum", prop: "amount", as: "total" },
+          ],
+        },
+      ],
+    ]);
+  });
+});
+
 interface Call {
   method: string;
   path: string;
   body: unknown;
   headers: Record<string, string>;
+}
+
+type BasesTestDeps = BasesCommandDeps;
+
+/** Run one command through the SDK gateway dispatcher (Zod validation included) with mocked Console deps. */
+async function dispatchThroughGateway(
+  target: new (deps: BasesTestDeps) => object,
+  method: string,
+  deps: BasesTestDeps,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  const entry = buildRegistry([target as unknown as new () => object]).commands.find(
+    (command) => command.method === method,
+  );
+  if (!entry) throw new Error(`${target.name}.${method} is missing from the registry`);
+  // The gateway builds commands with `new cls()`; bind the mocked Console deps.
+  const bound = class extends target {
+    constructor() {
+      super(deps);
+    }
+  };
+  const contextRecord: ContextRecord = {
+    contextId: "ctx_bases_gateway",
+    contextKey: "rctx_bases_gateway",
+    kind: "test-runtime",
+    agentId: "bases-agent",
+    capabilities: [
+      { permission: "read", objectType: "bases", objectId: "*", source: "test" },
+      { permission: "read", objectType: "bases.rows", objectId: "*", source: "test" },
+      { permission: "read", objectType: "bases.views", objectId: "*", source: "test" },
+      { permission: "mutate", objectType: "bases.rows", objectId: "*", source: "test" },
+    ],
+    metadata: { authorityMode: "delegated" },
+    createdAt: Date.now(),
+  };
+  const result = await dispatch({ ...entry, cls: bound }, body, {}, { contextRecord, emitAudit: () => undefined });
+  return { status: result.response.status, body: await result.response.json() };
 }
 
 function makeDeps(

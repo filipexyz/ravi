@@ -2,148 +2,152 @@
 
 Uma view é a unidade de leitura, escrita e compartilhamento. Ela junta:
 
-- `columns`: projeção (chaves). Respostas pela view só trazem essas colunas,
-  mais `rowId` e `version`. `body` pode ser projetado como coluna.
+- `columns`: projeção. Respostas pela view só trazem essas colunas, mais
+  `rowId` e `version`. `body` pode ser projetado como coluna.
 - `query`: `{ filter, sort }`. O `filter` é política obrigatória de linhas e pode
-  usar colunas não projetadas. Filtro enviado na consulta é somado com AND e só
-  estreita.
-- `layout`: `table`, `board` (`groupBy` em `select`/`status`), `list`, `gallery`,
-  `calendar` (`dateProp`), `form`, `chart` (`chartId`). Layout não muda o que
-  cada pessoa pode ler.
+  usar colunas não projetadas. Filtro enviado na consulta soma com AND e só estreita.
+- `layout`: `table`, `board` (`groupBy`), `list`, `gallery`, `calendar`
+  (`dateProp`), `form`, `chart` (`chartId`). Não muda o que cada pessoa lê.
 - `access`: quem lê, quem escreve e o quê.
 
-Gerentes da base (`manage`: papel efetivo `developer` ou `project_admin`) leem
-e escrevem por qualquer view pelo CLI e pela API. Numa Ravi Page ninguém é
-gerente. Os demais só recebem a forma pública: nome, layout, colunas projetadas
-com tipo e opções, e as próprias capabilities. Nunca recebem `query.filter` nem
-`access`.
+Regra 4. A view é o contrato: 'cada um vê o seu' = filtro `$viewer`; dono e
+status inicial = `write.set` (só na criação; nunca `false` em checkbox);
+formulário = `read: []` + `create`. No Pages ninguém é gerente. Motivo: o
+Console aplica a view no servidor, e o HTML não esconde nada de quem abre o host.
 
-Não existe tela de Bases no Console. A view é o contrato que uma Ravi Page
-gerada usa para ler e escrever (`pages.md`).
+Gerentes da base (papel efetivo `developer` ou `project_admin`) leem e escrevem
+por qualquer view pelo CLI. Os demais nunca recebem `query.filter` nem `access`.
 
 ```bash
-ravi bases views list pipeline --json
-ravi bases views show pipeline <view-id> --json     # capabilities; policy completa só para gerentes
-ravi bases views create pipeline --spec @view.json --json
-ravi bases views update pipeline <view-id> --spec '{"columns":["name","stage","amount"]}' --json
-ravi bases views archive pipeline <view-id> --json --execute
+ravi bases views list tarefas --json
+ravi bases views show tarefas <view-id> --json     # policy completa só para gerentes
+ravi bases views create tarefas --spec @minhas-tarefas.json --json
 ```
 
-`views update` usa `--expected-version` (sem a flag o CLI lê a versão atual).
-Arquivar uma view quebra os gráficos e as Pages que a usam.
+`views update` usa `--expected-version`. Arquivar uma view quebra os gráficos e
+as páginas que a usam.
 
 ## Princípios de acesso
-
-`access.read` (lista) e `access.write.principals` (lista):
 
 | princípio | quem | onde admite |
 |---|---|---|
 | `{ "kind": "project_role", "minRole": "viewer" \| "developer" \| "project_admin" }` | papel efetivo no projeto (org `owner`/`admin` contam como `project_admin`) | CLI e API |
 | `{ "kind": "user", "userId": "<uuid>" }` | um membro ativo da org | CLI e API |
-| `{ "kind": "page_viewer", "siteId": "<uuid>" }` | quem abre aquele site Ravi Pages por login (site do mesmo projeto) | só Ravi Pages |
+| `{ "kind": "page_viewer", "siteId": "<uuid>" }` | quem abre aquele site por login | só Ravi Pages |
 
-Numa Ravi Page só `page_viewer` admite: papel no projeto e `user` não contam
-lá. Fora do Pages, `page_viewer` não admite ninguém. Uma view usada por uma
-tela e por agents no CLI lista os dois princípios. `page_viewer` não distingue
-pessoas: passa todo membro da org que lê o projeto e abre qualquer rota do
-host. Restrição por pessoa numa tela é trabalho do filtro com `$viewer.*`.
-O `siteId` sai de `ravi pages list --project <p> --json` (o site com
-`isDefault: true`).
+Numa página só `page_viewer` admite; fora do Pages, ele não admite ninguém. Uma
+view usada por tela e por agentes lista os dois. `page_viewer` não distingue
+pessoas: passa todo membro da org que lê o projeto e abre qualquer rota do host.
+Restrição por pessoa é trabalho do filtro com `$viewer.*`.
 
-Um princípio de leitura pode ter `"mode": "aggregate"`: só lê dados de gráficos
-dessa view, sem linhas e sem filtros próprios; grupos com menos de 5 linhas são
-suprimidos.
+A view com `page_viewer` exige que o site já exista (senão: "Pages viewer
+principals must name a Ravi Pages site"). A ordem:
+
+1. ship de esqueleto: `ravi pages ship --project <p> --title "<título>" --route /<rota> --body "<p>Em construção</p>" --json` (num host que já tem página de dados, com `--uses` da união);
+2. `ravi pages list --project <p> --json`: o `siteId` é o do site com `isDefault: true`;
+3. `ravi bases views create ...` com esse `siteId`;
+4. ship da página real com os ids da view.
 
 `access.write`:
 
 | campo | efeito |
 |---|---|
 | `principals` | quem pode escrever (ler não implica escrever) |
-| `columns` | chaves que essas pessoas podem mudar (subconjunto de `columns`) |
+| `columns` | chaves que essas pessoas podem mudar |
 | `create` / `archive` | podem criar / arquivar linhas pela view |
-| `set` | valores aplicados na criação: literais, `$viewer.raviUserId`, `$viewer.email`, `$now`, `$today`; quem escreve não pode enviar essas chaves |
-| `allowEscape` | `false` (padrão): a linha escrita tem de continuar dentro do filtro da view (`write_escapes_view`) |
+| `set` | valores aplicados na criação: literais, `$viewer.raviUserId`, `$viewer.email`, `$now`, `$today` |
+| `allowEscape` | `false` (padrão): a linha escrita tem de continuar no filtro (`write_escapes_view`) |
 
-Ordem das checagens numa escrita pela view: admissão em `write.principals` →
-colunas graváveis → a linha existe, não está arquivada e casa o filtro (senão
-`not_found`, nunca `forbidden`) → `expectedVersion` → pós-imagem dentro do filtro.
+Linha fora do filtro da view responde `not_found`, nunca `forbidden`.
 
-## "Cada vendedor só vê os próprios deals"
+## Cada um vê o seu
+
+Tarefas de um escritório: cada pessoa vê, move e cria só as próprias.
 
 ```json
-{
-  "name": "Meus deals",
-  "columns": ["name", "stage", "amount", "close_date", "owner"],
-  "query": {
-    "filter": { "prop": "owner", "op": "contains", "value": "$viewer.raviUserId" },
-    "sort": [{ "prop": "amount", "dir": "desc" }]
-  },
-  "layout": { "type": "board", "groupBy": "stage" },
-  "access": {
-    "read": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
-    "write": {
-      "principals": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
-      "columns": ["name", "stage", "amount", "close_date"],
-      "create": true,
-      "archive": false,
-      "set": { "owner": "$viewer.raviUserId" },
-      "allowEscape": false
-    }
-  }
-}
+{ "name": "Minhas tarefas", "columns": ["titulo", "status", "prazo", "dono", "supervisao"],
+  "query": { "filter": { "prop": "dono", "op": "contains", "value": "$viewer.raviUserId" },
+             "sort": [{ "prop": "prazo", "dir": "asc" }] },
+  "layout": { "type": "board", "groupBy": "status" },
+  "access": { "read": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
+    "write": { "principals": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
+      "columns": ["titulo", "status", "prazo"], "create": true, "archive": false,
+      "set": { "dono": "$viewer.raviUserId" }, "allowEscape": false } } }
 ```
 
-Na página (um board com `views.describe`, `views.query`, `views.rows.update`
-e `views.rows.create`), cada vendedor lê e cria só os seus; `owner` é
-preenchido no servidor e não pode ser trocado por quem escreve.
+Na página (board com `views.describe`, `views.query`, `views.rows.update` e
+`views.rows.create`), cada um lê e cria só as suas; `dono` é preenchido no
+servidor e ninguém consegue trocá-lo pela tela.
 
-Para a gestão ver tudo: no Pages não dá para limitar por papel, então uma view
-`page_viewer` sem filtro mostraria tudo a todos que abrem o site. A visão
-completa fica com agents no CLI (outra view com
-`read: [{ "kind": "project_role", "minRole": "project_admin" }]` e sem filtro)
-ou vira número agregado na tela.
+## Dono + supervisão
 
-Para um gráfico de pipeline que todo mundo no site vê sem ver linhas, crie uma
-view com `"read": [{ "kind": "page_viewer", "siteId": "<site-id>", "mode": "aggregate" }]`
-e o gráfico em cima dela; a página chama `ravi.bases.charts.data`.
+No Pages não dá para limitar por papel: uma view `page_viewer` sem filtro
+mostra tudo a todos que abrem o host. Quem precisa ver as linhas dos outros
+entra na linha, numa coluna `person` de supervisão, e o filtro vira `or`. A
+mesma view serve a todos: a supervisora vê as dela e as que supervisiona.
+
+```json
+{ "or": [
+  { "prop": "dono", "op": "contains", "value": "$viewer.raviUserId" },
+  { "prop": "supervisao", "op": "contains", "value": "$viewer.raviUserId" } ] }
+```
+
+- Quem preenche `supervisao` é o agente, pelo CLI, com ids de membro (abaixo) e a regra de quem opera o Ravi ("a Rita supervisiona a área Fiscal"). Deixe `supervisao` fora de `write.columns`, senão qualquer um vira supervisor.
+- Um projeto separado não isola nada de owner, admin ou developer da org: eles leem e escrevem qualquer base pelo CLI. Ele só separa quem abre cada host.
+- A opção agregada continua: leitura `page_viewer` com `"mode": "aggregate"`, sem filtro, e um gráfico em cima (`ravi.bases.charts.data`). Só números, e grupo com menos de 5 linhas some: num time pequeno, mostre linhas pelo `or`.
+- Visão completa só para agentes no CLI: view com `read: [{ "kind": "project_role", "minRole": "project_admin" }]`, sem filtro. Nunca uma view "da gestão" sem filtro no host, que todos leriam.
+
+## Aprovador
+
+Aprovação dada na tela por um membro: coluna `aprovador` (person), coluna de
+decisão editável (`decisao`, select Aprovada/Devolvida) e uma view "Para eu
+aprovar" (`table`, com `page_viewer` em `read` e em `write.principals`). O
+trecho que muda:
+
+```json
+{ "query": { "filter": { "and": [
+    { "prop": "aprovador", "op": "contains", "value": "$viewer.raviUserId" },
+    { "prop": "status", "op": "eq", "value": "Entregue" },
+    { "prop": "decisao", "op": "is_empty" } ] } },
+  "access": { "write": { "columns": ["decisao"], "create": false, "archive": false, "allowEscape": true } } }
+```
+
+- `allowEscape: true` porque decidir tira a linha do filtro (sem ele, `write_escapes_view`). `decisao` fica fora de `write.columns` de toda outra view.
+- Antes de agir, confira em `ravi bases rows history tarefas <row> --json` que a versão que gravou `decisao` tem `actorType: user`, `surface: page` e `actorId` igual ao `aprovador` da linha. Motivo: o trigger drena estado, e quem gravasse `decisao` por outro caminho injetaria uma aprovação.
+
+## Ids de membro
+
+Coluna `person` pede user ids da org, não nomes nem e-mails.
+
+- `ravi bases show <base> --json` devolve `base.members[]` (`id`, `displayName`) dos membros ativos da org, para quem gerencia a base. É inferido do código e não traz e-mail: com nomes repetidos, confirme com a pessoa. O mapa `users` de `rows history` também dá nomes.
+- Mais seguro: a pessoa se identifica num formulário de uma base `pessoas` com `write.set: { "pessoa": "$viewer.raviUserId", "email": "$viewer.email" }`, e o agente lê os ids dali.
+- Guarde ids que dão poder (aprovador, supervisão) onde agente de frente não edita.
+
+## Presets
+
+- `write.set` vale só na criação: não dá para "assumir" uma linha existente com preset. Trocar o dono depois é `rows update` pelo CLI.
+- Chave com preset sai das colunas graváveis: quem escreve não pode enviá-la.
+- Nunca `false` em checkbox: vira vazio e o Console recusa a view inteira ("Presets cannot be empty."). O checkbox nasce desmarcado, e `{"prop":"processado","op":"eq","value":false}` casa com a linha nova.
+- View com `create` cobre toda propriedade `required` por `write.columns` ou `write.set`, senão `validation_failed`.
 
 ## Formulários
 
-Um formulário é uma view com `layout.type: "form"`, `access.read` vazio e
-`access.write.create: true`, mais uma Ravi Page gerada que monta os campos com
+Formulário é uma view com `layout.type: "form"`, `access.read` vazio e
+`access.write.create: true`, mais uma página que monta os campos com
 `ravi.bases.views.describe` e envia com `ravi.bases.views.rows.create`
-(`pages.md`, seção Formulário). Quem envia não lê nada da base.
+(esqueleto: `ravi skills show pages --file references/esqueletos/formulario.html.txt`).
+Quem envia não lê nada da base.
 
 ```json
-{
-  "name": "Pedido de conteúdo",
-  "columns": ["title", "channel", "due", "requester_email"],
+{ "name": "Pedido de conteúdo", "columns": ["title", "channel", "due", "requester_email"],
   "layout": { "type": "form", "title": "Peça um conteúdo", "submitLabel": "Enviar",
               "successMessage": "Recebido. A equipe responde em 2 dias úteis." },
-  "access": {
-    "read": [],
-    "write": {
-      "principals": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
-      "columns": ["title", "channel", "due"],
-      "create": true,
-      "archive": false,
-      "set": { "requester_email": "$viewer.email", "status": "Novo" },
-      "allowEscape": false
-    }
-  }
-}
+  "access": { "read": [],
+    "write": { "principals": [{ "kind": "page_viewer", "siteId": "<site-id>" }],
+      "columns": ["title", "channel", "due"], "create": true, "archive": false,
+      "set": { "requester_email": "$viewer.email", "status": "Novo" }, "allowEscape": false } } }
 ```
 
-- Uma view com `create` tem de cobrir toda propriedade `required` por
-  `write.columns` ou `write.set`, senão `views create`/`views update` dá
-  `validation_failed` em `access.write.create`.
-- A página lê `layout.title`, `description`, `submitLabel` e `successMessage`
-  do `views.describe` e mostra só `capabilities.writeColumns`; chaves de
-  `write.set` não aparecem e não podem ser enviadas.
-- Ship com `--uses ravi.bases.views.describe,ravi.bases.views.rows.create`.
-- v1 não tem link público anônimo. Quem envia entra no Pages por login e é
-  membro da org com leitura do projeto. Rota com senha não serve.
-- Vincular uma view a um site expõe as linhas dela, como o viewer, a todo
-  artefato publicado naquele host. O Console não avisa ninguém: ao conceder
-  `page_viewer`, diga à pessoa "o host `<host>` (todas as rotas) passa a ler
-  a view `<nome>` [e a escrever as colunas X], como quem abre o site".
+- Ship com `--uses ravi.bases.views.describe,ravi.bases.views.rows.create`, somado aos ids das outras páginas de dados do host.
+- Não há formulário público: quem envia é membro logado, em rota `private` ou `protected_link` (senha não serve). Gente de fora manda os dados pela conversa.
+- Vincular uma view a um site a expõe a todo o host, sem aviso do Console. Diga à pessoa: "o host `<host>` (todas as rotas) passa a ler a view `<nome>` [e a escrever as colunas X]".

@@ -2163,7 +2163,7 @@ class BasesAggregateOptions {
   final List<String>? agg;
   final String? console;
   final String? filter;
-  final List<String>? groupBy;
+  final String? groupBy;
   final String? project;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -3110,7 +3110,7 @@ class BasesRowsAddOptions {
 }
 
 class BasesRowsAddReturn {
-  const BasesRowsAddReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+  const BasesRowsAddReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId, this.warnings});
 
   final String baseRef;
   final String consoleUrl;
@@ -3121,6 +3121,7 @@ class BasesRowsAddReturn {
   final bool success;
   final Map<String, RaviJson> users;
   final RaviJson viewId;
+  final List<String>? warnings;
 
   factory BasesRowsAddReturn.fromJson(Map<String, Object?> json) {
     return BasesRowsAddReturn(
@@ -3133,6 +3134,7 @@ class BasesRowsAddReturn {
       success: raviJsonAsBool(json["success"]),
       users: raviJsonAsRaviJsonMap(json["users"]),
       viewId: RaviJson.from(json["viewId"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -3213,7 +3215,7 @@ class BasesRowsExportOptions {
   final String? maxRows;
   final String? out;
   final String? project;
-  final List<String>? sort;
+  final String? sort;
   final String? view;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -3528,7 +3530,7 @@ class BasesRowsQueryOptions {
   final String? limit;
   final String? maxRows;
   final String? project;
-  final List<String>? sort;
+  final String? sort;
   final String? view;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -3714,7 +3716,7 @@ class BasesRowsUpdateOptions {
 }
 
 class BasesRowsUpdateReturn {
-  const BasesRowsUpdateReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+  const BasesRowsUpdateReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId, this.warnings});
 
   final String baseRef;
   final String consoleUrl;
@@ -3725,6 +3727,7 @@ class BasesRowsUpdateReturn {
   final bool success;
   final Map<String, RaviJson> users;
   final RaviJson viewId;
+  final List<String>? warnings;
 
   factory BasesRowsUpdateReturn.fromJson(Map<String, Object?> json) {
     return BasesRowsUpdateReturn(
@@ -3737,6 +3740,7 @@ class BasesRowsUpdateReturn {
       success: raviJsonAsBool(json["success"]),
       users: raviJsonAsRaviJsonMap(json["users"]),
       viewId: RaviJson.from(json["viewId"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -4147,7 +4151,7 @@ class BasesViewsQueryOptions {
   final String? limit;
   final String? maxRows;
   final String? project;
-  final List<String>? sort;
+  final String? sort;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (all != null) {
@@ -15522,7 +15526,7 @@ class PagesPublishedReturn {
 PagesPublishedReturn pagesPublishedReturnFromJson(Object? json) => PagesPublishedReturn.fromJsonValue(json);
 
 class PagesShipOptions {
-  const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.project, this.route, this.title, this.uses, this.visibility});
+  const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.membersBestEffort, this.project, this.route, this.title, this.uses, this.visibility});
 
   final String? body;
   final String? console;
@@ -15530,6 +15534,7 @@ class PagesShipOptions {
   final String? entrypoint;
   final bool? execute;
   final String? html;
+  final bool? membersBestEffort;
   final String? project;
   final String? route;
   final String? title;
@@ -15555,6 +15560,9 @@ class PagesShipOptions {
     if (html != null) {
       into["html"] = RaviJson.from(html);
     }
+    if (membersBestEffort != null) {
+      into["membersBestEffort"] = RaviJson.from(membersBestEffort);
+    }
     if (project != null) {
       into["project"] = RaviJson.from(project);
     }
@@ -15574,7 +15582,7 @@ class PagesShipOptions {
 }
 
 class PagesShipReturn {
-  const PagesShipReturn({required this.artifactId, required this.commentFollow, required this.route, required this.site, required this.slug, required this.success, required this.url, this.uses, required this.visibility});
+  const PagesShipReturn({required this.artifactId, required this.commentFollow, required this.route, required this.site, required this.slug, required this.success, required this.url, this.uses, required this.visibility, this.warnings});
 
   final RaviJson artifactId;
   final RaviJson commentFollow;
@@ -15585,6 +15593,7 @@ class PagesShipReturn {
   final RaviJson url;
   final List<String>? uses;
   final String visibility;
+  final List<String>? warnings;
 
   factory PagesShipReturn.fromJson(Map<String, Object?> json) {
     return PagesShipReturn(
@@ -15597,6 +15606,7 @@ class PagesShipReturn {
       url: RaviJson.from(json["url"]),
       uses: json["uses"] == null ? null : raviJsonAsList(json["uses"], raviJsonAsString),
       visibility: raviJsonAsString(json["visibility"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -21690,14 +21700,22 @@ class SkillsRevokeBatchReturn {
 SkillsRevokeBatchReturn skillsRevokeBatchReturnFromJson(Object? json) => SkillsRevokeBatchReturn.fromJsonValue(json);
 
 class SkillsShowOptions {
-  const SkillsShowOptions({this.installed, this.source});
+  const SkillsShowOptions({this.file, this.installed, this.raw, this.source});
 
+  final String? file;
   final bool? installed;
+  final bool? raw;
   final String? source;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (file != null) {
+      into["file"] = RaviJson.from(file);
+    }
     if (installed != null) {
       into["installed"] = RaviJson.from(installed);
+    }
+    if (raw != null) {
+      into["raw"] = RaviJson.from(raw);
     }
     if (source != null) {
       into["source"] = RaviJson.from(source);
@@ -21706,12 +21724,16 @@ class SkillsShowOptions {
 }
 
 class SkillsShowReturn {
-  const SkillsShowReturn({required this.skill});
+  const SkillsShowReturn({this.file, required this.files, required this.skill});
 
+  final RaviJson? file;
+  final List<String> files;
   final RaviJson skill;
 
   factory SkillsShowReturn.fromJson(Map<String, Object?> json) {
     return SkillsShowReturn(
+      file: json["file"] == null ? null : RaviJson.from(json["file"]),
+      files: raviJsonAsList(json["files"], raviJsonAsString),
       skill: RaviJson.from(json["skill"]),
     );
   }

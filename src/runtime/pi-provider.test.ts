@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   buildPiManagedRuntimeEnvSignature,
   buildPiRpcProcessArgs,
+  buildPiSkillCatalogSystemPrompt,
   buildPiRpcSpawnEnv,
   createPiRpcSubprocessTransport,
   createPiRuntimeProvider,
@@ -16,6 +17,7 @@ import {
   type PiRpcTransport,
 } from "./pi-provider.js";
 import { classifyRuntimeContextWindowFailure } from "./context-window-recovery.js";
+import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
 import {
   createPiPermissionHooksReadyEvent,
   formatPiPermissionUiDecisionValue,
@@ -764,6 +766,48 @@ describe("Pi runtime provider", () => {
     expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
     expect(transport.starts[0]?.systemPromptAppend).toContain("ravi skills show <skill-name> --json");
     expect(transport.starts[0]?.systemPromptAppend).toContain("availability only");
+  });
+
+  it("summarizes baseline skills in the Pi catalog with the first sentence of their description", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pi-skills-baseline-"));
+    try {
+      const pluginPath = join(root, "ravi-system");
+      const writeSkill = (dir: string, name: string, description: string[]) => {
+        const skillPath = join(pluginPath, "skills", dir);
+        mkdirSync(skillPath, { recursive: true });
+        writeFileSync(
+          join(skillPath, "SKILL.md"),
+          ["---", `name: ${name}`, ...description, "---", "", `# ${name}`].join("\n"),
+        );
+      };
+      writeSkill("solucoes", "solucoes", [
+        "description: |",
+        "  Porta de entrada para montar soluções com o Ravi. Primeiro separa membro de quem é de fora.",
+        "  - tela, painel",
+      ]);
+      writeSkill("skills", "skill-creator", ["description: Guia para criar skills no Ravi. Use quando precisar."]);
+      writeSkill("image", "image", ["description: Gera imagens."]);
+
+      const prompt = buildPiSkillCatalogSystemPrompt(
+        "base",
+        buildPluginSkillVisibilitySnapshot({
+          provider: "pi",
+          plugins: [{ type: "local", path: pluginPath }],
+          state: "advertised",
+          confidence: "declared",
+          evidenceKind: "system-prompt",
+        }),
+      );
+
+      expect(prompt).toContain(
+        "- ravi-system-solucoes (skill: solucoes) — Porta de entrada para montar soluções com o Ravi.\n",
+      );
+      expect(prompt).toContain("- ravi-system-skills (skill: skill-creator) — Guia para criar skills no Ravi.\n");
+      expect(prompt).toContain("- ravi-system-image (skill: image)\n");
+      expect(prompt).not.toContain("Gera imagens");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("filters the Pi catalog to the agent allowlist and still denies a hidden skill at tool time", async () => {

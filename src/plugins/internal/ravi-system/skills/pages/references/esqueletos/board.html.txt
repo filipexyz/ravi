@@ -1,0 +1,117 @@
+<!doctype html>
+<!--
+  Esqueleto de board (kanban) sobre uma view de Bases. Pasta com index.html (este arquivo)
+  e client.js (cópia de _client.js.txt). Ship:
+    ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
+      --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
+  Outras páginas de dados no host? O --uses leva a união dos ids de todas. Rota private (padrão).
+  Zonas: CONFIG (troque), FIXO (mude só com motivo), LIVRE (estilo e textos).
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board</title>
+<!-- LIVRE: estilo -->
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 16px; color: #1f2328; background: #fff; }
+  #board { display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; }
+  .col { background: #f4f5f7; border-radius: 8px; padding: 8px; flex: 0 0 220px; min-height: 80px; }
+  .col h2 { font-size: 13px; margin: 0 0 8px; }
+  .col.over { outline: 2px dashed #4269d0; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; margin-bottom: 6px; }
+  .card[draggable="true"] { cursor: grab; }
+  .err { color: #b42318; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1 id="title">Carregando…</h1>
+<p id="banner" hidden></p>
+<div id="board"></div>
+<script src="client.js"></script>
+<script>
+// CONFIG ----------------------------------------------------------------------
+const VIEW_ID = "00000000-0000-0000-0000-000000000000"; // id da view (views create --json)
+const GROUP_PROP = null; // chave select/status das colunas; null = layout.groupBy da view
+const TITLE = null;      // null = nome da view
+const MAX_ROWS = 1000;   // teto de linhas carregadas
+
+// LIVRE: textos -----------------------------------------------------------------
+const TEXT = { empty: "Sem valor", untitled: "(sem título)", capped: `Mostrando as primeiras ${MAX_ROWS} linhas.` };
+
+// FIXO --------------------------------------------------------------------------
+let view, group, titleKey, rows = [], moving = 0;
+const groupOf = (row) => row.values[group.key] ?? null;
+
+async function load() {
+  if (moving) return; // não troca os cartões no meio de uma escrita
+  const all = [];
+  let cursor = null;
+  do {
+    const page = await query(VIEW_ID, { limit: 500, cursor });
+    all.push(...page.rows);
+    cursor = page.nextCursor;
+  } while (cursor && all.length < MAX_ROWS);
+  rows = all;
+  render();
+  if (cursor) Object.assign(document.getElementById("banner"), { hidden: false, className: "", textContent: TEXT.capped });
+}
+function render() {
+  const canDrag = view.capabilities.writeColumns.includes(group.key);
+  const options = (group.config.options || []).filter((o) => !o.archived || rows.some((r) => groupOf(r) === o.id));
+  let lanes = [...options.map((o) => ({ id: o.id, name: o.name })), { id: null, name: TEXT.empty }];
+  if (view.layout && view.layout.hideEmptyGroups) lanes = lanes.filter((l) => rows.some((r) => groupOf(r) === l.id));
+  document.getElementById("board").replaceChildren(...lanes.map((lane) => {
+    const cards = rows.filter((r) => groupOf(r) === lane.id).map((row) => {
+      const card = el("div", { className: "card", draggable: canDrag, textContent: String(row.values[titleKey] ?? TEXT.untitled) });
+      card.ondragstart = (e) => e.dataTransfer.setData("text/plain", row.rowId);
+      return card;
+    });
+    const col = el("section", { className: "col" }, el("h2", { textContent: `${lane.name} (${cards.length})` }), ...cards);
+    if (canDrag) {
+      col.ondragover = (e) => { e.preventDefault(); col.classList.add("over"); };
+      col.ondragleave = () => col.classList.remove("over");
+      col.ondrop = (e) => { e.preventDefault(); col.classList.remove("over"); move(e.dataTransfer.getData("text/plain"), lane.id); };
+    }
+    return col;
+  }));
+}
+async function move(rowId, optionId) {
+  const row = rows.find((r) => r.rowId === rowId);
+  if (!row || groupOf(row) === optionId) return;
+  const before = groupOf(row);
+  row.values[group.key] = optionId;
+  render();
+  moving++;
+  try {
+    Object.assign(row, await update(VIEW_ID, row.rowId, { [group.key]: optionId }, row.version));
+    document.getElementById("banner").hidden = true;
+  } catch (err) {
+    if (err.code === "version_conflict" && err.current) Object.assign(row, err.current); // recarrega a linha
+    else row.values[group.key] = before; // write_escapes_view, validation_failed: volta o cartão
+    if (err.code === "not_found") rows = rows.filter((r) => r !== row);
+    showError(err);
+  } finally {
+    moving--;
+  }
+  render();
+}
+async function main() {
+  try {
+    view = await describe(VIEW_ID);
+    const key = GROUP_PROP || (view.layout && view.layout.groupBy);
+    group = view.columns.find((c) => c.key === key && (c.type === "select" || c.type === "status"));
+    if (!view.valid || !group) throw { code: "view_invalid" };
+    titleKey = (view.columns.find((c) => c.type === "text") || view.columns[0]).key;
+    document.getElementById("title").textContent = document.title = TITLE || view.name;
+    await load();
+    poll(load, 30000);
+  } catch (err) {
+    showError(err);
+  }
+}
+main();
+</script>
+</body>
+</html>

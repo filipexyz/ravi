@@ -13,6 +13,7 @@ import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata } from "../
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
+import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES } from "../../pages/ship.js";
 import { PagesAssertionAudienceCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
@@ -1134,6 +1135,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         execute,
       );
 
@@ -1246,6 +1248,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1325,6 +1328,7 @@ describe("pages agent-first contract", () => {
           undefined,
           undefined,
           true,
+          undefined,
           true,
         ),
       );
@@ -1410,6 +1414,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1490,6 +1495,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1553,6 +1559,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1607,6 +1614,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1639,6 +1647,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1959,6 +1968,7 @@ describe("pages agent-first contract", () => {
         ["ravi.identity.assertion", planted],
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1979,6 +1989,7 @@ describe("pages agent-first contract", () => {
         ["ravi.identity.assertion"],
         undefined,
         true,
+        undefined,
         true,
       ),
     );
@@ -1994,7 +2005,187 @@ describe("pages agent-first contract", () => {
     expect(output).not.toContain(planted);
     expect(output).not.toContain("access-secret");
   });
+
+  it("ship refuses ravi.bases.* uses on a public route before any Console call (exit 2)", async () => {
+    const client = makeClient(async () => {
+      throw new Error("console should not be called");
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const shipPublicBases = (asJson: boolean) =>
+      command.ship(
+        [],
+        "loja",
+        "Estoque",
+        "<h1>OK</h1>",
+        undefined,
+        undefined,
+        "public",
+        "/estoque",
+        undefined,
+        ["ravi.bases.views.describe,ravi.bases.views.query"],
+        undefined,
+        asJson,
+      );
+
+    let caught: unknown;
+    const json = await captureConsole(async () => {
+      try {
+        await runWithContext({}, () => shipPublicBases(true));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    expect(caught).toBeInstanceOf(ContractError);
+    expect((caught as ContractError).code).toBe("LIVE_DATA_PUBLIC_ROUTE");
+    expect((caught as ContractError).exitCode).toBe(2);
+    const envelope = JSON.parse(json.output);
+    expect(envelope).toMatchObject({
+      success: false,
+      op: "pages ship",
+      error: {
+        code: "LIVE_DATA_PUBLIC_ROUTE",
+        message: SHIP_LIVE_DATA_REFUSAL_LINES[0],
+        retryable: false,
+        basesUses: ["ravi.bases.views.describe", "ravi.bases.views.query"],
+        visibility: "public",
+        override: "--members-best-effort",
+      },
+    });
+    expect(envelope.error.issues.map((issue: { message: string }) => issue.message)).toEqual([
+      ...SHIP_LIVE_DATA_REFUSAL_LINES,
+    ]);
+    expect(envelope.error.suggestedAction).toContain("Drop --visibility");
+
+    // Text mode prints the headline, then the members fix, outsiders fix and override.
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipPublicBases(false))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text.split("\n")).toEqual([...SHIP_LIVE_DATA_REFUSAL_LINES]);
+    expect(client.me).not.toHaveBeenCalled();
+    expect(client.requestJson).not.toHaveBeenCalled();
+  });
+
+  it("ship --members-best-effort publishes ravi.bases.* on a public route with a members-only warning", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-best-effort-");
+    const { client, finalizeBodies } = makeShipClient();
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const ship = (asJson: boolean) =>
+      command.ship(
+        [],
+        "proj",
+        "Estoque",
+        "<h1>OK</h1>",
+        undefined,
+        undefined,
+        "public",
+        "/estoque",
+        undefined,
+        ["ravi.bases.views.query"],
+        undefined,
+        asJson,
+        true,
+        undefined,
+      );
+
+    const { output } = await captureConsole(() => ship(true));
+
+    expect(finalizeBodies[0]).toMatchObject({
+      publish: { visibility: "public", uses: ["ravi.bases.views.query"] },
+    });
+    expect(JSON.parse(output)).toMatchObject({
+      success: true,
+      visibility: "public",
+      uses: ["ravi.bases.views.query"],
+      warnings: [SHIP_LIVE_DATA_OVERRIDE_WARNING],
+    });
+
+    const text = await captureConsole(() => ship(false));
+    expect(text.output).toContain(`warning: ${SHIP_LIVE_DATA_OVERRIDE_WARNING}`);
+    expect(SHIP_LIVE_DATA_OVERRIDE_WARNING).toContain("Only org members already signed in get live data");
+  });
+
+  it("ship keeps public routes without ravi.bases.* and private routes with ravi.bases.* unchanged", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-live-data-ok-");
+    const { client, finalizeBodies } = makeShipClient();
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const ship = (visibility: string | undefined, uses: string[]) =>
+      captureConsole(() =>
+        command.ship(
+          [],
+          "proj",
+          "Estoque",
+          "<h1>OK</h1>",
+          undefined,
+          undefined,
+          visibility,
+          "/estoque",
+          undefined,
+          uses,
+          undefined,
+          true,
+        ),
+      );
+
+    const publicAssertion = JSON.parse((await ship("public", ["ravi.identity.assertion"])).output);
+    const privateBases = JSON.parse((await ship(undefined, ["ravi.bases.views.query"])).output);
+    const protectedBases = JSON.parse((await ship("protected_link", ["ravi.bases.views.query"])).output);
+
+    expect(publicAssertion).toMatchObject({ success: true, visibility: "public" });
+    expect(privateBases).toMatchObject({ success: true, visibility: "private", uses: ["ravi.bases.views.query"] });
+    expect(protectedBases).toMatchObject({ success: true, visibility: "protected_link" });
+    for (const payload of [publicAssertion, privateBases, protectedBases]) {
+      expect(payload).not.toHaveProperty("warnings");
+    }
+    expect(finalizeBodies.map((body) => (body.publish as { visibility: string }).visibility)).toEqual([
+      "public",
+      "private",
+      "protected_link",
+    ]);
+  });
 });
+
+function makeShipClient(): { client: ConsoleApiClient; finalizeBodies: Array<Record<string, unknown>> } {
+  const finalizeBodies: Array<Record<string, unknown>> = [];
+  const client = {
+    me: mock(async () => ({
+      user: { email: "alice@example.com" },
+      organization: { id: "org_1" },
+    })),
+    requestJson: mock(async (method: string, path: string) => {
+      if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+        return [{ id: "site_1", slug: "acme-proj", isDefault: true, defaultHostname: "acme-proj.ravi.page" }];
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    }),
+    createPageUploadSession: mock(async () => ({
+      uploadSession: { id: `upl_live_data_${finalizeBodies.length}` },
+      uploadPolicy: { directUpload: false },
+    })),
+    finalizeArtifactPublish: mock(async (input: Record<string, unknown>) => {
+      finalizeBodies.push(input);
+      return {
+        artifact: { id: `cloud_art_live_data_${finalizeBodies.length}` },
+        site: { id: "site_1", slug: "acme-proj", defaultHostname: "acme-proj.ravi.page" },
+        url: "https://acme-proj.ravi.page/estoque",
+      };
+    }),
+  } as unknown as ConsoleApiClient;
+  return { client, finalizeBodies };
+}
+
+async function captureConsoleError(run: () => Promise<void>): Promise<string> {
+  const originalError = console.error;
+  const lines: string[] = [];
+  console.error = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+  try {
+    await run();
+    return lines.join("\n");
+  } finally {
+    console.error = originalError;
+  }
+}
 
 async function expectCloudError(run: () => Promise<unknown>): Promise<CloudAuthError> {
   try {

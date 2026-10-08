@@ -17,6 +17,9 @@ description: |
 
 # Sessions Manager
 
+> Verbos: AGIR (mandar a chat ou sessão) · RELATAR (followups). Compõe com: triggers, whatsapp.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Sessões são conversas persistentes entre agents e usuários. Cada sessão tem um nome único, um agent associado, e pode ter canal de saída (WhatsApp, Matrix, etc).
 
 Sessões são a superfície de comunicação do Ravi. Não são o task runtime. Se o trabalho precisa de dono, progresso e estado terminal, use `ravi tasks ...`. Se a pergunta é medir regressão ou comparar comportamento, use `ravi eval ...`.

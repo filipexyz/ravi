@@ -19,6 +19,7 @@ applies_to:
   - src/triggers
   - src/skills
   - src/tasks
+  - src/plugins/internal/ravi-system/skills/solucoes
 owners:
   - ravi-dev
 status: draft
@@ -33,6 +34,7 @@ Routine Composition defines how a recurring loop combines triggers, context, ski
 
 ## Invariants
 
+- People MUST be classified before the design. Every person a routine touches is either an org member (signed in, can read the project) or an outsider (customer, patient, family, supplier, lead). If unsure, a person is an outsider. Members may get live data pages; outsiders get channel messages or snapshots only.
 - Trigger and context MUST be separate fields. A trigger starting a routine does not imply it has all needed context.
 - Skills MUST be named explicitly when a routine depends on a specialized protocol.
 - Output policy MUST define default silence or default speaking behavior.
@@ -53,6 +55,17 @@ trigger
 -> output decision
 -> quality/watch update
 ```
+
+## Solution Sheet
+
+The `solucoes` skill fills a sheet before building. Its lines map onto this contract:
+
+- REAGIR (event) and RELATAR (clock) -> trigger
+- GUARDAR -> context
+- GUARDAR with `--idempotency-key` and `--expected-version` -> durable state write
+- AGIR (channel) and MOSTRAR (screen) -> output
+- the eight rules of `solucoes` -> quality
+- CAPTAR has no field here: machine intake is its own routine with its own trigger.
 
 ## Non-Goals
 

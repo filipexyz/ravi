@@ -10,6 +10,9 @@ description: |
 
 # Image
 
+> Verbos: AGIR (mídia). Compõe com: whatsapp, pages.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 ## TL;DR
 
 Em sessão com chat de origem, a imagem será entregue automaticamente e essa entrega exige confirmação:

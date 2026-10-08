@@ -11,6 +11,9 @@ description: |
 
 # Tasks
 
+> Verbos: AGIR (trabalho longo) · REAGIR (`ravi.task.*.event`). Compõe com: bases (fila).
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 O `task runtime` é o control plane operacional do Ravi.
 
 ## Modelo Mental

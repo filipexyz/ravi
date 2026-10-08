@@ -17,6 +17,11 @@
 - `bases rows add` MUST send the same key in the `Idempotency-Key` header and
   in `idempotencyKey`; `--idempotency-key` MUST override it and a malformed key
   MUST fail with `PAYLOAD_INVALID` before any request.
+- Inside an agent session, `bases rows add` and `bases rows update` without
+  `--idempotency-key` MUST still write and MUST return `warnings`; with the
+  key, or outside an agent session, they MUST return no `warnings`.
+- `bases rows query --sort a:desc,b` and `bases aggregate --group-by
+  status,prazo:month` MUST pass through the daemon gateway (one string value).
 - `bases rows update` without `--expected-version` or `--last-write-wins` MUST
   fail with `PAYLOAD_INVALID` (exit 2) before any Console call.
 - A Console `VERSION_CONFLICT` MUST return exit 1 with `consoleError`,
@@ -42,7 +47,7 @@
   plans MUST name the generated Pages that stop working
   (`grep -n "Console" src/cli/commands/bases.ts` shows only project, scope,
   URL, and server-side wording).
-- The `bases` skill MUST name only the seven `ravi.bases.*` ids listed in
+- The `bases` and `pages` skills MUST name only the seven `ravi.bases.*` ids listed in
   SPEC "Generated Pages". Every page example MUST ship with `--uses` covering
   the ids it calls, and the skill MUST say that `--uses` is the union of the
   ids called by every page on the same host.

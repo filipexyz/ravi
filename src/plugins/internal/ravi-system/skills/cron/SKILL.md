@@ -10,6 +10,9 @@ description: |
 
 # Cron Manager
 
+> Verbos: RELATAR. Compõe com: bases, pages (snapshot), whatsapp.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Você gerencia os jobs agendados do Ravi. Jobs são tarefas que rodam automaticamente em horários ou intervalos específicos.
 
 ## Contrato Do CLI

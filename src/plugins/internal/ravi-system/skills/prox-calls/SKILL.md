@@ -11,6 +11,9 @@ description: |
 
 # prox.city Calls
 
+> Verbos: CAPTAR · AGIR (ligação). Compõe com: bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 `ravi prox calls` e a superficie operacional de ligacoes do prox.city. Calls sao canal de ativacao humana: check-in, follow-up, entrevista, convite, assessment e coleta de resposta.
 
 Antes de alterar codigo ou regra, consulte a spec normativa:

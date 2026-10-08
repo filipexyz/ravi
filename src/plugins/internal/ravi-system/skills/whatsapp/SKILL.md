@@ -13,6 +13,9 @@ description: |
 
 # WhatsApp Manager
 
+> Verbos: CAPTAR · AGIR. Compõe com: routes, bases, triggers (reação).
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, registrar rotas/sessões Ravi e operar grupos pelo CLI.
 
 **Importante:** Todos os comandos precisam que o Omni esteja rodando com WhatsApp conectado.

@@ -101,6 +101,20 @@ describe("resolveAgentSkills — provider-agnostic core", () => {
       expect(resolved.allowlist).toContain("tasks");
       expect(resolved.allowlist).toContain("ravi-system:tasks");
     });
+
+    it("pins the baseline kit, solucoes included", () => {
+      expect(BASELINE_SYSTEM_SKILL_SLUGS).toEqual([
+        "ravi-system-sessions",
+        "ravi-system-tasks",
+        "ravi-system-specs",
+        "ravi-system-skill-creator",
+        "ravi-system-solucoes",
+      ]);
+      const resolved = resolveAgentSkills("agent-fresh", { capabilitiesOverride: [] });
+      expect(resolved.provenance.baseline).toContain("ravi-system-solucoes");
+      expect(resolved.allowlist).toContain("solucoes");
+      expect(resolved.allowlist).toContain("ravi-system:solucoes");
+    });
   });
 });
 
@@ -159,6 +173,32 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(resolved.allowlist).toContain("ravi-system-pages");
     expect(resolved.allowlist).toContain("pages");
     expect(resolved.allowlist).not.toContain("ravi-system-permissions-manager");
+  });
+
+  it("authorizes the baseline solucoes skill for a configured agent without a grant for it", () => {
+    dbUpsertSkillGrant({ agentId: "configured-builder", skillName: "gmail-pack" });
+
+    const resolved = resolveAgentSkills("configured-builder", { capabilitiesOverride: [] });
+    expect(resolved.hasConfiguration).toBe(true);
+    expect(resolved.allowlist).toContain("ravi-system-solucoes");
+    expect(isSkillAuthorizedForAgent("configured-builder", "ravi-system-solucoes")).toBe(true);
+    expect(isSkillAuthorizedForAgent("configured-builder", "solucoes")).toBe(true);
+  });
+
+  it("derives the slack, observers and meetings skills from their command groups", () => {
+    const resolved = resolveAgentSkills("agent-channels", {
+      capabilitiesOverride: [
+        cap("execute", "group", "slack"),
+        cap("execute", "group", "observers_rules"),
+        cap("read", "meetings.profiles", "list"),
+      ],
+    });
+    expect(resolved.allowlist).toContain("ravi-system-slack");
+    expect(resolved.allowlist).toContain("ravi-system-observers");
+    expect(resolved.allowlist).toContain("ravi-system-meetings");
+    expect(resolved.allowlist).not.toContain("ravi-system-whatsapp-manager");
+    expect(officialSkillImpliedByCapabilities([cap("execute", "group", "slack")], "ravi-system-slack")).toBe(true);
+    expect(officialSkillImpliedByCapabilities([cap("execute", "group", "slack")], "ravi-system-meetings")).toBe(false);
   });
 
   it("does not treat a visible permissions skill as mutate:permissions:allow", () => {

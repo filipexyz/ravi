@@ -111,6 +111,49 @@ function dnsHostLabel(value: string | null | undefined): string | null {
   return slug;
 }
 
+/** `--uses` ids under this prefix call live Ravi Bases data through Pages connectors. */
+export const RAVI_BASES_USE_PREFIX = "ravi.bases.";
+
+export const SHIP_MEMBERS_BEST_EFFORT_FLAG = "--members-best-effort";
+
+/**
+ * Refusal copy, one line per issue. Each line stays under the 200-character
+ * issue cap so the whole reason survives the remote CLI gateway.
+ */
+export const SHIP_LIVE_DATA_REFUSAL_LINES = [
+  "Refusing to ship: this page calls ravi.bases.* and the route would be public. Nothing was uploaded or published.",
+  "Live data works only for signed-in org members on private or protected_link routes; anonymous visitors get connector_session_required.",
+  "next (members): drop --visibility (private is the default).",
+  "next (outsiders): ship a snapshot instead, with the numbers inside the HTML and no ravi.bases.* in --uses, ideally on another project's host (ravi pages ship --project <other> ...).",
+  `override: ${SHIP_MEMBERS_BEST_EFFORT_FLAG}, only when every reader is an org member already signed in.`,
+] as const;
+
+export const SHIP_LIVE_DATA_OVERRIDE_WARNING = `${SHIP_MEMBERS_BEST_EFFORT_FLAG}: this public route calls ravi.bases.*. Only org members already signed in get live data; everyone else gets connector_session_required.`;
+
+export type ShipLiveDataCheck =
+  | { status: "ok" }
+  | { status: "refused"; basesUses: string[] }
+  | { status: "overridden"; basesUses: string[]; warning: string };
+
+/**
+ * Pages connectors serve `ravi.bases.*` only to a Pages session, which a
+ * public route never asks for. Ship always sends the route visibility, so a
+ * password route can only come from `public` on a host whose default is
+ * `password`, and this public check already covers it.
+ */
+export function checkShipLiveData(input: {
+  membersBestEffort?: boolean;
+  uses?: readonly string[];
+  visibility: string;
+}): ShipLiveDataCheck {
+  const basesUses = (input.uses ?? []).filter((id) => id.startsWith(RAVI_BASES_USE_PREFIX));
+  if (basesUses.length === 0 || input.visibility !== "public") return { status: "ok" };
+  if (input.membersBestEffort === true) {
+    return { status: "overridden", basesUses, warning: SHIP_LIVE_DATA_OVERRIDE_WARNING };
+  }
+  return { status: "refused", basesUses };
+}
+
 export function resolveShipContentKind(input: Pick<ShipSourceInput, "body" | "dir" | "html">): ShipContentKind {
   const present = [
     input.body !== undefined ? "body" : null,

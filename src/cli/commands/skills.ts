@@ -34,12 +34,16 @@ import {
   installSkills,
   listCatalogSkills,
   listInstalledSkills,
+  listSkillFilePaths,
+  normalizeSkillFilePath,
   parseSkillSource,
+  readSkillFile,
   selectSkills,
   SkillSourceError,
   withResolvedSkillSource,
   type InstalledRaviSkill,
   type RaviSkill,
+  type RaviSkillFile,
   type SkillSourceErrorCode,
   type SkillSourceOptions,
 } from "../../skills/manager.js";
@@ -215,6 +219,63 @@ function failSkillSource(op: string, error: SkillSourceError, options: { asJson?
   });
 }
 
+interface SkillFileView {
+  files: string[];
+  selected: RaviSkillFile | null;
+}
+
+/** Captured eagerly: a `--source` git clone is removed once its callback returns. */
+function inspectSkillFiles(skill: RaviSkill, file: string | undefined): SkillFileView {
+  return { files: listSkillFilePaths(skill), selected: file === undefined ? null : readSkillFile(skill, file) };
+}
+
+function skillFileListLine(files: readonly string[]): string {
+  return `Files in this skill: ${files.join(", ")}`;
+}
+
+const SKILL_FILE_ISSUE_MAX_LENGTH = 180;
+
+/**
+ * "Files in this skill: ..." split into issue-sized lines: the gateway caps
+ * each issue message, and issues are what reaches a remote caller.
+ */
+function skillFileListLines(files: readonly string[]): string[] {
+  const lines: string[] = [];
+  let current = "Files in this skill:";
+  for (const [index, file] of files.entries()) {
+    const separator = index === 0 ? " " : ", ";
+    if (current.length + separator.length + file.length > SKILL_FILE_ISSUE_MAX_LENGTH && index > 0) {
+      lines.push(`${current},`);
+      current = file;
+      continue;
+    }
+    current += `${separator}${file}`;
+  }
+  lines.push(current);
+  return lines;
+}
+
+function failSkillFile(skill: RaviSkill, file: string, files: readonly string[], asJson?: boolean): never {
+  const invalid = normalizeSkillFilePath(file) === null;
+  const code = invalid ? "SKILL_FILE_INVALID" : "SKILL_FILE_NOT_FOUND";
+  const message = invalid
+    ? `Invalid skill file path: ${file}. Pass a path relative to the skill, from its file list.`
+    : `File not found in skill ${skill.name}: ${file}`;
+  const suggestedAction = `Use a path from this skill's file list: ravi skills show ${skill.name} --file <path>`;
+  contractFail("skills show", code, message, {
+    asJson,
+    exitCode: invalid ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
+    details: {
+      suggestedAction,
+      files: [...files],
+      issues: [
+        ...skillContractIssues(["file"], code, message, suggestedAction),
+        ...skillFileListLines(files).map((line) => ({ path: ["files"], code: "SKILL_FILES", message: line })),
+      ],
+    },
+  });
+}
+
 function withSkillSourceContract<T>(op: string, asJson: boolean | undefined, run: () => T): T {
   try {
     return run();
@@ -307,10 +368,13 @@ FONTES
 `;
 
 const SKILLS_SHOW_HELP_AFTER = `
-LEITURA — imprime o SKILL.md completo (frontmatter + corpo) de uma skill.
+LEITURA — imprime o SKILL.md completo (frontmatter + corpo) de uma skill, ou um
+arquivo dela com --file (ex.: references/<arquivo>). Ler um arquivo conta como
+carregar a skill.
 
 USE
   ✓ ler a skill inteira antes de patchar (guard) ou de decidir grantar
+  ✓ abrir só o reference que precisa (--file); a lista sai no fim da saída
   ✓ inspecionar uma skill de fonte externa antes de instalar (--source)
 
 NÃO USE
@@ -318,12 +382,21 @@ NÃO USE
 
 EXAMPLES
   ravi skills show cli-creator
+  ravi skills show bases --file references/views-access-forms.md
+  ravi skills show pages --file references/esqueletos/_client.js.txt --raw > site/client.js
   ravi skills show emissao-nf-sde --installed --json
   ravi skills show minha-skill --source ./local/path
+
+FORMATO
+  --json traz { skill, files[] } (files: caminhos relativos, SKILL.md primeiro);
+  com --file, também file { path, content }. --raw imprime só os bytes do
+  arquivo (sem cabeçalho nem lista), para copiar com > arquivo.
 
 ON ERROR (reason → fix)
   Skill not found → nome errado ou universo errado. Rode \`ravi skills list\`
                     (+ --installed/--source conforme o caso) pra achar o nome canônico.
+  SKILL_FILE_NOT_FOUND → caminho fora da lista da skill; o erro lista os arquivos.
+  SKILL_FILE_INVALID   → caminho absoluto ou com ".."; passe um caminho relativo da lista.
 
 SEE ALSO
   ravi skills list · ravi skills guard (editar) · ravi skills inspect
@@ -746,9 +819,22 @@ export class SkillsCommands {
     @Option({ flags: "--installed", description: "Inspect only operator-installed/materialized skills" })
     installed?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--file <path>",
+      description: "Print one file of the skill by its relative path (e.g. references/<file>); counts as loading it",
+    })
+    file?: string,
+    @Option({
+      flags: "--raw",
+      description: "Print only the file's bytes (SKILL.md without --file), e.g. to copy a skeleton with > client.js",
+    })
+    raw?: boolean,
   ) {
+    // --raw prints exactly one file; without --file that file is SKILL.md.
+    const fileArg = file ?? (raw === true ? "SKILL.md" : undefined);
     let skill: RaviSkill | null;
     let candidates: string[];
+    let sourceFiles: SkillFileView | null = null;
     if (source) {
       // Resolve inside the callback (temp clones are cleaned up on return) and
       // fail with the envelope OUTSIDE it, keeping cleanup + exit code intact.
@@ -757,13 +843,19 @@ export class SkillsCommands {
           source,
           (resolvedSource) => {
             const skills = discoverSkills(resolvedSource);
-            return { skill: findSkillByName(skills, name), names: skills.map((entry) => entry.name) };
+            const found = findSkillByName(skills, name);
+            return {
+              skill: found,
+              names: skills.map((entry) => entry.name),
+              files: found ? inspectSkillFiles(found, fileArg) : null,
+            };
           },
           callerSkillSourceOptions(),
         ),
       );
       skill = resolved.skill;
       candidates = resolved.names;
+      sourceFiles = resolved.files;
     } else if (installed === true) {
       skill = findInstalledSkill(name);
       candidates = listInstalledSkills({ includeCodex: true }).map((entry) => entry.name);
@@ -797,15 +889,37 @@ export class SkillsCommands {
       }
     }
 
-    const payload = { skill: serializeSkill(skill, { includeContent: true }) };
+    const { files, selected } = sourceFiles ?? inspectSkillFiles(skill, fileArg);
+    if (fileArg !== undefined && !selected) {
+      failSkillFile(skill, fileArg, files, asJson);
+    }
+
+    const payload = {
+      skill: serializeSkill(skill, { includeContent: true }),
+      files,
+      ...(selected ? { file: selected } : {}),
+    };
     if (asJson) {
       printJson(payload);
+    } else if (raw === true && selected) {
+      process.stdout.write(selected.content);
+    } else if (selected) {
+      // The `# <name>` header comes first: loaded-skill detection reads it from
+      // the output, and a reference file starts with a heading of its own.
+      console.log(`# ${skill.name}`);
+      console.log(`File: ${selected.path}`);
+      console.log(`Path: ${skill.path}`);
+      console.log("");
+      console.log(selected.content.trimEnd());
+      console.log("");
+      console.log(skillFileListLine(files));
     } else {
       console.log(`# ${skill.name}`);
       if (skill.description) console.log(`\n${skill.description}\n`);
       console.log(`Path: ${skill.path}`);
       console.log("");
       console.log(skill.content);
+      if (files.length > 1) console.log(skillFileListLine(files));
     }
     return payload;
   }

@@ -1,0 +1,130 @@
+<!doctype html>
+<!--
+  Esqueleto de formulário sobre uma view de Bases (access.read: [] e write.create: true).
+  Pasta com index.html (este arquivo) e client.js (cópia de _client.js.txt). Ship:
+    ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
+      --uses ravi.bases.views.describe,ravi.bases.views.rows.create --json
+  Outras páginas de dados no host? O --uses leva a união dos ids de todas.
+  Rota private; quem preenche é membro; gente de fora usa a conversa.
+  Dono e status inicial vêm do write.set da view: o formulário não desenha nem envia.
+  Zonas: CONFIG (troque), FIXO (mude só com motivo), LIVRE (estilo e textos).
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formulário</title>
+<!-- LIVRE: estilo -->
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 16px auto; max-width: 560px; padding: 0 16px; color: #1f2328; background: #fff; }
+  label { display: block; margin: 12px 0; }
+  input, select, textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; }
+  input[type=checkbox] { display: inline; width: auto; }
+  .err { color: #b42318; }
+  .ok { color: #067647; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1 id="title">Carregando…</h1>
+<p id="banner" hidden></p>
+<form id="form" hidden></form>
+<script src="client.js"></script>
+<script>
+// CONFIG ----------------------------------------------------------------------
+const VIEW_ID = "00000000-0000-0000-0000-000000000000"; // id da view (views create --json)
+
+// LIVRE: textos (o layout form da view, quando existe, tem precedência) -------------
+const TEXT = { submit: "Enviar", done: "Enviado. Obrigado!" };
+
+// FIXO --------------------------------------------------------------------------
+// person e ref ficam de fora: dono vem de write.set ($viewer.raviUserId).
+const SIMPLE = { text: "text", url: "url", email: "email", phone: "tel", number: "number" };
+const CHOICE = new Set(["select", "status", "multi_select"]);
+let pending = null; // { json, key }: a mesma chave só para repetir o mesmo envio
+
+function field(col) {
+  let node;
+  if (CHOICE.has(col.type)) {
+    node = el("select", { multiple: col.type === "multi_select" });
+    if (col.type !== "multi_select") node.append(el("option", { value: "", textContent: "—" }));
+    for (const o of col.config.options || []) if (!o.archived) node.append(el("option", { value: o.id, textContent: o.name }));
+  } else if (col.type === "checkbox") node = el("input", { type: "checkbox" });
+  else if (col.type === "date") node = el("input", { type: col.config.includeTime ? "datetime-local" : "date" });
+  else if (col.type === "body") node = el("textarea", { rows: 5 });
+  else node = el("input", { type: SIMPLE[col.type] });
+  if (col.type === "number") node.step = "any";
+  node.name = col.key;
+  node.required = col.required && col.type !== "checkbox";
+  return node;
+}
+function read(col, node) {
+  if (col.type === "checkbox") return node.checked;
+  if (col.type === "multi_select") return [...node.selectedOptions].map((o) => o.value);
+  if (node.value === "") return null;
+  if (col.type === "number") return Number(node.value);
+  if (col.type === "date" && col.config.includeTime) return new Date(node.value).toISOString();
+  return node.value; // date sem hora: "YYYY-MM-DD"
+}
+function build(view) {
+  const layout = view.layout && view.layout.type === "form" ? view.layout : {};
+  const cols = view.columns.filter((c) => view.capabilities.writeColumns.includes(c.key) && (SIMPLE[c.type] || CHOICE.has(c.type) || ["checkbox", "date", "body"].includes(c.type)));
+  const form = document.getElementById("form");
+  form.replaceChildren(
+    ...(layout.description ? [el("p", { textContent: layout.description })] : []),
+    ...cols.map((c) => el("label", {}, c.name + (c.required ? " *" : ""), field(c), el("small", { className: "err", id: `err-${c.key}` }))),
+    el("p", { id: "err-form" }),
+    el("button", { type: "submit", textContent: layout.submitLabel || TEXT.submit }),
+  );
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const values = {};
+    let body;
+    for (const c of cols) {
+      const v = read(c, form.elements.namedItem(c.key));
+      if (c.type === "body") { if (v !== null) body = v; } else if (v !== null && !(Array.isArray(v) && !v.length)) values[c.key] = v;
+    }
+    const json = JSON.stringify({ values, body });
+    if (!pending || pending.json !== json) pending = { json, key: newKey() };
+    form.querySelectorAll("small").forEach((n) => { n.textContent = ""; });
+    const status = document.getElementById("err-form");
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      await create(VIEW_ID, values, pending.key, body);
+      pending = null;
+      form.reset();
+      status.className = "ok";
+      status.textContent = layout.successMessage || TEXT.done;
+      document.getElementById("banner").hidden = true;
+    } catch (err) {
+      status.className = "err";
+      status.textContent = "";
+      if (err.code === "validation_failed" && err.fieldErrors) {
+        for (const [key, message] of Object.entries(err.fieldErrors)) {
+          const slot = document.getElementById(`err-${key}`) || status;
+          slot.textContent = slot.textContent ? `${slot.textContent} ${message}` : message;
+        }
+      } else showError(err);
+    } finally {
+      button.disabled = false;
+    }
+  };
+  form.hidden = false;
+}
+async function main() {
+  try {
+    const view = await describe(VIEW_ID);
+    if (!view.valid) throw { code: "view_invalid" };
+    if (!view.capabilities.create) throw { code: "base_forbidden" };
+    const layout = view.layout && view.layout.type === "form" ? view.layout : {};
+    document.getElementById("title").textContent = document.title = layout.title || view.name;
+    build(view);
+  } catch (err) {
+    showError(err);
+  }
+}
+main();
+</script>
+</body>
+</html>

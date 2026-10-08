@@ -10,6 +10,9 @@ description: |
 
 # Ravi Artifacts
 
+> Verbos: GUARDAR (arquivo). Compõe com: pages, bases (`ref`).
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 `ravi artifacts` é o ledger genérico de artefatos do Ravi.
 
 Ele registra o arquivo bruto, metadata, métricas, lineage e relações com sessão/task/canal para que um artifact possa ser auditado, encontrado e reutilizado depois.

@@ -614,7 +614,7 @@ export class RaviClient {
       agg?: string[];
       console?: string;
       filter?: string;
-      groupBy?: string[];
+      groupBy?: string;
       project?: string;
     }): Promise<BasesAggregateReturn> => {
       return this.transport.call({
@@ -882,7 +882,7 @@ export class RaviClient {
         maxRows?: string;
         out?: string;
         project?: string;
-        sort?: string[];
+        sort?: string;
         view?: string;
       }): Promise<BasesRowsExportReturn> => {
         return this.transport.call({
@@ -956,7 +956,7 @@ export class RaviClient {
         limit?: string;
         maxRows?: string;
         project?: string;
-        sort?: string[];
+        sort?: string;
         view?: string;
       }): Promise<BasesRowsQueryReturn> => {
         return this.transport.call({
@@ -1111,7 +1111,7 @@ export class RaviClient {
         limit?: string;
         maxRows?: string;
         project?: string;
-        sort?: string[];
+        sort?: string;
       }): Promise<BasesViewsQueryReturn> => {
         return this.transport.call({
           groupSegments: ["bases","views"],
@@ -5019,6 +5019,7 @@ export class RaviClient {
       entrypoint?: string;
       execute?: boolean;
       html?: string;
+      membersBestEffort?: boolean;
       project?: string;
       route?: string;
       title?: string;
@@ -7060,7 +7061,9 @@ export class RaviClient {
     },
     /** Show a Ravi catalog skill, installed skill or source skill */
     show: async (name: string, options?: {
+      file?: string;
       installed?: boolean;
+      raw?: boolean;
       source?: string;
     }): Promise<SkillsShowReturn> => {
       return this.transport.call({

@@ -97,7 +97,10 @@ ravi skills list --installed --codex --json
 ravi skills show image
 ravi skills show image --installed
 ravi skills show find-skills --source vercel-labs/skills
+ravi skills show bases --file references/query-ast.md   # um arquivo da skill (caminho relativo)
 ```
+
+`show` termina com a lista `Files in this skill:`; com `--json`, sai `files[]` (SKILL.md primeiro) e, com `--file`, `file {path, content}`. Ler um arquivo conta como carregar a skill.
 
 ### Ver skills disponíveis em uma fonte
 

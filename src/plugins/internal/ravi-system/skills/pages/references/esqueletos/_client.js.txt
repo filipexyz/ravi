@@ -1,0 +1,78 @@
+// Cliente Ravi Pages → Bases, única cópia. Publique como client.js ao lado do index.html
+// (ship --dir) e carregue com <script src="client.js"></script>, relativo, antes do script
+// da página. A página tem <p id="banner" hidden></p>. Inputs: data-pages.md, "Connectors".
+function el(tag, props = {}, ...kids) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...kids.filter((k) => k !== null && k !== undefined && k !== ""));
+  return node;
+}
+class ExecError extends Error {
+  constructor(code, status, body, requestId) {
+    super(code);
+    Object.assign(this, { code, status, requestId });
+    this.fieldErrors = body && typeof body.fieldErrors === "object" ? body.fieldErrors : null;
+    this.current = body && typeof body.current === "object" ? body.current : null; // version_conflict
+  }
+}
+// POST same-origin { id, input }. 429: espera 2, 4, 8 s e repete o mesmo input (mesma chave).
+async function exec(id, input, retries = 3) {
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch("/_ravi/connectors/exec", { method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ id, input }) });
+    } catch { throw new ExecError("network_error", 0, null, null); }
+    if (res.status === 429 && attempt < retries) { await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt)); continue; }
+    let body = null;
+    try { body = await res.json(); } catch { /* não JSON */ }
+    if (res.ok && body && body.ok === true) return body.output;
+    const code = body && typeof body.error === "string" ? body.error : "connector_unavailable";
+    throw new ExecError(code, res.status, body, res.headers.get("x-request-id"));
+  }
+}
+// Chave nova por escrita; a mesma só para reenviar o mesmo input.
+const newKey = () => crypto.randomUUID();
+const describe = (viewId) => exec("ravi.bases.views.describe", { viewId });
+function query(viewId, { filter, sort, limit, cursor } = {}) {
+  const input = { viewId };
+  Object.entries({ filter, sort, limit, cursor }).forEach(([k, v]) => { if (v) input[k] = v; });
+  return exec("ravi.bases.views.query", input);
+}
+const update = (viewId, rowId, values, expectedVersion, idempotencyKey = newKey()) =>
+  exec("ravi.bases.views.rows.update", { viewId, rowId, values, expectedVersion, idempotencyKey });
+const create = (viewId, values, idempotencyKey = newKey(), body) =>
+  exec("ravi.bases.views.rows.create", { viewId, values, idempotencyKey, ...(body === undefined ? {} : { body }) });
+const MESSAGES = {
+  connector_not_allowlisted: "O host não liberou esta ação. Quem publica: ship com o id na união do --uses.",
+  version_conflict: "Alguém mudou esta linha antes. Ela foi recarregada; refaça a mudança.",
+  connector_rate_limited: "Muitas ações seguidas. Espere alguns segundos.",
+  not_found: "Indisponível para você, ou saiu desta lista.",
+  base_forbidden: "Esta tela não permite essa ação.",
+  view_invalid: "Tela em manutenção. Avise quem cuida da base.",
+  write_escapes_view: "Essa mudança tiraria a linha desta lista.",
+  network_error: "Sem conexão. Tente de novo.",
+};
+function showError(err) {
+  const node = document.getElementById("banner");
+  const code = err && err.code;
+  node.className = "err";
+  node.hidden = false;
+  // Rota private: recarregar leva ao login. Em rota public ou com senha, não resolve.
+  if (code === "connector_session_required" || code === "connector_unauthorized") {
+    return node.replaceChildren("Sua sessão expirou. ", el("a", { href: location.pathname + location.search, textContent: "Entrar de novo" }));
+  }
+  const text = MESSAGES[code] || "Algo deu errado. Tente de novo.";
+  node.replaceChildren(err && err.requestId ? `${text} (código ${err.requestId})` : text);
+}
+// Sem push: releia com piso de 30 s (limite: 120 chamadas/min por viewer por site).
+// Pula a vez com a aba escondida. Devolve stop().
+function poll(fn, ms = 30000) {
+  const every = Math.max(ms, 30000);
+  let timer = null, stopped = false;
+  const tick = async () => {
+    if (!document.hidden) { try { await fn(); } catch (err) { showError(err); } }
+    if (!stopped) timer = setTimeout(tick, every);
+  };
+  timer = setTimeout(tick, every);
+  return () => { stopped = true; clearTimeout(timer); };
+}

@@ -10,6 +10,9 @@ description: |
 
 # Video Analysis
 
+> Verbos: CAPTAR (analisar). Compõe com: bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Analisa vídeos do YouTube usando legendas/captions via `yt-dlp` como caminho padrão por custo e latência. Usa Gemini como fallback quando não há legenda, quando a extração falha, ou quando o usuário pede análise visual/resumo via `--strategy gemini` ou `--force-analyze`. Arquivos locais seguem via Gemini.
 
 ## Contrato Do CLI

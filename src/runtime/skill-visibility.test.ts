@@ -6,6 +6,7 @@ import {
   buildSkillVisibilitySnapshot,
   commandLineRunsSkillRemediation,
   diffLoadedSkills,
+  extractRaviSkillShowNameFromCommand,
   extractRequestedSkillsFromCommandLine,
   extractRequestedSkillsFromToolCall,
   extractSkillNameFromFilesystemPath,
@@ -582,6 +583,21 @@ describe("skill visibility policy", () => {
 
     expect(loaded.loadedSkills).toEqual(["ravi-user-skills-building-ravi-apps"]);
   });
+  it("records the named skill for a --raw read, whose output is the file's own bytes", () => {
+    const snapshot = buildSkillVisibilitySnapshot([
+      { id: "ravi-system-pages", provider: "codex", state: "advertised", confidence: "declared", lastSeenAt: 1 },
+    ]);
+
+    const loaded = markLoadedFromRaviSkillToolCall(snapshot, {
+      provider: "codex",
+      toolName: "exec_command",
+      toolInput: { command: "ravi skills show pages --file references/data-pages.md --raw" },
+      output: "# Páginas de dados\n\nUma página de dados lê uma view.\n",
+      now: 2,
+    });
+
+    expect(loaded.loadedSkills).toEqual(["ravi-system-pages"]);
+  });
 });
 
 describe("skill invocation extraction", () => {
@@ -626,6 +642,35 @@ describe("skill invocation extraction", () => {
         command: "wc -l /tmp/p/skills/app-creator/SKILL.md | ravi skills show image",
       }),
     ).toEqual(["app-creator", "image"]);
+  });
+
+  it("reads skills show --file as a file of the named skill, never as another skill", () => {
+    expect(extractRaviSkillShowNameFromCommand("ravi skills show --file references/query-ast.md bases")).toBe("bases");
+    expect(extractRaviSkillShowNameFromCommand("ravi skills show --file=references/query-ast.md bases --json")).toBe(
+      "bases",
+    );
+    expect(extractRequestedSkillsFromCommandLine("ravi skills show bases --file SKILL.md")).toEqual(["bases"]);
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills show pages --file references/esqueletos/board.html.txt 2>&1"),
+    ).toEqual(["pages"]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "ravi skills show bases --file SKILL.md && cat /tmp/p/skills/whatsapp-manager/SKILL.md",
+      ),
+    ).toEqual(["bases", "whatsapp-manager"]);
+    expect(extractRequestedSkillsFromCommandLine("ravi skills show bases --file SKILL.md 2>/dev/null")).toEqual([
+      "bases",
+    ]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        "ravi skills show pages --file references/esqueletos/_client.js.txt --raw > site/client.js",
+      ),
+    ).toEqual(["pages"]);
+    expect(
+      extractRequestedSkillsFromCommandLine(
+        'ravi skills show bases --file "$(cat /tmp/p/skills/whatsapp-manager/SKILL.md)"',
+      ),
+    ).toEqual(["bases", "whatsapp-manager"]);
   });
 
   it("does not treat a ravi skills install/list --source path as a skill load unless the segment expands", () => {

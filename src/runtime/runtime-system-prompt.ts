@@ -10,8 +10,16 @@ import { loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildStickerPromptSection } from "../stickers/prompt.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import { buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
-import type { ContextRecord } from "../router/router-db.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { buildSessionGoalPromptSection } from "./session-goals.js";
+import { listGroupSkillRules } from "../cli/skill-gates.js";
+import {
+  canRunSkillsShow,
+  capabilityMatchesGroupRule,
+  isAdminAll,
+  selectGroupCaps,
+} from "./skill-capability-implication.js";
+import { skillNameMatchesAllowlist } from "./skill-visibility.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -25,6 +33,8 @@ export interface RuntimeSystemPromptInput {
     ContextRecord,
     "contextId" | "kind" | "agentId" | "sessionKey" | "sessionName" | "source" | "capabilities"
   >;
+  /** Skills the runtime exposes to the agent; undefined means unfiltered (every skill visible). */
+  allowedSkills?: readonly string[];
 }
 
 export interface RuntimeSystemPrompt {
@@ -36,6 +46,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
   const sections = [
     ...buildSystemPromptSections(input.agent.id, input.ctx, undefined, input.sessionName, {
       agentMode: input.agent.mode,
+      buildingSolutions: shouldMountBuildingSolutions(input),
     }),
     buildRuntimeOperationalContextSection(input),
     ...buildSessionGoalPromptSections(input),
@@ -50,6 +61,35 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     text: renderPromptSections(sections),
     sections,
   };
+}
+
+const BUILDING_SOLUTIONS_SKILL = "ravi-system-solucoes";
+const BUILDING_SOLUTIONS_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["bases", "pages", "triggers", "cron"]);
+
+/**
+ * "Building Solutions" sends the agent to `ravi skills show solucoes` and the
+ * bases, pages, triggers and cron groups: mount it only for a non-sentinel
+ * agent that can see that skill, run `ravi skills show`, and run at least one
+ * of those groups.
+ */
+function shouldMountBuildingSolutions(input: RuntimeSystemPromptInput): boolean {
+  if (input.agent.mode === "sentinel") return false;
+  if (input.allowedSkills && !skillNameMatchesAllowlist(BUILDING_SOLUTIONS_SKILL, input.allowedSkills)) {
+    return false;
+  }
+  // CLI calls inside the runtime are authorized against this context's
+  // snapshot alone, so no capabilities means none of these commands can run.
+  const capabilities = input.runtimeContext?.capabilities ?? [];
+  return canRunSkillsShow(capabilities) && canRunBuildingSolutionsGroup(capabilities);
+}
+
+function canRunBuildingSolutionsGroup(capabilities: readonly ContextCapability[]): boolean {
+  if (isAdminAll(capabilities) || selectGroupCaps(capabilities).some((cap) => cap.objectId === "*")) {
+    return true;
+  }
+  return listGroupSkillRules()
+    .filter((rule) => BUILDING_SOLUTIONS_GROUP_RULE_IDS.has(rule.id))
+    .some((rule) => capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern)));
 }
 
 function buildRuntimeOperationalContextSection(input: RuntimeSystemPromptInput): PromptContextSection {

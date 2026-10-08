@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "id": "N2",
+  "title": "N2 · negativo: publicar um HTML pronto",
+  "prompt": "Publica esse HTML em /sobre.",
+  "session": {
+    "name": "eval-N2-a0-haiku-1",
+    "agentId": "eval-a0-haiku"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "N-resultado",
+      "type": "response.contains",
+      "needle": "/sobre",
+      "description": "Publicou (ou pediu o arquivo para publicar) em /sobre. Proxy fraco: N e P3 saem do juiz e de checar-comandos.sh --ordem."
+    }
+  ],
+  "runner": {
+    "timeoutMs": 300000
+  }
+}

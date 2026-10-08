@@ -15,6 +15,9 @@ description: |
 
 # Slack Nativo
 
+> Verbos: CAPTAR (modal, botão) · MOSTRAR (Canvas) · AGIR. Compõe com: triggers, bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Slack e um canal nativo do Ravi. Para Slack, use `ravi slack ...` e as specs
 `channels/slack/*` como fonte operacional.
 
