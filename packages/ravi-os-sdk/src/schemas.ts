@@ -89978,7 +89978,7 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "session": {
-      "description": "Session: main or isolated (default: isolated)",
+      "description": "Session: main, isolated (default), or key:<template> for one persistent session per resolved key (e.g. key:issue-{{data.payload.row.values.topic_id}})",
       "type": "string"
     },
     "shell": {
